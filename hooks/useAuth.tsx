@@ -21,11 +21,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // `lobby` is exposed reactively via state; lobbyRef holds the same handle for
+  // imperative cleanup (unsubscribe the previous one without reading state).
   const lobbyRef = useRef<LobbyHandle | null>(null);
+  const [lobby, setLobby] = useState<LobbyHandle | null>(null);
 
   const startLobby = useCallback((a: Account) => {
     lobbyRef.current?.unsubscribe();
     lobbyRef.current = joinLobby({ accountId: a.accountId, username: a.username });
+    setLobby(lobbyRef.current);
   }, []);
 
   useEffect(() => {
@@ -39,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       else clearSession();
       setLoading(false);
     });
-    return () => { active = false; lobbyRef.current?.unsubscribe(); };
+    return () => { active = false; lobbyRef.current?.unsubscribe(); lobbyRef.current = null; };
   }, [startLobby]);
 
   const login = useCallback(async (u: string, p: string) => {
@@ -58,17 +62,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     if (token) await logoutAccount(token);
-    lobbyRef.current?.unsubscribe(); lobbyRef.current = null;
+    lobbyRef.current?.unsubscribe(); lobbyRef.current = null; setLobby(null);
     clearSession(); setAccount(null); setToken(null);
   }, [token]);
 
-  /* eslint-disable react-hooks/refs */
   return (
-    <Ctx.Provider value={{ account, token, loading, lobby: lobbyRef.current, login, register, logout }}>
+    <Ctx.Provider value={{ account, token, loading, lobby, login, register, logout }}>
       {children}
     </Ctx.Provider>
   );
-  /* eslint-enable react-hooks/refs */
 }
 
 export function useAuth(): AuthState {

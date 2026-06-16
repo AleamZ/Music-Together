@@ -35,7 +35,7 @@ lib/
   identity.ts                    # MODIFY: keep computeElapsedMs; remove StoredIdentity/per-room token helpers
   roles.ts / queue.ts / format.ts / youtube/*   # UNCHANGED
 hooks/
-  useAuth.ts                     # CREATE: session context (account, login/register/logout, restore via me(), owns joinLobby handle)
+  useAuth.tsx                    # CREATE: session context (account, login/register/logout, restore via me(), owns joinLobby handle)
   useActiveRooms.ts              # CREATE: lobby presence + room-card details
   useRoom.ts                     # MODIFY: identity from useAuth/session; membership by account; push room_id to lobby
   useDjController.ts             # MODIFY: RPC calls use (roomId, token)
@@ -791,11 +791,11 @@ git commit -m "feat: session-based RPC wrappers + auth wrappers; member username
 
 ## Task B3: Auth context + screen (`useAuth`, `AuthScreen`)
 
-**Files:** Create `hooks/useAuth.ts`, `components/auth/AuthScreen.tsx`
+**Files:** Create `hooks/useAuth.tsx`, `components/auth/AuthScreen.tsx`
 
 > `useAuth` restores the session via `me()` on mount, exposes login/register/logout, and owns the single `joinLobby` handle (created on login/restore, torn down on logout). The lobby handle is exposed so `useRoom` can flip `room_id`.
 
-- [ ] **Step 1: Create `hooks/useAuth.ts`**
+- [ ] **Step 1: Create `hooks/useAuth.tsx`**
 
 ```tsx
 "use client";
@@ -821,15 +821,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // `lobby` is exposed reactively via state; lobbyRef holds the same handle for imperative cleanup.
   const lobbyRef = useRef<LobbyHandle | null>(null);
+  const [lobby, setLobby] = useState<LobbyHandle | null>(null);
 
   const startLobby = useCallback((a: Account) => {
     lobbyRef.current?.unsubscribe();
     lobbyRef.current = joinLobby({ accountId: a.accountId, username: a.username });
+    setLobby(lobbyRef.current);
   }, []);
 
   useEffect(() => {
     const s = loadSession();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!s) { setLoading(false); return; }
     let active = true;
     fetchMe(s.token).then((me) => {
@@ -838,7 +842,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       else clearSession();
       setLoading(false);
     });
-    return () => { active = false; lobbyRef.current?.unsubscribe(); };
+    return () => { active = false; lobbyRef.current?.unsubscribe(); lobbyRef.current = null; };
   }, [startLobby]);
 
   const login = useCallback(async (u: string, p: string) => {
@@ -857,12 +861,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     if (token) await logoutAccount(token);
-    lobbyRef.current?.unsubscribe(); lobbyRef.current = null;
+    lobbyRef.current?.unsubscribe(); lobbyRef.current = null; setLobby(null);
     clearSession(); setAccount(null); setToken(null);
   }, [token]);
 
   return (
-    <Ctx.Provider value={{ account, token, loading, lobby: lobbyRef.current, login, register, logout }}>
+    <Ctx.Provider value={{ account, token, loading, lobby, login, register, logout }}>
       {children}
     </Ctx.Provider>
   );
@@ -931,7 +935,7 @@ export default function AuthScreen() {
         <input required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Tên đăng nhập (username)" className="rounded-lg border border-gold bg-cream px-3 py-2 text-ink" />
         <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mật khẩu" className="rounded-lg border border-gold bg-cream px-3 py-2 text-ink" />
         {error && <p className="text-sm text-burgundy-accent">{error}</p>}
-        <button disabled={busy} className="rounded-lg bg-burgundy px-4 py-2 font-cormorant text-lg font-bold text-cream disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-lg bg-burgundy px-4 py-2 font-cormorant text-lg font-bold text-cream disabled:opacity-60">
           {busy ? "Đang xử lý…" : mode === "login" ? "Đăng nhập" : "Đăng ký"}
         </button>
       </form>
@@ -945,7 +949,7 @@ export default function AuthScreen() {
 - [ ] **Step 5: Commit**
 
 ```bash
-git add hooks/useAuth.ts components/auth/AuthScreen.tsx app/Providers.tsx app/layout.tsx
+git add hooks/useAuth.tsx components/auth/AuthScreen.tsx app/Providers.tsx app/layout.tsx
 git commit -m "feat: auth context (session restore + lobby handle) and auth screen"
 ```
 
