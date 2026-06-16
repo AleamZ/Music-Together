@@ -767,10 +767,12 @@ export async function renameRoom(roomId: string, token: string, newName: string)
 ```
 and map results so each member carries `username`:
 ```ts
-  const members = ((membersRes.data as Array<Member & { accounts: { username: string } | null }>) ?? [])
+  type MemberWithAccount = { id: string; room_id: string; account_id: string; joined_at: string; accounts: { username: string } | null };
+  const members = ((membersRes.data ?? []) as unknown as MemberWithAccount[])
     .map((m) => ({ id: m.id, room_id: m.room_id, account_id: m.account_id, joined_at: m.joined_at, username: m.accounts?.username }));
 ```
 (Keep the `rooms` and `queue_items` selects as-is. `RoomState` and `trackPresence` are unchanged.)
+> Note: Supabase types a to-one embed (`accounts(username)`) as an array in its generated types, so cast via `as unknown as` (the runtime value is a single object/`null`). Same quirk handled in `lib/lobby.ts`'s `fetchRoomCards`.
 
 - [ ] **Step 4: Trim `lib/identity.ts`** — remove `Identity`, `StoredIdentity`, `saveIdentity`, `loadIdentity`, `clearIdentity` (now in `lib/session.ts`); KEEP `computeElapsedMs` exactly. Delete `lib/identity.test.ts`'s storage tests, keeping only the `computeElapsedMs` describe block.
 
@@ -1061,7 +1063,7 @@ export async function fetchRoomCards(roomIds: string[]): Promise<Map<string, Roo
   if (djMemberIds.length) {
     const { data: members } = await supabase.from("members").select("id, accounts ( username )").in("id", djMemberIds);
     type MemberRow = { id: string; accounts: { username: string } | null };
-    for (const m of (members ?? []) as MemberRow[]) if (m.accounts?.username) djByMemberId.set(m.id, m.accounts.username);
+    for (const m of (members ?? []) as unknown as MemberRow[]) if (m.accounts?.username) djByMemberId.set(m.id, m.accounts.username);
   }
   for (const r of roomRows) {
     out.set(r.id, {
