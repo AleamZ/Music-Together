@@ -18,15 +18,16 @@ export interface RoomView {
 
 const EMPTY: RoomState = { room: null, members: [], queue: [] };
 
-export function useRoom(code: string): RoomView {
+export function useRoom(code: string, joinNonce = 0): RoomView {
   const [identity, setIdentity] = useState<StoredIdentity | null>(null);
   const [state, setState] = useState<RoomState>(EMPTY);
   const [onlineIds, setOnlineIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Resolve identity from localStorage on mount (client only).
+  // Resolve identity from localStorage on mount and whenever joinNonce bumps
+  // (so a fresh join in JoinGate advances the UI past the gate). Client only.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setIdentity(loadIdentity(code)); }, [code]);
+  useEffect(() => { setIdentity(loadIdentity(code)); }, [code, joinNonce]);
 
   // Look up the room id by code (needed for subscriptions) then subscribe.
   useEffect(() => {

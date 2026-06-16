@@ -1869,14 +1869,15 @@ export interface RoomView {
 
 const EMPTY: RoomState = { room: null, members: [], queue: [] };
 
-export function useRoom(code: string): RoomView {
+export function useRoom(code: string, joinNonce = 0): RoomView {
   const [identity, setIdentity] = useState<StoredIdentity | null>(null);
   const [state, setState] = useState<RoomState>(EMPTY);
   const [onlineIds, setOnlineIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Resolve identity from localStorage on mount (client only).
-  useEffect(() => { setIdentity(loadIdentity(code)); }, [code]);
+  // Resolve identity from localStorage on mount and whenever joinNonce bumps
+  // (so a fresh join in JoinGate advances the UI past the gate). Client only.
+  useEffect(() => { setIdentity(loadIdentity(code)); }, [code, joinNonce]);
 
   // Look up the room id by code (needed for subscriptions) then subscribe.
   useEffect(() => {
@@ -1970,7 +1971,7 @@ import RoomShell from "@/components/room/RoomShell";
 
 export default function RoomClient({ code }: { code: string }) {
   const [joinNonce, setJoinNonce] = useState(0);
-  const view = useRoom(code);
+  const view = useRoom(code, joinNonce);
 
   if (view.loading) {
     return <main className="flex min-h-screen items-center justify-center font-cormorant text-burgundy">Đang tải phòng…</main>;
