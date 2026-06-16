@@ -1263,7 +1263,7 @@ git commit -m "feat: lobby UI + home auth gate"
   - Import `useAuth`; derive `identity` from `{ account, token }` (the member id is resolved from `state.members` by `account_id`).
   - `RoomView` exposes `token: string`, `accountId: string`, `myMemberId: string | null` (found via `state.members.find(m => m.account_id === accountId)?.id ?? null`), plus the existing `state/onlineIds/role/kicked/loading`.
   - `role` = `deriveRole(state.room, myMemberId)`.
-  - `kicked` = `!!accountId && !!state.room && state.members.length > 0 && !state.members.some(m => m.account_id === accountId)`.
+  - `kicked` = `wasMember && !!state.room && !myMemberId` — a `wasMember` latch (set true in the subscription callback once your account appears in `members`) so a **never-joined** visitor falls through to the JoinGate instead of the kicked screen.
   - On entering the room (after room id known), call `lobby.setRoomId(roomId)`; in cleanup call `lobby.setRoomId(null)`.
   - Presence: keep `trackPresence(roomId, { memberId: myMemberId ?? accountId, name: account.username }, setOnlineIds)`.
 
@@ -1288,7 +1288,11 @@ export function useRoom(code: string): RoomView {
   const [state, setState] = useState<RoomState>(EMPTY);
   const [onlineIds, setOnlineIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [wasMember, setWasMember] = useState(false); // latches once we've ever been a member of THIS room
   const accountId = account?.accountId ?? "";
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setWasMember(false); }, [code]); // reset latch when switching rooms
 
   useEffect(() => {
     let unsubRoom: (() => void) | undefined;
@@ -1300,7 +1304,7 @@ export function useRoom(code: string): RoomView {
       if (!data) { setLoading(false); return; }
       const roomId = data.id as string;
       lobby?.setRoomId(roomId);
-      unsubRoom = subscribeRoom(roomId, (s) => { setState(s); setLoading(false); });
+      unsubRoom = subscribeRoom(roomId, (s) => { setState(s); setLoading(false); if (accountId && s.members.some((m) => m.account_id === accountId)) setWasMember(true); });
       if (account) unsubPresence = trackPresence(roomId, { memberId: account.accountId, name: account.username }, setOnlineIds);
     })();
     return () => { active = false; unsubRoom?.(); unsubPresence?.(); lobby?.setRoomId(null); };
@@ -1309,7 +1313,7 @@ export function useRoom(code: string): RoomView {
   const myMemberId = state.members.find((m) => m.account_id === accountId)?.id ?? null;
   const role = state.room ? deriveRole(state.room, myMemberId)
     : { isAdmin: false, isDj: false, canManageQueue: false, canControlPlayback: false };
-  const kicked = !!accountId && !!state.room && state.members.length > 0 && !state.members.some((m) => m.account_id === accountId);
+  const kicked = wasMember && !!state.room && !myMemberId; // never-joined users fall through to JoinGate
 
   return { loading, state, onlineIds, token: token ?? "", accountId, myMemberId, role, kicked };
 }
@@ -1387,7 +1391,7 @@ export default function JoinGate({ code, token, onJoined }: { code: string; toke
 - [ ] **Step 4: `hooks/useDjController.ts`** — change the prop type from `{ …, identity: Identity }` to `{ …, roomId: string, token: string }` and every RPC call from `advanceQueue(identity)` → `advanceQueue(roomId, token)`, `setPlayback(identity, …)` → `setPlayback(roomId, token, …)`, `seekPlayback(identity, …)` → `seekPlayback(roomId, token, …)`. The effect/guard logic (queueLen auto-advance, advancingRef, load/seek/volume) is otherwise unchanged. Update the destructure to `{ room, current, isDj, queueLen, roomId, token }`.
 
 - [ ] **Step 5: `components/room/RoomShell.tsx`, `MemberList.tsx`, `Queue.tsx`, `AddSong.tsx`, `SettingsDialog.tsx`, `Header.tsx`** — swap `identity` props for `(roomId, token)` and display names from `member.username`:
-  - `RoomShell`: `const { state, role, onlineIds, token, accountId } = view; const room = state.room!;` pass `roomId={room.id} token={token}` to children that mutate; `useDjController({ room, current, isDj: role.isDj, queueLen: state.queue.length, roomId: room.id, token })`.
+  - `RoomShell`: `const { state, role, onlineIds, token, myMemberId } = view; const room = state.room!;` pass `roomId={room.id} token={token}` to children that mutate; `useDjController({ room, current, isDj: role.isDj, queueLen: state.queue.length, roomId: room.id, token })`. **`djOnline` must map the DJ's member id to an account id first** (presence/`onlineIds` are keyed by ACCOUNT id, but `dj_member_id` is a MEMBER id): `const djAccountId = state.members.find(m => m.id === room.dj_member_id)?.account_id ?? null; const djOnline = !!djAccountId && onlineIds.includes(djAccountId);`
   - `MemberList`: online check uses `onlineIds.includes(m.account_id)`; display `m.username ?? "?"`; badges from `room.admin_member_id/dj_member_id === m.id`.
   - `Queue`: `bumpToTop(roomId, token, id)`, `reorderItem(roomId, token, id, pos)`, `deleteItem(roomId, token, id)`.
   - `AddSong`: `addQueueItem(roomId, token, {…})`.
