@@ -46,3 +46,15 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 - Free Supabase projects pause after ~1 week of inactivity; the first request after that is slow.
 - Realtime is read-only; all writes are authorized server-side via SECURITY DEFINER RPCs.
 - Phase 2 (deferred): chat, emoji reactions, song likes (UI placeholders already present); optional in-app YouTube search (needs a `YOUTUBE_API_KEY`).
+
+## v2: Accounts & Lobby
+
+**One-time DB migration:** open the Supabase SQL Editor and run `supabase/migrations/0004_v2_rebuild.sql`. This drops all v1 tables and functions and rebuilds the account-native schema — room data is wiped, which is acceptable in dev/staging.
+
+**Env vars:** unchanged — `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are the only required variables.
+
+**What's new in v2:**
+- Username + password accounts via Supabase Auth; role (host/listener) follows the account across devices.
+- Lobby page showing all currently-active rooms with live participant counts.
+- Animated turntable on the room page.
+- Copy-code and share buttons for easy room invites.
