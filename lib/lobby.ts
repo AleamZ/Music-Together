@@ -27,7 +27,6 @@ function snapshot(): Map<string, RoomPresence> {
 
 function notify(): void {
   const rooms = snapshot();
-  console.log("[lobby] notify → activeRooms=", [...rooms.keys()], "rawPresence=", channel?.presenceState());
   subscribers.forEach((cb) => cb(rooms));
 }
 
@@ -63,14 +62,12 @@ export function joinLobby(me: LobbyMe): LobbyHandle {
     .on("presence", { event: "join" }, notify)
     .on("presence", { event: "leave" }, notify)
     .subscribe(async (status) => {
-      console.log("[lobby] subscribe status=", status, "room_id=", currentRoomId);
       if (status === "SUBSCRIBED") {
         subscribed = true;
         // Always re-assert the LATEST room_id on (re)subscribe — covers the
         // case where setRoomId ran before the channel finished joining and the
         // reconnect path where the server dropped our prior presence.
-        const res = await ch.track(buildPayload());
-        console.log("[lobby] track result=", res, "payload room_id=", currentRoomId);
+        await ch.track(buildPayload());
         notify();
       } else {
         // CHANNEL_ERROR / CLOSED / TIMED_OUT: we'll re-track on the next SUBSCRIBED.
@@ -88,7 +85,6 @@ export function joinLobby(me: LobbyMe): LobbyHandle {
     },
     setRoomId: (roomId: string | null) => {
       currentRoomId = roomId;
-      console.log("[lobby] setRoomId", roomId, "subscribed=", subscribed, "isActiveChannel=", channel === ch);
       if (channel === ch && subscribed) void ch.track(buildPayload());
     },
   };
