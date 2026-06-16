@@ -10,6 +10,7 @@
 1. **Hòm thư góp ý:** mọi user đã đăng nhập gửi feedback (loại + nội dung); **root** đọc & xử lý.
 2. **Role `root`:** quản trị toàn hệ thống — feedback, phòng, tài khoản, thống kê.
 3. **Siết bảo mật / chống lạm dụng:** khóa (ban) tài khoản, rate-limit chống spam. (KHÔNG đổi kiến trúc đọc — xem §2.)
+4. **Thương hiệu:** dùng `public/logo.png` làm logo header + animation (loader xoay/nhịp, nhãn tâm đĩa than). Xem §7.
 
 ### Ngoài phạm vi
 - Đổi mô hình đọc công khai (`using(true)`) → giữ nguyên (cần cho Realtime; bí mật vẫn được cô lập). Quyết định ở §2.
@@ -120,8 +121,12 @@ end $$;
   - **Thống kê** (`StatsTab`): tổng phòng / tài khoản / feedback chưa xử lý / tổng.
   - Phong cách Vintage Library.
 - **`useAuth` & điều hướng:** `Account` thêm `isRoot`; `me/login/register` (lib/auth + supabase wrappers) trả `is_root`. Sảnh hiện link **"⚙️ Quản trị"** nếu `isRoot`.
+- **Logo & animation (`public/logo.png`, 1536×1024 PNG):** dùng qua **`next/image` import tĩnh** (`import logo from "@/public/logo.png"`) → Next tự tối ưu/resize/lazy (không cần cấu hình remote domain; nguồn 2.5MB chấp nhận được vì được phục vụ ở kích thước nhỏ).
+  - **Logo header/brand:** component dùng chung `components/brand/Logo.tsx` (logo cao ~32–40px + chữ "Music Together"), **thay emoji 🎩** ở: thanh trên Sảnh, header phòng, tiêu đề màn Đăng nhập, header trang `/admin`.
+  - **Logo animation (loader):** `components/brand/BrandSpinner.tsx` — logo có animation **xoay nhẹ / nhịp (pulse)**; thay các màn chữ "Đang tải…" (RoomClient, page gate, admin) bằng spinner-logo này.
+  - **Logo trên đĩa than:** `components/room/Turntable.tsx` — nhãn tâm đĩa dùng **logo làm mặc định** (xoay theo đĩa khi `spinning`) khi **chưa có** `thumbnail` bài hát (thay 🎼); khi có ảnh bài hát thì vẫn ưu tiên ảnh đó.
 
-**File:** MỚI `lib/feedback.ts`, `lib/admin.ts`, `components/feedback/{FeedbackButton,FeedbackModal}.tsx`, `app/admin/page.tsx`, `components/admin/{FeedbackTab,RoomsTab,AccountsTab,StatsTab}.tsx`. SỬA `hooks/useAuth.tsx` (+isRoot), `lib/auth.ts` (me/login/register +is_root), `lib/supabase.ts` (createRoom giữ chữ ký), `components/lobby/Lobby.tsx` (link Quản trị + nút Góp ý), `components/room/Header.tsx` (nút Góp ý). MỚI `supabase/migrations/0005_v3_admin.sql`.
+**File:** MỚI `lib/feedback.ts`, `lib/admin.ts`, `components/feedback/{FeedbackButton,FeedbackModal}.tsx`, `app/admin/page.tsx`, `components/admin/{FeedbackTab,RoomsTab,AccountsTab,StatsTab}.tsx`, **`components/brand/{Logo,BrandSpinner}.tsx`**. SỬA `hooks/useAuth.tsx` (+isRoot), `lib/auth.ts` (me/login/register +is_root), `lib/supabase.ts` (createRoom giữ chữ ký), `components/lobby/Lobby.tsx` (link Quản trị + nút Góp ý + Logo), `components/room/Header.tsx` (nút Góp ý + Logo), **`components/auth/AuthScreen.tsx` + `components/room/Turntable.tsx` + các màn "Đang tải…" (RoomClient, app/page) (dùng Logo/BrandSpinner)**. MỚI `supabase/migrations/0005_v3_admin.sql`.
 
 ---
 
@@ -138,6 +143,7 @@ end $$;
 - **Phase A — Backend:** `0005_v3_admin.sql` (cột + feedback table + RLS + RPC + rate-limit + grants) + integration tests.
 - **Phase B — Client wiring:** `lib/feedback.ts`, `lib/admin.ts`; `me/login/register` + `useAuth` trả `isRoot`.
 - **Phase C — UI:** `FeedbackButton/Modal` (Sảnh + Header); trang `/admin` + 4 tab + link Quản trị.
+- **Phase D — Branding (logo):** `components/brand/{Logo,BrandSpinner}.tsx`; thay 🎩 bằng Logo ở các header + màn Đăng nhập + admin; thay màn "Đang tải…" bằng BrandSpinner; logo làm nhãn tâm đĩa than (fallback khi chưa có thumbnail).
 
 ## 11. Câu hỏi mở / tương lai
 - Rate-limit `register` ở tầng Vercel/Cloudflare (chống spam đăng ký).
