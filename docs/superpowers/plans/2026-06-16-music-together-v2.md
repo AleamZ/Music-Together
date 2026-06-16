@@ -1106,11 +1106,15 @@ export function useActiveRooms(): { rooms: ActiveRoom[]; loading: boolean } {
   useEffect(() => {
     const ids = [...presence.keys()].sort();
     const key = ids.join(",");
-    if (key === lastKeyRef.current) return;
+    if (key === lastKeyRef.current) return; // same id-set: existing fetch/cards stand
     lastKeyRef.current = key;
-    let active = true;
-    (async () => { const next = await fetchRoomCards(ids); if (active) setCards(next); })();
-    return () => { active = false; };
+    // CORRECTION (found on the deployed build): do NOT cancel via effect cleanup.
+    // When presence re-fires with the SAME id-set, the cleanup cancelled the only
+    // in-flight fetch while the key-guard skipped starting a new one → setCards
+    // never ran → 0 rooms. Apply the result only if `key` is still the latest.
+    fetchRoomCards(ids).then((next) => {
+      if (lastKeyRef.current === key) setCards(next);
+    });
   }, [presence]);
 
   const rooms: ActiveRoom[] = [];
