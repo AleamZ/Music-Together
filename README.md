@@ -38,7 +38,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Deploy (free tier)
 
-1. **Supabase:** create a free project. In the SQL editor run `supabase/migrations/0001_init.sql`, `0002_rpc.sql`, `0003_realtime.sql` in order (or `supabase db push` with the CLI linked to the project).
+1. **Supabase:** create a free project. **For the current (v2) schema, just run `supabase/migrations/0004_v2_rebuild.sql`** in the SQL editor — it builds the full account-native schema in one shot (see the "v2: Accounts & Lobby" section). *(The original v1 files `0001_init.sql`→`0003_realtime.sql` are kept only as history; `0004` drops and supersedes them.)*
 2. **Vercel/Cloudflare Pages:** import the repo. Set env vars `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Build command `next build`.
 3. The app is client-rendered; the only server code is the `/api/oembed` proxy (a lightweight, cached function).
 
@@ -54,7 +54,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 **Env vars:** unchanged — `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are the only required variables.
 
 **What's new in v2:**
-- Username + password accounts via Supabase Auth; role (host/listener) follows the account across devices.
-- Lobby page showing all currently-active rooms with live participant counts.
+- Username + password accounts (custom `accounts`/`sessions` tables + bcrypt + a per-account session token — **not** Supabase Auth); role (Admin / DJ) follows the account across devices.
+- Lobby page showing all currently-active rooms (via global Realtime Presence) with live participant counts.
 - Animated turntable on the room page.
 - Copy-code and share buttons for easy room invites.

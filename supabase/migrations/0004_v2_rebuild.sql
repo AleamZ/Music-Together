@@ -1,8 +1,10 @@
 -- =========================================================
 -- 0004_v2_rebuild.sql — v2 teardown + rebuild (account-based auth)
--- Re-runnable: drops v1 objects first. pgcrypto already installed in
--- `extensions` by 0001; every function relies on `set search_path = public, extensions`.
+-- Re-runnable AND self-contained: ensures pgcrypto exists, then drops v1 objects.
+-- Every function relies on `set search_path = public, extensions`.
 -- =========================================================
+create extension if not exists pgcrypto with schema extensions;
+
 drop function if exists public._auth_member(uuid,uuid,text,text)                       cascade;
 drop function if exists public.create_room(text,text,text)                             cascade;
 drop function if exists public.join_room(text,text,text)                               cascade;
