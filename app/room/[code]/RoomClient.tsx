@@ -28,5 +28,5 @@ export default function RoomClient({ code }: { code: string }) {
   if (!view.identity) {
     return <JoinGate code={code} onJoined={() => setJoinNonce((n) => n + 1)} key={joinNonce} />;
   }
-  return <RoomShell code={code} view={view} />;
+  return <RoomShell view={view} />;
 }

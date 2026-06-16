@@ -10,14 +10,14 @@ import AddSong from "./AddSong";
 import Queue from "./Queue";
 import { useDjController } from "@/hooks/useDjController";
 
-export default function RoomShell({ code, view }: { code: string; view: RoomView }) {
+export default function RoomShell({ view }: { view: RoomView }) {
   const { state, identity, role, onlineIds } = view;
   const room = state.room!;
   const current = state.queue.find((q) => q.id === room.current_item_id) ?? null;
   const djOnline = !!room.dj_member_id && onlineIds.includes(room.dj_member_id);
 
   // DJ-only playback engine (no-op for non-DJ). Returns transport handlers + duration/volume.
-  const dj = useDjController({ room, current, identity: identity!, isDj: role.isDj });
+  const dj = useDjController({ room, current, identity: identity!, isDj: role.isDj, queueLen: state.queue.length });
 
   return (
     <main className="mx-auto max-w-6xl p-3">
