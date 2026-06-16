@@ -225,6 +225,7 @@ create or replace function public.join_room(
   out room_id uuid, out member_id uuid
 ) language plpgsql security definer set search_path = public, extensions
 as $$
+#variable_conflict use_column
 declare v_account uuid; v_room uuid; v_hash text;
 begin
   v_account := public._auth_account(p_session_token);
