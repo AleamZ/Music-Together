@@ -4,6 +4,7 @@ import { useState } from "react";
 import { setPlayMode, type Member, type Room } from "@/lib/supabase";
 import SettingsDialog from "./SettingsDialog";
 import ShareButtons from "./ShareButtons";
+import FeedbackButton from "@/components/feedback/FeedbackButton";
 
 export default function Header({ room, members, isAdmin, roomId, token, myMemberId }: {
   room: Room; members: Member[]; isAdmin: boolean; roomId: string; token: string; myMemberId: string | null;
@@ -30,6 +31,7 @@ export default function Header({ room, members, isAdmin, roomId, token, myMember
         {isAdmin && (
           <button onClick={() => setOpen(true)} className="rounded-lg border border-gold bg-cream px-3 py-1 text-sm text-burgundy">⚙️ Setting</button>
         )}
+        <FeedbackButton />
       </div>
       {open && <SettingsDialog room={room} members={members} roomId={roomId} token={token} myMemberId={myMemberId} onClose={() => setOpen(false)} />}
     </header>
