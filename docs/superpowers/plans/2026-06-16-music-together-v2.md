@@ -1038,15 +1038,17 @@ export function aggregateActiveRooms(state: Record<string, Array<LobbyPresence &
   return out;
 }
 
+// CORRECTION (found in manual testing): supabase-js returns the SAME channel object
+// per topic, so a second `supabase.channel("lobby")` here + `.on()` after joinLobby's
+// `.subscribe()` throws "cannot add presence callbacks after subscribe()". The shipped
+// lib/lobby.ts uses ONE shared channel (created by joinLobby, which registers the
+// presence listeners) plus a module-level `subscribers` Set; subscribeActiveRooms just
+// registers an in-memory callback and emits the current snapshot — it never opens a
+// second channel. See the committed lib/lobby.ts for the authoritative version.
 export function subscribeActiveRooms(onChange: (rooms: Map<string, RoomPresence>) => void): () => void {
-  const channel: RealtimeChannel = supabase.channel(LOBBY_CHANNEL);
-  const emit = () => {
-    const state = channel.presenceState<LobbyPresence>() as Record<string, Array<LobbyPresence & { presence_ref: string }>>;
-    onChange(aggregateActiveRooms(state));
-  };
-  channel.on("presence", { event: "sync" }, emit).on("presence", { event: "join" }, emit).on("presence", { event: "leave" }, emit)
-    .subscribe((status) => { if (status === "SUBSCRIBED") emit(); });
-  return () => { void supabase.removeChannel(channel); };
+  subscribers.add(onChange);
+  onChange(snapshot()); // current snapshot from the shared channel created by joinLobby
+  return () => { subscribers.delete(onChange); };
 }
 
 export interface RoomCard { id: string; code: string; name: string; is_playing: boolean; current_title: string | null; dj_username: string | null; }
