@@ -48,16 +48,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (u: string, p: string) => {
     const r = await loginAccount(u, p);
-    const a = { accountId: r.accountId, username: r.username };
     saveSession({ accountId: r.accountId, username: r.username, token: r.token });
-    setAccount(a); setToken(r.token); startLobby(a);
+    const acct = (await fetchMe(r.token)) ?? { accountId: r.accountId, username: r.username, isRoot: false };
+    setAccount(acct); setToken(r.token); startLobby(acct);
   }, [startLobby]);
 
   const register = useCallback(async (u: string, p: string) => {
     const r = await registerAccount(u, p);
-    const a = { accountId: r.accountId, username: r.username };
     saveSession({ accountId: r.accountId, username: r.username, token: r.token });
-    setAccount(a); setToken(r.token); startLobby(a);
+    const acct = (await fetchMe(r.token)) ?? { accountId: r.accountId, username: r.username, isRoot: false };
+    setAccount(acct); setToken(r.token); startLobby(acct);
   }, [startLobby]);
 
   const logout = useCallback(async () => {
