@@ -22,7 +22,7 @@
 ### Environment variables (repo root `.env.local`, create when you reach Task 10)
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://<your-project>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon public key>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx   # new-style publishable key (legacy anon JWT also works)
 ```
 For integration tests (Task 9), a **local** Supabase is preferred:
 ```
@@ -1252,7 +1252,7 @@ git commit -m "test(db): RPC security + behavior integration tests"
 - Create: `lib/supabase.ts`
 - Create: `.env.local` (not committed; `.gitignore` already excludes `.env*`)
 
-- [ ] **Step 1: Create `.env.local`** with your project's URL + anon key (see "Environment variables" above). Do not commit it.
+- [ ] **Step 1: Create `.env.local`** with your project's URL + publishable key (see "Environment variables" above). Do not commit it. Never put the `service_role`/`sb_secret_*` key in client code or env vars prefixed `NEXT_PUBLIC_`.
 
 - [ ] **Step 2: Create `lib/supabase.ts`**
 
@@ -1261,10 +1261,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Identity } from "@/lib/identity";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
-/** Single shared client => one Realtime socket for the whole app. */
-export const supabase: SupabaseClient = createClient(url, anonKey, {
+/** Single shared client => one Realtime socket for the whole app.
+ *  Uses @supabase/supabase-js (NOT @supabase/ssr): anon access + Realtime, no auth cookies. */
+export const supabase: SupabaseClient = createClient(url, publishableKey, {
   auth: { persistSession: false },
   realtime: { params: { eventsPerSecond: 5 } },
 });
@@ -2047,8 +2048,8 @@ export default function Turntable({ spinning, thumbnail }: { spinning: boolean; 
         <div className="absolute inset-[48.5%] rounded-full bg-[#1a140d]" />
       </div>
       {/* tonearm */}
-      <div className="absolute -right-1 -top-1 h-3 w-28 origin-right rotate-[28deg]">
-        <div className="mt-1 h-1.5 rounded bg-gradient-to-r from-gold to-[#8a6d2f] shadow" />
+      <div className="absolute -right-1 -top-1 h-3 w-28 origin-right rotate-28">
+        <div className="mt-1 h-1.5 rounded bg-linear-to-r from-gold to-[#8a6d2f] shadow" />
         <div className="absolute -right-1.5 -top-0.5 h-4 w-4 rounded-full bg-[#8a6d2f] shadow" />
       </div>
     </div>
@@ -2656,7 +2657,7 @@ git commit -m "feat: DJ playback controller wiring player to playback RPCs"
 ## Deploy (free tier)
 
 1. **Supabase:** create a free project. In the SQL editor run `supabase/migrations/0001_init.sql`, `0002_rpc.sql`, `0003_realtime.sql` in order (or `supabase db push` with the CLI linked to the project).
-2. **Vercel/Cloudflare Pages:** import the repo. Set env vars `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Build command `next build`.
+2. **Vercel/Cloudflare Pages:** import the repo. Set env vars `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Build command `next build`.
 3. The app is client-rendered; the only server code is the `/api/oembed` proxy (a lightweight, cached function).
 
 ### Notes
