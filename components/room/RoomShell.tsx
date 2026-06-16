@@ -14,7 +14,10 @@ export default function RoomShell({ view }: { view: RoomView }) {
   const { state, role, onlineIds, token, myMemberId } = view;
   const room = state.room!;
   const current = state.queue.find((q) => q.id === room.current_item_id) ?? null;
-  const djOnline = !!room.dj_member_id && onlineIds.includes(room.dj_member_id);
+  // onlineIds are ACCOUNT ids (presence is keyed by account id); dj_member_id is a MEMBER id,
+  // so map it to its account id before checking presence.
+  const djAccountId = state.members.find((m) => m.id === room.dj_member_id)?.account_id ?? null;
+  const djOnline = !!djAccountId && onlineIds.includes(djAccountId);
 
   // DJ-only playback engine (no-op for non-DJ). Returns transport handlers + duration/volume.
   const dj = useDjController({ room, current, isDj: role.isDj, queueLen: state.queue.length, roomId: room.id, token });
