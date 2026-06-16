@@ -6,12 +6,15 @@ export interface RoomState { room: Room | null; members: Member[]; queue: QueueI
 async function fetchRoomState(roomId: string): Promise<RoomState> {
   const [roomRes, membersRes, queueRes] = await Promise.all([
     supabase.from("rooms").select("*").eq("id", roomId).maybeSingle(),
-    supabase.from("members").select("*").eq("room_id", roomId).order("joined_at"),
+    supabase.from("members").select("id, room_id, account_id, joined_at, accounts(username)").eq("room_id", roomId).order("joined_at"),
     supabase.from("queue_items").select("*").eq("room_id", roomId).order("position"),
   ]);
+  type MemberWithAccount = { id: string; room_id: string; account_id: string; joined_at: string; accounts: { username: string } | null };
+  const members = ((membersRes.data ?? []) as unknown as MemberWithAccount[])
+    .map((m) => ({ id: m.id, room_id: m.room_id, account_id: m.account_id, joined_at: m.joined_at, username: m.accounts?.username }));
   return {
     room: (roomRes.data as Room) ?? null,
-    members: (membersRes.data as Member[]) ?? [],
+    members,
     queue: (queueRes.data as QueueItem[]) ?? [],
   };
 }

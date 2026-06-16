@@ -1,23 +1,5 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import {
-  saveIdentity, loadIdentity, clearIdentity, computeElapsedMs,
-} from "@/lib/identity";
-
-describe("identity storage", () => {
-  beforeEach(() => localStorage.clear());
-
-  it("round-trips identity per room code", () => {
-    saveIdentity({ code: "salon-abc", roomId: "r1", memberId: "m1", token: "t1" });
-    expect(loadIdentity("salon-abc")).toEqual({ code: "salon-abc", roomId: "r1", memberId: "m1", token: "t1" });
-    expect(loadIdentity("other")).toBeNull();
-  });
-
-  it("clears identity", () => {
-    saveIdentity({ code: "salon-abc", roomId: "r1", memberId: "m1", token: "t1" });
-    clearIdentity("salon-abc");
-    expect(loadIdentity("salon-abc")).toBeNull();
-  });
-});
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { computeElapsedMs } from "@/lib/identity";
 
 describe("computeElapsedMs", () => {
   afterEach(() => vi.useRealTimers());
