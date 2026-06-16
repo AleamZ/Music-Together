@@ -35,3 +35,14 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 # Music-Together
+
+## Deploy (free tier)
+
+1. **Supabase:** create a free project. In the SQL editor run `supabase/migrations/0001_init.sql`, `0002_rpc.sql`, `0003_realtime.sql` in order (or `supabase db push` with the CLI linked to the project).
+2. **Vercel/Cloudflare Pages:** import the repo. Set env vars `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Build command `next build`.
+3. The app is client-rendered; the only server code is the `/api/oembed` proxy (a lightweight, cached function).
+
+### Notes
+- Free Supabase projects pause after ~1 week of inactivity; the first request after that is slow.
+- Realtime is read-only; all writes are authorized server-side via SECURITY DEFINER RPCs.
+- Phase 2 (deferred): chat, emoji reactions, song likes (UI placeholders already present); optional in-app YouTube search (needs a `YOUTUBE_API_KEY`).
