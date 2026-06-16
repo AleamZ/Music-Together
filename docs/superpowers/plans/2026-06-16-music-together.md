@@ -1990,7 +1990,7 @@ export default function RoomClient({ code }: { code: string }) {
   if (!view.identity) {
     return <JoinGate code={code} onJoined={() => setJoinNonce((n) => n + 1)} key={joinNonce} />;
   }
-  return <RoomShell code={code} view={view} />;
+  return <RoomShell view={view} />;
 }
 ```
 
@@ -2466,14 +2466,14 @@ import AddSong from "./AddSong";
 import Queue from "./Queue";
 import { useDjController } from "@/hooks/useDjController";
 
-export default function RoomShell({ code, view }: { code: string; view: RoomView }) {
+export default function RoomShell({ view }: { view: RoomView }) {
   const { state, identity, role, onlineIds } = view;
   const room = state.room!;
   const current = state.queue.find((q) => q.id === room.current_item_id) ?? null;
   const djOnline = !!room.dj_member_id && onlineIds.includes(room.dj_member_id);
 
   // DJ-only playback engine (no-op for non-DJ). Returns transport handlers + duration/volume.
-  const dj = useDjController({ room, current, identity: identity!, isDj: role.isDj });
+  const dj = useDjController({ room, current, identity: identity!, isDj: role.isDj, queueLen: state.queue.length });
 
   return (
     <main className="mx-auto max-w-6xl p-3">
@@ -2541,21 +2541,32 @@ export interface DjController {
   setVolume: (v: number) => void;
 }
 
-export function useDjController({ room, current, identity, isDj }: {
-  room: Room; current: QueueItem | null; identity: Identity; isDj: boolean;
+export function useDjController({ room, current, identity, isDj, queueLen }: {
+  room: Room; current: QueueItem | null; identity: Identity; isDj: boolean; queueLen: number;
 }): DjController {
   const [durationMs, setDurationMs] = useState(0);
   const [volume, setVol] = useState(100);
   const loadedRef = useRef<string | null>(null); // currently loaded video id
 
+  // Single-flight guard: onEnded / auto-advance / skip must never advance twice
+  // for one slot. Released when a new current lands, the queue empties, or on error.
+  const advancingRef = useRef(false);
+  const advance = useCallback(() => {
+    if (!isDj || advancingRef.current) return;
+    advancingRef.current = true;
+    void advanceQueue(identity).catch(() => { advancingRef.current = false; });
+  }, [isDj, identity]);
+  useEffect(() => {
+    if (room.current_item_id || queueLen === 0) advancingRef.current = false;
+  }, [room.current_item_id, queueLen]);
+
   // onEnded -> advance (DJ only). useYouTubePlayer keeps the latest callback.
-  const yt = useYouTubePlayer(
-    () => { if (isDj) void advanceQueue(identity).catch(() => {}); },
-  );
+  const yt = useYouTubePlayer(() => advance());
 
   // Restore saved volume once.
   useEffect(() => {
     const v = Number(localStorage.getItem(VOL_KEY));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!Number.isNaN(v) && v > 0) setVol(v);
   }, []);
   // Apply volume to the player whenever it changes / becomes ready.
@@ -2583,14 +2594,12 @@ export function useDjController({ room, current, identity, isDj }: {
     if (room.is_playing) yt.play(); else yt.pause();
   }, [isDj, yt.ready, room.is_playing, current, yt]);
 
-  // Auto-advance: DJ online, nothing playing, queue has items -> start next.
+  // Auto-advance: DJ ready, nothing playing, and the queue has items -> start next.
+  // Depends on queueLen so adding the first song to an idle room kicks playback off.
   useEffect(() => {
     if (!isDj || !yt.ready) return;
-    if (!room.current_item_id && room.is_playing === false) {
-      // only kick off if there is something to play
-      void advanceQueue(identity).catch(() => {});
-    }
-  }, [isDj, yt.ready, room.current_item_id, room.is_playing, identity]);
+    if (!room.current_item_id && !room.is_playing && queueLen > 0) advance();
+  }, [isDj, yt.ready, room.current_item_id, room.is_playing, queueLen, advance]);
 
   const togglePlay = useCallback(() => {
     if (!isDj) return;
@@ -2605,7 +2614,7 @@ export function useDjController({ room, current, identity, isDj }: {
     }
   }, [isDj, room, identity]);
 
-  const skip = useCallback(() => { if (isDj) void advanceQueue(identity); }, [isDj, identity]);
+  const skip = useCallback(() => advance(), [advance]);
 
   const seekMs = useCallback((ms: number) => {
     if (!isDj) return;
