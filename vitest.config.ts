@@ -12,5 +12,9 @@ export default defineConfig({
     setupFiles: ["./tests/setup.ts"],
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "dist/**"],
+    env: {
+      NEXT_PUBLIC_SUPABASE_URL: "https://test.supabase.co",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_test_key",
+    },
   },
 });
