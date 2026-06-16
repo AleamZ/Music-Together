@@ -1778,11 +1778,11 @@ export default function Home() {
       </header>
 
       <div className="flex rounded-full border border-gold text-sm">
-        <button onClick={() => setMode("create")}
+        <button type="button" onClick={() => setMode("create")}
           className={`flex-1 rounded-full px-4 py-2 ${mode === "create" ? "bg-burgundy text-cream" : "text-burgundy"}`}>
           Tạo phòng
         </button>
-        <button onClick={() => setMode("join")}
+        <button type="button" onClick={() => setMode("join")}
           className={`flex-1 rounded-full px-4 py-2 ${mode === "join" ? "bg-burgundy text-cream" : "text-burgundy"}`}>
           Vào phòng
         </button>
