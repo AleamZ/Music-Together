@@ -17,7 +17,7 @@ export async function fetchVideoMeta(videoIdOrUrl: string, signal?: AbortSignal)
       const d = (await res.json()) as Partial<VideoMeta>;
       if (d.title) return { id, title: d.title, author: d.author ?? "", thumbnail: d.thumbnail ?? youTubeThumbnail(id) };
     }
-  } catch { /* fall through */ }
+  } catch (e) { if ((e as Error).name === "AbortError") throw e; /* else fall through */ }
 
   try {
     const url = `https://noembed.com/embed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}`;
@@ -26,7 +26,7 @@ export async function fetchVideoMeta(videoIdOrUrl: string, signal?: AbortSignal)
       const d = (await res.json()) as { title?: string; author_name?: string; thumbnail_url?: string; error?: string };
       if (d.title && !d.error) return { id, title: d.title, author: d.author_name ?? "", thumbnail: d.thumbnail_url ?? youTubeThumbnail(id) };
     }
-  } catch { /* fall through */ }
+  } catch (e) { if ((e as Error).name === "AbortError") throw e; /* else fall through */ }
 
   return { id, title: "", author: "", thumbnail: youTubeThumbnail(id) };
 }

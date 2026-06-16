@@ -68,7 +68,6 @@ export interface UseYouTubePlayer {
   setVolume: (v: number) => void;
   getDuration: () => number;
   getCurrentTime: () => number;
-  onError?: (handler: (code: number) => void) => void;
 }
 
 export function useYouTubePlayer(onEnded?: () => void, onError?: (code: number) => void): UseYouTubePlayer {
