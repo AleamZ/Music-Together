@@ -6,7 +6,7 @@ export interface AdminAccount { id: string; username: string; is_root: boolean; 
 export interface AdminStats { total_rooms: number; total_accounts: number; feedback_new: number; feedback_total: number; }
 
 const rows = <T>(d: unknown): T[] => (Array.isArray(d) ? (d as T[]) : []);
-const one = <T>(d: unknown): T => (Array.isArray(d) ? (d as T[])[0] : (d as T));
+const one = <T>(d: unknown): T | undefined => (Array.isArray(d) ? (d as T[])[0] : (d as T));
 
 export async function listFeedback(token: string): Promise<FeedbackRow[]> {
   const { data, error } = await supabase.rpc("list_feedback", { p_session_token: token });
@@ -46,5 +46,7 @@ export async function adminDeleteAccount(token: string, accountId: string): Prom
 export async function adminStats(token: string): Promise<AdminStats> {
   const { data, error } = await supabase.rpc("admin_stats", { p_session_token: token });
   if (error) throw error;
-  return one<AdminStats>(data);
+  const s = one<AdminStats>(data);
+  if (!s) throw new Error("admin_stats returned no data");
+  return s;
 }
