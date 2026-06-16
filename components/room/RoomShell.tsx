@@ -27,7 +27,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
       <Header room={room} members={state.members} isAdmin={role.isAdmin} roomId={room.id} token={token} myMemberId={myMemberId} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[22%_1fr_33%]">
         <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
-          <MemberList members={state.members} room={room} onlineIds={onlineIds} />
+          <MemberList members={state.members} room={room} onlineIds={onlineIds} isAdmin={role.isAdmin} token={token} myMemberId={myMemberId} />
           <ChatPanel />
         </section>
 
