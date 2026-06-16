@@ -29,6 +29,7 @@ export default function AuthScreen() {
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-5 px-6">
       <header className="flex justify-center text-center">
+        <h1 className="sr-only">Music Together</h1>
         <Logo size={56} />
       </header>
       <div className="flex rounded-full border border-gold text-sm">
