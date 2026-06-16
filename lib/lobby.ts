@@ -8,21 +8,81 @@ export interface LobbyHandle { unsubscribe: () => void; setRoomId: (roomId: stri
 
 const LOBBY_CHANNEL = "lobby";
 
-export function joinLobby(me: LobbyMe, getInitialRoomId: () => string | null = () => null): LobbyHandle {
-  const key = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-  let currentRoomId: string | null = getInitialRoomId();
-  const channel: RealtimeChannel = supabase.channel(LOBBY_CHANNEL, { config: { presence: { key } } });
-  const buildPayload = (): LobbyPresence => ({ account_id: me.accountId, username: me.username, room_id: currentRoomId, online_at: new Date().toISOString() });
-  channel.subscribe(async (status) => {
-    if (status === "SUBSCRIBED") { currentRoomId = getInitialRoomId(); await channel.track(buildPayload()); }
+// A single shared "lobby" channel does BOTH jobs: it tracks this client's
+// presence (room_id) AND drives active-room updates. supabase-js returns the
+// SAME channel object per topic, so we must NOT open a second channel('lobby')
+// or call .on() after .subscribe() — instead, observers register here in-memory.
+let channel: RealtimeChannel | null = null;
+let currentRoomId: string | null = null;
+const subscribers = new Set<(rooms: Map<string, RoomPresence>) => void>();
+
+function snapshot(): Map<string, RoomPresence> {
+  if (!channel) return new Map();
+  const state = channel.presenceState<LobbyPresence>() as Record<
+    string,
+    Array<LobbyPresence & { presence_ref: string }>
+  >;
+  return aggregateActiveRooms(state);
+}
+
+function notify(): void {
+  const rooms = snapshot();
+  subscribers.forEach((cb) => cb(rooms));
+}
+
+/**
+ * Join the single shared global lobby channel and track this client's presence.
+ * KEY is a per-tab random id (NOT account_id) so multiple tabs / rooms for one
+ * account never collide. account_id lives in the payload (deduped when counting).
+ * Call once per logged-in session (useAuth); re-calling tears down the prior channel.
+ */
+export function joinLobby(me: LobbyMe): LobbyHandle {
+  if (channel) { void supabase.removeChannel(channel); channel = null; }
+  currentRoomId = null;
+
+  const key =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  const ch = supabase.channel(LOBBY_CHANNEL, { config: { presence: { key } } });
+  channel = ch;
+
+  const buildPayload = (): LobbyPresence => ({
+    account_id: me.accountId,
+    username: me.username,
+    room_id: currentRoomId,
+    online_at: new Date().toISOString(),
   });
+
+  ch.on("presence", { event: "sync" }, notify)
+    .on("presence", { event: "join" }, notify)
+    .on("presence", { event: "leave" }, notify)
+    .subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        await ch.track(buildPayload());
+        notify();
+      }
+    });
+
   return {
-    unsubscribe: () => { void supabase.removeChannel(channel); },
-    setRoomId: (roomId: string | null) => { currentRoomId = roomId; void channel.track(buildPayload()); },
+    unsubscribe: () => {
+      if (channel === ch) {
+        void supabase.removeChannel(ch);
+        channel = null;
+        currentRoomId = null;
+      }
+    },
+    setRoomId: (roomId: string | null) => {
+      currentRoomId = roomId;
+      if (channel === ch) void ch.track(buildPayload());
+    },
   };
 }
 
-export function aggregateActiveRooms(state: Record<string, Array<LobbyPresence & { presence_ref: string }>>): Map<string, RoomPresence> {
+/** Flatten presence across tabs, drop lobby-browsers (room_id null), dedupe by account. */
+export function aggregateActiveRooms(
+  state: Record<string, Array<LobbyPresence & { presence_ref: string }>>,
+): Map<string, RoomPresence> {
   const byRoom = new Map<string, Map<string, string>>();
   for (const entries of Object.values(state)) {
     for (const en of entries) {
@@ -37,15 +97,15 @@ export function aggregateActiveRooms(state: Record<string, Array<LobbyPresence &
   return out;
 }
 
+/**
+ * Observe active rooms. Registers an in-memory callback on the shared lobby
+ * channel created by joinLobby — does NOT open a second channel. Emits the
+ * current snapshot immediately, then on every presence sync/join/leave.
+ */
 export function subscribeActiveRooms(onChange: (rooms: Map<string, RoomPresence>) => void): () => void {
-  const channel: RealtimeChannel = supabase.channel(LOBBY_CHANNEL);
-  const emit = () => {
-    const state = channel.presenceState<LobbyPresence>() as Record<string, Array<LobbyPresence & { presence_ref: string }>>;
-    onChange(aggregateActiveRooms(state));
-  };
-  channel.on("presence", { event: "sync" }, emit).on("presence", { event: "join" }, emit).on("presence", { event: "leave" }, emit)
-    .subscribe((status) => { if (status === "SUBSCRIBED") emit(); });
-  return () => { void supabase.removeChannel(channel); };
+  subscribers.add(onChange);
+  onChange(snapshot());
+  return () => { subscribers.delete(onChange); };
 }
 
 export interface RoomCard { id: string; code: string; name: string; is_playing: boolean; current_title: string | null; dj_username: string | null; }
