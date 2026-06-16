@@ -31,11 +31,13 @@ export function useRoom(code: string): RoomView {
     let unsubRoom: (() => void) | undefined;
     let unsubPresence: (() => void) | undefined;
     let active = true;
+    let enteredRoomId: string | null = null;
     (async () => {
       const { data } = await supabase.from("rooms").select("id").eq("code", code).maybeSingle();
       if (!active) return;
       if (!data) { setLoading(false); return; }
       const roomId = data.id as string;
+      enteredRoomId = roomId;
       lobby?.setRoomId(roomId);
       unsubRoom = subscribeRoom(roomId, (s) => {
         setState(s);
@@ -45,7 +47,16 @@ export function useRoom(code: string): RoomView {
       });
       if (account) unsubPresence = trackPresence(roomId, { memberId: account.accountId, name: account.username }, setOnlineIds);
     })();
-    return () => { active = false; unsubRoom?.(); unsubPresence?.(); lobby?.setRoomId(null); };
+    return () => {
+      active = false;
+      unsubRoom?.();
+      unsubPresence?.();
+      // Only clear our lobby presence if this cleanup ran AFTER we actually
+      // entered the room. A StrictMode/re-run cleanup that fires before the
+      // async fetch resolved must NOT push room_id=null (that would clobber the
+      // value the surviving effect run is about to set, hiding us from the lobby).
+      if (enteredRoomId) lobby?.setRoomId(null);
+    };
   }, [code, accountId, account, lobby]);
 
   const myMemberId = state.members.find((m) => m.account_id === accountId)?.id ?? null;

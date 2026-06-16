@@ -38,7 +38,10 @@ function notify(): void {
  */
 export function joinLobby(me: LobbyMe): LobbyHandle {
   if (channel) { void supabase.removeChannel(channel); channel = null; }
-  currentRoomId = null;
+  // NOTE: do NOT reset currentRoomId here. A re-entrant joinLobby (e.g. React
+  // StrictMode double-invoke, or a reconnect) must keep whatever room the user
+  // is currently in, otherwise the freshly-created channel tracks room_id=null
+  // and other clients aggregate this user out of their active-room list.
 
   const key =
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -46,6 +49,7 @@ export function joinLobby(me: LobbyMe): LobbyHandle {
       : Math.random().toString(36).slice(2);
   const ch = supabase.channel(LOBBY_CHANNEL, { config: { presence: { key } } });
   channel = ch;
+  let subscribed = false;
 
   const buildPayload = (): LobbyPresence => ({
     account_id: me.accountId,
@@ -59,8 +63,15 @@ export function joinLobby(me: LobbyMe): LobbyHandle {
     .on("presence", { event: "leave" }, notify)
     .subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
+        subscribed = true;
+        // Always re-assert the LATEST room_id on (re)subscribe — covers the
+        // case where setRoomId ran before the channel finished joining and the
+        // reconnect path where the server dropped our prior presence.
         await ch.track(buildPayload());
         notify();
+      } else {
+        // CHANNEL_ERROR / CLOSED / TIMED_OUT: we'll re-track on the next SUBSCRIBED.
+        subscribed = false;
       }
     });
 
@@ -74,7 +85,11 @@ export function joinLobby(me: LobbyMe): LobbyHandle {
     },
     setRoomId: (roomId: string | null) => {
       currentRoomId = roomId;
-      if (channel === ch) void ch.track(buildPayload());
+      // Only the channel that is still the active module channel may track.
+      // If we're not SUBSCRIBED yet, the SUBSCRIBED handler above re-tracks
+      // buildPayload() (which reads the now-updated currentRoomId), so the
+      // value is never lost to the track-before-join window.
+      if (channel === ch && subscribed) void ch.track(buildPayload());
     },
   };
 }
