@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
-import { computeElapsedMs, type Identity } from "@/lib/identity";
+import { computeElapsedMs } from "@/lib/identity";
 import { advanceQueue, seekPlayback, setPlayback, type QueueItem, type Room } from "@/lib/supabase";
 
 const VOL_KEY = "music-together:volume";
@@ -16,8 +16,8 @@ export interface DjController {
   setVolume: (v: number) => void;
 }
 
-export function useDjController({ room, current, identity, isDj, queueLen }: {
-  room: Room; current: QueueItem | null; identity: Identity; isDj: boolean; queueLen: number;
+export function useDjController({ room, current, isDj, queueLen, roomId, token }: {
+  room: Room; current: QueueItem | null; isDj: boolean; queueLen: number; roomId: string; token: string;
 }): DjController {
   const [durationMs, setDurationMs] = useState(0);
   const [volume, setVol] = useState(100);
@@ -30,8 +30,8 @@ export function useDjController({ room, current, identity, isDj, queueLen }: {
   const advance = useCallback(() => {
     if (!isDj || advancingRef.current) return;
     advancingRef.current = true;
-    void advanceQueue(identity).catch(() => { advancingRef.current = false; });
-  }, [isDj, identity]);
+    void advanceQueue(roomId, token).catch(() => { advancingRef.current = false; });
+  }, [isDj, roomId, token]);
   useEffect(() => {
     if (room.current_item_id || queueLen === 0) advancingRef.current = false;
   }, [room.current_item_id, queueLen]);
@@ -83,20 +83,20 @@ export function useDjController({ room, current, identity, isDj, queueLen }: {
     if (nowPlaying) {
       // resume: started_at = now - paused_elapsed
       const startedAt = new Date(Date.now() - room.paused_elapsed_ms).toISOString();
-      void setPlayback(identity, { isPlaying: true, startedAt, pausedElapsedMs: room.paused_elapsed_ms });
+      void setPlayback(roomId, token, { isPlaying: true, startedAt, pausedElapsedMs: room.paused_elapsed_ms });
     } else {
       const elapsed = computeElapsedMs(room);
-      void setPlayback(identity, { isPlaying: false, startedAt: null, pausedElapsedMs: elapsed });
+      void setPlayback(roomId, token, { isPlaying: false, startedAt: null, pausedElapsedMs: elapsed });
     }
-  }, [isDj, room, identity]);
+  }, [isDj, room, roomId, token]);
 
   const skip = useCallback(() => advance(), [advance]);
 
   const seekMs = useCallback((ms: number) => {
     if (!isDj) return;
     yt.seekTo(ms / 1000);
-    void seekPlayback(identity, Math.floor(ms));
-  }, [isDj, identity, yt]);
+    void seekPlayback(roomId, token, Math.floor(ms));
+  }, [isDj, roomId, token, yt]);
 
   const setVolume = useCallback((v: number) => {
     setVol(v);

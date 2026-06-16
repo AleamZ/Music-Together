@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { setPlayMode, type Member, type Room } from "@/lib/supabase";
-import type { Identity } from "@/lib/identity";
 import SettingsDialog from "./SettingsDialog";
 
-export default function Header({ room, members, identity, isAdmin }: {
-  room: Room; members: Member[]; identity: Identity | null; isAdmin: boolean;
+export default function Header({ room, members, isAdmin, roomId, token, myMemberId }: {
+  room: Room; members: Member[]; isAdmin: boolean; roomId: string; token: string; myMemberId: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const shareCode = () => {
@@ -27,17 +26,17 @@ export default function Header({ room, members, identity, isAdmin }: {
         <div className="inline-flex overflow-hidden rounded-full border border-gold text-xs">
           {(["order", "shuffle"] as const).map((mode) => (
             <button key={mode} disabled={!isAdmin || room.play_mode === mode}
-              onClick={() => identity && setPlayMode(identity, mode)}
+              onClick={() => setPlayMode(roomId, token, mode)}
               className={`px-3 py-1 ${room.play_mode === mode ? "bg-burgundy text-cream" : "text-burgundy"} ${!isAdmin ? "opacity-60" : ""}`}>
               {mode === "order" ? "Thứ tự" : "Trộn"}
             </button>
           ))}
         </div>
-        {isAdmin && identity && (
+        {isAdmin && (
           <button onClick={() => setOpen(true)} className="rounded-lg border border-gold bg-cream px-3 py-1 text-sm text-burgundy">⚙️ Setting</button>
         )}
       </div>
-      {open && identity && <SettingsDialog room={room} members={members} identity={identity} onClose={() => setOpen(false)} />}
+      {open && <SettingsDialog room={room} members={members} roomId={roomId} token={token} myMemberId={myMemberId} onClose={() => setOpen(false)} />}
     </header>
   );
 }

@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { bumpToTop, deleteItem, reorderItem, type QueueItem } from "@/lib/supabase";
 import { positionBetween } from "@/lib/queue";
-import type { Identity } from "@/lib/identity";
 
-export default function Queue({ queue, currentId, canManage, identity }: {
-  queue: QueueItem[]; currentId: string | null; canManage: boolean; identity: Identity;
+export default function Queue({ queue, currentId, canManage, roomId, token }: {
+  queue: QueueItem[]; currentId: string | null; canManage: boolean; roomId: string; token: string;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const upcoming = queue.filter((q) => q.id !== currentId);
@@ -17,7 +16,7 @@ export default function Queue({ queue, currentId, canManage, identity }: {
     const before = upcoming[idx - 1]?.position ?? null;
     const newPos = positionBetween(before, target.position);
     setDragId(null);
-    try { await reorderItem(identity, dragId, newPos); } catch { /* ignore */ }
+    try { await reorderItem(roomId, token, dragId, newPos); } catch { /* ignore */ }
   }
 
   return (
@@ -46,9 +45,9 @@ export default function Queue({ queue, currentId, canManage, identity }: {
             </div>
             {canManage && (
               <div className="flex gap-1">
-                <button title="Kéo lên đầu" onClick={() => bumpToTop(identity, q.id)}
+                <button title="Kéo lên đầu" onClick={() => bumpToTop(roomId, token, q.id)}
                   className="rounded border border-gold-200 bg-cream px-1.5 text-sm text-burgundy">⬆</button>
-                <button title="Xóa" onClick={() => deleteItem(identity, q.id)}
+                <button title="Xóa" onClick={() => deleteItem(roomId, token, q.id)}
                   className="rounded border border-gold-200 bg-cream px-1.5 text-sm text-burgundy">✕</button>
               </div>
             )}

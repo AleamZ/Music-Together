@@ -11,17 +11,17 @@ import Queue from "./Queue";
 import { useDjController } from "@/hooks/useDjController";
 
 export default function RoomShell({ view }: { view: RoomView }) {
-  const { state, identity, role, onlineIds } = view;
+  const { state, role, onlineIds, token, myMemberId } = view;
   const room = state.room!;
   const current = state.queue.find((q) => q.id === room.current_item_id) ?? null;
   const djOnline = !!room.dj_member_id && onlineIds.includes(room.dj_member_id);
 
   // DJ-only playback engine (no-op for non-DJ). Returns transport handlers + duration/volume.
-  const dj = useDjController({ room, current, identity: identity!, isDj: role.isDj, queueLen: state.queue.length });
+  const dj = useDjController({ room, current, isDj: role.isDj, queueLen: state.queue.length, roomId: room.id, token });
 
   return (
     <main className="mx-auto max-w-6xl p-3">
-      <Header room={room} members={state.members} identity={identity} isAdmin={role.isAdmin} />
+      <Header room={room} members={state.members} isAdmin={role.isAdmin} roomId={room.id} token={token} myMemberId={myMemberId} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[22%_1fr_33%]">
         <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
           <MemberList members={state.members} room={room} onlineIds={onlineIds} />
@@ -38,9 +38,9 @@ export default function RoomShell({ view }: { view: RoomView }) {
         </section>
 
         <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
-          <AddSong identity={identity!} />
+          <AddSong roomId={room.id} token={token} />
           <p className="mb-2 text-[11px] text-ink/60">🔎 Ô tìm kiếm trong app: bật khi cấu hình API key (Phase 2)</p>
-          <Queue queue={state.queue} currentId={room.current_item_id} canManage={role.canManageQueue} identity={identity!} />
+          <Queue queue={state.queue} currentId={room.current_item_id} canManage={role.canManageQueue} roomId={room.id} token={token} />
         </section>
       </div>
     </main>

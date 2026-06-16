@@ -4,9 +4,8 @@ import { useState } from "react";
 import { addQueueItem } from "@/lib/supabase";
 import { parseYouTubeId } from "@/lib/youtube/parse";
 import { fetchVideoMeta } from "@/lib/youtube/meta";
-import type { Identity } from "@/lib/identity";
 
-export default function AddSong({ identity }: { identity: Identity }) {
+export default function AddSong({ roomId, token }: { roomId: string; token: string }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +18,7 @@ export default function AddSong({ identity }: { identity: Identity }) {
     setBusy(true);
     try {
       const meta = await fetchVideoMeta(id);
-      await addQueueItem(identity, {
+      await addQueueItem(roomId, token, {
         videoId: id,
         title: meta?.title || id,
         thumb: meta?.thumbnail ?? null,
