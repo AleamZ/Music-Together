@@ -1,5 +1,48 @@
 "use client";
+
 import type { RoomView } from "@/hooks/useRoom";
-export default function RoomShell({ code }: { code: string; view: RoomView }) {
-  return <main className="p-6 font-cormorant text-burgundy">Phòng {code} — giao diện đang được lắp ráp…</main>;
+import Header from "./Header";
+import MemberList from "./MemberList";
+import ChatPanel from "./ChatPanel";
+import NowPlaying from "./NowPlaying";
+import Reactions from "./Reactions";
+import AddSong from "./AddSong";
+import Queue from "./Queue";
+import { useDjController } from "@/hooks/useDjController";
+
+export default function RoomShell({ code, view }: { code: string; view: RoomView }) {
+  const { state, identity, role, onlineIds } = view;
+  const room = state.room!;
+  const current = state.queue.find((q) => q.id === room.current_item_id) ?? null;
+  const djOnline = !!room.dj_member_id && onlineIds.includes(room.dj_member_id);
+
+  // DJ-only playback engine (no-op for non-DJ). Returns transport handlers + duration/volume.
+  const dj = useDjController({ room, current, identity: identity!, isDj: role.isDj });
+
+  return (
+    <main className="mx-auto max-w-6xl p-3">
+      <Header room={room} members={state.members} identity={identity} isAdmin={role.isAdmin} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[22%_1fr_33%]">
+        <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
+          <MemberList members={state.members} room={room} onlineIds={onlineIds} />
+          <ChatPanel />
+        </section>
+
+        <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
+          <NowPlaying
+            room={room} current={current} canControl={role.canControlPlayback}
+            durationMs={dj.durationMs} volume={dj.volume} djOnline={djOnline}
+            onPlayPause={dj.togglePlay} onSkip={dj.skip} onSeekMs={dj.seekMs} onVolume={dj.setVolume}
+          />
+          <Reactions />
+        </section>
+
+        <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
+          <AddSong identity={identity!} />
+          <p className="mb-2 text-[11px] text-ink/60">🔎 Ô tìm kiếm trong app: bật khi cấu hình API key (Phase 2)</p>
+          <Queue queue={state.queue} currentId={room.current_item_id} canManage={role.canManageQueue} identity={identity!} />
+        </section>
+      </div>
+    </main>
+  );
 }
