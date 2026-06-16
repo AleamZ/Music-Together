@@ -58,3 +58,50 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 - Lobby page showing all currently-active rooms (via global Realtime Presence) with live participant counts.
 - Animated turntable on the room page.
 - Copy-code and share buttons for easy room invites.
+
+## v3: Admin & Feedback
+
+### DB migration
+
+`supabase/migrations/0005_v3_admin.sql` is **fully additive** — it uses `add column if not exists`, `create table if not exists`, and `create or replace function`, so **no data is lost**. Two options:
+
+- **Preferred (live DB):** open the Supabase SQL Editor and run `supabase/migrations/0005_v3_admin.sql`. Existing rooms, accounts, and sessions are preserved.
+- **Reset (dev/staging):** run `supabase db reset` to replay migrations `0001` → `0005` from scratch (wipes all data).
+
+### Bootstrap the root account
+
+After the migration runs, create the root account by executing the snippet below **once** in the Supabase SQL Editor. Replace `<STRONG_PASSWORD>` with a real, randomly-generated password before running.
+
+> ⚠️ **Do NOT commit this snippet with a real password. Do NOT reuse any password that has ever been shared or leaked.** The GitHub repo is public.
+
+```sql
+-- Run ONCE in the Supabase SQL Editor to bootstrap the root account.
+-- Replace <STRONG_PASSWORD> with a real strong password before running.
+-- ⚠️  Do NOT commit this with a real password. Do NOT reuse a leaked/shared password.
+do $$
+declare v_id uuid;
+begin
+  insert into public.accounts (username, is_root)
+    values ('root', true)
+    on conflict (lower(username)) do update set is_root = true
+    returning id into v_id;
+  insert into public.account_secrets (account_id, password_hash)
+    values (v_id, extensions.crypt('<STRONG_PASSWORD>', extensions.gen_salt('bf')))
+    on conflict (account_id) do update set password_hash = excluded.password_hash;
+end $$;
+```
+
+**Schema notes (verified against migrations):**
+- `accounts.id` has `default gen_random_uuid()` — no need to supply the id explicitly.
+- The unique constraint on `username` is a **functional unique index** on `lower(username)` (`accounts_username_lower_uniq`), so the conflict target is `(lower(username))`, not `(username)`.
+- `account_secrets` PK is `account_id` — the second `on conflict` target is `(account_id)`.
+- pgcrypto lives in the `extensions` schema (per `create extension if not exists pgcrypto with schema extensions`). A bare `do $$` block does not inherit `set search_path`, so `crypt` and `gen_salt` must be schema-qualified as `extensions.crypt(...)` / `extensions.gen_salt('bf')`.
+- The snippet is idempotent: re-running it sets `is_root = true` and updates the password hash, which is safe.
+
+### What's new in v3
+
+- **Feedback inbox (hòm thư góp ý):** any logged-in user can submit feedback (bug / suggestion / other) via the feedback button in the lobby and room pages. Rate-limited to 10 submissions per hour per account.
+- **`/admin` dashboard** (root account only): view and triage the feedback inbox; view all rooms with member counts and delete any room; view all accounts, ban/unban accounts, and delete accounts; live system stats (total rooms, accounts, new/total feedback).
+- **Account ban:** banned accounts are rejected at the session-auth layer (`_auth_account`) and all their active sessions are invalidated immediately on ban.
+- **Per-account rate limits:** 10 rooms/hour and 10 feedback submissions/hour enforced server-side in SECURITY DEFINER RPCs.
+- **Logo branding:** app logo displayed in the header and as an animated spinner on the loading screen.
