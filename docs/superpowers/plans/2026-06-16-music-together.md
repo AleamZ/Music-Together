@@ -1586,6 +1586,7 @@ declare global {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-namespace -- ambient types for the global YT IFrame API (no @types/youtube dependency)
 declare namespace YT {
   export enum PlayerState { UNSTARTED = -1, ENDED = 0, PLAYING = 1, PAUSED = 2, BUFFERING = 3, CUED = 5 }
   export interface PlayerEvent { target: Player; }
@@ -1652,8 +1653,13 @@ export function useYouTubePlayer(onEnded?: () => void, onError?: (code: number) 
   const playerRef = useRef<YT.Player | null>(null);
   const [ready, setReady] = useState(false);
   const queueRef = useRef<Array<(p: YT.Player) => void>>([]);
-  const onEndedRef = useRef(onEnded); onEndedRef.current = onEnded;
-  const onErrorRef = useRef(onError); onErrorRef.current = onError;
+  const onEndedRef = useRef(onEnded);
+  const onErrorRef = useRef(onError);
+  // Keep the latest callbacks without re-creating the player (synced after render).
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+    onErrorRef.current = onError;
+  });
 
   useEffect(() => {
     let cancelled = false;
