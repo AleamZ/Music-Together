@@ -26,7 +26,12 @@ run("v4 roles + chat", () => {
     if (error) throw error;
     return (Array.isArray(data) ? data[0] : data) as { room_id: string; member_id: string };
   };
-  const idOf = (r: { data: unknown }) => (Array.isArray(r.data) ? r.data[0] : r.data) as string;
+  const idOf = (r: { data: unknown; error: unknown }) => {
+    if (r.error) throw r.error;
+    const id = (Array.isArray(r.data) ? r.data[0] : r.data) as string | null;
+    if (!id) throw new Error("expected a uuid from rpc");
+    return id;
+  };
 
   it("assign_dj revoke returns DJ to the admin", async () => {
     const owner = await reg(uniq("own"));
@@ -34,6 +39,10 @@ run("v4 roles + chat", () => {
     const m2 = await reg(uniq("dj"));
     const j = await join(room.code, m2.token);
     expect((await db.rpc("assign_dj", { p_room_id: room.room_id, p_session_token: owner.token, p_target_member: j.member_id })).error).toBeNull();
+    {
+      const { data } = await db.from("rooms").select("dj_member_id").eq("id", room.room_id).single();
+      expect((data as { dj_member_id: string }).dj_member_id).toBe(j.member_id);
+    }
     expect((await db.rpc("assign_dj", { p_room_id: room.room_id, p_session_token: owner.token, p_target_member: null })).error).toBeNull();
     const { data } = await db.from("rooms").select("dj_member_id, admin_member_id").eq("id", room.room_id).single();
     const r = data as { dj_member_id: string; admin_member_id: string };
