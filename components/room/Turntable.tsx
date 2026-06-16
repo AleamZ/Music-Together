@@ -1,5 +1,8 @@
 "use client";
 
+import Image from "next/image";
+import logo from "@/public/logo.png";
+
 export default function Turntable({ spinning, thumbnail }: { spinning: boolean; thumbnail?: string | null }) {
   return (
     <div className="relative mx-auto h-64 w-80">
@@ -10,8 +13,10 @@ export default function Turntable({ spinning, thumbnail }: { spinning: boolean; 
       >
         <div className="absolute inset-[34%] flex items-center justify-center rounded-full"
           style={{ background: "radial-gradient(circle,#7a1f33,#6e2233 60%,#4d1722)", boxShadow: "0 0 0 2px #b08d57" }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {thumbnail ? <img src={thumbnail} alt="" className="h-full w-full rounded-full object-cover opacity-90" /> : <span className="text-2xl">🎼</span>}
+          {thumbnail
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={thumbnail} alt="" className="h-full w-full rounded-full object-cover opacity-90" />
+            : <Image src={logo} alt="" width={80} height={80} className="h-full w-full rounded-full object-cover opacity-90" />}
         </div>
         <div className="absolute inset-[48.5%] rounded-full bg-[#1a140d]" />
       </div>

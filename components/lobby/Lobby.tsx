@@ -8,6 +8,7 @@ import { useActiveRooms } from "@/hooks/useActiveRooms";
 import { createRoom } from "@/lib/supabase";
 import RoomCard from "./RoomCard";
 import FeedbackButton from "@/components/feedback/FeedbackButton";
+import Logo from "@/components/brand/Logo";
 
 export default function Lobby() {
   const { account, token, logout } = useAuth();
@@ -30,7 +31,7 @@ export default function Lobby() {
   return (
     <main className="mx-auto max-w-3xl p-4">
       <header className="mb-4 flex items-center justify-between border-b-2 border-gold pb-3">
-        <span className="font-playfair text-2xl font-bold text-burgundy">🎩 Music Together</span>
+        <Logo />
         <div className="flex items-center gap-2">
           <FeedbackButton />
           {account?.isRoot && <Link href="/admin" className="rounded-lg border border-gold bg-cream px-3 py-1 text-sm text-burgundy">⚙️ Quản trị</Link>}

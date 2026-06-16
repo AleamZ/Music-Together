@@ -40,3 +40,7 @@ body {
 @keyframes vinyl-spin { to { transform: rotate(360deg); } }
 .animate-vinyl { animation: vinyl-spin 6s linear infinite; }
 .animate-vinyl-paused { animation-play-state: paused; }
+
+/* ===== Brand loader ===== */
+@keyframes brand-pulse { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.08); opacity: 1; } }
+.animate-brand-pulse { animation: brand-pulse 1.4s ease-in-out infinite; }

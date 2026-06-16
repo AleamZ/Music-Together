@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import Logo from "@/components/brand/Logo";
 
 export default function AuthScreen() {
   const { login, register } = useAuth();
@@ -27,9 +28,8 @@ export default function AuthScreen() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-5 px-6">
-      <header className="text-center">
-        <div className="text-5xl">🎩🎶</div>
-        <h1 className="font-playfair text-3xl font-bold text-burgundy">Music Together</h1>
+      <header className="flex justify-center text-center">
+        <Logo size={56} />
       </header>
       <div className="flex rounded-full border border-gold text-sm">
         <button type="button" onClick={() => setMode("login")} className={`flex-1 rounded-full px-4 py-2 ${mode === "login" ? "bg-burgundy text-cream" : "text-burgundy"}`}>Đăng nhập</button>

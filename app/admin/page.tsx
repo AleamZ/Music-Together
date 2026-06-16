@@ -8,6 +8,8 @@ import FeedbackTab from "@/components/admin/FeedbackTab";
 import RoomsTab from "@/components/admin/RoomsTab";
 import AccountsTab from "@/components/admin/AccountsTab";
 import StatsTab from "@/components/admin/StatsTab";
+import Logo from "@/components/brand/Logo";
+import BrandSpinner from "@/components/brand/BrandSpinner";
 
 type Tab = "feedback" | "rooms" | "accounts" | "stats";
 const TABS: { id: Tab; label: string }[] = [
@@ -19,7 +21,7 @@ export default function AdminPage() {
   const { account, token, loading } = useAuth();
   const [tab, setTab] = useState<Tab>("feedback");
 
-  if (loading) return <main className="flex min-h-screen items-center justify-center font-cormorant text-burgundy">Đang tải…</main>;
+  if (loading) return <BrandSpinner />;
   if (!account) return <AuthScreen />;
   if (!account.isRoot) return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-3 text-center">
@@ -31,7 +33,7 @@ export default function AdminPage() {
   return (
     <main className="mx-auto max-w-4xl p-4">
       <header className="mb-4 flex items-center justify-between border-b-2 border-gold pb-3">
-        <span className="font-playfair text-2xl font-bold text-burgundy">⚙️ Quản trị hệ thống</span>
+        <span className="flex items-center gap-2 font-playfair text-2xl font-bold text-burgundy"><Logo size={28} withWordmark={false} /> Quản trị hệ thống</span>
         <Link href="/" className="text-sm text-burgundy-accent underline">Về trang chủ</Link>
       </header>
       <div className="mb-4 flex gap-1 rounded-full border border-gold p-1 text-sm">

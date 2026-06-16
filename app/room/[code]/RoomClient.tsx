@@ -7,15 +7,16 @@ import { useRoom } from "@/hooks/useRoom";
 import AuthScreen from "@/components/auth/AuthScreen";
 import JoinGate from "@/components/room/JoinGate";
 import RoomShell from "@/components/room/RoomShell";
+import BrandSpinner from "@/components/brand/BrandSpinner";
 
 export default function RoomClient({ code }: { code: string }) {
   const { account, loading: authLoading } = useAuth();
   const view = useRoom(code);
   const [, force] = useState(0);
 
-  if (authLoading) return <main className="flex min-h-screen items-center justify-center font-cormorant text-burgundy">Đang tải…</main>;
+  if (authLoading) return <BrandSpinner />;
   if (!account) return <AuthScreen />;
-  if (view.loading) return <main className="flex min-h-screen items-center justify-center font-cormorant text-burgundy">Đang tải phòng…</main>;
+  if (view.loading) return <BrandSpinner label="Đang tải phòng…" />;
   if (!view.state.room) return <main className="flex min-h-screen items-center justify-center font-cormorant text-burgundy">Không tìm thấy phòng &ldquo;{code}&rdquo;.</main>;
   if (view.kicked) return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
