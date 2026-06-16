@@ -32,7 +32,6 @@ export default function NowPlaying(p: NowPlayingProps) {
   }, [room.is_playing, room.started_at, room.paused_elapsed_ms]);
 
   const dur = p.durationMs || (current?.duration_seconds ? current.duration_seconds * 1000 : 0);
-  const pct = dur > 0 ? Math.min(100, (elapsed / dur) * 100) : 0;
 
   return (
     <section className="flex flex-col items-center gap-3 rounded-xl border border-gold-200 bg-cream/60 p-4 text-center">
