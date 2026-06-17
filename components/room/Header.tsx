@@ -6,6 +6,7 @@ import SettingsDialog from "./SettingsDialog";
 import ShareButtons from "./ShareButtons";
 import FeedbackButton from "@/components/feedback/FeedbackButton";
 import Logo from "@/components/brand/Logo";
+import ThemeToggle from "@/components/brand/ThemeToggle";
 
 export default function Header({ room, members, isAdmin, roomId, token, myMemberId }: {
   room: Room; members: Member[]; isAdmin: boolean; roomId: string; token: string; myMemberId: string | null;
@@ -20,6 +21,7 @@ export default function Header({ room, members, isAdmin, roomId, token, myMember
         <ShareButtons code={room.code} title={room.name} />
       </div>
       <div className="flex items-center gap-2">
+        <ThemeToggle />
         <div className="inline-flex overflow-hidden rounded-full border border-gold text-xs">
           {(["order", "shuffle"] as const).map((mode) => (
             <button key={mode} disabled={!isAdmin || room.play_mode === mode}

@@ -9,6 +9,7 @@ import { createRoom } from "@/lib/supabase";
 import RoomCard from "./RoomCard";
 import FeedbackButton from "@/components/feedback/FeedbackButton";
 import Logo from "@/components/brand/Logo";
+import ThemeToggle from "@/components/brand/ThemeToggle";
 
 export default function Lobby() {
   const { account, token, logout } = useAuth();
@@ -33,6 +34,7 @@ export default function Lobby() {
       <header className="mb-4 flex items-center justify-between border-b-2 border-gold pb-3">
         <Logo />
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <FeedbackButton />
           {account?.isRoot && <Link href="/admin" className="rounded-lg border border-gold bg-cream px-3 py-1 text-sm text-burgundy">⚙️ Quản trị</Link>}
           <span className="flex items-center gap-2 rounded-full border border-gold bg-cream px-3 py-1 text-sm">
