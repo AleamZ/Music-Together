@@ -19,20 +19,27 @@ async function fetchRoomState(roomId: string): Promise<RoomState> {
   };
 }
 
-/** Subscribe to room-scoped changes; re-fetch + push fresh state on any change. */
+/** Subscribe to room-scoped changes; re-fetch + push fresh state on any change.
+ *  Refresh is trailing-debounced so a burst of postgres_changes (e.g. a 50-row
+ *  batch insert) collapses into ~1 refetch instead of one per row. */
 export function subscribeRoom(roomId: string, onState: (s: RoomState) => void): () => void {
   let cancelled = false;
-  const refresh = async () => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const doRefresh = async () => {
     const state = await fetchRoomState(roomId);
     if (!cancelled) onState(state);
+  };
+  const refresh = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; void doRefresh(); }, 150);
   };
   const channel: RealtimeChannel = supabase
     .channel(`room:${roomId}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${roomId}` }, refresh)
     .on("postgres_changes", { event: "*", schema: "public", table: "queue_items", filter: `room_id=eq.${roomId}` }, refresh)
     .on("postgres_changes", { event: "*", schema: "public", table: "members", filter: `room_id=eq.${roomId}` }, refresh)
-    .subscribe((status) => { if (status === "SUBSCRIBED") void refresh(); });
-  return () => { cancelled = true; void supabase.removeChannel(channel); };
+    .subscribe((status) => { if (status === "SUBSCRIBED") void doRefresh(); });
+  return () => { cancelled = true; if (timer) clearTimeout(timer); void supabase.removeChannel(channel); };
 }
 
 /** Realtime Presence: online member ids, keyed by member id. */
