@@ -123,3 +123,20 @@ end $$;
 - **Floating emoji reactions:** ephemeral animations powered by Supabase Broadcast (no DB storage). Palette: ❤️ 😂 🔥 👏 🎉.
 - **Inline admin role menu:** a ⋯ menu on each member row (visible to admins only) provides quick access to Giao/Thu DJ, Trao Admin, and Kick — no need to open the Settings dialog (which still works too).
 - **DJ revoke returns to admin:** revoking the DJ role now hands it back to the room admin instead of clearing it entirely.
+
+## v5: Queue Scroll, Logo Favicon & Playlist Add
+
+### DB migration
+
+`supabase/migrations/0007_v5_batch_queue.sql` is **fully additive** — it uses `create or replace function` only (no table drops or column changes), so **no data is lost**. Two options:
+
+- **Preferred (live DB):** open the Supabase SQL Editor and run `supabase/migrations/0007_v5_batch_queue.sql`.
+- **Reset (dev/staging):** run `supabase db reset` to replay migrations `0001` → `0007` from scratch (wipes all data).
+
+> Playlist enumeration and emoji reactions need **no API key** and **no extra config** — only the migration above is required for v5.
+
+### What's new in v5
+
+- **Queue scrolls internally:** the right-hand queue column is height-capped and scrolls inside itself instead of stretching the whole page. Drag-to-reorder, bump, and delete still work across the full list.
+- **Logo favicon:** the browser tab uses `public/logo.png` instead of the default icon.
+- **Add a whole YouTube playlist:** paste a playlist link (`…/playlist?list=…`) and all of its videos (up to 50) are enqueued in one batch. The list is read key-free from the public playlist page. A normal video link — even one that also carries `&list=` — still adds just that one video; paste the dedicated playlist URL to add the whole list.
