@@ -58,7 +58,7 @@ export default function Queue({ queue, currentId, canManage, roomId, token }: {
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm text-ink">{q.title || q.youtube_video_id}</div>
                 <div className="text-[11px] text-gold">do {q.added_by_name}
-                  <span className="ml-2 rounded-full border border-gold-200 bg-cream px-1.5 text-[9px] uppercase text-[#8a6d2f]">like · sắp ra mắt</span>
+                  <span className="ml-2 rounded-full border border-gold-200 bg-cream px-1.5 text-[9px] uppercase text-gold">like · sắp ra mắt</span>
                 </div>
               </div>
               {canManage && (
