@@ -15,8 +15,11 @@ export async function GET(request: Request): Promise<Response> {
     const res = await fetch(url, {
       headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" },
       next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return Response.json({ error: "Playlist fetch failed" }, { status: 502 });
+    const len = Number(res.headers.get("content-length") ?? 0);
+    if (len > 5_000_000) return Response.json({ error: "Playlist too large" }, { status: 502 });
     const html = await res.text();
     const items = extractPlaylistItems(html, 50);
     if (items.length === 0) return Response.json({ error: "Playlist trống hoặc không đọc được" }, { status: 404 });
