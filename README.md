@@ -110,7 +110,7 @@ end $$;
 
 ### DB migration
 
-`supabase/migrations/0006_v4_chat_roles.sql` is **fully additive** — it uses `create table if not exists`, `create or replace function`, and `alter table … add column if not exists`, so **no data is lost**. Two options:
+`supabase/migrations/0006_v4_chat_roles.sql` is **fully additive** — it uses `create table if not exists` and `create or replace function` (no table drops or column removals), so **no data is lost**. Two options:
 
 - **Preferred (live DB):** open the Supabase SQL Editor and run `supabase/migrations/0006_v4_chat_roles.sql`. Existing rooms, accounts, sessions, and feedback are preserved.
 - **Reset (dev/staging):** run `supabase db reset` to replay migrations `0001` → `0006` from scratch (wipes all data).
