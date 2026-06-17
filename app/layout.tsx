@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Cormorant_Garamond, EB_Garamond, Playfair_Display } from "next/font/google";
+import { Cormorant_Garamond, EB_Garamond, Playfair_Display, Pixelify_Sans } from "next/font/google";
 import "./globals.css";
 import Providers from "./Providers";
 
@@ -11,6 +11,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 const cormorant = Cormorant_Garamond({ variable: "--font-cormorant", subsets: ["latin"], display: "swap" });
 const ebGaramond = EB_Garamond({ variable: "--font-eb-garamond", subsets: ["latin"], display: "swap" });
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], display: "swap" });
+const pixel = Pixelify_Sans({ variable: "--font-pixel", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
   title: "Music Together — Phòng nghe nhạc",
@@ -22,9 +23,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="vi"
-      className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${ebGaramond.variable} ${playfair.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${ebGaramond.variable} ${playfair.variable} ${pixel.variable} h-full antialiased`}
     >
-      <body className="min-h-full"><Providers>{children}</Providers></body>
+      <body className="min-h-full">
+        <script dangerouslySetInnerHTML={{ __html: "try{if(localStorage.getItem('music-together:theme')==='cozy')document.documentElement.setAttribute('data-theme','cozy')}catch(e){}" }} />
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
