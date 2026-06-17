@@ -105,3 +105,21 @@ end $$;
 - **Account ban:** banned accounts are rejected at the session-auth layer (`_auth_account`) and all their active sessions are invalidated immediately on ban.
 - **Per-account rate limits:** 10 rooms/hour and 10 feedback submissions/hour enforced server-side in SECURITY DEFINER RPCs.
 - **Logo branding:** app logo displayed in the header and as an animated spinner on the loading screen.
+
+## v4: Chat, Reactions & Inline Roles
+
+### DB migration
+
+`supabase/migrations/0006_v4_chat_roles.sql` is **fully additive** — it uses `create table if not exists`, `create or replace function`, and `alter table … add column if not exists`, so **no data is lost**. Two options:
+
+- **Preferred (live DB):** open the Supabase SQL Editor and run `supabase/migrations/0006_v4_chat_roles.sql`. Existing rooms, accounts, sessions, and feedback are preserved.
+- **Reset (dev/staging):** run `supabase db reset` to replay migrations `0001` → `0006` from scratch (wipes all data).
+
+> Emoji reactions use Supabase Broadcast (no DB writes) — they need **no migration**. Only the file above is required for v4.
+
+### What's new in v4
+
+- **Persisted room chat:** history loads on entry; updates in real-time via Supabase Realtime. Any member can send a message; the author or any room admin can delete a message. Messages are capped at 500 characters, rate-limited to 10 messages per 15 seconds per person, and only the newest 200 messages per room are retained.
+- **Floating emoji reactions:** ephemeral animations powered by Supabase Broadcast (no DB storage). Palette: ❤️ 😂 🔥 👏 🎉.
+- **Inline admin role menu:** a ⋯ menu on each member row (visible to admins only) provides quick access to Giao/Thu DJ, Trao Admin, and Kick — no need to open the Settings dialog (which still works too).
+- **DJ revoke returns to admin:** revoking the DJ role now hands it back to the room admin instead of clearing it entirely.
