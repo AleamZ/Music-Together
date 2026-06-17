@@ -65,3 +65,14 @@ export function extractPlaylistItems(html: string, cap = 50): PlaylistItem[] {
   }
   return out;
 }
+
+/** Client: fetch + enumerate a playlist via the same-origin route. Throws on failure. */
+export async function fetchPlaylistItems(listId: string): Promise<PlaylistItem[]> {
+  const res = await fetch(`/api/playlist?list=${encodeURIComponent(listId)}`);
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(d.error ?? "Không đọc được playlist");
+  }
+  const d = (await res.json()) as { items?: PlaylistItem[] };
+  return d.items ?? [];
+}
