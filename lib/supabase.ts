@@ -37,6 +37,15 @@ export async function addQueueItem(roomId: string, token: string, v: { videoId: 
   const { error } = await supabase.rpc("add_queue_item", { p_room_id: roomId, p_session_token: token, p_video_id: v.videoId, p_title: v.title, p_thumb: v.thumb, p_duration: v.duration });
   if (error) throw error;
 }
+export async function addQueueItems(
+  roomId: string, token: string,
+  items: Array<{ videoId: string; title: string; thumb: string | null }>,
+): Promise<number> {
+  const payload = items.map((it) => ({ video_id: it.videoId, title: it.title, thumb: it.thumb }));
+  const { data, error } = await supabase.rpc("add_queue_items", { p_room_id: roomId, p_session_token: token, p_items: payload });
+  if (error) throw error;
+  return typeof data === "number" ? data : Number(data ?? 0);
+}
 export async function advanceQueue(roomId: string, token: string) {
   const { error } = await supabase.rpc("advance_queue", { p_room_id: roomId, p_session_token: token });
   if (error) throw error;
