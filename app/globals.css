@@ -85,3 +85,6 @@ html[data-theme="cozy"] {
 html[data-theme="cozy"] body {
   background: #f4e4c1;
 }
+
+/* ===== Pixel radio equalizer ===== */
+@keyframes eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
