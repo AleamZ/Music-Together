@@ -149,3 +149,12 @@ end $$;
 - **Chat notifications (Zalo-style):** when a new message arrives from someone else while you're *away* (scrolled up in the chat, or the tab is in the background) you get an unread badge on the "Trò chuyện" header, a "↓ N tin mới" pill to jump to the latest, a short "ting" sound, and — once you grant permission — a desktop notification while the tab is backgrounded. Toggle everything with the **🔔 bell** in the chat header (default **on**); your own messages never notify. The chat also no longer yanks you to the bottom while you're reading older messages.
 
 > Desktop popups need a secure context (HTTPS, or `localhost`) and browser permission; without them the in-app badge + sound still work. The sound uses the Web Audio API (no audio file).
+
+## v7: Themes (Vinyl Salon + Pixel Cozy)
+
+**No migration, no config** — purely client-side UX. New:
+
+- **Theme toggle (🎩 Salon / 🎮 Pixel):** a toggle in the lobby header and room header switches the whole app's look instantly. The choice is **persisted per browser** (localStorage key `music-together:theme`, default Salon) and applies to everyone on that device.
+- **Pixel Cozy theme:** uses a warm pastel palette, a pixel heading/label font (Pixelify Sans) while body text stays a readable serif so Vietnamese characters stay sharp, a **pixel boombox logo**, and turns the turntable into a **pixel radio**.
+- **Vinyl Salon theme:** the original look — unchanged.
+- All app logic is unchanged — theming is CSS-variable + presentation only (`data-theme` attribute on `<html>`; no JS logic branches).
