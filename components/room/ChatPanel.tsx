@@ -42,7 +42,11 @@ export default function ChatPanel({ roomId, token, accountId, isAdmin }: {
   // React to new messages: notify when "away", auto-scroll only when at bottom / own message.
   useEffect(() => {
     const list = listRef.current;
+    // Wait for the first non-empty batch (history loads async) before baselining
+    // "seen" — otherwise the whole history would notify when the room opens in a
+    // background tab.
     if (!initializedRef.current) {
+      if (messages.length === 0) return;
       messages.forEach((m) => seenRef.current.add(m.id));
       initializedRef.current = true;
       list?.scrollTo({ top: list.scrollHeight });
@@ -62,6 +66,7 @@ export default function ChatPanel({ roomId, token, accountId, isAdmin }: {
       }
     }
     if (atBottomRef.current || ownLast) list?.scrollTo({ top: list.scrollHeight });
+    if (atBottomRef.current && !document.hidden) setUnread(0);
   }, [messages, accountId]);
 
   function onScroll() {
