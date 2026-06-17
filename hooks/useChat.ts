@@ -10,7 +10,14 @@ export function useChat(roomId: string, token: string, viewer: { accountId: stri
 
   useEffect(() => {
     let active = true;
-    fetchRecentMessages(roomId).then((m) => { if (active) setMessages(m); }).catch(() => {});
+    fetchRecentMessages(roomId).then((hist) => {
+      if (!active) return;
+      setMessages((prev) => {
+        const byId = new Map(prev.map((p) => [p.id, p] as const));
+        for (const msg of hist) byId.set(msg.id, msg);
+        return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
+      });
+    }).catch(() => {});
     const unsub = subscribeChat(roomId, {
       onInsert: (msg) => setMessages((prev) => (prev.some((p) => p.id === msg.id) ? prev : [...prev, msg])),
       onDelete: (id) => setMessages((prev) => prev.filter((p) => p.id !== id)),
