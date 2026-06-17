@@ -15,6 +15,7 @@ const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["lati
 export const metadata: Metadata = {
   title: "Music Together — Phòng nghe nhạc",
   description: "Cùng nhau chọn và nghe nhạc YouTube trong một phòng nghe cổ điển.",
+  icons: { icon: "/logo.png", shortcut: "/logo.png", apple: "/logo.png" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

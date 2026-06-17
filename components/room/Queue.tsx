@@ -25,7 +25,7 @@ export default function Queue({ queue, currentId, canManage, roomId, token }: {
         Hàng đợi <span className="text-xs text-ink/60">{upcoming.length} bài</span>
       </h3>
       {upcoming.length === 0 && <p className="text-sm text-ink/60">Chưa có bài nào trong hàng đợi.</p>}
-      <ul>
+      <ul className="max-h-[65vh] overflow-y-auto pr-1">
         {upcoming.map((q) => (
           <li key={q.id}
             draggable={canManage}
