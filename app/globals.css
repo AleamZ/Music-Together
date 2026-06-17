@@ -88,3 +88,24 @@ html[data-theme="cozy"] body {
 
 /* ===== Pixel radio equalizer ===== */
 @keyframes eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+
+/* ===== Pixel Cozy "skin" — blocky frames so the live UI matches the pixel-game demo ===== */
+/* Flatten rounded corners → square/pixel (covers cards, pills, dots, buttons). */
+html[data-theme="cozy"] .rounded-xl,
+html[data-theme="cozy"] .rounded-lg,
+html[data-theme="cozy"] .rounded-md,
+html[data-theme="cozy"] .rounded,
+html[data-theme="cozy"] .rounded-full {
+  border-radius: 3px;
+}
+/* Chunky borders everywhere a border is used. */
+html[data-theme="cozy"] .border { border-width: 2px; }
+/* Cards become framed pixel boxes with a hard offset shadow. */
+html[data-theme="cozy"] .rounded-xl {
+  border-width: 2px;
+  box-shadow: 4px 4px 0 var(--color-ink);
+}
+/* Pixel font on chrome buttons (short labels); inputs/body stay readable for Vietnamese. */
+html[data-theme="cozy"] button { font-family: var(--font-pixel); }
+/* Primary (filled) buttons get a small hard pixel shadow. */
+html[data-theme="cozy"] button.bg-burgundy { box-shadow: 3px 3px 0 var(--color-ink); }
