@@ -65,3 +65,23 @@ html { scrollbar-width: thin; scrollbar-color: var(--color-gold) var(--color-par
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--color-burgundy); }
 *::-webkit-scrollbar-corner { background: var(--color-parchment); }
+
+/* ===== Pixel Cozy theme — remap the salon tokens (components keep their classes) ===== */
+html[data-theme="cozy"] {
+  --color-parchment: #f4e4c1;
+  --color-parchment-200: #ecdab8;
+  --color-parchment-300: #e0cfa6;
+  --color-cream: #fbf3df;
+  --color-ink: #5c4033;
+  --color-burgundy: #d97c5a;
+  --color-burgundy-accent: #c2552f;
+  --color-gold: #7fb069;
+  --color-gold-200: #bcd3a0;
+  --color-green-vintage: #6db5c9;
+  /* pixel font for headings/labels/buttons; body stays --font-eb-garamond (Vietnamese stays sharp) */
+  --font-playfair: var(--font-pixel);
+  --font-cormorant: var(--font-pixel);
+}
+html[data-theme="cozy"] body {
+  background: #f4e4c1;
+}
