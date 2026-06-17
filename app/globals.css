@@ -44,3 +44,10 @@ body {
 /* ===== Brand loader ===== */
 @keyframes brand-pulse { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.08); opacity: 1; } }
 .animate-brand-pulse { animation: brand-pulse 1.4s ease-in-out infinite; }
+
+/* ===== Floating reactions ===== */
+@keyframes float-up {
+  0%   { transform: translateY(0) scale(1);     opacity: 1; }
+  100% { transform: translateY(-150px) scale(1.4); opacity: 0; }
+}
+.animate-float-up { animation: float-up 2s ease-out forwards; }

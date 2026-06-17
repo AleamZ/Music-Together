@@ -37,7 +37,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
             durationMs={dj.durationMs} volume={dj.volume} djOnline={djOnline}
             onPlayPause={dj.togglePlay} onSkip={dj.skip} onSeekMs={dj.seekMs} onVolume={dj.setVolume}
           />
-          <Reactions />
+          <Reactions roomId={room.id} />
         </section>
 
         <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
