@@ -140,3 +140,12 @@ end $$;
 - **Queue scrolls internally:** the right-hand queue column is height-capped and scrolls inside itself instead of stretching the whole page. Drag-to-reorder, bump, and delete still work across the full list.
 - **Logo favicon:** the browser tab uses `public/logo.png` instead of the default icon.
 - **Add a whole YouTube playlist:** paste a playlist link (`…/playlist?list=…`) and all of its videos (up to 50) are enqueued in one batch. The list is read key-free from the public playlist page. A normal video link — even one that also carries `&list=` — still adds just that one video; paste the dedicated playlist URL to add the whole list.
+
+## v6: Queue Loading & Chat Notifications
+
+**No migration, no config** — purely client-side UX. New:
+
+- **Queue action loading:** deleting, bumping to top, or drag-reordering a song shows a per-row spinner (and disables that row) while the change is saving, instead of a silent delay.
+- **Chat notifications (Zalo-style):** when a new message arrives from someone else while you're *away* (scrolled up in the chat, or the tab is in the background) you get an unread badge on the "Trò chuyện" header, a "↓ N tin mới" pill to jump to the latest, a short "ting" sound, and — once you grant permission — a desktop notification while the tab is backgrounded. Toggle everything with the **🔔 bell** in the chat header (default **on**); your own messages never notify. The chat also no longer yanks you to the bottom while you're reading older messages.
+
+> Desktop popups need a secure context (HTTPS, or `localhost`) and browser permission; without them the in-app badge + sound still work. The sound uses the Web Audio API (no audio file).
