@@ -52,3 +52,27 @@ export function parseYouTubeStart(input: string): number {
     return 0;
   }
 }
+
+const PLAYLIST_ID_RE = /^[A-Za-z0-9_-]+$/;
+
+/** Extract the `list` playlist id from any common YouTube URL form, or null. */
+export function parsePlaylistId(input: string): string | null {
+  if (!input) return null;
+  const raw = input.trim();
+  let url: URL;
+  try {
+    url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+  const isYouTube =
+    host === "youtube.com" ||
+    host === "m.youtube.com" ||
+    host === "music.youtube.com" ||
+    host === "youtube-nocookie.com" ||
+    host === "youtu.be";
+  if (!isYouTube) return null;
+  const list = url.searchParams.get("list");
+  return list && PLAYLIST_ID_RE.test(list) ? list : null;
+}
