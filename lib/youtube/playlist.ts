@@ -28,41 +28,59 @@ function extractYtInitialData(html: string): unknown {
   return null;
 }
 
-type Renderer = {
+// Legacy playlist layout entry.
+type VideoRenderer = {
   videoId?: unknown;
   title?: { runs?: Array<{ text?: unknown }>; simpleText?: unknown };
-  thumbnail?: { thumbnails?: Array<{ url?: unknown }> };
+};
+// Current playlist layout entry (the "lockup" component).
+type LockupViewModel = {
+  contentId?: unknown;
+  contentType?: unknown;
+  metadata?: { lockupMetadataViewModel?: { title?: { content?: unknown } } };
 };
 
-function collectRenderers(node: unknown, out: Renderer[]): void {
-  if (Array.isArray(node)) { for (const v of node) collectRenderers(v, out); return; }
-  if (node && typeof node === "object") {
-    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
-      if (k === "playlistVideoRenderer" && v && typeof v === "object") out.push(v as Renderer);
-      else collectRenderers(v, out);
-    }
-  }
-}
-
-/** Pure: parse a YouTube playlist page's HTML into queue items (in order, capped). Fails soft to []. */
+/** Pure: parse a YouTube playlist page's HTML into queue items (in order, deduped, capped).
+ *  Handles BOTH the legacy `playlistVideoRenderer` and the current `lockupViewModel`
+ *  layouts (YouTube migrated playlist videos to lockups). Thumb is derived from the
+ *  videoId (hqdefault always exists). Fails soft to []. */
 export function extractPlaylistItems(html: string, cap = 50): PlaylistItem[] {
   const data = extractYtInitialData(html);
   if (!data) return [];
-  const renderers: Renderer[] = [];
-  collectRenderers(data, renderers);
   const out: PlaylistItem[] = [];
-  for (const r of renderers) {
-    const videoId = typeof r.videoId === "string" ? r.videoId : "";
-    if (!videoId) continue;
-    const runText = r.title?.runs?.[0]?.text;
-    const title = typeof runText === "string" ? runText
-      : typeof r.title?.simpleText === "string" ? r.title.simpleText : "";
-    const thumbs = r.thumbnail?.thumbnails;
-    const lastUrl = Array.isArray(thumbs) && thumbs.length ? thumbs[thumbs.length - 1]?.url : undefined;
-    const thumb = typeof lastUrl === "string" ? lastUrl : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-    out.push({ videoId, title, thumb });
-    if (out.length >= cap) break;
-  }
+  const seen = new Set<string>();
+  const add = (videoId: string, title: string): void => {
+    if (!videoId || seen.has(videoId)) return;
+    seen.add(videoId);
+    out.push({ videoId, title, thumb: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` });
+  };
+  const walk = (node: unknown): void => {
+    if (out.length >= cap || node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const v of node) { if (out.length >= cap) return; walk(v); }
+      return;
+    }
+    const obj = node as Record<string, unknown>;
+    const pvr = obj.playlistVideoRenderer as VideoRenderer | undefined;
+    if (pvr && typeof pvr === "object") {
+      const videoId = typeof pvr.videoId === "string" ? pvr.videoId : "";
+      const runText = pvr.title?.runs?.[0]?.text;
+      const title = typeof runText === "string" ? runText
+        : typeof pvr.title?.simpleText === "string" ? pvr.title.simpleText : "";
+      add(videoId, title);
+      return;
+    }
+    const lvm = obj.lockupViewModel as LockupViewModel | undefined;
+    if (lvm && typeof lvm === "object" && lvm.contentType === "LOCKUP_CONTENT_TYPE_VIDEO") {
+      const videoId = typeof lvm.contentId === "string" ? lvm.contentId : "";
+      const content = lvm.metadata?.lockupMetadataViewModel?.title?.content;
+      const title = typeof content === "string" ? content : "";
+      add(videoId, title);
+      return;
+    }
+    for (const v of Object.values(obj)) { if (out.length >= cap) return; walk(v); }
+  };
+  walk(data);
   return out;
 }
 
