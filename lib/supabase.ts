@@ -14,13 +14,15 @@ export interface Room {
   admin_member_id: string | null; dj_member_id: string | null;
   current_item_id: string | null; is_playing: boolean;
   started_at: string | null; paused_elapsed_ms: number; created_at: string;
+  max_duration_seconds: number; require_approval: boolean; banned_keywords: string[];
 }
 export interface Member { id: string; room_id: string; account_id: string; joined_at: string; username?: string; }
+export type QueueStatus = "pending" | "approved";
 export interface QueueItem {
   id: string; room_id: string; youtube_video_id: string; title: string;
   thumbnail_url: string | null; duration_seconds: number | null;
   added_by_account_id: string | null; added_by_name: string;
-  position: number; created_at: string;
+  position: number; created_at: string; status: QueueStatus;
 }
 
 export async function createRoom(roomName: string, password: string, token: string) {
@@ -39,9 +41,9 @@ export async function addQueueItem(roomId: string, token: string, v: { videoId: 
 }
 export async function addQueueItems(
   roomId: string, token: string,
-  items: Array<{ videoId: string; title: string; thumb: string | null }>,
+  items: Array<{ videoId: string; title: string; thumb: string | null; duration?: number | null }>,
 ): Promise<number> {
-  const payload = items.map((it) => ({ video_id: it.videoId, title: it.title, thumb: it.thumb }));
+  const payload = items.map((it) => ({ video_id: it.videoId, title: it.title, thumb: it.thumb, duration: it.duration ?? null }));
   const { data, error } = await supabase.rpc("add_queue_items", { p_room_id: roomId, p_session_token: token, p_items: payload });
   if (error) throw error;
   return typeof data === "number" ? data : Number(data ?? 0);
@@ -68,6 +70,27 @@ export async function reorderItem(roomId: string, token: string, itemId: string,
 }
 export async function deleteItem(roomId: string, token: string, itemId: string) {
   const { error } = await supabase.rpc("delete_item", { p_room_id: roomId, p_session_token: token, p_item_id: itemId });
+  if (error) throw error;
+}
+export async function approveQueueItem(roomId: string, token: string, itemId: string) {
+  const { error } = await supabase.rpc("approve_queue_item", { p_room_id: roomId, p_session_token: token, p_item_id: itemId });
+  if (error) throw error;
+}
+export async function approveAllPending(roomId: string, token: string): Promise<number> {
+  const { data, error } = await supabase.rpc("approve_all_pending", { p_room_id: roomId, p_session_token: token });
+  if (error) throw error;
+  return typeof data === "number" ? data : Number(data ?? 0);
+}
+export async function rejectQueueItem(roomId: string, token: string, itemId: string) {
+  const { error } = await supabase.rpc("reject_queue_item", { p_room_id: roomId, p_session_token: token, p_item_id: itemId });
+  if (error) throw error;
+}
+export interface RoomSettings { maxDurationSeconds: number; requireApproval: boolean; bannedKeywords: string[] }
+export async function updateRoomSettings(roomId: string, token: string, s: RoomSettings) {
+  const { error } = await supabase.rpc("update_room_settings", {
+    p_room_id: roomId, p_session_token: token,
+    p_max_duration_seconds: s.maxDurationSeconds, p_require_approval: s.requireApproval, p_banned_keywords: s.bannedKeywords,
+  });
   if (error) throw error;
 }
 export async function setPlayMode(roomId: string, token: string, mode: PlayMode) {

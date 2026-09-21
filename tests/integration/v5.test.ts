@@ -22,9 +22,9 @@ run("v5 batch queue add", () => {
     return (Array.isArray(data) ? data[0] : data) as { code: string; room_id: string; member_id: string };
   };
   const items = [
-    { video_id: "aaaaaaaaaaa", title: "A", thumb: "ta" },
-    { video_id: "bbbbbbbbbbb", title: "B", thumb: "tb" },
-    { video_id: "ccccccccccc", title: "C", thumb: null },
+    { video_id: "aaaaaaaaaaa", title: "A", thumb: "ta", duration: 60 },
+    { video_id: "bbbbbbbbbbb", title: "B", thumb: "tb", duration: 60 },
+    { video_id: "ccccccccccc", title: "C", thumb: null, duration: 60 },
   ];
 
   it("a member batch-adds items with increasing positions", async () => {
