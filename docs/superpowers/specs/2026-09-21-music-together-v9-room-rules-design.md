@@ -13,6 +13,8 @@ Give each room three **Admin/DJ-configurable rules** that govern what enters the
 
 All three are **enforced server-side in the RPCs** (the DB is public; anyone can call an RPC directly). The client re-implements the same checks only to give friendly messages before calling.
 
+**Trust boundary (known limitation):** the RPCs validate the title and duration the caller supplies. The UI always supplies YouTube-derived values, so nothing gets around the rules through the app; a client that calls the RPC directly with forged metadata can. That is the app's existing trust model (any member can already submit an arbitrary title). Closing it requires server-signed metadata (a Next route that fetches the details and HMAC-signs `video_id|title|duration` with a server secret the RPC verifies) — a separate follow-up.
+
 ## 2. Constraints (carried from v1–v8)
 
 - **Public DB / RPC-only writes:** rules live in `SECURITY DEFINER` functions authorized by `_auth(room, session, role)`; `'admin_or_dj'` already exists.
