@@ -111,7 +111,7 @@ begin
   loop
     if coalesce(v_item->>'video_id', '') = '' then continue; end if;
     v_title := coalesce(nullif(v_item->>'title', ''), v_item->>'video_id');
-    v_duration := case when jsonb_typeof(v_item->'duration') = 'number' then (v_item->>'duration')::int else null end;
+    v_duration := case when jsonb_typeof(v_item->'duration') = 'number' then floor((v_item->>'duration')::numeric)::int else null end;
     begin
       perform public._check_queue_rules(p_room_id, v_title, v_duration);
     exception when check_violation then
@@ -176,7 +176,7 @@ begin
     from public.queue_items where id = p_item_id and room_id = p_room_id;
   if not found then return; end if;
   if v_member is distinct from v_admin and v_member is distinct from v_dj
-     and not (v_status = 'pending' and v_owner = v_account) then
+     and not (v_status = 'pending' and coalesce(v_owner = v_account, false)) then
     raise exception 'admin or dj role required' using errcode = '42501';
   end if;
   if exists (select 1 from public.rooms where id = p_room_id and current_item_id = p_item_id) then
