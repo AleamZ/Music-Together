@@ -10,7 +10,7 @@ import AddSong from "./AddSong";
 import Queue from "./Queue";
 import PendingQueue from "./PendingQueue";
 import MyPending from "./MyPending";
-import { useDjController } from "@/hooks/useDjController";
+import { usePlayback } from "@/hooks/usePlayback";
 
 export default function RoomShell({ view }: { view: RoomView }) {
   const { state, role, onlineIds, token, myMemberId, accountId } = view;
@@ -27,8 +27,8 @@ export default function RoomShell({ view }: { view: RoomView }) {
   const djAccountId = state.members.find((m) => m.id === room.dj_member_id)?.account_id ?? null;
   const djOnline = !!djAccountId && onlineIds.includes(djAccountId);
 
-  // DJ-only playback engine (no-op for non-DJ). Returns transport handlers + duration/volume.
-  const dj = useDjController({ room, current, isDj: role.isDj, queueLen: approved.length, roomId: room.id, token });
+  // Playback engine for everyone (DJ-only writes inside). Returns transport handlers + duration/volume/gate.
+  const dj = usePlayback({ room, current, isDj: role.isDj, queueLen: approved.length, roomId: room.id, token });
 
   return (
     <main className="mx-auto max-w-6xl p-3">
