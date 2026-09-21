@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { addQueueItem, addQueueItems } from "@/lib/supabase";
 import { parseYouTubeId, parsePlaylistId, isYouTubeLinkInput } from "@/lib/youtube/parse";
 import { fetchVideoMeta } from "@/lib/youtube/meta";
+import { fetchVideoDetails } from "@/lib/youtube/video";
 import { fetchPlaylistItems } from "@/lib/youtube/playlist";
 import { fetchSuggestions, type Suggestion } from "@/lib/youtube/suggest";
 import { fetchSearchResults, type SearchResult } from "@/lib/youtube/search";
+import { checkQueueRules, ruleMessage, violationFromRpcError, type RoomRules } from "@/lib/queue-rules";
 import SearchResults from "./SearchResults";
 
 const SUGGEST_DEBOUNCE_MS = 250;
@@ -14,7 +16,9 @@ const BLUR_CLOSE_MS = 150;
 
 type Search = { id: number; query: string; results: SearchResult[] };
 
-export default function AddSong({ roomId, token }: { roomId: string; token: string }) {
+export default function AddSong({ roomId, token, rules, willPend }: {
+  roomId: string; token: string; rules: RoomRules; willPend: boolean;
+}) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,21 +123,31 @@ export default function AddSong({ roomId, token }: { roomId: string; token: stri
       if (!videoId && playlistId) {
         const items = await fetchPlaylistItems(playlistId);
         if (items.length === 0) { setError("Playlist trống hoặc không đọc được."); return; }
-        const added = await addQueueItems(roomId, token, items);
-        setNotice(`Đã thêm ${added} bài từ playlist.`);
+        const added = await addQueueItems(roomId, token,
+          items.map((it) => ({ videoId: it.videoId, title: it.title, thumb: it.thumb, duration: it.durationSeconds })));
+        const skipped = items.length - added;
+        setNotice(
+          `Đã thêm ${added} bài từ playlist.` +
+          (skipped > 0 ? ` Bỏ qua ${skipped} bài (quá dài / từ khóa cấm).` : "") +
+          (willPend && added > 0 ? " Đã gửi, chờ Admin/DJ duyệt." : ""),
+        );
         setInput("");
       } else if (videoId) {
-        const meta = await fetchVideoMeta(videoId);
-        await addQueueItem(roomId, token, {
-          videoId,
-          title: meta?.title || videoId,
-          thumb: meta?.thumbnail ?? null,
-          duration: null,
-        });
+        // Watch page first (has the duration); oEmbed fallback keeps title/thumb but no duration.
+        const details = await fetchVideoDetails(videoId);
+        const meta = details ? null : await fetchVideoMeta(videoId);
+        const title = details?.title || meta?.title || videoId;
+        const thumb = details ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : (meta?.thumbnail ?? null);
+        const duration = details?.durationSeconds ?? null;
+        const violation = checkQueueRules(rules, { title, durationSeconds: duration });
+        if (violation) { setError(ruleMessage(violation)); return; }
+        await addQueueItem(roomId, token, { videoId, title, thumb, duration });
+        if (willPend) setNotice("Đã gửi, chờ Admin/DJ duyệt.");
         setInput("");
       }
     } catch (err) {
-      setError((err as { message?: string }).message ?? "Không thêm được bài.");
+      const violation = violationFromRpcError(err, rules);
+      setError(violation ? ruleMessage(violation) : ((err as { message?: string }).message ?? "Không thêm được bài."));
     } finally {
       setBusy(false);
     }
@@ -176,7 +190,7 @@ export default function AddSong({ roomId, token }: { roomId: string; token: stri
       </form>
       {search && (
         <SearchResults key={search.id} query={search.query} results={search.results}
-          roomId={roomId} token={token} onClose={() => setSearch(null)} />
+          roomId={roomId} token={token} rules={rules} willPend={willPend} onClose={() => setSearch(null)} />
       )}
     </div>
   );
