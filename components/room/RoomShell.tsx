@@ -43,10 +43,10 @@ export default function RoomShell({ view }: { view: RoomView }) {
   return (
     <main className="mx-auto max-w-6xl p-3">
       <Header room={room} members={state.members} isAdmin={role.isAdmin} isDj={role.isDj} roomId={room.id} token={token} myMemberId={myMemberId} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[26%_1fr_33%]">
-        <section className="flex flex-col rounded-xl border border-gold-200 bg-cream/50 p-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[26%_1fr_33%] lg:items-start">
+        <section className="flex flex-col rounded-xl border border-gold-200 bg-cream/50 p-3 lg:sticky lg:top-3 lg:h-[calc(100vh-90px)] lg:max-h-[850px] min-h-[520px] overflow-hidden">
           {/* Segmented Tab Switcher */}
-          <div className="mb-3 flex rounded-lg border border-gold-200 bg-cream/80 p-0.5 text-xs font-medium">
+          <div className="mb-3 flex shrink-0 rounded-lg border border-gold-200 bg-cream/80 p-0.5 text-xs font-medium">
             <button
               type="button"
               onClick={() => setLeftTab("chat")}
@@ -84,7 +84,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
           </div>
 
           {/* Left Column Content */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             {leftTab === "members" && (
               <MemberList
                 members={state.members}
@@ -124,16 +124,18 @@ export default function RoomShell({ view }: { view: RoomView }) {
             )}
 
             {leftTab === "split" && (
-              <div className="flex flex-col gap-3">
-                <MemberList
-                  members={state.members}
-                  room={room}
-                  onlineIds={onlineIds}
-                  isAdmin={role.isAdmin}
-                  token={token}
-                  myMemberId={myMemberId}
-                />
-                <div className="border-t border-gold-200/60 pt-2">
+              <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
+                <div className="max-h-44 shrink-0 overflow-y-auto pr-1 border-b border-gold-200/50 pb-2">
+                  <MemberList
+                    members={state.members}
+                    room={room}
+                    onlineIds={onlineIds}
+                    isAdmin={role.isAdmin}
+                    token={token}
+                    myMemberId={myMemberId}
+                  />
+                </div>
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-1">
                   {isChatDrawerOpen ? (
                     <div className="flex flex-col items-center justify-center p-4 text-center border border-dashed border-gold-200 rounded-xl bg-cream/30">
                       <p className="text-xs text-ink/60">Phòng chat đang mở rộng ở bên phải</p>

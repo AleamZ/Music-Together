@@ -311,9 +311,9 @@ export default function ChatPanel({
   }
 
   return (
-    <div className={`flex flex-col ${isDrawer ? "h-full" : "h-full min-h-[440px]"}`}>
+    <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden">
       {/* Header bar */}
-      <div className="mb-2 flex items-center justify-between border-b border-gold-200/50 pb-2">
+      <div className="mb-2 flex shrink-0 items-center justify-between border-b border-gold-200/50 pb-2">
         <div className="flex items-center gap-2">
           <span className="font-playfair text-lg font-bold text-burgundy">
             Trò chuyện
@@ -366,8 +366,7 @@ export default function ChatPanel({
       <div
         ref={listRef}
         onScroll={onScroll}
-        className="flex-1 flex flex-col gap-1.5 overflow-y-auto rounded-xl border border-gold-200 bg-cream/70 p-2.5 shadow-inner"
-        style={{ minHeight: isDrawer ? "300px" : "340px" }}
+        className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-y-auto rounded-xl border border-gold-200 bg-cream/70 p-2.5 shadow-inner"
       >
         {messages.length === 0 ? (
           <div className="m-auto flex flex-col items-center justify-center text-center py-8">
@@ -401,17 +400,17 @@ export default function ChatPanel({
         <button
           type="button"
           onClick={jumpToBottom}
-          className="mt-1.5 flex items-center justify-center gap-1.5 w-full rounded-lg bg-burgundy/90 hover:bg-burgundy py-1.5 text-xs font-semibold text-cream shadow-md transition-all active:scale-[0.99]"
+          className="mt-1.5 flex shrink-0 items-center justify-center gap-1.5 w-full rounded-lg bg-burgundy/90 hover:bg-burgundy py-1.5 text-xs font-semibold text-cream shadow-md transition-all active:scale-[0.99]"
         >
           <span>↓</span> {unread} tin nhắn mới
         </button>
       )}
 
-      {error && <p className="mt-1 text-xs text-burgundy-accent px-1">{error}</p>}
+      {error && <p className="mt-1 shrink-0 text-xs text-burgundy-accent px-1">{error}</p>}
 
       {/* Replying Banner */}
       {replyingTo && (
-        <div className="mt-2 flex items-center justify-between rounded-t-lg border-x border-t border-gold-200 bg-gold-200/40 px-3 py-1.5 text-xs text-burgundy animate-in fade-in slide-in-from-bottom-2 duration-150">
+        <div className="mt-2 flex shrink-0 items-center justify-between rounded-t-lg border-x border-t border-gold-200 bg-gold-200/40 px-3 py-1.5 text-xs text-burgundy animate-in fade-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center gap-1.5 truncate">
             <span className="font-bold shrink-0">↩ Trả lời @{replyingTo.username}:</span>
             <span className="truncate text-ink/70">
@@ -430,7 +429,7 @@ export default function ChatPanel({
       )}
 
       {/* Composer Input Area */}
-      <div className={`relative mt-2 flex flex-col ${replyingTo ? "mt-0" : ""}`}>
+      <div className={`relative mt-2 flex shrink-0 flex-col ${replyingTo ? "mt-0" : ""}`}>
         {/* Mention Autocomplete Menu */}
         {mentionQuery !== null && (
           <MentionAutocomplete
@@ -488,7 +487,7 @@ export default function ChatPanel({
         </div>
 
         {/* Bottom helper info */}
-        <div className="mt-1 flex items-center justify-between px-1 text-[10px] text-ink/40">
+        <div className="mt-1 flex shrink-0 items-center justify-between px-1 text-[10px] text-ink/40">
           <span>Enter để gửi, Shift+Enter xuống dòng</span>
           <span>{text.length}/500</span>
         </div>
