@@ -66,7 +66,7 @@ export function parseSuggestJsonp(text: string, cap = 10): Suggestion[]
 The upstream body is JSONP: `window.google.ac.h(["<q>", [[text, type, flags, {zai, zaj, zak, zal, zam?}], …], {…}])`.
 
 - Strip the callback wrapper: take the substring from the first `(` after `window.google.ac.h` to the last `)`; `JSON.parse` it. Wrapper missing / JSON invalid / shape unexpected → `[]`.
-- `payload[1]` is the suggestion array. For each entry: `text = entry[0]` (must be a non-empty string, else skip); the optional 4th element may carry `zal` (video id) and `zai` (thumbnail URL). Emit `{ text, videoId?: zal, thumb?: `https://i.ytimg.com/vi/{zal}/mqdefault.jpg` }` — both only when `zal` is a non-empty string; `zai` is never read (the thumb is derived from the id, same invariant as search results).
+- `payload[1]` is the suggestion array. For each entry: `text = entry[0]` (must be a non-empty string, else skip); the optional 4th element may carry `zal` (video id) and `zai` (thumbnail URL). Emit `{ text, videoId?: zal, thumb?: "https://i.ytimg.com/vi/{zal}/mqdefault.jpg" }` — both only when `zal` is a non-empty string; `zai` is never read (the thumb is derived from the id, same invariant as search results).
 - Dedupe by `text` (case-insensitive, trimmed); stop at `cap`.
 
 ### 5.2 `lib/youtube/search.ts`

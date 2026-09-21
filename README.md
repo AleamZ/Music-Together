@@ -40,7 +40,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 1. **Supabase:** create a free project. **For the current (v2) schema, just run `supabase/migrations/0004_v2_rebuild.sql`** in the SQL editor — it builds the full account-native schema in one shot (see the "v2: Accounts & Lobby" section). *(The original v1 files `0001_init.sql`→`0003_realtime.sql` are kept only as history; `0004` drops and supersedes them.)*
 2. **Vercel/Cloudflare Pages:** import the repo. Set env vars `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Build command `next build`.
-3. The app is client-rendered; the only server code is the `/api/oembed` proxy (a lightweight, cached function).
+3. The app is client-rendered; the only server code is a handful of lightweight, cached proxy routes — `/api/oembed`, `/api/playlist`, `/api/yt/search`, `/api/yt/suggest` — that relay public YouTube data key-free.
 
 ### Notes
 - Free Supabase projects pause after ~1 week of inactivity; the first request after that is slow.
@@ -167,4 +167,4 @@ end $$;
 - **Type keywords** → YouTube's own suggestions appear under the box as you type (↑/↓ to pick, Enter to search, Esc to close). Enter — or the **Tìm** button — runs a YouTube *video* search; results (thumb · title · channel · duration) show above the queue with a **+ Thêm** button per row. The panel stays open so you can queue several songs in a row; added rows turn into "✓ Đã thêm".
 - Songs added from search carry their **duration** (`duration_seconds`), which pasted links never had.
 
-How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's suggest feed) and `/api/yt/search` (YouTube's InnerTube search with the video-only filter) — called anonymously: no cookies, no login, no key. Both fail soft (empty list / a friendly message). Language and region are fixed to `vi` / `VN`.
+How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's suggest feed) and `/api/yt/search` (YouTube's InnerTube search with the video-only filter) — called anonymously: no user/session cookies (only YouTube's static consent cookie), no login, no key. Both fail soft (empty list / a friendly message). Language and region are fixed to `vi` / `VN`.
