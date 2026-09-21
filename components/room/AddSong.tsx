@@ -129,12 +129,16 @@ export default function AddSong({ roomId, token, rules, willPend, orderLimit }: 
         if (items.length === 0) { setError("Playlist trống hoặc không đọc được."); return; }
         const added = await addQueueItems(roomId, token,
           items.map((it) => ({ videoId: it.videoId, title: it.title, thumb: it.thumb, duration: it.durationSeconds })));
-        const skipped = items.length - added;
-        const hitLimit = remaining !== null && added < items.length && added >= remaining;
+        // The RPC skips the same rule violators the client mirror would; inserting FEWER than the rule-valid items
+        // means the order limit stopped it (the DB count is fresher than `remaining` — e.g. another tab added meanwhile).
+        const valid = items.filter((it) => !checkQueueRules(rules, { title: it.title, durationSeconds: it.durationSeconds })).length;
+        const hitLimit = remaining !== null && added < valid;
+        const skipped = hitLimit ? items.length - valid : items.length - added;
         setNotice(
           (hitLimit
             ? `Đã thêm ${added}/${items.length} bài — đạt giới hạn ${rules.max_orders_per_member} order.`
-            : `Đã thêm ${added} bài từ playlist.` + (skipped > 0 ? ` Bỏ qua ${skipped} bài (quá dài / từ khóa cấm).` : "")) +
+            : `Đã thêm ${added} bài từ playlist.`) +
+          (skipped > 0 ? ` Bỏ qua ${skipped} bài (quá dài / từ khóa cấm).` : "") +
           (willPend && added > 0 ? " Đã gửi, chờ Admin/DJ duyệt." : ""),
         );
         setInput("");
@@ -187,7 +191,8 @@ export default function AddSong({ roomId, token, rules, willPend, orderLimit }: 
             </ul>
           )}
         </div>
-        <button disabled={busy || searching}
+        <button disabled={busy || searching || (link && remaining === 0)}
+          title={link && remaining === 0 ? ruleMessage({ code: "order_limit", max: rules.max_orders_per_member }) : undefined}
           className="rounded-lg bg-burgundy px-3 py-2 font-cormorant font-bold text-cream disabled:opacity-60">
           {busy || searching ? "…" : link ? "+ Thêm" : "Tìm"}
         </button>

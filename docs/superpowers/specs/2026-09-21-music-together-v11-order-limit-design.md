@@ -104,17 +104,18 @@ Passed to `AddSong` (new prop `orderLimit`) which forwards it to `SearchResults`
 
 - Counter next to the input, only when `ordersRemaining(rules, mine, exempt) !== null`: `Order: {mine}/{max}` (`text-[11px] text-ink/60`; turns `text-burgundy-accent` when remaining is 0).
 - Single link: before the RPC, `orderLimitViolation(...)` → `setError(ruleMessage(v))` and return (the RPC error path also maps it, for stale clients).
-- Playlist: if remaining is `0`, error as above without calling the RPC. Otherwise call `addQueueItems` as today; when `remaining !== null && added < items.length && added >= remaining` the notice becomes `Đã thêm ${added}/${items.length} bài — đạt giới hạn ${max} order.` (+ the existing "Đã gửi, chờ Admin/DJ duyệt." suffix when `willPend && added > 0`); otherwise the existing notice.
+- Playlist: if remaining is `0`, error as above without calling the RPC. Otherwise call `addQueueItems` as today; when `remaining !== null && added < valid` (valid = items passing the client rule mirror; the RPC inserted fewer, so the limit stopped it) the notice becomes `Đã thêm ${added}/${items.length} bài — đạt giới hạn ${max} order.` (+ the existing "Đã gửi, chờ Admin/DJ duyệt." suffix when `willPend && added > 0`); otherwise the existing notice. The skipped-by-rules detail `Bỏ qua k bài (quá dài / từ khóa cấm).` is appended in both cases when k > 0.
+- The submit button is disabled (title = the violation message) while a link is typed and no slot is left; text search stays available.
 - Text search / suggest path unchanged.
 
 ### 3.5 `components/room/SearchResults.tsx`
 
-- New prop `orderLimit: { mine: number; exempt: boolean }`. When `ordersRemaining(rules, mine, exempt) === 0`, every "+ Thêm" button is `disabled` with `title={ruleMessage({ code: "order_limit", max })}`; rows already `done` stay as they are. The RPC error path also maps `order limit reached`.
+- New prop `orderLimit: { mine: number; exempt: boolean }`. When `ordersRemaining(rules, mine, exempt) === 0`, rows not yet added show the reason chip `đủ order` (title = the full message) in place of the "+ Thêm" button — the same chip UI the v9 rules use, visible on touch devices; rows already `done` stay as they are. The RPC error path also maps `order limit reached`.
 - `mine` updates live through realtime (RoomShell recomputes it from `state.queue`), so after a successful add the remaining buttons disable automatically when the limit is hit.
 
 ### 3.6 `components/room/SettingsDialog.tsx` — "Quy tắc hàng đợi" (Admin + DJ)
 
-- New numeric field after "Thời lượng tối đa": label **`Số order tối đa mỗi người`**, `min=0 max=100 step=1`, hint `0 = không giới hạn`; client validation `Số order tối đa phải từ 0 đến 100.`; saved together with the other rules via `updateRoomSettings({ …, maxOrdersPerMember })`.
+- New numeric field after "Thời lượng tối đa": label **`Số order tối đa mỗi người`**, `min=0 max=100 step=1`, hint `0 = không giới hạn`; client validation `Số order tối đa phải từ 0 đến 100.` (an empty field is rejected, not treated as 0); saved together with the other rules via `updateRoomSettings({ …, maxOrdersPerMember })`.
 
 ### 3.7 README — v11 section (what counts, exemptions, playlist behaviour, default 5, 0 = unlimited).
 

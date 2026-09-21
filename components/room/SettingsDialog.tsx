@@ -41,7 +41,7 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
       return;
     }
     const orders = Number(maxOrders);
-    if (!Number.isInteger(orders) || orders < 0 || orders > MAX_ORDERS) {
+    if (maxOrders.trim() === "" || !Number.isInteger(orders) || orders < 0 || orders > MAX_ORDERS) {
       setRulesMsg({ ok: false, text: `Số order tối đa phải từ 0 đến ${MAX_ORDERS}.` });
       return;
     }

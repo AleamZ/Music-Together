@@ -24,9 +24,10 @@ export default function SearchResults({ query, results, roomId, token, rules, wi
   const [state, setState] = useState<Record<string, AddState>>({});
   // Synchronous guard: a rapid double click can call add() twice before React commits "busy".
   const inFlight = useRef(new Set<string>());
-  // At the limit every "+ Thêm" is disabled; `mine` updates live through realtime after each add.
+  // At the limit rows not yet added show the `đủ order` reason chip (visible on touch too, unlike a tooltip);
+  // `mine` updates live through realtime after each add.
   const atLimit = ordersRemaining(rules, orderLimit.mine, orderLimit.exempt) === 0;
-  const limitTitle = atLimit ? ruleMessage({ code: "order_limit", max: rules.max_orders_per_member }) : undefined;
+  const limitViolation: RuleViolation | null = atLimit ? { code: "order_limit", max: rules.max_orders_per_member } : null;
 
   async function add(r: SearchResult) {
     if (atLimit) return;
@@ -60,7 +61,7 @@ export default function SearchResults({ query, results, roomId, token, rules, wi
       <ul className="max-h-[40vh] overflow-y-auto pr-1">
         {results.map((r) => {
           const st = state[r.videoId] ?? IDLE;
-          const violation = checkQueueRules(rules, { title: r.title, durationSeconds: r.durationSeconds });
+          const violation = checkQueueRules(rules, { title: r.title, durationSeconds: r.durationSeconds }) ?? (st.kind === "done" ? null : limitViolation);
           return (
             <li key={r.videoId} className={`border-b border-dotted border-gold-200 py-2 ${st.kind === "busy" ? "opacity-60" : ""}`}>
               <div className="flex items-center gap-2">
@@ -78,8 +79,7 @@ export default function SearchResults({ query, results, roomId, token, rules, wi
                     {REASON[violation.code]}
                   </span>
                 ) : (
-                  <button type="button" disabled={st.kind === "done" || atLimit} title={st.kind === "done" ? undefined : limitTitle}
-                    onClick={() => add(r)}
+                  <button type="button" disabled={st.kind === "done"} onClick={() => add(r)}
                     className="whitespace-nowrap rounded border border-gold-200 bg-cream px-1.5 text-sm text-burgundy disabled:opacity-60">
                     {st.kind === "done" ? (willPend ? "✓ Đã gửi" : "✓ Đã thêm") : "+ Thêm"}
                   </button>
