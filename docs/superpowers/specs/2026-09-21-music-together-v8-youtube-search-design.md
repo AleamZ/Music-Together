@@ -107,6 +107,8 @@ One input. On **submit**, classify the trimmed text with `parseYouTubeId` / `par
 - match → existing single-video / playlist add path, **unchanged**;
 - no match → `runSearch(text)`.
 
+**Bare-id refinement:** `parseYouTubeId` also accepts a bare 11-char id (`[A-Za-z0-9_-]{11}`), which now collides with ordinary 11-letter search words (`nhacsontung`). A *bare* string counts as a link only if it contains at least one non-lowercase-letter character (digit, uppercase, `_`, `-`); a purely lowercase 11-letter word is searched. Real URLs are always links. This lives in one helper, `isLink(s)`, used for both submit classification and the button label.
+
 Placeholder becomes `"Tìm bài hoặc dán link YouTube…"`. The submit button's label follows the same classification of the *current* input: link → `+ Thêm`, anything else → `Tìm`; while `busy || searching` → `…` (disabled).
 
 **State:** `input`, `suggestions: Suggestion[]`, `activeIdx: number` (-1 = none), `showSuggest: boolean`, `search: { query: string; results: SearchResult[] } | null`, `searching: boolean`, plus the existing `busy` / `error` / `notice`.
