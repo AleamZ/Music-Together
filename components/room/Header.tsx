@@ -8,8 +8,8 @@ import FeedbackButton from "@/components/feedback/FeedbackButton";
 import Logo from "@/components/brand/Logo";
 import ThemeToggle from "@/components/brand/ThemeToggle";
 
-export default function Header({ room, members, isAdmin, roomId, token, myMemberId }: {
-  room: Room; members: Member[]; isAdmin: boolean; roomId: string; token: string; myMemberId: string | null;
+export default function Header({ room, members, isAdmin, isDj, roomId, token, myMemberId }: {
+  room: Room; members: Member[]; isAdmin: boolean; isDj: boolean; roomId: string; token: string; myMemberId: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -31,12 +31,12 @@ export default function Header({ room, members, isAdmin, roomId, token, myMember
             </button>
           ))}
         </div>
-        {isAdmin && (
+        {(isAdmin || isDj) && (
           <button onClick={() => setOpen(true)} className="rounded-lg border border-gold bg-cream px-3 py-1 text-sm text-burgundy">⚙️ Setting</button>
         )}
         <FeedbackButton />
       </div>
-      {open && <SettingsDialog room={room} members={members} roomId={roomId} token={token} myMemberId={myMemberId} onClose={() => setOpen(false)} />}
+      {open && <SettingsDialog room={room} members={members} roomId={roomId} token={token} myMemberId={myMemberId} isAdmin={isAdmin} onClose={() => setOpen(false)} />}
     </header>
   );
 }
