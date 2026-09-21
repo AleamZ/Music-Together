@@ -11,7 +11,7 @@ export interface NowPlayingProps {
   current: QueueItem | null;
   canControl: boolean;          // DJ
   durationMs: number;           // from the player when DJ, else from current.duration_seconds*1000, else 0
-  volume: number;               // 0..100 (DJ local)
+  volume: number;               // 0..100 (local device — everyone)
   onPlayPause: () => void;
   onSkip: () => void;
   onSeekMs: (ms: number) => void;

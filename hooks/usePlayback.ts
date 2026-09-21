@@ -65,9 +65,10 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
 
   // Restore saved volume once.
   useEffect(() => {
-    const v = Number(localStorage.getItem(VOL_KEY));
+    const raw = localStorage.getItem(VOL_KEY);
+    const v = raw === null ? NaN : Number(raw);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from localStorage
-    if (!Number.isNaN(v) && v > 0) setVol(v);
+    if (Number.isFinite(v) && v >= 0 && v <= 100) setVol(v);
   }, []);
   // A document that already had a user gesture (e.g. the click that entered the room) may play with sound.
   useEffect(() => {
@@ -81,9 +82,15 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
   // Load + position the current track whenever it changes (everyone).
   useEffect(() => {
     if (!ready) return;
-    if (!currentId || !currentVideoId) { loadedRef.current = null; return; }
+    if (!currentId || !currentVideoId) {
+      loadedRef.current = null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- duration belongs to the loaded track; reset before the tick re-captures it
+      setDurationMs(0);
+      return;
+    }
     if (loadedRef.current === currentId) return;
     loadedRef.current = currentId;
+    setDurationMs(0);
     const r = roomRef.current;
     load(currentVideoId, targetSeconds(r));
     if (shouldPlay(r, unlocked, true)) play(); else pause();
