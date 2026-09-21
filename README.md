@@ -45,7 +45,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 ### Notes
 - Free Supabase projects pause after ~1 week of inactivity; the first request after that is slow.
 - Realtime is read-only; all writes are authorized server-side via SECURITY DEFINER RPCs.
-- Phase 2 (deferred): chat, emoji reactions, song likes (UI placeholders already present); optional in-app YouTube search (needs a `YOUTUBE_API_KEY`).
+- Song likes are still a UI placeholder. Chat, emoji reactions (v4) and in-app YouTube search (v8, key-free) are done.
 
 ## v2: Accounts & Lobby
 
@@ -158,3 +158,13 @@ end $$;
 - **Pixel Cozy theme:** uses a warm pastel palette, a pixel heading/label font (Pixelify Sans) while body text stays a readable serif so Vietnamese characters stay sharp, a **pixel boombox logo**, and turns the turntable into a **pixel radio**.
 - **Vinyl Salon theme:** the original look — unchanged.
 - All app logic is unchanged — theming is CSS-variable + presentation only (`data-theme` attribute on `<html>`; no JS logic branches).
+
+## v8: Tìm bài trực tiếp từ YouTube (in-app search)
+
+**No migration, no config, no API key.** The room's "add song" box is now a smart box:
+
+- **Paste a link** (video or playlist) → adds it, exactly as before.
+- **Type keywords** → YouTube's own suggestions appear under the box as you type (↑/↓ to pick, Enter to search, Esc to close). Enter — or the **Tìm** button — runs a YouTube *video* search; results (thumb · title · channel · duration) show above the queue with a **+ Thêm** button per row. The panel stays open so you can queue several songs in a row; added rows turn into "✓ Đã thêm".
+- Songs added from search carry their **duration** (`duration_seconds`), which pasted links never had.
+
+How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's suggest feed) and `/api/yt/search` (YouTube's InnerTube search with the video-only filter) — called anonymously: no cookies, no login, no key. Both fail soft (empty list / a friendly message). Language and region are fixed to `vi` / `VN`.

@@ -66,7 +66,7 @@ export function parseSuggestJsonp(text: string, cap = 10): Suggestion[]
 The upstream body is JSONP: `window.google.ac.h(["<q>", [[text, type, flags, {zai, zaj, zak, zal, zam?}], …], {…}])`.
 
 - Strip the callback wrapper: take the substring from the first `(` after `window.google.ac.h` to the last `)`; `JSON.parse` it. Wrapper missing / JSON invalid / shape unexpected → `[]`.
-- `payload[1]` is the suggestion array. For each entry: `text = entry[0]` (must be a non-empty string, else skip); the optional 4th element may carry `zal` (video id) and `zai` (thumbnail URL). Emit `{ text, videoId?: zal, thumb?: zai }` — only include `videoId`/`thumb` when they are non-empty strings.
+- `payload[1]` is the suggestion array. For each entry: `text = entry[0]` (must be a non-empty string, else skip); the optional 4th element may carry `zal` (video id) and `zai` (thumbnail URL). Emit `{ text, videoId?: zal, thumb?: `https://i.ytimg.com/vi/{zal}/mqdefault.jpg` }` — both only when `zal` is a non-empty string; `zai` is never read (the thumb is derived from the id, same invariant as search results).
 - Dedupe by `text` (case-insensitive, trimmed); stop at `cap`.
 
 ### 5.2 `lib/youtube/search.ts`
@@ -162,7 +162,7 @@ Both routes are unauthenticated like `/api/playlist`; abuse surface is limited b
 ## 8. Testing
 
 - **Unit** (`tests/unit/`, vitest, no network):
-  - `suggest.test.ts` — `parseSuggestJsonp`: real-shaped JSONP with the `window.google.ac.h(` wrapper → texts in order, `videoId`/`thumb` present only for entries with `zal`/`zai`; entries missing text skipped; duplicate texts collapsed; `cap` respected; garbage / missing wrapper / non-array payload → `[]`.
+  - `suggest.test.ts` — `parseSuggestJsonp`: real-shaped JSONP with the `window.google.ac.h(` wrapper → texts in order, `videoId`/`thumb` present only for entries with `zal` (a non-canonical `zai` is ignored); entries missing text skipped; duplicate texts collapsed; `cap` respected; garbage / missing wrapper / non-array payload → `[]`.
   - `search.test.ts` — `parseDurationText`: `"4:32"`→272, `"1:02:15"`→3735, `"0:59"`→59, `"LIVE"`/`""`/`undefined`/`"4"`→`null`. `extractSearchResults`: a trimmed InnerTube-shaped fixture with `videoRenderer`s under `itemSectionRenderer` **and** inside a `shelfRenderer`, one with no `lengthText` (→ `durationSeconds: null`), one with no `videoId` (skipped), a duplicate id (collapsed), a `channelRenderer` sibling (ignored); `cap` respected; `null`/string input → `[]`.
 - **Manual** (dev server): type "nếu như ta chẳng còn" → suggestions appear, ↑/↓/Enter/Esc work, click adds a row to the queue in both themes; paste a video link and a playlist link → old behaviour intact.
 - Routes' live fetches are not unit-tested (covered by the pure parsers + manual run), matching the v5 precedent.
