@@ -7,7 +7,8 @@ export interface Suggestion {
 const CALLBACK = "window.google.ac.h";
 
 /** Pure: parse YouTube's suggest JSONP (`window.google.ac.h([q, [[text, type, flags, meta?], …], …])`)
- *  into deduped, capped suggestions. `meta.zal` = video id, `meta.zai` = thumbnail. Fails soft to []. */
+ *  into deduped, capped suggestions. `meta.zal` = video id; thumb is derived from it (same
+ *  canonical URL as `extractSearchResults`) — upstream `meta.zai` is never read. Fails soft to []. */
 export function parseSuggestJsonp(text: string, cap = 10): Suggestion[] {
   const at = text.indexOf(CALLBACK);
   if (at === -1) return [];
@@ -31,9 +32,11 @@ export function parseSuggestJsonp(text: string, cap = 10): Suggestion[] {
     const s: Suggestion = { text: t };
     const meta = entry[3];
     if (meta && typeof meta === "object") {
-      const { zal, zai } = meta as { zal?: unknown; zai?: unknown };
-      if (typeof zal === "string" && zal) s.videoId = zal;
-      if (typeof zai === "string" && zai) s.thumb = zai;
+      const { zal } = meta as { zal?: unknown };
+      if (typeof zal === "string" && zal) {
+        s.videoId = zal;
+        s.thumb = `https://i.ytimg.com/vi/${zal}/mqdefault.jpg`;
+      }
     }
     out.push(s);
   }
