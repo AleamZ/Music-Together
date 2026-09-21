@@ -17,6 +17,12 @@ describe("extractVideoDetails", () => {
   it("a finished live stream (isLiveContent) keeps its real length", () => {
     expect(extractVideoDetails(page({ videoDetails: { videoId: "vodvodvodvo", title: "VOD", author: "X", lengthSeconds: "3600", isLiveContent: true } }))?.durationSeconds).toBe(3600);
   });
+  it("a currently-live stream (isLiveNow, no videoDetails.isLive) has no duration", () => {
+    expect(extractVideoDetails(page({
+      videoDetails: { videoId: "jfKfPfyJRdk", title: "lofi", author: "Lofi Girl", lengthSeconds: "121601512", isLiveContent: true },
+      microformat: { playerMicroformatRenderer: { liveBroadcastDetails: { isLiveNow: true, startTimestamp: "2022-07-12T12:00:00+00:00" } } },
+    }))).toEqual({ id: "jfKfPfyJRdk", title: "lofi", author: "Lofi Girl", durationSeconds: null, isLive: true });
+  });
   it("accepts the bare `ytInitialPlayerResponse = ` marker", () => {
     expect(extractVideoDetails(page({ videoDetails: { videoId: "abcabcabcab", title: "T", author: "A", lengthSeconds: "5" } }, "ytInitialPlayerResponse = "))?.id).toBe("abcabcabcab");
   });

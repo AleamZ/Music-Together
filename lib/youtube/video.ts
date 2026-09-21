@@ -10,17 +10,20 @@ export interface VideoDetails {
 
 type PlayerResponse = {
   videoDetails?: { videoId?: unknown; title?: unknown; author?: unknown; lengthSeconds?: unknown; isLive?: unknown };
+  microformat?: { playerMicroformatRenderer?: { liveBroadcastDetails?: { isLiveNow?: unknown } } };
 };
 
 const MARKERS = ["var ytInitialPlayerResponse = ", 'window["ytInitialPlayerResponse"] = ', "ytInitialPlayerResponse = "];
 
-/** Pure: read `videoDetails` out of a watch page. A live stream (or a zero length) has no duration.
- *  `isLiveContent` is deliberately ignored: a finished stream is a normal VOD with a real length. Fails soft to null. */
+/** Pure: read `videoDetails` out of a watch page. A currently-live stream (or a zero length) has no duration.
+ *  "Live" = `videoDetails.isLive` OR `microformat.…liveBroadcastDetails.isLiveNow` — YouTube often sets only the latter
+ *  (and reports the stream's elapsed time as `lengthSeconds`). `isLiveContent` is deliberately ignored: a finished
+ *  stream is a normal VOD with a real length. Fails soft to null. */
 export function extractVideoDetails(html: string): VideoDetails | null {
   const data = extractEmbeddedJson(html, MARKERS) as PlayerResponse | null;
   const vd = data?.videoDetails;
   if (!vd || typeof vd.videoId !== "string" || !vd.videoId) return null;
-  const isLive = vd.isLive === true;
+  const isLive = vd.isLive === true || data?.microformat?.playerMicroformatRenderer?.liveBroadcastDetails?.isLiveNow === true;
   const raw = vd.lengthSeconds;
   const len = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
   const durationSeconds = !isLive && Number.isFinite(len) && len > 0 ? len : null;
