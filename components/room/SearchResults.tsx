@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { addQueueItem } from "@/lib/supabase";
 import type { SearchResult } from "@/lib/youtube/search";
 
@@ -15,8 +15,13 @@ export default function SearchResults({ query, results, roomId, token, onClose }
   query: string; results: SearchResult[]; roomId: string; token: string; onClose: () => void;
 }) {
   const [state, setState] = useState<Record<string, AddState>>({});
+  // Synchronous guard: a rapid double click can call add() twice before React commits "busy".
+  const inFlight = useRef(new Set<string>());
 
   async function add(r: SearchResult) {
+    if ((state[r.videoId] ?? "idle") === "done") return;
+    if (inFlight.current.has(r.videoId)) return;
+    inFlight.current.add(r.videoId);
     setState((s) => ({ ...s, [r.videoId]: "busy" }));
     try {
       await addQueueItem(roomId, token, {
@@ -25,6 +30,8 @@ export default function SearchResults({ query, results, roomId, token, onClose }
       setState((s) => ({ ...s, [r.videoId]: "done" }));
     } catch {
       setState((s) => ({ ...s, [r.videoId]: "error" }));
+    } finally {
+      inFlight.current.delete(r.videoId);
     }
   }
 

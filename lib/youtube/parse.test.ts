@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseYouTubeId, parseYouTubeStart } from "@/lib/youtube/parse";
+import { parseYouTubeId, parseYouTubeStart, isYouTubeLinkInput } from "@/lib/youtube/parse";
 
 describe("parseYouTubeId", () => {
   it("parses standard watch URLs", () => {
@@ -35,5 +35,26 @@ describe("parseYouTubeStart", () => {
   });
   it("defaults to 0", () => {
     expect(parseYouTubeStart("https://youtu.be/dQw4w9WgXcQ")).toBe(0);
+  });
+});
+
+describe("isYouTubeLinkInput", () => {
+  it("treats YouTube video and playlist URLs as links", () => {
+    expect(isYouTubeLinkInput("https://youtu.be/dQw4w9WgXcQ")).toBe(true);
+    expect(isYouTubeLinkInput("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe(true);
+    expect(isYouTubeLinkInput("https://www.youtube.com/playlist?list=PLabc123")).toBe(true);
+  });
+  it("treats a bare 11-char id as a link when it is not a plain lowercase word", () => {
+    expect(isYouTubeLinkInput("dQw4w9WgXcQ")).toBe(true);
+    expect(isYouTubeLinkInput("abc_123-xyz")).toBe(true);
+  });
+  it("treats plain words and phrases as searches", () => {
+    expect(isYouTubeLinkInput("nhacsontung")).toBe(false);
+    expect(isYouTubeLinkInput("nếu như ta chẳng còn")).toBe(false);
+    expect(isYouTubeLinkInput("son tung")).toBe(false);
+    expect(isYouTubeLinkInput("")).toBe(false);
+  });
+  it("rejects non-YouTube URLs", () => {
+    expect(isYouTubeLinkInput("https://vimeo.com/123")).toBe(false);
   });
 });

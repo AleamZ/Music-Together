@@ -76,3 +76,12 @@ export function parsePlaylistId(input: string): string | null {
   const list = url.searchParams.get("list");
   return list && PLAYLIST_ID_RE.test(list) ? list : null;
 }
+
+/** Link = a YouTube URL, or a bare 11-char id that doesn't look like a plain lowercase word
+ *  (`nhacsontung` is a search, `dQw4w9WgXcQ` is an id). */
+export function isYouTubeLinkInput(s: string): boolean {
+  if (parsePlaylistId(s)) return true;
+  const id = parseYouTubeId(s);
+  if (!id) return false;
+  return id !== s || /[^a-z]/.test(s);
+}

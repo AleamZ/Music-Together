@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { addQueueItem, addQueueItems } from "@/lib/supabase";
-import { parseYouTubeId, parsePlaylistId } from "@/lib/youtube/parse";
+import { parseYouTubeId, parsePlaylistId, isYouTubeLinkInput } from "@/lib/youtube/parse";
 import { fetchVideoMeta } from "@/lib/youtube/meta";
 import { fetchPlaylistItems } from "@/lib/youtube/playlist";
 import { fetchSuggestions, type Suggestion } from "@/lib/youtube/suggest";
@@ -11,15 +11,6 @@ import SearchResults from "./SearchResults";
 
 const SUGGEST_DEBOUNCE_MS = 250;
 const BLUR_CLOSE_MS = 150;
-
-/** Link = a YouTube URL, or a bare 11-char id that doesn't look like a plain lowercase word
- *  (`nhacsontung` is a search, `dQw4w9WgXcQ` is an id). */
-function isLink(s: string): boolean {
-  if (parsePlaylistId(s)) return true;
-  const id = parseYouTubeId(s);
-  if (!id) return false;
-  return id !== s || /[^a-z]/.test(s);
-}
 
 type Search = { id: number; query: string; results: SearchResult[] };
 
@@ -43,11 +34,11 @@ export default function AddSong({ roomId, token }: { roomId: string; token: stri
   const skipSuggestFor = useRef<string | null>(null);
 
   const trimmed = input.trim();
-  const link = trimmed !== "" && isLink(trimmed);
+  const link = trimmed !== "" && isYouTubeLinkInput(trimmed);
 
   // Suggest-as-you-type: debounced; the cleanup aborts the in-flight request on every keystroke.
   useEffect(() => {
-    if (!trimmed || isLink(trimmed) || skipSuggestFor.current === trimmed) return;
+    if (!trimmed || isYouTubeLinkInput(trimmed) || skipSuggestFor.current === trimmed) return;
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
       fetchSuggestions(trimmed, ctrl.signal)
@@ -69,7 +60,7 @@ export default function AddSong({ roomId, token }: { roomId: string; token: stri
     setError(null);
     const t = value.trim();
     if (!t) setSearch(null);                         // clearing the box closes the results panel
-    if (!t || isLink(t)) { setSuggestions([]); closeSuggest(); }
+    if (!t || isYouTubeLinkInput(t)) { setSuggestions([]); closeSuggest(); }
   }
 
   async function runSearch(query: string) {
@@ -115,7 +106,7 @@ export default function AddSong({ roomId, token }: { roomId: string; token: stri
     e.preventDefault();
     const text = trimmed;
     if (!text) return;
-    if (!isLink(text)) { await runSearch(text); return; }
+    if (!isYouTubeLinkInput(text)) { await runSearch(text); return; }
 
     // Link path — unchanged from v5.
     setError(null);
@@ -155,11 +146,16 @@ export default function AddSong({ roomId, token }: { roomId: string; token: stri
           <input value={input} onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={onKeyDown} onBlur={onBlur} onFocus={onFocus}
             placeholder="Tìm bài hoặc dán link YouTube…" autoComplete="off"
+            role="combobox" aria-autocomplete="list"
+            aria-expanded={showSuggest && suggestions.length > 0}
+            aria-controls="addsong-suggest-list"
+            aria-activedescendant={showSuggest && activeIdx >= 0 ? `addsong-suggest-${activeIdx}` : undefined}
             className="w-full rounded-lg border border-gold bg-cream px-3 py-2 text-sm text-ink" />
           {showSuggest && suggestions.length > 0 && (
-            <ul className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-gold bg-cream shadow">
+            <ul role="listbox" id="addsong-suggest-list"
+              className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-gold bg-cream shadow">
               {suggestions.map((s, i) => (
-                <li key={s.text}
+                <li key={s.text} role="option" id={`addsong-suggest-${i}`} aria-selected={i === activeIdx}
                   onMouseDown={(e) => { e.preventDefault(); pick(s.text); }}
                   onMouseEnter={() => setActiveIdx(i)}
                   className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-ink ${i === activeIdx ? "bg-parchment-200" : ""}`}>
