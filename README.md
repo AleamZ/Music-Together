@@ -180,6 +180,8 @@ How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's sugg
 
 > After the migration every room limits videos to **10 minutes** by default (`0` = unlimited). Pasted links therefore need a duration: the app reads it key-free from the watch page (`/api/yt/video`) and from playlist pages. Live streams have no duration and are rejected while a limit is set.
 
+> If you applied `0008` before this note was added, re-run it (it is idempotent) or run just `alter table public.queue_items replica identity full; alter table public.members replica identity full;` — without it, Realtime DELETE events don't match the room filter and the UI won't update after reject / withdraw / delete / kick until a reload.
+
 ### What's new in v9
 
 - **Room rules (Admin + DJ)** in ⚙️ Setting → **Quy tắc hàng đợi**: *Thời lượng tối đa* (minutes, `0` = unlimited, default 10), *Chờ duyệt* toggle, and *Từ khóa cấm* chips (matched against the video **title**, case- and accent-insensitive). The rules are enforced inside the RPCs, so they cannot be bypassed by calling the API directly; the UI checks them first for friendly messages, and search-result rows that break a rule are greyed out with the reason.

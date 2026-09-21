@@ -248,3 +248,10 @@ grant execute on function public.approve_queue_item(uuid,text,uuid)             
 grant execute on function public.approve_all_pending(uuid,text)                            to anon, authenticated;
 grant execute on function public.reject_queue_item(uuid,text,uuid)                        to anon, authenticated;
 grant execute on function public.update_room_settings(uuid,text,integer,boolean,text[])   to anon, authenticated;
+
+-- ---------- H. Realtime: DELETE events must carry room_id so the client's room filter matches ----------
+-- Without REPLICA IDENTITY FULL a DELETE payload holds only the primary key, the `room_id=eq.<room>`
+-- subscription filter in lib/realtime.ts never matches, and reject / withdraw / delete / kick never refresh
+-- the UI (same fix chat_messages got in 0006). Idempotent.
+alter table public.queue_items replica identity full;
+alter table public.members     replica identity full;
