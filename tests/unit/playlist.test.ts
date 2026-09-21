@@ -23,12 +23,12 @@ describe("parsePlaylistId", () => {
 
 const FIXTURE = `<!DOCTYPE html><html><body><script nonce="x">var ytInitialData = ${JSON.stringify({
   contents: { wrap: { contents: [
-    { playlistVideoRenderer: { videoId: "aaaaaaaaaaa", title: { runs: [{ text: "Song A" }] },
+    { playlistVideoRenderer: { videoId: "aaaaaaaaaaa", title: { runs: [{ text: "Song A" }] }, lengthSeconds: "272",
       thumbnail: { thumbnails: [
         { url: "https://i.ytimg.com/vi/aaaaaaaaaaa/default.jpg" },
         { url: "https://i.ytimg.com/vi/aaaaaaaaaaa/hqdefault.jpg" },
       ] } } },
-    { playlistVideoRenderer: { videoId: "bbbbbbbbbbb", title: { simpleText: "Song B" },
+    { playlistVideoRenderer: { videoId: "bbbbbbbbbbb", title: { simpleText: "Song B" }, lengthText: { simpleText: "1:02:15" },
       thumbnail: { thumbnails: [{ url: "https://i.ytimg.com/vi/bbbbbbbbbbb/hqdefault.jpg" }] } } },
     { continuationItemRenderer: { trigger: "x" } },
   ] } },
@@ -40,6 +40,9 @@ const FIXTURE = `<!DOCTYPE html><html><body><script nonce="x">var ytInitialData 
 const LOCKUP_FIXTURE = `<!DOCTYPE html><html><body><script nonce="x">var ytInitialData = ${JSON.stringify({
   contents: { tabs: [{ contents: [
     { lockupViewModel: { contentId: "tNZegj60iLI", contentType: "LOCKUP_CONTENT_TYPE_VIDEO",
+      contentImage: { thumbnailViewModel: { overlays: [
+        { thumbnailOverlayBadgeViewModel: { thumbnailBadges: [{ thumbnailBadgeViewModel: { text: "3:45", badgeStyle: "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT" } }] } },
+      ] } },
       metadata: { lockupMetadataViewModel: { title: { content: "01. Intro" } } } } },
     { lockupViewModel: { contentId: "xubKh9u0uDY", contentType: "LOCKUP_CONTENT_TYPE_VIDEO",
       metadata: { lockupMetadataViewModel: { title: { content: "02. Con Nít" } } } } },
@@ -53,15 +56,15 @@ describe("extractPlaylistItems", () => {
   it("parses playlistVideoRenderer entries in order, derives hqdefault thumb, skips non-video", () => {
     const items = extractPlaylistItems(FIXTURE);
     expect(items).toEqual([
-      { videoId: "aaaaaaaaaaa", title: "Song A", thumb: "https://i.ytimg.com/vi/aaaaaaaaaaa/hqdefault.jpg" },
-      { videoId: "bbbbbbbbbbb", title: "Song B", thumb: "https://i.ytimg.com/vi/bbbbbbbbbbb/hqdefault.jpg" },
+      { videoId: "aaaaaaaaaaa", title: "Song A", thumb: "https://i.ytimg.com/vi/aaaaaaaaaaa/hqdefault.jpg", durationSeconds: 272 },
+      { videoId: "bbbbbbbbbbb", title: "Song B", thumb: "https://i.ytimg.com/vi/bbbbbbbbbbb/hqdefault.jpg", durationSeconds: 3735 },
     ]);
   });
   it("parses the current lockupViewModel layout, dedupes, skips non-video lockups", () => {
     const items = extractPlaylistItems(LOCKUP_FIXTURE);
     expect(items).toEqual([
-      { videoId: "tNZegj60iLI", title: "01. Intro", thumb: "https://i.ytimg.com/vi/tNZegj60iLI/hqdefault.jpg" },
-      { videoId: "xubKh9u0uDY", title: "02. Con Nít", thumb: "https://i.ytimg.com/vi/xubKh9u0uDY/hqdefault.jpg" },
+      { videoId: "tNZegj60iLI", title: "01. Intro", thumb: "https://i.ytimg.com/vi/tNZegj60iLI/hqdefault.jpg", durationSeconds: 225 },
+      { videoId: "xubKh9u0uDY", title: "02. Con Nít", thumb: "https://i.ytimg.com/vi/xubKh9u0uDY/hqdefault.jpg", durationSeconds: null },
     ]);
   });
   it("respects the cap", () => {
