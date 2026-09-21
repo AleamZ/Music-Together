@@ -8,19 +8,25 @@ import NowPlaying from "./NowPlaying";
 import Reactions from "./Reactions";
 import AddSong from "./AddSong";
 import Queue from "./Queue";
+import PendingQueue from "./PendingQueue";
+import MyPending from "./MyPending";
 import { useDjController } from "@/hooks/useDjController";
 
 export default function RoomShell({ view }: { view: RoomView }) {
   const { state, role, onlineIds, token, myMemberId, accountId } = view;
   const room = state.room!;
   const current = state.queue.find((q) => q.id === room.current_item_id) ?? null;
+  // Pending rows are requests awaiting Admin/DJ approval; only approved rows are the play queue.
+  const approved = state.queue.filter((q) => q.status === "approved");
+  const pending = state.queue.filter((q) => q.status === "pending");
+  const myPending = pending.filter((q) => q.added_by_account_id === accountId);
   // onlineIds are ACCOUNT ids (presence is keyed by account id); dj_member_id is a MEMBER id,
   // so map it to its account id before checking presence.
   const djAccountId = state.members.find((m) => m.id === room.dj_member_id)?.account_id ?? null;
   const djOnline = !!djAccountId && onlineIds.includes(djAccountId);
 
   // DJ-only playback engine (no-op for non-DJ). Returns transport handlers + duration/volume.
-  const dj = useDjController({ room, current, isDj: role.isDj, queueLen: state.queue.length, roomId: room.id, token });
+  const dj = useDjController({ room, current, isDj: role.isDj, queueLen: approved.length, roomId: room.id, token });
 
   return (
     <main className="mx-auto max-w-6xl p-3">
@@ -42,7 +48,11 @@ export default function RoomShell({ view }: { view: RoomView }) {
 
         <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
           <AddSong roomId={room.id} token={token} />
-          <Queue queue={state.queue} currentId={room.current_item_id} canManage={role.canManageQueue} roomId={room.id} token={token} />
+          <MyPending items={myPending} roomId={room.id} token={token} />
+          {role.canManageQueue && (room.require_approval || pending.length > 0) && (
+            <PendingQueue pending={pending} roomId={room.id} token={token} />
+          )}
+          <Queue queue={approved} currentId={room.current_item_id} canManage={role.canManageQueue} roomId={room.id} token={token} />
         </section>
       </div>
     </main>
