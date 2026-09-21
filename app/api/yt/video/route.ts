@@ -20,7 +20,7 @@ export async function GET(request: Request): Promise<Response> {
     const len = Number(res.headers.get("content-length") ?? 0);
     if (len > 5_000_000) return Response.json({ error: "Page too large" }, { status: 502 });
     const details = extractVideoDetails(await res.text());
-    if (!details) return Response.json({ error: "Video not found" }, { status: 404 });
+    if (!details || details.id !== id) return Response.json({ error: "Video not found" }, { status: 404 });
     return Response.json(details);
   } catch {
     return Response.json({ error: "Video request error" }, { status: 502 });

@@ -22,16 +22,17 @@ run("v9 room rules", () => {
     return (Array.isArray(data) ? data[0] : data) as { code: string; room_id: string; member_id: string };
   };
   const join = async (code: string, token: string) => {
-    const { error } = await db.rpc("join_room", { p_code: code, p_password: "secret", p_session_token: token });
+    const { data, error } = await db.rpc("join_room", { p_code: code, p_password: "secret", p_session_token: token });
     if (error) throw error;
+    return (Array.isArray(data) ? data[0] : data) as { room_id: string; member_id: string };
   };
   const add = (roomId: string, token: string, videoId: string, title: string, duration: number | null) =>
     db.rpc("add_queue_item", { p_room_id: roomId, p_session_token: token, p_video_id: videoId, p_title: title, p_thumb: null, p_duration: duration });
   const settings = (roomId: string, token: string, max: number, approval: boolean, kws: string[]) =>
     db.rpc("update_room_settings", { p_room_id: roomId, p_session_token: token, p_max_duration_seconds: max, p_require_approval: approval, p_banned_keywords: kws });
   const row = async (id: string) => {
-    const { data } = await db.from("queue_items").select("status, position").eq("id", id).maybeSingle();
-    return data as { status: string; position: number } | null;
+    const { data } = await db.from("queue_items").select("status, position, youtube_video_id").eq("id", id).maybeSingle();
+    return data as { status: string; position: number; youtube_video_id: string } | null;
   };
 
   it("enforces the default 10-minute limit and unknown durations", async () => {
@@ -67,7 +68,7 @@ run("v9 room rules", () => {
     const member = await reg(uniq("mem")); await join(room.code, member.token);
     await settings(room.room_id, admin.token, 0, true, []);
     const { data: memId } = await add(room.room_id, member.token, "m1", "Member", 100);
-    expect(await row(memId as string)).toEqual({ status: "pending", position: 0 });
+    expect(await row(memId as string)).toEqual({ status: "pending", position: 0, youtube_video_id: "m1" });
     const { data: admId } = await add(room.room_id, admin.token, "a1", "Admin", 100);
     expect((await row(admId as string))?.status).toBe("approved");
     // advance (admin is dj on create) plays a1, then finds nothing approved
@@ -120,5 +121,71 @@ run("v9 room rules", () => {
     expect(error).toBeNull(); expect(data).toBe(1);
     const { data: rows } = await db.from("queue_items").select("youtube_video_id, status").eq("room_id", room.room_id);
     expect(rows).toEqual([{ youtube_video_id: "b1", status: "pending" }]);
+  });
+
+  it("DJ bypasses approval like admin and may change the settings", async () => {
+    const admin = await reg(uniq("adm")); const room = await createRoom(admin.token);
+    const dj = await reg(uniq("dj")); const djJoin = await join(room.code, dj.token);
+    const member = await reg(uniq("mem")); await join(room.code, member.token);
+    expect((await db.rpc("assign_dj", { p_room_id: room.room_id, p_session_token: admin.token, p_target_member: djJoin.member_id })).error).toBeNull();
+    expect((await settings(room.room_id, dj.token, 0, true, [])).error).toBeNull();
+    const { data: djId } = await add(room.room_id, dj.token, "d1", "DJ", 100);
+    expect((await row(djId as string))?.status).toBe("approved");
+    const { data: memId } = await add(room.room_id, member.token, "d2", "Member", 100);
+    expect((await row(memId as string))?.status).toBe("pending");
+  });
+
+  it("keyword caps: 30 chars per keyword, 50 keywords per room", async () => {
+    const admin = await reg(uniq("adm")); const room = await createRoom(admin.token);
+    const tooLong = await settings(room.room_id, admin.token, 0, false, ["a".repeat(31)]);
+    expect(tooLong.error?.code).toBe("22023"); expect(tooLong.error?.message).toBe("keyword too long");
+    const tooMany = await settings(room.room_id, admin.token, 0, false, Array.from({ length: 51 }, (_, i) => `kw${i}`));
+    expect(tooMany.error?.code).toBe("22023"); expect(tooMany.error?.message).toBe("too many keywords");
+    expect((await settings(room.room_id, admin.token, 0, false, Array.from({ length: 50 }, (_, i) => `kw${i}`))).error).toBeNull();
+  });
+
+  it("approve assigns a position after the queue; approve-all keeps request order", async () => {
+    const admin = await reg(uniq("adm")); const room = await createRoom(admin.token);
+    const member = await reg(uniq("mem")); await join(room.code, member.token);
+    await settings(room.room_id, admin.token, 0, true, []);
+    const { data: a1 } = await add(room.room_id, admin.token, "a1", "A1", 100);
+    const p = (await row(a1 as string))!.position;
+    const { data: m1 } = await add(room.room_id, member.token, "m1", "M1", 100);
+    const { data: m2 } = await add(room.room_id, member.token, "m2", "M2", 100);
+    const { data: m3 } = await add(room.room_id, member.token, "m3", "M3", 100);
+    expect((await db.rpc("approve_queue_item", { p_room_id: room.room_id, p_session_token: admin.token, p_item_id: m2 })).error).toBeNull();
+    const m2Row = (await row(m2 as string))!;
+    expect(m2Row.status).toBe("approved"); expect(m2Row.position).toBeGreaterThan(p);
+    const { data: count } = await db.rpc("approve_all_pending", { p_room_id: room.room_id, p_session_token: admin.token });
+    expect(count).toBe(2);
+    const m1Row = (await row(m1 as string))!; const m3Row = (await row(m3 as string))!;
+    expect(m1Row.position).toBeGreaterThan(m2Row.position); expect(m3Row.position).toBeGreaterThan(m1Row.position);
+    const { data: ordered } = await db.from("queue_items").select("youtube_video_id, position")
+      .eq("room_id", room.room_id).eq("status", "approved").order("position");
+    expect((ordered as { youtube_video_id: string }[]).map((r) => r.youtube_video_id)).toEqual(["a1", "m2", "m1", "m3"]);
+  });
+
+  it("member cannot reject another member's pending row", async () => {
+    const admin = await reg(uniq("adm")); const room = await createRoom(admin.token);
+    const member = await reg(uniq("mem")); await join(room.code, member.token);
+    const other = await reg(uniq("oth")); await join(room.code, other.token);
+    await settings(room.room_id, admin.token, 0, true, []);
+    const { data: id } = await add(room.room_id, member.token, "r1", "Pending", 100);
+    expect((await db.rpc("reject_queue_item", { p_room_id: room.room_id, p_session_token: other.token, p_item_id: id })).error?.code).toBe("42501");
+    expect((await row(id as string))?.status).toBe("pending");
+  });
+
+  it("admin batch rows are approved even with approval on", async () => {
+    const admin = await reg(uniq("adm")); const room = await createRoom(admin.token);
+    await settings(room.room_id, admin.token, 0, true, []);
+    const { data, error } = await db.rpc("add_queue_items", { p_room_id: room.room_id, p_session_token: admin.token, p_items: [
+      { video_id: "c1", title: "one", thumb: null, duration: 100 },
+      { video_id: "c2", title: "two", thumb: null, duration: 100 },
+    ] });
+    expect(error).toBeNull(); expect(data).toBe(2);
+    const { data: rows } = await db.from("queue_items").select("youtube_video_id, status, position").eq("room_id", room.room_id).order("position");
+    const batch = rows as { youtube_video_id: string; status: string; position: number }[];
+    expect(batch.map((r) => [r.youtube_video_id, r.status])).toEqual([["c1", "approved"], ["c2", "approved"]]);
+    expect(batch[0].position).toBeLessThan(batch[1].position);
   });
 });
