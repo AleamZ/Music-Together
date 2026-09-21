@@ -42,7 +42,6 @@ export default function RoomShell({ view }: { view: RoomView }) {
 
         <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
           <AddSong roomId={room.id} token={token} />
-          <p className="mb-2 text-[11px] text-ink/60">🔎 Ô tìm kiếm trong app: bật khi cấu hình API key (Phase 2)</p>
           <Queue queue={state.queue} currentId={room.current_item_id} canManage={role.canManageQueue} roomId={room.id} token={token} />
         </section>
       </div>
