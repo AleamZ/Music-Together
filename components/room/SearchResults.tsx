@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { addQueueItem } from "@/lib/supabase";
 import type { SearchResult } from "@/lib/youtube/search";
-import { checkQueueRules, ruleMessage, violationFromRpcError, type RoomRules, type RuleViolation } from "@/lib/queue-rules";
+import { checkQueueRules, ordersRemaining, ruleMessage, violationFromRpcError, type RoomRules, type RuleViolation } from "@/lib/queue-rules";
 
 type AddState = { kind: "idle" } | { kind: "busy" } | { kind: "done" } | { kind: "error"; message: string };
 const IDLE: AddState = { kind: "idle" };
@@ -17,14 +17,19 @@ function Spinner() {
 }
 
 /** Search results panel. Mount with a fresh `key` per search — that is what resets the add state. */
-export default function SearchResults({ query, results, roomId, token, rules, willPend, onClose }: {
-  query: string; results: SearchResult[]; roomId: string; token: string; rules: RoomRules; willPend: boolean; onClose: () => void;
+export default function SearchResults({ query, results, roomId, token, rules, willPend, orderLimit, onClose }: {
+  query: string; results: SearchResult[]; roomId: string; token: string; rules: RoomRules; willPend: boolean;
+  orderLimit: { mine: number; exempt: boolean }; onClose: () => void;
 }) {
   const [state, setState] = useState<Record<string, AddState>>({});
   // Synchronous guard: a rapid double click can call add() twice before React commits "busy".
   const inFlight = useRef(new Set<string>());
+  // At the limit every "+ Thêm" is disabled; `mine` updates live through realtime after each add.
+  const atLimit = ordersRemaining(rules, orderLimit.mine, orderLimit.exempt) === 0;
+  const limitTitle = atLimit ? ruleMessage({ code: "order_limit", max: rules.max_orders_per_member }) : undefined;
 
   async function add(r: SearchResult) {
+    if (atLimit) return;
     if ((state[r.videoId] ?? IDLE).kind === "done") return;
     if (inFlight.current.has(r.videoId)) return;
     inFlight.current.add(r.videoId);
@@ -73,7 +78,8 @@ export default function SearchResults({ query, results, roomId, token, rules, wi
                     {REASON[violation.code]}
                   </span>
                 ) : (
-                  <button type="button" disabled={st.kind === "done"} onClick={() => add(r)}
+                  <button type="button" disabled={st.kind === "done" || atLimit} title={st.kind === "done" ? undefined : limitTitle}
+                    onClick={() => add(r)}
                     className="whitespace-nowrap rounded border border-gold-200 bg-cream px-1.5 text-sm text-burgundy disabled:opacity-60">
                     {st.kind === "done" ? (willPend ? "✓ Đã gửi" : "✓ Đã thêm") : "+ Thêm"}
                   </button>

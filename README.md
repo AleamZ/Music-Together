@@ -198,3 +198,16 @@ How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's sugg
 - Everyone has a **local** 🔊 volume slider (their own device only).
 - **🔈 Bật âm thanh:** browsers refuse to start audio without a user gesture, so a member who opened the room URL directly sees this button once; members who clicked their way in from the lobby usually don't.
 - A video that cannot be played on a particular device (embedding disabled, region) shows a small notice on that device only; the room is unaffected.
+
+## v11: Giới hạn số order mỗi người
+
+### DB migration
+
+`supabase/migrations/0009_v11_order_limit.sql` is **additive** (`add column if not exists`, `create or replace function`): run it in the Supabase SQL Editor (or `supabase db reset` on dev/staging). It drops and re-creates `update_room_settings` with one more optional argument — older clients that call it without the argument keep working.
+
+### What's new in v11
+
+- **Room rule (Admin + DJ)** in ⚙️ Setting → **Quy tắc hàng đợi** → *Số order tối đa mỗi người* (default **5**, `0` = unlimited, max 100): how many songs one member may have in the queue at once — pending **and** approved rows count, the song currently playing does not. **Admin and DJ are exempt.**
+- Members see a live **`Order: 3/5`** counter next to the add box; at the limit the add box and every search-result **+ Thêm** button refuse with *"Bạn đã đặt đủ 5 bài — chờ bài phát xong rồi đặt tiếp."* The RPCs enforce the same rule (`order limit reached`), so it cannot be bypassed by calling the API directly.
+- **Playlists** add as many songs as still fit, then stop: *"Đã thêm 2/10 bài — đạt giới hạn 5 order."* Songs skipped by the other rules do not use a slot.
+- A slot frees up when the member's song starts playing, is rejected, or is withdrawn.

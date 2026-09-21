@@ -11,6 +11,7 @@ import Queue from "./Queue";
 import PendingQueue from "./PendingQueue";
 import MyPending from "./MyPending";
 import { usePlayback } from "@/hooks/usePlayback";
+import { countMyOrders } from "@/lib/queue-rules";
 
 export default function RoomShell({ view }: { view: RoomView }) {
   const { state, role, onlineIds, token, myMemberId, accountId } = view;
@@ -22,6 +23,8 @@ export default function RoomShell({ view }: { view: RoomView }) {
   const myPending = pending.filter((q) => q.added_by_account_id === accountId);
   const rules = { max_duration_seconds: room.max_duration_seconds, banned_keywords: room.banned_keywords, max_orders_per_member: room.max_orders_per_member };
   const willPend = room.require_approval && !role.canManageQueue;
+  // Per-member order limit (v11): rows I have waiting (pending + approved), excluding the one playing. Admin/DJ exempt.
+  const orderLimit = { mine: countMyOrders(state.queue, accountId, room.current_item_id), exempt: role.canManageQueue };
   // onlineIds are ACCOUNT ids (presence is keyed by account id); dj_member_id is a MEMBER id,
   // so map it to its account id before checking presence.
   const djAccountId = state.members.find((m) => m.id === room.dj_member_id)?.account_id ?? null;
@@ -50,7 +53,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
         </section>
 
         <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
-          <AddSong roomId={room.id} token={token} rules={rules} willPend={willPend} />
+          <AddSong roomId={room.id} token={token} rules={rules} willPend={willPend} orderLimit={orderLimit} />
           <MyPending items={myPending} roomId={room.id} token={token} />
           {role.canManageQueue && (room.require_approval || pending.length > 0) && (
             <PendingQueue pending={pending} roomId={room.id} token={token} />

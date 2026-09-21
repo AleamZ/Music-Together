@@ -8,7 +8,7 @@ import { fetchVideoDetails } from "@/lib/youtube/video";
 import { fetchPlaylistItems } from "@/lib/youtube/playlist";
 import { fetchSuggestions, type Suggestion } from "@/lib/youtube/suggest";
 import { fetchSearchResults, type SearchResult } from "@/lib/youtube/search";
-import { checkQueueRules, ruleMessage, violationFromRpcError, type RoomRules } from "@/lib/queue-rules";
+import { checkQueueRules, orderLimitViolation, ordersRemaining, ruleMessage, violationFromRpcError, type RoomRules } from "@/lib/queue-rules";
 import SearchResults from "./SearchResults";
 
 const SUGGEST_DEBOUNCE_MS = 250;
@@ -16,8 +16,8 @@ const BLUR_CLOSE_MS = 150;
 
 type Search = { id: number; query: string; results: SearchResult[] };
 
-export default function AddSong({ roomId, token, rules, willPend }: {
-  roomId: string; token: string; rules: RoomRules; willPend: boolean;
+export default function AddSong({ roomId, token, rules, willPend, orderLimit }: {
+  roomId: string; token: string; rules: RoomRules; willPend: boolean; orderLimit: { mine: number; exempt: boolean };
 }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -39,6 +39,8 @@ export default function AddSong({ roomId, token, rules, willPend }: {
 
   const trimmed = input.trim();
   const link = trimmed !== "" && isYouTubeLinkInput(trimmed);
+  // null = unlimited / exempt (no counter); 0 = at the limit.
+  const remaining = ordersRemaining(rules, orderLimit.mine, orderLimit.exempt);
 
   // Suggest-as-you-type: debounced; the cleanup aborts the in-flight request on every keystroke.
   useEffect(() => {
@@ -118,6 +120,8 @@ export default function AddSong({ roomId, token, rules, willPend }: {
     const videoId = parseYouTubeId(text);
     const playlistId = parsePlaylistId(text);
     if (!videoId && !playlistId) { setError("Link YouTube không hợp lệ."); return; }
+    const limitViolation = orderLimitViolation(rules, orderLimit.mine, orderLimit.exempt);
+    if (limitViolation) { setError(ruleMessage(limitViolation)); return; }
     setBusy(true);
     try {
       if (!videoId && playlistId) {
@@ -126,9 +130,11 @@ export default function AddSong({ roomId, token, rules, willPend }: {
         const added = await addQueueItems(roomId, token,
           items.map((it) => ({ videoId: it.videoId, title: it.title, thumb: it.thumb, duration: it.durationSeconds })));
         const skipped = items.length - added;
+        const hitLimit = remaining !== null && added < items.length && added >= remaining;
         setNotice(
-          `Đã thêm ${added} bài từ playlist.` +
-          (skipped > 0 ? ` Bỏ qua ${skipped} bài (quá dài / từ khóa cấm).` : "") +
+          (hitLimit
+            ? `Đã thêm ${added}/${items.length} bài — đạt giới hạn ${rules.max_orders_per_member} order.`
+            : `Đã thêm ${added} bài từ playlist.` + (skipped > 0 ? ` Bỏ qua ${skipped} bài (quá dài / từ khóa cấm).` : "")) +
           (willPend && added > 0 ? " Đã gửi, chờ Admin/DJ duyệt." : ""),
         );
         setInput("");
@@ -185,12 +191,18 @@ export default function AddSong({ roomId, token, rules, willPend }: {
           className="rounded-lg bg-burgundy px-3 py-2 font-cormorant font-bold text-cream disabled:opacity-60">
           {busy || searching ? "…" : link ? "+ Thêm" : "Tìm"}
         </button>
+        {remaining !== null && (
+          <span className={`self-center whitespace-nowrap text-[11px] ${remaining === 0 ? "text-burgundy-accent" : "text-ink/60"}`}
+            title="Số bài bạn đang đặt / giới hạn của phòng">
+            Order: {orderLimit.mine}/{rules.max_orders_per_member}
+          </span>
+        )}
         {error && <p className="w-full text-xs text-burgundy-accent">{error}</p>}
         {notice && <p className="w-full text-xs text-burgundy">{notice}</p>}
       </form>
       {search && (
         <SearchResults key={search.id} query={search.query} results={search.results}
-          roomId={roomId} token={token} rules={rules} willPend={willPend} onClose={() => setSearch(null)} />
+          roomId={roomId} token={token} rules={rules} willPend={willPend} orderLimit={orderLimit} onClose={() => setSearch(null)} />
       )}
     </div>
   );

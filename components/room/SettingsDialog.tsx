@@ -7,6 +7,7 @@ import { normalizeForMatch } from "@/lib/queue-rules";
 const MAX_KEYWORD_LEN = 30;
 const MAX_KEYWORDS = 50;
 const MAX_MINUTES = 1440;
+const MAX_ORDERS = 100;
 
 export default function SettingsDialog({ room, members, roomId, token, myMemberId, isAdmin, onClose }: {
   room: Room; members: Member[]; roomId: string; token: string; myMemberId: string | null; isAdmin: boolean; onClose: () => void;
@@ -16,6 +17,7 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
 
   // Queue rules (admin + dj). Values are snapshotted when the dialog opens.
   const [maxMinutes, setMaxMinutes] = useState(String(room.max_duration_seconds / 60));
+  const [maxOrders, setMaxOrders] = useState(String(room.max_orders_per_member));
   const [requireApproval, setRequireApproval] = useState(room.require_approval);
   const [keywords, setKeywords] = useState<string[]>(room.banned_keywords);
   const [kwInput, setKwInput] = useState("");
@@ -38,10 +40,15 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
       setRulesMsg({ ok: false, text: `Thời lượng tối đa phải từ 0 đến ${MAX_MINUTES} phút.` });
       return;
     }
+    const orders = Number(maxOrders);
+    if (!Number.isInteger(orders) || orders < 0 || orders > MAX_ORDERS) {
+      setRulesMsg({ ok: false, text: `Số order tối đa phải từ 0 đến ${MAX_ORDERS}.` });
+      return;
+    }
     setSaving(true);
     setRulesMsg(null);
     try {
-      await updateRoomSettings(roomId, token, { maxDurationSeconds: Math.round(mins * 60), requireApproval, bannedKeywords: keywords, maxOrdersPerMember: room.max_orders_per_member });
+      await updateRoomSettings(roomId, token, { maxDurationSeconds: Math.round(mins * 60), requireApproval, bannedKeywords: keywords, maxOrdersPerMember: orders });
       setRulesMsg({ ok: true, text: "Đã lưu quy tắc." });
     } catch {
       setRulesMsg({ ok: false, text: "Không lưu được cài đặt." });
@@ -90,6 +97,12 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
         <label className="mb-1 block text-sm text-ink">Thời lượng tối đa (phút)</label>
         <input type="number" min={0} max={MAX_MINUTES} step={1} value={maxMinutes} onChange={(e) => setMaxMinutes(e.target.value)}
           title="Phút; có thể nhập số thập phân (0.5 = 30 giây)"
+          className="mb-1 w-28 rounded-lg border border-gold bg-cream px-3 py-1.5 text-ink" />
+        <p className="mb-3 text-[11px] text-ink/60">0 = không giới hạn</p>
+
+        <label className="mb-1 block text-sm text-ink">Số order tối đa mỗi người</label>
+        <input type="number" min={0} max={MAX_ORDERS} step={1} value={maxOrders} onChange={(e) => setMaxOrders(e.target.value)}
+          title="Số bài một thành viên được đặt cùng lúc (đang chờ + chờ duyệt; bài đang phát không tính). Admin/DJ không bị giới hạn."
           className="mb-1 w-28 rounded-lg border border-gold bg-cream px-3 py-1.5 text-ink" />
         <p className="mb-3 text-[11px] text-ink/60">0 = không giới hạn</p>
 
