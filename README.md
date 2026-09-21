@@ -188,3 +188,13 @@ How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's sugg
 - **Trust model:** the rules run inside the RPCs on the title/duration the client submits (read key-free from YouTube by the app). That blocks every path through the UI; a member who deliberately forges those fields with dev tools can still slip a video through — the same latitude the app has always given for song titles. Tamper-proof enforcement would need server-signed metadata (planned as a follow-up).
 - **Approval queue:** with *Chờ duyệt* on, songs added by members land in a **⏳ Chờ duyệt** panel above the queue that only Admin/DJ see, with ✓ / ✕ per row and **Duyệt tất cả**. Members see their own pending songs under the add box and can withdraw them. Admin/DJ additions skip approval. Turning the toggle off approves everything still pending.
 - **Playlist adds** skip songs that break a rule and report how many were skipped.
+
+## v10: Nghe cùng phòng (listen-along)
+
+**No migration, no config.** Every member's device now plays the current track **in sync** with the room:
+
+- Playback follows the room clock (`started_at` / paused position): a listener who joins mid-song hears it from the right spot; DJ pause/resume/seek/skip propagate to everyone within a second or two (drift is corrected every 5 s).
+- **Only the DJ** has ▶/⏸, ⏭ and the seek bar — the playback RPCs still require the DJ role, so listeners cannot change the room's playback even by calling the API. Listeners see "Đang nghe cùng phòng · DJ điều khiển".
+- Everyone has a **local** 🔊 volume slider (their own device only).
+- **🔈 Bật âm thanh:** browsers refuse to start audio without a user gesture, so a member who opened the room URL directly sees this button once; members who clicked their way in from the lobby usually don't.
+- A video that cannot be played on a particular device (embedding disabled, region) shows a small notice on that device only; the room is unaffected.

@@ -43,6 +43,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
           <NowPlaying
             room={room} current={current} canControl={role.canControlPlayback}
             durationMs={dj.durationMs} volume={dj.volume} djOnline={djOnline}
+            unlocked={dj.unlocked} onUnlock={dj.unlock} playError={dj.playError}
             onPlayPause={dj.togglePlay} onSkip={dj.skip} onSeekMs={dj.seekMs} onVolume={dj.setVolume}
           />
           <Reactions roomId={room.id} />

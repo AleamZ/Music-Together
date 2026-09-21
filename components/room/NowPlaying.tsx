@@ -17,6 +17,9 @@ export interface NowPlayingProps {
   onSeekMs: (ms: number) => void;
   onVolume: (v: number) => void;
   djOnline: boolean;
+  unlocked: boolean;            // autoplay gate passed on this device
+  onUnlock: () => void;         // 🔈 button
+  playError: string | null;     // this device could not play the current track
 }
 
 export default function NowPlaying(p: NowPlayingProps) {
@@ -53,21 +56,28 @@ export default function NowPlaying(p: NowPlayingProps) {
         <span>{formatClock(dur)}</span>
       </div>
 
-      {p.canControl && (
-        <>
-          <div className="flex items-center gap-3">
+      {!p.unlocked && (
+        <button onClick={p.onUnlock} className="rounded-full bg-burgundy px-4 py-2 text-cream">🔈 Bật âm thanh</button>
+      )}
+
+      <div className="flex items-center gap-3">
+        {p.canControl && (
+          <>
             <button onClick={p.onPlayPause} className="h-13 w-13 rounded-full bg-burgundy px-4 py-2 text-cream">
               {room.is_playing ? "⏸" : "▶"}
             </button>
             <button onClick={p.onSkip} className="rounded-full border border-gold bg-cream px-4 py-2 text-burgundy">⏭</button>
-            <label className="ml-2 flex items-center gap-1 text-xs text-ink/80">🔊
-              <input type="range" min={0} max={100} value={p.volume}
-                onChange={(e) => p.onVolume(Number(e.target.value))} className="w-20 accent-burgundy" />
-            </label>
-          </div>
-          <p className="text-[11px] text-green-vintage">Điều khiển phát / tua / âm lượng — chỉ DJ</p>
-        </>
-      )}
+          </>
+        )}
+        <label className="flex items-center gap-1 text-xs text-ink/80">🔊
+          <input type="range" min={0} max={100} value={p.volume}
+            onChange={(e) => p.onVolume(Number(e.target.value))} className="w-20 accent-burgundy" aria-label="volume" />
+        </label>
+      </div>
+      <p className="text-[11px] text-green-vintage">
+        {p.canControl ? "Điều khiển phát / tua — chỉ DJ" : "Đang nghe cùng phòng · DJ điều khiển"}
+      </p>
+      {p.playError && <p className="text-[11px] text-burgundy-accent">{p.playError}</p>}
     </section>
   );
 }
