@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { checkQueueRules, normalizeForMatch, ruleMessage, violationFromRpcError } from "@/lib/queue-rules";
+import { checkQueueRules, countMyOrders, normalizeForMatch, orderLimitViolation, ordersRemaining, ruleMessage, violationFromRpcError } from "@/lib/queue-rules";
 
-const rules = (max: number, kws: string[] = []) => ({ max_duration_seconds: max, banned_keywords: kws });
+const rules = (max: number, kws: string[] = [], maxOrders = 5) => ({ max_duration_seconds: max, banned_keywords: kws, max_orders_per_member: maxOrders });
 
 describe("normalizeForMatch", () => {
   it("lower-cases and strips Vietnamese diacritics, including đ", () => {
@@ -49,5 +49,47 @@ describe("violationFromRpcError", () => {
     expect(violationFromRpcError({ code: "42501", message: "admin or dj role required" }, rules(0))).toBeNull();
     expect(violationFromRpcError(new Error("network"), rules(0))).toBeNull();
     expect(violationFromRpcError(null, rules(0))).toBeNull();
+  });
+});
+
+describe("countMyOrders", () => {
+  const q = [
+    { id: "a", added_by_account_id: "me" },
+    { id: "b", added_by_account_id: "me" },
+    { id: "c", added_by_account_id: "other" },
+    { id: "d", added_by_account_id: null },
+    { id: "e", added_by_account_id: "me" },
+  ];
+  it("counts my rows regardless of status and excludes the playing one", () => {
+    expect(countMyOrders(q, "me", null)).toBe(3);
+    expect(countMyOrders(q, "me", "a")).toBe(2);
+    expect(countMyOrders(q, "me", "c")).toBe(3);
+  });
+  it("returns 0 for an unknown or null account", () => {
+    expect(countMyOrders(q, "nobody", null)).toBe(0);
+    expect(countMyOrders(q, null, null)).toBe(0);
+  });
+});
+
+describe("ordersRemaining / orderLimitViolation", () => {
+  it("null when unlimited (0) or exempt; otherwise limit - mine clamped at 0", () => {
+    expect(ordersRemaining(rules(0, [], 0), 3, false)).toBeNull();
+    expect(ordersRemaining(rules(0, [], 5), 99, true)).toBeNull();
+    expect(ordersRemaining(rules(0, [], 5), 3, false)).toBe(2);
+    expect(ordersRemaining(rules(0, [], 5), 5, false)).toBe(0);
+    expect(ordersRemaining(rules(0, [], 5), 7, false)).toBe(0);
+  });
+  it("violates only when no slot is left", () => {
+    expect(orderLimitViolation(rules(0, [], 5), 4, false)).toBeNull();
+    expect(orderLimitViolation(rules(0, [], 5), 5, false)).toEqual({ code: "order_limit", max: 5 });
+    expect(orderLimitViolation(rules(0, [], 5), 5, true)).toBeNull();
+    expect(orderLimitViolation(rules(0, [], 0), 50, false)).toBeNull();
+  });
+});
+
+describe("order limit copy + RPC mapping", () => {
+  it("renders the message and maps 'order limit reached'", () => {
+    expect(ruleMessage({ code: "order_limit", max: 5 })).toBe("Bạn đã đặt đủ 5 bài — chờ bài phát xong rồi đặt tiếp.");
+    expect(violationFromRpcError({ code: "23514", message: "order limit reached" }, rules(0, [], 3))).toEqual({ code: "order_limit", max: 3 });
   });
 });

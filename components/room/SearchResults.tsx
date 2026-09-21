@@ -3,13 +3,13 @@
 import { useRef, useState } from "react";
 import { addQueueItem } from "@/lib/supabase";
 import type { SearchResult } from "@/lib/youtube/search";
-import { checkQueueRules, ruleMessage, violationFromRpcError, type RoomRules } from "@/lib/queue-rules";
+import { checkQueueRules, ruleMessage, violationFromRpcError, type RoomRules, type RuleViolation } from "@/lib/queue-rules";
 
 type AddState = { kind: "idle" } | { kind: "busy" } | { kind: "done" } | { kind: "error"; message: string };
 const IDLE: AddState = { kind: "idle" };
 
-const REASON: Record<"too_long" | "unknown_duration" | "banned", string> = {
-  too_long: "quá dài", unknown_duration: "không rõ thời lượng", banned: "từ khóa cấm",
+const REASON: Record<RuleViolation["code"], string> = {
+  too_long: "quá dài", unknown_duration: "không rõ thời lượng", banned: "từ khóa cấm", order_limit: "đủ order",
 };
 
 function Spinner() {

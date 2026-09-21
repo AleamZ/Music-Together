@@ -41,7 +41,7 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
     setSaving(true);
     setRulesMsg(null);
     try {
-      await updateRoomSettings(roomId, token, { maxDurationSeconds: Math.round(mins * 60), requireApproval, bannedKeywords: keywords });
+      await updateRoomSettings(roomId, token, { maxDurationSeconds: Math.round(mins * 60), requireApproval, bannedKeywords: keywords, maxOrdersPerMember: room.max_orders_per_member });
       setRulesMsg({ ok: true, text: "Đã lưu quy tắc." });
     } catch {
       setRulesMsg({ ok: false, text: "Không lưu được cài đặt." });

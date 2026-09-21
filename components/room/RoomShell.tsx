@@ -20,7 +20,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
   const approved = state.queue.filter((q) => q.status === "approved");
   const pending = state.queue.filter((q) => q.status === "pending");
   const myPending = pending.filter((q) => q.added_by_account_id === accountId);
-  const rules = { max_duration_seconds: room.max_duration_seconds, banned_keywords: room.banned_keywords };
+  const rules = { max_duration_seconds: room.max_duration_seconds, banned_keywords: room.banned_keywords, max_orders_per_member: room.max_orders_per_member };
   const willPend = room.require_approval && !role.canManageQueue;
   // onlineIds are ACCOUNT ids (presence is keyed by account id); dj_member_id is a MEMBER id,
   // so map it to its account id before checking presence.
