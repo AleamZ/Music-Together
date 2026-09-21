@@ -168,3 +168,20 @@ end $$;
 - Songs added from search carry their **duration** (`duration_seconds`), which pasted links never had.
 
 How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's suggest feed) and `/api/yt/search` (YouTube's InnerTube search with the video-only filter) — called anonymously: no user/session cookies (only YouTube's static consent cookie), no login, no key. Both fail soft (empty list / a friendly message). Language and region are fixed to `vi` / `VN`.
+
+## v9: Quy tắc hàng đợi (giới hạn thời lượng · chờ duyệt · từ khóa cấm)
+
+### DB migration
+
+`supabase/migrations/0008_v9_room_rules.sql` is **fully additive** (`add column if not exists`, `create or replace function`, `create extension if not exists unaccent`) — **no data is lost**; existing queue rows become `approved`. Two options:
+
+- **Preferred (live DB):** open the Supabase SQL Editor and run `supabase/migrations/0008_v9_room_rules.sql`.
+- **Reset (dev/staging):** run `supabase db reset` to replay migrations `0001` → `0008` from scratch (wipes all data).
+
+> After the migration every room limits videos to **10 minutes** by default (`0` = unlimited). Pasted links therefore need a duration: the app reads it key-free from the watch page (`/api/yt/video`) and from playlist pages. Live streams have no duration and are rejected while a limit is set.
+
+### What's new in v9
+
+- **Room rules (Admin + DJ)** in ⚙️ Setting → **Quy tắc hàng đợi**: *Thời lượng tối đa* (minutes, `0` = unlimited, default 10), *Chờ duyệt* toggle, and *Từ khóa cấm* chips (matched against the video **title**, case- and accent-insensitive). The rules are enforced inside the RPCs, so they cannot be bypassed by calling the API directly; the UI checks them first for friendly messages, and search-result rows that break a rule are greyed out with the reason.
+- **Approval queue:** with *Chờ duyệt* on, songs added by members land in a **⏳ Chờ duyệt** panel above the queue that only Admin/DJ see, with ✓ / ✕ per row and **Duyệt tất cả**. Members see their own pending songs under the add box and can withdraw them. Admin/DJ additions skip approval. Turning the toggle off approves everything still pending.
+- **Playlist adds** skip songs that break a rule and report how many were skipped.
