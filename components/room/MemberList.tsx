@@ -12,11 +12,11 @@ export default function MemberList({ members, room, onlineIds, isAdmin, token, m
   const roomId = room.id;
 
   return (
-    <div>
-      <h3 className="mb-2 flex items-center justify-between font-cormorant text-lg text-burgundy">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <h3 className="mb-2 shrink-0 flex items-center justify-between font-cormorant text-lg text-burgundy">
         Thành viên <span className="text-xs text-ink/60">{online.size} online</span>
       </h3>
-      <ul>
+      <ul className="flex-1 min-h-0 overflow-y-auto pr-1">
         {members.map((m) => {
           const isDj = room.dj_member_id === m.id;
           const canManage = isAdmin && m.id !== myMemberId;

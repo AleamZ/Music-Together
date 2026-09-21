@@ -33,8 +33,9 @@ export function subscribeChat(
   roomId: string,
   handlers: { onInsert: (m: ChatMessage) => void; onDelete: (id: string) => void },
 ): () => void {
+  const subId = Math.random().toString(36).slice(2, 9);
   const channel: RealtimeChannel = supabase
-    .channel(`chat:${roomId}`)
+    .channel(`chat:${roomId}:${subId}`)
     .on("postgres_changes",
       { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` },
       (payload) => handlers.onInsert(payload.new as ChatMessage))
