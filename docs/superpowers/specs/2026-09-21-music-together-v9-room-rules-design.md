@@ -104,7 +104,7 @@ update_room_settings(p_room_id uuid, p_session_token text,
                      p_max_duration_seconds integer, p_require_approval boolean, p_banned_keywords text[]) returns void
 ```
 
-`update_room_settings` validation: `p_max_duration_seconds >= 0` and `<= 86400`; keywords: trim each, drop empty, cap each at 30 chars, cap the array at 50, dedupe case-insensitively (raise `22023` on violation). If `p_require_approval` is false and the room currently has pending rows, **approve them all** (same as `approve_all_pending`) inside the same call so nothing is left invisible.
+`update_room_settings` validation: `p_max_duration_seconds >= 0` and `<= 86400`; keywords: trim each, drop empty, cap each at 30 chars, cap the array at 50, dedupe case- and accent-insensitively via `lower(unaccent(...))` — the same normalization used for matching (raise `22023` on violation). If `p_require_approval` is false and the room currently has pending rows, **approve them all** (same as `approve_all_pending`) inside the same call so nothing is left invisible.
 
 `lib/supabase.ts` adds wrappers: `approveQueueItem`, `approveAllPending`, `rejectQueueItem`, `updateRoomSettings`; `addQueueItems` items gain `duration: number | null`; `Room` gains `max_duration_seconds: number; require_approval: boolean; banned_keywords: string[]`; `QueueItem` gains `status: "pending" | "approved"`.
 
@@ -113,7 +113,7 @@ update_room_settings(p_room_id uuid, p_session_token text,
 ### 4.1 `GET /api/yt/video?id=` (`app/api/yt/video/route.ts`)
 
 - Validate with `parseYouTubeId`; fetch `https://www.youtube.com/watch?v={id}&hl=en` with the playlist route's headers (`User-Agent`, `Accept-Language`, `Cookie: CONSENT=YES+1`), `AbortSignal.timeout(8000)`, `next: { revalidate: 86400 }`, 5 MB size guard.
-- Pure parser `extractVideoDetails(html)` in `lib/youtube/video.ts`: locate `ytInitialPlayerResponse` (same balanced-JSON slicing as `extractYtInitialData`; markers `var ytInitialPlayerResponse = ` and `ytInitialPlayerResponse = `), read `videoDetails.{videoId,title,author,lengthSeconds,isLiveContent,isLive}` → `{ id, title, author, durationSeconds: number | null, isLive: boolean }`. `lengthSeconds` is a numeric string; `"0"` or missing or live → `null`. Unparseable → `null` (route answers 404).
+- Pure parser `extractVideoDetails(html)` in `lib/youtube/video.ts`: locate `ytInitialPlayerResponse` (same balanced-JSON slicing as `extractYtInitialData`; markers `var ytInitialPlayerResponse = ` and `ytInitialPlayerResponse = `), read `videoDetails.{videoId,title,author,lengthSeconds,isLive}` → `{ id, title, author, durationSeconds: number | null, isLive: boolean }`. `lengthSeconds` is a numeric string; `"0"` or missing or `isLive` → `null`. `isLiveContent` is ignored on purpose: a finished stream is a normal VOD with a real length. Unparseable → `null` (route answers 404).
 - Response `200 { id, title, author, durationSeconds, isLive }` | `400` | `404 { error }` | `502 { error }`.
 - Client `fetchVideoDetails(id, signal?)` in `lib/youtube/video.ts`; resolves `null` on any non-OK.
 
