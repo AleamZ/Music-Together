@@ -1,32 +1,8 @@
+import { extractEmbeddedJson } from "@/lib/youtube/embedded-json";
+
 export interface PlaylistItem { videoId: string; title: string; thumb: string; }
 
-function sliceBalancedJson(s: string, start: number): string | null {
-  if (s[start] !== "{") return null;
-  let depth = 0, inStr = false, esc = false;
-  for (let i = start; i < s.length; i++) {
-    const c = s[i];
-    if (inStr) {
-      if (esc) esc = false;
-      else if (c === "\\") esc = true;
-      else if (c === '"') inStr = false;
-    } else if (c === '"') inStr = true;
-    else if (c === "{") depth++;
-    else if (c === "}") { depth--; if (depth === 0) return s.slice(start, i + 1); }
-  }
-  return null;
-}
-
-function extractYtInitialData(html: string): unknown {
-  const markers = ['var ytInitialData = ', 'window["ytInitialData"] = ', "ytInitialData = "];
-  for (const marker of markers) {
-    const i = html.indexOf(marker);
-    if (i === -1) continue;
-    const json = sliceBalancedJson(html, i + marker.length);
-    if (!json) continue;
-    try { return JSON.parse(json); } catch { /* try next marker */ }
-  }
-  return null;
-}
+const YT_INITIAL_DATA_MARKERS = ['var ytInitialData = ', 'window["ytInitialData"] = ', "ytInitialData = "];
 
 // Legacy playlist layout entry.
 type VideoRenderer = {
@@ -45,7 +21,7 @@ type LockupViewModel = {
  *  layouts (YouTube migrated playlist videos to lockups). Thumb is derived from the
  *  videoId (hqdefault always exists). Fails soft to []. */
 export function extractPlaylistItems(html: string, cap = 50): PlaylistItem[] {
-  const data = extractYtInitialData(html);
+  const data = extractEmbeddedJson(html, YT_INITIAL_DATA_MARKERS);
   if (!data) return [];
   const out: PlaylistItem[] = [];
   const seen = new Set<string>();
