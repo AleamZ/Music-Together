@@ -352,11 +352,136 @@ function CyberpunkCassettePlayer({
   );
 }
 
-export default function Turntable({ spinning, thumbnail }: { spinning: boolean; thumbnail?: string | null }) {
+function ITVTelevisionCenterpiece({
+  spinning,
+  thumbnail,
+  title,
+  uploader,
+}: {
+  spinning: boolean;
+  thumbnail?: string | null;
+  title?: string | null;
+  uploader?: string | null;
+}) {
+  return (
+    <div className="relative select-none flex items-center justify-center my-0.5 w-[220px] sm:w-[240px]">
+      {/* Subtle Television Shadow */}
+      <div className="relative w-full rounded-lg border border-[#76cb00]/50 bg-gradient-to-b from-[#181d26] via-[#0d121c] to-[#080b12] p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.8),0_0_12px_rgba(118,203,0,0.2)]">
+        {/* CRT Screen Display */}
+        <div className="relative w-full h-[140px] sm:h-[150px] rounded-md overflow-hidden bg-black flex flex-col justify-between border border-[#76cb00]/30 shadow-inner">
+          {/* Background Video / Image Thumbnail */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={thumbnail || "/themes/itv/bg.jpg"}
+            alt="iTV Screen"
+            className={`absolute inset-0 h-full w-full object-cover transition-all duration-500 ${
+              spinning ? "brightness-100 contrast-105" : "brightness-75 grayscale-20"
+            }`}
+          />
+
+          {/* CRT Television Scanline Overlay */}
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.35)_50%)] bg-[length:100%_3px] opacity-70" />
+
+          {/* Top Row: Status on Left, Authentic Watermark on Right */}
+          <div className="relative z-10 flex items-center justify-between p-1.5">
+            {/* Top-Left: LIVE / PAUSE indicator */}
+            <div className="flex items-center gap-1 bg-black/60 px-1.5 py-0.5 rounded text-[8px] font-mono text-white/90 border border-white/10 backdrop-blur-xs">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  spinning ? "bg-red-500 shadow-[0_0_6px_#ff0033] animate-pulse" : "bg-amber-400"
+                }`}
+              />
+              <span className="font-bold">{spinning ? "TRỰC TIẾP" : "TẠM DỪNG"}</span>
+            </div>
+
+            {/* Top-Right: Iconic iTV Watermark Bug */}
+            <div className="flex items-center gap-1 select-none opacity-90 drop-shadow-[0_1px_3px_#000]">
+              <div className="flex h-4 w-4 items-center justify-center rounded-xs bg-[#76cb00] text-black font-black text-[9px] leading-none shadow-xs">
+                i★
+              </div>
+              <span className="font-sans font-black text-[11px] text-[#84e800] tracking-tighter">TV</span>
+              <span className="text-[#84e800] text-xs font-black">|</span>
+            </div>
+          </div>
+
+          {/* Authentic iTV Lower-Third Graphic (Vintage 2000s Broadcast Ticker) */}
+          <div className="relative z-10 w-full flex flex-col">
+            {/* 1. Yellow SMS Instruction Ticker */}
+            <div className="w-full px-1.5 py-0.5 bg-black/70 backdrop-blur-xs flex items-center justify-between text-[8px] sm:text-[9px] font-sans font-bold text-[#ffde00] border-t border-black/50">
+              <span className="truncate drop-shadow-[0_1px_2px_#000]">
+                Soạn tin: <span className="text-white font-black">IM 8730</span> gửi <span className="text-white font-black">8730</span>
+              </span>
+              <span className="text-white/60 font-mono text-[7px] shrink-0 ml-1">VTC13</span>
+            </div>
+
+            {/* 2. Lower Dark Bar with Green Square [ i★ ] Badge */}
+            <div className="h-6 w-full bg-[#0a1120]/95 border-t border-[#76cb00]/40 flex items-center overflow-hidden">
+              {/* Green Square [ i★ ] Badge */}
+              <div className="h-full w-6 shrink-0 bg-[#76cb00] flex items-center justify-center text-white font-black text-[11px] select-none shadow-sm">
+                i★
+              </div>
+
+              {/* Scrolling Ticker / Current Song Bar */}
+              <div className="flex-1 overflow-hidden px-1.5 whitespace-nowrap">
+                <div className="inline-block animate-[marquee_14s_linear_infinite] text-[8px] sm:text-[9px] font-sans font-medium text-white/90">
+                  <span className="text-[#ff3b30] font-bold mx-1">❚</span>
+                  <span className="text-[#ffde00] font-bold">MS: #8730</span>
+                  <span className="text-white font-bold ml-1">{title || "iTV Music"}</span>
+                  {uploader && <span className="text-[#84e800] ml-1">({uploader})</span>}
+                  <span className="text-[#ff3b30] font-bold mx-1.5">❚</span>
+                  <span className="text-[#ff9900]">11963: Ocean</span>
+                  <span className="text-[#ff3b30] font-bold mx-1.5">❚</span>
+                  <span className="text-[#ff9900]">12082: Nắm Lấy Bàn Tay</span>
+                  <span className="text-[#ff3b30] font-bold mx-1.5">❚</span>
+                  <span className="text-[#ff9900]">1343: My Heart Will Go On</span>
+                  <span className="text-[#ff3b30] font-bold mx-1.5">❚</span>
+                  <span className="text-[#ff9900]">9914: I&apos;m Sorry</span>
+                  <span className="text-[#ff3b30] font-bold mx-1.5">❚</span>
+                  <span className="text-[#ff9900]">2838: Stop Stop Stop</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Television Stand Feet & Power Dot */}
+        <div className="mt-1 flex items-center justify-between px-2 text-[7px] font-mono text-white/40">
+          <div className="flex items-center gap-1">
+            <span className={`h-1 w-1 rounded-full ${spinning ? "bg-[#76cb00]" : "bg-amber-500"}`} />
+            <span>ITV-CRT 2000</span>
+          </div>
+          <span>STEREO</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Turntable({
+  spinning,
+  thumbnail,
+  title,
+  uploader,
+}: {
+  spinning: boolean;
+  thumbnail?: string | null;
+  title?: string | null;
+  uploader?: string | null;
+}) {
   const { theme } = useTheme();
   if (theme === "cozy") return <CozyRadio spinning={spinning} thumbnail={thumbnail} />;
   if (theme === "dragon") return <DragonLuteCenterpiece spinning={spinning} />;
   if (theme === "cyberpunk") return <CyberpunkCassettePlayer spinning={spinning} thumbnail={thumbnail} />;
+  if (theme === "itv")
+    return (
+      <ITVTelevisionCenterpiece
+        spinning={spinning}
+        thumbnail={thumbnail}
+        title={title}
+        uploader={uploader}
+      />
+    );
   return <VinylDisc spinning={spinning} thumbnail={thumbnail} />;
 }
+
 

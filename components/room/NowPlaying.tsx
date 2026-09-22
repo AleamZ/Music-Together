@@ -64,6 +64,159 @@ export default function NowPlaying(p: NowPlayingProps) {
     }
   };
 
+  if (theme === "itv") {
+    return (
+      <section className="relative rounded-xl border border-[#76cb00]/40 bg-[#080d16]/95 p-3 sm:p-4 shadow-xl backdrop-blur-xl">
+        <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
+          {/* Left Column: Television Broadcast Centerpiece */}
+          <div className="shrink-0 flex items-center justify-center">
+            <Turntable
+              spinning={room.is_playing && !!current}
+              thumbnail={current?.thumbnail_url}
+              title={current?.title || current?.youtube_video_id}
+              uploader={current?.added_by_name}
+            />
+          </div>
+
+          {/* Right Column: Song Info, Broadcast Controls, Timeline */}
+          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
+            {/* 1. Track Info (Expanded & No duplicate thumbnail) */}
+            {current ? (
+              <div className="min-w-0 w-full">
+                <h2
+                  className="truncate font-sans text-base sm:text-xl font-black text-white tracking-wide"
+                  style={{ textShadow: "0 0 10px rgba(118,203,0,0.6)" }}
+                  title={current.title || current.youtube_video_id}
+                >
+                  {current.title || current.youtube_video_id}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                  <span className="font-mono text-[9px] sm:text-[10px] uppercase px-2 py-0.5 rounded bg-[#ff6600] border border-[#ff8800] text-white font-extrabold tracking-wider shrink-0 shadow-xs">
+                    YÊU CẦU BỞI
+                  </span>
+                  <span className="font-mono text-xs sm:text-sm text-[#84e800] font-bold">
+                    {current.added_by_name}
+                  </span>
+                  <span className="text-white/40">•</span>
+                  <span className="font-mono text-xs text-[#ffcc00] font-bold">
+                    MÃ BÀI HÁT: #{current.id ? String(current.id).slice(-4) : "8730"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="py-2">
+                <h2 className="font-sans text-base font-bold text-[#84e800] tracking-wide">
+                  {!p.djOnline ? "● TRỰC TIẾP: DJ ĐANG OFFLINE — CHỜ TÍN HIỆU" : "● HÀNG ĐỢI RỖNG — SOẠN ITV GỬI 8730"}
+                </h2>
+                <p className="font-sans text-[11px] text-white/70 mt-0.5">
+                  Thêm bài hát ở bảng bên phải để gửi lên phát sóng truyền hình iTV
+                </p>
+              </div>
+            )}
+
+            {/* 2. Timeline / Progress */}
+            <div className="flex w-full items-center gap-2 text-xs text-white/80">
+              <span className="font-mono text-[11px] w-9 text-right text-[#84e800] font-bold">
+                {formatClock(elapsed)}
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={dur || 0}
+                value={Math.min(elapsed, dur || 0)}
+                disabled={!p.canControl || dur === 0}
+                onChange={(e) => p.onSeekMs(Number(e.target.value))}
+                className="h-1.5 flex-1 accent-[#76cb00] cursor-pointer"
+                aria-label="seek"
+              />
+              <span className="font-mono text-[11px] w-9 text-[#ff9900] font-bold">
+                {formatClock(dur)}
+              </span>
+            </div>
+
+            {/* 3. Controls Row */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                {p.canControl && (
+                  <>
+                    <button
+                      onClick={p.onPlayPause}
+                      className="h-10 w-10 sm:h-11 sm:w-11 rounded-lg bg-gradient-to-r from-[#76cb00] to-[#84e800] border border-[#a3ff12] text-black font-extrabold text-sm shadow-[0_0_16px_rgba(118,203,0,0.7)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
+                      title={room.is_playing ? "Tạm dừng" : "Phát sóng"}
+                    >
+                      {room.is_playing ? "⏸" : "▶"}
+                    </button>
+                    <button
+                      onClick={p.onSkip}
+                      className="h-8.5 px-3 rounded-lg border border-[#ff6600]/60 bg-[#1e1008] text-[#ff9900] font-mono text-xs shadow-[0_0_10px_rgba(255,102,0,0.3)] transition hover:bg-[#ff6600]/20 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                      title="Chuyển bài tiếp theo"
+                    >
+                      <span>CHUYỂN BÀI</span>
+                      <span>⏭</span>
+                    </button>
+                  </>
+                )}
+
+                {/* Audio On/Off Toggle Icon */}
+                <button
+                  onClick={toggleAudio}
+                  className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+                    !p.unlocked
+                      ? "bg-gradient-to-r from-[#76cb00] to-[#84e800] border border-[#a3ff12] text-black shadow-[0_0_14px_#84e800] animate-pulse"
+                      : p.volume === 0
+                      ? "bg-[#181005] border border-[#ff6600]/50 text-[#ff6600]"
+                      : "bg-[#0b1624] border border-[#76cb00]/50 text-[#84e800] hover:border-[#84e800] shadow-[0_0_8px_rgba(118,203,0,0.4)]"
+                  }`}
+                  title={
+                    !p.unlocked
+                      ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                      : p.volume === 0
+                      ? "Bật lại tiếng (Unmute)"
+                      : "Tắt tiếng (Mute)"
+                  }
+                >
+                  {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+                </button>
+              </div>
+
+              {/* Volume Slider */}
+              <div className="flex items-center gap-1.5 font-mono text-xs text-white bg-black/60 px-3 py-1 rounded-lg border border-[#76cb00]/40">
+                <span className="text-[#84e800] font-bold">VOL</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={p.volume}
+                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                  className="w-16 sm:w-20 accent-[#76cb00] cursor-pointer"
+                  aria-label="volume"
+                />
+                <span className="text-[10px] w-7 text-right font-mono text-[#84e800] font-bold">
+                  {p.volume}%
+                </span>
+              </div>
+            </div>
+
+            {/* 4. Room Info & SMS Notice */}
+            <div className="flex items-center justify-between font-mono text-[10px] text-white/70">
+              <p className="truncate">
+                {p.canControl
+                  ? "● BẠN LÀ DJ — TOÀN QUYỀN ĐIỀU PHỐI SÓNG TRUYỀN HÌNH"
+                  : "● ĐANG KẾT NỐI SÓNG iTV LIVE · DJ ĐIỀU PHỐI"}
+              </p>
+              {p.playError && <p className="text-red-400 font-bold">{p.playError}</p>}
+            </div>
+
+            {/* 5. Reactions Bar */}
+            <div className="pt-2 border-t border-[#76cb00]/25 flex items-center justify-start">
+              {p.children}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   if (theme === "cyberpunk") {
     return (
       <section className="relative rounded-xl border border-cyan-500/50 bg-[#080914]/90 p-3 sm:p-4 shadow-[0_0_28px_rgba(0,240,255,0.22),inset_0_1px_0_rgba(0,240,255,0.4)] backdrop-blur-xl">
