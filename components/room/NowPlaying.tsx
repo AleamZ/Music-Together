@@ -6,6 +6,7 @@ import { computeElapsedMs } from "@/lib/identity";
 import { formatClock } from "@/lib/format";
 import type { Room, QueueItem } from "@/lib/supabase";
 import { DragonCorners } from "./DragonDecorations";
+import { CyberpunkCorners } from "./CyberpunkDecorations";
 import { useTheme } from "@/hooks/useTheme";
 
 export interface NowPlayingProps {
@@ -39,6 +40,189 @@ export default function NowPlaying(p: NowPlayingProps) {
   }, [room.is_playing, room.started_at, room.paused_elapsed_ms]);
 
   const dur = p.durationMs || (current?.duration_seconds ? current.duration_seconds * 1000 : 0);
+
+  const [lastVolume, setLastVolume] = useState(p.volume > 0 ? p.volume : 100);
+
+  const handleVolumeChange = (v: number) => {
+    if (v > 0) setLastVolume(v);
+    p.onVolume(v);
+  };
+
+  const toggleAudio = () => {
+    if (!p.unlocked) {
+      p.onUnlock();
+      if (p.volume === 0) {
+        p.onVolume(lastVolume || 100);
+      }
+    } else {
+      if (p.volume > 0) {
+        setLastVolume(p.volume);
+        p.onVolume(0);
+      } else {
+        p.onVolume(lastVolume || 100);
+      }
+    }
+  };
+
+  if (theme === "cyberpunk") {
+    return (
+      <section className="relative rounded-xl border border-cyan-500/50 bg-[#080914]/90 p-3 sm:p-4 shadow-[0_0_28px_rgba(0,240,255,0.22),inset_0_1px_0_rgba(0,240,255,0.4)] backdrop-blur-xl">
+        <CyberpunkCorners size={44} allFour />
+        <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
+          {/* Left Column: Cyber-Deck Cassette Centerpiece */}
+          <div className="shrink-0 flex items-center justify-center">
+            <Turntable spinning={room.is_playing && !!current} thumbnail={current?.thumbnail_url} />
+          </div>
+
+          {/* Right Column: Digital HUD Info, Controls, Timeline */}
+          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
+            {/* 1. Track Info */}
+            {current ? (
+              <div className="flex items-center gap-3">
+                {current.thumbnail_url && (
+                  <div className="relative h-13 w-13 sm:h-14 sm:w-14 shrink-0 overflow-hidden rounded-lg border border-pink-500/60 shadow-[0_0_12px_rgba(255,0,85,0.35)] bg-black/60">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={current.thumbnail_url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                    {room.is_playing && (
+                      <div className="absolute inset-0 bg-cyan-400/20 animate-pulse" />
+                    )}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <h2
+                    className="truncate font-mono text-base sm:text-lg font-black text-cyan-200 tracking-wide"
+                    style={{ textShadow: "0 0 10px rgba(0,240,255,0.6)" }}
+                    title={current.title || current.youtube_video_id}
+                  >
+                    {current.title || current.youtube_video_id}
+                  </h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="font-mono text-[9px] uppercase px-1.5 py-0.5 rounded bg-pink-950/80 border border-pink-500/50 text-pink-300 font-bold tracking-wider">
+                      UPLOADER
+                    </span>
+                    <span className="font-mono text-[11px] text-cyan-300 font-semibold truncate">
+                      {current.added_by_name}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-2">
+                <h2 className="font-mono text-base font-bold text-cyan-300/90 tracking-wider">
+                  {!p.djOnline ? "// SYSTEM: DJ OFFLINE - STANDBY" : "// AUDIO_QUEUE: EMPTY"}
+                </h2>
+                <p className="font-mono text-[11px] text-pink-400/70 mt-0.5">
+                  Thêm bài hát ở bảng bên phải để nạp vào băng từ Cyber-Deck
+                </p>
+              </div>
+            )}
+
+            {/* 2. Timeline / Progress */}
+            <div className="flex w-full items-center gap-2 text-xs text-cyan-300/80">
+              <span className="font-mono text-[11px] w-9 text-right text-cyan-400 font-bold">
+                {formatClock(elapsed)}
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={dur || 0}
+                value={Math.min(elapsed, dur || 0)}
+                disabled={!p.canControl || dur === 0}
+                onChange={(e) => p.onSeekMs(Number(e.target.value))}
+                className="h-1.5 flex-1 accent-cyan-400 cursor-pointer"
+                aria-label="seek"
+              />
+              <span className="font-mono text-[11px] w-9 text-pink-400 font-bold">
+                {formatClock(dur)}
+              </span>
+            </div>
+
+            {/* 3. Controls Row */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                {p.canControl && (
+                  <>
+                    <button
+                      onClick={p.onPlayPause}
+                      className="h-10 w-10 sm:h-11 sm:w-11 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 border border-cyan-200 text-black font-extrabold text-sm shadow-[0_0_16px_rgba(0,240,255,0.6)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
+                      title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}
+                    >
+                      {room.is_playing ? "⏸" : "▶"}
+                    </button>
+                    <button
+                      onClick={p.onSkip}
+                      className="h-8.5 px-3 rounded-lg border border-pink-500/60 bg-[#160a1e] text-pink-300 font-mono text-xs shadow-[0_0_10px_rgba(255,0,85,0.3)] transition hover:bg-pink-950/60 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                      title="Chuyển bài tiếp theo"
+                    >
+                      <span>SKIP</span>
+                      <span>⏭</span>
+                    </button>
+                  </>
+                )}
+
+                {/* Audio On/Off Toggle Icon */}
+                <button
+                  onClick={toggleAudio}
+                  className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+                    !p.unlocked
+                      ? "bg-gradient-to-r from-emerald-400 to-cyan-400 border border-emerald-200 text-black shadow-[0_0_14px_#00ff88] animate-pulse"
+                      : p.volume === 0
+                      ? "bg-[#160a1e] border border-pink-500/50 text-pink-400"
+                      : "bg-[#0c1224] border border-cyan-400/50 text-cyan-300 hover:border-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.3)]"
+                  }`}
+                  title={
+                    !p.unlocked
+                      ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                      : p.volume === 0
+                      ? "Bật lại tiếng (Unmute)"
+                      : "Tắt tiếng (Mute)"
+                  }
+                >
+                  {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+                </button>
+              </div>
+
+              {/* Volume Slider */}
+              <div className="flex items-center gap-1.5 font-mono text-xs text-cyan-300 bg-black/60 px-3 py-1 rounded-lg border border-cyan-400/30">
+                <span className="text-cyan-400">VOL</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={p.volume}
+                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                  className="w-16 sm:w-20 accent-cyan-400 cursor-pointer"
+                  aria-label="volume"
+                />
+                <span className="text-[10px] w-7 text-right font-mono text-emerald-400 font-bold">
+                  {p.volume}%
+                </span>
+              </div>
+            </div>
+
+            {/* 4. Room Info */}
+            <div className="flex items-center justify-between font-mono text-[10px] text-cyan-400/70">
+              <p className="truncate">
+                {p.canControl
+                  ? "// NODE_ROLE: [DJ_MASTER] — FULL DECK ACCESS"
+                  : "// NODE_ROLE: [SUBSCRIBER] — REMOTE SYNCED"}
+              </p>
+              {p.playError && <p className="text-pink-400 font-bold">{p.playError}</p>}
+            </div>
+
+            {/* 5. Reactions Bar */}
+            <div className="pt-2 border-t border-cyan-500/20 flex items-center justify-start">
+              {p.children}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   if (theme === "dragon") {
     return (
@@ -128,25 +312,37 @@ export default function NowPlaying(p: NowPlayingProps) {
                   </>
                 )}
 
-                {!p.unlocked && (
-                  <button
-                    onClick={p.onUnlock}
-                    className="rounded-full bg-gradient-to-r from-red-800 to-amber-700 border border-amber-400/60 px-3.5 py-1.5 text-xs text-amber-100 shadow-md animate-pulse cursor-pointer"
-                  >
-                    🔈 Bật âm thanh
-                  </button>
-                )}
+                {/* Audio On/Off Toggle Icon */}
+                <button
+                  onClick={toggleAudio}
+                  className={`h-8.5 w-8.5 rounded-full border text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+                    !p.unlocked
+                      ? "bg-gradient-to-r from-red-800 to-amber-700 border-amber-400/80 text-amber-100 shadow-[0_0_10px_rgba(212,175,55,0.4)] animate-pulse"
+                      : p.volume === 0
+                      ? "bg-[#181520] border-amber-400/30 text-amber-400/50"
+                      : "bg-[#1f1a29] border-amber-400/50 text-amber-200"
+                  }`}
+                  title={
+                    !p.unlocked
+                      ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                      : p.volume === 0
+                      ? "Bật lại tiếng (Unmute)"
+                      : "Tắt tiếng (Mute)"
+                  }
+                >
+                  {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+                </button>
               </div>
 
               {/* Volume Slider */}
               <div className="flex items-center gap-1.5 text-xs text-amber-200/80 bg-black/40 px-3 py-1 rounded-full border border-amber-400/20">
-                <span>🔊</span>
+                <span>VOL</span>
                 <input
                   type="range"
                   min={0}
                   max={100}
                   value={p.volume}
-                  onChange={(e) => p.onVolume(Number(e.target.value))}
+                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
                   className="w-16 sm:w-20 accent-amber-400 cursor-pointer"
                   aria-label="volume"
                 />
@@ -197,22 +393,27 @@ export default function NowPlaying(p: NowPlayingProps) {
         <span>{formatClock(dur)}</span>
       </div>
 
-      {!p.unlocked && (
-        <button onClick={p.onUnlock} className="rounded-full bg-burgundy px-4 py-1.5 text-xs text-cream shadow-xs">🔈 Bật âm thanh</button>
-      )}
-
       <div className="flex items-center gap-3">
         {p.canControl && (
           <>
-            <button onClick={p.onPlayPause} className="h-11 w-11 rounded-full bg-burgundy px-3 py-1 text-cream shadow-xs transition hover:scale-105 active:scale-95">
+            <button onClick={p.onPlayPause} className="h-11 w-11 rounded-full bg-burgundy px-3 py-1 text-cream shadow-xs transition hover:scale-105 active:scale-95" title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}>
               {room.is_playing ? "⏸" : "▶"}
             </button>
-            <button onClick={p.onSkip} className="rounded-full border border-gold bg-cream px-3 py-1.5 text-xs text-burgundy shadow-xs transition hover:scale-105 active:scale-95">⏭</button>
+            <button onClick={p.onSkip} className="rounded-full border border-gold bg-cream px-3 py-1.5 text-xs text-burgundy shadow-xs transition hover:scale-105 active:scale-95" title="Chuyển bài">⏭</button>
           </>
         )}
-        <label className="flex items-center gap-1 text-xs text-ink/80">🔊
+        <button
+          onClick={toggleAudio}
+          className={`h-9 w-9 rounded-full border border-gold bg-cream text-sm shadow-xs transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+            !p.unlocked ? "animate-pulse bg-burgundy text-cream" : ""
+          }`}
+          title={!p.unlocked ? "Nhấn để bật âm thanh" : p.volume === 0 ? "Bật lại tiếng (Unmute)" : "Tắt tiếng (Mute)"}
+        >
+          {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+        </button>
+        <label className="flex items-center gap-1 text-xs text-ink/80">
           <input type="range" min={0} max={100} value={p.volume}
-            onChange={(e) => p.onVolume(Number(e.target.value))} className="w-16 sm:w-20 accent-burgundy" aria-label="volume" />
+            onChange={(e) => handleVolumeChange(Number(e.target.value))} className="w-16 sm:w-20 accent-burgundy" aria-label="volume" />
         </label>
       </div>
       <p className="text-[10px] sm:text-[11px] text-green-vintage">

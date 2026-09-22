@@ -160,9 +160,203 @@ function DragonLuteCenterpiece({ spinning }: { spinning: boolean }) {
   );
 }
 
+function TapeReel({
+  spinning,
+  color = "#00f0ff",
+}: {
+  spinning: boolean;
+  color?: string;
+}) {
+  return (
+    <div
+      className={`relative h-13 w-13 sm:h-15 sm:w-15 shrink-0 ${
+        spinning ? "animate-[spin_2.2s_linear_infinite]" : ""
+      }`}
+    >
+      <svg
+        viewBox="0 0 64 64"
+        fill="none"
+        className="w-full h-full drop-shadow-[0_0_8px_rgba(0,240,255,0.5)]"
+      >
+        {/* Outer Wheel Rim */}
+        <circle cx="32" cy="32" r="30" stroke={color} strokeWidth="2.5" fill="#0b0e1b" />
+        <circle cx="32" cy="32" r="23" stroke={color} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
+        {/* 6 Radial Spokes */}
+        {[0, 60, 120, 180, 240, 300].map((deg) => (
+          <line
+            key={deg}
+            x1="32"
+            y1="32"
+            x2={32 + 22 * Math.cos((deg * Math.PI) / 180)}
+            y2={32 + 22 * Math.sin((deg * Math.PI) / 180)}
+            stroke={color}
+            strokeWidth="2"
+            opacity="0.8"
+          />
+        ))}
+        {/* Inner Hub Gear */}
+        <circle cx="32" cy="32" r="11" fill="#04060d" stroke={color} strokeWidth="2" />
+        {/* Center Spindle Teeth (3 prongs in hot magenta) */}
+        {[0, 120, 240].map((deg) => (
+          <rect
+            key={deg}
+            x="30.5"
+            y="23"
+            width="3"
+            height="5"
+            fill="#ff0055"
+            transform={`rotate(${deg} 32 32)`}
+          />
+        ))}
+        <circle cx="32" cy="32" r="4" fill="#000" />
+      </svg>
+    </div>
+  );
+}
+
+const EQ_DELAYS = [0, 0.12, 0.28, 0.05, 0.35, 0.18, 0.42, 0.22, 0.08, 0.3, 0.15, 0.25];
+const EQ_DURATIONS = [0.65, 0.5, 0.75, 0.55, 0.8, 0.6, 0.7, 0.52, 0.68, 0.58, 0.72, 0.62];
+
+function CyberpunkCassettePlayer({
+  spinning,
+  thumbnail,
+}: {
+  spinning: boolean;
+  thumbnail?: string | null;
+}) {
+  return (
+    <div className="relative select-none flex items-center justify-center my-1 w-full max-w-[340px] sm:max-w-[360px]">
+      {/* Ambient Neon Back-Glow */}
+      <div
+        className={`absolute inset-0 rounded-2xl blur-xl transition-all duration-700 pointer-events-none ${
+          spinning
+            ? "opacity-70 bg-gradient-to-r from-cyan-500/25 via-fuchsia-600/20 to-pink-500/25 animate-pulse"
+            : "opacity-20 bg-cyan-500/10"
+        }`}
+      />
+
+      {/* Cyber-Deck Chassis */}
+      <div className="relative w-full rounded-xl border border-cyan-400/60 bg-gradient-to-b from-[#111326] via-[#090b16] to-[#04060c] p-2.5 sm:p-3 shadow-[0_0_24px_rgba(0,240,255,0.25),inset_0_1px_0_rgba(0,240,255,0.4)]">
+        {/* Corner Rivet Screws */}
+        <div className="absolute top-1.5 left-2 font-mono text-[9px] text-cyan-600 select-none">⊕</div>
+        <div className="absolute top-1.5 right-2 font-mono text-[9px] text-pink-600 select-none">⊕</div>
+        <div className="absolute bottom-1.5 left-2 font-mono text-[9px] text-cyan-600 select-none">⊕</div>
+        <div className="absolute bottom-1.5 right-2 font-mono text-[9px] text-pink-600 select-none">⊕</div>
+
+        {/* Top Deck HUD Bar */}
+        <div className="flex items-center justify-between px-2 pb-1.5 border-b border-cyan-500/20 font-mono text-[9px] tracking-wider">
+          <div className="flex items-center gap-1.5 text-cyan-400">
+            <span className="text-pink-500 font-bold">CP-2099</span>
+            <span className="text-cyan-600 hidden sm:inline">//</span>
+            <span className="text-cyan-300/80 hidden sm:inline">MAGNETIC TAPE CORE</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <span
+                className={`inline-block h-2 w-2 rounded-full transition-all ${
+                  spinning
+                    ? "bg-emerald-400 shadow-[0_0_8px_#00ff88] animate-pulse"
+                    : "bg-amber-500/60"
+                }`}
+              />
+              <span className={`text-[9px] font-bold ${spinning ? "text-emerald-300" : "text-amber-400/80"}`}>
+                {spinning ? "PLAY" : "PAUSED"}
+              </span>
+            </div>
+            <span className="text-pink-400/80 font-bold">TYPE-IV</span>
+          </div>
+        </div>
+
+        {/* Center Smoked Cassette Window */}
+        <div className="relative mt-2 rounded-lg border border-cyan-400/40 bg-[#060812]/95 p-2 overflow-hidden shadow-inner">
+          {/* Subtle Scanline Sheen */}
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(0,240,255,0.02)_50%,transparent_50%)] bg-[length:100%_4px]" />
+
+          {/* Tape Ribbon Running Across Spools */}
+          <div className="absolute top-7 left-10 right-10 h-1 bg-gradient-to-r from-cyan-900 via-pink-900 to-cyan-900 opacity-70 pointer-events-none" />
+
+          {/* Dual Spools and Center Mixtape Label */}
+          <div className="relative flex items-center justify-between gap-2 z-10">
+            {/* Left Spool */}
+            <TapeReel spinning={spinning} color="#00f0ff" />
+
+            {/* Center Mixtape Label */}
+            <div className="flex-1 min-w-0 max-w-[150px] sm:max-w-[170px] mx-auto rounded-md border border-fuchsia-500/50 bg-[#0a0c1a] p-1 shadow-[0_0_12px_rgba(255,0,85,0.2)] flex flex-col items-center">
+              <div className="relative h-11 sm:h-12 w-full rounded overflow-hidden bg-black/60 border border-cyan-400/30">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbnail || "/themes/cyberpunk/emblem.jpg"}
+                  alt="Cassette Label"
+                  className={`h-full w-full object-cover transition-all ${
+                    spinning ? "brightness-105 contrast-105" : "brightness-85 grayscale-20"
+                  }`}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+                <div className="absolute bottom-0.5 inset-x-1 flex items-center justify-between text-[7px] font-mono text-cyan-300 font-bold tracking-widest">
+                  <span>A-SIDE</span>
+                  <span className="text-pink-400">HI-RES</span>
+                </div>
+              </div>
+
+              {/* Tape Branding Label */}
+              <div className="w-full mt-1 flex items-center justify-between px-1 text-[8px] font-mono tracking-tight text-cyan-400/80">
+                <span className="font-extrabold text-pink-400">NEO-TOKYO</span>
+                <span className="text-[7px] text-cyan-300">2099.NET</span>
+              </div>
+            </div>
+
+            {/* Right Spool */}
+            <TapeReel spinning={spinning} color="#ff0055" />
+          </div>
+
+          {/* Equalizer Spectrum Analyzer Window (12-band) */}
+          <div className="mt-2.5 pt-1.5 border-t border-cyan-500/20 flex items-center justify-between gap-2 px-1">
+            <div className="font-mono text-[8px] text-cyan-400 tracking-wider flex items-center gap-1">
+              <span className="text-pink-400 font-bold">VU</span>
+              <span className="text-cyan-600">|</span>
+              <span className="text-[7px] text-cyan-400/80">SPECTRUM</span>
+            </div>
+
+            {/* 12-Band Equalizer */}
+            <div className="flex-1 flex h-4 sm:h-5 items-end justify-center gap-1 sm:gap-1.5 px-2">
+              {EQ_DELAYS.map((delay, i) => (
+                <div
+                  key={i}
+                  className="w-1.5 sm:w-2 rounded-xs transition-all duration-300"
+                  style={{
+                    height: spinning ? "100%" : "18%",
+                    background: "linear-gradient(to top, #00ff88 0%, #00f0ff 60%, #ff0055 100%)",
+                    boxShadow: spinning ? "0 0 6px rgba(0,240,255,0.4)" : "none",
+                    animation: spinning
+                      ? `eq-cyber ${EQ_DURATIONS[i]}s ${delay}s ease-in-out infinite`
+                      : "none",
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="font-mono text-[8px] text-pink-400 tracking-widest font-bold">
+              +3dB
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Status Ticker */}
+        <div className="mt-1.5 flex items-center justify-between px-1 font-mono text-[8px] text-cyan-400/70">
+          <span>AUDIO-CORE: 96kHz / 32-BIT</span>
+          <span className="text-pink-400/80">STEREO SURROUND</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Turntable({ spinning, thumbnail }: { spinning: boolean; thumbnail?: string | null }) {
   const { theme } = useTheme();
   if (theme === "cozy") return <CozyRadio spinning={spinning} thumbnail={thumbnail} />;
   if (theme === "dragon") return <DragonLuteCenterpiece spinning={spinning} />;
+  if (theme === "cyberpunk") return <CyberpunkCassettePlayer spinning={spinning} thumbnail={thumbnail} />;
   return <VinylDisc spinning={spinning} thumbnail={thumbnail} />;
 }
+
