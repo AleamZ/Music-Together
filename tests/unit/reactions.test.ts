@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { throttled, REACTION_EMOJIS } from "@/lib/reactions";
+import { throttled, REACTION_EMOJIS, type ReactionData } from "@/lib/reactions";
 
 describe("throttled", () => {
   it("allows the first call (lastAt null)", () => {
@@ -17,5 +17,13 @@ describe("throttled", () => {
 describe("REACTION_EMOJIS", () => {
   it("is the fixed 5-emoji palette", () => {
     expect(REACTION_EMOJIS).toEqual(["❤️", "😂", "🔥", "👏", "🎉"]);
+  });
+});
+
+describe("ReactionData", () => {
+  it("supports emoji and optional username", () => {
+    const data: ReactionData = { emoji: "🔥", username: "hunglt" };
+    expect(data.emoji).toBe("🔥");
+    expect(data.username).toBe("hunglt");
   });
 });

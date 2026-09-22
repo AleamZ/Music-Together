@@ -1,23 +1,53 @@
-import type { RealtimeChannel } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { supabase, type RealtimeChannel } from "@/lib/supabase";
 
 export const REACTION_EMOJIS = ["❤️", "😂", "🔥", "👏", "🎉"] as const;
 export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
 
-export interface ReactionsHandle { send: (emoji: ReactionEmoji) => void; unsubscribe: () => void; }
+export interface ReactionData {
+  emoji: ReactionEmoji;
+  username?: string;
+}
+
+export interface ReactionsHandle {
+  send: (data: ReactionEmoji | ReactionData) => void;
+  unsubscribe: () => void;
+}
 
 /** Ephemeral floating reactions over a dedicated Broadcast channel (no DB). self:false → no echo. */
-export function joinReactions(roomId: string, onReact: (emoji: ReactionEmoji) => void): ReactionsHandle {
+export function joinReactions(
+  roomId: string,
+  onReact: (data: ReactionData) => void,
+): ReactionsHandle {
   const channel: RealtimeChannel = supabase
-    .channel(`reactions:${roomId}`)
+    .channel(`reactions:${roomId}`, {
+      config: { broadcast: { ack: true, self: false } },
+    })
     .on("broadcast", { event: "react" }, (payload) => {
-      const emoji = (payload.payload as { emoji?: ReactionEmoji })?.emoji;
-      if (emoji) onReact(emoji);
+      const raw = ((payload as any)?.payload ?? payload) as any;
+      if (!raw) return;
+      if (typeof raw === "string") {
+        onReact({ emoji: raw as ReactionEmoji });
+      } else {
+        const emoji = raw.emoji ?? (payload as any)?.emoji;
+        const username = raw.username ?? (payload as any)?.username;
+        if (emoji) {
+          onReact({
+            emoji,
+            username: typeof username === "string" && username.trim() ? username.trim() : undefined,
+          });
+        }
+      }
     })
     .subscribe();
+
   return {
-    send: (emoji) => { void channel.send({ type: "broadcast", event: "react", payload: { emoji } }); },
-    unsubscribe: () => { void supabase.removeChannel(channel); },
+    send: (data) => {
+      const payload: ReactionData = typeof data === "string" ? { emoji: data } : data;
+      channel.send({ type: "broadcast", event: "react", payload }).catch(() => {});
+    },
+    unsubscribe: () => {
+      void supabase.removeChannel(channel);
+    },
   };
 }
 

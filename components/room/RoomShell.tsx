@@ -16,7 +16,7 @@ import { usePlayback } from "@/hooks/usePlayback";
 import { countMyOrders } from "@/lib/queue-rules";
 
 export default function RoomShell({ view }: { view: RoomView }) {
-  const { state, role, onlineIds, token, myMemberId, accountId } = view;
+  const { state, role, onlineIds, token, myMemberId, accountId, username } = view;
   const room = state.room!;
   const current = state.queue.find((q) => q.id === room.current_item_id) ?? null;
   // Pending rows are requests awaiting Admin/DJ approval; only approved rows are the play queue.
@@ -34,6 +34,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
 
   // Playback engine for everyone (DJ-only writes inside). Returns transport handlers + duration/volume/gate.
   const dj = usePlayback({ room, current, isDj: role.isDj, queueLen: approved.length, roomId: room.id, token });
+  const myUsername = username || state.members.find((m) => m.account_id === accountId)?.username;
 
   // Tab state for left column: "chat" | "members" | "split"
   const [leftTab, setLeftTab] = useState<"chat" | "members" | "split">("chat");
@@ -171,7 +172,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
             unlocked={dj.unlocked} onUnlock={dj.unlock} playError={dj.playError}
             onPlayPause={dj.togglePlay} onSkip={dj.skip} onSeekMs={dj.seekMs} onVolume={dj.setVolume}
           />
-          <Reactions roomId={room.id} />
+          <Reactions roomId={room.id} username={myUsername} />
         </section>
 
         <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
