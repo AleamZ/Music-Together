@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 export interface RoomView {
   loading: boolean; state: RoomState; onlineIds: string[];
-  token: string; accountId: string; myMemberId: string | null;
+  token: string; accountId: string; username: string; myMemberId: string | null;
   role: RoleFlags; kicked: boolean;
 }
 const EMPTY: RoomState = { room: null, members: [], queue: [] };
@@ -65,5 +65,5 @@ export function useRoom(code: string): RoomView {
   // kicked only if we WERE a member and now aren't (never-joined users fall through to JoinGate).
   const kicked = wasMember && !!state.room && !myMemberId;
 
-  return { loading, state, onlineIds, token: token ?? "", accountId, myMemberId, role, kicked };
+  return { loading, state, onlineIds, token: token ?? "", accountId, username: account?.username ?? "", myMemberId, role, kicked };
 }
