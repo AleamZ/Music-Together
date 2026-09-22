@@ -742,5 +742,140 @@ html[data-theme="cyberpunk"] .podium-card-3 .podium-stat {
   color: #fffde6 !important;
 }
 
+/* ===== iTV Music — Kênh Âm Nhạc Tương Tác 2000s ===== */
+html[data-theme="itv"] {
+  --color-parchment: #080d16;
+  --color-cream: #0c1422;
+  --color-burgundy: #76cb00;       /* iconic iTV lime green */
+  --color-burgundy-accent: #ff6600;/* broadcast orange */
+  --color-gold: #84e800;           /* chartreuse highlight */
+  --color-green-vintage: #00ff88;  /* live signal green */
+  --color-ink: #f0f6fc;
+}
+
+html[data-theme="itv"] body {
+  background-color: #060a12;
+  background-image: url('/themes/itv/bg.jpg');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
+  background-attachment: fixed;
+  color: #f0f6fc;
+}
+
+/* Semi-transparent broadcast glassmorphism panels with lime-green glow */
+html[data-theme="itv"] .bg-cream\/50,
+html[data-theme="itv"] .bg-cream\/60,
+html[data-theme="itv"] .bg-cream\/70,
+html[data-theme="itv"] .bg-cream\/80 {
+  background-color: rgba(10, 16, 28, 0.88) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-color: rgba(118, 203, 0, 0.35) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85), 0 0 16px rgba(118, 203, 0, 0.12) !important;
+}
+
+html[data-theme="itv"] .border-gold,
+html[data-theme="itv"] .border-gold-200 {
+  border-color: rgba(118, 203, 0, 0.4) !important;
+}
+
+/* Interactive lime-green inputs & buttons */
+html[data-theme="itv"] input[type="text"],
+html[data-theme="itv"] textarea {
+  background-color: rgba(4, 7, 14, 0.9) !important;
+  border-color: rgba(118, 203, 0, 0.5) !important;
+  color: #ffffff !important;
+}
+html[data-theme="itv"] input[type="text"]:focus,
+html[data-theme="itv"] textarea:focus {
+  border-color: #84e800 !important;
+  box-shadow: 0 0 12px rgba(132, 232, 0, 0.5) !important;
+}
+
+/* Scrollbars */
+html[data-theme="itv"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+html[data-theme="itv"] ::-webkit-scrollbar-track {
+  background: #060a12;
+}
+html[data-theme="itv"] ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #76cb00 0%, #ff6600 100%);
+  border-radius: 4px;
+}
+
+/* iTV Top 10 Leaderboard Podiums */
+html[data-theme="itv"] .podium-card-1 {
+  background: linear-gradient(180deg, rgba(118, 203, 0, 0.22) 0%, rgba(10, 20, 4, 0.96) 100%) !important;
+  border: 1.5px solid rgba(132, 232, 0, 0.75) !important;
+  box-shadow: 0 0 24px rgba(118, 203, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.8) !important;
+}
+html[data-theme="itv"] .podium-card-1 .podium-avatar {
+  background: linear-gradient(135deg, #84e800 0%, #529400 100%) !important;
+  border: 2px solid #b8ff4d !important;
+  color: #000000 !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 16px rgba(132, 232, 0, 0.8) !important;
+}
+html[data-theme="itv"] .podium-card-1 .podium-name {
+  color: #84e800 !important;
+  font-weight: 800 !important;
+  text-shadow: 0 0 8px rgba(118, 203, 0, 0.7) !important;
+}
+html[data-theme="itv"] .podium-card-1 .podium-stat {
+  background: rgba(118, 203, 0, 0.2) !important;
+  border: 1px solid rgba(132, 232, 0, 0.5) !important;
+  color: #e5ffb3 !important;
+}
+
+html[data-theme="itv"] .podium-card-2 {
+  background: linear-gradient(180deg, rgba(255, 102, 0, 0.2) 0%, rgba(28, 12, 3, 0.96) 100%) !important;
+  border: 1.5px solid rgba(255, 102, 0, 0.65) !important;
+  box-shadow: 0 0 20px rgba(255, 102, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.8) !important;
+}
+html[data-theme="itv"] .podium-card-2 .podium-avatar {
+  background: linear-gradient(135deg, #ff6600 0%, #b34700 100%) !important;
+  border: 2px solid #ffaa66 !important;
+  color: #ffffff !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 16px rgba(255, 102, 0, 0.8) !important;
+}
+html[data-theme="itv"] .podium-card-2 .podium-name {
+  color: #ff771a !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 8px rgba(255, 102, 0, 0.6) !important;
+}
+html[data-theme="itv"] .podium-card-2 .podium-stat {
+  background: rgba(255, 102, 0, 0.2) !important;
+  border: 1px solid rgba(255, 102, 0, 0.45) !important;
+  color: #ffe6d4 !important;
+}
+
+html[data-theme="itv"] .podium-card-3 {
+  background: linear-gradient(180deg, rgba(0, 229, 255, 0.18) 0%, rgba(4, 22, 28, 0.96) 100%) !important;
+  border: 1.5px solid rgba(0, 229, 255, 0.6) !important;
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.25), 0 8px 24px rgba(0, 0, 0, 0.8) !important;
+}
+html[data-theme="itv"] .podium-card-3 .podium-avatar {
+  background: linear-gradient(135deg, #00e5ff 0%, #008899 100%) !important;
+  border: 2px solid #99f5ff !important;
+  color: #031417 !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.7) !important;
+}
+html[data-theme="itv"] .podium-card-3 .podium-name {
+  color: #00e5ff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.6) !important;
+}
+html[data-theme="itv"] .podium-card-3 .podium-stat {
+  background: rgba(0, 229, 255, 0.18) !important;
+  border: 1px solid rgba(0, 229, 255, 0.45) !important;
+  color: #d6faff !important;
+}
+
+
 
 

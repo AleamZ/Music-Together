@@ -17,6 +17,7 @@ import { usePlayback } from "@/hooks/usePlayback";
 import { countMyOrders } from "@/lib/queue-rules";
 import { DragonCorners, DragonHeaderBanner } from "./DragonDecorations";
 import { CyberpunkCorners, CyberpunkHeaderBanner } from "./CyberpunkDecorations";
+import { ITVHeaderBanner } from "./ITVDecorations";
 
 export default function RoomShell({ view }: { view: RoomView }) {
   const { state, role, onlineIds, token, myMemberId, accountId, username } =
@@ -77,6 +78,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
       />
       <DragonHeaderBanner />
       <CyberpunkHeaderBanner />
+      <ITVHeaderBanner />
       <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:gap-7 lg:grid-cols-[7fr_12fr_5.5fr] flex-1 min-h-0 min-w-0 items-stretch pb-1">
         <section className="relative flex flex-col rounded-xl border border-gold-200 bg-cream/50 p-2.5 sm:p-3 pt-3.5 h-full max-h-full min-h-0 min-w-0">
           <DragonCorners size={60} />
