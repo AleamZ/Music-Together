@@ -8,6 +8,9 @@ describe("parseTheme", () => {
   it("returns 'salon' for 'salon'", () => {
     expect(parseTheme("salon")).toBe("salon");
   });
+  it("returns 'dragon' for 'dragon'", () => {
+    expect(parseTheme("dragon")).toBe("dragon");
+  });
   it("defaults to 'salon' for null / unknown / empty", () => {
     expect(parseTheme(null)).toBe("salon");
     expect(parseTheme("")).toBe("salon");

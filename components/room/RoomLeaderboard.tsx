@@ -167,9 +167,9 @@ export default function RoomLeaderboard({
 
   // Render Full Expanded Card - flex-1 stretches all the way to bottom edge (bám mép)
   return (
-    <section aria-label="Bảng xếp hạng âm nhạc" className="flex-1 min-h-0 flex flex-col rounded-xl border border-gold-200 bg-cream/70 p-2.5 sm:p-3 shadow-xs transition w-full min-w-0 max-w-full overflow-hidden">
+    <section aria-label="Bảng xếp hạng âm nhạc" className="relative flex-1 min-h-0 flex flex-col rounded-xl border border-gold-200 bg-cream/70 p-2 sm:p-2.5 shadow-xs transition w-full min-w-0 max-w-full">
       {/* Header Bar */}
-      <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-1.5 border-b border-gold-200/50 pb-2">
+      <div className="mb-1.5 flex shrink-0 flex-wrap items-center justify-between gap-1.5 border-b border-gold-200/50 pb-1.5">
         <div className="flex items-center gap-1.5">
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gold-200/40 text-xs shadow-2xs">
             🏆
@@ -269,19 +269,19 @@ export default function RoomLeaderboard({
             <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
               {/* Compact Trio Showcase (Top 3) */}
               {rankings.length > 0 && (
-                <div className="shrink-0 flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg border border-gold-200/50 bg-gold-200/10 p-1.5 sm:p-2">
+                <div className="podium-container shrink-0 flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg border border-gold-200/50 bg-gold-200/10 p-1.5 sm:p-2">
                   {/* Rank 2 (Silver) */}
                   {top2 ? (
-                    <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-md border border-slate-300/70 bg-cream/80 px-2 py-1 shadow-2xs">
+                    <div className="podium-card podium-card-2 flex flex-1 min-w-0 items-center gap-1.5 rounded-md border border-slate-300/70 bg-cream/80 px-2 py-1 shadow-2xs">
                       <span className="text-xs sm:text-sm shrink-0">🥈</span>
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-[10px] font-bold text-slate-700">
+                      <div className="podium-avatar flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-[10px] font-bold text-slate-700">
                         {top2.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[11px] font-semibold text-ink leading-tight">
+                        <p className="podium-name truncate text-[11px] font-semibold text-ink leading-tight">
                           {top2.name}
                         </p>
-                        <p className="text-[9px] text-ink/60 leading-tight">
+                        <p className="podium-stat text-[9px] text-ink/60 leading-tight">
                           {top2.percentage}% ({top2.playedCount} bài)
                         </p>
                       </div>
@@ -292,19 +292,19 @@ export default function RoomLeaderboard({
 
                   {/* Rank 1 (Gold - Center - Elevated) */}
                   {top1 && (
-                    <div className="relative flex flex-1 min-w-0 items-center gap-1.5 rounded-md border border-gold bg-amber-50 px-2 py-1 shadow-xs ring-1 ring-gold-200/60">
+                    <div className="podium-card podium-card-1 relative flex flex-1 min-w-0 items-center gap-1.5 rounded-md border border-gold bg-amber-50 px-2 py-1 shadow-xs ring-1 ring-gold-200/60">
                       <span className="text-xs sm:text-sm shrink-0">👑</span>
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-gold bg-amber-200 text-xs font-bold text-burgundy shadow-2xs">
+                      <div className="podium-avatar flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-gold bg-amber-200 text-xs font-bold text-burgundy shadow-2xs">
                         {top1.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1">
-                          <span className="text-[9px] font-bold text-amber-900">#1</span>
-                          <p className="truncate text-xs font-bold text-burgundy leading-tight">
+                          <span className="podium-rank-tag text-[9px] font-bold text-amber-900">#1</span>
+                          <p className="podium-name truncate text-xs font-bold text-burgundy leading-tight">
                             {top1.name}
                           </p>
                         </div>
-                        <p className="text-[9px] font-bold text-burgundy/90 leading-tight">
+                        <p className="podium-stat text-[9px] font-bold text-burgundy/90 leading-tight">
                           {top1.percentage}% ({top1.playedCount} bài)
                         </p>
                       </div>
@@ -313,16 +313,16 @@ export default function RoomLeaderboard({
 
                   {/* Rank 3 (Bronze) */}
                   {top3 ? (
-                    <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-md border border-amber-600/30 bg-cream/80 px-2 py-1 shadow-2xs">
+                    <div className="podium-card podium-card-3 flex flex-1 min-w-0 items-center gap-1.5 rounded-md border border-amber-600/30 bg-cream/80 px-2 py-1 shadow-2xs">
                       <span className="text-xs sm:text-sm shrink-0">🥉</span>
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-amber-600/40 bg-amber-50 text-[10px] font-bold text-amber-900">
+                      <div className="podium-avatar flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-amber-600/40 bg-amber-50 text-[10px] font-bold text-amber-900">
                         {top3.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[11px] font-semibold text-ink leading-tight">
+                        <p className="podium-name truncate text-[11px] font-semibold text-ink leading-tight">
                           {top3.name}
                         </p>
-                        <p className="text-[9px] text-ink/60 leading-tight">
+                        <p className="podium-stat text-[9px] text-ink/60 leading-tight">
                           {top3.percentage}% ({top3.playedCount} bài)
                         </p>
                       </div>

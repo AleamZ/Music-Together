@@ -6,6 +6,7 @@ import type { ThemeName } from "@/lib/theme";
 const OPTIONS: { id: ThemeName; label: string }[] = [
   { id: "salon", label: "🎩 Salon" },
   { id: "cozy", label: "🎮 Pixel" },
+  { id: "dragon", label: "🐉 Long Phụng" },
 ];
 
 export default function ThemeToggle() {
