@@ -8,6 +8,7 @@ import ChatPanel from "./ChatPanel";
 import ChatDrawer from "./ChatDrawer";
 import NowPlaying from "./NowPlaying";
 import Reactions from "./Reactions";
+import RoomLeaderboard from "./RoomLeaderboard";
 import AddSong from "./AddSong";
 import Queue from "./Queue";
 import PendingQueue from "./PendingQueue";
@@ -42,10 +43,20 @@ export default function RoomShell({ view }: { view: RoomView }) {
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
 
   return (
-    <main className="mx-auto max-w-6xl p-3">
-      <Header room={room} members={state.members} isAdmin={role.isAdmin} isDj={role.isDj} roomId={room.id} token={token} myMemberId={myMemberId} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[26%_1fr_33%] lg:items-start">
-        <section className="flex flex-col rounded-xl border border-gold-200 bg-cream/50 p-3 lg:sticky lg:top-3 lg:h-[calc(100vh-90px)] lg:max-h-[850px] min-h-[520px] overflow-hidden">
+    <main className="mx-auto max-w-[1440px] p-2.5 sm:p-3 lg:h-screen lg:max-h-screen lg:overflow-hidden lg:flex lg:flex-col">
+      <Header
+        room={room}
+        members={state.members}
+        isAdmin={role.isAdmin}
+        isDj={role.isDj}
+        roomId={room.id}
+        token={token}
+        myMemberId={myMemberId}
+        queue={state.queue}
+        current={current}
+      />
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[28%_1fr_31%] lg:flex-1 lg:min-h-0 lg:items-stretch">
+        <section className="flex flex-col rounded-xl border border-gold-200 bg-cream/50 p-3 lg:h-full lg:max-h-full overflow-hidden">
           {/* Segmented Tab Switcher */}
           <div className="mb-3 flex shrink-0 rounded-lg border border-gold-200 bg-cream/80 p-0.5 text-xs font-medium">
             <button
@@ -73,14 +84,14 @@ export default function RoomShell({ view }: { view: RoomView }) {
             <button
               type="button"
               onClick={() => setLeftTab("split")}
-              className={`rounded-md px-2 py-1.5 text-center transition-all ${
+              className={`rounded-md px-2.5 py-1.5 text-center transition-all ${
                 leftTab === "split"
                   ? "bg-burgundy text-cream shadow-xs font-semibold"
                   : "text-ink/70 hover:text-burgundy"
               }`}
               title="Xem cả hai cùng lúc"
             >
-              ☷
+              ☷ Cả hai
             </button>
           </div>
 
@@ -165,23 +176,37 @@ export default function RoomShell({ view }: { view: RoomView }) {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
+        {/* Center Column: Player, Floating Reactions, and Live Leaderboard */}
+        <div className="flex flex-col gap-3 lg:h-full lg:max-h-full overflow-hidden">
           <NowPlaying
             room={room} current={current} canControl={role.canControlPlayback}
             durationMs={dj.durationMs} volume={dj.volume} djOnline={djOnline}
             unlocked={dj.unlocked} onUnlock={dj.unlock} playError={dj.playError}
             onPlayPause={dj.togglePlay} onSkip={dj.skip} onSeekMs={dj.seekMs} onVolume={dj.setVolume}
-          />
-          <Reactions roomId={room.id} username={myUsername} />
-        </section>
+          >
+            <Reactions roomId={room.id} username={myUsername} />
+          </NowPlaying>
 
-        <section className="rounded-xl border border-gold-200 bg-cream/50 p-3">
+          {/* Leaderboard, Shuffle Luck, & Recent Play History right on the main screen */}
+          <RoomLeaderboard
+            room={room}
+            queue={state.queue}
+            current={current}
+            roomId={room.id}
+            token={token}
+          />
+        </div>
+
+        {/* Right Column: Queue & Add Song */}
+        <section className="flex flex-col rounded-xl border border-gold-200 bg-cream/50 p-3 lg:h-full lg:max-h-full overflow-hidden">
           <AddSong roomId={room.id} token={token} rules={rules} willPend={willPend} orderLimit={orderLimit} />
-          <MyPending items={myPending} roomId={room.id} token={token} />
-          {role.canManageQueue && (room.require_approval || pending.length > 0) && (
-            <PendingQueue pending={pending} roomId={room.id} token={token} />
-          )}
-          <Queue queue={approved} currentId={room.current_item_id} canManage={role.canManageQueue} roomId={room.id} token={token} />
+          <div className="flex-1 min-h-0 flex flex-col overflow-y-auto pr-0.5 mt-2">
+            <MyPending items={myPending} roomId={room.id} token={token} />
+            {role.canManageQueue && (room.require_approval || pending.length > 0) && (
+              <PendingQueue pending={pending} roomId={room.id} token={token} />
+            )}
+            <Queue queue={approved} currentId={room.current_item_id} canManage={role.canManageQueue} roomId={room.id} token={token} />
+          </div>
         </section>
       </div>
 

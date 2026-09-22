@@ -13,7 +13,7 @@ export default function Reactions({
   const { emotes, react } = useReactions(roomId, username);
 
   return (
-    <div className="relative mt-3">
+    <div className="relative mt-1 w-full border-t border-gold-200/40 pt-2">
       {/* Floating emotes container */}
       <div className="pointer-events-none absolute inset-x-0 bottom-12 h-52 overflow-hidden">
         {emotes.map((e) => {
