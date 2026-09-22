@@ -2,14 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import type { EmojiClickData } from "emoji-picker-react";
+import { Theme, type EmojiClickData } from "emoji-picker-react";
 
 // Lazy-load EmojiPicker to keep initial page bundle ultra-light & SSR-safe
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), {
   ssr: false,
   loading: () => (
-    <div className="flex h-80 w-72 items-center justify-center text-xs text-ink/60 bg-cream">
-      Đang tải emoji…
+    <div className="flex h-64 w-full items-center justify-center text-xs text-ink/60 bg-cream">
+      <span className="animate-spin mr-1.5">⏳</span> Đang tải emoji…
     </div>
   ),
 });
@@ -61,12 +61,11 @@ export default function EmojiPickerPopover({
   return (
     <div
       ref={popoverRef}
-      className="absolute bottom-full right-0 z-50 mb-2 flex flex-col overflow-hidden rounded-xl border border-gold-200 bg-cream shadow-2xl animate-in fade-in zoom-in-95 duration-150"
-      style={{ width: "min(340px, 90vw)" }}
+      className="absolute bottom-full left-0 right-0 z-50 mb-1.5 flex flex-col rounded-xl border border-gold-200 bg-cream shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 max-h-[340px]"
     >
       {/* Quick Emojis Bar */}
-      <div className="flex items-center gap-1 border-b border-gold-200/50 bg-parchment/40 px-2 py-1.5 overflow-x-auto">
-        <span className="text-[11px] font-semibold text-burgundy/80 shrink-0 mr-1">Nhanh:</span>
+      <div className="flex items-center gap-1 border-b border-gold-200/50 bg-gold-200/20 px-2 py-1 overflow-x-auto shrink-0">
+        <span className="text-[10px] font-semibold text-burgundy shrink-0 mr-0.5">Nhanh:</span>
         {QUICK_EMOJIS.map((emoji) => (
           <button
             key={emoji}
@@ -81,11 +80,12 @@ export default function EmojiPickerPopover({
       </div>
 
       {/* Full Picker */}
-      <div className="overflow-hidden">
+      <div className="w-full h-[270px] overflow-hidden bg-cream">
         <EmojiPicker
           onEmojiClick={handleEmojiClick}
           width="100%"
-          height={350}
+          height={270}
+          theme={Theme.LIGHT}
           previewConfig={{ showPreview: false }}
           skinTonesDisabled
           searchPlaceHolder="Tìm biểu cảm…"
