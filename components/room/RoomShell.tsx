@@ -16,6 +16,7 @@ import MyPending from "./MyPending";
 import { usePlayback } from "@/hooks/usePlayback";
 import { countMyOrders } from "@/lib/queue-rules";
 import { DragonCorners, DragonHeaderBanner } from "./DragonDecorations";
+import { CyberpunkCorners, CyberpunkHeaderBanner } from "./CyberpunkDecorations";
 
 export default function RoomShell({ view }: { view: RoomView }) {
   const { state, role, onlineIds, token, myMemberId, accountId, username } =
@@ -75,9 +76,11 @@ export default function RoomShell({ view }: { view: RoomView }) {
         current={current}
       />
       <DragonHeaderBanner />
+      <CyberpunkHeaderBanner />
       <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:gap-7 lg:grid-cols-[7fr_12fr_5.5fr] flex-1 min-h-0 min-w-0 items-stretch pb-1">
         <section className="relative flex flex-col rounded-xl border border-gold-200 bg-cream/50 p-2.5 sm:p-3 pt-3.5 h-full max-h-full min-h-0 min-w-0">
           <DragonCorners size={60} />
+          <CyberpunkCorners size={36} />
           {/* Segmented Tab Switcher */}
           <div className="mb-2 mt-1 sm:mt-1.5 mx-0.5 flex shrink-0 rounded-lg border border-gold-200 bg-cream/80 p-0.5 text-xs font-medium">
             <button
@@ -237,6 +240,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
         {/* Right Column: Queue & Add Song */}
         <section className="relative flex flex-col rounded-xl border border-gold-200 bg-cream/50 p-2.5 sm:p-3 pt-3.5 h-full max-h-full min-h-0 min-w-0">
           <DragonCorners size={60} />
+          <CyberpunkCorners size={36} />
           <div className="mt-1 sm:mt-1.5 mx-0.5 shrink-0">
             <AddSong
               roomId={room.id}

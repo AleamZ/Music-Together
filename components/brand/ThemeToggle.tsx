@@ -7,6 +7,7 @@ const OPTIONS: { id: ThemeName; label: string }[] = [
   { id: "salon", label: "🎩 Salon" },
   { id: "cozy", label: "🎮 Pixel" },
   { id: "dragon", label: "🐉 Long Phụng" },
+  { id: "cyberpunk", label: "⚡ Cyberpunk" },
 ];
 
 export default function ThemeToggle() {

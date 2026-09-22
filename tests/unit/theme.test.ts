@@ -11,6 +11,9 @@ describe("parseTheme", () => {
   it("returns 'dragon' for 'dragon'", () => {
     expect(parseTheme("dragon")).toBe("dragon");
   });
+  it("returns 'cyberpunk' for 'cyberpunk'", () => {
+    expect(parseTheme("cyberpunk")).toBe("cyberpunk");
+  });
   it("defaults to 'salon' for null / unknown / empty", () => {
     expect(parseTheme(null)).toBe("salon");
     expect(parseTheme("")).toBe("salon");
