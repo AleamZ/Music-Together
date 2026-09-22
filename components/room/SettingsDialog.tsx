@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { assignDj, kickMember, renameRoom, transferAdmin, updateRoomSettings, type Member, type Room } from "@/lib/supabase";
 import { normalizeForMatch } from "@/lib/queue-rules";
+import { DragonCorners } from "./DragonDecorations";
 
 const MAX_KEYWORD_LEN = 30;
 const MAX_KEYWORDS = 50;
@@ -59,8 +60,10 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-gold bg-parchment p-5" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 font-playfair text-xl text-burgundy">Cài đặt phòng</h3>
+      <div className="relative w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DragonCorners size={52} allFour />
+        <div className="max-h-[90vh] overflow-y-auto rounded-xl border border-gold bg-parchment p-5">
+          <h3 className="mb-3 font-playfair text-xl text-burgundy">Cài đặt phòng</h3>
 
         {isAdmin && (
           <>
@@ -135,6 +138,7 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
         {rulesMsg && <p className={`mt-1 text-xs ${rulesMsg.ok ? "text-burgundy" : "text-burgundy-accent"}`}>{rulesMsg.text}</p>}
 
         <button onClick={onClose} className="mt-4 w-full rounded-lg border border-gold py-2 text-burgundy">Đóng</button>
+        </div>
       </div>
     </div>
   );

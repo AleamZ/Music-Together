@@ -15,6 +15,7 @@ import {
 } from "@/lib/room-stats";
 import { fetchVideoDetails } from "@/lib/youtube/video";
 import { checkQueueRules, ruleMessage, violationFromRpcError } from "@/lib/queue-rules";
+import { DragonCorners } from "./DragonDecorations";
 
 interface RoomChartModalProps {
   room: Room;
@@ -130,10 +131,11 @@ export default function RoomChartModal({
         role="dialog"
         aria-modal="true"
         aria-label="Bảng xếp hạng và thống kê âm nhạc"
-        className="relative z-10 flex max-h-[88vh] w-full max-w-4xl flex-col rounded-2xl border-2 border-gold bg-cream shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="relative z-10 flex max-h-[88vh] w-full max-w-4xl flex-col rounded-2xl border-2 border-gold bg-cream shadow-2xl animate-in fade-in zoom-in-95 duration-150"
       >
+        <DragonCorners size={56} allFour />
         {/* Modal Header */}
-        <div className="flex shrink-0 items-center justify-between border-b border-gold-200 bg-cream px-5 py-3.5">
+        <div className="flex shrink-0 items-center justify-between border-b border-gold-200 bg-cream px-5 py-3.5 rounded-t-2xl">
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-200/30 text-xl shadow-xs">
               🏆
@@ -150,7 +152,7 @@ export default function RoomChartModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-gold-200 bg-cream text-ink/60 transition hover:border-gold hover:text-burgundy"
+            className="relative z-50 flex h-8 w-8 items-center justify-center rounded-full border border-gold-200 bg-cream text-ink/60 transition hover:border-gold hover:text-burgundy"
             aria-label="Đóng"
           >
             ✕
@@ -226,7 +228,7 @@ export default function RoomChartModal({
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 rounded-b-2xl">
           {loading ? (
             <div className="flex h-48 flex-col items-center justify-center gap-2 text-ink/60">
               <span className="animate-spin text-2xl">⏳</span>
@@ -247,22 +249,22 @@ export default function RoomChartModal({
                 <div className="space-y-5">
                   {/* Top 3 Trio Showcase - Clean solid elegance */}
                   {rankings.length > 0 && (
-                    <div className="rounded-xl border border-gold-200 bg-gold-200/10 p-4 shadow-2xs">
+                    <div className="podium-container rounded-xl border border-gold-200 bg-gold-200/10 p-4 shadow-2xs">
                       <h3 className="mb-3 text-center font-playfair text-sm font-bold tracking-wide text-burgundy uppercase">
                         Bục Vinh Danh Gout Âm Nhạc
                       </h3>
                       <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
                         {/* Rank 2 (Silver) */}
                         {top2 ? (
-                          <div className="flex flex-col items-center justify-center rounded-xl border border-slate-300 bg-cream p-3 text-center shadow-xs">
+                          <div className="podium-card podium-card-2 flex flex-col items-center justify-center rounded-xl border border-slate-300 bg-cream p-3 text-center shadow-xs">
                             <span className="text-xl">🥈</span>
-                            <div className="my-1.5 flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-slate-100 font-serif text-sm font-bold text-slate-800">
+                            <div className="podium-avatar my-1.5 flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-slate-100 font-serif text-sm font-bold text-slate-800">
                               {top2.name.charAt(0).toUpperCase()}
                             </div>
-                            <p className="max-w-[120px] truncate text-xs font-bold text-ink sm:max-w-[150px]">
+                            <p className="podium-name max-w-[120px] truncate text-xs font-bold text-ink sm:max-w-[150px]">
                               {top2.name}
                             </p>
-                            <span className="mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                            <span className="podium-stat mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
                               {top2.playedCount} bài ({top2.percentage}%)
                             </span>
                           </div>
@@ -272,20 +274,20 @@ export default function RoomChartModal({
 
                         {/* Rank 1 (Gold - Center) */}
                         {top1 && (
-                          <div className="relative flex flex-col items-center justify-center rounded-xl border-2 border-gold bg-amber-50/70 p-3 text-center shadow-xs ring-1 ring-gold-200">
+                          <div className="podium-card podium-card-1 relative flex flex-col items-center justify-center rounded-xl border-2 border-gold bg-amber-50/70 p-3 text-center shadow-xs ring-1 ring-gold-200">
                             <span className="text-2xl">👑</span>
-                            <div className="my-1.5 flex h-12 w-12 items-center justify-center rounded-full border-2 border-gold bg-amber-200 font-serif text-base font-bold text-burgundy shadow-2xs">
+                            <div className="podium-avatar my-1.5 flex h-12 w-12 items-center justify-center rounded-full border-2 border-gold bg-amber-200 font-serif text-base font-bold text-burgundy shadow-2xs">
                               {top1.name.charAt(0).toUpperCase()}
                             </div>
-                            <p className="max-w-[130px] truncate text-sm font-bold text-burgundy sm:max-w-[160px]">
+                            <p className="podium-name max-w-[130px] truncate text-sm font-bold text-burgundy sm:max-w-[160px]">
                               {top1.name}
                             </p>
                             {top1.badge && (
-                              <span className="mt-0.5 text-[10px] font-semibold text-burgundy">
+                              <span className="podium-badge mt-0.5 text-[10px] font-semibold text-burgundy">
                                 {top1.badge.icon} {top1.badge.title}
                               </span>
                             )}
-                            <span className="mt-1 rounded-full bg-gold/25 px-2.5 py-0.5 text-[10px] font-bold text-burgundy">
+                            <span className="podium-stat mt-1 rounded-full bg-gold/25 px-2.5 py-0.5 text-[10px] font-bold text-burgundy">
                               {top1.playedCount} bài ({top1.percentage}%)
                             </span>
                           </div>
@@ -293,15 +295,15 @@ export default function RoomChartModal({
 
                         {/* Rank 3 (Bronze) */}
                         {top3 ? (
-                          <div className="flex flex-col items-center justify-center rounded-xl border border-amber-600/40 bg-cream p-3 text-center shadow-xs">
+                          <div className="podium-card podium-card-3 flex flex-col items-center justify-center rounded-xl border border-amber-600/40 bg-cream p-3 text-center shadow-xs">
                             <span className="text-xl">🥉</span>
-                            <div className="my-1.5 flex h-10 w-10 items-center justify-center rounded-full border border-amber-600/40 bg-amber-50 font-serif text-sm font-bold text-amber-900">
+                            <div className="podium-avatar my-1.5 flex h-10 w-10 items-center justify-center rounded-full border border-amber-600/40 bg-amber-50 font-serif text-sm font-bold text-amber-900">
                               {top3.name.charAt(0).toUpperCase()}
                             </div>
-                            <p className="max-w-[120px] truncate text-xs font-bold text-ink sm:max-w-[150px]">
+                            <p className="podium-name max-w-[120px] truncate text-xs font-bold text-ink sm:max-w-[150px]">
                               {top3.name}
                             </p>
-                            <span className="mt-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                            <span className="podium-stat mt-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
                               {top3.playedCount} bài ({top3.percentage}%)
                             </span>
                           </div>

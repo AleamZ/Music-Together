@@ -36,9 +36,18 @@ export default function Queue({ queue, currentId, canManage, roomId, token }: {
 
   return (
     <div>
-      <h3 className="mb-2 flex items-center justify-between font-cormorant text-lg text-burgundy">
-        Hàng đợi <span className="text-xs text-ink/60">{upcoming.length} bài</span>
-      </h3>
+      <div className="mb-2 flex items-center justify-between gap-1">
+        <h3 className="font-cormorant text-lg text-burgundy">
+          Hàng đợi <span className="text-xs text-ink/60">({upcoming.length} bài)</span>
+        </h3>
+        {canManage ? (
+          <span className="text-[10px] text-gold/90 font-medium">⠿ Kéo thả để xếp bài</span>
+        ) : (
+          <span className="text-[10px] text-ink/50 italic" title="Chỉ DJ hoặc Admin mới có quyền đổi thứ tự hoặc xóa bài trong hàng đợi">
+            🔒 DJ / Admin quản lý
+          </span>
+        )}
+      </div>
       {upcoming.length === 0 && <p className="text-sm text-ink/60">Chưa có bài nào trong hàng đợi.</p>}
       {error && <p className="mb-1 text-xs text-burgundy-accent">{error}</p>}
       <ul className="max-h-[65vh] overflow-y-auto pr-1">
@@ -50,28 +59,34 @@ export default function Queue({ queue, currentId, canManage, roomId, token }: {
               onDragStart={() => setDragId(q.id)}
               onDragOver={(e) => canManage && e.preventDefault()}
               onDrop={() => dropOn(q)}
-              className={`flex items-center gap-2 border-b border-dotted border-gold-200 py-2 ${busy ? "opacity-60" : ""}`}>
-              {canManage && <span className={`text-gold ${busy ? "cursor-progress" : "cursor-grab"}`}>⠿</span>}
+              className={`flex items-center gap-2 border-b border-dotted border-gold-200/50 py-2.5 transition-colors hover:bg-gold-200/5 ${busy ? "opacity-60" : ""}`}>
+              {canManage && <span className={`text-gold shrink-0 ${busy ? "cursor-progress" : "cursor-grab"}`}>⠿</span>}
               {q.thumbnail_url
-                ? <img src={q.thumbnail_url} alt="" className="h-9 w-12 rounded object-cover" />
-                : <span className="flex h-9 w-12 items-center justify-center rounded bg-burgundy text-cream">▶</span>}
+                ? <img src={q.thumbnail_url} alt="" className="h-9 w-12 shrink-0 rounded border border-gold-200/30 object-cover shadow-2xs" />
+                : <span className="flex h-9 w-12 shrink-0 items-center justify-center rounded bg-burgundy text-cream">▶</span>}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-ink">{q.title || q.youtube_video_id}</div>
-                <div className="text-[11px] text-gold">do {q.added_by_name}
-                  <span className="ml-2 rounded-full border border-gold-200 bg-cream px-1.5 text-[9px] uppercase text-gold">like · sắp ra mắt</span>
+                <div className="line-clamp-2 text-sm font-medium leading-snug text-ink" title={q.title || q.youtube_video_id}>
+                  {q.title || q.youtube_video_id}
+                </div>
+                <div className="mt-1 truncate text-xs text-gold">
+                  do <b className="font-semibold text-ink">{q.added_by_name}</b>
                 </div>
               </div>
-              {canManage && (
-                <div className="flex w-14 items-center justify-end gap-1">
+              {canManage ? (
+                <div className="flex w-14 shrink-0 items-center justify-end gap-1">
                   {busy ? <Spinner /> : (
                     <>
                       <button title="Kéo lên đầu" onClick={() => run(q.id, () => bumpToTop(roomId, token, q.id))}
-                        className="rounded border border-gold-200 bg-cream px-1.5 text-sm text-burgundy">⬆</button>
+                        className="rounded border border-gold-200 bg-cream px-1.5 py-0.5 text-sm text-burgundy transition-transform hover:scale-105 active:scale-95">⬆</button>
                       <button title="Xóa" onClick={() => run(q.id, () => deleteItem(roomId, token, q.id))}
-                        className="rounded border border-gold-200 bg-cream px-1.5 text-sm text-burgundy">✕</button>
+                        className="rounded border border-gold-200 bg-cream px-1.5 py-0.5 text-sm text-burgundy transition-transform hover:scale-105 active:scale-95">✕</button>
                     </>
                   )}
                 </div>
+              ) : (
+                <span className="text-xs text-ink/30 px-1" title="Chỉ DJ hoặc Admin mới có quyền đổi thứ tự hoặc xóa bài">
+                  🔒
+                </span>
               )}
             </li>
           );

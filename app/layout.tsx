@@ -26,7 +26,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${ebGaramond.variable} ${playfair.variable} ${pixel.variable} h-full antialiased`}
     >
       <body className="min-h-full">
-        <script dangerouslySetInnerHTML={{ __html: "try{if(localStorage.getItem('music-together:theme')==='cozy')document.documentElement.setAttribute('data-theme','cozy')}catch(e){}" }} />
+        <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('music-together:theme');if(t==='cozy'||t==='dragon')document.documentElement.setAttribute('data-theme',t)}catch(e){}" }} />
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -109,3 +109,390 @@ html[data-theme="cozy"] .rounded-xl {
 html[data-theme="cozy"] button { font-family: var(--font-pixel); }
 /* Primary (filled) buttons get a small hard pixel shadow. */
 html[data-theme="cozy"] button.bg-burgundy { box-shadow: 3px 3px 0 var(--color-ink); }
+
+/* ===== Imperial Dragon & Phoenix (Long Phụng) Theme — Luxury Obsidian & Champagne Gold ===== */
+html[data-theme="dragon"] {
+  --color-parchment: #0f0e13;
+  --color-parchment-200: #17151c;
+  --color-parchment-300: #201c27;
+  --color-cream: #141218;
+  --color-ink: #f7f4ed;
+  --color-burgundy: #d4af37;
+  --color-burgundy-accent: #c44343;
+  --color-gold: #cbb692;
+  --color-gold-200: #e2ca7a;
+  --color-green-vintage: #10b981;
+}
+
+html[data-theme="dragon"] body {
+  background-color: #0c0b0f;
+  background-image:
+    radial-gradient(ellipse 90% 45% at 50% -5%, rgba(212, 175, 55, 0.08), transparent 75%),
+    linear-gradient(to bottom, rgba(14, 13, 17, 0.82) 0%, rgba(10, 9, 13, 0.94) 100%),
+    url('/themes/dragon/bg.jpg');
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  color: #f7f4ed;
+}
+
+/* Scrollbars — Refined & Subtle */
+html[data-theme="dragon"] {
+  scrollbar-color: rgba(212, 175, 55, 0.35) #0c0b0f;
+}
+html[data-theme="dragon"] *::-webkit-scrollbar-track {
+  background: #0c0b0f;
+}
+html[data-theme="dragon"] *::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border: 2px solid #0c0b0f;
+  border-radius: 9999px;
+}
+html[data-theme="dragon"] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(230, 195, 100, 0.55);
+}
+
+/* High Contrast Soothing Text */
+html[data-theme="dragon"] .text-ink,
+html[data-theme="dragon"] .text-ink\/90 {
+  color: #f7f4ed !important;
+}
+html[data-theme="dragon"] .text-ink\/80 {
+  color: #ded8cb !important;
+}
+html[data-theme="dragon"] .text-ink\/70,
+html[data-theme="dragon"] .text-ink\/60 {
+  color: #b5ac9d !important;
+}
+html[data-theme="dragon"] .text-ink\/40,
+html[data-theme="dragon"] .text-ink\/30 {
+  color: #837a6d !important;
+}
+html[data-theme="dragon"] .text-gold,
+html[data-theme="dragon"] .text-gold\/90,
+html[data-theme="dragon"] .text-gold\/80 {
+  color: #d6bf96 !important;
+}
+html[data-theme="dragon"] .text-gold-200 {
+  color: #ecd59b !important;
+}
+
+/* Titles & Badges — Warm Antique Gold, No Harsh Glow */
+html[data-theme="dragon"] .font-cormorant.text-burgundy,
+html[data-theme="dragon"] .font-playfair.text-burgundy {
+  color: #f1dc9f !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+html[data-theme="dragon"] b.text-burgundy {
+  color: #f3dfa8 !important;
+  font-weight: 600;
+}
+
+/* Range slider (NowPlaying seeker) */
+html[data-theme="dragon"] input[type="range"] {
+  accent-color: #d4af37 !important;
+}
+
+/* Translucent Obsidian Glass for Cards and Containers */
+html[data-theme="dragon"] .bg-cream,
+html[data-theme="dragon"] .bg-cream\/70,
+html[data-theme="dragon"] .bg-cream\/80,
+html[data-theme="dragon"] .bg-cream\/90,
+html[data-theme="dragon"] .bg-cream\/60,
+html[data-theme="dragon"] .bg-cream\/50,
+html[data-theme="dragon"] .bg-cream\/40,
+html[data-theme="dragon"] .bg-cream\/30 {
+  background: linear-gradient(180deg, rgba(23, 21, 27, 0.78) 0%, rgba(15, 13, 18, 0.86) 100%) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* Refined Imperial Hairline Gold Frame on Major Sections */
+html[data-theme="dragon"] section.rounded-xl,
+html[data-theme="dragon"] aside.rounded-xl,
+html[data-theme="dragon"] .dragon-framed {
+  border: 1px solid rgba(218, 180, 95, 0.4) !important;
+  box-shadow:
+    0 10px 32px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 235, 180, 0.1) !important;
+}
+
+/* Subtle border for inner cards & list items */
+html[data-theme="dragon"] div.rounded-xl:not([role="dialog"]) {
+  border: 1px solid rgba(212, 175, 55, 0.16);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Header bar */
+html[data-theme="dragon"] header {
+  border-bottom: 1px solid rgba(212, 175, 55, 0.3) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Gold border highlights */
+html[data-theme="dragon"] .border-gold,
+html[data-theme="dragon"] .border-gold-200,
+html[data-theme="dragon"] .border-gold\/70,
+html[data-theme="dragon"] .border-gold-200\/40,
+html[data-theme="dragon"] .border-gold-200\/50,
+html[data-theme="dragon"] .border-gold-200\/60 {
+  border-color: rgba(212, 175, 55, 0.28) !important;
+}
+
+/* Chat & Text Inputs */
+html[data-theme="dragon"] textarea,
+html[data-theme="dragon"] input[type="text"],
+html[data-theme="dragon"] input[type="password"],
+html[data-theme="dragon"] input:not([type]) {
+  background-color: rgba(18, 16, 22, 0.85) !important;
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+  color: #f7f4ed !important;
+  font-size: 14px !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+}
+html[data-theme="dragon"] textarea:focus,
+html[data-theme="dragon"] input[type="text"]:focus,
+html[data-theme="dragon"] input[type="password"]:focus,
+html[data-theme="dragon"] input:not([type]):focus {
+  border-color: rgba(230, 195, 100, 0.6) !important;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+  outline: none !important;
+}
+html[data-theme="dragon"] textarea::placeholder,
+html[data-theme="dragon"] input::placeholder {
+  color: #9c9183 !important;
+  opacity: 0.8 !important;
+}
+
+/* Royal Cinnabar Primary Buttons (Chu Sa Hoàng Cung) */
+html[data-theme="dragon"] button.bg-burgundy,
+html[data-theme="dragon"] .bg-burgundy {
+  background: linear-gradient(135deg, #822222 0%, #601518 100%) !important;
+  border: 1px solid rgba(230, 195, 100, 0.4) !important;
+  color: #fff8eb !important;
+  font-weight: 600 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+}
+html[data-theme="dragon"] button.bg-burgundy:hover,
+html[data-theme="dragon"] .bg-burgundy:hover {
+  background: linear-gradient(135deg, #962828 0%, #72191d 100%) !important;
+  border-color: rgba(245, 215, 125, 0.65) !important;
+  box-shadow: 0 4px 12px rgba(130, 34, 34, 0.4) !important;
+}
+
+/* Elegant Gilded Outline Buttons */
+html[data-theme="dragon"] button.border-gold,
+html[data-theme="dragon"] button.border-gold\/70,
+html[data-theme="dragon"] button.border-gold\/60,
+html[data-theme="dragon"] button.border-gold-200 {
+  background: rgba(212, 175, 55, 0.07) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #e8d299 !important;
+  font-weight: 500 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+}
+html[data-theme="dragon"] button.border-gold:hover,
+html[data-theme="dragon"] button.border-gold\/70:hover,
+html[data-theme="dragon"] button.border-gold\/60:hover,
+html[data-theme="dragon"] button.border-gold-200:hover {
+  background: rgba(212, 175, 55, 0.16) !important;
+  border-color: rgba(230, 195, 100, 0.6) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.25) !important;
+}
+
+/* Chat Messages & Hover Rows */
+html[data-theme="dragon"] .group:hover {
+  background-color: rgba(212, 175, 55, 0.05) !important;
+}
+html[data-theme="dragon"] .bg-gold-200\/30,
+html[data-theme="dragon"] .bg-gold-200\/40,
+html[data-theme="dragon"] .bg-gold-200\/15 {
+  background-color: rgba(212, 175, 55, 0.1) !important;
+  border-color: rgba(212, 175, 55, 0.25) !important;
+}
+
+/* Segmented Tab Switcher */
+html[data-theme="dragon"] .rounded-lg.border.border-gold-200,
+html[data-theme="dragon"] .rounded-lg.border.border-gold {
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Chat Input Row */
+html[data-theme="dragon"] .rounded-xl.border.border-gold-200 {
+  border: 1px solid rgba(212, 175, 55, 0.28) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Modal Dialog Luxury Gold Frame */
+html[data-theme="dragon"] div[role="dialog"].rounded-2xl {
+  border: 1px solid rgba(230, 195, 100, 0.45) !important;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.9),
+    0 0 20px rgba(212, 175, 55, 0.12),
+    inset 0 1px 0 rgba(255, 240, 190, 0.15) !important;
+}
+
+/* ===== Long Phụng Imperial Podium (Bục Vinh Danh Gout Âm Nhạc) ===== */
+html[data-theme="dragon"] .podium-container {
+  background: rgba(18, 16, 22, 0.75) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 235, 180, 0.08) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Base Podium Card in Dragon Theme */
+html[data-theme="dragon"] .podium-card {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* --- RANK 1: Hoàng Kim Quán Quân (Emperor Gold) --- */
+html[data-theme="dragon"] .podium-card-1 {
+  background: linear-gradient(180deg, rgba(38, 30, 18, 0.92) 0%, rgba(20, 16, 12, 0.98) 100%) !important;
+  border: 1.5px solid rgba(245, 208, 115, 0.6) !important;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.75),
+    0 0 18px rgba(212, 175, 55, 0.22),
+    inset 0 1px 0 rgba(255, 240, 180, 0.25) !important;
+  outline: none !important;
+}
+html[data-theme="dragon"] .podium-card-1 .podium-avatar {
+  background: linear-gradient(135deg, #fceda6 0%, #d4af37 50%, #946f23 100%) !important;
+  border: 2px solid #ffeab0 !important;
+  color: #170d02 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6), 0 0 10px rgba(212, 175, 55, 0.45) !important;
+}
+html[data-theme="dragon"] .podium-card-1 .podium-name {
+  color: #fff9ea !important;
+  font-weight: 700 !important;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9) !important;
+}
+html[data-theme="dragon"] .podium-card-1 .podium-badge {
+  background: rgba(212, 175, 55, 0.15) !important;
+  border: 1px solid rgba(212, 175, 55, 0.35) !important;
+  color: #f6e3b0 !important;
+  border-radius: 9999px !important;
+  padding: 1px 8px !important;
+  font-weight: 600 !important;
+}
+html[data-theme="dragon"] .podium-card-1 .podium-stat {
+  background: rgba(212, 175, 55, 0.18) !important;
+  border: 1px solid rgba(212, 175, 55, 0.38) !important;
+  color: #faebd2 !important;
+  font-weight: 600 !important;
+}
+html[data-theme="dragon"] .podium-card-1 .podium-rank-tag {
+  color: #fceda6 !important;
+}
+
+/* --- RANK 2: Bạch Ngân Á Quân (Platinum Silver) --- */
+html[data-theme="dragon"] .podium-card-2 {
+  background: linear-gradient(180deg, rgba(24, 26, 33, 0.92) 0%, rgba(14, 15, 20, 0.98) 100%) !important;
+  border: 1px solid rgba(160, 174, 192, 0.4) !important;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+html[data-theme="dragon"] .podium-card-2 .podium-avatar {
+  background: linear-gradient(135deg, #f8fafc 0%, #cbd5e1 50%, #64748b 100%) !important;
+  border: 1.5px solid #e2e8f0 !important;
+  color: #0f172a !important;
+  font-weight: 800 !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5) !important;
+}
+html[data-theme="dragon"] .podium-card-2 .podium-name {
+  color: #f1f5f9 !important;
+  font-weight: 600 !important;
+}
+html[data-theme="dragon"] .podium-card-2 .podium-stat {
+  background: rgba(148, 163, 184, 0.16) !important;
+  border: 1px solid rgba(148, 163, 184, 0.28) !important;
+  color: #cbd5e1 !important;
+  font-weight: 600 !important;
+}
+
+/* --- RANK 3: Cổ Đồng Quý Quân (Antique Bronze) --- */
+html[data-theme="dragon"] .podium-card-3 {
+  background: linear-gradient(180deg, rgba(32, 22, 18, 0.92) 0%, rgba(18, 12, 10, 0.98) 100%) !important;
+  border: 1px solid rgba(180, 83, 9, 0.42) !important;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 200, 150, 0.1) !important;
+}
+html[data-theme="dragon"] .podium-card-3 .podium-avatar {
+  background: linear-gradient(135deg, #fde68a 0%, #d97706 50%, #78350f 100%) !important;
+  border: 1.5px solid #fbbf24 !important;
+  color: #fffbeb !important;
+  font-weight: 800 !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5) !important;
+}
+html[data-theme="dragon"] .podium-card-3 .podium-name {
+  color: #fed7aa !important;
+  font-weight: 600 !important;
+}
+html[data-theme="dragon"] .podium-card-3 .podium-stat {
+  background: rgba(180, 83, 9, 0.18) !important;
+  border: 1px solid rgba(180, 83, 9, 0.32) !important;
+  color: #fde68a !important;
+  font-weight: 600 !important;
+}
+
+/* Modal Table in Dragon Theme */
+html[data-theme="dragon"] table th {
+  background-color: rgba(212, 175, 55, 0.1) !important;
+  color: #d6bf96 !important;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.25) !important;
+}
+html[data-theme="dragon"] table td {
+  border-bottom: 1px solid rgba(212, 175, 55, 0.12) !important;
+}
+html[data-theme="dragon"] table tr:hover td {
+  background-color: rgba(212, 175, 55, 0.05) !important;
+}
+
+/* ===== Dragon Lute Player Animations (Đàn Nguyệt Hoàng Gia) ===== */
+@keyframes string-vibrate {
+  0%, 100% {
+    transform: translateY(0) scaleY(1);
+    opacity: 0.75;
+  }
+  25% {
+    transform: translateY(-0.7px) scaleY(1.3);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(0.5px) scaleY(0.85);
+    opacity: 0.8;
+  }
+  75% {
+    transform: translateY(-0.4px) scaleY(1.2);
+    opacity: 1;
+  }
+}
+
+.animate-string-1 {
+  animation: string-vibrate 0.12s ease-in-out infinite;
+  transform-origin: center;
+}
+.animate-string-2 {
+  animation: string-vibrate 0.16s ease-in-out infinite 0.03s;
+  transform-origin: center;
+}
+.animate-string-3 {
+  animation: string-vibrate 0.14s ease-in-out infinite 0.06s;
+  transform-origin: center;
+}
+.animate-string-4 {
+  animation: string-vibrate 0.18s ease-in-out infinite 0.09s;
+  transform-origin: center;
+}
+
+
+

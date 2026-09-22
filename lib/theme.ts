@@ -1,6 +1,8 @@
-export type ThemeName = "salon" | "cozy";
+export type ThemeName = "salon" | "cozy" | "dragon";
 
 /** Validate a stored/raw theme value; anything other than the known themes → "salon". */
 export function parseTheme(v: string | null): ThemeName {
-  return v === "cozy" ? "cozy" : "salon";
+  if (v === "cozy") return "cozy";
+  if (v === "dragon") return "dragon";
+  return "salon";
 }
