@@ -9,6 +9,10 @@ import { DragonCorners } from "./DragonDecorations";
 import { CyberpunkCorners } from "./CyberpunkDecorations";
 import { MikuNekomimiEars } from "./MikuDecorations";
 import { useTheme } from "@/hooks/useTheme";
+import { useLyrics } from "@/hooks/useLyrics";
+import KaraokeView from "./KaraokeView";
+import KaraokeModal from "./KaraokeModal";
+import LyricSearchModal from "./LyricSearchModal";
 
 const MIKU_EQ_BARS = [
   { delay: "0.1s", dur: "0.65s" },
@@ -50,6 +54,9 @@ export default function NowPlaying(p: NowPlayingProps) {
   const { room, current } = p;
   const { theme } = useTheme();
   const [elapsed, setElapsed] = useState(0);
+  const [viewMode, setViewMode] = useState<"turntable" | "lyrics">("turntable");
+  const [isKaraokeModalOpen, setIsKaraokeModalOpen] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
   // Tick the local clock every 500ms; value derived purely from room fields.
   useEffect(() => {
@@ -60,6 +67,14 @@ export default function NowPlaying(p: NowPlayingProps) {
   }, [room.is_playing, room.started_at, room.paused_elapsed_ms]);
 
   const dur = p.durationMs || (current?.duration_seconds ? current.duration_seconds * 1000 : 0);
+
+  const lyricsHook = useLyrics({
+    title: current?.title,
+    durationSeconds: current?.duration_seconds,
+    elapsedMs: elapsed,
+    roomId: room.id,
+    trackId: current?.id,
+  });
 
   const [lastVolume, setLastVolume] = useState(p.volume > 0 ? p.volume : 100);
 
@@ -84,386 +99,525 @@ export default function NowPlaying(p: NowPlayingProps) {
     }
   };
 
+  const renderCenterpiece = (
+    turntableEl: React.ReactNode,
+    customClass = "w-[210px] sm:w-[240px] h-[190px] sm:h-[220px]"
+  ) => (
+    <div className="flex flex-col items-center shrink-0">
+      <div className="flex items-center gap-1 mb-2 px-2 py-0.5 rounded-full bg-black/50 border border-white/10 text-[9px] font-mono">
+        <button
+          type="button"
+          onClick={() => setViewMode("turntable")}
+          className={`px-2 py-0.5 rounded-full transition-all cursor-pointer ${
+            viewMode === "turntable"
+              ? "bg-white/20 text-white font-bold"
+              : "text-white/50 hover:text-white"
+          }`}
+          title="Xem hoạt cảnh mâm đĩa"
+        >
+          💿 ĐĨA NHẠC
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode("lyrics")}
+          className={`px-2 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
+            viewMode === "lyrics"
+              ? "bg-white/20 text-white font-bold"
+              : "text-white/50 hover:text-white"
+          }`}
+          title="Xem lời bài hát Karaoke"
+        >
+          <span>🎤</span>
+          <span>LỜI</span>
+          {lyricsHook.hasSynced && (
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsKaraokeModalOpen(true)}
+          className="px-1.5 py-0.5 text-white/50 hover:text-white transition-colors cursor-pointer"
+          title="Mở toàn màn hình sân khấu Karaoke"
+        >
+          ⛶
+        </button>
+      </div>
+
+      {viewMode === "turntable" ? (
+        turntableEl
+      ) : (
+        <div
+          className={`${customClass} rounded-xl border border-white/20 bg-black/60 backdrop-blur-md overflow-hidden flex flex-col p-1 shadow-inner relative`}
+        >
+          <KaraokeView
+            lines={lyricsHook.lines}
+            activeLineIndex={lyricsHook.activeLineIndex}
+            loading={lyricsHook.loading}
+            error={lyricsHook.error}
+            hasSynced={lyricsHook.hasSynced}
+            canSeek={p.canControl}
+            onSeekMs={p.onSeekMs}
+            onSearchManual={lyricsHook.searchManual}
+            onOpenSearchModal={() => setIsSearchModalOpen(true)}
+            elapsedMs={elapsed}
+            isPlaying={room.is_playing}
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  const modalElement = (
+    <>
+      <KaraokeModal
+        isOpen={isKaraokeModalOpen}
+        onClose={() => setIsKaraokeModalOpen(false)}
+        lines={lyricsHook.lines}
+        activeLineIndex={lyricsHook.activeLineIndex}
+        loading={lyricsHook.loading}
+        error={lyricsHook.error}
+        hasSynced={lyricsHook.hasSynced}
+        canSeek={p.canControl}
+        onSeekMs={p.onSeekMs}
+        onSearchManual={lyricsHook.searchManual}
+        onOpenSearchModal={() => setIsSearchModalOpen(true)}
+        current={current}
+        elapsedMs={elapsed}
+        durationMs={dur}
+        isPlaying={room.is_playing}
+        onPlayPause={p.onPlayPause}
+        onSkip={p.onSkip}
+        volume={p.volume}
+        onVolume={p.onVolume}
+      />
+      <LyricSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        defaultTitle={current?.title}
+        targetDurationSeconds={current?.duration_seconds}
+        canSyncToRoom={p.canControl}
+        onSelectLyric={(data, syncToRoom) => {
+          lyricsHook.applyCustomLyric(data, syncToRoom);
+        }}
+      />
+    </>
+  );
+
+
   if (theme === "miku") {
     return (
-      <section className="relative rounded-2xl border-2 border-[#00f0ff]/50 bg-[#07111e]/90 p-3.5 sm:p-5 shadow-[0_8px_32px_rgba(0,0,0,0.8),0_0_20px_rgba(0,240,255,0.25)] backdrop-blur-xl mt-4 sm:mt-5">
-        {/* Nekomimi Cat Ears atop player */}
-        <MikuNekomimiEars />
+      <>
+        <section className="relative rounded-2xl border-2 border-[#00f0ff]/50 bg-[#07111e]/90 p-3.5 sm:p-5 shadow-[0_8px_32px_rgba(0,0,0,0.8),0_0_20px_rgba(0,240,255,0.25)] backdrop-blur-xl mt-4 sm:mt-5">
+          {/* Nekomimi Cat Ears atop player */}
+          <MikuNekomimiEars />
 
-        {/* Cyber Deck Header Bar */}
-        <div className="flex items-center justify-between border-b border-[#00f0ff]/30 pb-2.5 mb-3.5">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] font-black tracking-widest px-2.5 py-0.5 rounded-full bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] text-[#050d18] shadow-[0_0_10px_rgba(0,240,255,0.8)]">
-              #01 MIKU DECK
-            </span>
-            <span className="font-mono text-[10px] text-[#ff007f] font-extrabold tracking-wider hidden sm:inline drop-shadow-[0_0_6px_rgba(255,0,127,0.8)]">
-              VOCALOID • SYNTH ENGINE
-            </span>
+          {/* Cyber Deck Header Bar */}
+          <div className="flex items-center justify-between border-b border-[#00f0ff]/30 pb-2.5 mb-3.5">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] font-black tracking-widest px-2.5 py-0.5 rounded-full bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] text-[#050d18] shadow-[0_0_10px_rgba(0,240,255,0.8)]">
+                #01 MIKU DECK
+              </span>
+              <span className="font-mono text-[10px] text-[#ff007f] font-extrabold tracking-wider hidden sm:inline drop-shadow-[0_0_6px_rgba(255,0,127,0.8)]">
+                VOCALOID • SYNTH ENGINE
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span
+                  className={`absolute inline-flex h-full w-full rounded-full ${
+                    room.is_playing ? "bg-[#00f0ff] animate-ping opacity-75" : "bg-zinc-500"
+                  }`}
+                />
+                <span
+                  className={`relative inline-flex rounded-full h-2 w-2 ${
+                    room.is_playing ? "bg-[#00f0ff] shadow-[0_0_6px_#00f0ff]" : "bg-zinc-600"
+                  }`}
+                />
+              </span>
+              <span className="font-mono text-[10px] text-[#a5f3fc] font-bold uppercase tracking-wider">
+                {room.is_playing ? "ON STAGE" : "STANDBY"}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span
-                className={`absolute inline-flex h-full w-full rounded-full ${
-                  room.is_playing ? "bg-[#00f0ff] animate-ping opacity-75" : "bg-zinc-500"
-                }`}
-              />
-              <span
-                className={`relative inline-flex rounded-full h-2 w-2 ${
-                  room.is_playing ? "bg-[#00f0ff] shadow-[0_0_6px_#00f0ff]" : "bg-zinc-600"
-                }`}
-              />
-            </span>
-            <span className="font-mono text-[10px] text-[#a5f3fc] font-bold uppercase tracking-wider">
-              {room.is_playing ? "ON STAGE" : "STANDBY"}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
-          {/* Left Column: Centerpiece Holographic Turntable */}
-          <div className="shrink-0 flex items-center justify-center relative">
-            <Turntable
-              spinning={room.is_playing && !!current}
-              thumbnail={current?.thumbnail_url}
-              title={current?.title || current?.youtube_video_id}
-              uploader={current?.added_by_name}
-            />
-          </div>
-
-          {/* Right Column: Song Info, Equalizer, Seekbar, Controls */}
-          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
-            {/* 1. Track Info */}
-            {current ? (
-              <div className="min-w-0 w-full">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#00f0ff]/20 border border-[#00f0ff]/50 text-[#00f0ff] tracking-wider uppercase">
-                    初音ミク LIVE
-                  </span>
-                  <span className="font-mono text-[9px] text-[#ff77b9] font-bold">
-                    MAGICAL MIRAI
-                  </span>
-                </div>
-                <h2
-                  className="truncate font-sans text-base sm:text-xl font-black text-white tracking-wide"
-                  style={{ textShadow: "0 0 12px rgba(0,240,255,0.7)" }}
-                  title={current.title || current.youtube_video_id}
-                >
-                  {current.title || current.youtube_video_id}
-                </h2>
-                <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  <span className="font-mono text-[9px] sm:text-[10px] uppercase px-2 py-0.5 rounded bg-[#ff007f] border border-[#ff3399] text-white font-extrabold tracking-wider shrink-0 shadow-[0_0_8px_rgba(255,0,127,0.6)]">
-                    YÊU CẦU BỞI
-                  </span>
-                  <span className="font-mono text-xs sm:text-sm text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)] flex items-center gap-1">
-                    <span>{current.added_by_name}</span>
-                    {current.is_replay && (
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/40">🔁 REPLAY</span>
-                    )}
-                  </span>
-                  <span className="text-white/40">•</span>
-                  <span className="font-mono text-xs text-[#a5f3fc]/80">
-                    {dur ? formatClock(dur) : "--:--"}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="min-w-0 w-full py-2">
-                <h2 className="font-mono text-sm sm:text-base font-bold text-[#00f0ff] tracking-wider drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]">
-                  [ SÂN KHẤU ĐANG CHỜ BÀI HÁT ]
-                </h2>
-                <p className="text-xs text-[#a5f3fc]/70 mt-1">
-                  Hãy thêm bài hát từ YouTube để Miku biểu diễn trên sân khấu ảo!
-                </p>
-              </div>
+          <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
+            {/* Left Column: Centerpiece Holographic Turntable / Karaoke */}
+            {renderCenterpiece(
+              <Turntable
+                spinning={room.is_playing && !!current}
+                thumbnail={current?.thumbnail_url}
+                title={current?.title || current?.youtube_video_id}
+                uploader={current?.added_by_name}
+              />,
+              "w-[210px] sm:w-[230px] h-[210px] sm:h-[230px]"
             )}
 
-            {/* 2. 16-Band Bouncy Equalizer Visualizer */}
-            <div className="w-full bg-[#050c16]/90 p-2 sm:p-2.5 rounded-xl border border-[#00f0ff]/30 shadow-inner">
-              <div className="flex items-center justify-between mb-1.5 px-1 font-mono text-[9px] text-[#00f0ff]/80">
-                <span className="font-bold flex items-center gap-1">
-                  <span className="text-[#ff007f]">▲</span> SPECTRUM ANALYZER (16-BAND)
+            {/* Right Column: Song Info, Equalizer, Seekbar, Controls */}
+            <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
+              {/* 1. Track Info */}
+              {current ? (
+                <div className="min-w-0 w-full">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#00f0ff]/20 border border-[#00f0ff]/50 text-[#00f0ff] tracking-wider uppercase">
+                      初音ミク LIVE
+                    </span>
+                    <span className="font-mono text-[9px] text-[#ff77b9] font-bold">
+                      MAGICAL MIRAI
+                    </span>
+                  </div>
+                  <h2
+                    className="truncate font-sans text-base sm:text-xl font-black text-white tracking-wide"
+                    style={{ textShadow: "0 0 12px rgba(0,240,255,0.7)" }}
+                    title={current.title || current.youtube_video_id}
+                  >
+                    {current.title || current.youtube_video_id}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    <span className="font-mono text-[9px] sm:text-[10px] uppercase px-2 py-0.5 rounded bg-[#ff007f] border border-[#ff3399] text-white font-extrabold tracking-wider shrink-0 shadow-[0_0_8px_rgba(255,0,127,0.6)]">
+                      YÊU CẦU BỞI
+                    </span>
+                    <span className="font-mono text-xs sm:text-sm text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)] flex items-center gap-1">
+                      <span>{current.added_by_name}</span>
+                      {current.is_replay && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/40">🔁 REPLAY</span>
+                      )}
+                    </span>
+                    <span className="text-white/40">•</span>
+                    <span className="font-mono text-xs text-[#a5f3fc]/80">
+                      {dur ? formatClock(dur) : "--:--"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="min-w-0 w-full py-2">
+                  <h2 className="font-mono text-sm sm:text-base font-bold text-[#00f0ff] tracking-wider drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]">
+                    [ SÂN KHẤU ĐANG CHỜ BÀI HÁT ]
+                  </h2>
+                  <p className="text-xs text-[#a5f3fc]/70 mt-1">
+                    Hãy thêm bài hát từ YouTube để Miku biểu diễn trên sân khấu ảo!
+                  </p>
+                </div>
+              )}
+
+              {/* 2. 16-Band Bouncy Equalizer Visualizer */}
+              <div className="w-full bg-[#050c16]/90 p-2 sm:p-2.5 rounded-xl border border-[#00f0ff]/30 shadow-inner">
+                <div className="flex items-center justify-between mb-1.5 px-1 font-mono text-[9px] text-[#00f0ff]/80">
+                  <span className="font-bold flex items-center gap-1">
+                    <span className="text-[#ff007f]">▲</span> SPECTRUM ANALYZER (16-BAND)
+                  </span>
+                  <span className="text-[#39c5bb] tracking-wider">
+                    {room.is_playing ? "44.1 kHz • STEREO" : "PAUSED"}
+                  </span>
+                </div>
+                <div className="flex items-end justify-between gap-1 sm:gap-1.5 h-10 sm:h-12 px-1">
+                  {MIKU_EQ_BARS.map((bar, idx) => (
+                    <div
+                      key={idx}
+                      className="flex-1 rounded-t-sm transition-all"
+                      style={{
+                        height: room.is_playing && current ? undefined : "12%",
+                        animation:
+                          room.is_playing && current
+                            ? `miku-eq-bounce ${bar.dur} ease-in-out infinite alternate ${bar.delay}`
+                            : "none",
+                        background: "linear-gradient(180deg, #ff007f 0%, #00f0ff 100%)",
+                        boxShadow:
+                          room.is_playing && current ? "0 0 8px rgba(0, 240, 255, 0.6)" : "none",
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Holographic Timeline / Seekbar */}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-mono text-[11px] w-9 text-right text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)]">
+                  {formatClock(elapsed)}
                 </span>
-                <span className="text-[#39c5bb] tracking-wider">
-                  {room.is_playing ? "44.1 kHz • STEREO" : "PAUSED"}
-                </span>
-              </div>
-              <div className="flex items-end justify-between gap-1 sm:gap-1.5 h-10 sm:h-12 px-1">
-                {MIKU_EQ_BARS.map((bar, idx) => (
-                  <div
-                    key={idx}
-                    className="flex-1 rounded-t-sm transition-all"
-                    style={{
-                      height: room.is_playing && current ? undefined : "12%",
-                      animation:
-                        room.is_playing && current
-                          ? `miku-eq-bounce ${bar.dur} ease-in-out infinite alternate ${bar.delay}`
-                          : "none",
-                      background: "linear-gradient(180deg, #ff007f 0%, #00f0ff 100%)",
-                      boxShadow:
-                        room.is_playing && current ? "0 0 8px rgba(0, 240, 255, 0.6)" : "none",
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* 3. Holographic Timeline / Seekbar */}
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-mono text-[11px] w-9 text-right text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)]">
-                {formatClock(elapsed)}
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={dur || 0}
-                value={Math.min(elapsed, dur || 0)}
-                disabled={!p.canControl || !dur}
-                onChange={(e) => p.onSeekMs(Number(e.target.value))}
-                className="flex-1 accent-[#00f0ff] cursor-pointer disabled:cursor-not-allowed h-1.5 rounded-lg bg-[#0b1928]"
-                aria-label="seek"
-              />
-              <span className="font-mono text-[11px] w-9 text-[#ff77b9] font-bold">
-                {formatClock(dur)}
-              </span>
-            </div>
-
-            {/* 4. Controls Row */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                {p.canControl && (
-                  <>
-                    <button
-                      onClick={p.onPlayPause}
-                      className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] border border-[#a5f3fc] text-[#050e18] font-black text-sm shadow-[0_0_18px_rgba(0,240,255,0.85)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
-                      title={room.is_playing ? "Tạm dừng" : "Phát sóng"}
-                    >
-                      {room.is_playing ? "⏸" : "▶"}
-                    </button>
-                    <button
-                      onClick={p.onSkip}
-                      className="h-8.5 px-3 rounded-lg border border-[#ff007f]/60 bg-[#1a0a18] text-[#ff77b9] font-mono text-xs shadow-[0_0_12px_rgba(255,0,127,0.35)] transition hover:bg-[#ff007f]/20 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
-                      title="Chuyển sang bài tiếp theo"
-                    >
-                      <span>NEXT BEAT</span>
-                      <span>⏭</span>
-                    </button>
-                  </>
-                )}
-
-                {/* Audio On/Off Toggle Icon */}
-                <button
-                  onClick={toggleAudio}
-                  className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
-                    !p.unlocked
-                      ? "bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] border border-[#a5f3fc] text-black shadow-[0_0_16px_#00f0ff] animate-pulse"
-                      : p.volume === 0
-                      ? "bg-[#180a14] border border-[#ff007f]/50 text-[#ff007f]"
-                      : "bg-[#0b1626] border border-[#00f0ff]/50 text-[#00f0ff] hover:border-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.5)]"
-                  }`}
-                  title={
-                    !p.unlocked
-                      ? "Nhấn để bật âm thanh nghe trên thiết bị này"
-                      : p.volume === 0
-                      ? "Bật lại tiếng (Unmute)"
-                      : "Tắt tiếng (Mute)"
-                  }
-                >
-                  {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
-                </button>
-              </div>
-
-              {/* Volume Slider */}
-              <div className="flex items-center gap-1.5 font-mono text-xs text-white bg-[#050c18]/90 px-3 py-1.5 rounded-lg border border-[#00f0ff]/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]">
-                <span className="text-[#00f0ff] font-bold text-[10px]">VOL</span>
                 <input
                   type="range"
                   min={0}
-                  max={100}
-                  value={p.volume}
-                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                  className="w-16 sm:w-20 accent-[#00f0ff] cursor-pointer"
-                  aria-label="volume"
+                  max={dur || 0}
+                  value={Math.min(elapsed, dur || 0)}
+                  disabled={!p.canControl || !dur}
+                  onChange={(e) => p.onSeekMs(Number(e.target.value))}
+                  className="flex-1 accent-[#00f0ff] cursor-pointer disabled:cursor-not-allowed h-1.5 rounded-lg bg-[#0b1928]"
+                  aria-label="seek"
                 />
-                <span className="text-[10px] w-7 text-right font-mono text-[#00f0ff] font-bold">
-                  {p.volume}%
+                <span className="font-mono text-[11px] w-9 text-[#ff77b9] font-bold">
+                  {formatClock(dur)}
                 </span>
               </div>
-            </div>
 
-            {/* 5. Room Role Info */}
-            <div className="flex items-center justify-between font-mono text-[10px] text-[#a5f3fc]/70">
-              <p className="truncate">
-                {p.canControl
-                  ? "● BẠN LÀ DJ — TOÀN QUYỀN ĐIỀU PHỐI SÂN KHẤU MIKU 01"
-                  : "● ĐANG KẾT NỐI SÂN KHẤU VOCALOID · DJ ĐIỀU PHỐI"}
-              </p>
-              {p.playError && <p className="text-red-400 font-bold">{p.playError}</p>}
-            </div>
+              {/* 4. Controls Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  {p.canControl && (
+                    <>
+                      <button
+                        onClick={p.onPlayPause}
+                        className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] border border-[#a5f3fc] text-[#050e18] font-black text-sm shadow-[0_0_18px_rgba(0,240,255,0.85)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
+                        title={room.is_playing ? "Tạm dừng" : "Phát sóng"}
+                      >
+                        {room.is_playing ? "⏸" : "▶"}
+                      </button>
+                      <button
+                        onClick={p.onSkip}
+                        className="h-8.5 px-3 rounded-lg border border-[#ff007f]/60 bg-[#1a0a18] text-[#ff77b9] font-mono text-xs shadow-[0_0_12px_rgba(255,0,127,0.35)] transition hover:bg-[#ff007f]/20 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                        title="Chuyển sang bài tiếp theo"
+                      >
+                        <span>NEXT BEAT</span>
+                        <span>⏭</span>
+                      </button>
+                    </>
+                  )}
 
-            {/* 6. Reactions Bar */}
-            <div className="pt-2 border-t border-[#00f0ff]/25 flex items-center justify-start">
-              {p.children}
+                  {/* Audio On/Off Toggle Icon */}
+                  <button
+                    onClick={toggleAudio}
+                    className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+                      !p.unlocked
+                        ? "bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] border border-[#a5f3fc] text-black shadow-[0_0_16px_#00f0ff] animate-pulse"
+                        : p.volume === 0
+                        ? "bg-[#180a14] border border-[#ff007f]/50 text-[#ff007f]"
+                        : "bg-[#0b1626] border border-[#00f0ff]/50 text-[#00f0ff] hover:border-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.5)]"
+                    }`}
+                    title={
+                      !p.unlocked
+                        ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                        : p.volume === 0
+                        ? "Bật lại tiếng (Unmute)"
+                        : "Tắt tiếng (Mute)"
+                    }
+                  >
+                    {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+                  </button>
+
+                  {/* Karaoke Fullscreen Button */}
+                  <button
+                    onClick={() => setIsKaraokeModalOpen(true)}
+                    className={`h-8.5 px-2.5 rounded-lg font-mono text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1 bg-[#0b1626] border border-[#00f0ff]/50 text-[#00f0ff] hover:border-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)] ${
+                      lyricsHook.hasSynced ? "border-[#ff007f] text-[#ff77b9]" : ""
+                    }`}
+                    title="Mở toàn màn hình sân khấu Karaoke"
+                  >
+                    <span>🎤</span>
+                    <span className="hidden sm:inline">KARAOKE</span>
+                    {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-[#00f0ff] animate-ping" />}
+                  </button>
+                </div>
+
+                {/* Volume Slider */}
+                <div className="flex items-center gap-1.5 font-mono text-xs text-white bg-[#050c18]/90 px-3 py-1.5 rounded-lg border border-[#00f0ff]/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]">
+                  <span className="text-[#00f0ff] font-bold text-[10px]">VOL</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={p.volume}
+                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                    className="w-16 sm:w-20 accent-[#00f0ff] cursor-pointer"
+                    aria-label="volume"
+                  />
+                  <span className="text-[10px] w-7 text-right font-mono text-[#00f0ff] font-bold">
+                    {p.volume}%
+                  </span>
+                </div>
+              </div>
+
+              {/* 5. Room Role Info */}
+              <div className="flex items-center justify-between font-mono text-[10px] text-[#a5f3fc]/70">
+                <p className="truncate">
+                  {p.canControl
+                    ? "● BẠN LÀ DJ — TOÀN QUYỀN ĐIỀU PHỐI SÂN KHẤU MIKU 01"
+                    : "● ĐANG KẾT NỐI SÂN KHẤU VOCALOID · DJ ĐIỀU PHỐI"}
+                </p>
+                {p.playError && <p className="text-red-400 font-bold">{p.playError}</p>}
+              </div>
+
+              {/* 6. Reactions Bar */}
+              <div className="pt-2 border-t border-[#00f0ff]/25 flex items-center justify-start">
+                {p.children}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+        {modalElement}
+      </>
     );
   }
 
   if (theme === "itv") {
     return (
-      <section className="relative rounded-xl border border-[#76cb00]/40 bg-[#080d16]/95 p-3 sm:p-4 shadow-xl backdrop-blur-xl">
-        <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
-          {/* Left Column: Television Broadcast Centerpiece */}
-          <div className="shrink-0 flex items-center justify-center">
-            <Turntable
-              spinning={room.is_playing && !!current}
-              thumbnail={current?.thumbnail_url}
-              title={current?.title || current?.youtube_video_id}
-              uploader={current?.added_by_name}
-            />
-          </div>
-
-          {/* Right Column: Song Info, Broadcast Controls, Timeline */}
-          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
-            {/* 1. Track Info (Expanded & No duplicate thumbnail) */}
-            {current ? (
-              <div className="min-w-0 w-full">
-                <h2
-                  className="truncate font-sans text-base sm:text-xl font-black text-white tracking-wide"
-                  style={{ textShadow: "0 0 10px rgba(118,203,0,0.6)" }}
-                  title={current.title || current.youtube_video_id}
-                >
-                  {current.title || current.youtube_video_id}
-                </h2>
-                <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  <span className="font-mono text-[9px] sm:text-[10px] uppercase px-2 py-0.5 rounded bg-[#ff6600] border border-[#ff8800] text-white font-extrabold tracking-wider shrink-0 shadow-xs">
-                    YÊU CẦU BỞI
-                  </span>
-                  <span className="font-mono text-xs sm:text-sm text-[#84e800] font-bold flex items-center gap-1">
-                    <span>{current.added_by_name}</span>
-                    {current.is_replay && (
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-[#84e800]/20 text-[#84e800] border border-[#84e800]/40">🔁 REPLAY</span>
-                    )}
-                  </span>
-                  <span className="text-white/40">•</span>
-                  <span className="font-mono text-xs text-[#ffcc00] font-bold">
-                    MÃ BÀI HÁT: #{current.id ? String(current.id).slice(-4) : "8730"}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="py-2">
-                <h2 className="font-sans text-base font-bold text-[#84e800] tracking-wide">
-                  {!p.djOnline ? "● TRỰC TIẾP: DJ ĐANG OFFLINE — CHỜ TÍN HIỆU" : "● HÀNG ĐỢI RỖNG — SOẠN ITV GỬI 8730"}
-                </h2>
-                <p className="font-sans text-[11px] text-white/70 mt-0.5">
-                  Thêm bài hát ở bảng bên phải để gửi lên phát sóng truyền hình iTV
-                </p>
-              </div>
+      <>
+        <section className="relative rounded-xl border border-[#76cb00]/40 bg-[#080d16]/95 p-3 sm:p-4 shadow-xl backdrop-blur-xl">
+          <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
+            {/* Left Column: Television Broadcast Centerpiece / Karaoke */}
+            {renderCenterpiece(
+              <Turntable
+                spinning={room.is_playing && !!current}
+                thumbnail={current?.thumbnail_url}
+                title={current?.title || current?.youtube_video_id}
+                uploader={current?.added_by_name}
+              />,
+              "w-[220px] sm:w-[240px] h-[190px] sm:h-[220px]"
             )}
 
-            {/* 2. Timeline / Progress */}
-            <div className="flex w-full items-center gap-2 text-xs text-white/80">
-              <span className="font-mono text-[11px] w-9 text-right text-[#84e800] font-bold">
-                {formatClock(elapsed)}
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={dur || 0}
-                value={Math.min(elapsed, dur || 0)}
-                disabled={!p.canControl || dur === 0}
-                onChange={(e) => p.onSeekMs(Number(e.target.value))}
-                className="h-1.5 flex-1 accent-[#76cb00] cursor-pointer"
-                aria-label="seek"
-              />
-              <span className="font-mono text-[11px] w-9 text-[#ff9900] font-bold">
-                {formatClock(dur)}
-              </span>
-            </div>
+            {/* Right Column: Song Info, Broadcast Controls, Timeline */}
+            <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
+              {/* 1. Track Info (Expanded & No duplicate thumbnail) */}
+              {current ? (
+                <div className="min-w-0 w-full">
+                  <h2
+                    className="truncate font-sans text-base sm:text-xl font-black text-white tracking-wide"
+                    style={{ textShadow: "0 0 10px rgba(118,203,0,0.6)" }}
+                    title={current.title || current.youtube_video_id}
+                  >
+                    {current.title || current.youtube_video_id}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    <span className="font-mono text-[9px] sm:text-[10px] uppercase px-2 py-0.5 rounded bg-[#ff6600] border border-[#ff8800] text-white font-extrabold tracking-wider shrink-0 shadow-xs">
+                      YÊU CẦU BỞI
+                    </span>
+                    <span className="font-mono text-xs sm:text-sm text-[#84e800] font-bold flex items-center gap-1">
+                      <span>{current.added_by_name}</span>
+                      {current.is_replay && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-[#84e800]/20 text-[#84e800] border border-[#84e800]/40">🔁 REPLAY</span>
+                      )}
+                    </span>
+                    <span className="text-white/40">•</span>
+                    <span className="font-mono text-xs text-[#ffcc00] font-bold">
+                      MÃ BÀI HÁT: #{current.id ? String(current.id).slice(-4) : "8730"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-2">
+                  <h2 className="font-sans text-base font-bold text-[#84e800] tracking-wide">
+                    {!p.djOnline ? "● TRỰC TIẾP: DJ ĐANG OFFLINE — CHỜ TÍN HIỆU" : "● HÀNG ĐỢI RỖNG — SOẠN ITV GỬI 8730"}
+                  </h2>
+                  <p className="font-sans text-[11px] text-white/70 mt-0.5">
+                    Thêm bài hát ở bảng bên phải để gửi lên phát sóng truyền hình iTV
+                  </p>
+                </div>
+              )}
 
-            {/* 3. Controls Row */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                {p.canControl && (
-                  <>
-                    <button
-                      onClick={p.onPlayPause}
-                      className="h-10 w-10 sm:h-11 sm:w-11 rounded-lg bg-gradient-to-r from-[#76cb00] to-[#84e800] border border-[#a3ff12] text-black font-extrabold text-sm shadow-[0_0_16px_rgba(118,203,0,0.7)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
-                      title={room.is_playing ? "Tạm dừng" : "Phát sóng"}
-                    >
-                      {room.is_playing ? "⏸" : "▶"}
-                    </button>
-                    <button
-                      onClick={p.onSkip}
-                      className="h-8.5 px-3 rounded-lg border border-[#ff6600]/60 bg-[#1e1008] text-[#ff9900] font-mono text-xs shadow-[0_0_10px_rgba(255,102,0,0.3)] transition hover:bg-[#ff6600]/20 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
-                      title="Chuyển bài tiếp theo"
-                    >
-                      <span>CHUYỂN BÀI</span>
-                      <span>⏭</span>
-                    </button>
-                  </>
-                )}
-
-                {/* Audio On/Off Toggle Icon */}
-                <button
-                  onClick={toggleAudio}
-                  className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
-                    !p.unlocked
-                      ? "bg-gradient-to-r from-[#76cb00] to-[#84e800] border border-[#a3ff12] text-black shadow-[0_0_14px_#84e800] animate-pulse"
-                      : p.volume === 0
-                      ? "bg-[#181005] border border-[#ff6600]/50 text-[#ff6600]"
-                      : "bg-[#0b1624] border border-[#76cb00]/50 text-[#84e800] hover:border-[#84e800] shadow-[0_0_8px_rgba(118,203,0,0.4)]"
-                  }`}
-                  title={
-                    !p.unlocked
-                      ? "Nhấn để bật âm thanh nghe trên thiết bị này"
-                      : p.volume === 0
-                      ? "Bật lại tiếng (Unmute)"
-                      : "Tắt tiếng (Mute)"
-                  }
-                >
-                  {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
-                </button>
-              </div>
-
-              {/* Volume Slider */}
-              <div className="flex items-center gap-1.5 font-mono text-xs text-white bg-black/60 px-3 py-1 rounded-lg border border-[#76cb00]/40">
-                <span className="text-[#84e800] font-bold">VOL</span>
+              {/* 2. Timeline / Progress */}
+              <div className="flex w-full items-center gap-2 text-xs text-white/80">
+                <span className="font-mono text-[11px] w-9 text-right text-[#84e800] font-bold">
+                  {formatClock(elapsed)}
+                </span>
                 <input
                   type="range"
                   min={0}
-                  max={100}
-                  value={p.volume}
-                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                  className="w-16 sm:w-20 accent-[#76cb00] cursor-pointer"
-                  aria-label="volume"
+                  max={dur || 0}
+                  value={Math.min(elapsed, dur || 0)}
+                  disabled={!p.canControl || dur === 0}
+                  onChange={(e) => p.onSeekMs(Number(e.target.value))}
+                  className="h-1.5 flex-1 accent-[#76cb00] cursor-pointer"
+                  aria-label="seek"
                 />
-                <span className="text-[10px] w-7 text-right font-mono text-[#84e800] font-bold">
-                  {p.volume}%
+                <span className="font-mono text-[11px] w-9 text-[#ff9900] font-bold">
+                  {formatClock(dur)}
                 </span>
               </div>
-            </div>
 
-            {/* 4. Room Info & SMS Notice */}
-            <div className="flex items-center justify-between font-mono text-[10px] text-white/70">
-              <p className="truncate">
-                {p.canControl
-                  ? "● BẠN LÀ DJ — TOÀN QUYỀN ĐIỀU PHỐI SÓNG TRUYỀN HÌNH"
-                  : "● ĐANG KẾT NỐI SÓNG iTV LIVE · DJ ĐIỀU PHỐI"}
-              </p>
-              {p.playError && <p className="text-red-400 font-bold">{p.playError}</p>}
-            </div>
+              {/* 3. Controls Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  {p.canControl && (
+                    <>
+                      <button
+                        onClick={p.onPlayPause}
+                        className="h-10 w-10 sm:h-11 sm:w-11 rounded-lg bg-gradient-to-r from-[#76cb00] to-[#84e800] border border-[#a3ff12] text-black font-extrabold text-sm shadow-[0_0_16px_rgba(118,203,0,0.7)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
+                        title={room.is_playing ? "Tạm dừng" : "Phát sóng"}
+                      >
+                        {room.is_playing ? "⏸" : "▶"}
+                      </button>
+                      <button
+                        onClick={p.onSkip}
+                        className="h-8.5 px-3 rounded-lg border border-[#ff6600]/60 bg-[#1e1008] text-[#ff9900] font-mono text-xs shadow-[0_0_10px_rgba(255,102,0,0.3)] transition hover:bg-[#ff6600]/20 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                        title="Chuyển bài tiếp theo"
+                      >
+                        <span>CHUYỂN BÀI</span>
+                        <span>⏭</span>
+                      </button>
+                    </>
+                  )}
 
-            {/* 5. Reactions Bar */}
-            <div className="pt-2 border-t border-[#76cb00]/25 flex items-center justify-start">
-              {p.children}
+                  {/* Audio On/Off Toggle Icon */}
+                  <button
+                    onClick={toggleAudio}
+                    className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+                      !p.unlocked
+                        ? "bg-gradient-to-r from-[#76cb00] to-[#84e800] border border-[#a3ff12] text-black shadow-[0_0_14px_#84e800] animate-pulse"
+                        : p.volume === 0
+                        ? "bg-[#181005] border border-[#ff6600]/50 text-[#ff6600]"
+                        : "bg-[#0b1624] border border-[#76cb00]/50 text-[#84e800] hover:border-[#84e800] shadow-[0_0_8px_rgba(118,203,0,0.4)]"
+                    }`}
+                    title={
+                      !p.unlocked
+                        ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                        : p.volume === 0
+                        ? "Bật lại tiếng (Unmute)"
+                        : "Tắt tiếng (Mute)"
+                    }
+                  >
+                    {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+                  </button>
+
+                  {/* Karaoke Fullscreen Button */}
+                  <button
+                    onClick={() => setIsKaraokeModalOpen(true)}
+                    className={`h-8.5 px-2.5 rounded-lg font-mono text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1 bg-black/60 border border-[#76cb00]/40 text-[#84e800] hover:border-[#84e800] shadow-[0_0_8px_rgba(118,203,0,0.3)] ${
+                      lyricsHook.hasSynced ? "border-[#ffde00] text-[#ffde00]" : ""
+                    }`}
+                    title="Mở toàn màn hình sân khấu Karaoke"
+                  >
+                    <span>🎤</span>
+                    <span className="hidden sm:inline">KARAOKE</span>
+                    {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-[#76cb00] animate-ping" />}
+                  </button>
+                </div>
+
+                {/* Volume Slider */}
+                <div className="flex items-center gap-1.5 font-mono text-xs text-white bg-black/60 px-3 py-1 rounded-lg border border-[#76cb00]/40">
+                  <span className="text-[#84e800] font-bold">VOL</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={p.volume}
+                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                    className="w-16 sm:w-20 accent-[#76cb00] cursor-pointer"
+                    aria-label="volume"
+                  />
+                  <span className="text-[10px] w-7 text-right font-mono text-[#84e800] font-bold">
+                    {p.volume}%
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. Room Info & SMS Notice */}
+              <div className="flex items-center justify-between font-mono text-[10px] text-white/70">
+                <p className="truncate">
+                  {p.canControl
+                    ? "● BẠN LÀ DJ — TOÀN QUYỀN ĐIỀU PHỐI SÓNG TRUYỀN HÌNH"
+                    : "● ĐANG KẾT NỐI SÓNG iTV LIVE · DJ ĐIỀU PHỐI"}
+                </p>
+                {p.playError && <p className="text-red-400 font-bold">{p.playError}</p>}
+              </div>
+
+              {/* 5. Reactions Bar */}
+              <div className="pt-2 border-t border-[#76cb00]/25 flex items-center justify-start">
+                {p.children}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+        {modalElement}
+      </>
     );
   }
 
@@ -475,15 +629,73 @@ export default function NowPlaying(p: NowPlayingProps) {
     const rightTapeDiameter = Math.round(38 + progress * 34);
 
     return (
-      <section className="relative rounded-xl border border-gold-200 bg-cream/50 p-2.5 sm:p-3.5 shadow-xl backdrop-blur-md overflow-hidden">
-        {/* Soft overhead warm lamp glow */}
-        <div className="pointer-events-none absolute inset-0 rounded-xl bg-[radial-gradient(ellipse_at_50%_0%,rgba(245,158,11,0.14)_0%,transparent_75%)]" />
+      <>
+        <section className="relative rounded-xl border border-gold-200 bg-cream/50 p-2.5 sm:p-3.5 shadow-xl backdrop-blur-md overflow-hidden">
+          {/* Soft overhead warm lamp glow */}
+          <div className="pointer-events-none absolute inset-0 rounded-xl bg-[radial-gradient(ellipse_at_50%_0%,rgba(245,158,11,0.14)_0%,transparent_75%)]" />
 
-        {/* ===================================================================== */}
-        {/* AUTHENTIC TRANSLUCENT COMPACT CASSETTE TAPE (Vỏ nhựa trong suốt mờ)  */}
-        {/* ===================================================================== */}
-        <div className="relative z-10 w-full max-w-[620px] mx-auto rounded-2xl border-2 border-[#5c3a21]/60 bg-[#1a110a]/35 p-2 sm:p-3 shadow-[0_12px_28px_rgba(0,0,0,0.65),inset_0_1px_2px_rgba(255,255,255,0.18)] backdrop-blur-sm">
-          {/* Top Write-Protect Notches (2 tai khuyết chống xoá băng trên đỉnh) */}
+          {/* Top Switcher Tab for Lofi */}
+          <div className="relative z-20 flex items-center justify-center gap-1.5 mb-2.5">
+            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#18110b]/80 border border-amber-800/40 text-[9px] font-serif shadow-sm">
+              <button
+                type="button"
+                onClick={() => setViewMode("turntable")}
+                className={`px-2 py-0.5 rounded-full transition-all cursor-pointer ${
+                  viewMode === "turntable"
+                    ? "bg-amber-600 text-cream font-bold shadow-xs"
+                    : "text-[#dfcca9]/70 hover:text-cream"
+                }`}
+              >
+                📼 BĂNG CASSETTE
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("lyrics")}
+                className={`px-2 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
+                  viewMode === "lyrics"
+                    ? "bg-amber-600 text-cream font-bold shadow-xs"
+                    : "text-[#dfcca9]/70 hover:text-cream"
+                }`}
+              >
+                <span>🎤</span>
+                <span>LỜI BÀI HÁT</span>
+                {lyricsHook.hasSynced && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsKaraokeModalOpen(true)}
+                className="px-1.5 py-0.5 text-[#dfcca9]/70 hover:text-cream transition-colors cursor-pointer"
+                title="Mở toàn màn hình sân khấu Karaoke"
+              >
+                ⛶
+              </button>
+            </div>
+          </div>
+
+          {viewMode === "lyrics" ? (
+            <div className="relative z-10 w-full max-w-[620px] mx-auto h-[320px] sm:h-[360px] rounded-2xl border-2 border-[#5c3a21]/60 bg-[#1a110a]/50 p-2 sm:p-3 shadow-xl backdrop-blur-sm overflow-hidden flex flex-col my-1">
+              <KaraokeView
+                lines={lyricsHook.lines}
+                activeLineIndex={lyricsHook.activeLineIndex}
+                loading={lyricsHook.loading}
+                error={lyricsHook.error}
+                hasSynced={lyricsHook.hasSynced}
+                canSeek={p.canControl}
+                onSeekMs={p.onSeekMs}
+                onSearchManual={lyricsHook.searchManual}
+                onOpenSearchModal={() => setIsSearchModalOpen(true)}
+                elapsedMs={elapsed}
+                isPlaying={room.is_playing}
+              />
+            </div>
+          ) : (
+            /* ===================================================================== */
+            /* AUTHENTIC TRANSLUCENT COMPACT CASSETTE TAPE (Vỏ nhựa trong suốt mờ)  */
+            /* ===================================================================== */
+            <div className="relative z-10 w-full max-w-[620px] mx-auto rounded-2xl border-2 border-[#5c3a21]/60 bg-[#1a110a]/35 p-2 sm:p-3 shadow-[0_12px_28px_rgba(0,0,0,0.65),inset_0_1px_2px_rgba(255,255,255,0.18)] backdrop-blur-sm">
+              {/* Top Write-Protect Notches (2 tai khuyết chống xoá băng trên đỉnh) */}
           <div className="absolute -top-1 left-7 sm:left-9 w-6 h-2 bg-[#0c0704] border-x border-b border-[#4a2e1b] rounded-b-xs select-none pointer-events-none" />
           <div className="absolute -top-1 right-7 sm:right-9 w-6 h-2 bg-[#0c0704] border-x border-b border-[#4a2e1b] rounded-b-xs select-none pointer-events-none" />
 
@@ -714,6 +926,7 @@ export default function NowPlaying(p: NowPlayingProps) {
             </div>
           </div>
         </div>
+      )}
 
         {/* ========================================================= */}
         {/* CASSETTE DECK TRANSPORT TRAY (Khay phím cơ mờ trong suốt) */}
@@ -809,6 +1022,17 @@ export default function NowPlaying(p: NowPlayingProps) {
                   {!p.unlocked || p.volume === 0 ? "MUTE" : "AUDIO"}
                 </span>
               </button>
+
+              {/* [ KARAOKE ] Key */}
+              <button
+                onClick={() => setIsKaraokeModalOpen(true)}
+                className="px-3 py-1.5 rounded-md border-t border-b-2 font-mono text-xs shadow-[0_2px_5px_rgba(0,0,0,0.5)] active:translate-y-0.5 cursor-pointer flex items-center gap-1.5 transition bg-gradient-to-b from-[#331d10] to-[#1e1008] border-amber-700/50 border-b-black text-[#fcd34d] hover:border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                title="Mở toàn màn hình sân khấu Karaoke"
+              >
+                <span>🎤</span>
+                <span>KARAOKE</span>
+                {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
+              </button>
             </div>
 
             {/* Volume Fader Slider */}
@@ -835,381 +1059,432 @@ export default function NowPlaying(p: NowPlayingProps) {
           {p.children}
         </div>
       </section>
-    );
+      {modalElement}
+    </>
+  );
   }
 
   if (theme === "cyberpunk") {
     return (
-      <section className="relative rounded-xl border border-cyan-500/50 bg-[#080914]/90 p-3 sm:p-4 shadow-[0_0_28px_rgba(0,240,255,0.22),inset_0_1px_0_rgba(0,240,255,0.4)] backdrop-blur-xl">
-        <CyberpunkCorners size={44} allFour />
-        <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
-          {/* Left Column: Cyber-Deck Cassette Centerpiece */}
-          <div className="shrink-0 flex items-center justify-center">
-            <Turntable spinning={room.is_playing && !!current} thumbnail={current?.thumbnail_url} />
-          </div>
-
-          {/* Right Column: Digital HUD Info, Controls, Timeline */}
-          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
-            {/* 1. Track Info */}
-            {current ? (
-              <div className="flex items-center gap-3">
-                {current.thumbnail_url && (
-                  <div className="relative h-13 w-13 sm:h-14 sm:w-14 shrink-0 overflow-hidden rounded-lg border border-pink-500/60 shadow-[0_0_12px_rgba(255,0,85,0.35)] bg-black/60">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={current.thumbnail_url}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                    {room.is_playing && (
-                      <div className="absolute inset-0 bg-cyan-400/20 animate-pulse" />
-                    )}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <h2
-                    className="truncate font-mono text-base sm:text-lg font-black text-cyan-200 tracking-wide"
-                    style={{ textShadow: "0 0 10px rgba(0,240,255,0.6)" }}
-                    title={current.title || current.youtube_video_id}
-                  >
-                    {current.title || current.youtube_video_id}
-                  </h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="font-mono text-[9px] uppercase px-1.5 py-0.5 rounded bg-pink-950/80 border border-pink-500/50 text-pink-300 font-bold tracking-wider">
-                      UPLOADER
-                    </span>
-                    <span className="font-mono text-[11px] text-cyan-300 font-semibold truncate flex items-center gap-1">
-                      <span>{current.added_by_name}</span>
-                      {current.is_replay && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-950/80 border border-cyan-500/50 text-cyan-300">🔁 REPLAY</span>
-                      )}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="py-2">
-                <h2 className="font-mono text-base font-bold text-cyan-300/90 tracking-wider">
-                  {!p.djOnline ? "// SYSTEM: DJ OFFLINE - STANDBY" : "// AUDIO_QUEUE: EMPTY"}
-                </h2>
-                <p className="font-mono text-[11px] text-pink-400/70 mt-0.5">
-                  Thêm bài hát ở bảng bên phải để nạp vào băng từ Cyber-Deck
-                </p>
-              </div>
+      <>
+        <section className="relative rounded-xl border border-cyan-500/50 bg-[#080914]/90 p-3 sm:p-4 shadow-[0_0_28px_rgba(0,240,255,0.22),inset_0_1px_0_rgba(0,240,255,0.4)] backdrop-blur-xl">
+          <CyberpunkCorners size={44} allFour />
+          <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
+            {/* Left Column: Cyber-Deck Cassette Centerpiece / Karaoke */}
+            {renderCenterpiece(
+              <Turntable spinning={room.is_playing && !!current} thumbnail={current?.thumbnail_url} />,
+              "w-[240px] sm:w-[280px] h-[210px] sm:h-[230px]"
             )}
 
-            {/* 2. Timeline / Progress */}
-            <div className="flex w-full items-center gap-2 text-xs text-cyan-300/80">
-              <span className="font-mono text-[11px] w-9 text-right text-cyan-400 font-bold">
-                {formatClock(elapsed)}
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={dur || 0}
-                value={Math.min(elapsed, dur || 0)}
-                disabled={!p.canControl || dur === 0}
-                onChange={(e) => p.onSeekMs(Number(e.target.value))}
-                className="h-1.5 flex-1 accent-cyan-400 cursor-pointer"
-                aria-label="seek"
-              />
-              <span className="font-mono text-[11px] w-9 text-pink-400 font-bold">
-                {formatClock(dur)}
-              </span>
-            </div>
-
-            {/* 3. Controls Row */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                {p.canControl && (
-                  <>
-                    <button
-                      onClick={p.onPlayPause}
-                      className="h-10 w-10 sm:h-11 sm:w-11 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 border border-cyan-200 text-black font-extrabold text-sm shadow-[0_0_16px_rgba(0,240,255,0.6)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
-                      title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}
+            {/* Right Column: Digital HUD Info, Controls, Timeline */}
+            <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
+              {/* 1. Track Info */}
+              {current ? (
+                <div className="flex items-center gap-3">
+                  {current.thumbnail_url && (
+                    <div className="relative h-13 w-13 sm:h-14 sm:w-14 shrink-0 overflow-hidden rounded-lg border border-pink-500/60 shadow-[0_0_12px_rgba(255,0,85,0.35)] bg-black/60">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={current.thumbnail_url}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                      {room.is_playing && (
+                        <div className="absolute inset-0 bg-cyan-400/20 animate-pulse" />
+                      )}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <h2
+                      className="truncate font-mono text-base sm:text-lg font-black text-cyan-200 tracking-wide"
+                      style={{ textShadow: "0 0 10px rgba(0,240,255,0.6)" }}
+                      title={current.title || current.youtube_video_id}
                     >
-                      {room.is_playing ? "⏸" : "▶"}
-                    </button>
-                    <button
-                      onClick={p.onSkip}
-                      className="h-8.5 px-3 rounded-lg border border-pink-500/60 bg-[#160a1e] text-pink-300 font-mono text-xs shadow-[0_0_10px_rgba(255,0,85,0.3)] transition hover:bg-pink-950/60 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
-                      title="Chuyển bài tiếp theo"
-                    >
-                      <span>SKIP</span>
-                      <span>⏭</span>
-                    </button>
-                  </>
-                )}
+                      {current.title || current.youtube_video_id}
+                    </h2>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-mono text-[9px] uppercase px-1.5 py-0.5 rounded bg-pink-950/80 border border-pink-500/50 text-pink-300 font-bold tracking-wider">
+                        UPLOADER
+                      </span>
+                      <span className="font-mono text-[11px] text-cyan-300 font-semibold truncate flex items-center gap-1">
+                        <span>{current.added_by_name}</span>
+                        {current.is_replay && (
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-950/80 border border-cyan-500/50 text-cyan-300">🔁 REPLAY</span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-2">
+                  <h2 className="font-mono text-base font-bold text-cyan-300/90 tracking-wider">
+                    {!p.djOnline ? "// SYSTEM: DJ OFFLINE - STANDBY" : "// AUDIO_QUEUE: EMPTY"}
+                  </h2>
+                  <p className="font-mono text-[11px] text-pink-400/70 mt-0.5">
+                    Thêm bài hát ở bảng bên phải để nạp vào băng từ Cyber-Deck
+                  </p>
+                </div>
+              )}
 
-                {/* Audio On/Off Toggle Icon */}
-                <button
-                  onClick={toggleAudio}
-                  className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
-                    !p.unlocked
-                      ? "bg-gradient-to-r from-emerald-400 to-cyan-400 border border-emerald-200 text-black shadow-[0_0_14px_#00ff88] animate-pulse"
-                      : p.volume === 0
-                      ? "bg-[#160a1e] border border-pink-500/50 text-pink-400"
-                      : "bg-[#0c1224] border border-cyan-400/50 text-cyan-300 hover:border-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.3)]"
-                  }`}
-                  title={
-                    !p.unlocked
-                      ? "Nhấn để bật âm thanh nghe trên thiết bị này"
-                      : p.volume === 0
-                      ? "Bật lại tiếng (Unmute)"
-                      : "Tắt tiếng (Mute)"
-                  }
-                >
-                  {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
-                </button>
-              </div>
-
-              {/* Volume Slider */}
-              <div className="flex items-center gap-1.5 font-mono text-xs text-cyan-300 bg-black/60 px-3 py-1 rounded-lg border border-cyan-400/30">
-                <span className="text-cyan-400">VOL</span>
+              {/* 2. Timeline / Progress */}
+              <div className="flex w-full items-center gap-2 text-xs text-cyan-300/80">
+                <span className="font-mono text-[11px] w-9 text-right text-cyan-400 font-bold">
+                  {formatClock(elapsed)}
+                </span>
                 <input
                   type="range"
                   min={0}
-                  max={100}
-                  value={p.volume}
-                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                  className="w-16 sm:w-20 accent-cyan-400 cursor-pointer"
-                  aria-label="volume"
+                  max={dur || 0}
+                  value={Math.min(elapsed, dur || 0)}
+                  disabled={!p.canControl || dur === 0}
+                  onChange={(e) => p.onSeekMs(Number(e.target.value))}
+                  className="h-1.5 flex-1 accent-cyan-400 cursor-pointer"
+                  aria-label="seek"
                 />
-                <span className="text-[10px] w-7 text-right font-mono text-emerald-400 font-bold">
-                  {p.volume}%
+                <span className="font-mono text-[11px] w-9 text-pink-400 font-bold">
+                  {formatClock(dur)}
                 </span>
               </div>
-            </div>
 
-            {/* 4. Room Info */}
-            <div className="flex items-center justify-between font-mono text-[10px] text-cyan-400/70">
-              <p className="truncate">
-                {p.canControl
-                  ? "// NODE_ROLE: [DJ_MASTER] — FULL DECK ACCESS"
-                  : "// NODE_ROLE: [SUBSCRIBER] — REMOTE SYNCED"}
-              </p>
-              {p.playError && <p className="text-pink-400 font-bold">{p.playError}</p>}
-            </div>
+              {/* 3. Controls Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  {p.canControl && (
+                    <>
+                      <button
+                        onClick={p.onPlayPause}
+                        className="h-10 w-10 sm:h-11 sm:w-11 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 border border-cyan-200 text-black font-extrabold text-sm shadow-[0_0_16px_rgba(0,240,255,0.6)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
+                        title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}
+                      >
+                        {room.is_playing ? "⏸" : "▶"}
+                      </button>
+                      <button
+                        onClick={p.onSkip}
+                        className="h-8.5 px-3 rounded-lg border border-pink-500/60 bg-[#160a1e] text-pink-300 font-mono text-xs shadow-[0_0_10px_rgba(255,0,85,0.3)] transition hover:bg-pink-950/60 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                        title="Chuyển bài tiếp theo"
+                      >
+                        <span>SKIP</span>
+                        <span>⏭</span>
+                      </button>
+                    </>
+                  )}
 
-            {/* 5. Reactions Bar */}
-            <div className="pt-2 border-t border-cyan-500/20 flex items-center justify-start">
-              {p.children}
+                  {/* Audio On/Off Toggle Icon */}
+                  <button
+                    onClick={toggleAudio}
+                    className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+                      !p.unlocked
+                        ? "bg-gradient-to-r from-emerald-400 to-cyan-400 border border-emerald-200 text-black shadow-[0_0_14px_#00ff88] animate-pulse"
+                        : p.volume === 0
+                        ? "bg-[#160a1e] border border-pink-500/50 text-pink-400"
+                        : "bg-[#0c1224] border border-cyan-400/50 text-cyan-300 hover:border-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.3)]"
+                    }`}
+                    title={
+                      !p.unlocked
+                        ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                        : p.volume === 0
+                        ? "Bật lại tiếng (Unmute)"
+                        : "Tắt tiếng (Mute)"
+                    }
+                  >
+                    {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+                  </button>
+
+                  {/* Karaoke Fullscreen Button */}
+                  <button
+                    onClick={() => setIsKaraokeModalOpen(true)}
+                    className={`h-8.5 px-2.5 rounded-lg font-mono text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1 bg-black/60 border border-cyan-400/40 text-cyan-300 hover:border-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.3)] ${
+                      lyricsHook.hasSynced ? "border-[#ff0055] text-[#ff0055]" : ""
+                    }`}
+                    title="Mở toàn màn hình sân khấu Karaoke"
+                  >
+                    <span>🎤</span>
+                    <span className="hidden sm:inline">KARAOKE</span>
+                    {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />}
+                  </button>
+                </div>
+
+                {/* Volume Slider */}
+                <div className="flex items-center gap-1.5 font-mono text-xs text-cyan-300 bg-black/60 px-3 py-1 rounded-lg border border-cyan-400/30">
+                  <span className="text-cyan-400">VOL</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={p.volume}
+                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                    className="w-16 sm:w-20 accent-cyan-400 cursor-pointer"
+                    aria-label="volume"
+                  />
+                  <span className="text-[10px] w-7 text-right font-mono text-emerald-400 font-bold">
+                    {p.volume}%
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. Room Info */}
+              <div className="flex items-center justify-between font-mono text-[10px] text-cyan-400/70">
+                <p className="truncate">
+                  {p.canControl
+                    ? "// NODE_ROLE: [DJ_MASTER] — FULL DECK ACCESS"
+                    : "// NODE_ROLE: [SUBSCRIBER] — REMOTE SYNCED"}
+                </p>
+                {p.playError && <p className="text-pink-400 font-bold">{p.playError}</p>}
+              </div>
+
+              {/* 5. Reactions Bar */}
+              <div className="pt-2 border-t border-cyan-500/20 flex items-center justify-start">
+                {p.children}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+        {modalElement}
+      </>
     );
   }
 
   if (theme === "dragon") {
     return (
-      <section className="relative rounded-2xl border border-amber-400/40 bg-[#0c0b0f]/85 p-3 sm:p-4 shadow-[0_12px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl">
-        <DragonCorners size={64} />
-        <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
-          {/* Left Column: Character Centerpiece */}
-          <div className="shrink-0 flex items-center justify-center">
-            <Turntable spinning={room.is_playing && !!current} thumbnail={current?.thumbnail_url} />
-          </div>
-
-          {/* Right Column: Music Info, Controls, Progress, Reactions */}
-          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
-            {/* 1. Track Info */}
-            {current ? (
-              <div className="flex items-center gap-3">
-                {current.thumbnail_url && (
-                  <div className="relative h-13 w-13 sm:h-14 sm:w-14 shrink-0 overflow-hidden rounded-xl border border-amber-400/40 shadow-lg bg-black/50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={current.thumbnail_url}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                    {room.is_playing && (
-                      <div className="absolute inset-0 bg-amber-400/15 animate-pulse" />
-                    )}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <h2
-                    className="truncate font-playfair text-base sm:text-lg font-bold text-amber-200 tracking-wide"
-                    title={current.title || current.youtube_video_id}
-                  >
-                    {current.title || current.youtube_video_id}
-                  </h2>
-                  <p className="text-[11px] text-amber-400/70 truncate mt-0.5 flex items-center gap-1.5">
-                    <span>do <b className="text-amber-300 font-semibold">{current.added_by_name}</b> đóng góp</span>
-                    {current.is_replay && (
-                      <span className="inline-flex items-center rounded bg-amber-400/20 px-1 py-0.2 text-[9px] font-semibold text-amber-200">
-                        🔁 Replay
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="py-2">
-                <h2 className="font-playfair text-base text-amber-300/80">
-                  {!p.djOnline ? "DJ đang offline — chờ DJ" : "Hàng đợi trống"}
-                </h2>
-                <p className="text-[11px] text-amber-400/50 mt-0.5">Thêm bài hát ở cột bên phải để giai nhân tấu khúc</p>
-              </div>
+      <>
+        <section className="relative rounded-2xl border border-amber-400/40 bg-[#0c0b0f]/85 p-3 sm:p-4 shadow-[0_12px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl">
+          <DragonCorners size={64} />
+          <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
+            {/* Left Column: Character Centerpiece / Karaoke */}
+            {renderCenterpiece(
+              <Turntable spinning={room.is_playing && !!current} thumbnail={current?.thumbnail_url} />,
+              "w-[210px] sm:w-[230px] h-[210px] sm:h-[230px]"
             )}
 
-            {/* 2. Timeline / Progress */}
-            <div className="flex w-full items-center gap-2 text-xs text-amber-200/80">
-              <span className="font-mono text-[11px] w-9 text-right text-amber-300/80">{formatClock(elapsed)}</span>
-              <input
-                type="range"
-                min={0}
-                max={dur || 0}
-                value={Math.min(elapsed, dur || 0)}
-                disabled={!p.canControl || dur === 0}
-                onChange={(e) => p.onSeekMs(Number(e.target.value))}
-                className="h-1.5 flex-1 accent-amber-400 cursor-pointer"
-                aria-label="seek"
-              />
-              <span className="font-mono text-[11px] w-9 text-amber-300/80">{formatClock(dur)}</span>
-            </div>
-
-            {/* 3. Controls Row */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                {p.canControl && (
-                  <>
-                    <button
-                      onClick={p.onPlayPause}
-                      className="h-10 w-10 sm:h-11 sm:w-11 rounded-full bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 border border-amber-300/80 text-black font-bold text-sm shadow-[0_4px_14px_rgba(212,175,55,0.4)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
-                      title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}
+            {/* Right Column: Music Info, Controls, Progress, Reactions */}
+            <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
+              {/* 1. Track Info */}
+              {current ? (
+                <div className="flex items-center gap-3">
+                  {current.thumbnail_url && (
+                    <div className="relative h-13 w-13 sm:h-14 sm:w-14 shrink-0 overflow-hidden rounded-xl border border-amber-400/40 shadow-lg bg-black/50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={current.thumbnail_url}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                      {room.is_playing && (
+                        <div className="absolute inset-0 bg-amber-400/15 animate-pulse" />
+                      )}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <h2
+                      className="truncate font-playfair text-base sm:text-lg font-bold text-amber-200 tracking-wide"
+                      title={current.title || current.youtube_video_id}
                     >
-                      {room.is_playing ? "⏸" : "▶"}
-                    </button>
-                    <button
-                      onClick={p.onSkip}
-                      className="h-8.5 px-3 rounded-full border border-amber-400/50 bg-[#1e1a26] text-amber-200 text-xs shadow-md transition hover:bg-amber-950/50 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
-                      title="Bỏ qua bài này"
-                    >
-                      <span>Chuyển bài</span>
-                      <span>⏭</span>
-                    </button>
-                  </>
-                )}
+                      {current.title || current.youtube_video_id}
+                    </h2>
+                    <p className="text-[11px] text-amber-400/70 truncate mt-0.5 flex items-center gap-1.5">
+                      <span>do <b className="text-amber-300 font-semibold">{current.added_by_name}</b> đóng góp</span>
+                      {current.is_replay && (
+                        <span className="inline-flex items-center rounded bg-amber-400/20 px-1 py-0.2 text-[9px] font-semibold text-amber-200">
+                          🔁 Replay
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-2">
+                  <h2 className="font-playfair text-base text-amber-300/80">
+                    {!p.djOnline ? "DJ đang offline — chờ DJ" : "Hàng đợi trống"}
+                  </h2>
+                  <p className="text-[11px] text-amber-400/50 mt-0.5">Thêm bài hát ở cột bên phải để giai nhân tấu khúc</p>
+                </div>
+              )}
 
-                {/* Audio On/Off Toggle Icon */}
-                <button
-                  onClick={toggleAudio}
-                  className={`h-8.5 w-8.5 rounded-full border text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
-                    !p.unlocked
-                      ? "bg-gradient-to-r from-red-800 to-amber-700 border-amber-400/80 text-amber-100 shadow-[0_0_10px_rgba(212,175,55,0.4)] animate-pulse"
-                      : p.volume === 0
-                      ? "bg-[#181520] border-amber-400/30 text-amber-400/50"
-                      : "bg-[#1f1a29] border-amber-400/50 text-amber-200"
-                  }`}
-                  title={
-                    !p.unlocked
-                      ? "Nhấn để bật âm thanh nghe trên thiết bị này"
-                      : p.volume === 0
-                      ? "Bật lại tiếng (Unmute)"
-                      : "Tắt tiếng (Mute)"
-                  }
-                >
-                  {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
-                </button>
-              </div>
-
-              {/* Volume Slider */}
-              <div className="flex items-center gap-1.5 text-xs text-amber-200/80 bg-black/40 px-3 py-1 rounded-full border border-amber-400/20">
-                <span>VOL</span>
+              {/* 2. Timeline / Progress */}
+              <div className="flex w-full items-center gap-2 text-xs text-amber-200/80">
+                <span className="font-mono text-[11px] w-9 text-right text-amber-300/80">{formatClock(elapsed)}</span>
                 <input
                   type="range"
                   min={0}
-                  max={100}
-                  value={p.volume}
-                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                  className="w-16 sm:w-20 accent-amber-400 cursor-pointer"
-                  aria-label="volume"
+                  max={dur || 0}
+                  value={Math.min(elapsed, dur || 0)}
+                  disabled={!p.canControl || dur === 0}
+                  onChange={(e) => p.onSeekMs(Number(e.target.value))}
+                  className="h-1.5 flex-1 accent-amber-400 cursor-pointer"
+                  aria-label="seek"
                 />
-                <span className="text-[10px] w-6 text-right font-mono text-amber-400/70">{p.volume}%</span>
+                <span className="font-mono text-[11px] w-9 text-amber-300/80">{formatClock(dur)}</span>
+              </div>
+
+              {/* 3. Controls Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  {p.canControl && (
+                    <>
+                      <button
+                        onClick={p.onPlayPause}
+                        className="h-10 w-10 sm:h-11 sm:w-11 rounded-full bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 border border-amber-300/80 text-black font-bold text-sm shadow-[0_4px_14px_rgba(212,175,55,0.4)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
+                        title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}
+                      >
+                        {room.is_playing ? "⏸" : "▶"}
+                      </button>
+                      <button
+                        onClick={p.onSkip}
+                        className="h-8.5 px-3 rounded-full border border-amber-400/50 bg-[#1e1a26] text-amber-200 text-xs shadow-md transition hover:bg-amber-950/50 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                        title="Bỏ qua bài này"
+                      >
+                        <span>Chuyển bài</span>
+                        <span>⏭</span>
+                      </button>
+                    </>
+                  )}
+
+                  {/* Audio On/Off Toggle Icon */}
+                  <button
+                    onClick={toggleAudio}
+                    className={`h-8.5 w-8.5 rounded-full border text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+                      !p.unlocked
+                        ? "bg-gradient-to-r from-red-800 to-amber-700 border-amber-400/80 text-amber-100 shadow-[0_0_10px_rgba(212,175,55,0.4)] animate-pulse"
+                        : p.volume === 0
+                        ? "bg-[#181520] border-amber-400/30 text-amber-400/50"
+                        : "bg-[#1f1a29] border-amber-400/50 text-amber-200"
+                    }`}
+                    title={
+                      !p.unlocked
+                        ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                        : p.volume === 0
+                        ? "Bật lại tiếng (Unmute)"
+                        : "Tắt tiếng (Mute)"
+                    }
+                  >
+                    {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+                  </button>
+
+                  {/* Karaoke Fullscreen Button */}
+                  <button
+                    onClick={() => setIsKaraokeModalOpen(true)}
+                    className={`h-8.5 px-3 rounded-full border border-amber-400/40 bg-[#1f1a29] text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5 ${
+                      lyricsHook.hasSynced ? "border-amber-400 text-amber-300" : "text-amber-200/80"
+                    }`}
+                    title="Mở toàn màn hình sân khấu Karaoke"
+                  >
+                    <span>🎤</span>
+                    <span className="hidden sm:inline">Karaoke</span>
+                    {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-ping" />}
+                  </button>
+                </div>
+
+                {/* Volume Slider */}
+                <div className="flex items-center gap-1.5 text-xs text-amber-200/80 bg-black/40 px-3 py-1 rounded-full border border-amber-400/20">
+                  <span>VOL</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={p.volume}
+                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                    className="w-16 sm:w-20 accent-amber-400 cursor-pointer"
+                    aria-label="volume"
+                  />
+                  <span className="text-[10px] w-6 text-right font-mono text-amber-400/70">{p.volume}%</span>
+                </div>
+              </div>
+
+              {/* 4. Room Info */}
+              <div className="flex items-center justify-between text-[11px] text-amber-400/60">
+                <p className="truncate">
+                  {p.canControl ? "✦ Bạn là DJ — Có quyền điều khiển phát / tua" : "✦ Đang nghe cùng phòng · DJ điều khiển"}
+                </p>
+                {p.playError && <p className="text-red-400 text-xs">{p.playError}</p>}
+              </div>
+
+              {/* 5. Reactions Bar */}
+              <div className="pt-2 border-t border-amber-400/15 flex items-center justify-start">
+                {p.children}
               </div>
             </div>
-
-            {/* 4. Room Info */}
-            <div className="flex items-center justify-between text-[11px] text-amber-400/60">
-              <p className="truncate">
-                {p.canControl ? "✦ Bạn là DJ — Có quyền điều khiển phát / tua" : "✦ Đang nghe cùng phòng · DJ điều khiển"}
-              </p>
-              {p.playError && <p className="text-red-400 text-xs">{p.playError}</p>}
-            </div>
-
-            {/* 5. Reactions Bar */}
-            <div className="pt-2 border-t border-amber-400/15 flex items-center justify-start">
-              {p.children}
-            </div>
           </div>
-        </div>
-      </section>
+        </section>
+        {modalElement}
+      </>
     );
   }
 
   return (
-    <section className="relative flex flex-col items-center gap-1.5 rounded-xl border border-gold-200 bg-cream/60 p-2 sm:p-2.5 pt-2.5 sm:pt-3 text-center shadow-xs">
-      <DragonCorners size={64} />
-      <Turntable spinning={room.is_playing && !!current} thumbnail={current?.thumbnail_url} />
-      {current ? (
-        <div className="max-w-[92%] flex items-center justify-center gap-2.5 sm:gap-3">
-          <div className="text-center min-w-0">
-            <h2 className="truncate font-cormorant text-lg font-bold text-burgundy sm:text-xl" title={current.title || current.youtube_video_id}>
-              {current.title || current.youtube_video_id}
-            </h2>
-            <p className="text-[11px] italic text-ink/80 leading-tight flex items-center justify-center gap-1.5">
-              <span>do <b className="text-burgundy">{current.added_by_name}</b> đóng góp</span>
-              {current.is_replay && (
-                <span className="inline-flex items-center rounded bg-gold-200/50 px-1 py-0.5 text-[9px] font-semibold text-burgundy not-italic" title="Tự động phát lại từ lịch sử">
-                  🔁 Replay
-                </span>
-              )}
-            </p>
-          </div>
-        </div>
-      ) : (
-        <h2 className="font-cormorant text-base text-burgundy sm:text-lg">{!p.djOnline ? "DJ đang offline — chờ DJ" : "Hàng đợi trống"}</h2>
-      )}
-
-      <div className="flex w-[88%] items-center gap-2 text-xs text-ink/80">
-        <span>{formatClock(elapsed)}</span>
-        <input type="range" min={0} max={dur || 0} value={Math.min(elapsed, dur || 0)} disabled={!p.canControl || dur === 0}
-          onChange={(e) => p.onSeekMs(Number(e.target.value))}
-          className="h-1.5 flex-1 accent-burgundy" aria-label="seek" />
-        <span>{formatClock(dur)}</span>
-      </div>
-
-      <div className="flex items-center gap-3">
-        {p.canControl && (
-          <>
-            <button onClick={p.onPlayPause} className="h-11 w-11 rounded-full bg-burgundy px-3 py-1 text-cream shadow-xs transition hover:scale-105 active:scale-95" title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}>
-              {room.is_playing ? "⏸" : "▶"}
-            </button>
-            <button onClick={p.onSkip} className="rounded-full border border-gold bg-cream px-3 py-1.5 text-xs text-burgundy shadow-xs transition hover:scale-105 active:scale-95" title="Chuyển bài">⏭</button>
-          </>
+    <>
+      <section className="relative flex flex-col items-center gap-1.5 rounded-xl border border-gold-200 bg-cream/60 p-2 sm:p-2.5 pt-2.5 sm:pt-3 text-center shadow-xs">
+        <DragonCorners size={64} />
+        {renderCenterpiece(
+          <Turntable spinning={room.is_playing && !!current} thumbnail={current?.thumbnail_url} />,
+          "w-[240px] sm:w-[280px] h-[210px] sm:h-[230px]"
         )}
-        <button
-          onClick={toggleAudio}
-          className={`h-9 w-9 rounded-full border border-gold bg-cream text-sm shadow-xs transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
-            !p.unlocked ? "animate-pulse bg-burgundy text-cream" : ""
-          }`}
-          title={!p.unlocked ? "Nhấn để bật âm thanh" : p.volume === 0 ? "Bật lại tiếng (Unmute)" : "Tắt tiếng (Mute)"}
-        >
-          {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
-        </button>
-        <label className="flex items-center gap-1 text-xs text-ink/80">
-          <input type="range" min={0} max={100} value={p.volume}
-            onChange={(e) => handleVolumeChange(Number(e.target.value))} className="w-16 sm:w-20 accent-burgundy" aria-label="volume" />
-        </label>
-      </div>
-      <p className="text-[10px] sm:text-[11px] text-green-vintage">
-        {p.canControl ? "Điều khiển phát / tua — chỉ DJ" : "Đang nghe cùng phòng · DJ điều khiển"}
-      </p>
-      {p.playError && <p className="text-[11px] text-burgundy-accent">{p.playError}</p>}
-      {p.children}
-    </section>
+        {current ? (
+          <div className="max-w-[92%] flex items-center justify-center gap-2.5 sm:gap-3">
+            <div className="text-center min-w-0">
+              <h2 className="truncate font-cormorant text-lg font-bold text-burgundy sm:text-xl" title={current.title || current.youtube_video_id}>
+                {current.title || current.youtube_video_id}
+              </h2>
+              <p className="text-[11px] italic text-ink/80 leading-tight flex items-center justify-center gap-1.5">
+                <span>do <b className="text-burgundy">{current.added_by_name}</b> đóng góp</span>
+                {current.is_replay && (
+                  <span className="inline-flex items-center rounded bg-gold-200/50 px-1 py-0.5 text-[9px] font-semibold text-burgundy not-italic" title="Tự động phát lại từ lịch sử">
+                    🔁 Replay
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <h2 className="font-cormorant text-base text-burgundy sm:text-lg">{!p.djOnline ? "DJ đang offline — chờ DJ" : "Hàng đợi trống"}</h2>
+        )}
+
+        <div className="flex w-[88%] items-center gap-2 text-xs text-ink/80">
+          <span>{formatClock(elapsed)}</span>
+          <input type="range" min={0} max={dur || 0} value={Math.min(elapsed, dur || 0)} disabled={!p.canControl || dur === 0}
+            onChange={(e) => p.onSeekMs(Number(e.target.value))}
+            className="h-1.5 flex-1 accent-burgundy" aria-label="seek" />
+          <span>{formatClock(dur)}</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {p.canControl && (
+            <>
+              <button onClick={p.onPlayPause} className="h-11 w-11 rounded-full bg-burgundy px-3 py-1 text-cream shadow-xs transition hover:scale-105 active:scale-95" title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}>
+                {room.is_playing ? "⏸" : "▶"}
+              </button>
+              <button onClick={p.onSkip} className="rounded-full border border-gold bg-cream px-3 py-1.5 text-xs text-burgundy shadow-xs transition hover:scale-105 active:scale-95" title="Chuyển bài">⏭</button>
+            </>
+          )}
+          <button
+            onClick={toggleAudio}
+            className={`h-9 w-9 rounded-full border border-gold bg-cream text-sm shadow-xs transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+              !p.unlocked ? "animate-pulse bg-burgundy text-cream" : ""
+            }`}
+            title={!p.unlocked ? "Nhấn để bật âm thanh" : p.volume === 0 ? "Bật lại tiếng (Unmute)" : "Tắt tiếng (Mute)"}
+          >
+            {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+          </button>
+          <button
+            onClick={() => setIsKaraokeModalOpen(true)}
+            className="h-9 px-3 rounded-full border border-gold bg-cream text-xs text-burgundy shadow-xs transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1"
+            title="Mở toàn màn hình sân khấu Karaoke"
+          >
+            <span>🎤</span>
+            <span className="hidden sm:inline">Karaoke</span>
+            {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-burgundy animate-ping" />}
+          </button>
+          <label className="flex items-center gap-1 text-xs text-ink/80">
+            <input type="range" min={0} max={100} value={p.volume}
+              onChange={(e) => handleVolumeChange(Number(e.target.value))} className="w-16 sm:w-20 accent-burgundy" aria-label="volume" />
+          </label>
+        </div>
+        <p className="text-[10px] sm:text-[11px] text-green-vintage">
+          {p.canControl ? "Điều khiển phát / tua — chỉ DJ" : "Đang nghe cùng phòng · DJ điều khiển"}
+        </p>
+        {p.playError && <p className="text-[11px] text-burgundy-accent">{p.playError}</p>}
+        {p.children}
+      </section>
+      {modalElement}
+    </>
   );
 }

@@ -66,6 +66,24 @@ html { scrollbar-width: thin; scrollbar-color: var(--color-gold) var(--color-par
 *::-webkit-scrollbar-thumb:hover { background: var(--color-burgundy); }
 *::-webkit-scrollbar-corner { background: var(--color-parchment); }
 
+/* ===== Utility to hide scrollbars completely ===== */
+.no-scrollbar::-webkit-scrollbar,
+html * .no-scrollbar::-webkit-scrollbar,
+html[data-theme] * .no-scrollbar::-webkit-scrollbar,
+.no-scrollbar *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+.no-scrollbar,
+html * .no-scrollbar,
+html[data-theme] * .no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
 /* ===== Pixel Cozy theme — remap the salon tokens (components keep their classes) ===== */
 html[data-theme="cozy"] {
   --color-parchment: #f4e4c1;
