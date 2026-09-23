@@ -59,6 +59,18 @@ export default function Logo({ size = 32, withWordmark = true }: { size?: number
             className="h-full w-full object-cover"
           />
         </span>
+      ) : theme === "miku" ? (
+        <span
+          className="relative inline-block overflow-hidden rounded-full border-2 border-[#00f0ff] shadow-[0_0_16px_rgba(0,240,255,0.85),0_0_6px_rgba(255,0,127,0.7)] bg-[#07131e]"
+          style={{ width: size, height: size }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/themes/miku/emblem.jpg"
+            alt="Vocaloid Miku"
+            className="h-full w-full object-cover"
+          />
+        </span>
       ) : (
         <Image
           src={logo}
@@ -80,10 +92,12 @@ export default function Logo({ size = 32, withWordmark = true }: { size?: number
               ? "font-sans font-black tracking-wider text-[#84e800] drop-shadow-[0_0_10px_rgba(132,232,0,0.8)] uppercase text-xl sm:text-2xl"
               : theme === "lofi"
               ? "font-serif tracking-wide text-[#f4ebd9] drop-shadow-[0_2px_8px_rgba(217,119,6,0.4)] font-medium text-xl sm:text-2xl"
+              : theme === "miku"
+              ? "font-mono font-black tracking-widest bg-gradient-to-r from-[#00f0ff] via-[#39c5bb] to-[#ff007f] bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(0,240,255,0.8)] uppercase text-xl sm:text-2xl"
               : "font-playfair text-burgundy"
           }`}
         >
-          {theme === "itv" ? "iTV MUSIC" : theme === "lofi" ? "Lo-Fi Attic" : "Music Together"}
+          {theme === "itv" ? "iTV MUSIC" : theme === "lofi" ? "Lo-Fi Attic" : theme === "miku" ? "MIKU 01" : "Music Together"}
         </span>
       )}
     </span>
