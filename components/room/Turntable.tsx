@@ -457,6 +457,130 @@ function ITVTelevisionCenterpiece({
   );
 }
 
+function LofiAtticCenterpiece({
+  spinning,
+  thumbnail,
+  title,
+  uploader,
+}: {
+  spinning: boolean;
+  thumbnail?: string | null;
+  title?: string | null;
+  uploader?: string | null;
+}) {
+  return (
+    <div className="relative select-none flex items-center justify-center my-0.5 w-[225px] sm:w-[245px]">
+      {/* Ambient warm amber glow */}
+      <div
+        className={`absolute inset-0 rounded-2xl blur-xl transition-all duration-700 pointer-events-none ${
+          spinning ? "opacity-50 bg-[#d97706]/25 animate-pulse" : "opacity-15 bg-[#d97706]/10"
+        }`}
+      />
+
+      {/* Cozy Window Sill Wooden Casing */}
+      <div className="relative w-full rounded-xl border border-[#d97706]/40 bg-gradient-to-b from-[#241710] via-[#1a110b] to-[#120b07] p-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(245,158,11,0.25)]">
+        {/* Rainy Window Frame Background */}
+        <div className="relative w-full h-[155px] sm:h-[165px] rounded-lg overflow-hidden bg-[#0e1620] flex flex-col justify-between border border-[#d97706]/25 p-2 shadow-inner">
+          {/* Rainy Glass Backdrop Image */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/themes/lofi/bg.jpg"
+            alt="Rainy Window"
+            className="absolute inset-0 h-full w-full object-cover opacity-25 filter blur-[1px]"
+          />
+
+          {/* Rain streak lines */}
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.04)_10%,transparent_10%,transparent_50%,rgba(255,255,255,0.03)_50%,transparent_60%)] bg-[length:16px_16px]" />
+
+          {/* Top Status Bar: Outside weather & status */}
+          <div className="relative z-10 flex items-center justify-between text-[9px] font-serif text-amber-200/90">
+            <div className="flex items-center gap-1.5 bg-black/50 px-2 py-0.5 rounded-full border border-amber-600/30 backdrop-blur-xs">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  spinning ? "bg-amber-400 shadow-[0_0_6px_#fbbf24] animate-pulse" : "bg-stone-500"
+                }`}
+              />
+              <span className="font-medium">{spinning ? "Đang pha nhạc" : "Tạm nghỉ"}</span>
+            </div>
+            <div className="flex items-center gap-1 bg-black/40 px-1.5 py-0.5 rounded-full text-[8px] text-amber-300/80">
+              <span>🌧️</span>
+              <span>21°C</span>
+            </div>
+          </div>
+
+          {/* Centerpiece: Polaroid Photo of Song */}
+          <div className="relative z-10 mx-auto my-auto flex flex-col items-center">
+            {/* Washi Tape */}
+            <div className="h-2.5 w-10 -mb-1 z-20 rounded-xs bg-amber-700/70 border border-amber-500/40 shadow-xs rotate-[-3deg]" />
+
+            {/* Polaroid Frame */}
+            <div className="relative bg-[#fcfaf5] p-1.5 pb-2 rounded-xs shadow-[0_6px_16px_rgba(0,0,0,0.6)] rotate-[1.5deg] transition-transform duration-500 hover:rotate-0">
+              {/* Photo Area */}
+              <div className="relative h-[78px] w-[95px] sm:h-[86px] sm:w-[105px] overflow-hidden rounded-xs bg-[#1a120c] border border-black/10">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbnail || "/themes/lofi/bg.jpg"}
+                  alt={title || "Lo-Fi Song"}
+                  className={`h-full w-full object-cover transition-all duration-700 ${
+                    spinning ? "brightness-100 contrast-105" : "brightness-85 grayscale-30"
+                  }`}
+                />
+                {/* Vintage Warm Sepia Overlay */}
+                <div className="pointer-events-none absolute inset-0 bg-amber-900/10 mix-blend-color" />
+              </div>
+
+              {/* Handwritten Note underneath */}
+              <div className="mt-1 px-0.5 text-center">
+                <p className="font-serif italic text-[8px] font-semibold text-[#3b2314] truncate max-w-[95px] sm:max-w-[105px]">
+                  {title || "Lo-Fi Melody"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Window Sill: Steaming Coffee Mug & Cassette Deck Bar */}
+          <div className="relative z-10 flex items-end justify-between pt-1">
+            {/* Steaming Coffee Cup */}
+            <div className="relative flex items-end gap-1.5">
+              {/* Cup container */}
+              <div className="relative h-6 w-8 rounded-b-md rounded-t-xs bg-gradient-to-b from-[#f5ede2] to-[#dfcca9] border border-[#bfa280] shadow-sm flex items-center justify-center">
+                {/* Handle */}
+                <div className="absolute -right-2 top-1 h-3.5 w-2 rounded-r-full border-2 border-[#dfcca9] border-l-0" />
+                {/* Coffee foam inside */}
+                <div className="h-1.5 w-6 rounded-full bg-[#5c3a21] border border-[#3d2413]/40 -mt-3.5" />
+
+                {/* Animated Rising Steam Wisps */}
+                {spinning && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 pointer-events-none flex gap-1">
+                    <span className="w-1 h-3 rounded-full bg-white/40 blur-[0.6px] animate-steam-1" />
+                    <span className="w-1 h-3.5 rounded-full bg-white/35 blur-[0.6px] animate-steam-2" />
+                    <span className="w-1 h-3 rounded-full bg-white/30 blur-[0.6px] animate-steam-3" />
+                  </div>
+                )}
+              </div>
+              <span className="text-[8px] font-serif text-amber-200/70 hidden sm:inline italic">
+                latte nóng
+              </span>
+            </div>
+
+            {/* Ambient Cassette / Turntable Mini-Badge */}
+            <div className="flex items-center gap-1 bg-black/60 px-2 py-0.5 rounded-md border border-amber-800/40 text-[8px] font-mono text-amber-300/80">
+              <span className={`text-[10px] ${spinning ? "animate-spin" : ""}`}>💿</span>
+              <span>33 RPM</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Window Sill Ledge Footer */}
+        <div className="mt-1 flex items-center justify-between px-1 text-[7px] font-mono text-amber-400/50">
+          <span>COZY ATTIC STUDIO</span>
+          <span>HI-FI WARMTH</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Turntable({
   spinning,
   thumbnail,
@@ -475,6 +599,15 @@ export default function Turntable({
   if (theme === "itv")
     return (
       <ITVTelevisionCenterpiece
+        spinning={spinning}
+        thumbnail={thumbnail}
+        title={title}
+        uploader={uploader}
+      />
+    );
+  if (theme === "lofi")
+    return (
+      <LofiAtticCenterpiece
         spinning={spinning}
         thumbnail={thumbnail}
         title={title}

@@ -17,6 +17,9 @@ describe("parseTheme", () => {
   it("returns 'itv' for 'itv'", () => {
     expect(parseTheme("itv")).toBe("itv");
   });
+  it("returns 'lofi' for 'lofi'", () => {
+    expect(parseTheme("lofi")).toBe("lofi");
+  });
   it("defaults to 'salon' for null / unknown / empty", () => {
     expect(parseTheme(null)).toBe("salon");
     expect(parseTheme("")).toBe("salon");

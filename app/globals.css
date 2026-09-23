@@ -876,6 +876,171 @@ html[data-theme="itv"] .podium-card-3 .podium-stat {
   color: #d6faff !important;
 }
 
+/* ===== RAINY COFFEE & LO-FI ATTIC (Căn Gác Mái Mưa & Cà Phê Chill) ===== */
+html[data-theme="lofi"] {
+  --color-parchment: #140d08;
+  --color-cream: #22160f;
+  --color-burgundy: #d97706;       /* warm honey amber */
+  --color-burgundy-accent: #b45309;/* roasted caramel */
+  --color-gold: #f59e0b;           /* amber glow */
+  --color-green-vintage: #5c7d67;  /* potted plant sage */
+  --color-ink: #f4ebd9;            /* warm latte foam */
+}
+
+html[data-theme="lofi"] body {
+  background-color: #120c08;
+  background-image: url('/themes/lofi/bg.jpg');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
+  background-attachment: fixed;
+  color: #f4ebd9;
+}
+
+/* Cozy wooden attic panels with warm amber glow & translucent glass */
+html[data-theme="lofi"] .bg-cream\/50,
+html[data-theme="lofi"] .bg-cream\/60,
+html[data-theme="lofi"] .bg-cream\/70,
+html[data-theme="lofi"] .bg-cream\/80 {
+  background-color: rgba(22, 14, 10, 0.52) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-color: rgba(217, 119, 6, 0.32) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 16px rgba(217, 119, 6, 0.08) !important;
+}
+
+html[data-theme="lofi"] .border-gold,
+html[data-theme="lofi"] .border-gold-200 {
+  border-color: rgba(217, 119, 6, 0.38) !important;
+}
+
+/* Inputs & textareas with coffee-bar wood ambiance */
+html[data-theme="lofi"] input[type="text"],
+html[data-theme="lofi"] textarea {
+  background-color: rgba(18, 12, 8, 0.92) !important;
+  border-color: rgba(217, 119, 6, 0.45) !important;
+  color: #f4ebd9 !important;
+}
+html[data-theme="lofi"] input[type="text"]:focus,
+html[data-theme="lofi"] textarea:focus {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.4) !important;
+}
+
+/* Custom warm amber scrollbar */
+html[data-theme="lofi"] ::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+html[data-theme="lofi"] ::-webkit-scrollbar-track {
+  background: rgba(18, 12, 8, 0.7);
+}
+html[data-theme="lofi"] ::-webkit-scrollbar-thumb {
+  background: rgba(217, 119, 6, 0.45);
+  border-radius: 4px;
+}
+html[data-theme="lofi"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.75);
+}
+
+/* Lo-Fi Coffee Podium Cards */
+html[data-theme="lofi"] .podium-card-1 {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.22) 0%, rgba(38, 24, 15, 0.96) 100%) !important;
+  border: 2px solid rgba(245, 158, 11, 0.75) !important;
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.3), 0 8px 24px rgba(0, 0, 0, 0.8) !important;
+}
+html[data-theme="lofi"] .podium-card-1 .podium-avatar {
+  background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%) !important;
+  border: 2px solid #fde68a !important;
+  color: #1a120c !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.8) !important;
+}
+html[data-theme="lofi"] .podium-card-1 .podium-name {
+  color: #fbbf24 !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.5) !important;
+}
+html[data-theme="lofi"] .podium-card-1 .podium-stat {
+  background: rgba(245, 158, 11, 0.22) !important;
+  border: 1px solid rgba(245, 158, 11, 0.5) !important;
+  color: #fef3c7 !important;
+}
+
+html[data-theme="lofi"] .podium-card-2 {
+  background: linear-gradient(180deg, rgba(217, 119, 6, 0.18) 0%, rgba(32, 20, 13, 0.96) 100%) !important;
+  border: 1.5px solid rgba(217, 119, 6, 0.6) !important;
+  box-shadow: 0 0 20px rgba(217, 119, 6, 0.2), 0 8px 24px rgba(0, 0, 0, 0.8) !important;
+}
+html[data-theme="lofi"] .podium-card-2 .podium-avatar {
+  background: linear-gradient(135deg, #d97706 0%, #78350f 100%) !important;
+  border: 2px solid #fcd34d !important;
+  color: #ffffff !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 14px rgba(217, 119, 6, 0.7) !important;
+}
+html[data-theme="lofi"] .podium-card-2 .podium-name {
+  color: #f59e0b !important;
+  font-weight: 700 !important;
+}
+html[data-theme="lofi"] .podium-card-2 .podium-stat {
+  background: rgba(217, 119, 6, 0.2) !important;
+  border: 1px solid rgba(217, 119, 6, 0.45) !important;
+  color: #fef3c7 !important;
+}
+
+html[data-theme="lofi"] .podium-card-3 {
+  background: linear-gradient(180deg, rgba(92, 125, 103, 0.2) 0%, rgba(24, 18, 14, 0.96) 100%) !important;
+  border: 1.5px solid rgba(92, 125, 103, 0.55) !important;
+  box-shadow: 0 0 20px rgba(92, 125, 103, 0.2), 0 8px 24px rgba(0, 0, 0, 0.8) !important;
+}
+html[data-theme="lofi"] .podium-card-3 .podium-avatar {
+  background: linear-gradient(135deg, #759a81 0%, #3f5d49 100%) !important;
+  border: 2px solid #a7c4b0 !important;
+  color: #0d1a12 !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 14px rgba(92, 125, 103, 0.6) !important;
+}
+html[data-theme="lofi"] .podium-card-3 .podium-name {
+  color: #a7c4b0 !important;
+  font-weight: 700 !important;
+}
+html[data-theme="lofi"] .podium-card-3 .podium-stat {
+  background: rgba(92, 125, 103, 0.2) !important;
+  border: 1px solid rgba(92, 125, 103, 0.45) !important;
+  color: #e5ede8 !important;
+}
+
+/* Animations for coffee steam */
+@keyframes steam-rise {
+  0% {
+    transform: translateY(0) scaleX(1);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.6;
+  }
+  60% {
+    transform: translateY(-14px) scaleX(1.4);
+    opacity: 0.35;
+  }
+  100% {
+    transform: translateY(-26px) scaleX(1.8);
+    opacity: 0;
+  }
+}
+
+.animate-steam-1 {
+  animation: steam-rise 2.8s ease-out infinite;
+}
+.animate-steam-2 {
+  animation: steam-rise 2.8s ease-out 0.9s infinite;
+}
+.animate-steam-3 {
+  animation: steam-rise 2.8s ease-out 1.8s infinite;
+}
+
+
 
 
 
