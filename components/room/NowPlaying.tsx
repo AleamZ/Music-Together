@@ -217,6 +217,377 @@ export default function NowPlaying(p: NowPlayingProps) {
     );
   }
 
+  if (theme === "lofi") {
+    const progress = dur > 0 ? Math.min(elapsed, dur) / dur : 0;
+    // Left spool supplies tape: shrinks from 72px to 38px
+    const leftTapeDiameter = Math.round(72 - progress * 34);
+    // Right spool takes up tape: grows from 38px to 72px
+    const rightTapeDiameter = Math.round(38 + progress * 34);
+
+    return (
+      <section className="relative rounded-xl border border-gold-200 bg-cream/50 p-2.5 sm:p-3.5 shadow-xl backdrop-blur-md overflow-hidden">
+        {/* Soft overhead warm lamp glow */}
+        <div className="pointer-events-none absolute inset-0 rounded-xl bg-[radial-gradient(ellipse_at_50%_0%,rgba(245,158,11,0.14)_0%,transparent_75%)]" />
+
+        {/* ===================================================================== */}
+        {/* AUTHENTIC TRANSLUCENT COMPACT CASSETTE TAPE (Vỏ nhựa trong suốt mờ)  */}
+        {/* ===================================================================== */}
+        <div className="relative z-10 w-full max-w-[620px] mx-auto rounded-2xl border-2 border-[#5c3a21]/60 bg-[#1a110a]/35 p-2 sm:p-3 shadow-[0_12px_28px_rgba(0,0,0,0.65),inset_0_1px_2px_rgba(255,255,255,0.18)] backdrop-blur-sm">
+          {/* Top Write-Protect Notches (2 tai khuyết chống xoá băng trên đỉnh) */}
+          <div className="absolute -top-1 left-7 sm:left-9 w-6 h-2 bg-[#0c0704] border-x border-b border-[#4a2e1b] rounded-b-xs select-none pointer-events-none" />
+          <div className="absolute -top-1 right-7 sm:right-9 w-6 h-2 bg-[#0c0704] border-x border-b border-[#4a2e1b] rounded-b-xs select-none pointer-events-none" />
+
+          {/* Top Center Grip Ribs (Gờ khía cầm tay trên đỉnh vỏ cassette) */}
+          <div className="absolute -top-[2px] left-1/2 -translate-x-1/2 w-24 h-1.5 bg-[#26150a]/90 rounded-b-xs border-b border-[#4a2e1b] flex items-center justify-around px-2 select-none pointer-events-none">
+            <span className="w-[1px] h-1 bg-[#4a2e1b]" />
+            <span className="w-[1px] h-1 bg-[#4a2e1b]" />
+            <span className="w-[1px] h-1 bg-[#4a2e1b]" />
+            <span className="w-[1px] h-1 bg-[#4a2e1b]" />
+            <span className="w-[1px] h-1 bg-[#4a2e1b]" />
+          </div>
+
+          {/* 4 Corner Screws (Ốc kim loại 4 góc) */}
+          <div className="absolute top-2 left-2 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-[#807060] via-[#524436] to-[#241c14] border border-[#140e08] shadow-xs flex items-center justify-center select-none pointer-events-none">
+            <div className="w-1.5 h-[1px] bg-[#140e08] rotate-45" />
+          </div>
+          <div className="absolute top-2 right-2 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-[#807060] via-[#524436] to-[#241c14] border border-[#140e08] shadow-xs flex items-center justify-center select-none pointer-events-none">
+            <div className="w-1.5 h-[1px] bg-[#140e08] -rotate-30" />
+          </div>
+          <div className="absolute bottom-2.5 left-2 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-[#807060] via-[#524436] to-[#241c14] border border-[#140e08] shadow-xs flex items-center justify-center select-none pointer-events-none">
+            <div className="w-1.5 h-[1px] bg-[#140e08] rotate-15" />
+          </div>
+          <div className="absolute bottom-2.5 right-2 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-[#807060] via-[#524436] to-[#241c14] border border-[#140e08] shadow-xs flex items-center justify-center select-none pointer-events-none">
+            <div className="w-1.5 h-[1px] bg-[#140e08] rotate-60" />
+          </div>
+
+          {/* 1. VINTAGE PAPER STICKER LABEL (Phần nhãn dán nửa trên) */}
+          <div className="relative rounded-xl border border-[#c4b39b]/90 bg-gradient-to-b from-[#fcf9f2]/95 via-[#f5eee1]/90 to-[#e8decf]/90 p-2.5 sm:p-3.5 text-[#2b180d] shadow-sm backdrop-blur-xs">
+            {/* Fine Paper Texture Lines */}
+            <div className="pointer-events-none absolute inset-0 rounded-xl bg-[linear-gradient(rgba(180,140,90,0.06)_1px,transparent_1px)] bg-[size:100%_4px]" />
+
+            {/* Label Header: Red SIDE A Stamp, Specs & Mixtape ID */}
+            <div className="relative z-10 flex items-center justify-between gap-2 border-b border-[#dfcca9] pb-1.5 select-none">
+              <div className="flex items-center gap-2">
+                <span className="bg-[#8b1e1e] text-white font-mono text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-xs tracking-widest shadow-xs">
+                  SIDE A
+                </span>
+                <span className="font-mono text-[8px] sm:text-[9px] text-[#6b4e33] font-semibold tracking-wider">
+                  NORMAL BIAS (TYPE I) • 120µs EQ
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 font-mono text-[8px] sm:text-[9px] text-[#6b4e33]">
+                <span className="font-bold text-[#8b1e1e]">C-90</span>
+                <span>•</span>
+                <span className="font-semibold text-[#3b2314]">
+                  TẬP #{current?.id ? String(current.id).slice(-4) : "8730"}
+                </span>
+              </div>
+            </div>
+
+            {/* Label Track Info Row with Album Sticker */}
+            <div className="relative z-10 flex items-center gap-2.5 sm:gap-3 py-1.5">
+              {/* Mini Album Cover Sticker (Dán trên nhãn băng) */}
+              <div className="shrink-0 relative">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xs p-0.5 bg-white border border-[#c4b39b] shadow-[0_2px_4px_rgba(0,0,0,0.15)] overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={current?.thumbnail_url || "/themes/lofi/bg.jpg"}
+                    alt={current?.title || "Mixtape Album"}
+                    className={`w-full h-full object-cover transition-all duration-500 ${
+                      room.is_playing ? "brightness-100" : "brightness-90 contrast-95"
+                    }`}
+                  />
+                </div>
+                {/* Washi tape on sticker */}
+                <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-6 h-1.5 bg-[#b45309]/50 border border-amber-700/40 rounded-xs rotate-[-3deg] shadow-xs" />
+              </div>
+
+              {/* Ruled Lines Track Titles */}
+              <div className="min-w-0 flex-1">
+                <div className="border-b border-[#cbb79a] pb-0.5">
+                  <h2
+                    className="truncate font-serif text-sm sm:text-base font-extrabold text-[#2a170d] tracking-wide"
+                    title={current?.title || current?.youtube_video_id || "Gác Mái Chiều Mưa"}
+                  >
+                    {current ? (current.title || current.youtube_video_id) : "Gác Mái Chiều Mưa • Chờ DJ chọn bài"}
+                  </h2>
+                </div>
+                <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-serif text-[#5c3a21] pt-1">
+                  <span className="truncate">
+                    {current ? `✍️ Yêu cầu bởi: ${current.added_by_name}` : "☕ Bật nhạc để sưởi ấm gác mái"}
+                  </span>
+                  <span className="shrink-0 font-mono text-[9px] text-[#785b3a] ml-2">
+                    🌧️ 21°C
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. TRANSPARENT CASSETTE WINDOW (Cửa sổ mica trong suốt lộ cuộn băng & Bánh răng) */}
+          <div className="relative my-2 h-24 sm:h-28 w-full rounded-2xl border-2 border-[#4a2e1b]/60 bg-[#0d0704]/45 shadow-[inset_0_2px_12px_rgba(0,0,0,0.85)] overflow-hidden flex items-center justify-between px-6 sm:px-14 backdrop-blur-xs">
+            {/* Glass Glare Reflection Line */}
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_30%,rgba(255,255,255,0.08)_45%,rgba(255,255,255,0.02)_55%,transparent_70%)]" />
+
+            {/* REALISTIC DIAGONAL MAGNETIC TAPE PATH (Đường băng từ nối xuống con lăn góc) */}
+            {/* Left diagonal tape band running towards bottom-left roller */}
+            <div className="pointer-events-none absolute left-12 sm:left-20 top-1/2 bottom-0 w-3 bg-[#26140b] -rotate-15 origin-top border-l border-[#3d2012]/80 opacity-85" />
+            {/* Right diagonal tape band running towards bottom-right roller */}
+            <div className="pointer-events-none absolute right-12 sm:right-20 top-1/2 bottom-0 w-3 bg-[#26140b] rotate-15 origin-top border-r border-[#3d2012]/80 opacity-85" />
+
+            {/* Left Spool: Supply Reel (Thu nhỏ dần theo thời gian) */}
+            <div className="relative z-10 w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center">
+              {/* Magnetic Tape Pack */}
+              <div
+                className="rounded-full bg-gradient-to-br from-[#2b170c] via-[#1a0e07] to-[#120804] border border-[#3d2012] flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.08),0_2px_8px_rgba(0,0,0,0.7)] transition-[width,height] duration-500"
+                style={{
+                  width: `${leftTapeDiameter}px`,
+                  height: `${leftTapeDiameter}px`,
+                }}
+              >
+                {/* White 6-Tooth Cassette Gear Hub */}
+                <svg
+                  viewBox="0 0 40 40"
+                  className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 select-none pointer-events-none"
+                  style={{
+                    animation: room.is_playing ? "spin 3.2s linear infinite" : "none",
+                  }}
+                >
+                  <circle cx="20" cy="20" r="17" fill="#fdfbf7" stroke="#cfbeaa" strokeWidth="1.2" />
+                  <circle cx="20" cy="20" r="12" fill="none" stroke="#dfd4c4" strokeWidth="0.8" />
+                  <circle cx="20" cy="20" r="8.5" fill="#0d0704" stroke="#4a301c" strokeWidth="0.8" />
+                  <rect x="18.5" y="7.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                  <rect x="18.5" y="28.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                  <g transform="rotate(60 20 20)">
+                    <rect x="18.5" y="7.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                    <rect x="18.5" y="28.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                  </g>
+                  <g transform="rotate(120 20 20)">
+                    <rect x="18.5" y="7.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                    <rect x="18.5" y="28.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                  </g>
+                </svg>
+              </div>
+            </div>
+
+            {/* Window Center: Real Cassette Scale Markings (100 - 50 - 0) */}
+            <div className="relative z-10 flex flex-col items-center select-none pointer-events-none px-2">
+              <div className="flex items-center gap-1.5 sm:gap-2.5 text-[8px] sm:text-[9px] font-mono text-amber-200/60 font-bold tracking-widest">
+                <span>100</span>
+                <span className="text-amber-400/80">•</span>
+                <span>50</span>
+                <span className="text-amber-400/80">•</span>
+                <span>0</span>
+              </div>
+              {/* Gauge tick lines */}
+              <div className="flex items-center gap-1 sm:gap-1.5 my-1 text-[7px] text-amber-500/50">
+                <span>|</span>
+                <span>:</span>
+                <span>|</span>
+                <span className="text-red-400 font-bold">▲</span>
+                <span>|</span>
+                <span>:</span>
+                <span>|</span>
+              </div>
+              <span className="font-mono text-[7px] sm:text-[8px] text-amber-400/60 tracking-wider">
+                INDEX
+              </span>
+            </div>
+
+            {/* Right Spool: Take-up Reel (Dày dần theo thời gian) */}
+            <div className="relative z-10 w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center">
+              {/* Magnetic Tape Pack */}
+              <div
+                className="rounded-full bg-gradient-to-br from-[#2b170c] via-[#1a0e07] to-[#120804] border border-[#3d2012] flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.08),0_2px_8px_rgba(0,0,0,0.7)] transition-[width,height] duration-500"
+                style={{
+                  width: `${rightTapeDiameter}px`,
+                  height: `${rightTapeDiameter}px`,
+                }}
+              >
+                {/* White 6-Tooth Cassette Gear Hub */}
+                <svg
+                  viewBox="0 0 40 40"
+                  className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 select-none pointer-events-none"
+                  style={{
+                    animation: room.is_playing ? "spin 3.2s linear infinite" : "none",
+                  }}
+                >
+                  <circle cx="20" cy="20" r="17" fill="#fdfbf7" stroke="#cfbeaa" strokeWidth="1.2" />
+                  <circle cx="20" cy="20" r="12" fill="none" stroke="#dfd4c4" strokeWidth="0.8" />
+                  <circle cx="20" cy="20" r="8.5" fill="#0d0704" stroke="#4a301c" strokeWidth="0.8" />
+                  <rect x="18.5" y="7.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                  <rect x="18.5" y="28.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                  <g transform="rotate(60 20 20)">
+                    <rect x="18.5" y="7.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                    <rect x="18.5" y="28.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                  </g>
+                  <g transform="rotate(120 20 20)">
+                    <rect x="18.5" y="7.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                    <rect x="18.5" y="28.5" width="3" height="4" rx="0.5" fill="#fdfbf7" />
+                  </g>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. CASSETTE BOTTOM TAPE-HEAD TRAPEZOID (Phần khuyết đầu từ đặc trưng 100% của băng cassette) */}
+          <div className="relative mx-auto mt-1 w-[82%] sm:w-[78%] h-12 sm:h-14 rounded-b-lg bg-[#140b05]/50 border-x-2 border-b-2 border-[#5c3a21]/60 shadow-[inset_0_2px_6px_rgba(0,0,0,0.7)] flex items-center justify-between px-3 sm:px-6 backdrop-blur-xs">
+            {/* Left Corner Guide Roller Pin (Con lăn dẫn hướng trái) */}
+            <div className="relative w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-[#fdfbf7]/90 border border-[#bfa588] shadow-inner flex items-center justify-center select-none pointer-events-none">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#3d2012]" />
+            </div>
+
+            {/* Left Capstan Drive Hole (Lỗ trục truyền động tròn) */}
+            <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-[#080402] border-2 border-[#5c3a21] shadow-inner" />
+
+            {/* Center Tape Head Opening with Bronze Spring Shield & Felt Pad */}
+            <div className="relative w-20 sm:w-28 h-6 sm:h-7 bg-[#0a0503] border border-[#4a2e1b] rounded-xs flex items-center justify-center overflow-hidden shadow-inner">
+              {/* Copper / Bronze Shield Spring */}
+              <div className="absolute inset-x-2 bottom-1 h-3 bg-gradient-to-t from-[#92400e] to-[#d97706] rounded-xs opacity-75" />
+              {/* White Felt Pressure Pad */}
+              <div className="relative z-10 w-3.5 h-2 bg-[#fdf2f2] border border-[#ef4444]/60 rounded-xs shadow-xs" />
+              {/* Magnetic Tape Ribbon running across the head opening */}
+              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2.5 bg-[#26140b] border-y border-[#3d2012]/80 opacity-90" />
+            </div>
+
+            {/* Right Capstan Drive Hole (Lỗ trục truyền động tròn) */}
+            <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-[#080402] border-2 border-[#5c3a21] shadow-inner" />
+
+            {/* Right Corner Guide Roller Pin (Con lăn dẫn hướng phải) */}
+            <div className="relative w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-[#fdfbf7]/90 border border-[#bfa588] shadow-inner flex items-center justify-center select-none pointer-events-none">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#3d2012]" />
+            </div>
+
+            {/* Bottom Center Screw */}
+            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-gradient-to-br from-[#807060] via-[#524436] to-[#241c14] border border-[#140e08] shadow-xs flex items-center justify-center select-none pointer-events-none">
+              <div className="w-1 h-[1px] bg-[#140e08] rotate-45" />
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================= */}
+        {/* CASSETTE DECK TRANSPORT TRAY (Khay phím cơ mờ trong suốt) */}
+        {/* ========================================================= */}
+        <div className="relative z-10 w-full max-w-[620px] mx-auto mt-3 rounded-xl border border-gold-200/30 bg-[#120a05]/30 p-2.5 sm:p-3 shadow-inner backdrop-blur-md">
+          {/* Timeline & Tape Counter Row */}
+          <div className="flex items-center gap-2.5 mb-2.5">
+            {/* Mechanical Counter Display */}
+            <div className="shrink-0 px-2 py-1 rounded bg-[#090503]/80 border border-amber-900/60 font-mono text-[11px] font-bold text-[#f59e0b] shadow-inner select-none">
+              {formatClock(elapsed)}
+            </div>
+
+            {/* Smooth Tape Timeline Seekbar */}
+            <div className="relative flex-1 flex items-center h-4">
+              <div className="absolute inset-x-0 h-1.5 rounded-full bg-[#24150c]/80 border border-amber-900/40" />
+              <div
+                className="absolute left-0 h-1.5 rounded-full bg-gradient-to-r from-amber-700 via-amber-500 to-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                style={{ width: `${dur ? (Math.min(elapsed, dur) / dur) * 100 : 0}%` }}
+              />
+              <input
+                type="range"
+                min={0}
+                max={dur || 0}
+                value={Math.min(elapsed, dur || 0)}
+                disabled={!p.canControl || dur === 0}
+                onChange={(e) => p.onSeekMs(Number(e.target.value))}
+                className="relative z-20 w-full h-4 opacity-0 cursor-pointer"
+                aria-label="seek"
+              />
+              {/* Tape Position Red Indicator Needle */}
+              <div
+                className="absolute z-10 pointer-events-none -top-0.5 h-3.5 w-1 bg-gradient-to-b from-red-500 to-amber-500 rounded-xs shadow-[0_0_6px_#f59e0b]"
+                style={{
+                  left: `calc(${dur ? (Math.min(elapsed, dur) / dur) * 100 : 0}% - 2px)`,
+                }}
+              />
+            </div>
+
+            {/* Total Duration Counter */}
+            <div className="shrink-0 px-2 py-1 rounded bg-[#090503]/80 border border-amber-900/40 font-mono text-[11px] text-[#dfcca9]/70 select-none">
+              {formatClock(dur)}
+            </div>
+          </div>
+
+          {/* Mechanical Piano Transport Keys & Volume Control */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-amber-900/30">
+            {/* Piano Keys Buttons */}
+            <div className="flex items-center gap-2">
+              {p.canControl && (
+                <>
+                  {/* [ PLAY / PAUSE ] Key */}
+                  <button
+                    onClick={p.onPlayPause}
+                    className="px-3.5 py-1.5 rounded-md bg-gradient-to-b from-[#d97706] to-[#853907] border-t border-amber-300 border-b-2 border-[#3b1501] text-[#1a0f07] font-black text-xs uppercase shadow-[0_2px_6px_rgba(0,0,0,0.6)] active:translate-y-0.5 cursor-pointer transition hover:brightness-110 flex items-center gap-1.5"
+                    title={room.is_playing ? "Tạm dừng" : "Phát nhạc"}
+                  >
+                    <span>{room.is_playing ? "⏸" : "⏵"}</span>
+                    <span>{room.is_playing ? "PAUSE" : "PLAY"}</span>
+                  </button>
+
+                  {/* [ F.FWD / CHUYỂN BÀI ] Key */}
+                  <button
+                    onClick={p.onSkip}
+                    className="px-3 py-1.5 rounded-md bg-gradient-to-b from-[#331d10] to-[#1e1008] border-t border-amber-700/50 border-b-2 border-black text-[#fcd34d] font-mono text-xs shadow-[0_2px_5px_rgba(0,0,0,0.5)] active:translate-y-0.5 cursor-pointer transition hover:bg-[#422515] flex items-center gap-1"
+                    title="Chuyển bài tiếp theo"
+                  >
+                    <span>FWD</span>
+                    <span>⏭</span>
+                  </button>
+                </>
+              )}
+
+              {/* [ AUDIO / MUTE ] Key */}
+              <button
+                onClick={toggleAudio}
+                className={`px-3 py-1.5 rounded-md border-t border-b-2 font-mono text-xs shadow-[0_2px_5px_rgba(0,0,0,0.5)] active:translate-y-0.5 cursor-pointer flex items-center gap-1.5 transition ${
+                  !p.unlocked
+                    ? "bg-gradient-to-b from-[#d97706] to-[#853907] border-amber-300 border-b-[#3b1501] text-[#1a0f07] animate-pulse"
+                    : p.volume === 0
+                    ? "bg-[#1e1008] border-amber-900/50 border-b-black text-amber-600/70"
+                    : "bg-gradient-to-b from-[#331d10] to-[#1e1008] border-amber-700/50 border-b-black text-[#fcd34d] hover:border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                }`}
+                title={
+                  !p.unlocked
+                    ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                    : p.volume === 0
+                    ? "Bật lại tiếng (Unmute)"
+                    : "Tắt tiếng (Mute)"
+                }
+              >
+                <span>{!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}</span>
+                <span className="text-[10px] hidden sm:inline">
+                  {!p.unlocked || p.volume === 0 ? "MUTE" : "AUDIO"}
+                </span>
+              </button>
+            </div>
+
+            {/* Volume Fader Slider */}
+            <div className="flex items-center gap-2 font-mono text-xs text-white bg-[#0a0503]/80 px-2.5 py-1 rounded-md border border-amber-900/40">
+              <span className="text-[#f59e0b] font-bold text-[9px] select-none">VOL</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={p.volume}
+                onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                className="w-16 sm:w-24 accent-[#d97706] cursor-pointer"
+                aria-label="volume"
+              />
+              <span className="text-[9px] w-6 text-right font-mono text-[#fcd34d] font-bold">
+                {p.volume}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Reactions bar */}
+        <div className="pt-2.5 mt-2.5 border-t border-amber-900/30 flex items-center justify-center">
+          {p.children}
+        </div>
+      </section>
+    );
+  }
+
   if (theme === "cyberpunk") {
     return (
       <section className="relative rounded-xl border border-cyan-500/50 bg-[#080914]/90 p-3 sm:p-4 shadow-[0_0_28px_rgba(0,240,255,0.22),inset_0_1px_0_rgba(0,240,255,0.4)] backdrop-blur-xl">
