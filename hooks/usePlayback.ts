@@ -46,8 +46,8 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
   const roomRef = useRef(room);
   useEffect(() => { roomRef.current = room; });
 
-  // DJ only — single-flight guard: onEnded / auto-advance / skip must never advance twice for one slot.
   const advancingRef = useRef(false);
+  const replayAttemptedRef = useRef(false);
   const advance = useCallback(() => {
     if (!isDj || advancingRef.current) return;
     advancingRef.current = true;
@@ -55,6 +55,7 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
   }, [isDj, roomId, token]);
   useEffect(() => {
     if (room.current_item_id || queueLen === 0) advancingRef.current = false;
+    if (room.current_item_id || queueLen > 0) replayAttemptedRef.current = false;
   }, [room.current_item_id, queueLen]);
 
   // Listeners do nothing on ended: the DJ's advance changes current_item_id and realtime delivers it.
@@ -124,11 +125,18 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
     return () => clearInterval(id);
   }, [ready, currentId, unlocked, getDuration, getCurrentTime, seekTo]);
 
-  // DJ only — auto-advance: nothing playing and the queue has items -> start the next track.
+  // DJ only — auto-advance: nothing playing and (queue has items OR auto_replay_history) -> start the next track.
   useEffect(() => {
     if (!isDj || !ready) return;
-    if (!room.current_item_id && !room.is_playing && queueLen > 0) advance();
-  }, [isDj, ready, room.current_item_id, room.is_playing, queueLen, advance]);
+    if (!room.current_item_id && !room.is_playing) {
+      if (queueLen > 0) {
+        advance();
+      } else if (room.auto_replay_history && !replayAttemptedRef.current) {
+        replayAttemptedRef.current = true;
+        advance();
+      }
+    }
+  }, [isDj, ready, room.current_item_id, room.is_playing, queueLen, room.auto_replay_history, advance]);
 
   /** Autoplay gate: must run inside a click handler so the browser honours play(). */
   const unlock = useCallback(() => {
@@ -139,6 +147,10 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
 
   const togglePlay = useCallback(() => {
     if (!isDj) return;
+    if (!room.current_item_id && room.auto_replay_history) {
+      advance();
+      return;
+    }
     const nowPlaying = !room.is_playing;
     if (nowPlaying) {
       // resume: started_at = now - paused_elapsed
@@ -148,7 +160,7 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
       const elapsed = computeElapsedMs(room);
       void setPlayback(roomId, token, { isPlaying: false, startedAt: null, pausedElapsedMs: elapsed });
     }
-  }, [isDj, room, roomId, token]);
+  }, [isDj, room, roomId, token, advance]);
 
   const skip = useCallback(() => advance(), [advance]);
 

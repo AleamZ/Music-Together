@@ -155,8 +155,11 @@ export default function NowPlaying(p: NowPlayingProps) {
                   <span className="font-mono text-[9px] sm:text-[10px] uppercase px-2 py-0.5 rounded bg-[#ff007f] border border-[#ff3399] text-white font-extrabold tracking-wider shrink-0 shadow-[0_0_8px_rgba(255,0,127,0.6)]">
                     YÊU CẦU BỞI
                   </span>
-                  <span className="font-mono text-xs sm:text-sm text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)]">
-                    {current.added_by_name}
+                  <span className="font-mono text-xs sm:text-sm text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)] flex items-center gap-1">
+                    <span>{current.added_by_name}</span>
+                    {current.is_replay && (
+                      <span className="text-[9px] px-1 py-0.2 rounded bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/40">🔁 REPLAY</span>
+                    )}
                   </span>
                   <span className="text-white/40">•</span>
                   <span className="font-mono text-xs text-[#a5f3fc]/80">
@@ -338,8 +341,11 @@ export default function NowPlaying(p: NowPlayingProps) {
                   <span className="font-mono text-[9px] sm:text-[10px] uppercase px-2 py-0.5 rounded bg-[#ff6600] border border-[#ff8800] text-white font-extrabold tracking-wider shrink-0 shadow-xs">
                     YÊU CẦU BỞI
                   </span>
-                  <span className="font-mono text-xs sm:text-sm text-[#84e800] font-bold">
-                    {current.added_by_name}
+                  <span className="font-mono text-xs sm:text-sm text-[#84e800] font-bold flex items-center gap-1">
+                    <span>{current.added_by_name}</span>
+                    {current.is_replay && (
+                      <span className="text-[9px] px-1 py-0.2 rounded bg-[#84e800]/20 text-[#84e800] border border-[#84e800]/40">🔁 REPLAY</span>
+                    )}
                   </span>
                   <span className="text-white/40">•</span>
                   <span className="font-mono text-xs text-[#ffcc00] font-bold">
@@ -872,8 +878,11 @@ export default function NowPlaying(p: NowPlayingProps) {
                     <span className="font-mono text-[9px] uppercase px-1.5 py-0.5 rounded bg-pink-950/80 border border-pink-500/50 text-pink-300 font-bold tracking-wider">
                       UPLOADER
                     </span>
-                    <span className="font-mono text-[11px] text-cyan-300 font-semibold truncate">
-                      {current.added_by_name}
+                    <span className="font-mono text-[11px] text-cyan-300 font-semibold truncate flex items-center gap-1">
+                      <span>{current.added_by_name}</span>
+                      {current.is_replay && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-950/80 border border-cyan-500/50 text-cyan-300">🔁 REPLAY</span>
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1027,8 +1036,13 @@ export default function NowPlaying(p: NowPlayingProps) {
                   >
                     {current.title || current.youtube_video_id}
                   </h2>
-                  <p className="text-[11px] text-amber-400/70 truncate mt-0.5">
-                    do <b className="text-amber-300 font-semibold">{current.added_by_name}</b> đóng góp
+                  <p className="text-[11px] text-amber-400/70 truncate mt-0.5 flex items-center gap-1.5">
+                    <span>do <b className="text-amber-300 font-semibold">{current.added_by_name}</b> đóng góp</span>
+                    {current.is_replay && (
+                      <span className="inline-flex items-center rounded bg-amber-400/20 px-1 py-0.2 text-[9px] font-semibold text-amber-200">
+                        🔁 Replay
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1146,7 +1160,14 @@ export default function NowPlaying(p: NowPlayingProps) {
             <h2 className="truncate font-cormorant text-lg font-bold text-burgundy sm:text-xl" title={current.title || current.youtube_video_id}>
               {current.title || current.youtube_video_id}
             </h2>
-            <p className="text-[11px] italic text-ink/80 leading-tight">do <b className="text-burgundy">{current.added_by_name}</b> đóng góp</p>
+            <p className="text-[11px] italic text-ink/80 leading-tight flex items-center justify-center gap-1.5">
+              <span>do <b className="text-burgundy">{current.added_by_name}</b> đóng góp</span>
+              {current.is_replay && (
+                <span className="inline-flex items-center rounded bg-gold-200/50 px-1 py-0.5 text-[9px] font-semibold text-burgundy not-italic" title="Tự động phát lại từ lịch sử">
+                  🔁 Replay
+                </span>
+              )}
+            </p>
           </div>
         </div>
       ) : (

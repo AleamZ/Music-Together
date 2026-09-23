@@ -17,6 +17,7 @@ export interface Room {
   started_at: string | null; paused_elapsed_ms: number; created_at: string;
   max_duration_seconds: number; require_approval: boolean; banned_keywords: string[];
   max_orders_per_member: number;
+  auto_replay_history: boolean;
 }
 export interface Member { id: string; room_id: string; account_id: string; joined_at: string; username?: string; }
 export type QueueStatus = "pending" | "approved";
@@ -25,6 +26,7 @@ export interface QueueItem {
   thumbnail_url: string | null; duration_seconds: number | null;
   added_by_account_id: string | null; added_by_name: string;
   position: number; created_at: string; status: QueueStatus;
+  is_replay?: boolean;
 }
 
 export async function createRoom(roomName: string, password: string, token: string) {
@@ -87,12 +89,19 @@ export async function rejectQueueItem(roomId: string, token: string, itemId: str
   const { error } = await supabase.rpc("reject_queue_item", { p_room_id: roomId, p_session_token: token, p_item_id: itemId });
   if (error) throw error;
 }
-export interface RoomSettings { maxDurationSeconds: number; requireApproval: boolean; bannedKeywords: string[]; maxOrdersPerMember: number }
+export interface RoomSettings {
+  maxDurationSeconds: number;
+  requireApproval: boolean;
+  bannedKeywords: string[];
+  maxOrdersPerMember: number;
+  autoReplayHistory?: boolean;
+}
 export async function updateRoomSettings(roomId: string, token: string, s: RoomSettings) {
   const { error } = await supabase.rpc("update_room_settings", {
     p_room_id: roomId, p_session_token: token,
     p_max_duration_seconds: s.maxDurationSeconds, p_require_approval: s.requireApproval, p_banned_keywords: s.bannedKeywords,
     p_max_orders_per_member: s.maxOrdersPerMember,
+    p_auto_replay_history: s.autoReplayHistory ?? null,
   });
   if (error) throw error;
 }

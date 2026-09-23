@@ -68,8 +68,13 @@ export default function Queue({ queue, currentId, canManage, roomId, token }: {
                 <div className="line-clamp-2 text-sm font-medium leading-snug text-ink" title={q.title || q.youtube_video_id}>
                   {q.title || q.youtube_video_id}
                 </div>
-                <div className="mt-1 truncate text-xs text-gold">
-                  do <b className="font-semibold text-ink">{q.added_by_name}</b>
+                <div className="mt-1 truncate text-xs text-gold flex items-center gap-1.5">
+                  <span>do <b className="font-semibold text-ink">{q.added_by_name}</b></span>
+                  {q.is_replay && (
+                    <span className="inline-flex items-center rounded bg-gold-200/50 px-1 py-0.5 text-[10px] font-semibold text-burgundy" title="Tự động phát lại từ lịch sử">
+                      🔁 Replay
+                    </span>
+                  )}
                 </div>
               </div>
               {canManage ? (
