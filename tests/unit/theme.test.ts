@@ -20,6 +20,9 @@ describe("parseTheme", () => {
   it("returns 'lofi' for 'lofi'", () => {
     expect(parseTheme("lofi")).toBe("lofi");
   });
+  it("returns 'miku' for 'miku'", () => {
+    expect(parseTheme("miku")).toBe("miku");
+  });
   it("defaults to 'salon' for null / unknown / empty", () => {
     expect(parseTheme(null)).toBe("salon");
     expect(parseTheme("")).toBe("salon");

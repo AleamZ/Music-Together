@@ -7,7 +7,27 @@ import { formatClock } from "@/lib/format";
 import type { Room, QueueItem } from "@/lib/supabase";
 import { DragonCorners } from "./DragonDecorations";
 import { CyberpunkCorners } from "./CyberpunkDecorations";
+import { MikuNekomimiEars } from "./MikuDecorations";
 import { useTheme } from "@/hooks/useTheme";
+
+const MIKU_EQ_BARS = [
+  { delay: "0.1s", dur: "0.65s" },
+  { delay: "0.3s", dur: "0.85s" },
+  { delay: "0.0s", dur: "0.6s" },
+  { delay: "0.4s", dur: "0.9s" },
+  { delay: "0.2s", dur: "0.7s" },
+  { delay: "0.5s", dur: "0.8s" },
+  { delay: "0.15s", dur: "0.6s" },
+  { delay: "0.35s", dur: "0.75s" },
+  { delay: "0.25s", dur: "0.95s" },
+  { delay: "0.05s", dur: "0.7s" },
+  { delay: "0.45s", dur: "0.85s" },
+  { delay: "0.2s", dur: "0.65s" },
+  { delay: "0.1s", dur: "0.8s" },
+  { delay: "0.4s", dur: "0.7s" },
+  { delay: "0.3s", dur: "0.9s" },
+  { delay: "0.15s", dur: "0.6s" },
+];
 
 export interface NowPlayingProps {
   room: Room;
@@ -63,6 +83,230 @@ export default function NowPlaying(p: NowPlayingProps) {
       }
     }
   };
+
+  if (theme === "miku") {
+    return (
+      <section className="relative rounded-2xl border-2 border-[#00f0ff]/50 bg-[#07111e]/90 p-3.5 sm:p-5 shadow-[0_8px_32px_rgba(0,0,0,0.8),0_0_20px_rgba(0,240,255,0.25)] backdrop-blur-xl mt-4 sm:mt-5">
+        {/* Nekomimi Cat Ears atop player */}
+        <MikuNekomimiEars />
+
+        {/* Cyber Deck Header Bar */}
+        <div className="flex items-center justify-between border-b border-[#00f0ff]/30 pb-2.5 mb-3.5">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] font-black tracking-widest px-2.5 py-0.5 rounded-full bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] text-[#050d18] shadow-[0_0_10px_rgba(0,240,255,0.8)]">
+              #01 MIKU DECK
+            </span>
+            <span className="font-mono text-[10px] text-[#ff007f] font-extrabold tracking-wider hidden sm:inline drop-shadow-[0_0_6px_rgba(255,0,127,0.8)]">
+              VOCALOID • SYNTH ENGINE
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span
+                className={`absolute inline-flex h-full w-full rounded-full ${
+                  room.is_playing ? "bg-[#00f0ff] animate-ping opacity-75" : "bg-zinc-500"
+                }`}
+              />
+              <span
+                className={`relative inline-flex rounded-full h-2 w-2 ${
+                  room.is_playing ? "bg-[#00f0ff] shadow-[0_0_6px_#00f0ff]" : "bg-zinc-600"
+                }`}
+              />
+            </span>
+            <span className="font-mono text-[10px] text-[#a5f3fc] font-bold uppercase tracking-wider">
+              {room.is_playing ? "ON STAGE" : "STANDBY"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col md:flex-row items-center md:items-stretch gap-4 sm:gap-6 w-full">
+          {/* Left Column: Centerpiece Holographic Turntable */}
+          <div className="shrink-0 flex items-center justify-center relative">
+            <Turntable
+              spinning={room.is_playing && !!current}
+              thumbnail={current?.thumbnail_url}
+              title={current?.title || current?.youtube_video_id}
+              uploader={current?.added_by_name}
+            />
+          </div>
+
+          {/* Right Column: Song Info, Equalizer, Seekbar, Controls */}
+          <div className="flex-1 min-w-0 flex flex-col justify-between gap-3 text-left w-full py-0.5">
+            {/* 1. Track Info */}
+            {current ? (
+              <div className="min-w-0 w-full">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#00f0ff]/20 border border-[#00f0ff]/50 text-[#00f0ff] tracking-wider uppercase">
+                    初音ミク LIVE
+                  </span>
+                  <span className="font-mono text-[9px] text-[#ff77b9] font-bold">
+                    MAGICAL MIRAI
+                  </span>
+                </div>
+                <h2
+                  className="truncate font-sans text-base sm:text-xl font-black text-white tracking-wide"
+                  style={{ textShadow: "0 0 12px rgba(0,240,255,0.7)" }}
+                  title={current.title || current.youtube_video_id}
+                >
+                  {current.title || current.youtube_video_id}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                  <span className="font-mono text-[9px] sm:text-[10px] uppercase px-2 py-0.5 rounded bg-[#ff007f] border border-[#ff3399] text-white font-extrabold tracking-wider shrink-0 shadow-[0_0_8px_rgba(255,0,127,0.6)]">
+                    YÊU CẦU BỞI
+                  </span>
+                  <span className="font-mono text-xs sm:text-sm text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)]">
+                    {current.added_by_name}
+                  </span>
+                  <span className="text-white/40">•</span>
+                  <span className="font-mono text-xs text-[#a5f3fc]/80">
+                    {dur ? formatClock(dur) : "--:--"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0 w-full py-2">
+                <h2 className="font-mono text-sm sm:text-base font-bold text-[#00f0ff] tracking-wider drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]">
+                  [ SÂN KHẤU ĐANG CHỜ BÀI HÁT ]
+                </h2>
+                <p className="text-xs text-[#a5f3fc]/70 mt-1">
+                  Hãy thêm bài hát từ YouTube để Miku biểu diễn trên sân khấu ảo!
+                </p>
+              </div>
+            )}
+
+            {/* 2. 16-Band Bouncy Equalizer Visualizer */}
+            <div className="w-full bg-[#050c16]/90 p-2 sm:p-2.5 rounded-xl border border-[#00f0ff]/30 shadow-inner">
+              <div className="flex items-center justify-between mb-1.5 px-1 font-mono text-[9px] text-[#00f0ff]/80">
+                <span className="font-bold flex items-center gap-1">
+                  <span className="text-[#ff007f]">▲</span> SPECTRUM ANALYZER (16-BAND)
+                </span>
+                <span className="text-[#39c5bb] tracking-wider">
+                  {room.is_playing ? "44.1 kHz • STEREO" : "PAUSED"}
+                </span>
+              </div>
+              <div className="flex items-end justify-between gap-1 sm:gap-1.5 h-10 sm:h-12 px-1">
+                {MIKU_EQ_BARS.map((bar, idx) => (
+                  <div
+                    key={idx}
+                    className="flex-1 rounded-t-sm transition-all"
+                    style={{
+                      height: room.is_playing && current ? undefined : "12%",
+                      animation:
+                        room.is_playing && current
+                          ? `miku-eq-bounce ${bar.dur} ease-in-out infinite alternate ${bar.delay}`
+                          : "none",
+                      background: "linear-gradient(180deg, #ff007f 0%, #00f0ff 100%)",
+                      boxShadow:
+                        room.is_playing && current ? "0 0 8px rgba(0, 240, 255, 0.6)" : "none",
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* 3. Holographic Timeline / Seekbar */}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-mono text-[11px] w-9 text-right text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)]">
+                {formatClock(elapsed)}
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={dur || 0}
+                value={Math.min(elapsed, dur || 0)}
+                disabled={!p.canControl || !dur}
+                onChange={(e) => p.onSeekMs(Number(e.target.value))}
+                className="flex-1 accent-[#00f0ff] cursor-pointer disabled:cursor-not-allowed h-1.5 rounded-lg bg-[#0b1928]"
+                aria-label="seek"
+              />
+              <span className="font-mono text-[11px] w-9 text-[#ff77b9] font-bold">
+                {formatClock(dur)}
+              </span>
+            </div>
+
+            {/* 4. Controls Row */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                {p.canControl && (
+                  <>
+                    <button
+                      onClick={p.onPlayPause}
+                      className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] border border-[#a5f3fc] text-[#050e18] font-black text-sm shadow-[0_0_18px_rgba(0,240,255,0.85)] transition hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
+                      title={room.is_playing ? "Tạm dừng" : "Phát sóng"}
+                    >
+                      {room.is_playing ? "⏸" : "▶"}
+                    </button>
+                    <button
+                      onClick={p.onSkip}
+                      className="h-8.5 px-3 rounded-lg border border-[#ff007f]/60 bg-[#1a0a18] text-[#ff77b9] font-mono text-xs shadow-[0_0_12px_rgba(255,0,127,0.35)] transition hover:bg-[#ff007f]/20 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                      title="Chuyển sang bài tiếp theo"
+                    >
+                      <span>NEXT BEAT</span>
+                      <span>⏭</span>
+                    </button>
+                  </>
+                )}
+
+                {/* Audio On/Off Toggle Icon */}
+                <button
+                  onClick={toggleAudio}
+                  className={`h-8.5 w-8.5 rounded-lg font-mono text-sm shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center ${
+                    !p.unlocked
+                      ? "bg-gradient-to-r from-[#00f0ff] to-[#39c5bb] border border-[#a5f3fc] text-black shadow-[0_0_16px_#00f0ff] animate-pulse"
+                      : p.volume === 0
+                      ? "bg-[#180a14] border border-[#ff007f]/50 text-[#ff007f]"
+                      : "bg-[#0b1626] border border-[#00f0ff]/50 text-[#00f0ff] hover:border-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.5)]"
+                  }`}
+                  title={
+                    !p.unlocked
+                      ? "Nhấn để bật âm thanh nghe trên thiết bị này"
+                      : p.volume === 0
+                      ? "Bật lại tiếng (Unmute)"
+                      : "Tắt tiếng (Mute)"
+                  }
+                >
+                  {!p.unlocked || p.volume === 0 ? "🔇" : "🔊"}
+                </button>
+              </div>
+
+              {/* Volume Slider */}
+              <div className="flex items-center gap-1.5 font-mono text-xs text-white bg-[#050c18]/90 px-3 py-1.5 rounded-lg border border-[#00f0ff]/40 shadow-[0_0_8px_rgba(0,240,255,0.2)]">
+                <span className="text-[#00f0ff] font-bold text-[10px]">VOL</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={p.volume}
+                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                  className="w-16 sm:w-20 accent-[#00f0ff] cursor-pointer"
+                  aria-label="volume"
+                />
+                <span className="text-[10px] w-7 text-right font-mono text-[#00f0ff] font-bold">
+                  {p.volume}%
+                </span>
+              </div>
+            </div>
+
+            {/* 5. Room Role Info */}
+            <div className="flex items-center justify-between font-mono text-[10px] text-[#a5f3fc]/70">
+              <p className="truncate">
+                {p.canControl
+                  ? "● BẠN LÀ DJ — TOÀN QUYỀN ĐIỀU PHỐI SÂN KHẤU MIKU 01"
+                  : "● ĐANG KẾT NỐI SÂN KHẤU VOCALOID · DJ ĐIỀU PHỐI"}
+              </p>
+              {p.playError && <p className="text-red-400 font-bold">{p.playError}</p>}
+            </div>
+
+            {/* 6. Reactions Bar */}
+            <div className="pt-2 border-t border-[#00f0ff]/25 flex items-center justify-start">
+              {p.children}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   if (theme === "itv") {
     return (

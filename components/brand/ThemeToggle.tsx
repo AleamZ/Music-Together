@@ -10,6 +10,7 @@ const OPTIONS: { id: ThemeName; label: string }[] = [
   { id: "cyberpunk", label: "⚡ Cyberpunk" },
   { id: "itv", label: "📺 iTV" },
   { id: "lofi", label: "☕ Lo-Fi" },
+  { id: "miku", label: "🎧 Miku 01" },
 ];
 
 export default function ThemeToggle() {

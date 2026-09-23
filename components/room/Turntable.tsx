@@ -581,6 +581,105 @@ function LofiAtticCenterpiece({
   );
 }
 
+function MikuHologramCenterpiece({
+  spinning,
+  thumbnail,
+}: {
+  spinning: boolean;
+  thumbnail?: string | null;
+  title?: string | null;
+  uploader?: string | null;
+}) {
+  return (
+    <div className="relative select-none flex items-center justify-center my-0.5 w-[210px] sm:w-[230px] h-[210px] sm:h-[230px]">
+      {/* Ambient Pulsing Neon Aura */}
+      <div
+        className={`absolute inset-0 rounded-full blur-2xl transition-all duration-700 pointer-events-none ${
+          spinning
+            ? "opacity-75 bg-gradient-to-tr from-[#00f0ff]/35 via-[#39c5bb]/20 to-[#ff007f]/35 animate-pulse"
+            : "opacity-20 bg-[#00f0ff]/10"
+        }`}
+      />
+
+      {/* Outer Cyber Turntable Chassis */}
+      <div className="relative w-full h-full rounded-full border border-[#00f0ff]/40 bg-gradient-to-b from-[#0c1424] via-[#070b16] to-[#04060d] p-3 shadow-[0_0_24px_rgba(0,240,255,0.3),inset_0_0_20px_rgba(0,0,0,0.85)] flex items-center justify-center">
+        {/* Rotating Outer Cyber Strobe Ring */}
+        <div
+          className={`absolute inset-1.5 rounded-full border border-dashed border-[#00f0ff]/30 pointer-events-none ${
+            spinning ? "animate-[spin_24s_linear_infinite]" : ""
+          }`}
+        />
+
+        {/* Cardinal Cyber & Sakura Markers */}
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 font-mono text-[8px] text-[#00f0ff] font-extrabold tracking-widest">
+          #01
+        </div>
+        <div className="absolute bottom-1 left-1/2 -translate-x-1/2 font-mono text-[8px] text-[#ff007f] font-extrabold tracking-widest">
+          MIKU
+        </div>
+        <div className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-[#39c5bb] select-none">
+          🌸
+        </div>
+        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-[#ff007f] select-none">
+          🌸
+        </div>
+
+        {/* Turntable Platter / Holographic Vinyl Disc */}
+        <div
+          className={`relative w-[165px] sm:w-[180px] h-[165px] sm:h-[180px] rounded-full shadow-2xl transition-transform ${
+            spinning ? "animate-vinyl" : "animate-vinyl animate-vinyl-paused"
+          }`}
+          style={{
+            background:
+              "radial-gradient(circle at center, #101c2e 0%, #080f1a 35%, #04060c 70%, #00f0ff18 100%), repeating-radial-gradient(circle at center, #070e18 0 2px, #0e1a2a 2px 4px)",
+            boxShadow: "0 0 16px rgba(0,240,255,0.35), inset 0 0 14px rgba(255,0,127,0.25)",
+          }}
+        >
+          {/* Subtle Cyan / Magenta Grooves */}
+          <div className="absolute inset-3 rounded-full border border-[#00f0ff]/20 pointer-events-none" />
+          <div className="absolute inset-6 rounded-full border border-[#ff007f]/20 pointer-events-none" />
+          <div className="absolute inset-10 rounded-full border border-[#39c5bb]/25 pointer-events-none" />
+
+          {/* Center Hologram Label with Thumbnail */}
+          <div className="absolute inset-[27%] rounded-full p-0.5 bg-gradient-to-tr from-[#00f0ff] via-[#39c5bb] to-[#ff007f] shadow-[0_0_14px_rgba(0,240,255,0.7)] flex items-center justify-center overflow-hidden">
+            <div className="w-full h-full rounded-full overflow-hidden bg-[#040810] flex items-center justify-center relative">
+              {thumbnail ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src="/themes/miku/emblem.jpg" alt="Miku" className="w-full h-full object-cover" />
+              )}
+              {/* Center Spindle Hole */}
+              <div className="absolute w-3 h-3 rounded-full bg-[#050b14] border-2 border-[#00f0ff] shadow-[0_0_6px_#00f0ff]" />
+            </div>
+          </div>
+        </div>
+
+        {/* Cyber Laser Tonearm */}
+        <div
+          className="absolute top-2 right-2 w-16 h-28 pointer-events-none transition-transform duration-700 origin-top-right z-10"
+          style={{
+            transform: spinning ? "rotate(16deg)" : "rotate(-10deg)",
+          }}
+        >
+          {/* Base Pivot */}
+          <div className="absolute top-1 right-2 w-5 h-5 rounded-full bg-[#0d1b2a] border border-[#00f0ff] shadow-[0_0_8px_#00f0ff] flex items-center justify-center">
+            <div className="w-2 h-2 rounded-full bg-[#ff007f] shadow-[0_0_4px_#ff007f]" />
+          </div>
+          {/* Arm Rod */}
+          <div className="absolute top-4 right-4 w-1 h-20 bg-gradient-to-b from-[#00f0ff] via-slate-400 to-[#ff007f] shadow-[0_0_6px_rgba(0,240,255,0.6)] rounded-full" />
+          {/* Stylus Cartridge */}
+          <div className="absolute bottom-3 right-3.5 w-3 h-5 bg-[#07131e] border border-[#ff007f] rounded-xs shadow-[0_0_8px_#ff007f] transform rotate-12 flex flex-col items-center justify-end pb-0.5">
+            {/* Glowing Laser Needle */}
+            <div className={`w-1.5 h-1.5 rounded-full ${spinning ? "bg-[#00f0ff] shadow-[0_0_8px_#00f0ff] animate-ping" : "bg-[#ff007f]"}`} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Turntable({
   spinning,
   thumbnail,
@@ -608,6 +707,15 @@ export default function Turntable({
   if (theme === "lofi")
     return (
       <LofiAtticCenterpiece
+        spinning={spinning}
+        thumbnail={thumbnail}
+        title={title}
+        uploader={uploader}
+      />
+    );
+  if (theme === "miku")
+    return (
+      <MikuHologramCenterpiece
         spinning={spinning}
         thumbnail={thumbnail}
         title={title}
