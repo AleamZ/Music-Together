@@ -1,8 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { ITEM_ART } from "@/lib/game/art/items";
 import { DEFAULT_LOOK as FROM_CHARACTER } from "@/lib/game/character";
 import { CHU_TU_LOOK, CO_BA_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
+
+vi.mock("@/lib/supabase", () => ({ supabase: {} }));
 
 describe("pure look module", () => {
   it("does not depend on Supabase", () => {
