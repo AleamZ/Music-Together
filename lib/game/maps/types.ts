@@ -39,7 +39,10 @@ export type PropPlacement =
   | { kind: "board"; x: number; y: number }
   | { kind: "sign"; x: number; y: number; icon?: "fish" | "note" }
   | { kind: "banana"; x: number; y: number }
-  | { kind: "lightpole"; x: number; y: number };
+  | { kind: "lightpole"; x: number; y: number }
+  | { kind: "stall_front"; x: number; y: number }
+  | { kind: "hut_front"; x: number; y: number }
+  | { kind: "records"; x: number; y: number };
 
 /** Where classic-mode members are shown (the hall only). */
 export interface Seating {

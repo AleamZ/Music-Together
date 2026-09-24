@@ -14,6 +14,9 @@ export function propFrame(p: PropPlacement): PropFrame {
     case "sign": return { w: 18, h: 26, ox: 9, oy: 26 };
     case "banana": return { w: 40, h: 36, ox: 20, oy: 35 };
     case "lightpole": return { w: 6, h: 42, ox: 3, oy: 42 };
+    case "stall_front": return { w: 108, h: 30, ox: 54, oy: 30 };
+    case "hut_front": return { w: 108, h: 26, ox: 54, oy: 26 };
+    case "records": return { w: 28, h: 34, ox: 14, oy: 34 };
   }
 }
 
