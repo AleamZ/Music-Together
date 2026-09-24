@@ -89,9 +89,11 @@ export function trackPresence(
     .on("presence", { event: "leave" }, emit)
     .subscribe((status) => {
       // A (re)join starts with none of our presence on the server → publish the wanted mode again;
-      // this re-track may use the call kept in reserve (5th per 30 s).
+      // this re-track may use the call kept in reserve (5th per 30 s) and never waits behind a pending
+      // timer that was computed with the 4-call budget.
       if (status === "SUBSCRIBED") {
         subscribed = true; published = null;
+        if (timer) { clearTimeout(timer); timer = null; }
         schedule(0, { max: PRESENCE_BUDGET.max + 1, windowMs: PRESENCE_BUDGET.windowMs });
       } else subscribed = false;
     });

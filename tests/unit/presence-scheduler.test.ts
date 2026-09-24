@@ -110,6 +110,23 @@ describe("trackPresence scheduler", () => {
     hd.unsubscribe();
   });
 
+  it("a rejoin while a mode change waits on a budget timer re-tracks the wanted mode at once (reserved call)", async () => {
+    const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "classic" }, () => {});
+    sub(); await adv(0);
+    for (const m of ["game", "classic", "game"] as const) { hd.setMode(m); await adv(2000); }
+    expect(times()).toEqual([0, 1000, 3000, 5000]); // 4-call budget used up until t = 30 s
+    hd.setMode("classic"); await adv(1000);          // waits on a budget timer (would fire at 30 s)
+    expect(h.state.calls).toHaveLength(4);
+
+    sub("CHANNEL_ERROR"); sub(); await adv(0);
+    expect(times().at(-1)).toBe(7000);               // sent at once: the reserved 5th call in the window
+    expect(modes().at(-1)).toBe("classic");          // …carrying the wanted (pending) mode
+    await adv(60_000); expect(h.state.calls).toHaveLength(5); // the cleared budget timer sends nothing extra
+    const ts = times();
+    for (const t of ts) expect(ts.filter((x) => x >= t && x < t + 30_000).length).toBeLessThanOrEqual(5);
+    hd.unsubscribe();
+  });
+
   it("a change made before SUBSCRIBED is sent on SUBSCRIBED; unsubscribe cancels pending and future sends", async () => {
     const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "classic" }, () => {});
     hd.setMode("game"); await adv(2000); expect(h.state.calls).toHaveLength(0);
