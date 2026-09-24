@@ -49,9 +49,10 @@ export default function Header({
             onClick={onEnterGame}
             className="flex items-center gap-1.5 rounded-lg border border-gold bg-cream px-3 py-1 text-sm font-medium text-burgundy shadow-xs transition hover:bg-gold-200/30 active:scale-95"
             title="Chuyển sang chế độ game 2D"
+            aria-label="Chế độ game"
           >
             <span>🎮</span>
-            <span>Chế độ game</span>
+            <span className="hidden sm:inline">Chế độ game</span>
           </button>
         )}
         <ThemeToggle />

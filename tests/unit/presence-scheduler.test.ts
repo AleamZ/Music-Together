@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { trackPresence } from "@/lib/realtime";
 import type { PresenceMode } from "@/lib/presence-modes";
 
-// Fake Realtime channel: records every track() call (time + mode) and answers with queued replies ("ok" by default).
+// Fake Realtime channel: records every track() call (time + mode) and answers with queued replies ("ok" by default;
+// an Error reply makes that call reject).
 const h = vi.hoisted(() => {
   const state = {
     subscribeCb: null as ((s: string) => void) | null,
     calls: [] as { at: number; mode: unknown }[],
-    replies: [] as Array<string | Promise<string>>,
+    replies: [] as Array<string | Promise<string> | Error>,
     removed: 0,
   };
   const channel = {
@@ -16,7 +17,8 @@ const h = vi.hoisted(() => {
     presenceState() { return {}; },
     track(payload: { mode: unknown }) {
       state.calls.push({ at: Date.now(), mode: payload.mode });
-      return Promise.resolve(state.replies.shift() ?? "ok");
+      const reply = state.replies.shift() ?? "ok";
+      return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply);
     },
   };
   return { state, channel };
@@ -75,6 +77,16 @@ describe("trackPresence scheduler", () => {
     await adv(1000); expect(h.state.calls).toHaveLength(3);
     await adv(60_000); expect(h.state.calls).toHaveLength(3);
     expect(modes()).toEqual(["game", "game", "game"]);
+    hd.unsubscribe();
+  });
+
+  it("retries a rejected track like a failed one, and the retry publishes the mode", async () => {
+    h.state.replies = [new Error("socket closed")];
+    const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "game" }, () => {});
+    sub(); await adv(0); expect(h.state.calls).toHaveLength(1);
+    await adv(1000); expect(modes()).toEqual(["game", "game"]);
+    await adv(60_000); expect(h.state.calls).toHaveLength(2); // acknowledged → never re-sent
+    hd.setMode("classic"); await adv(1000); expect(modes()).toEqual(["game", "game", "classic"]);
     hd.unsubscribe();
   });
 

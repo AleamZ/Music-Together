@@ -76,7 +76,9 @@ export function trackPresence(
     const mode = wanted;
     const now = Date.now();
     sentAt = [...sentAt.filter((t) => now - t < PRESENCE_BUDGET.windowMs), now];
-    const status = await channel.track({ name: me.name, online_at: new Date(now).toISOString(), mode });
+    // A rejected call counts as failed (retried below) instead of leaving `sending` stuck.
+    const status = await channel.track({ name: me.name, online_at: new Date(now).toISOString(), mode })
+      .catch(() => "error" as const);
     sending = false;
     if (closed) return;
     if (status === "ok") published = mode;

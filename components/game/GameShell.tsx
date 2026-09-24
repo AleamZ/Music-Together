@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ChatDrawer from "@/components/room/ChatDrawer";
 import MemberList from "@/components/room/MemberList";
 import RoomChartModal from "@/components/room/RoomChartModal";
@@ -63,7 +63,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
 
   // The game has its own parchment look: portals (RoomChartModal renders into <body>) get the palette too, and the app
   // theme is switched off while the shell is mounted — some theme rules use !important and would restyle the game UI.
-  useEffect(() => {
+  // A layout effect runs before the first paint, so no frame is drawn in the app theme.
+  useLayoutEffect(() => {
     const html = document.documentElement;
     const theme = html.getAttribute("data-theme");
     html.removeAttribute("data-theme");

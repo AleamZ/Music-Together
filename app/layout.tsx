@@ -12,8 +12,9 @@ const cormorant = Cormorant_Garamond({ variable: "--font-cormorant", subsets: ["
 const ebGaramond = EB_Garamond({ variable: "--font-eb-garamond", subsets: ["latin"], display: "swap" });
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], display: "swap" });
 const pixel = Pixelify_Sans({ variable: "--font-pixel", subsets: ["latin"], display: "swap" });
-// Game mode (v13) HUD + canvas text. Static font → needs `weight`; has a Vietnamese subset.
-const vt323 = VT323({ weight: "400", variable: "--font-vt323", subsets: ["latin", "vietnamese"], display: "swap" });
+// Game mode (v13) HUD + canvas text. Static font → needs `weight`; has a Vietnamese subset. Only game mode uses it,
+// so it is not preloaded on every route.
+const vt323 = VT323({ weight: "400", variable: "--font-vt323", subsets: ["latin", "vietnamese"], display: "swap", preload: false });
 
 export const metadata: Metadata = {
   title: "Music Together — Phòng nghe nhạc",

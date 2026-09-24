@@ -64,4 +64,18 @@ describe("createSendGate", () => {
     vi.advanceTimersByTime(5000);
     expect(sent).toHaveLength(4);
   });
+
+  it("keeps its normal pace after the clock steps back", () => {
+    vi.useFakeTimers();
+    let clock = 50_000;
+    const sent: GameMessage[] = [];
+    const gate = createSendGate((m) => sent.push(m), { now: () => clock });
+    for (let i = 0; i < 3; i++) gate.push({ t: "lk", id: "me" }); // the burst empties the bucket
+    clock -= 10_000; // the system clock jumps back 10 s
+    gate.push({ t: "hello", id: "me" });
+    clock += 400;
+    vi.advanceTimersByTime(400); // one token takes ~334 ms at 3 msgs/s
+    expect(sent.map((m) => m.t)).toEqual(["lk", "lk", "lk", "hello"]);
+    gate.dispose();
+  });
 });

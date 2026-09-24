@@ -89,7 +89,8 @@ export function createSendGate(send: (msg: GameMessage) => void, opts: SendGateO
 
   const refill = () => {
     const t = now();
-    tokens = Math.min(burst, tokens + ((t - last) / 1000) * rate);
+    // a backwards clock step must not drive the bucket negative (that would stall hello/movement for as long)
+    tokens = Math.min(burst, tokens + (Math.max(0, t - last) / 1000) * rate);
     last = t;
   };
   const flush = () => {
