@@ -3,7 +3,16 @@
 import { useRef, useState } from "react";
 import { addQueueItem } from "@/lib/supabase";
 import type { SearchResult } from "@/lib/youtube/search";
-import { checkQueueRules, ordersRemaining, ruleMessage, violationFromRpcError, type RoomRules, type RuleViolation } from "@/lib/queue-rules";
+import {
+  checkQueueRules,
+  ordersRemaining,
+  ruleMessage,
+  violationFromRpcError,
+  checkDuplicateTrack,
+  duplicateMessage,
+  type RoomRules,
+  type RuleViolation,
+} from "@/lib/queue-rules";
 
 type AddState = { kind: "idle" } | { kind: "busy" } | { kind: "done" } | { kind: "error"; message: string };
 const IDLE: AddState = { kind: "idle" };
@@ -17,9 +26,30 @@ function Spinner() {
 }
 
 /** Search results panel. Mount with a fresh `key` per search — that is what resets the add state. */
-export default function SearchResults({ query, results, roomId, token, rules, willPend, orderLimit, onClose }: {
-  query: string; results: SearchResult[]; roomId: string; token: string; rules: RoomRules; willPend: boolean;
-  orderLimit: { mine: number; exempt: boolean }; onClose: () => void;
+export default function SearchResults({
+  query,
+  results,
+  roomId,
+  token,
+  rules,
+  willPend,
+  orderLimit,
+  queue = [],
+  currentVideoId = null,
+  history = [],
+  onClose,
+}: {
+  query: string;
+  results: SearchResult[];
+  roomId: string;
+  token: string;
+  rules: RoomRules;
+  willPend: boolean;
+  orderLimit: { mine: number; exempt: boolean };
+  queue?: Array<{ youtube_video_id: string }>;
+  currentVideoId?: string | null;
+  history?: Array<{ youtube_video_id: string }>;
+  onClose: () => void;
 }) {
   const [state, setState] = useState<Record<string, AddState>>({});
   // Synchronous guard: a rapid double click can call add() twice before React commits "busy".
@@ -31,6 +61,7 @@ export default function SearchResults({ query, results, roomId, token, rules, wi
 
   async function add(r: SearchResult) {
     if (atLimit) return;
+    if (checkDuplicateTrack(r.videoId, queue, currentVideoId, history, 20)) return;
     if ((state[r.videoId] ?? IDLE).kind === "done") return;
     if (inFlight.current.has(r.videoId)) return;
     inFlight.current.add(r.videoId);
@@ -61,6 +92,7 @@ export default function SearchResults({ query, results, roomId, token, rules, wi
       <ul className="max-h-[40vh] overflow-y-auto pr-1">
         {results.map((r) => {
           const st = state[r.videoId] ?? IDLE;
+          const dup = checkDuplicateTrack(r.videoId, queue, currentVideoId, history, 20);
           const violation = checkQueueRules(rules, { title: r.title, durationSeconds: r.durationSeconds }) ?? (st.kind === "done" ? null : limitViolation);
           return (
             <li key={r.videoId} className={`border-b border-dotted border-gold-200 py-2 ${st.kind === "busy" ? "opacity-60" : ""}`}>
@@ -73,7 +105,20 @@ export default function SearchResults({ query, results, roomId, token, rules, wi
                     {r.channel}{r.durationText ? ` · ${r.durationText}` : ""}
                   </div>
                 </div>
-                {st.kind === "busy" ? <Spinner /> : violation ? (
+                {st.kind === "busy" ? (
+                  <Spinner />
+                ) : dup && st.kind !== "done" ? (
+                  <span
+                    title={duplicateMessage(dup)}
+                    className="whitespace-nowrap rounded border border-gold/40 bg-parchment-200 px-1.5 py-0.5 text-xs text-ink/60"
+                  >
+                    {dup.duplicate === "queue"
+                      ? dup.isCurrent
+                        ? "Đang phát"
+                        : "Trong hàng chờ"
+                      : "Vừa phát"}
+                  </span>
+                ) : violation ? (
                   <span title={ruleMessage(violation)}
                     className="whitespace-nowrap rounded border border-gold-200 bg-cream px-1.5 text-xs text-ink/50">
                     {REASON[violation.code]}
@@ -93,3 +138,4 @@ export default function SearchResults({ query, results, roomId, token, rules, wi
     </div>
   );
 }
+

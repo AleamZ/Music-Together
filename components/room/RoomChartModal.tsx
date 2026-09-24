@@ -14,7 +14,7 @@ import {
   type PlayHistoryItem,
 } from "@/lib/room-stats";
 import { fetchVideoDetails } from "@/lib/youtube/video";
-import { checkQueueRules, ruleMessage, violationFromRpcError } from "@/lib/queue-rules";
+import { checkQueueRules, ruleMessage, violationFromRpcError, isDuplicateInQueue } from "@/lib/queue-rules";
 import { DragonCorners } from "./DragonDecorations";
 
 interface RoomChartModalProps {
@@ -78,6 +78,11 @@ export default function RoomChartModal({
 
   const handleReadd = async (item: PlayHistoryItem) => {
     if (!token) return;
+    if (isDuplicateInQueue(queue, current?.youtube_video_id, item.youtube_video_id)) {
+      setToast("Bài này đã có trong hàng chờ hoặc đang phát! ⚠️");
+      setTimeout(() => setToast(null), 3500);
+      return;
+    }
     setReaddingId(item.id);
     try {
       // Fetch duration first (required if room has max_duration_seconds rule)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { RoomView } from "@/hooks/useRoom";
 import Header from "./Header";
 import MemberList from "./MemberList";
@@ -16,6 +16,7 @@ import MyPending from "./MyPending";
 import { usePlayback } from "@/hooks/usePlayback";
 import { useSponsorBlock } from "@/hooks/useSponsorBlock";
 import { countMyOrders } from "@/lib/queue-rules";
+import { fetchPlayHistory, type PlayHistoryItem } from "@/lib/room-stats";
 import { DragonCorners, DragonHeaderBanner } from "./DragonDecorations";
 import { CyberpunkCorners, CyberpunkHeaderBanner } from "./CyberpunkDecorations";
 import { ITVHeaderBanner } from "./ITVDecorations";
@@ -70,6 +71,21 @@ export default function RoomShell({ view }: { view: RoomView }) {
   const [leftTab, setLeftTab] = useState<"chat" | "members" | "split">("chat");
   // Drawer state for expanded chat
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+
+  // Recent play history for leaderboard & duplicate prevention
+  const [history, setHistory] = useState<PlayHistoryItem[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchPlayHistory(room.id)
+      .then((data) => {
+        if (active) setHistory(data);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [room.id, current?.id]);
 
   return (
     <main className="w-full max-w-[1500px] mx-auto px-3 sm:px-5 lg:px-6 py-1 sm:py-1.5 h-screen max-h-screen overflow-x-auto overflow-y-hidden flex flex-col">
@@ -252,6 +268,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
             current={current}
             roomId={room.id}
             token={token}
+            history={history}
           />
         </div>
 
@@ -266,6 +283,9 @@ export default function RoomShell({ view }: { view: RoomView }) {
               rules={rules}
               willPend={willPend}
               orderLimit={orderLimit}
+              queue={state.queue}
+              currentVideoId={current?.youtube_video_id}
+              history={history}
             />
           </div>
           <div className="flex-1 min-h-0 flex flex-col overflow-y-auto pr-0.5 mt-2">

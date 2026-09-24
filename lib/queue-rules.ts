@@ -70,3 +70,138 @@ export function violationFromRpcError(err: unknown, rules: RoomRules): RuleViola
   const m = /^banned keyword: (.+)$/.exec(e.message);
   return m ? { code: "banned", keyword: m[1] } : null;
 }
+
+export const DEFAULT_RECENT_HISTORY_LIMIT = 20;
+
+/**
+ * Calculates adaptive cooldown based on total songs in room history:
+ * - 0 songs: 0
+ * - 1..3 songs: 1 (only the track that literally just finished)
+ * - 4..40 songs: floor(historyLength / 2) (50% of history)
+ * - 40+ songs: maxLimit (capped at default 20)
+ */
+export function getEffectiveHistoryCooldown(
+  historyLength: number,
+  maxLimit = DEFAULT_RECENT_HISTORY_LIMIT
+): number {
+  if (historyLength <= 0) return 0;
+  if (historyLength <= 3) return 1;
+  return Math.min(maxLimit, Math.floor(historyLength / 2));
+}
+
+export function isDuplicateInQueue(
+  queue: Array<{ youtube_video_id: string }>,
+  currentVideoId: string | null | undefined,
+  videoId: string
+): boolean {
+  if (!videoId) return false;
+  if (currentVideoId && currentVideoId === videoId) return true;
+  return queue.some((item) => item.youtube_video_id === videoId);
+}
+
+export function findRecentInHistory(
+  history: Array<{ youtube_video_id: string }>,
+  videoId: string,
+  maxLimit = DEFAULT_RECENT_HISTORY_LIMIT
+): { isRecent: boolean; index: number; effectiveLimit: number } {
+  if (!videoId || history.length === 0) return { isRecent: false, index: -1, effectiveLimit: 0 };
+  const effectiveLimit = getEffectiveHistoryCooldown(history.length, maxLimit);
+  if (effectiveLimit <= 0) return { isRecent: false, index: -1, effectiveLimit: 0 };
+  const idx = history.slice(0, effectiveLimit).findIndex((item) => item.youtube_video_id === videoId);
+  return { isRecent: idx !== -1, index: idx, effectiveLimit };
+}
+
+export type DuplicateCheckResult =
+  | { duplicate: "queue"; isCurrent?: boolean }
+  | { duplicate: "history"; index: number }
+  | null;
+
+export function checkDuplicateTrack(
+  videoId: string,
+  queue: Array<{ youtube_video_id: string }> = [],
+  currentVideoId: string | null | undefined = null,
+  history: Array<{ youtube_video_id: string }> = [],
+  maxHistoryLimit = DEFAULT_RECENT_HISTORY_LIMIT
+): DuplicateCheckResult {
+  if (!videoId) return null;
+  if (currentVideoId && currentVideoId === videoId) {
+    return { duplicate: "queue", isCurrent: true };
+  }
+  if (queue.some((item) => item.youtube_video_id === videoId)) {
+    return { duplicate: "queue", isCurrent: false };
+  }
+  const hist = findRecentInHistory(history, videoId, maxHistoryLimit);
+  if (hist.isRecent) {
+    return { duplicate: "history", index: hist.index };
+  }
+  return null;
+}
+
+export function duplicateMessage(check: DuplicateCheckResult): string {
+  if (!check) return "";
+  if (check.duplicate === "queue") {
+    return check.isCurrent ? "Bài này đang được phát trong phòng." : "Bài này đã có trong hàng chờ.";
+  }
+  return `Bài này vừa mới phát gần đây (${check.index === 0 ? "vừa phát xong" : `${check.index + 1} bài trước`}). Hãy chọn bài khác nhé!`;
+}
+
+export interface PlaylistDeduplicationResult<T extends { videoId: string }> {
+  validItems: T[];
+  internalDuplicates: number;
+  queueDuplicates: number;
+  historyDuplicates: number;
+}
+
+export function deduplicatePlaylistItems<T extends { videoId: string }>(
+  items: T[],
+  queue: Array<{ youtube_video_id: string }> = [],
+  currentVideoId: string | null | undefined = null,
+  history: Array<{ youtube_video_id: string }> = [],
+  maxHistoryLimit = DEFAULT_RECENT_HISTORY_LIMIT
+): PlaylistDeduplicationResult<T> {
+  const seenIds = new Set<string>();
+  let internalDuplicates = 0;
+  let queueDuplicates = 0;
+  let historyDuplicates = 0;
+  const validItems: T[] = [];
+
+  const queueSet = new Set<string>();
+  if (currentVideoId) queueSet.add(currentVideoId);
+  for (const q of queue) {
+    if (q.youtube_video_id) queueSet.add(q.youtube_video_id);
+  }
+
+  const effectiveLimit = getEffectiveHistoryCooldown(history.length, maxHistoryLimit);
+  const recentHistorySet = new Set<string>();
+  for (const h of history.slice(0, effectiveLimit)) {
+    if (h.youtube_video_id) recentHistorySet.add(h.youtube_video_id);
+  }
+
+  for (const item of items) {
+    if (seenIds.has(item.videoId)) {
+      internalDuplicates++;
+      continue;
+    }
+    seenIds.add(item.videoId);
+
+    if (queueSet.has(item.videoId)) {
+      queueDuplicates++;
+      continue;
+    }
+
+    if (recentHistorySet.has(item.videoId)) {
+      historyDuplicates++;
+      continue;
+    }
+
+    validItems.push(item);
+  }
+
+  return {
+    validItems,
+    internalDuplicates,
+    queueDuplicates,
+    historyDuplicates,
+  };
+}
+
