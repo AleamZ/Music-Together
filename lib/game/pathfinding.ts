@@ -133,7 +133,10 @@ export function lineClear(map: GameMap, a: Vec, b: Vec): boolean {
   return true;
 }
 
-/** Greedy string-pulling: keep only the waypoints needed to stay in line of sight (≤ 32 points). */
+/** Greedy string-pulling: keep only the waypoints needed to stay in line of sight.
+ *  A route needing more than `MAX_PATH_POINTS` waypoints is cut to its first `MAX_PATH_POINTS` points,
+ *  so the walk may end before the target — callers must not assume arrival at the target
+ *  (the engine checks the distance to an interactable's use spot before triggering it). */
 export function smoothPath(map: GameMap, from: Vec, points: Vec[]): Vec[] {
   const out: Vec[] = [];
   let anchor = from;

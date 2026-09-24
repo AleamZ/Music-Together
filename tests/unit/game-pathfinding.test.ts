@@ -51,4 +51,23 @@ describe("smoothPath", () => {
     for (const p of pts) { expect(lineClear(wallMap, prev, p)).toBe(true); prev = p; }
     expect(pts[pts.length - 1]).toEqual({ x: 108, y: 36 });
   });
+  it("cuts a route that needs more than MAX_PATH_POINTS waypoints to its first MAX_PATH_POINTS points", () => {
+    // 20 one-cell corridors; the walls between them open alternately at the bottom and the top,
+    // so the route zig-zags and needs about two waypoints per corridor (more than MAX_PATH_POINTS).
+    const zigzag = mapFromAscii([
+      ".#..".repeat(9) + ".#.",
+      ".#".repeat(19) + ".",
+      ".#".repeat(19) + ".",
+      "...#".repeat(9) + "...",
+    ]);
+    const from = { x: 4, y: 4 };
+    const to = { x: 308, y: 4 };
+    const cells = findPath(zigzag, from, to)!;
+    expect(cells[cells.length - 1]).toEqual(to);
+    const pts = smoothPath(zigzag, from, cells);
+    expect(pts).toHaveLength(MAX_PATH_POINTS);
+    let prev = from;
+    for (const p of pts) { expect(lineClear(zigzag, prev, p)).toBe(true); prev = p; }
+    expect(pts[pts.length - 1]).not.toEqual(to);
+  });
 });
