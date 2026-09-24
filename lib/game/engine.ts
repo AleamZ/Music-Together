@@ -185,7 +185,7 @@ export class GameEngine {
 
   /** Trigger the interactable in range (E key / HUD button). */
   interact(): void {
-    if (this.prompt) this.cb.onInteract(this.prompt);
+    if (this.prompt) this.trigger(this.prompt);
   }
 
   /** My current state as a message — the answer to someone's `hello`. */
@@ -201,6 +201,12 @@ export class GameEngine {
   }
 
   // ------------------------------------------------------------ internals
+
+  /** An explicit interaction (in-range click, E/Enter, HUD button) cancels any earlier walk-to-interact. */
+  private trigger(id: InteractId): void {
+    this.pendingInteract = null;
+    this.cb.onInteract(id);
+  }
 
   private applyTo(a: Actor, msg: GameMessage, now: number): void {
     if (msg.t === "st" || msg.t === "mv") {
@@ -259,7 +265,7 @@ export class GameEngine {
       // Enter keeps its normal meaning on a focused button or link (HUD controls)
       if (e.code === "Enter" && e.target instanceof HTMLElement && e.target.closest("button, a[href], [role='button']")) return;
       e.preventDefault();
-      this.cb.onInteract(this.prompt);
+      this.trigger(this.prompt);
     }
   };
 
@@ -283,8 +289,7 @@ export class GameEngine {
     const it = interactableAt(this.map, w);
     if (it) {
       if (inUseRange(it, this.local.pos)) {
-        this.pendingInteract = null;
-        this.cb.onInteract(it.id);
+        this.trigger(it.id);
         return;
       }
       this.pendingInteract = it.id;
