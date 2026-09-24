@@ -5,6 +5,7 @@ import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
 import { computeElapsedMs } from "@/lib/identity";
 import { needsResync, shouldPlay, targetSeconds } from "@/lib/playback-sync";
 import { advanceQueue, seekPlayback, setPlayback, type QueueItem, type Room } from "@/lib/supabase";
+import { findActiveSkipSegment, type SponsorSegment } from "@/lib/sponsorblock";
 
 const VOL_KEY = "music-together:volume";
 const TICK_MS = 1000;
@@ -27,8 +28,26 @@ export interface PlaybackController {
  *  position, drift); only the DJ branches write room state (advance, play/pause, seek).
  *  Effects depend on primitives (ids, flags) and on the player hook's stable callbacks — never on the
  *  `room`/`current` objects, which are re-created on every realtime refetch and would re-seek the player. */
-export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
-  room: Room; current: QueueItem | null; isDj: boolean; queueLen: number; roomId: string; token: string;
+export function usePlayback({
+  room,
+  current,
+  isDj,
+  queueLen,
+  roomId,
+  token,
+  sponsorSegments,
+  sponsorBlockEnabled,
+  onSponsorSkipped,
+}: {
+  room: Room;
+  current: QueueItem | null;
+  isDj: boolean;
+  queueLen: number;
+  roomId: string;
+  token: string;
+  sponsorSegments?: SponsorSegment[];
+  sponsorBlockEnabled?: boolean;
+  onSponsorSkipped?: (seg: SponsorSegment) => void;
 }): PlaybackController {
   const [durationMs, setDurationMs] = useState(0);
   const [volume, setVol] = useState(100);
@@ -42,12 +61,32 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
   const startedAt = room.started_at;
   const pausedElapsed = room.paused_elapsed_ms;
 
+  const sponsorSegmentsRef = useRef(sponsorSegments ?? []);
+  useEffect(() => {
+    sponsorSegmentsRef.current = sponsorSegments ?? [];
+  }, [sponsorSegments]);
+
+  const sponsorBlockEnabledRef = useRef(sponsorBlockEnabled ?? true);
+  useEffect(() => {
+    sponsorBlockEnabledRef.current = sponsorBlockEnabled ?? true;
+  }, [sponsorBlockEnabled]);
+
+  const onSponsorSkippedRef = useRef(onSponsorSkipped);
+  useEffect(() => {
+    onSponsorSkippedRef.current = onSponsorSkipped;
+  }, [onSponsorSkipped]);
+
+  const skippedSegmentIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    skippedSegmentIdsRef.current.clear();
+  }, [currentId]);
+
   // Latest room row for timers/handlers (synced after render — never assigned during render).
   const roomRef = useRef(room);
   useEffect(() => { roomRef.current = room; });
 
-  // DJ only — single-flight guard: onEnded / auto-advance / skip must never advance twice for one slot.
   const advancingRef = useRef(false);
+  const replayAttemptedRef = useRef(false);
   const advance = useCallback(() => {
     if (!isDj || advancingRef.current) return;
     advancingRef.current = true;
@@ -55,6 +94,7 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
   }, [isDj, roomId, token]);
   useEffect(() => {
     if (room.current_item_id || queueLen === 0) advancingRef.current = false;
+    if (room.current_item_id || queueLen > 0) replayAttemptedRef.current = false;
   }, [room.current_item_id, queueLen]);
 
   // Listeners do nothing on ended: the DJ's advance changes current_item_id and realtime delivers it.
@@ -120,15 +160,39 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
       if (n % DRIFT_EVERY_TICKS === 0 && r.is_playing && unlocked && needsResync(getCurrentTime(), r)) {
         seekTo(targetSeconds(r));
       }
+
+      // DJ only: Auto-skip sponsor segments
+      if (isDj && r.is_playing && sponsorBlockEnabledRef.current) {
+        const curSec = targetSeconds(r);
+        const seg = findActiveSkipSegment(
+          curSec,
+          sponsorSegmentsRef.current,
+          skippedSegmentIdsRef.current
+        );
+        if (seg) {
+          skippedSegmentIdsRef.current.add(seg.segmentId);
+          const targetMs = Math.ceil(seg.end * 1000);
+          seekTo(targetMs / 1000);
+          void seekPlayback(roomId, token, targetMs);
+          onSponsorSkippedRef.current?.(seg);
+        }
+      }
     }, TICK_MS);
     return () => clearInterval(id);
-  }, [ready, currentId, unlocked, getDuration, getCurrentTime, seekTo]);
+  }, [ready, currentId, unlocked, isDj, roomId, token, getDuration, getCurrentTime, seekTo]);
 
-  // DJ only — auto-advance: nothing playing and the queue has items -> start the next track.
+  // DJ only — auto-advance: nothing playing and (queue has items OR auto_replay_history) -> start the next track.
   useEffect(() => {
     if (!isDj || !ready) return;
-    if (!room.current_item_id && !room.is_playing && queueLen > 0) advance();
-  }, [isDj, ready, room.current_item_id, room.is_playing, queueLen, advance]);
+    if (!room.current_item_id && !room.is_playing) {
+      if (queueLen > 0) {
+        advance();
+      } else if (room.auto_replay_history && !replayAttemptedRef.current) {
+        replayAttemptedRef.current = true;
+        advance();
+      }
+    }
+  }, [isDj, ready, room.current_item_id, room.is_playing, queueLen, room.auto_replay_history, advance]);
 
   /** Autoplay gate: must run inside a click handler so the browser honours play(). */
   const unlock = useCallback(() => {
@@ -139,6 +203,10 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
 
   const togglePlay = useCallback(() => {
     if (!isDj) return;
+    if (!room.current_item_id && room.auto_replay_history) {
+      advance();
+      return;
+    }
     const nowPlaying = !room.is_playing;
     if (nowPlaying) {
       // resume: started_at = now - paused_elapsed
@@ -148,7 +216,7 @@ export function usePlayback({ room, current, isDj, queueLen, roomId, token }: {
       const elapsed = computeElapsedMs(room);
       void setPlayback(roomId, token, { isPlaying: false, startedAt: null, pausedElapsedMs: elapsed });
     }
-  }, [isDj, room, roomId, token]);
+  }, [isDj, room, roomId, token, advance]);
 
   const skip = useCallback(() => advance(), [advance]);
 

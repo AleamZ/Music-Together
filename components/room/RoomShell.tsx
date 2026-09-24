@@ -14,6 +14,7 @@ import Queue from "./Queue";
 import PendingQueue from "./PendingQueue";
 import MyPending from "./MyPending";
 import { usePlayback } from "@/hooks/usePlayback";
+import { useSponsorBlock } from "@/hooks/useSponsorBlock";
 import { countMyOrders } from "@/lib/queue-rules";
 import { DragonCorners, DragonHeaderBanner } from "./DragonDecorations";
 import { CyberpunkCorners, CyberpunkHeaderBanner } from "./CyberpunkDecorations";
@@ -48,6 +49,8 @@ export default function RoomShell({ view }: { view: RoomView }) {
     state.members.find((m) => m.id === room.dj_member_id)?.account_id ?? null;
   const djOnline = !!djAccountId && onlineIds.includes(djAccountId);
 
+  const sponsorBlock = useSponsorBlock(current?.youtube_video_id);
+
   // Playback engine for everyone (DJ-only writes inside). Returns transport handlers + duration/volume/gate.
   const dj = usePlayback({
     room,
@@ -56,6 +59,9 @@ export default function RoomShell({ view }: { view: RoomView }) {
     queueLen: approved.length,
     roomId: room.id,
     token,
+    sponsorSegments: sponsorBlock.segments,
+    sponsorBlockEnabled: sponsorBlock.enabled,
+    onSponsorSkipped: sponsorBlock.triggerSkipToast,
   });
   const myUsername =
     username || state.members.find((m) => m.account_id === accountId)?.username;
@@ -228,6 +234,11 @@ export default function RoomShell({ view }: { view: RoomView }) {
               onSkip={dj.skip}
               onSeekMs={dj.seekMs}
               onVolume={dj.setVolume}
+              sponsorSegments={sponsorBlock.segments}
+              sponsorBlockEnabled={sponsorBlock.enabled}
+              onToggleSponsorBlock={sponsorBlock.toggleEnabled}
+              lastSkippedToast={sponsorBlock.lastSkippedToast}
+              onClearSkippedToast={sponsorBlock.clearSkipToast}
             >
               <Reactions roomId={room.id} username={myUsername} />
             </NowPlaying>

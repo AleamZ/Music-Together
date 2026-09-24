@@ -20,6 +20,7 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
   const [maxMinutes, setMaxMinutes] = useState(String(room.max_duration_seconds / 60));
   const [maxOrders, setMaxOrders] = useState(String(room.max_orders_per_member));
   const [requireApproval, setRequireApproval] = useState(room.require_approval);
+  const [autoReplayHistory, setAutoReplayHistory] = useState(room.auto_replay_history ?? false);
   const [keywords, setKeywords] = useState<string[]>(room.banned_keywords);
   const [kwInput, setKwInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -49,7 +50,13 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
     setSaving(true);
     setRulesMsg(null);
     try {
-      await updateRoomSettings(roomId, token, { maxDurationSeconds: Math.round(mins * 60), requireApproval, bannedKeywords: keywords, maxOrdersPerMember: orders });
+      await updateRoomSettings(roomId, token, {
+        maxDurationSeconds: Math.round(mins * 60),
+        requireApproval,
+        bannedKeywords: keywords,
+        maxOrdersPerMember: orders,
+        autoReplayHistory,
+      });
       setRulesMsg({ ok: true, text: "Đã lưu quy tắc." });
     } catch {
       setRulesMsg({ ok: false, text: "Không lưu được cài đặt." });
@@ -109,11 +116,17 @@ export default function SettingsDialog({ room, members, roomId, token, myMemberI
           className="mb-1 w-28 rounded-lg border border-gold bg-cream px-3 py-1.5 text-ink" />
         <p className="mb-3 text-[11px] text-ink/60">0 = không giới hạn</p>
 
-        <label className="mb-1 flex items-center gap-2 text-sm text-ink">
+        <label className="mb-1 flex items-center gap-2 text-sm text-ink cursor-pointer">
           <input type="checkbox" checked={requireApproval} onChange={(e) => setRequireApproval(e.target.checked)} />
           Chờ duyệt
         </label>
         <p className="mb-3 text-[11px] text-ink/60">Bài của thành viên phải được Admin/DJ duyệt mới vào hàng đợi.</p>
+
+        <label className="mb-1 flex items-center gap-2 text-sm text-ink cursor-pointer">
+          <input type="checkbox" checked={autoReplayHistory} onChange={(e) => setAutoReplayHistory(e.target.checked)} />
+          Tự động phát lại lịch sử
+        </label>
+        <p className="mb-3 text-[11px] text-ink/60">Tự động chọn bài từ lịch sử phát khi danh sách bài hát chờ rỗng.</p>
 
         <label className="mb-1 block text-sm text-ink">Từ khóa cấm</label>
         {keywords.length > 0 && (
