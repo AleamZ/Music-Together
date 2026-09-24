@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { LyricLine } from "@/lib/lyrics/parse-lrc";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
+import { findActiveLyricIndex, type LyricLine } from "@/lib/lyrics/parse-lrc";
 import { formatClock } from "@/lib/format";
 import { useTheme } from "@/hooks/useTheme";
+import {
+  estimateSongProfile,
+  buildEstimatedLineTiming,
+  computeTokenFill,
+  type KaraokeLineTiming,
+  type SongTimingProfile,
+} from "@/lib/lyrics/timing/index";
 
 export interface KaraokeViewProps {
   lines: LyricLine[];
@@ -22,20 +29,6 @@ export interface KaraokeViewProps {
   offsetMs?: number;
   onChangeOffset?: (offset: number) => void;
   suggestedIntroOffsetMs?: number | null;
-}
-
-interface CharWord {
-  isSpace: boolean;
-  text: string;
-}
-
-function parseTextIntoWords(text: string): CharWord[] {
-  const normalized = (text || "").normalize("NFC");
-  const parts = normalized.split(/(\s+)/);
-  return parts.filter(Boolean).map((part) => ({
-    isSpace: /^\s+$/.test(part),
-    text: part,
-  }));
 }
 
 export default function KaraokeView({
@@ -75,19 +68,14 @@ export default function KaraokeView({
   const [manualQuery, setManualQuery] = useState("");
   const [showSearchBox, setShowSearchBox] = useState(false);
 
-  // Smooth local clock interpolator for 60 FPS karaoke letter-by-letter highlight
+  // Smooth local clock interpolator for 60 FPS karaoke highlight
   const lastSyncElapsedRef = useRef(elapsedMs);
   const lastSyncTimeRef = useRef(performance.now());
-  const lastHighlightedCountRef = useRef(-1);
 
   useEffect(() => {
     lastSyncElapsedRef.current = elapsedMs;
     lastSyncTimeRef.current = performance.now();
   }, [elapsedMs, isPlaying]);
-
-  useEffect(() => {
-    lastHighlightedCountRef.current = -1;
-  }, [activeLineIndex, theme]);
 
   // Color schemes based on active theme
   const getThemeStyles = useCallback(() => {
@@ -95,9 +83,9 @@ export default function KaraokeView({
       case "miku":
         return {
           activeClass: "text-white font-black",
-          highlightCharClass:
-            "text-[#00f0ff] font-black drop-shadow-[0_0_14px_rgba(0,240,255,1)] transition-colors duration-75",
-          dimCharClass: "text-white/30 font-bold transition-colors duration-75",
+          highlightColor: "#00f0ff",
+          dimColor: "rgba(255, 255, 255, 0.35)",
+          glowColor: "rgba(0, 240, 255, 0.9)",
           activeTimestamp: "text-[#00f0ff] font-bold font-mono",
           inactiveClass: "text-[#a5f3fc]/35 hover:text-[#a5f3fc]/70",
           badgeBg: "bg-[#00f0ff]/15 text-[#00f0ff] border border-[#00f0ff]/30",
@@ -107,9 +95,9 @@ export default function KaraokeView({
       case "cyberpunk":
         return {
           activeClass: "text-white font-black",
-          highlightCharClass:
-            "text-[#00ff88] font-black drop-shadow-[0_0_14px_rgba(0,255,136,1)] transition-colors duration-75",
-          dimCharClass: "text-white/30 font-bold transition-colors duration-75",
+          highlightColor: "#00ff88",
+          dimColor: "rgba(255, 255, 255, 0.35)",
+          glowColor: "rgba(0, 255, 136, 0.9)",
           activeTimestamp: "text-[#00ff88] font-bold font-mono",
           inactiveClass: "text-cyan-200/35 hover:text-cyan-200/70",
           badgeBg: "bg-cyan-900/30 text-cyan-300 border border-cyan-500/30",
@@ -119,9 +107,9 @@ export default function KaraokeView({
       case "itv":
         return {
           activeClass: "text-white font-black",
-          highlightCharClass:
-            "text-[#ffde00] font-black drop-shadow-[0_0_12px_rgba(255,222,0,1)] transition-colors duration-75",
-          dimCharClass: "text-white/30 font-bold transition-colors duration-75",
+          highlightColor: "#ffde00",
+          dimColor: "rgba(255, 255, 255, 0.35)",
+          glowColor: "rgba(255, 222, 0, 0.85)",
           activeTimestamp: "text-[#ffde00] font-bold font-mono",
           inactiveClass: "text-white/35 hover:text-white/70",
           badgeBg: "bg-[#76cb00]/15 text-[#84e800] border border-[#76cb00]/30",
@@ -131,9 +119,9 @@ export default function KaraokeView({
       case "lofi":
         return {
           activeClass: "text-[#fef3c7] font-black",
-          highlightCharClass:
-            "text-[#fbbf24] font-black drop-shadow-[0_0_12px_rgba(251,191,36,0.95)] transition-colors duration-75",
-          dimCharClass: "text-[#dfcca9]/30 font-bold transition-colors duration-75",
+          highlightColor: "#fbbf24",
+          dimColor: "rgba(223, 204, 169, 0.35)",
+          glowColor: "rgba(251, 191, 36, 0.85)",
           activeTimestamp: "text-[#fbbf24] font-bold font-mono",
           inactiveClass: "text-[#dfcca9]/35 hover:text-[#dfcca9]/70",
           badgeBg: "bg-amber-900/20 text-amber-300 border border-amber-700/30",
@@ -141,12 +129,12 @@ export default function KaraokeView({
           activeIndicator: "bg-[#fbbf24]",
         };
       default:
-        // Salon / Cozy
+        // Salon / Cozy / Dragon
         return {
           activeClass: "text-white font-black",
-          highlightCharClass:
-            "text-[#fef08a] font-black drop-shadow-[0_0_14px_rgba(254,240,138,1)] transition-colors duration-75",
-          dimCharClass: "text-white/30 font-bold transition-colors duration-75",
+          highlightColor: "#facc15",
+          dimColor: "rgba(255, 255, 255, 0.35)",
+          glowColor: "rgba(250, 204, 21, 0.85)",
           activeTimestamp: "text-gold font-bold font-mono",
           inactiveClass: "text-cream/35 hover:text-cream/70",
           badgeBg: "bg-gold-200/10 text-gold-200 border border-gold-200/30",
@@ -158,57 +146,102 @@ export default function KaraokeView({
 
   const themeStyles = getThemeStyles();
 
-  // RequestAnimationFrame loop for real-time progressive letter-by-letter highlight
+  // Effective active line index: tracks line transitions with millisecond precision
+  // based on continuous playback time, avoiding the 500ms polling latency from parent.
+  const [effectiveLineIndex, setEffectiveLineIndex] = useState(activeLineIndex);
+  const effectiveLineIndexRef = useRef(activeLineIndex);
+
+  // Sync immediately when parent activeLineIndex changes (e.g. seek, skip, manual navigation)
+  useEffect(() => {
+    setEffectiveLineIndex(activeLineIndex);
+    effectiveLineIndexRef.current = activeLineIndex;
+  }, [activeLineIndex]);
+
+  // Adaptive song profile — computed once per lyrics load, drives all timing heuristics
+  const songProfile = useMemo<SongTimingProfile>(() => {
+    return estimateSongProfile(lines);
+  }, [lines]);
+
+  // Per-line timing — computed whenever active line changes (NOT in rAF)
+  const activeLineTiming = useMemo<KaraokeLineTiming | null>(() => {
+    if (effectiveLineIndex < 0 || effectiveLineIndex >= lines.length) return null;
+    return buildEstimatedLineTiming(
+      lines[effectiveLineIndex],
+      lines[effectiveLineIndex + 1],
+      songProfile
+    );
+  }, [effectiveLineIndex, lines, songProfile]);
+
+  // --- Refs so rAF loop reads latest values without closure capture ---
+  const activeLineTimingRef = useRef<KaraokeLineTiming | null>(null);
+  const themeStylesRef = useRef(themeStyles);
+
+  // Sync themeStyles ref on every render (safe: no DOM involvement)
+  themeStylesRef.current = themeStyles;
+
+  // Sync timing ref AFTER DOM has been committed (useLayoutEffect).
+  // Also reset word fills to 0% so line transitions always start cleanly.
+  useLayoutEffect(() => {
+    activeLineTimingRef.current = activeLineTiming;
+    if (charContainerRef.current) {
+      const els = charContainerRef.current.querySelectorAll<HTMLSpanElement>(".karaoke-word");
+      els.forEach((el) => {
+        el.style.setProperty("--fill", "0%");
+        el.style.filter = "none";
+        el.style.transform = "scale(1) translateY(0px)";
+      });
+    }
+  }, [activeLineTiming]);
+
+  // RequestAnimationFrame loop — runs CONTINUOUSLY; never restarted on line change.
+  // Reads timing and styles via refs; switches lines immediately when boundary is crossed.
   useEffect(() => {
     let animId: number;
 
     const frame = () => {
-      if (
-        charContainerRef.current &&
-        hasSynced &&
-        activeLineIndex >= 0 &&
-        activeLineIndex < lines.length
-      ) {
-        const curLine = lines[activeLineIndex];
-        const nextLine = lines[activeLineIndex + 1];
-        const startTime = curLine.timeMs;
+      const now = performance.now();
+      const rawCurrentMs = isPlaying
+        ? lastSyncElapsedRef.current + (now - lastSyncTimeRef.current)
+        : lastSyncElapsedRef.current;
+      const currentMs = Math.max(0, rawCurrentMs + offsetMs);
 
-        const now = performance.now();
-        const rawCurrentMs = isPlaying
-          ? lastSyncElapsedRef.current + (now - lastSyncTimeRef.current)
-          : lastSyncElapsedRef.current;
-        const currentMs = Math.max(0, rawCurrentMs + offsetMs);
+      // High-precision active line detection: switch lines the instant currentMs crosses the line boundary
+      if (hasSynced && lines.length > 0 && isPlaying) {
+        const targetIndex = findActiveLyricIndex(lines, currentMs);
+        if (targetIndex >= 0 && targetIndex !== effectiveLineIndexRef.current) {
+          effectiveLineIndexRef.current = targetIndex;
+          setEffectiveLineIndex(targetIndex);
+        }
+      }
 
-        const rawDuration =
-          nextLine && nextLine.timeMs > startTime ? nextLine.timeMs - startTime : 4500;
-        const lineTextLength = (curLine.text || "").trim().length;
-        const estimatedMaxSingMs = Math.max(1600, lineTextLength * 280);
-        const duration = Math.min(rawDuration, estimatedMaxSingMs);
+      const timing = activeLineTimingRef.current;
+      const styles = themeStylesRef.current;
+      const container = charContainerRef.current;
 
-        let progress = 0;
-        if (currentMs <= startTime) {
-          progress = 0;
-        } else if (duration > 0) {
-          progress = Math.min(1, Math.max(0, (currentMs - startTime) / duration));
-        } else {
-          progress = 1;
+      if (container && hasSynced && timing && timing.tokens.length > 0) {
+        const nonSpaceTokens = timing.tokens.filter((t) => !t.isSpace);
+        const wordEls = container.querySelectorAll<HTMLSpanElement>(".karaoke-word");
+
+        // Safety: if token count doesn't match DOM, wait for next commit
+        if (nonSpaceTokens.length !== wordEls.length) {
+          animId = requestAnimationFrame(frame);
+          return;
         }
 
-        const spans = charContainerRef.current.querySelectorAll<HTMLSpanElement>(".char-span");
-        const total = spans.length;
-        const count = Math.min(total, Math.floor(progress * total));
+        for (let i = 0; i < nonSpaceTokens.length; i++) {
+          const tok = nonSpaceTokens[i];
+          const el = wordEls[i];
+          if (!el) continue;
 
-        if (count !== lastHighlightedCountRef.current) {
-          lastHighlightedCountRef.current = count;
-          const { highlightCharClass, dimCharClass } = themeStyles;
-          for (let i = 0; i < total; i++) {
-            const el = spans[i];
-            const isSpace = el.getAttribute("data-space") === "true";
-            if (isSpace) {
-              el.className = `char-span inline-block whitespace-pre ${i < count ? "text-white/60" : "text-white/20"}`;
-            } else {
-              el.className = `char-span ${i < count ? highlightCharClass : dimCharClass}`;
-            }
+          const fill = computeTokenFill(tok, currentMs);
+          el.style.setProperty("--fill", `${fill}%`);
+
+          if (fill > 0 && fill < 100) {
+            el.style.filter = `drop-shadow(0 0 12px ${styles.glowColor})`;
+            el.style.transform = "scale(1.06) translateY(-1px)";
+          } else {
+            el.style.filter = "none";
+            el.style.transform = "scale(1) translateY(0px)";
           }
         }
       }
@@ -218,7 +251,9 @@ export default function KaraokeView({
 
     animId = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(animId);
-  }, [hasSynced, activeLineIndex, lines, isPlaying, offsetMs, themeStyles]);
+  // Only restart rAF when fundamental playback state changes — NOT on line change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSynced, isPlaying, offsetMs, lines]);
 
   // Smooth scroll active line into center of container
   const scrollToActive = useCallback((smooth = true) => {
@@ -241,7 +276,7 @@ export default function KaraokeView({
   useEffect(() => {
     if (userScrolled) return;
     scrollToActive(true);
-  }, [activeLineIndex, userScrolled, scrollToActive]);
+  }, [effectiveLineIndex, userScrolled, scrollToActive]);
 
   // Initial positioning on mount or lines changed
   useEffect(() => {
@@ -278,14 +313,14 @@ export default function KaraokeView({
 
   // Apple Music-inspired depth of field styling per line
   const getLineStyle = (idx: number) => {
-    if (!hasSynced || activeLineIndex < 0) {
+    if (!hasSynced || effectiveLineIndex < 0) {
       return {
         className: `${themeStyles.inactiveClass} opacity-80 scale-100 blur-none`,
         isActive: false,
       };
     }
 
-    const dist = Math.abs(idx - activeLineIndex);
+    const dist = Math.abs(idx - effectiveLineIndex);
     const isActive = dist === 0;
 
     if (isActive) {
@@ -545,7 +580,6 @@ export default function KaraokeView({
           !error &&
           lines.map((line, idx) => {
             const { className, isActive } = getLineStyle(idx);
-            const words = isActive ? parseTextIntoWords(line.text || "♪ ♪ ♪") : null;
 
             return (
               <div
@@ -610,47 +644,50 @@ export default function KaraokeView({
                     </div>
                   )}
 
-                  {/* Lyric text with sequential letter-by-letter highlight */}
-                  {isActive && words ? (
+                  {/* Lyric text with progressive rhythm-aware gradient sweep */}
+                  {isActive && activeLineTiming && activeLineTiming.tokens.length > 0 ? (
                     <div
                       ref={charContainerRef}
-                      className={`font-sans leading-relaxed sm:leading-loose tracking-normal ${fullscreen
+                      className={`font-sans leading-relaxed sm:leading-loose tracking-normal ${
+                        fullscreen
                           ? "text-2xl sm:text-4xl lg:text-5xl font-black"
                           : "text-base sm:text-lg font-bold"
-                        }`}
+                      }`}
                     >
-                      {words.map((word, wIdx) => {
-                        if (word.isSpace) {
+                      {activeLineTiming.tokens.map((token, tIdx) => {
+                        if (token.isSpace) {
                           return (
                             <span
-                              key={wIdx}
-                              data-space="true"
-                              className="char-span inline-block whitespace-pre text-white/30"
+                              key={tIdx}
+                              className="inline-block whitespace-pre text-white/30"
                             >
-                              {word.text}
+                              {token.text}
                             </span>
                           );
                         }
                         return (
-                          <span key={wIdx} className="inline-block whitespace-nowrap">
-                            {Array.from(word.text).map((char, cIdx) => (
-                              <span
-                                key={cIdx}
-                                className={`char-span ${themeStyles.dimCharClass}`}
-                              >
-                                {char}
-                              </span>
-                            ))}
+                          <span
+                            key={tIdx}
+                            className="karaoke-word inline-block whitespace-nowrap transition-transform duration-100 ease-out origin-bottom select-none"
+                            style={{
+                              backgroundImage: `linear-gradient(to right, ${themeStyles.highlightColor} 0%, ${themeStyles.highlightColor} var(--fill, 0%), ${themeStyles.dimColor} var(--fill, 0%), ${themeStyles.dimColor} 100%)`,
+                              WebkitBackgroundClip: "text",
+                              WebkitTextFillColor: "transparent",
+                              willChange: "transform, filter",
+                            }}
+                          >
+                            {token.text}
                           </span>
                         );
                       })}
                     </div>
                   ) : (
                     <span
-                      className={`leading-relaxed sm:leading-loose tracking-normal transition-colors font-sans ${fullscreen
+                      className={`leading-relaxed sm:leading-loose tracking-normal transition-colors font-sans ${
+                        fullscreen
                           ? "text-2xl sm:text-4xl lg:text-5xl font-bold"
                           : "text-base sm:text-lg font-medium"
-                        }`}
+                      }`}
                     >
                       {line.text || "♪ ♪ ♪"}
                     </span>
@@ -662,7 +699,7 @@ export default function KaraokeView({
       </div>
 
       {/* Snap Back Floating Button */}
-      {userScrolled && hasSynced && activeLineIndex >= 0 && (
+      {userScrolled && hasSynced && effectiveLineIndex >= 0 && (
         <button
           type="button"
           onClick={snapBackToActive}

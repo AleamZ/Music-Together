@@ -2,12 +2,20 @@
  * Parses LRC format synchronized lyrics into structured timeline objects.
  */
 
+export interface LyricWord {
+  word: string;
+  timeMs: number;
+  durationMs?: number;
+}
+
 export interface LyricLine {
   timeMs: number; // Milliseconds from start. -1 if plain unsynchronized lyric.
   text: string;
+  words?: LyricWord[];
 }
 
 const TIMESTAMP_REGEX = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
+const WORD_TIMESTAMP_REGEX = /<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>([^<]+)/g;
 const METADATA_TAG_REGEX = /^\[[a-zA-Z]+:[^\]]*\]$/;
 
 /**
@@ -30,7 +38,7 @@ export function parseLrc(rawLrc: string): LyricLine[] {
       continue;
     }
 
-    // Match all timestamps on this line
+    // Match all line-level timestamps on this line
     const timestamps: number[] = [];
     let match: RegExpExecArray | null;
 
@@ -49,10 +57,41 @@ export function parseLrc(rawLrc: string): LyricLine[] {
     }
 
     if (timestamps.length > 0) {
-      // Remove all timestamp tags to get pure lyric text
-      const text = trimmed.replace(TIMESTAMP_REGEX, "").trim();
+      const textWithoutBrackets = trimmed.replace(TIMESTAMP_REGEX, "").trim();
+
+      // Check if line contains Enhanced LRC word-level timestamps: <mm:ss.xx>word
+      let words: LyricWord[] | undefined = undefined;
+      WORD_TIMESTAMP_REGEX.lastIndex = 0;
+      if (WORD_TIMESTAMP_REGEX.test(textWithoutBrackets)) {
+        WORD_TIMESTAMP_REGEX.lastIndex = 0;
+        const parsedWords: LyricWord[] = [];
+        let wordMatch: RegExpExecArray | null;
+        while ((wordMatch = WORD_TIMESTAMP_REGEX.exec(textWithoutBrackets)) !== null) {
+          const wMin = parseInt(wordMatch[1], 10);
+          const wSec = parseInt(wordMatch[2], 10);
+          let wMs = 0;
+          if (wordMatch[3]) {
+            wMs = parseInt(wordMatch[3].padEnd(3, "0").slice(0, 3), 10);
+          }
+          const wTimeMs = (wMin * 60 + wSec) * 1000 + wMs;
+          const wordText = wordMatch[4].trim();
+          if (wordText) {
+            parsedWords.push({ word: wordText, timeMs: wTimeMs });
+          }
+        }
+        if (parsedWords.length > 0) {
+          words = parsedWords;
+        }
+      }
+
+      // Clean all tags to produce final plain text
+      const cleanText = textWithoutBrackets.replace(/<\d{1,2}:\d{2}(?:\.\d{1,3})?>/g, "").trim();
       for (const timeMs of timestamps) {
-        result.push({ timeMs, text });
+        if (words && words.length > 0) {
+          result.push({ timeMs, text: cleanText, words });
+        } else {
+          result.push({ timeMs, text: cleanText });
+        }
       }
     } else {
       // Line without timestamps (e.g. plain text lyric)

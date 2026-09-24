@@ -119,15 +119,25 @@ export default function NowPlaying(p: NowPlayingProps) {
   const [isKaraokeModalOpen, setIsKaraokeModalOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
-  // Tick the local clock every 500ms; value derived purely from room fields.
+  const dur = p.durationMs || (current?.duration_seconds ? current.duration_seconds * 1000 : 0);
+
+  // Reset playback bar state immediately whenever the track changes
   useEffect(() => {
-    const tick = () => setElapsed(computeElapsedMs(room));
+    setElapsed(0);
+  }, [current?.id]);
+
+  // Tick the local clock every 500ms; value derived purely from room fields with duration bounds.
+  useEffect(() => {
+    const tick = () => {
+      const raw = computeElapsedMs(room);
+      // Sanity clamp: elapsed cannot be negative, and if track duration is known, cannot exceed duration.
+      const safe = dur > 0 ? Math.min(dur, Math.max(0, raw)) : Math.max(0, raw);
+      setElapsed(safe);
+    };
     tick();
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
-  }, [room.is_playing, room.started_at, room.paused_elapsed_ms]);
-
-  const dur = p.durationMs || (current?.duration_seconds ? current.duration_seconds * 1000 : 0);
+  }, [room.is_playing, room.started_at, room.paused_elapsed_ms, dur, current?.id]);
 
   const suggestedIntroOffsetMs = useMemo(() => {
     return getIntroOffsetSuggestion(p.sponsorSegments);

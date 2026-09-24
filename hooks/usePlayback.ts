@@ -134,9 +134,23 @@ export function usePlayback({
     loadedRef.current = currentId;
     setDurationMs(0);
     const r = roomRef.current;
-    load(currentVideoId, targetSeconds(r));
+    const rawTarget = targetSeconds(r);
+    const maxSec =
+      current?.duration_seconds && current.duration_seconds > 0
+        ? current.duration_seconds
+        : Infinity;
+
+    // Safety: if rawTarget is at or beyond the track's duration, it is stale/invalid.
+    // Start fresh from 0.
+    const safeTarget = rawTarget >= maxSec ? 0 : rawTarget;
+    load(currentVideoId, safeTarget);
     if (shouldPlay(r, unlocked, true)) play(); else pause();
-  }, [ready, currentId, currentVideoId, unlocked, load, play, pause]);
+
+    // If DJ and room clock was corrupted (> maxSec), fix the room clock in the database immediately!
+    if (isDj && rawTarget >= maxSec && maxSec < Infinity) {
+      void seekPlayback(roomId, token, 0);
+    }
+  }, [ready, currentId, currentVideoId, unlocked, load, play, pause, isDj, roomId, token, current?.duration_seconds]);
 
   // Follow play/pause (everyone). playVideo() on a playing player is a no-op, so re-runs are harmless.
   useEffect(() => {
@@ -147,8 +161,17 @@ export function usePlayback({
   // Follow seeks / pause-resume (everyone): a changed clock origin means "jump to the room position".
   useEffect(() => {
     if (!ready || !currentId || loadedRef.current !== currentId) return;
-    seekTo(targetSeconds(roomRef.current));
-  }, [ready, currentId, startedAt, pausedElapsed, seekTo]);
+    const rawTarget = targetSeconds(roomRef.current);
+    const maxSec =
+      durationMs > 0
+        ? durationMs / 1000
+        : current?.duration_seconds && current.duration_seconds > 0
+        ? current.duration_seconds
+        : Infinity;
+    if (rawTarget < maxSec) {
+      seekTo(rawTarget);
+    }
+  }, [ready, currentId, startedAt, pausedElapsed, seekTo, durationMs, current?.duration_seconds]);
 
   // Tick (everyone): capture the duration once known; every 5 s correct drift against the room clock.
   useEffect(() => {
@@ -159,8 +182,25 @@ export function usePlayback({
       const d = getDuration();
       if (d > 0) setDurationMs((prev) => (prev === d * 1000 ? prev : d * 1000));
       const r = roomRef.current;
-      if (n % DRIFT_EVERY_TICKS === 0 && r.is_playing && unlocked && needsResync(getCurrentTime(), r)) {
-        seekTo(targetSeconds(r));
+      const curItem = currentRef.current;
+      const totalSec =
+        d > 0
+          ? d
+          : durationMs > 0
+          ? durationMs / 1000
+          : (curItem?.duration_seconds ?? 0);
+      const maxSec = totalSec > 0 ? totalSec : Infinity;
+      const targetSec = targetSeconds(r);
+
+      // Only resync if targetSec is strictly within valid track duration
+      if (
+        n % DRIFT_EVERY_TICKS === 0 &&
+        r.is_playing &&
+        unlocked &&
+        targetSec < maxSec &&
+        needsResync(getCurrentTime(), r)
+      ) {
+        seekTo(targetSec);
       }
 
       // DJ only: Auto-skip sponsor segments
@@ -170,7 +210,7 @@ export function usePlayback({
         sponsorBlockEnabledRef.current &&
         !advancingRef.current
       ) {
-        const curSec = targetSeconds(r);
+        const curSec = targetSec;
         const seg = findActiveSkipSegment(
           curSec,
           sponsorSegmentsRef.current,
@@ -178,29 +218,33 @@ export function usePlayback({
         );
         if (seg) {
           skippedSegmentIdsRef.current.add(seg.segmentId);
-          const curItem = currentRef.current;
-          const totalSec =
-            getDuration() > 0
-              ? getDuration()
-              : durationMs > 0
-              ? durationMs / 1000
-              : (curItem?.duration_seconds ?? 0);
 
-          if (isEndOfTrackSegment(seg, totalSec)) {
+          const isEnd =
+            isEndOfTrackSegment(seg, totalSec) ||
+            (totalSec > 0 && (seg.end >= totalSec - 4 || seg.start >= totalSec - 4));
+
+          if (isEnd) {
             onSponsorSkippedRef.current?.(seg);
             pause();
             advance();
           } else {
             const targetMs = Math.ceil(seg.end * 1000);
-            seekTo(targetMs / 1000);
-            void seekPlayback(roomId, token, targetMs);
-            onSponsorSkippedRef.current?.(seg);
+            // Safety: if targetMs is at or near the end of the track, advance directly
+            if (totalSec > 0 && targetMs >= (totalSec - 3) * 1000) {
+              onSponsorSkippedRef.current?.(seg);
+              pause();
+              advance();
+            } else {
+              seekTo(targetMs / 1000);
+              void seekPlayback(roomId, token, targetMs);
+              onSponsorSkippedRef.current?.(seg);
+            }
           }
         }
       }
     }, TICK_MS);
     return () => clearInterval(id);
-  }, [ready, currentId, unlocked, isDj, roomId, token, getDuration, getCurrentTime, seekTo, advance, pause]);
+  }, [ready, currentId, unlocked, isDj, roomId, token, getDuration, getCurrentTime, seekTo, advance, pause, durationMs]);
 
   // DJ only — auto-advance: nothing playing and (queue has items OR auto_replay_history) -> start the next track.
   useEffect(() => {

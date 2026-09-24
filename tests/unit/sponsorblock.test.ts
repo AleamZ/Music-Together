@@ -123,7 +123,7 @@ describe("lib/sponsorblock", () => {
       expect(isEndOfTrackSegment(midSeg, 240.0)).toBe(false);
     });
 
-    it("returns false when total duration is 0 and category is not outro", () => {
+    it("returns false when total duration is 0 and category is not outro and no videoDuration", () => {
       const midSeg: SponsorSegment = {
         segmentId: "mid-1",
         category: "sponsor",
@@ -132,6 +132,18 @@ describe("lib/sponsorblock", () => {
         duration: 30.0,
       };
       expect(isEndOfTrackSegment(midSeg, 0)).toBe(false);
+    });
+
+    it("uses seg.videoDuration when totalDurationSec is 0 and recognizes end of track", () => {
+      const endSeg: SponsorSegment = {
+        segmentId: "end-sponsor",
+        category: "sponsor",
+        start: 306.865,
+        end: 322.961,
+        duration: 16.096,
+        videoDuration: 323.201,
+      };
+      expect(isEndOfTrackSegment(endSeg, 0)).toBe(true);
     });
   });
 

@@ -20,6 +20,7 @@ export interface SponsorSegment {
   start: number; // in seconds
   end: number; // in seconds
   duration: number; // in seconds
+  videoDuration?: number; // in seconds
 }
 
 export interface SponsorBlockApiResponse {
@@ -80,10 +81,12 @@ export function isEndOfTrackSegment(
   thresholdSec = 3
 ): boolean {
   if (seg.category === "outro") return true;
-  if (totalDurationSec <= 0) return false;
+  const effectiveTotal =
+    totalDurationSec > 0 ? totalDurationSec : (seg.videoDuration ?? 0);
+  if (effectiveTotal <= 0) return false;
   return (
-    seg.end >= totalDurationSec - thresholdSec ||
-    seg.start >= totalDurationSec - thresholdSec
+    seg.end >= effectiveTotal - thresholdSec ||
+    seg.start >= effectiveTotal - thresholdSec
   );
 }
 

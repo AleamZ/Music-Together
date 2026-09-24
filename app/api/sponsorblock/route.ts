@@ -92,6 +92,10 @@ export async function GET(request: Request) {
           start,
           end,
           duration: Math.max(0, end - start),
+          videoDuration:
+            typeof item.videoDuration === "number" && item.videoDuration > 0
+              ? item.videoDuration
+              : undefined,
         };
       })
       .sort((a, b) => a.start - b.start);
