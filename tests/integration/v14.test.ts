@@ -66,6 +66,6 @@ run("v14 fishing economy", () => {
     expect(species ?? []).toHaveLength(12);
     expect(items ?? []).toHaveLength(12);
     const wallets = await db.from("wallets").select("*");
-    expect(wallets.error !== null || (wallets.data ?? []).length === 0).toBe(true);
+    expect(wallets.error).not.toBeNull();
   });
 });
