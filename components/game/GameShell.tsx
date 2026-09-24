@@ -14,17 +14,19 @@ import type { RoomView } from "@/hooks/useRoom";
 import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
 import { formatChatMessageBody, parseChatMessageBody } from "@/lib/chat-helpers";
 import { formatClock } from "@/lib/format";
-import { DEFAULT_LOOK } from "@/lib/game/character";
-import { HALL_SEATING } from "@/lib/game/maps/hall";
-import type { Interactable } from "@/lib/game/maps/types";
+import { DEFAULT_LOOK } from "@/lib/game/look";
+import { getMap } from "@/lib/game/maps/registry";
+import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import { badgesFor, buildRoster, freshChatBubbles, roleAccounts } from "@/lib/game/social";
 import type { Look } from "@/lib/game/types";
+import { mapCounts } from "@/lib/presence-modes";
 import type { RoomDerived } from "@/lib/room-derived";
 import { getCategoryLabel } from "@/lib/sponsorblock";
 import CharacterEditor from "./CharacterEditor";
 import GameCanvas, { type GameCanvasHandle } from "./GameCanvas";
 import HudChatBar from "./HudChatBar";
 import HudNowPlaying from "./HudNowPlaying";
+import MapCounts from "./MapCounts";
 import { ParchmentModal } from "./Parchment";
 import QueuePanel from "./QueuePanel";
 import SpritePreview from "./SpritePreview";
@@ -39,9 +41,13 @@ export interface GameShellProps {
 
 type Panel = "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | null;
 
-/** Game mode: the hall canvas + parchment HUD. Music, queue, chat and roles are the same as the classic view. */
+/** A portal fades to dark in FADE_MS, the new map starts, and it fades back in after the map's first frame. */
+const FADE_MS = 250;
+
+/** Game mode: the room world (hall + pond) and the parchment HUD. Music, queue, chat and roles are the same as the
+ *  classic view. */
 export default function GameShell({ view, derived, playback, sponsorBlock, onExitGame }: GameShellProps) {
-  const { state, role, presence, onlineIds, token, accountId, username, myMemberId } = view;
+  const { state, role, presence, onlineIds, token, accountId, username, myMemberId, setPresenceMap } = view;
   const room = state.room!;
   const { members } = state;
   const { admin_member_id, dj_member_id } = room;
@@ -68,6 +74,27 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     };
   }, []);
 
+  // --- where I am: game mode always starts in the hall; a portal fades out, switches the map, fades back in
+  const [travel, setTravel] = useState<{ mapId: MapId; arrive: Spot | null }>({ mapId: "hall", arrive: null });
+  const [fading, setFading] = useState(false);
+  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const map = getMap(travel.mapId);
+  useEffect(() => {
+    setPresenceMap(travel.mapId);
+  }, [travel.mapId, setPresenceMap]);
+  useEffect(() => () => {
+    if (fadeTimer.current) clearTimeout(fadeTimer.current);
+  }, []);
+  const travelTo = useCallback((to: { map: MapId; arrive: Spot }) => {
+    if (fadeTimer.current) return;
+    setFading(true);
+    fadeTimer.current = setTimeout(() => {
+      fadeTimer.current = null;
+      setTravel({ mapId: to.map, arrive: to.arrive });
+    }, FADE_MS);
+  }, []);
+  const onFirstFrame = useCallback(() => setFading(false), []);
+
   // --- me
   const { look: savedLook, exists, setSaved } = useMyCharacter(accountId);
   const myLook = savedLook ?? DEFAULT_LOOK;
@@ -79,14 +106,16 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     canvasRef.current?.setLocal({ name: myName, badges: myBadges, look: myLook });
   }, [myName, myBadges, myLook]);
 
-  // --- everyone else (room members only: presence keys and game messages from anyone else are ignored)
+  // --- everyone else on this map (room members only: presence keys and game messages from anyone else are ignored)
   const memberIds = useMemo(() => new Set(members.map((m) => m.account_id)), [members]);
   const { looks, refresh } = useLooks(presence.map((p) => p.accountId).filter((id) => id !== accountId && memberIds.has(id)));
   useEffect(() => {
     canvasRef.current?.setRoster(buildRoster({
-      presence, members, room: { admin_member_id, dj_member_id }, localId: accountId, looks, mapId: "hall", seating: HALL_SEATING,
+      presence, members, room: { admin_member_id, dj_member_id }, localId: accountId, looks,
+      mapId: travel.mapId, seating: getMap(travel.mapId).seating,
     }));
-  }, [presence, members, admin_member_id, dj_member_id, accountId, looks]);
+  }, [presence, members, admin_member_id, dj_member_id, accountId, looks, travel]);
+  const counts = useMemo(() => mapCounts(presence.filter((p) => memberIds.has(p.accountId))), [presence, memberIds]);
 
   // --- chat bubbles (this shell owns one useChat; the drawer has its own)
   const { messages, send } = useChat(room.id, token, { accountId, isAdmin: role.isAdmin });
@@ -98,7 +127,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     }
   }, [messages]);
 
-  // --- reactions float from the sender's character
+  // --- reactions float from the sender's character (from the top of the screen when they are on the other map)
   const { react } = useReactions(room.id, myName, {
     onEvent: (data) => canvasRef.current?.showReaction(data.accountId ?? null, data.emoji),
   });
@@ -109,6 +138,18 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     canvasRef.current?.setInputEnabled(!blocking);
   }, [blocking]);
 
+  // --- the camera may lift the character above the bottom HUD
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = bottomRef.current;
+    if (!el) return;
+    const apply = () => canvasRef.current?.setBottomInset(Math.ceil(el.getBoundingClientRect().height) + 8);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const showToast = useCallback((text: string) => {
     setToast(text);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -116,15 +157,28 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   }, []);
 
   const onInteract = useCallback((it: Interactable) => {
-    if (it.kind === "dj_booth") setPanel("queue");
-    else if (it.kind === "notice_board") setPanel("board");
-    else showToast("Ao câu cá sắp mở — hẹn bản sau!");
-  }, [showToast]);
+    switch (it.kind) {
+      case "dj_booth":
+        setPanel("queue");
+        break;
+      case "notice_board":
+        setPanel("board");
+        break;
+      case "portal":
+        if (it.to) travelTo(it.to);
+        break;
+      default:
+        showToast("Sắp mở — chờ chút nhé!");
+    }
+  }, [travelTo, showToast]);
 
-  const onUnsupported = useCallback(() => {
-    window.alert("Trình duyệt này không vẽ được thế giới game — quay về giao diện cũ.");
+  const leaveBroken = useCallback((message: string) => {
+    window.alert(message);
     onExitGame();
   }, [onExitGame]);
+  const onUnsupported = useCallback(() => leaveBroken("Trình duyệt này không vẽ được thế giới game — quay về giao diện cũ."), [leaveBroken]);
+  const onFatal = useCallback(() => leaveBroken("Thế giới game gặp lỗi — quay về giao diện cũ."), [leaveBroken]);
+  const onFishingInput = useCallback(() => {}, []);
 
   const onSaved = useCallback((look: Look) => {
     setSaved(look);
@@ -136,13 +190,17 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const skipped = sponsorBlock.lastSkippedToast;
   const cardMember = card ? members.find((m) => m.account_id === card) : undefined;
   const cardPresence = card ? presence.find((p) => p.accountId === card) : undefined;
+  const cardWhere = cardPresence?.mode === "classic" ? "🖥️ Đang ở giao diện cũ"
+    : cardPresence?.map === "pond" ? "🎣 Đang ở ao câu cá" : "🎮 Đang dạo quanh sảnh";
 
   return (
-    <div className="game-ui fixed inset-0 overflow-hidden bg-[#2f6e8f] text-ink">
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "pond" ? "bg-[#5a8f32]" : "bg-[#2f6e8f]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
         localId={accountId}
+        mapId={travel.mapId}
+        arrive={travel.arrive}
         initial={{ name: myName, badges: myBadges, look: myLook }}
         isMember={(id) => memberIds.has(id)}
         onInteract={onInteract}
@@ -150,7 +208,14 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         onActorClick={setCard}
         onConnectionChange={setConnected}
         onLookChanged={refresh}
+        onFishingInput={onFishingInput}
+        onFirstFrame={onFirstFrame}
         onUnsupported={onUnsupported}
+        onFatal={onFatal}
+      />
+      <div
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-0 z-40 bg-black transition-opacity duration-200 motion-reduce:transition-none ${fading ? "opacity-100" : "opacity-0"}`}
       />
 
       <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex flex-wrap items-start justify-between gap-2">
@@ -164,6 +229,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             </button>
           </div>
         </div>
+        <MapCounts counts={counts} />
         <HudNowPlaying
           room={room}
           current={derived.current}
@@ -193,7 +259,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             <span className="text-xl">{cardMember?.username ?? cardPresence?.name ?? "Khách"}</span>
             {card === roles.adminAccountId && <span>👑 Chủ phòng</span>}
             {card === roles.djAccountId && <span>🎧 DJ</span>}
-            <span className="opacity-80">{cardPresence?.mode === "classic" ? "🖥️ Đang ở giao diện cũ" : "🎮 Đang dạo quanh sảnh"}</span>
+            <span className="opacity-80">{cardWhere}</span>
           </div>
           <button type="button" className="pch-btn self-start" onClick={() => setCard(null)} aria-label="Đóng">✕</button>
         </div>
@@ -210,7 +276,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         </button>
       )}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
+      <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
         <HudChatBar
           onSend={(text) => send(formatChatMessageBody(text))}
           onReact={react}
