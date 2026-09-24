@@ -194,7 +194,7 @@ Procedural painters ported from the mockup, with a seeded RNG so the scene is id
 
 ### 8.1 Presence (room channel `presence:{roomId}`, existing)
 
-Payload grows from `{ name, online_at }` to `{ name, online_at, mode: "classic" | "game" }`. `trackPresence` returns a handle with `setMode(mode)` (re-`track()`, debounced 1 s because of the 5-calls-per-30-s limit). `useRoom` exposes `presence: Array<{ accountId, name, mode }>` alongside `onlineIds`. Pure helper `aggregatePresenceModes(state)` (unit-tested): an account is `game` if **any** of its tabs reports `game`.
+Payload grows from `{ name, online_at }` to `{ name, online_at, mode: "classic" | "game" }`. `trackPresence` returns a handle with `setMode(mode)`. Because Presence allows 5 calls per client per 30 s, re-`track()`s are budgeted: changes within 1 s are merged, mode changes use at most 4 calls per 30 s (the pure helper `presenceDelay` computes the wait), a mode the server already acknowledged is never re-sent, a failed or timed-out `track()` is retried, and the re-track after a reconnect may use the reserved 5th call without waiting behind a pending timer. The first track already carries the stored view mode. `useRoom` exposes `presence: Array<{ accountId, name, mode }>` alongside `onlineIds`. Pure helper `aggregatePresenceModes(state)` (unit-tested): an account is `game` if **any** of its tabs reports `game`.
 
 ### 8.2 Broadcast channel `game:{roomId}` (new, `self: false`)
 
@@ -356,7 +356,8 @@ Unit (Vitest):
 - `tests/unit/game-character-hooks.test.ts` — `useMyCharacter` / `useLooks`.
 - `tests/unit/channel-lifecycle.test.ts` — joins wait for the previous leave of the same topic.
 - `tests/unit/reactions.test.ts` — `parseReaction` (old and new payloads).
-- `tests/unit/presence-mode.test.ts` — `aggregatePresenceModes`.
+- `tests/unit/presence-mode.test.ts` — `aggregatePresenceModes`, `presenceDelay`.
+- `tests/unit/presence-scheduler.test.ts` — `trackPresence` budget, merge, retry, reconnect reserve, unsubscribe (fake channel + fake timers).
 - `tests/unit/room-derived.test.ts` — shared queue/rules derivation.
 
 Integration (`tests/integration/v13.test.ts`, runs when `SUPABASE_TEST_URL` is set): `save_character` happy path + upsert, invalid option, wrong-slot item, non-starter item, bad session. The migration is replayed on a throwaway local PostgreSQL 18 cluster before handing it to the owner.
