@@ -6,6 +6,7 @@ import MemberList from "@/components/room/MemberList";
 import RoomChartModal from "@/components/room/RoomChartModal";
 import SettingsDialog from "@/components/room/SettingsDialog";
 import { useChat } from "@/hooks/useChat";
+import { useFishingController } from "@/hooks/useFishingController";
 import { useLooks } from "@/hooks/useLooks";
 import { useMyCharacter } from "@/hooks/useMyCharacter";
 import type { PlaybackController } from "@/hooks/usePlayback";
@@ -23,6 +24,7 @@ import { mapCounts } from "@/lib/presence-modes";
 import type { RoomDerived } from "@/lib/room-derived";
 import { getCategoryLabel } from "@/lib/sponsorblock";
 import CharacterEditor from "./CharacterEditor";
+import FishingHud from "./fishing/FishingHud";
 import GameCanvas, { type GameCanvasHandle } from "./GameCanvas";
 import HudChatBar from "./HudChatBar";
 import HudNowPlaying from "./HudNowPlaying";
@@ -59,6 +61,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const [card, setCard] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const close = useCallback(() => setPanel(null), []);
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
+  }, []);
 
   // The game has its own parchment look: portals (RoomChartModal renders into <body>) get the palette too, and the app
   // theme is switched off while the shell is mounted — some theme rules use !important and would restyle the game UI.
@@ -139,6 +146,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     canvasRef.current?.setInputEnabled(!blocking);
   }, [blocking]);
 
+  // --- fishing: coins, bait, the daily check-in, the song bonus, digging (and, later, casting and the shops)
+  const getCanvas = useCallback(() => canvasRef.current, []);
+  const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: showToast });
+  const { interact: fishingInteract, promptText } = fishing;
+
   // --- the camera may lift the character above the bottom HUD
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -149,12 +161,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
-
-  const showToast = useCallback((text: string) => {
-    setToast(text);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3000);
   }, []);
 
   const onInteract = useCallback((it: Interactable) => {
@@ -169,9 +175,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         if (it.to) travelTo(it.to);
         break;
       default:
-        showToast("Sắp mở — chờ chút nhé!");
+        if (!fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast]);
+  }, [travelTo, showToast, fishingInteract]);
 
   const leaveBroken = useCallback((message: string) => {
     window.alert(message);
@@ -228,6 +234,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             <button type="button" className="pch-btn self-start" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
               👕 Tủ đồ
             </button>
+            <FishingHud state={fishing.data.state} failed={fishing.data.failed} onReload={() => void fishing.data.reload()} />
           </div>
         </div>
         <MapCounts counts={counts} />
@@ -273,7 +280,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           className="pch-btn pch-btn-primary absolute bottom-24 left-1/2 z-10 -translate-x-1/2 text-xl"
         >
           <span className="pointer-coarse:hidden">E · </span>
-          {prompt.prompt}
+          {promptText(prompt)}
         </button>
       )}
 

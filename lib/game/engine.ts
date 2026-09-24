@@ -66,6 +66,7 @@ const KEEPALIVE_MS = 3000;
 const BUBBLE_MS = 6000;
 const REACTION_MS = 1600;
 const MAX_FAILED_FRAMES = 3;
+const PUFF_MS = 1000;
 const NO_KEYS: KeyState = { up: false, down: false, left: false, right: false };
 
 /** Canvas 2D game loop: input, local + remote actors, NPCs, fishing, camera, depth-sorted rendering, overlays.
@@ -102,6 +103,7 @@ export class GameEngine {
   private castAt = 0;
   private hand: string | null = null;
   private landed: { speciesId: string; weightG: number; until: number } | null = null;
+  private puffs: Array<{ x: number; y: number; born: number }> = [];
   private species = new Map<string, SpeciesInfo>();
   private raf = 0;
   private lastT = 0;
@@ -251,6 +253,11 @@ export class GameEngine {
   /** "🐟 Cá lóc 1,2 kg" over my head for a moment. */
   showLocalCatch(speciesId: string, weightG: number): void {
     this.landed = { speciesId, weightG, until: performance.now() + CATCH_LABEL_MS };
+  }
+
+  /** A dust puff at `at` for a second (digging worms — only I see it). */
+  puff(at: Vec): void {
+    this.puffs.push({ x: at.x, y: at.y, born: performance.now() });
   }
 
   /** Is another visible member fishing within `radius` px of `p` (the spot is taken)? */
@@ -495,6 +502,7 @@ export class GameEngine {
     for (const [id, b] of this.bubbles) if (b.until < now) this.bubbles.delete(id);
     this.reactions = this.reactions.filter((r) => now - r.born < REACTION_MS);
     if (this.landed && this.landed.until < now) this.landed = null;
+    if (this.puffs.length > 0) this.puffs = this.puffs.filter((p) => now - p.born < PUFF_MS);
   }
 
   /** Keyboard walking started, stopped or turned → `mv` (plus a keep-alive every 3 s while walking). A path is
@@ -582,6 +590,17 @@ export class GameEngine {
     });
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.draw();
+    for (const p of this.puffs) {
+      const age = Math.min(1, (t - p.born) / PUFF_MS);
+      const r = reduced ? 4 : 2 + age * 6;
+      b.globalAlpha = 1 - age;
+      b.fillStyle = "#b58a52";
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        b.fillRect(Math.round(p.x + Math.cos(a) * r) - camX, Math.round(p.y - 2 + Math.sin(a) * r * 0.5) - camY, 2, 2);
+      }
+      b.globalAlpha = 1;
+    }
     this.art.drawOverhead(b, t, camX, camY, reduced);
 
     const c = this.ctx;

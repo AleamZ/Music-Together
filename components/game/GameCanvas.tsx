@@ -34,6 +34,8 @@ export interface GameCanvasHandle {
   landCatch: (speciesId: string, weightG: number, hand: string | null) => void;
   /** Is someone else fishing right at this spot? */
   anglerNear: (p: Vec) => boolean;
+  /** A dust puff (digging worms). */
+  puff: (at: Vec) => void;
 }
 
 export interface GameCanvasProps {
@@ -129,6 +131,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         sendFs([speciesId, weightG]);
       },
       anglerNear: (p) => engineRef.current?.anglerNear(p) ?? false,
+      puff: (at) => engineRef.current?.puff(at),
     };
   }, [localId]);
 
