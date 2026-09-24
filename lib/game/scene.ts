@@ -45,6 +45,11 @@ export function nearestInteractable(map: GameMap, feet: Vec, range = PROMPT_RANG
   return best;
 }
 
+/** True when the feet are close enough to use the interactable (its use spot within `range`). */
+export function inUseRange(it: Interactable, feet: Vec, range = PROMPT_RANGE): boolean {
+  return Math.hypot(feet.x - it.use.x, feet.y - it.use.y) <= range;
+}
+
 /** Click box of a 24×48 character whose feet are at `feet`. */
 export function hitsCharacter(p: Vec, feet: Vec): boolean {
   return p.x >= feet.x - 10 && p.x <= feet.x + 10 && p.y >= feet.y - 44 && p.y <= feet.y + 2;

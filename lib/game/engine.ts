@@ -5,7 +5,7 @@ import type { GameMap, InteractId, Spot } from "@/lib/game/maps/types";
 import { inputDir, type KeyState } from "@/lib/game/movement";
 import { codeToFacing, facingToCode, MAX_PATH_POINTS, type FacingCode, type GameMessage, type Unit } from "@/lib/game/net/protocol";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
-import { cameraFor, computeView, hitsCharacter, interactableAt, nearestInteractable, PROMPT_RANGE, stackBoxes, type Box } from "@/lib/game/scene";
+import { cameraFor, computeView, hitsCharacter, interactableAt, inUseRange, nearestInteractable, stackBoxes, type Box } from "@/lib/game/scene";
 import { wrapBubble } from "@/lib/game/text";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 
@@ -176,7 +176,11 @@ export class GameEngine {
 
   setInputEnabled(enabled: boolean): void {
     this.inputEnabled = enabled;
-    if (!enabled) this.keys = { ...NO_KEYS };
+    if (!enabled) {
+      this.keys = { ...NO_KEYS };
+      // drop the pending interaction but let the walk finish: others follow the same `pa` to its end
+      this.pendingInteract = null;
+    }
   }
 
   /** Trigger the interactable in range (E key / HUD button). */
@@ -252,6 +256,8 @@ export class GameEngine {
       return;
     }
     if ((e.code === "KeyE" || e.code === "Enter") && this.prompt) {
+      // Enter keeps its normal meaning on a focused button or link (HUD controls)
+      if (e.code === "Enter" && e.target instanceof HTMLElement && e.target.closest("button, a[href], [role='button']")) return;
       e.preventDefault();
       this.cb.onInteract(this.prompt);
     }
@@ -276,7 +282,8 @@ export class GameEngine {
     // Interactables win over people: the DJ stands right behind the booth.
     const it = interactableAt(this.map, w);
     if (it) {
-      if (Math.hypot(this.local.pos.x - it.use.x, this.local.pos.y - it.use.y) <= PROMPT_RANGE) {
+      if (inUseRange(it, this.local.pos)) {
+        this.pendingInteract = null;
         this.cb.onInteract(it.id);
         return;
       }
@@ -355,7 +362,7 @@ export class GameEngine {
       this.pendingInteract = null;
       // a long walk can end early (smoothPath caps the waypoints) — only trigger when we really got there
       const it = this.map.interactables.find((i) => i.id === id);
-      if (it && Math.hypot(this.local.pos.x - it.use.x, this.local.pos.y - it.use.y) <= PROMPT_RANGE) this.cb.onInteract(id);
+      if (it && inUseRange(it, this.local.pos)) this.cb.onInteract(id);
     }
     if (!this.local.path) {
       const m = this.localMove();

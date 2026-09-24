@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildHallMap } from "@/lib/game/maps/hall";
-import { cameraFor, computeView, hitsCharacter, interactableAt, nearestInteractable, stackBoxes } from "@/lib/game/scene";
+import { cameraFor, computeView, hitsCharacter, interactableAt, inUseRange, nearestInteractable, PROMPT_RANGE, stackBoxes } from "@/lib/game/scene";
 
 const hall = buildHallMap();
 
@@ -42,6 +42,15 @@ describe("hit tests", () => {
     expect(hitsCharacter({ x: 100, y: 80 }, { x: 100, y: 100 })).toBe(true);
     expect(hitsCharacter({ x: 112, y: 80 }, { x: 100, y: 100 })).toBe(false);
     expect(hitsCharacter({ x: 100, y: 50 }, { x: 100, y: 100 })).toBe(false);
+  });
+});
+
+describe("inUseRange", () => {
+  it("is true within PROMPT_RANGE of the use spot and false just beyond it", () => {
+    const booth = hall.interactables.find((i) => i.id === "dj_booth")!;
+    expect(inUseRange(booth, booth.use)).toBe(true);
+    expect(inUseRange(booth, { x: booth.use.x, y: booth.use.y + PROMPT_RANGE })).toBe(true);
+    expect(inUseRange(booth, { x: booth.use.x, y: booth.use.y + PROMPT_RANGE + 1 })).toBe(false);
   });
 });
 
