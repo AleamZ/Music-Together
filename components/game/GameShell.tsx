@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChatDrawer from "@/components/room/ChatDrawer";
 import MemberList from "@/components/room/MemberList";
 import RoomChartModal from "@/components/room/RoomChartModal";
@@ -85,8 +85,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     canvasRef.current?.setLocal({ name: myName, badges: myBadges, look: myLook });
   }, [myName, myBadges, myLook]);
 
-  // --- everyone else
-  const { looks, refresh } = useLooks(presence.map((p) => p.accountId).filter((id) => id !== accountId));
+  // --- everyone else (room members only: presence keys and game messages from anyone else are ignored)
+  const memberIds = useMemo(() => new Set(members.map((m) => m.account_id)), [members]);
+  const { looks, refresh } = useLooks(presence.map((p) => p.accountId).filter((id) => id !== accountId && memberIds.has(id)));
   useEffect(() => {
     canvasRef.current?.setRoster(buildRoster({
       presence, members, room: { admin_member_id, dj_member_id }, localId: accountId, looks, map: HALL_SPOTS,
@@ -149,6 +150,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         roomId={room.id}
         localId={accountId}
         initial={{ name: myName, badges: myBadges, look: myLook }}
+        isMember={(id) => memberIds.has(id)}
         onInteract={onInteract}
         onPromptChange={setPrompt}
         onActorClick={setCard}

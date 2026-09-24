@@ -4,6 +4,7 @@ import type { HallArt } from "@/lib/game/maps/hall-art";
 import type { GameMap, InteractId } from "@/lib/game/maps/types";
 import { inputDir, type KeyState } from "@/lib/game/movement";
 import { facingToCode, MAX_PATH_POINTS, type FacingCode, type GameMessage, type Unit } from "@/lib/game/net/protocol";
+import { unseenGraceMs } from "@/lib/game/net/replies";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
 import { cameraFor, computeView, hitsCharacter, interactableAt, inUseRange, nearestInteractable, stackBoxes, type Box } from "@/lib/game/scene";
 import { wrapBubble } from "@/lib/game/text";
@@ -41,8 +42,6 @@ const KEYMAP: Record<string, keyof KeyState> = {
 const KEEPALIVE_MS = 3000;
 const BUBBLE_MS = 6000;
 const REACTION_MS = 1600;
-/** A walking member is hidden until their first state arrives (answers to `hello` take up to 1.5 s). */
-const UNSEEN_GRACE_MS = 2000;
 const NO_KEYS: KeyState = { up: false, down: false, left: false, right: false };
 
 /** Canvas 2D game loop: input, local + remote actors, camera, depth-sorted rendering, overlays. Browser only. */
@@ -202,9 +201,10 @@ export class GameEngine {
     };
   }
 
-  /** A walking member is drawn once we know where they are (or after the grace period). */
+  /** A walking member is drawn once we know where they are, or once the answers to their `hello` are overdue
+   *  (the answer window grows with the world: everyone else walking + me). */
   private visible(id: string, now: number): boolean {
-    return this.world.visible(id, now, UNSEEN_GRACE_MS);
+    return this.world.visible(id, now, unseenGraceMs(this.world.walkers() + 1));
   }
 
   private resize(): void {

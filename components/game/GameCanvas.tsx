@@ -6,6 +6,7 @@ import { buildHallMap } from "@/lib/game/maps/hall";
 import { paintHall } from "@/lib/game/maps/hall-art";
 import type { InteractId } from "@/lib/game/maps/types";
 import { joinGameChannel } from "@/lib/game/net/channel";
+import { createReplyScheduler, replyWindowMs } from "@/lib/game/net/replies";
 import type { Look } from "@/lib/game/types";
 
 export interface GameCanvasHandle {
@@ -25,6 +26,8 @@ export interface GameCanvasProps {
   localId: string;
   /** Used once when the world starts; later changes go through the handle's setLocal. */
   initial: { name: string; badges: string; look: Look };
+  /** Is this account a current room member? Game messages from anyone else are dropped (spec §8.3). */
+  isMember: (accountId: string) => boolean;
   onInteract: (id: InteractId) => void;
   onPromptChange: (id: InteractId | null) => void;
   onActorClick: (accountId: string) => void;
@@ -82,19 +85,25 @@ export default function GameCanvas({ ref, roomId, localId, ...rest }: GameCanvas
       return;
     }
 
-    // Answers to someone's `hello` are spread over 1.5 s so a crowd doesn't reply in the same instant.
-    const replyTimers = new Set<ReturnType<typeof setTimeout>>();
+    // One answer (my state) serves every `hello` that arrives before it goes out; answers are spread over a window
+    // that grows with the world, because each one reaches every player.
+    const replies = createReplyScheduler({
+      send: () => channel.send(engine.snapshot()),
+      windowMs: () => replyWindowMs(engine.walkers() + 1),
+    });
     const channel = joinGameChannel(roomId, map, {
       onMessage: (msg) => {
+        if (msg.id === localId) {
+          // Another tab of my account left the world and everyone just dropped my character: tell them where I am.
+          if (msg.t === "bye") channel.send(engine.snapshot());
+          return;
+        }
+        if (!propsRef.current.isMember(msg.id)) return;
         switch (msg.t) {
-          case "hello": {
-            const timer = setTimeout(() => {
-              replyTimers.delete(timer);
-              channel.send(engine.snapshot());
-            }, Math.random() * 1500);
-            replyTimers.add(timer);
+          case "hello":
+            engine.noteHello(msg.id);
+            replies.onHello();
             break;
-          }
           case "lk":
             propsRef.current.onLookChanged(msg.id);
             break;
@@ -107,7 +116,10 @@ export default function GameCanvas({ ref, roomId, localId, ...rest }: GameCanvas
       },
       onStatus: (connected) => {
         propsRef.current.onConnectionChange(connected);
-        if (connected) channel.send({ t: "hello", id: localId });
+        if (!connected) return;
+        // (Re)entering: ask for everyone's state and announce mine — after a reconnect I may have moved.
+        channel.send({ t: "hello", id: localId });
+        channel.send(engine.snapshot());
       },
     });
 
@@ -115,7 +127,7 @@ export default function GameCanvas({ ref, roomId, localId, ...rest }: GameCanvas
     announceRef.current = () => channel.send({ t: "lk", id: localId });
     engine.start();
     return () => {
-      for (const timer of replyTimers) clearTimeout(timer);
+      replies.dispose();
       announceRef.current = null;
       engineRef.current = null;
       channel.leave({ t: "bye", id: localId });
