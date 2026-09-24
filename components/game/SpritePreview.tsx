@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { previewPose } from "@/lib/game/art/preview";
 import { getCharacterFrames, getPortrait } from "@/lib/game/art/raster";
-import type { Facing, Look } from "@/lib/game/types";
-
-const TURN: Facing[] = ["down", "left", "up", "right"];
+import type { Look } from "@/lib/game/types";
 
 /** A look on a small pixel canvas: a static head portrait, or a walking preview that turns every 1.2 s. */
 export default function SpritePreview({ look, mode = "portrait", scale = 2, className = "" }: {
@@ -32,9 +31,7 @@ export default function SpritePreview({ look, mode = "portrait", scale = 2, clas
     const start = performance.now();
     let raf = 0;
     const draw = (t: number) => {
-      const sec = (t - start) / 1000;
-      const facing = TURN[Math.floor(sec / 1.2) % TURN.length];
-      const frame = still ? 0 : ((Math.floor(sec * 8) % 4) as 0 | 1 | 2 | 3);
+      const { facing, frame } = previewPose((t - start) / 1000, still);
       ctx.clearRect(0, 0, cv.width, cv.height);
       ctx.drawImage(frames[facing][frame], 0, 0, cv.width, cv.height);
       raf = requestAnimationFrame(draw);
