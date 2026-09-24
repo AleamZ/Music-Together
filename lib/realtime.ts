@@ -1,6 +1,8 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase, type Room, type Member, type QueueItem } from "@/lib/supabase";
-import { aggregatePresenceModes, type PresenceEntry, type PresenceMeta, type PresenceMode } from "@/lib/presence-modes";
+import {
+  aggregatePresenceModes, presenceDelay, PRESENCE_BUDGET, type PresenceEntry, type PresenceMeta, type PresenceMode,
+} from "@/lib/presence-modes";
 
 export interface RoomState { room: Room | null; members: Member[]; queue: QueueItem[]; }
 
@@ -45,34 +47,61 @@ export function subscribeRoom(roomId: string, onState: (s: RoomState) => void): 
 
 export interface PresenceHandle { unsubscribe: () => void; setMode: (mode: PresenceMode) => void }
 
-/** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13). */
+/** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13).
+ *  track() calls are budgeted to ≤ 4 per 30 s (PRESENCE_BUDGET; Supabase allows 5), mode changes within
+ *  1 s are merged, a mode the server already acknowledged is never re-sent, and failed tracks are retried. */
 export function trackPresence(
   roomId: string,
   me: { memberId: string; name: string; mode: PresenceMode },
   onChange: (entries: PresenceEntry[]) => void,
 ): PresenceHandle {
   const channel = supabase.channel(`presence:${roomId}`, { config: { presence: { key: me.memberId } } });
-  let mode = me.mode;
+  let wanted: PresenceMode = me.mode;        // the mode other members should see
+  let published: PresenceMode | null = null; // last mode the server acknowledged with 'ok'
   let subscribed = false;
+  let closed = false;
+  let sending = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const emit = () => onChange(aggregatePresenceModes(channel.presenceState() as unknown as Record<string, PresenceMeta[]>));
-  const track = () => channel.track({ name: me.name, online_at: new Date().toISOString(), mode });
+  let sentAt: number[] = [];                 // times of recent track() calls (pruned to the budget window)
+  const emit = () => onChange(aggregatePresenceModes(channel.presenceState<PresenceMeta>()));
+  const schedule = (minDelay = 0) => {
+    if (closed || timer || sending) return;
+    timer = setTimeout(() => { void flush(); }, Math.max(minDelay, presenceDelay(sentAt, Date.now())));
+  };
+  const flush = async () => {
+    timer = null;
+    if (closed || !subscribed || sending || wanted === published) return;
+    sending = true;
+    const mode = wanted;
+    const now = Date.now();
+    sentAt = [...sentAt.filter((t) => now - t < PRESENCE_BUDGET.windowMs), now];
+    const status = await channel.track({ name: me.name, online_at: new Date(now).toISOString(), mode });
+    sending = false;
+    if (closed) return;
+    if (status === "ok") published = mode;
+    // The mode changed while the call was in flight, or the call failed/timed out → send again (budgeted).
+    if (wanted !== published) schedule(status === "ok" ? 0 : 1000);
+  };
   channel
     .on("presence", { event: "sync" }, emit)
     .on("presence", { event: "join" }, emit)
     .on("presence", { event: "leave" }, emit)
-    .subscribe(async (status) => {
-      if (status === "SUBSCRIBED") { subscribed = true; await track(); }
+    .subscribe((status) => {
+      // A (re)join starts with none of our presence on the server → publish the wanted mode again.
+      if (status === "SUBSCRIBED") { subscribed = true; published = null; schedule(); }
       else subscribed = false;
     });
   return {
-    unsubscribe: () => { if (timer) clearTimeout(timer); void supabase.removeChannel(channel); },
+    unsubscribe: () => {
+      closed = true;
+      if (timer) { clearTimeout(timer); timer = null; }
+      void supabase.removeChannel(channel);
+    },
     setMode: (next) => {
-      if (next === mode) return;
-      mode = next;
-      if (timer) clearTimeout(timer);
-      // Presence allows 5 calls per client per 30 s → debounce rapid toggles into one track().
-      timer = setTimeout(() => { timer = null; if (subscribed) void track(); }, 1000);
+      if (closed || next === wanted) return;
+      wanted = next;
+      // The 1 s delay merges rapid toggles; A→B→A inside it sends nothing because wanted === published.
+      schedule(1000);
     },
   };
 }

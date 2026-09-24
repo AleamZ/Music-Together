@@ -6,6 +6,7 @@ import type { PresenceEntry, PresenceMode } from "@/lib/presence-modes";
 import { supabase } from "@/lib/supabase";
 import { deriveRole, type RoleFlags } from "@/lib/roles";
 import { useAuth } from "@/hooks/useAuth";
+import { readStoredMode } from "@/hooks/useViewMode";
 
 export interface RoomView {
   loading: boolean; state: RoomState; onlineIds: string[];
@@ -20,7 +21,7 @@ export function useRoom(code: string): RoomView {
   const [state, setState] = useState<RoomState>(EMPTY);
   const [presence, setPresence] = useState<PresenceEntry[]>([]);
   const presenceRef = useRef<PresenceHandle | null>(null);
-  const modeRef = useRef<PresenceMode>("classic");
+  const modeRef = useRef<PresenceMode | null>(null);
   const setPresenceMode = useCallback((m: PresenceMode) => {
     modeRef.current = m;
     presenceRef.current?.setMode(m);
@@ -54,7 +55,7 @@ export function useRoom(code: string): RoomView {
         if (accountId && s.members.some((m) => m.account_id === accountId)) setWasMember(true);
       });
       if (account) {
-        presenceHandle = trackPresence(roomId, { memberId: account.accountId, name: account.username, mode: modeRef.current }, setPresence);
+        presenceHandle = trackPresence(roomId, { memberId: account.accountId, name: account.username, mode: modeRef.current ?? readStoredMode() }, setPresence);
         presenceRef.current = presenceHandle;
       }
     })();

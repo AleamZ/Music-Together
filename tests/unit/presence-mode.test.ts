@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aggregatePresenceModes } from "@/lib/presence-modes";
+import { aggregatePresenceModes, presenceDelay } from "@/lib/presence-modes";
 
 describe("aggregatePresenceModes", () => {
   it("returns one entry per account, sorted by account id", () => {
@@ -22,5 +22,17 @@ describe("aggregatePresenceModes", () => {
   });
   it("uses an empty name when no tab reports one", () => {
     expect(aggregatePresenceModes({ a: [{ mode: "game" }] })[0].name).toBe("");
+  });
+});
+
+describe("presenceDelay", () => {
+  it("sends immediately while under the budget", () => {
+    expect(presenceDelay([0, 1000, 2000], 3000)).toBe(0);
+  });
+  it("waits until the oldest send in the window expires", () => {
+    expect(presenceDelay([0, 1000, 2000, 3000], 4000)).toBe(26000);
+  });
+  it("ignores sends older than the window", () => {
+    expect(presenceDelay([0, 1000, 2000, 31000], 31500)).toBe(0);
   });
 });
