@@ -13,56 +13,25 @@ import AddSong from "./AddSong";
 import Queue from "./Queue";
 import PendingQueue from "./PendingQueue";
 import MyPending from "./MyPending";
-import { usePlayback } from "@/hooks/usePlayback";
-import { useSponsorBlock } from "@/hooks/useSponsorBlock";
-import { countMyOrders } from "@/lib/queue-rules";
+import type { PlaybackController } from "@/hooks/usePlayback";
+import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
+import type { RoomDerived } from "@/lib/room-derived";
 import { DragonCorners, DragonHeaderBanner } from "./DragonDecorations";
 import { CyberpunkCorners, CyberpunkHeaderBanner } from "./CyberpunkDecorations";
 import { ITVHeaderBanner } from "./ITVDecorations";
 import { LofiHeaderBanner } from "./LofiDecorations";
 import { MikuHeaderBanner } from "./MikuDecorations";
 
-export default function RoomShell({ view }: { view: RoomView }) {
-  const { state, role, onlineIds, token, myMemberId, accountId, username } =
-    view;
+export default function RoomShell({ view, derived, playback: dj, sponsorBlock, onEnterGame }: {
+  view: RoomView;
+  derived: RoomDerived;
+  playback: PlaybackController;
+  sponsorBlock: UseSponsorBlockResult;
+  onEnterGame: () => void;
+}) {
+  const { state, role, onlineIds, token, myMemberId, accountId, username } = view;
   const room = state.room!;
-  const current =
-    state.queue.find((q) => q.id === room.current_item_id) ?? null;
-  // Pending rows are requests awaiting Admin/DJ approval; only approved rows are the play queue.
-  const approved = state.queue.filter((q) => q.status === "approved");
-  const pending = state.queue.filter((q) => q.status === "pending");
-  const myPending = pending.filter((q) => q.added_by_account_id === accountId);
-  const rules = {
-    max_duration_seconds: room.max_duration_seconds,
-    banned_keywords: room.banned_keywords,
-    max_orders_per_member: room.max_orders_per_member,
-  };
-  const willPend = room.require_approval && !role.canManageQueue;
-  // Per-member order limit (v11): rows I have waiting (pending + approved), excluding the one playing. Admin/DJ exempt.
-  const orderLimit = {
-    mine: countMyOrders(state.queue, accountId, room.current_item_id),
-    exempt: role.canManageQueue,
-  };
-  // onlineIds are ACCOUNT ids (presence is keyed by account id); dj_member_id is a MEMBER id,
-  // so map it to its account id before checking presence.
-  const djAccountId =
-    state.members.find((m) => m.id === room.dj_member_id)?.account_id ?? null;
-  const djOnline = !!djAccountId && onlineIds.includes(djAccountId);
-
-  const sponsorBlock = useSponsorBlock(current?.youtube_video_id);
-
-  // Playback engine for everyone (DJ-only writes inside). Returns transport handlers + duration/volume/gate.
-  const dj = usePlayback({
-    room,
-    current,
-    isDj: role.isDj,
-    queueLen: approved.length,
-    roomId: room.id,
-    token,
-    sponsorSegments: sponsorBlock.segments,
-    sponsorBlockEnabled: sponsorBlock.enabled,
-    onSponsorSkipped: sponsorBlock.triggerSkipToast,
-  });
+  const { current, approved, pending, myPending, rules, willPend, orderLimit, djOnline } = derived;
   const myUsername =
     username || state.members.find((m) => m.account_id === accountId)?.username;
 
@@ -83,6 +52,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
         myMemberId={myMemberId}
         queue={state.queue}
         current={current}
+        onEnterGame={onEnterGame}
       />
       <DragonHeaderBanner />
       <CyberpunkHeaderBanner />
