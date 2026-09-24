@@ -44,6 +44,8 @@ interface Live {
   answeredAt: number;
   /** The player left before start_cast answered: give it up as soon as it does. */
   abandoned: boolean;
+  /** The bite was hooked: a second hook (a double tap) must not restart the reel. */
+  hooked: boolean;
   timers: Array<ReturnType<typeof setTimeout>>;
 }
 
@@ -91,7 +93,7 @@ export function useCastSession({ roomId, data, canvas, toast }: {
 
   const cast = useCallback((spot: Interactable) => {
     if (live.current) return;
-    const l: Live = { info: null, answeredAt: 0, abandoned: false, timers: [] };
+    const l: Live = { info: null, answeredAt: 0, abandoned: false, hooked: false, timers: [] };
     live.current = l;
     const startedAt = performance.now();
     canvas()?.plant(spot.use, spot.face ?? "up");
@@ -134,7 +136,8 @@ export function useCastSession({ roomId, data, canvas, toast }: {
 
   const hook = useCallback(() => {
     const l = live.current;
-    if (!l?.info || !canHook(l.info, performance.now() - l.answeredAt)) return;
+    if (!l?.info || l.hooked || !canHook(l.info, performance.now() - l.answeredAt)) return;
+    l.hooked = true;
     clearTimers(l);
     const params = reelParamsFor(l.info, crypto.getRandomValues(new Uint32Array(1))[0]);
     canvas()?.setFishing({ phase: "reeling" });

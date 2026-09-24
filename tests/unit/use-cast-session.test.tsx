@@ -60,6 +60,22 @@ describe("useCastSession", () => {
     expect(phases(s.canvas.setFishing)).toEqual(["casting", "waiting", "bite", "reeling"]);
   });
 
+  it("hooks a bite only once (a double tap, or Space twice before the re-render)", async () => {
+    const s = setup(async () => answer(), async () => null);
+    act(() => s.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    expect(s.result.current.view.phase).toBe("bite");
+    const hookAtBite = s.result.current.hook; // what input routed at the bite still calls
+    act(() => hookAtBite());
+    const first = s.result.current.view;
+    const params = "params" in first ? first.params : null;
+    expect(params).not.toBeNull();
+    act(() => hookAtBite());
+    const second = s.result.current.view;
+    expect("params" in second ? second.params : null).toBe(params);
+    expect(phases(s.canvas.setFishing)).toEqual(["casting", "waiting", "bite", "reeling"]); // one reel start
+  });
+
   it("gives a missed bite up and says so", async () => {
     const s = setup(async () => answer({ rarity: null }), async () => ({ result: "lost", why: "gave_up", state: STATE }));
     act(() => s.result.current.cast(SPOT));
