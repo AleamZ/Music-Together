@@ -3,6 +3,7 @@
 **Date:** 2026-09-24
 **Builds on:** v12 (`main` @ `c3b536e`). Next.js 16.2.9, React 19, TS 5, Tailwind v4, Supabase (Postgres + Realtime), custom account/session auth, SECURITY DEFINER RPCs.
 **Roadmap:** v13 = game mode + music hall + characters (this doc) → v14 = fishing pond, economy (xu), fish depot + gear shop → v15 = fashion shop, wardrobe purchases, pets.
+**Revised during planning (2026-09-24):** module names, the feet box, the single hair layer, extra scarf codes, the camera rule, the `hello` answer window and the test list were synced with the implementation plan `docs/superpowers/plans/2026-09-24-music-together-v13.md`, whose prototypes were run in the browser.
 
 ## 1. Goal
 
@@ -49,10 +50,10 @@ components/room/RoomSession.tsx     NEW: useRoom view + usePlayback + useSponsor
  ├─ viewMode === "classic" → <RoomShell view playback sponsor onEnterGame>   (existing UI, playback lifted out)
  └─ viewMode === "game"    → <GameShell  view playback sponsor onExitGame>   (lazy-loaded)
       ├─ <GameCanvas>            canvas + lib/game/engine (loop, input, camera, render)
-      ├─ useGameNetwork          Broadcast channel game:{roomId}, handshake, remote players
-      ├─ useMyCharacter          load/save my character (Postgres)
+      │                          + lib/game/net/channel (Broadcast game:{roomId}, handshake)
+      ├─ useMyCharacter/useLooks my character / other members' looks (Postgres)
       ├─ HUD (React, parchment)  portrait · now playing/DJ controls · chat bar · buttons
-      └─ Panels                  QueuePanel · ChatDrawer · MembersPanel · RoomChartModal · SettingsDialog · CharacterEditor
+      └─ Panels                  QueuePanel · ChatDrawer · MemberList · RoomChartModal · SettingsDialog · CharacterEditor
 lib/game/                         pure logic + art (unit-tested) — see §5–§9
 supabase/migrations/0011_v13_game_mode.sql
 ```
@@ -73,26 +74,29 @@ supabase/migrations/0011_v13_game_mode.sql
 ### 6.1 Units
 
 - World unit = 1 art pixel. Map **hall** = 640 × 400 px. Collision grid cell = 8 px (80 × 50 cells).
-- Character sprite 24 × 48 px, anchored at the **feet** (sprite drawn at `x-12, y-46`). Collision box = 10 × 6 px around the feet (`x-5…x+5`, `y-5…y+1`).
+- Character sprite 24 × 48 px, anchored at the **feet** (sprite drawn at `x-12, y-46`). Collision box = 6 × 4 px around the feet (`x-3…x+3`, `y-3…y+1`) — small enough to pass between the café tables.
 - Walk speed 70 px/s; walk animation 4 frames at 8 fps (`idle, stepA, idle, stepB`).
 - Facing: `down | up | left | right` (`right` = mirrored `left`). With diagonal input the horizontal component decides the facing.
 
 ### 6.2 Map definition — `lib/game/maps/hall.ts`
 
 ```ts
+// lib/game/maps/types.ts
 export interface Rect { x: number; y: number; w: number; h: number }
-export interface Interactable { id: "dj_booth" | "notice_board" | "dock_sign"; rect: Rect; use: { x: number; y: number }; label: string }
-export interface Seat { x: number; y: number; dir: Facing }
+export interface Spot { x: number; y: number; dir: Facing }
+export type InteractId = "dj_booth" | "notice_board" | "dock_sign";
+export interface Interactable { id: InteractId; label: string; rect: Rect; use: Vec }   // rect = click target
 export interface GameMap {
-  id: "hall"; width: number; height: number; cell: number;
-  blocked: Uint8Array;                       // cols*rows, 1 = blocked (built from solids + water − walkable overrides)
-  cols: number; rows: number;
-  spawn: { x: number; y: number };
-  seats: Seat[];                             // classic-mode members (behind café tables)
-  standSpots: Array<{ x: number; y: number; dir: Facing }>; // overflow for classic members
+  id: string; width: number; height: number; cell: number; cols: number; rows: number;
+  blocked: Uint8Array;        // cols*rows, 1 = blocked (built from solids + water − walkable overrides)
+  spawn: Vec;
+  djSpot: Spot;               // where a classic-mode DJ is shown (behind the mixer)
+  seats: Spot[];              // classic-mode members (behind café tables)
+  standSpots: Spot[];         // overflow for classic members
   interactables: Interactable[];
-  props: PropPlacement[];                    // render + depth-sort list (palms, tables, counter, hammock posts…)
+  props: PropPlacement[];     // depth-sorted sprites: palm, hammock, post, table, mixer, board, sign, banana, lightpole
 }
+// lib/game/maps/hall.ts
 export function buildHallMap(): GameMap
 ```
 
@@ -113,27 +117,28 @@ Interactables:
 - **notice_board** — "Bảng tin": opens `RoomChartModal` (rankings/history).
 - **dock_sign** — "Bến câu cá": toast *"Ao câu cá sắp mở — hẹn bản sau!"* (v14 hook).
 
-Seats: 6 (3 tables × 2). Classic-mode members are assigned seats deterministically (online classic account ids sorted ascending → seats in order; overflow → `standSpots`), so every client shows the same arrangement. A seated character is drawn **behind** its table so the table top hides the legs.
+Seats: 6 (3 tables × 2). Classic-mode members are assigned seats deterministically (online classic account ids sorted ascending → seats in order; overflow → `standSpots`), so every client shows the same arrangement; a classic-mode DJ stands at `djSpot` behind the mixer instead. A seated character is drawn **behind** its table so the table top hides the legs.
 
 ### 6.3 Movement — `lib/game/movement.ts` (pure)
 
 ```ts
-export function isBlockedAt(map: GameMap, x: number, y: number): boolean          // collision box vs grid
-export function stepMove(map: GameMap, pos: Vec, vel: Vec, dtSec: number): Vec     // axis-separated: x then y, so the player slides along walls
-export function inputToVelocity(keys: { up: boolean; down: boolean; left: boolean; right: boolean }): Vec  // normalized ×70
-export function facingFor(vel: Vec, prev: Facing): Facing
+export function isBlockedAt(map: GameMap, x: number, y: number): boolean                  // collision box vs grid
+export function stepMove(map: GameMap, pos: Vec, dir: Vec, dtSec: number, speed = 70): Vec // normalized dir, ≤ 4 px substeps, x then y → slides along walls
+export function inputDir(keys: KeyState): Vec                                            // -1/0/1 per axis
+export function facingFor(dir: Vec, prev: Facing): Facing                                // keyboard: horizontal wins
+export function facingForVector(v: Vec, prev: Facing): Facing                            // paths: dominant axis
 ```
 
 ### 6.4 Pathfinding — `lib/game/pathfinding.ts` (pure)
 
 - `findPath(map, from: Vec, to: Vec, maxNodes = 5000): Vec[] | null` — A* on the 8-px grid, 8-neighbour moves with **no corner cutting**, octile heuristic. If the target cell is blocked, the nearest walkable cell within 3 cells is used; otherwise `null`.
-- `smoothPath(map, cells): Vec[]` — string-pulling with a line-of-sight test that uses the collision box; returns pixel waypoints (≤ 32).
+- `smoothPath(map, from, points): Vec[]` — string-pulling with a line-of-sight test that uses the collision box; returns pixel waypoints (≤ 32 = `MAX_PATH_POINTS`).
 - Keyboard input cancels an active path. Clicking an interactable paths to its `use` spot and triggers it on arrival.
 
 ### 6.5 Camera & scaling
 
 - The canvas backing store = container CSS size × `min(devicePixelRatio, 2)`.
-- Integer scale `s = max(1, floor(min(devW / 300, devH / 180)))`; logical viewport = `floor(devW / s) × floor(devH / s)`.
+- Integer scale `s = max(1, floor(min(devW / 300, devH / 180)))`, then raised until the view is no larger than the map (portrait phones would otherwise see empty bands); logical viewport = `ceil(devW / s) × ceil(devH / s)` (`lib/game/scene.ts`).
 - The camera centres on the local player, clamped to the map; if the map is smaller than the viewport it is centred.
 - The world renders into a low-res buffer, then is blitted with `imageSmoothingEnabled = false`. Text overlays (names, bubbles, prompts) are drawn afterwards at device resolution.
 
@@ -143,7 +148,7 @@ All sprites are string grids (one character per pixel), exactly like `components
 
 ### 7.1 Layers and draw order
 
-`hair.under` → body (legs, bottom, torso, head) → `hair.over` → hat. (`hand` and `pet` layers are reserved for v14/v15.)
+body (legs, bottom, torso, head) → hair → hat — one hair layer per direction; every style covers the whole scalp. (`hand` and `pet` layers are reserved for v14/v15.)
 
 ### 7.2 Region codes in body templates
 
@@ -154,7 +159,9 @@ All sprites are string grids (one character per pixel), exactly like `components
 | `s` `S` | skin / skin shade | skin tone |
 | `e` `b` `m` | eyes+brows / blush / mouth | skin tone |
 | `t` `T` `u` `K` | top main / shade / highlight / detail (pockets, buttons) | top item (`K` = main for plain tees) |
-| `q` `Q` | neck scarf light / dark (band + tails) | neck item; without scarf → top main / highlight (reads as a collar) |
+| `q` `Q` | neck scarf band light / dark | neck item; without scarf → top main / highlight (reads as a collar) |
+| `r` `R` | front scarf tails light / dark | neck item; without scarf → top main / highlight |
+| `v` `V` `n` | side-view scarf tails light / dark / outline | neck item + outline; transparent without a scarf |
 | `p` `P` `l` | bottom main / shade / side stripe | bottom item |
 | `j` | hem | outline for shorts, bottom shade for long pants |
 | `g` `G` | lower leg / shade | skin for shorts, bottom colours for long pants |
@@ -164,14 +171,15 @@ All sprites are string grids (one character per pixel), exactly like `components
 ### 7.3 Grids
 
 - **Body** (`body.ts`): head (bald + face, 17 rows), torso (13 rows), bottom (6 rows), legs (10 rows, built from one-leg templates so a lifted leg is the same template shifted up one row), 2 empty rows → 24 × 48, for `down`, `up`, `left`. `buildBody(dir, frame): string[]`.
-- **Hair** (`hair.ts`): styles `short`, `bob`, `long`, each with `under`/`over` grids per direction (24 wide, 48 tall, mostly `.`); every style must fully cover the bald scalp rows.
+- **Hair** (`hair.ts`): styles `short`, `bob`, `long`, one layer per direction (`down`, `up`, `left`; 24 wide, placed from its top row); every style must fully cover the bald scalp.
 - **Hats** (`hats.ts`): `hat_nonla` (wide conical hat, rows 0–8), `hat_taibeo_green` (bucket hat, rows 2–9); symmetric, so one grid serves every direction.
 - **Palettes** (`palettes.ts`): skin tones `light | warm | tan | deep`; hair colours `black | darkbrown | brown | pink`.
 - **Item render data** (`items.ts`): `Record<ItemId, ItemArt>` keyed by catalog id, e.g. `top_baba_yellow: { slot: "top", kind: "baba", colors: [...] }`, `bottom_shorts_red: { slot: "bottom", kind: "shorts", colors: [...] }`.
 
-### 7.4 Composition — `compose.ts` (browser only)
+### 7.4 Composition — `compose.ts` (pure) + `raster.ts` (browser)
 
-- `lookKey(look)` → stable string; `getCharacterFrames(look)` → cached `HTMLCanvasElement`s per `(dir, frame)`; `getPortrait(look)` → 24 × 24 head crop for the HUD and panels.
+- `compose.ts`: `lookKey(look)` → stable string; `composeMatrix(look, facing, frame)` → 48 × 24 colour matrix (unit-tested).
+- `raster.ts`: `getCharacterFrames(look)` → cached `HTMLCanvasElement`s per `(dir, frame)`; `getPortrait(look)` → 24 × 24 head crop for the HUD and panels.
 - Mirroring for `right` happens at composition time. The cache is bounded (LRU, 64 looks).
 
 ### 7.5 Scene art — `lib/game/maps/hall-art.ts` (browser only)
@@ -192,7 +200,7 @@ Payload grows from `{ name, online_at }` to `{ name, online_at, mode: "classic" 
 
 | Event | Payload | When |
 |---|---|---|
-| `hello` | `{ id }` | I entered the world. Every other player answers with `st` after a random 0–300 ms delay. |
+| `hello` | `{ id }` | I entered the world (again after a reconnect). Every other player answers with their state (`st`, or `pa` while walking a path) after a random 0–1500 ms delay. |
 | `st` | `{ id, x, y, d, mv, vx, vy }` | full state (answer to `hello`) |
 | `mv` | `{ id, x, y, d, mv, vx, vy }` | keyboard movement changed (start, stop, direction); keep-alive every 3 s while moving |
 | `pa` | `{ id, x, y, pts: [[x,y],…] }` | click/tap path started (≤ 32 waypoints) |
@@ -209,18 +217,20 @@ Payload grows from `{ name, online_at }` to `{ name, online_at, mode: "classic" 
 
 `createSendGate({ ratePerSec: 3, burst: 3 })` — token bucket; `mv` is **coalesced** (only the latest pending state is flushed when a token frees up), `pa`/`hello`/`st`/`lk`/`bye` take a token or wait. Worst case ~3 game messages/s per client, which keeps a client's total (game + reactions, reactions already throttled to 4/s) near the 5/s the app declares.
 
-### 8.5 Remote players — `lib/game/remote.ts` (pure)
+### 8.5 Remote players — `lib/game/actor.ts` (pure, shared with the local player)
 
 State per remote: position, facing, velocity, optional path, `lastMsgAt`, and a display position.
 
-- `mv`/`st`: if the display position is > 48 px away → snap; else blend to the reported position over 120 ms, then extrapolate along `(vx,vy)` at 70 px/s through `stepMove` (same collision as the sender, so walls stop both sides alike).
+- `mv`/`st`: if the display position is > 48 px away → snap; else the display position blends exponentially (12 /s) towards the simulated one, which extrapolates along `(vx,vy)` at 70 px/s through `stepMove` (same collision as the sender, so walls stop both sides alike).
 - `pa`: start from `(x,y)` and walk the waypoints at 70 px/s.
 - Moving with no message for 4 s → stop (lost `stop` guard).
-- A game-mode member with no state yet stands at the spawn until the first `st`/`mv`.
+- A game-mode member with no state yet is hidden for up to 2 s (answers to `hello` arrive within 1.5 s), then shown at the spawn until the first `st`/`mv`.
 
 ### 8.6 Budget (documented in README)
 
-One walking player sends ≈ 1–2 msgs/s, an idle player 0. With N players in the world each message is delivered N−1 times. Example: 10 players, each walking ~25 % of the time → ≈ 3 sends/s × 10 ≈ 30 events/s (limit 100) ≈ 110 k/hour → the free 2 M/month covers ~18 hours of a 10-person session (≈ 100 hours for 4 people). Joins cost O(N²) once (`hello` + N answers).
+One walking player sends ≈ 1–2 msgs/s, an idle player 0. With N players in the world each message is delivered N−1 times. Example: 10 players, each walking ~25 % of the time → ≈ 3 sends/s × 10 ≈ 30 events/s (limit 100) ≈ 110 k/hour → the free 2 M/month covers ~18 hours of a 10-person session (≈ 100 hours for 4 people). Joins cost O(N²) once (`hello` + N answers, spread over 1.5 s).
+
+**Re-joining a topic:** realtime-js returns the existing channel for a topic while it is still leaving, and a leaving channel never re-joins; on a classic ↔ game switch one component leaves `reactions:{roomId}` while another joins it in the same commit. `lib/channel-lifecycle.ts` makes a join wait for the previous leave of the same topic (used by the game and reactions channels).
 
 ## 9. Characters & catalog (Postgres)
 
@@ -276,7 +286,7 @@ returns public.characters
 
 ### 9.3 Client — `lib/game/character.ts`
 
-`Look` type (camelCase mirror of the row), `DEFAULT_LOOK` (warm skin, short black hair, nón lá, áo bà ba vàng, quần đùi đỏ, dép xanh, khăn rằn), `lookFromRow`, `validateLook(look, catalog)` (same rules as the RPC, for the editor), `fetchCatalog()` (cached), `fetchCharacters(accountIds)`, `fetchMyCharacter(accountId)`, `saveCharacter(token, look)`. An unknown item id renders with a placeholder palette, never crashes.
+`Look` type (camelCase mirror of the row), `DEFAULT_LOOK` (warm skin, short black hair, nón lá, áo bà ba vàng, quần đùi đỏ, dép xanh, khăn rằn), `lookFromRow`, `validateLook(look, catalog)` (same rules as the RPC, for the editor), `fetchCatalog()` (cached), `fetchCharacters(accountIds)`, `saveCharacter(token, look)`, `characterErrorMessage(err)`. Hooks: `useMyCharacter(accountId)` (my look + whether a row exists) and `useLooks(accountIds)` (other members, refreshed on `lk`). An unknown item id renders with a placeholder palette, never crashes.
 
 ## 10. Game UI
 
@@ -323,7 +333,7 @@ Full-viewport canvas with parchment overlays (cream `#fbf3dc`, brown border `#8b
 - Broadcast channel not `SUBSCRIBED` → HUD shows *"Đang kết nối thế giới…"*; local movement still works; retry on the next status change (supabase-js reconnects).
 - Character fetch fails → `DEFAULT_LOOK`. Save fails → inline error, editor stays open.
 - Same account in two game tabs → both drive the same character (documented, not prevented).
-- Canvas 2D unavailable → toast and fall back to classic.
+- Canvas 2D unavailable → an alert, then back to the classic view.
 - Reduced motion (`prefers-reduced-motion`): no floating notes, no blinking lights.
 
 ## 13. Testing
@@ -337,7 +347,15 @@ Unit (Vitest):
 - `tests/unit/game-pathfinding.test.ts` — path around obstacles, no corner cutting, blocked-target fallback, unreachable → null, smoothing keeps line of sight and ≤ 32 points.
 - `tests/unit/game-hall-map.test.ts` — spawn, seats, stand spots and every `use` spot are walkable and reachable from the spawn; the dock is walkable, the water is not.
 - `tests/unit/game-protocol.test.ts` — message validation, send gate (rate, burst, `mv` coalescing).
-- `tests/unit/game-remote.test.ts` — snap vs blend, extrapolation with collision, path following, stale stop.
+- `tests/unit/game-actor.test.ts` — snap vs blend, extrapolation with collision, path following, stale stop.
+- `tests/unit/game-compose.test.ts` — palette mapping (scarf / no scarf, shorts / long pants), mirroring, hat placement.
+- `tests/unit/game-hall-art.test.ts` — seeded RNG; prop frames line up with the interaction rects.
+- `tests/unit/game-scene.test.ts` — view scale (incl. portrait phones), camera clamp, hit tests, overlay stacking.
+- `tests/unit/game-seating-text.test.ts` — seat assignment, bubble wrapping.
+- `tests/unit/game-social.test.ts` — roster (seats, DJ spot, badges, non-members ignored), fresh chat bubbles.
+- `tests/unit/game-character-hooks.test.ts` — `useMyCharacter` / `useLooks`.
+- `tests/unit/channel-lifecycle.test.ts` — joins wait for the previous leave of the same topic.
+- `tests/unit/reactions.test.ts` — `parseReaction` (old and new payloads).
 - `tests/unit/presence-mode.test.ts` — `aggregatePresenceModes`.
 - `tests/unit/room-derived.test.ts` — shared queue/rules derivation.
 
