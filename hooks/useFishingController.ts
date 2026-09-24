@@ -70,11 +70,16 @@ export function useFishingController({ token, accountId, canvas, current, toast 
   }, []);
 
   // --- the daily check-in: once per visit; the toast only when it paid
+  // It waits for the first fishing_state, so the claim is the later call and its answer (with the bonus) is the one kept.
+  const loaded = state !== null;
+  const claimed = useRef(false);
   useEffect(() => {
+    if (!loaded || claimed.current) return;
+    claimed.current = true;
     void claimDaily().then((r) => {
       if (r?.claimed) toastRef.current(dailyText(r.amount));
     });
-  }, [claimDaily]);
+  }, [loaded, claimDaily]);
 
   // --- names for the catch labels, and the fish in my hand for everyone to see
   useEffect(() => {

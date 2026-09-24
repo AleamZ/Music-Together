@@ -112,6 +112,22 @@ describe("useFishingController", () => {
     expect(toasts).toEqual(["🪙 Điểm danh hôm nay: +20 xu"]);
   });
 
+  it("waits for the first state before claiming, so the claimed coins are the ones kept", async () => {
+    let loadState!: (s: FishingState) => void;
+    rpc.fetchFishingState.mockReturnValue(new Promise<FishingState>((r) => { loadState = r; }));
+    rpc.claimDaily.mockResolvedValue({ claimed: true, amount: 20, state: state({ coins: 120 }) });
+    const { result, toasts } = setup();
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(rpc.fetchFishingState).toHaveBeenCalledTimes(1);
+    expect(rpc.claimDaily).not.toHaveBeenCalled();
+    await act(async () => { loadState(state({ coins: 100 })); await vi.advanceTimersByTimeAsync(0); });
+    expect(rpc.claimDaily).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(rpc.claimDaily).toHaveBeenCalledTimes(1);
+    expect(result.current.data.state?.coins).toBe(120);
+    expect(toasts).toEqual(["🪙 Điểm danh hôm nay: +20 xu"]);
+  });
+
   it("hands the species names and my hand fish to the canvas", async () => {
     rpc.fetchFishingState.mockResolvedValue(state({ fish: [{ id: "f1", species_id: "ca_ro", weight_g: 120, price: 5, caught_at: "x" }] }));
     rpc.claimDaily.mockResolvedValue({ claimed: false, amount: 0, state: state({ fish: [{ id: "f1", species_id: "ca_ro", weight_g: 120, price: 5, caught_at: "x" }] }) });
