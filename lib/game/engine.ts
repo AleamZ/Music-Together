@@ -96,6 +96,7 @@ export class GameEngine {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
     canvas.addEventListener("pointerdown", this.onPointerDown);
     this.resize();
   }
@@ -112,6 +113,7 @@ export class GameEngine {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
   }
 
@@ -249,8 +251,20 @@ export class GameEngine {
   };
 
   private readonly onBlur = (): void => {
-    this.keys = { ...NO_KEYS };
+    this.halt();
   };
+
+  private readonly onVisibilityChange = (): void => {
+    if (document.visibilityState === "hidden") this.halt();
+  };
+
+  /** Focus left the page or the tab was hidden: stop keyboard walking and send the stop now — a hidden tab may not
+   *  run another frame, and everyone else would see me walk on. A click/tap path goes on (others follow the same `pa`). */
+  private halt(): void {
+    this.keys = { ...NO_KEYS };
+    if (!this.local.path) setKeyboard(this.local, { x: 0, y: 0 });
+    this.announceMove(performance.now());
+  }
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (!this.inputEnabled || e.button !== 0) return;
@@ -343,14 +357,7 @@ export class GameEngine {
       const it = this.map.interactables.find((i) => i.id === id);
       if (it && inUseRange(it, this.local.pos)) this.cb.onInteract(id);
     }
-    if (!this.local.path) {
-      const m = this.localMove();
-      const changed = m.mv !== this.lastSent.mv || m.vx !== this.lastSent.vx || m.vy !== this.lastSent.vy;
-      if (changed || (m.mv && now - this.lastSent.at > KEEPALIVE_MS)) {
-        this.cb.onLocalMove(m);
-        this.lastSent = { mv: m.mv, vx: m.vx, vy: m.vy, at: now };
-      }
-    }
+    this.announceMove(now);
     const near = nearestInteractable(this.map, this.local.pos);
     if (near !== this.prompt) {
       this.prompt = near;
@@ -360,6 +367,18 @@ export class GameEngine {
     this.cam = cameraFor(this.local.display, this.vw, this.vh, this.map.width, this.map.height);
     for (const [id, b] of this.bubbles) if (b.until < now) this.bubbles.delete(id);
     this.reactions = this.reactions.filter((r) => now - r.born < REACTION_MS);
+  }
+
+  /** Keyboard walking started, stopped or turned → `mv` (plus a keep-alive every 3 s while walking). A path is
+   *  announced once, when it starts. */
+  private announceMove(now: number): void {
+    if (this.local.path) return;
+    const m = this.localMove();
+    const changed = m.mv !== this.lastSent.mv || m.vx !== this.lastSent.vx || m.vy !== this.lastSent.vy;
+    if (changed || (m.mv && now - this.lastSent.at > KEEPALIVE_MS)) {
+      this.cb.onLocalMove(m);
+      this.lastSent = { mv: m.mv, vx: m.vx, vy: m.vy, at: now };
+    }
   }
 
   private render(t: number): void {
