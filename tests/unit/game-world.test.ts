@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_LOOK } from "@/lib/game/character";
+import { DEFAULT_LOOK } from "@/lib/game/look";
 import type { Spot } from "@/lib/game/maps/types";
 import type { GameMessage } from "@/lib/game/net/protocol";
 import { RemoteWorld, type RosterEntry } from "@/lib/game/world";

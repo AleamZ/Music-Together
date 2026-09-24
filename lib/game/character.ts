@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { DEFAULT_LOOK } from "@/lib/game/look";
 import { HAIR_COLORS, HAIR_STYLES, SKIN_TONES, type ItemSlot, type Look } from "@/lib/game/types";
 
 export interface CatalogItem { id: string; slot: ItemSlot; name: string; price: number; starter: boolean; sort_order: number }
@@ -7,10 +8,7 @@ export interface CharacterRow {
   hat: string | null; top: string; bottom: string; shoes: string; neck: string | null;
 }
 
-export const DEFAULT_LOOK: Look = {
-  skin: "warm", hair: "short", hairColor: "black",
-  hat: "hat_nonla", top: "top_baba_yellow", bottom: "bottom_shorts_red", shoes: "shoes_dep_blue", neck: "neck_khanran",
-};
+export { DEFAULT_LOOK };
 
 function pick<T extends string>(list: readonly T[], v: string, fallback: T): T {
   return (list as readonly string[]).includes(v) ? (v as T) : fallback;

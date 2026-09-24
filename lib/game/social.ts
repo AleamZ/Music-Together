@@ -1,5 +1,5 @@
 import type { ChatMessage } from "@/lib/chat";
-import { DEFAULT_LOOK } from "@/lib/game/character";
+import { DEFAULT_LOOK } from "@/lib/game/look";
 import type { RosterEntry } from "@/lib/game/engine";
 import type { GameMap } from "@/lib/game/maps/types";
 import { assignSpots } from "@/lib/game/seating";

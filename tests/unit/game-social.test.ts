@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ChatMessage } from "@/lib/chat";
-import { DEFAULT_LOOK } from "@/lib/game/character";
+import { DEFAULT_LOOK } from "@/lib/game/look";
 import { badgesFor, buildRoster, freshChatBubbles, roleAccounts } from "@/lib/game/social";
 import type { Member } from "@/lib/supabase";
 

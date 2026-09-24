@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { assignSpots } from "@/lib/game/seating";
-import { wrapBubble } from "@/lib/game/text";
+import { graphemes, wrapBubble } from "@/lib/game/text";
 import type { Spot } from "@/lib/game/maps/types";
 
 const seats: Spot[] = [{ x: 1, y: 1, dir: "down" }, { x: 2, y: 2, dir: "down" }];
@@ -36,5 +36,27 @@ describe("wrapBubble", () => {
     expect(lines[0]).toHaveLength(28);
     expect(lines[1]).toHaveLength(28);
     expect(lines[1].endsWith("…")).toBe(true);
+  });
+});
+
+describe("wrapBubble — graphemes", () => {
+  const noLoneSurrogate = (s: string) => [...s].every((ch) => {
+    const cp = ch.codePointAt(0)!;
+    return cp < 0xd800 || cp > 0xdfff;
+  });
+  it("never cuts an emoji in half", () => {
+    const lines = wrapBubble("🎣".repeat(70));
+    expect(lines).toHaveLength(2);
+    expect(lines.every(noLoneSurrogate)).toBe(true);
+    expect(graphemes(lines[0])).toHaveLength(28);
+    expect(lines[1].endsWith("…")).toBe(true);
+    expect(graphemes(lines[1])).toHaveLength(28);
+  });
+  it("keeps decomposed Vietnamese letters whole (NFC)", () => {
+    const decomposed = "Cá lóc bông".normalize("NFD");
+    expect(wrapBubble(decomposed)).toEqual(["Cá lóc bông"]);
+  });
+  it("counts a letter with its accents as one character", () => {
+    expect(graphemes("ệ".normalize("NFD"))).toEqual(["ệ"]);
   });
 });
