@@ -131,7 +131,7 @@ begin
     perform public.start_cast(room, t3);
     raise exception 'expected not a member';
   exception when others then
-    assert sqlerrm <> 'expected not a member', 'non-members cannot cast';
+    assert sqlerrm = 'account is not a member of this room', sqlerrm;
   end;
 
   -- shrimp selected (2 left): cast, give up
