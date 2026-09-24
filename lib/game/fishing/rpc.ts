@@ -22,7 +22,10 @@ export function fetchFishingCatalog(): Promise<FishingCatalog> {
         species: ((sp.data ?? []) as SpeciesRow[]).map(speciesFromRow),
         items: ((it.data ?? []) as ShopItemRow[]).map(shopItemFromRow),
       };
-    })();
+    })().catch((e) => {
+      catalogPromise = null;
+      throw e;
+    });
   }
   return catalogPromise;
 }

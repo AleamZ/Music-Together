@@ -17,6 +17,14 @@ const chain = (rows: unknown[]) => {
   c.then = (resolve: (v: unknown) => unknown) => Promise.resolve({ data: rows, error: null }).then(resolve);
   return c;
 };
+/** The same chain, but awaiting it rejects: an error thrown rather than returned as { error }. */
+const rejecting = (err: unknown) => {
+  const c: Record<string, unknown> = {};
+  c.select = () => c;
+  c.order = () => c;
+  c.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => Promise.reject(err).then(resolve, reject);
+  return c;
+};
 
 beforeEach(() => {
   h.rpc.mockReset();
@@ -35,6 +43,16 @@ describe("fetchFishingCatalog", () => {
     expect(h.from).toHaveBeenCalledTimes(2);
     expect(a.species[0]).toMatchObject({ id: "ca_ro", pricePerKg: 45 });
     expect(a.items[0]).toMatchObject({ id: "rod_wood", starter: true, zonePct: 25 });
+  });
+
+  it("does not keep a rejected load: the next call queries again", async () => {
+    vi.resetModules(); // a fresh module: the test above left its catalog cached
+    const { fetchFishingCatalog: load } = await import("@/lib/game/fishing/rpc");
+    h.from.mockImplementation(() => rejecting(new TypeError("Failed to fetch")));
+    await expect(load()).rejects.toThrow("Failed to fetch");
+    h.from.mockImplementation(() => chain([]));
+    await expect(load()).resolves.toEqual({ species: [], items: [] });
+    expect(h.from).toHaveBeenCalledTimes(4);
   });
 });
 

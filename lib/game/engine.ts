@@ -355,7 +355,8 @@ export class GameEngine {
       // Enter keeps its normal meaning on a focused button or link (HUD controls)
       if (e.code === "Enter" && e.target instanceof HTMLElement && e.target.closest("button, a[href], [role='button']")) return;
       e.preventDefault();
-      this.trigger(this.prompt);
+      // a held key triggers once: a repeat would reach the next map's engine, and the hall's arrival is at the dock sign
+      if (!e.repeat) this.trigger(this.prompt);
     }
   };
 

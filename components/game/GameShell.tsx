@@ -151,7 +151,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     onEvent: (data) => canvasRef.current?.showReaction(data.accountId ?? null, data.emoji),
   });
 
-  // --- fishing: coins, bait, the daily check-in, the song bonus, digging (and, later, casting and the shops)
+  // --- fishing: coins, bait, the daily check-in, the song bonus, digging, casting and the fishing panels (bag, depot, shop, records)
   const getCanvas = useCallback(() => canvasRef.current, []);
   const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: showToast });
   const { interact: fishingInteract, promptText, cancelCast, onFishingInput } = fishing;

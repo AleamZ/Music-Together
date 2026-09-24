@@ -56,6 +56,19 @@ describe("useFishing", () => {
     expect(result.current).toMatchObject({ failed: false, state: { coins: 7 } });
   });
 
+  it("fetches a failed catalog again on the next reload, and only until it has loaded", async () => {
+    rpc.fetchFishingCatalog.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const { result } = renderHook(() => useFishing("tok", () => {}));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.catalog).toBeNull();
+    expect(rpc.fetchFishingCatalog).toHaveBeenCalledTimes(1);
+    await act(async () => { await result.current.reload(); });
+    expect(result.current.catalog?.species[0].id).toBe("ca_ro");
+    expect(rpc.fetchFishingCatalog).toHaveBeenCalledTimes(2);
+    await act(async () => { await result.current.reload(); });
+    expect(rpc.fetchFishingCatalog).toHaveBeenCalledTimes(2);
+  });
+
   it("replaces the state with each answer, and on an error toasts and fetches again", async () => {
     const errors: string[] = [];
     const { result } = renderHook(() => useFishing("tok", (t) => errors.push(t)));
@@ -95,7 +108,11 @@ describe("useFishing", () => {
 });
 
 describe("useFishingController", () => {
-  const canvas = { setSpecies: vi.fn(), setHand: vi.fn(), puff: vi.fn() } as unknown as GameCanvasHandle;
+  const spies = { setSpecies: vi.fn(), setHand: vi.fn(), puff: vi.fn() };
+  const canvas = spies as unknown as GameCanvasHandle;
+  beforeEach(() => {
+    for (const f of Object.values(spies)) f.mockClear();
+  });
   const setup = (current: QueueItem | null = null) => {
     const toasts: string[] = [];
     const hook = renderHook((p: { current: QueueItem | null }) => useFishingController({

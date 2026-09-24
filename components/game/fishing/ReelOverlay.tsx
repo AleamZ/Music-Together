@@ -9,6 +9,10 @@ import { createReel, fishFloor, stepReel, zoneHeight, type ReelParams } from "@/
 const UNKNOWN = "#6b6f74";
 const SILHOUETTE = FISH_ICONS.ca_ro.rows;
 
+/** A key typed into a text field is not a game key (spec §12); the same test as the engine's. */
+const isTyping = (t: EventTarget | null): boolean =>
+  t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+
 /** A fish shape in one colour (16 × 16). */
 function FishSilhouette({ color }: { color: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -56,10 +60,11 @@ export default function ReelOverlay({ params, rarity, onDone }: {
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.code !== "Space") return;
+      if (e.code !== "Space" || isTyping(e.target)) return;
       e.preventDefault();
       holding.current = true;
     };
+    // A release always lets go, like the engine's keyup: a hold never sticks when focus moved into a text field.
     const up = (e: KeyboardEvent) => {
       if (e.code === "Space") holding.current = false;
     };

@@ -14,6 +14,7 @@ export interface FishingData {
   /** fishing_state failed: the HUD shows "—" and offers "Tải lại giỏ đồ". */
   failed: boolean;
   catalog: FishingCatalog | null;
+  /** Fetches the state again, and the catalog too while it has not loaded. */
   reload: () => Promise<FishingState | null>;
   claimDaily: () => Promise<{ claimed: boolean; amount: number } | null>;
   dig: () => Promise<{ gained: number } | null>;
@@ -51,7 +52,20 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     setFailed(false);
   }, []);
 
+  // The catalog is read with the first state, and by every later reload until it has loaded. A failure stays silent:
+  // the bag and the shop show their loading text meanwhile.
+  const active = useRef(false);
+  const catalogLoaded = useRef(false);
+  const loadCatalog = useCallback(() => {
+    fetchFishingCatalog().then((c) => {
+      if (!active.current) return;
+      catalogLoaded.current = true;
+      setCatalog(c);
+    }).catch(() => {});
+  }, []);
+
   const reload = useCallback(async () => {
+    if (!catalogLoaded.current) loadCatalog();
     const n = ++seq.current;
     try {
       const s = await fetchFishingState(token);
@@ -61,16 +75,13 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
       if (n >= applied.current) setFailed(true);
       return null;
     }
-  }, [token, apply]);
+  }, [token, apply, loadCatalog]);
 
   useEffect(() => {
-    let active = true;
+    active.current = true;
     const first = setTimeout(() => void reload(), 0);
-    fetchFishingCatalog().then((c) => {
-      if (active) setCatalog(c);
-    }).catch(() => {});
     return () => {
-      active = false;
+      active.current = false;
       clearTimeout(first);
     };
   }, [reload]);

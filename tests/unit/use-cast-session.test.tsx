@@ -165,6 +165,40 @@ describe("ReelOverlay", () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
+
+  it("does not hold on a Space typed into a text field", () => {
+    let frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => { frames.push(cb); return frames.length; });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    const { container } = render(<>
+      <input aria-label="Chat" />
+      <ReelOverlay params={{ zonePct: 25, difficulty: 15, minReelMs: 2600, seed: 7 }} rarity={null} onDone={() => {}} />
+    </>);
+    let t = 0;
+    const play = (ms: number) => {
+      for (const end = t + ms; t < end;) {
+        t += 16;
+        const run = frames;
+        frames = [];
+        act(() => run.forEach((cb) => cb(t)));
+      }
+    };
+    /** The bottom edge of the green zone: it stays at 0 % unless the player holds. */
+    const zone = () => (container.querySelector("div[aria-hidden='true'] > div") as HTMLElement).style.bottom;
+    const chat = screen.getByRole("textbox", { name: "Chat" });
+    chat.focus();
+    const typed = fireEvent.keyDown(chat, { code: "Space", key: " " });
+    play(300);
+    expect(zone()).toBe("0%");
+    expect(typed).toBe(true); // not prevented: the space reaches the text field
+    fireEvent.keyUp(chat, { code: "Space", key: " " });
+    fireEvent.keyDown(document.body, { code: "Space", key: " " }); // outside a text field Space does hold
+    play(300);
+    expect(parseFloat(zone())).toBeGreaterThan(0);
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 });
 
 describe("CatchCard", () => {
