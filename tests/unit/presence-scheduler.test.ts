@@ -7,7 +7,7 @@ import type { PresenceMode } from "@/lib/presence-modes";
 const h = vi.hoisted(() => {
   const state = {
     subscribeCb: null as ((s: string) => void) | null,
-    calls: [] as { at: number; mode: unknown }[],
+    calls: [] as { at: number; mode: unknown; map: unknown }[],
     replies: [] as Array<string | Promise<string> | Error>,
     removed: 0,
   };
@@ -15,8 +15,8 @@ const h = vi.hoisted(() => {
     on() { return channel; },
     subscribe(cb: (s: string) => void) { state.subscribeCb = cb; return channel; },
     presenceState() { return {}; },
-    track(payload: { mode: unknown }) {
-      state.calls.push({ at: Date.now(), mode: payload.mode });
+    track(payload: { mode: unknown; map?: unknown }) {
+      state.calls.push({ at: Date.now(), mode: payload.mode, map: payload.map });
       const reply = state.replies.shift() ?? "ok";
       return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply);
     },
@@ -166,5 +166,41 @@ describe("trackPresence scheduler", () => {
     sub(); await adv(0);
     hd.unsubscribe(); resolveFirst("error"); await adv(60_000);
     expect(h.state.calls).toHaveLength(1);
+  });
+
+  it("publishes the map with the mode in one merged track, and never re-sends an acknowledged state", async () => {
+    const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "game", map: "hall" }, () => {});
+    sub(); await adv(0);
+    expect(h.state.calls.map((c) => c.map)).toEqual(["hall"]);
+    hd.setMap("pond"); await adv(400); hd.setMode("game"); await adv(1000);
+    expect(h.state.calls.map((c) => [c.mode, c.map])).toEqual([["game", "hall"], ["game", "pond"]]);
+    hd.setMap("pond"); await adv(60_000); expect(h.state.calls).toHaveLength(2);
+    hd.setMap("hall"); await adv(300); hd.setMap("pond"); await adv(10_000); expect(h.state.calls).toHaveLength(2);
+    hd.unsubscribe();
+  });
+
+  it("publishes map null in the classic view, whatever the last map was", async () => {
+    const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "game", map: "pond" }, () => {});
+    sub(); await adv(0);
+    hd.setMode("classic"); await adv(1000);
+    expect(h.state.calls.map((c) => [c.mode, c.map])).toEqual([["game", "pond"], ["classic", null]]);
+    hd.setMap("hall"); await adv(10_000); expect(h.state.calls).toHaveLength(2); // nothing visible changed
+    hd.setMode("game"); await adv(1000);
+    expect(h.state.calls.at(-1)).toMatchObject({ mode: "game", map: "hall" });
+    hd.unsubscribe();
+  });
+
+  it("shares the 4-per-30 s budget between map and mode changes", async () => {
+    const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "game", map: "hall" }, () => {});
+    sub(); await adv(0);
+    for (let i = 0; i < 12; i++) {
+      if (i % 2) hd.setMap(i % 4 === 1 ? "pond" : "hall");
+      else hd.setMode(i % 4 === 0 ? "classic" : "game");
+      await adv(1500);
+    }
+    await adv(120_000);
+    const ts = times();
+    for (const t of ts) expect(ts.filter((x) => x >= t && x < t + 30_000).length).toBeLessThanOrEqual(4);
+    hd.unsubscribe();
   });
 });

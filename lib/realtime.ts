@@ -1,4 +1,5 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { MapId } from "@/lib/game/maps/types";
 import { supabase, type Room, type Member, type QueueItem } from "@/lib/supabase";
 import {
   aggregatePresenceModes, presenceDelay, PRESENCE_BUDGET, type PresenceEntry, type PresenceMeta, type PresenceMode,
@@ -45,20 +46,30 @@ export function subscribeRoom(roomId: string, onState: (s: RoomState) => void): 
   return () => { cancelled = true; if (timer) clearTimeout(timer); void supabase.removeChannel(channel); };
 }
 
-export interface PresenceHandle { unsubscribe: () => void; setMode: (mode: PresenceMode) => void }
+export interface PresenceHandle {
+  unsubscribe: () => void;
+  setMode: (mode: PresenceMode) => void;
+  /** The game map I walk on (v14). Published only while the mode is "game" (classic → map null). */
+  setMap: (map: MapId) => void;
+}
 
-/** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13).
- *  track() calls are budgeted (Supabase allows 5 per 30 s): ≤ 4 calls per 30 s for mode changes; a re-track
- *  after a reconnect may use the 5th. Mode changes within 1 s are merged, a mode the server already
+interface Published { mode: PresenceMode; map: MapId | null }
+
+/** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13) and game map (v14).
+ *  track() calls are budgeted (Supabase allows 5 per 30 s): ≤ 4 calls per 30 s for mode and map changes together;
+ *  a re-track after a reconnect may use the 5th. Changes within 1 s are merged, a state the server already
  *  acknowledged is never re-sent, and failed tracks are retried. */
 export function trackPresence(
   roomId: string,
-  me: { memberId: string; name: string; mode: PresenceMode },
+  me: { memberId: string; name: string; mode: PresenceMode; map?: MapId },
   onChange: (entries: PresenceEntry[]) => void,
 ): PresenceHandle {
   const channel = supabase.channel(`presence:${roomId}`, { config: { presence: { key: me.memberId } } });
-  let wanted: PresenceMode = me.mode;        // the mode other members should see
-  let published: PresenceMode | null = null; // last mode the server acknowledged with 'ok'
+  let mode: PresenceMode = me.mode;          // what other members should see…
+  let map: MapId = me.map ?? "hall";
+  let published: Published | null = null;    // …and the last state the server acknowledged with 'ok'
+  const wanted = (): Published => ({ mode, map: mode === "game" ? map : null });
+  const isPublished = () => published !== null && published.mode === wanted().mode && published.map === wanted().map;
   let subscribed = false;
   let closed = false;
   let sending = false;
@@ -71,26 +82,26 @@ export function trackPresence(
   };
   const flush = async () => {
     timer = null;
-    if (closed || !subscribed || sending || wanted === published) return;
+    if (closed || !subscribed || sending || isPublished()) return;
     sending = true;
-    const mode = wanted;
+    const next = wanted();
     const now = Date.now();
     sentAt = [...sentAt.filter((t) => now - t < PRESENCE_BUDGET.windowMs), now];
     // A rejected call counts as failed (retried below) instead of leaving `sending` stuck.
-    const status = await channel.track({ name: me.name, online_at: new Date(now).toISOString(), mode })
+    const status = await channel.track({ name: me.name, online_at: new Date(now).toISOString(), mode: next.mode, map: next.map })
       .catch(() => "error" as const);
     sending = false;
     if (closed) return;
-    if (status === "ok") published = mode;
-    // The mode changed while the call was in flight, or the call failed/timed out → send again (budgeted).
-    if (wanted !== published) schedule(status === "ok" ? 0 : 1000);
+    if (status === "ok") published = next;
+    // The state changed while the call was in flight, or the call failed/timed out → send again (budgeted).
+    if (!isPublished()) schedule(status === "ok" ? 0 : 1000);
   };
   channel
     .on("presence", { event: "sync" }, emit)
     .on("presence", { event: "join" }, emit)
     .on("presence", { event: "leave" }, emit)
     .subscribe((status) => {
-      // A (re)join starts with none of our presence on the server → publish the wanted mode again;
+      // A (re)join starts with none of our presence on the server → publish the wanted state again;
       // this re-track may use the call kept in reserve (5th per 30 s) and never waits behind a pending
       // timer that was computed with the 4-call budget.
       if (status === "SUBSCRIBED") {
@@ -106,9 +117,14 @@ export function trackPresence(
       void supabase.removeChannel(channel);
     },
     setMode: (next) => {
-      if (closed || next === wanted) return;
-      wanted = next;
-      // The 1 s delay merges rapid toggles; A→B→A inside it sends nothing because wanted === published.
+      if (closed || next === mode) return;
+      mode = next;
+      // The 1 s delay merges rapid toggles; A→B→A inside it sends nothing because the wanted state is published.
+      schedule(1000);
+    },
+    setMap: (next) => {
+      if (closed || next === map) return;
+      map = next;
       schedule(1000);
     },
   };

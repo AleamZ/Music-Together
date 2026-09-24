@@ -84,7 +84,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const { looks, refresh } = useLooks(presence.map((p) => p.accountId).filter((id) => id !== accountId && memberIds.has(id)));
   useEffect(() => {
     canvasRef.current?.setRoster(buildRoster({
-      presence, members, room: { admin_member_id, dj_member_id }, localId: accountId, looks, map: HALL_SEATING,
+      presence, members, room: { admin_member_id, dj_member_id }, localId: accountId, looks, mapId: "hall", seating: HALL_SEATING,
     }));
   }, [presence, members, admin_member_id, dj_member_id, accountId, looks]);
 

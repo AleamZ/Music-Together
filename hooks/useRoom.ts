@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MapId } from "@/lib/game/maps/types";
 import { subscribeRoom, trackPresence, type PresenceHandle, type RoomState } from "@/lib/realtime";
 import type { PresenceEntry, PresenceMode } from "@/lib/presence-modes";
 import { supabase } from "@/lib/supabase";
@@ -11,6 +12,8 @@ import { readStoredMode } from "@/hooks/useViewMode";
 export interface RoomView {
   loading: boolean; state: RoomState; onlineIds: string[];
   presence: PresenceEntry[]; setPresenceMode: (m: PresenceMode) => void;
+  /** The game map I am on (published with the mode; shared presence budget). */
+  setPresenceMap: (m: MapId) => void;
   token: string; accountId: string; username: string; myMemberId: string | null;
   role: RoleFlags; kicked: boolean;
 }
@@ -25,6 +28,11 @@ export function useRoom(code: string): RoomView {
   const setPresenceMode = useCallback((m: PresenceMode) => {
     modeRef.current = m;
     presenceRef.current?.setMode(m);
+  }, []);
+  const mapRef = useRef<MapId>("hall");
+  const setPresenceMap = useCallback((m: MapId) => {
+    mapRef.current = m;
+    presenceRef.current?.setMap(m);
   }, []);
   const [loading, setLoading] = useState(true);
   // Latches true once we've ever been a member of THIS room, so a brand-new
@@ -55,7 +63,9 @@ export function useRoom(code: string): RoomView {
         if (accountId && s.members.some((m) => m.account_id === accountId)) setWasMember(true);
       });
       if (account) {
-        presenceHandle = trackPresence(roomId, { memberId: account.accountId, name: account.username, mode: modeRef.current ?? readStoredMode() }, setPresence);
+        presenceHandle = trackPresence(roomId, {
+          memberId: account.accountId, name: account.username, mode: modeRef.current ?? readStoredMode(), map: mapRef.current,
+        }, setPresence);
         presenceRef.current = presenceHandle;
       }
     })();
@@ -79,5 +89,8 @@ export function useRoom(code: string): RoomView {
   const kicked = wasMember && !!state.room && !myMemberId;
 
   const onlineIds = presence.map((p) => p.accountId);
-  return { loading, state, onlineIds, presence, setPresenceMode, token: token ?? "", accountId, username: account?.username ?? "", myMemberId, role, kicked };
+  return {
+    loading, state, onlineIds, presence, setPresenceMode, setPresenceMap, token: token ?? "", accountId, username: account?.username ?? "",
+    myMemberId, role, kicked,
+  };
 }
