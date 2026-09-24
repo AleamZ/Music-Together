@@ -159,8 +159,8 @@ body (legs, bottom, torso, head) → hair → hat — one hair layer per directi
 | `s` `S` | skin / skin shade | skin tone |
 | `e` `b` `m` | eyes+brows / blush / mouth | skin tone |
 | `t` `T` `u` `K` | top main / shade / highlight / detail (pockets, buttons) | top item (`K` = main for plain tees) |
-| `q` `Q` | neck scarf band light / dark | neck item; without scarf → top main / highlight (reads as a collar) |
-| `r` `R` | front scarf tails light / dark | neck item; without scarf → top main / highlight |
+| `q` `Q` | neck scarf band light / dark | neck item; without scarf → top main (the neckline reads as part of the shirt) |
+| `r` `R` | front scarf tails light / dark | neck item; without scarf → top main |
 | `v` `V` `n` | side-view scarf tails light / dark / outline | neck item + outline; transparent without a scarf |
 | `p` `P` `l` | bottom main / shade / side stripe | bottom item |
 | `j` | hem | outline for shorts, bottom shade for long pants |
