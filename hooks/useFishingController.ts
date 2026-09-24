@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
+import { useCastSession, type CastSession, type CastView } from "@/hooks/useCastSession";
 import { useFishing, type FishingData } from "@/hooks/useFishing";
 import {
-  BAIT_FULL, dailyText, digText, digWaitText, LOADING, NOT_LOADED, promptText as promptFor, SONG_BONUS,
+  BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NOT_LOADED, promptText as promptFor, SONG_BONUS,
 } from "@/lib/game/fishing/messages";
 import { baitTotal, castWaitMin, digWaitSec, handFish } from "@/lib/game/fishing/state";
 import type { Interactable } from "@/lib/game/maps/types";
@@ -14,6 +15,17 @@ export type FishingPanel = "bag" | "depot" | "shop" | "records";
 
 export interface FishingController {
   data: FishingData;
+  /** The cast in progress (spec §6.1). */
+  cast: CastView;
+  caught: CastSession["caught"];
+  dismissCatch: () => void;
+  hook: () => void;
+  reelIn: () => void;
+  reelDone: (caught: boolean) => void;
+  /** Give up the cast quietly (a portal). */
+  cancelCast: () => void;
+  /** Canvas input while the rod is out: a tap hooks at the bite, Esc reels in while waiting. */
+  onFishingInput: (kind: "tap" | "cancel") => void;
   panel: FishingPanel | null;
   openPanel: (p: FishingPanel) => void;
   closePanel: () => void;
@@ -41,8 +53,9 @@ const SONG_BONUS_DELAY_MS = 1500;
 
 /** Everything fishing for the game shell (spec §6, §10): the state, the daily check-in, the song bonus, digging,
  *  the HUD prompts and which fishing panel is open. */
-export function useFishingController({ token, accountId, canvas, current, toast }: FishingControllerOptions): FishingController {
+export function useFishingController({ token, roomId, accountId, canvas, current, toast }: FishingControllerOptions): FishingController {
   const data = useFishing(token, toast);
+  const session = useCastSession({ roomId, data, canvas, toast });
   const { state, failed, catalog, reload, claimDaily, dig } = data;
   const [panel, setPanel] = useState<FishingPanel | null>(null);
   const stateRef = useRef(state);
@@ -151,18 +164,42 @@ export function useFishingController({ token, accountId, canvas, current, toast 
     }, DIG_MS);
   }, [canvas, dig, later]);
 
+  // --- casting: the checks of spec §6.1, then the session takes over
+  const { cast: castAt, hook, reelIn } = session;
+  const fishAt = useCallback((it: Interactable) => {
+    const refusal = castRefusal(stateRef.current, failedRef.current, Date.now(), canvas()?.anglerNear(it.use) ?? false);
+    if (refusal) toastRef.current(refusal);
+    else castAt(it);
+  }, [canvas, castAt]);
+  const castPhase = session.view.phase;
+  const onFishingInput = useCallback((kind: "tap" | "cancel") => {
+    if (kind === "tap" && castPhase === "bite") hook();
+    else if (kind === "cancel" && castPhase === "waiting") reelIn();
+  }, [castPhase, hook, reelIn]);
+
   const interact = useCallback((it: Interactable): boolean => {
     switch (it.kind) {
       case "dig_spot":
         digAt(it);
         return true;
+      case "fish_spot":
+        fishAt(it);
+        return true;
       default:
         return false;
     }
-  }, [digAt]);
+  }, [digAt, fishAt]);
 
   return {
     data,
+    cast: session.view,
+    caught: session.caught,
+    dismissCatch: session.dismissCatch,
+    hook,
+    reelIn,
+    reelDone: session.reelDone,
+    cancelCast: session.abandon,
+    onFishingInput,
     panel,
     openPanel: setPanel,
     closePanel: useCallback(() => setPanel(null), []),

@@ -25,6 +25,7 @@ import type { RoomDerived } from "@/lib/room-derived";
 import { getCategoryLabel } from "@/lib/sponsorblock";
 import CharacterEditor from "./CharacterEditor";
 import FishingHud from "./fishing/FishingHud";
+import FishingOverlays from "./fishing/FishingOverlays";
 import GameCanvas, { type GameCanvasHandle } from "./GameCanvas";
 import HudChatBar from "./HudChatBar";
 import HudNowPlaying from "./HudNowPlaying";
@@ -149,7 +150,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   // --- fishing: coins, bait, the daily check-in, the song bonus, digging (and, later, casting and the shops)
   const getCanvas = useCallback(() => canvasRef.current, []);
   const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: showToast });
-  const { interact: fishingInteract, promptText } = fishing;
+  const { interact: fishingInteract, promptText, cancelCast, onFishingInput } = fishing;
 
   // --- the camera may lift the character above the bottom HUD
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -172,12 +173,14 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         setPanel("board");
         break;
       case "portal":
-        if (it.to) travelTo(it.to);
+        if (!it.to) break;
+        cancelCast();
+        travelTo(it.to);
         break;
       default:
         if (!fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract]);
+  }, [travelTo, showToast, fishingInteract, cancelCast]);
 
   const leaveBroken = useCallback((message: string) => {
     window.alert(message);
@@ -185,7 +188,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   }, [onExitGame]);
   const onUnsupported = useCallback(() => leaveBroken("Trình duyệt này không vẽ được thế giới game — quay về giao diện cũ."), [leaveBroken]);
   const onFatal = useCallback(() => leaveBroken("Thế giới game gặp lỗi — quay về giao diện cũ."), [leaveBroken]);
-  const onFishingInput = useCallback(() => {}, []);
 
   const onSaved = useCallback((look: Look) => {
     setSaved(look);
@@ -283,6 +285,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           {promptText(prompt)}
         </button>
       )}
+
+      <FishingOverlays fishing={fishing} />
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
         <HudChatBar
