@@ -225,9 +225,7 @@ export class GameEngine {
     this.local.pos = { x: at.x, y: at.y };
     this.local.display = { x: at.x, y: at.y };
     this.local.facing = facing;
-    const m = this.localMove();
-    this.cb.onLocalMove(m);
-    this.lastSent = { mv: m.mv, vx: m.vx, vy: m.vy, at: performance.now() };
+    this.announceNow();
   }
 
   /** What my rod shows. While it is out, movement, click-to-move and interactables are off. */
@@ -237,6 +235,11 @@ export class GameEngine {
     if (f.phase !== "idle") {
       this.keys = { ...NO_KEYS };
       this.pendingInteract = null;
+      if (this.local.path) {
+        // a click/tap walk stops here too — and say so, or the others follow its `pa` to the end
+        setKeyboard(this.local, { x: 0, y: 0 });
+        this.announceNow();
+      }
     }
   }
 
@@ -504,6 +507,13 @@ export class GameEngine {
       this.cb.onLocalMove(m);
       this.lastSent = { mv: m.mv, vx: m.vx, vy: m.vy, at: now };
     }
+  }
+
+  /** Send my state now, changed or not: a jump or a stopped path, which the change check above would miss. */
+  private announceNow(): void {
+    const m = this.localMove();
+    this.cb.onLocalMove(m);
+    this.lastSent = { mv: m.mv, vx: m.vx, vy: m.vy, at: performance.now() };
   }
 
   private render(t: number): void {
