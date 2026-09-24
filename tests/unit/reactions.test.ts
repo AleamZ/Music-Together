@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { throttled, REACTION_EMOJIS, type ReactionData } from "@/lib/reactions";
+import { parseReaction, throttled, REACTION_EMOJIS, type ReactionData } from "@/lib/reactions";
+
+describe("parseReaction", () => {
+  it("reads the broadcast envelope and keeps username + accountId", () => {
+    expect(parseReaction({ type: "broadcast", event: "react", payload: { emoji: "🔥", username: " hunglt ", accountId: "acc-1" } }))
+      .toEqual({ emoji: "🔥", username: "hunglt", accountId: "acc-1" });
+  });
+  it("accepts old clients: bare emoji strings and payloads without accountId", () => {
+    expect(parseReaction({ payload: "🎉" })).toEqual({ emoji: "🎉" });
+    expect(parseReaction({ payload: { emoji: "👏", username: "" } })).toEqual({ emoji: "👏" });
+  });
+  it("drops unknown emojis and junk", () => {
+    expect(parseReaction({ payload: { emoji: "💩" } })).toBeNull();
+    expect(parseReaction({ payload: 42 })).toBeNull();
+    expect(parseReaction(null)).toBeNull();
+  });
+});
 
 describe("throttled", () => {
   it("allows the first call (lastAt null)", () => {

@@ -8,6 +8,7 @@ import { usePlayback } from "@/hooks/usePlayback";
 import { useSponsorBlock } from "@/hooks/useSponsorBlock";
 import { deriveRoom } from "@/lib/room-derived";
 import BrandSpinner from "@/components/brand/BrandSpinner";
+import GameErrorBoundary from "@/components/game/GameErrorBoundary";
 import RoomShell from "./RoomShell";
 
 // Game code is only downloaded by members who switch to game mode.
@@ -38,7 +39,16 @@ export default function RoomSession({ view }: { view: RoomView }) {
   useEffect(() => { setPresenceMode(mode); }, [mode, setPresenceMode]);
 
   if (mode === "game") {
-    return <GameShell view={view} derived={derived} playback={playback} sponsorBlock={sponsorBlock} onExitGame={() => setMode("classic")} />;
+    return (
+      <GameErrorBoundary
+        onError={() => {
+          window.alert("Chế độ game gặp lỗi — đã quay về giao diện cũ.");
+          setMode("classic");
+        }}
+      >
+        <GameShell view={view} derived={derived} playback={playback} sponsorBlock={sponsorBlock} onExitGame={() => setMode("classic")} />
+      </GameErrorBoundary>
+    );
   }
   return <RoomShell view={view} derived={derived} playback={playback} sponsorBlock={sponsorBlock} onEnterGame={() => setMode("game")} />;
 }
