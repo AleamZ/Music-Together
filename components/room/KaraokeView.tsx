@@ -317,41 +317,47 @@ export default function KaraokeView({
 
   return (
     <div
-      className={`relative flex flex-col w-full h-full select-none ${fullscreen ? "p-4 sm:p-8" : "p-2 sm:p-3"
-        }`}
+      className={`relative flex flex-col w-full h-full select-none ${
+        fullscreen ? "p-4 sm:p-8" : "p-2 sm:p-3"
+      }`}
     >
       {/* Top Controls Bar */}
-      <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider ${themeStyles.badgeBg}`}>
+      <div className="flex flex-wrap items-center justify-between gap-1.5 pb-2 mb-1.5 border-b border-white/10 shrink-0">
+        {/* Left: Badge & Fullscreen Hint */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span
+            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider whitespace-nowrap shrink-0 shadow-sm ${themeStyles.badgeBg}`}
+          >
             {hasSynced ? "🎤 KARAOKE SYNC" : "📄 LỜI BÀI HÁT"}
           </span>
-          {canSeek && hasSynced && (
-            <span className="text-[10px] text-white/40 hidden sm:inline">
+          {canSeek && hasSynced && fullscreen && (
+            <span className="text-[10px] text-white/40 whitespace-nowrap hidden lg:inline">
               (Bấm vào câu hát để tua)
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Right: Controls & Adjusters */}
+        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Sync Offset Adjuster */}
           {hasSynced && onChangeOffset && (
             <div
-              className="flex items-center gap-1 bg-white/5 border border-white/15 rounded px-1.5 py-0.5 text-[11px] font-mono text-white/80"
+              className="inline-flex items-center gap-0.5 bg-white/10 hover:bg-white/15 border border-white/15 rounded-lg px-1.5 py-0.5 text-[10px] sm:text-[11px] font-mono text-white/90 whitespace-nowrap shrink-0 transition-colors"
               title="Căn chỉnh độ lệch thời gian (Offset) nếu lời chạy nhanh/chậm hơn video"
             >
-              <span className="text-[10px] text-white/40 hidden md:inline">Lệch:</span>
+              <span className="text-[9px] text-white/40 hidden sm:inline mr-0.5">Lệch:</span>
               <button
                 type="button"
                 onClick={() => onChangeOffset(offsetMs - 500)}
-                className="px-1 hover:text-gold font-bold transition-colors cursor-pointer"
+                className="px-1 py-0.2 hover:text-gold hover:bg-white/10 rounded font-bold transition-all cursor-pointer"
                 title="Lùi lời 0.5s (-0.5s) khi lời hát bị nhanh hơn ca sĩ"
               >
                 -0.5s
               </button>
               <span
-                className={`px-1 font-bold ${offsetMs !== 0 ? "text-gold" : "text-white/50"
-                  }`}
+                className={`px-1 font-bold ${
+                  offsetMs !== 0 ? "text-gold" : "text-white/50"
+                }`}
               >
                 {offsetMs > 0
                   ? `+${(offsetMs / 1000).toFixed(1)}s`
@@ -360,7 +366,7 @@ export default function KaraokeView({
               <button
                 type="button"
                 onClick={() => onChangeOffset(offsetMs + 500)}
-                className="px-1 hover:text-gold font-bold transition-colors cursor-pointer"
+                className="px-1 py-0.2 hover:text-gold hover:bg-white/10 rounded font-bold transition-all cursor-pointer"
                 title="Tiến lời 0.5s (+0.5s) khi lời hát bị chậm hơn ca sĩ"
               >
                 +0.5s
@@ -372,7 +378,7 @@ export default function KaraokeView({
                     onChangeOffset(0);
                     setToastMessage("Đã đặt lại độ lệch (0.0s)");
                   }}
-                  className="text-[9px] text-white/40 hover:text-white ml-0.5 cursor-pointer font-bold"
+                  className="text-[9px] text-white/40 hover:text-white px-1 py-0.2 hover:bg-white/10 rounded cursor-pointer font-bold"
                   title="Đặt lại độ lệch về 0.0s"
                 >
                   ↺
@@ -391,12 +397,12 @@ export default function KaraokeView({
                   const sec = (suggestedIntroOffsetMs / 1000).toFixed(1);
                   setToastMessage(`💡 Đã bù intro MV (${suggestedIntroOffsetMs >= 0 ? `+${sec}s` : `${sec}s`})`);
                 }}
-                className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/25 to-yellow-500/25 hover:from-amber-400 hover:to-yellow-400 text-amber-200 hover:text-black border border-amber-400/60 rounded-full px-2.5 py-0.5 text-[11px] font-bold shadow-[0_0_12px_rgba(251,191,36,0.25)] hover:shadow-[0_0_16px_rgba(251,191,36,0.6)] hover:scale-105 transition-all cursor-pointer"
+                className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-500/25 to-yellow-500/25 hover:from-amber-400 hover:to-yellow-400 text-amber-200 hover:text-black border border-amber-400/60 rounded-lg px-2 py-0.5 text-[10px] sm:text-[11px] font-bold shadow-md hover:scale-105 transition-all cursor-pointer whitespace-nowrap shrink-0"
                 title="Phát hiện đoạn intro/thoại đầu MV từ SponsorBlock. Bấm để tự động bù lệch cho bài hát"
               >
                 <span className="animate-pulse">💡</span>
-                <span>Khớp intro MV</span>
-                <span className="font-mono">({(suggestedIntroOffsetMs / 1000).toFixed(1)}s)</span>
+                <span>Intro</span>
+                <span className="font-mono text-[9px] sm:text-[10px]">({(suggestedIntroOffsetMs / 1000).toFixed(1)}s)</span>
               </button>
             ) : (
               <button
@@ -405,13 +411,12 @@ export default function KaraokeView({
                   onChangeOffset(0);
                   setToastMessage("Đã huỷ bù intro (0.0s)");
                 }}
-                className="flex items-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all cursor-pointer"
+                className="inline-flex items-center gap-1 bg-emerald-500/25 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 rounded-lg px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0"
                 title="Đang áp dụng mốc bù intro SponsorBlock. Bấm để huỷ bỏ"
               >
-                <span>✓</span>
-                <span>Đã khớp intro</span>
-                <span className="font-mono text-emerald-200">({(suggestedIntroOffsetMs / 1000).toFixed(1)}s)</span>
-                <span className="text-[10px] text-white/40 hover:text-white ml-0.5 font-bold">✕</span>
+                <span>✓ Intro</span>
+                <span className="font-mono text-[9px] sm:text-[10px] text-emerald-300">({(suggestedIntroOffsetMs / 1000).toFixed(1)}s)</span>
+                <span className="text-[9px] text-white/50 hover:text-white ml-0.5 font-bold">✕</span>
               </button>
             )
           )}
@@ -420,12 +425,14 @@ export default function KaraokeView({
           <button
             type="button"
             onClick={() => setAlign((prev) => (prev === "left" ? "center" : "left"))}
-            className="text-[11px] px-2 py-0.5 rounded border border-white/15 bg-white/5 hover:bg-white/15 text-white/70 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] px-1.5 sm:px-2 py-0.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/15 text-white/80 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             title={align === "left" ? "Đổi sang căn giữa" : "Đổi sang căn lề trái (chuẩn Apple Music)"}
           >
-            {align === "left" ? "⇤ Căn trái" : "≡ Căn giữa"}
+            <span>{align === "left" ? "⇤" : "≡"}</span>
+            <span className="hidden sm:inline">{align === "left" ? "Trái" : "Giữa"}</span>
           </button>
 
+          {/* Search Button */}
           <button
             type="button"
             onClick={() => {
@@ -435,16 +442,18 @@ export default function KaraokeView({
                 setShowSearchBox((prev) => !prev);
               }
             }}
-            className="text-[11px] px-2 py-0.5 rounded border border-white/20 bg-white/5 hover:bg-white/15 text-white/80 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] px-1.5 sm:px-2 py-0.5 rounded-lg border border-white/20 bg-white/5 hover:bg-white/15 text-white/80 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             title="Tìm kiếm & chọn bản lời bài hát phù hợp"
           >
-            🔍 {onOpenSearchModal ? "Tìm lời" : showSearchBox ? "Đóng tìm" : "Tìm lời"}
+            <span>🔍</span>
+            <span className="hidden sm:inline">{onOpenSearchModal ? "Tìm lời" : showSearchBox ? "Đóng" : "Tìm lời"}</span>
           </button>
+
           {fullscreen && onCloseFullscreen && (
             <button
               type="button"
               onClick={onCloseFullscreen}
-              className="text-sm px-2.5 py-0.5 rounded-lg border border-white/30 bg-black/40 hover:bg-white/20 text-white font-bold transition-all cursor-pointer"
+              className="text-sm px-2.5 py-0.5 rounded-lg border border-white/30 bg-black/40 hover:bg-white/20 text-white font-bold transition-all cursor-pointer whitespace-nowrap shrink-0"
               title="Đóng chế độ toàn màn hình"
             >
               ✕
@@ -493,10 +502,11 @@ export default function KaraokeView({
           WebkitMaskImage:
             "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
         }}
-        className={`relative flex-1 overflow-y-auto overflow-x-hidden min-h-0 space-y-5 sm:space-y-7 no-scrollbar ${align === "left"
-            ? "text-left max-w-2xl mx-auto px-4 sm:px-10"
-            : "text-center px-4 sm:px-8"
-          } ${fullscreen ? "py-[34vh]" : "py-24 sm:py-28"}`}
+        className={`relative flex-1 overflow-y-auto overflow-x-hidden min-h-0 space-y-4 sm:space-y-6 no-scrollbar ${
+          align === "left"
+            ? "text-left max-w-2xl mx-auto px-3 sm:px-6"
+            : "text-center px-3 sm:px-6"
+        } ${fullscreen ? "py-[30vh]" : "py-8 sm:py-12"}`}
       >
         {loading && (
           <div className="flex flex-col items-center justify-center h-48 gap-2 text-white/70">

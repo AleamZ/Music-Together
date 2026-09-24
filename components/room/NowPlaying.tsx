@@ -168,101 +168,108 @@ export default function NowPlaying(p: NowPlayingProps) {
 
   const renderCenterpiece = (
     turntableEl: React.ReactNode,
-    customClass = "w-[210px] sm:w-[240px] h-[190px] sm:h-[220px]"
-  ) => (
-    <div className="flex flex-col items-center shrink-0">
-      <div className="flex items-center gap-1 mb-2 px-2 py-0.5 rounded-full bg-black/50 border border-white/10 text-[9px] font-mono">
-        <button
-          type="button"
-          onClick={() => setViewMode("turntable")}
-          className={`px-2 py-0.5 rounded-full transition-all cursor-pointer ${
-            viewMode === "turntable"
-              ? "bg-white/20 text-white font-bold"
-              : "text-white/50 hover:text-white"
-          }`}
-          title="Xem hoạt cảnh mâm đĩa"
-        >
-          💿 ĐĨA NHẠC
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("lyrics")}
-          className={`px-2 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
-            viewMode === "lyrics"
-              ? "bg-white/20 text-white font-bold"
-              : "text-white/50 hover:text-white"
-          }`}
-          title="Xem lời bài hát Karaoke"
-        >
-          <span>🎤</span>
-          <span>LỜI</span>
-          {lyricsHook.hasSynced && (
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsKaraokeModalOpen(true)}
-          className="px-1.5 py-0.5 text-white/50 hover:text-white transition-colors cursor-pointer"
-          title="Mở toàn màn hình sân khấu Karaoke"
-        >
-          ⛶
-        </button>
-        {p.onToggleSponsorBlock && (
+    customClass = "w-[210px] sm:w-[240px] h-[190px] sm:h-[220px]",
+    lyricsClass?: string
+  ) => {
+    const activeLyricsClass =
+      lyricsClass ||
+      "w-full max-w-[340px] sm:max-w-[380px] md:w-[300px] lg:w-[340px] h-[250px] sm:h-[280px]";
+
+    return (
+      <div className={`flex flex-col items-center shrink-0 ${viewMode === "lyrics" ? "w-full md:w-auto" : ""}`}>
+        <div className="flex items-center gap-1 mb-2 px-2 py-0.5 rounded-full bg-black/50 border border-white/10 text-[9px] font-mono">
           <button
             type="button"
-            onClick={p.onToggleSponsorBlock}
-            className={`px-2 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
-              p.sponsorBlockEnabled
-                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold"
-                : "text-white/40 hover:text-white/70"
+            onClick={() => setViewMode("turntable")}
+            className={`px-2 py-0.5 rounded-full transition-all cursor-pointer ${
+              viewMode === "turntable"
+                ? "bg-white/20 text-white font-bold"
+                : "text-white/50 hover:text-white"
             }`}
-            title={
-              p.sponsorBlockEnabled
-                ? "Tự động bỏ qua đoạn quảng cáo/tài trợ: ĐANG BẬT (Bấm để tắt)"
-                : "Tự động bỏ qua đoạn quảng cáo/tài trợ: ĐÃ TẮT (Bấm để bật)"
-            }
+            title="Xem hoạt cảnh mâm đĩa"
           >
-            <span>🛡️</span>
-            <span>{p.sponsorBlockEnabled ? "BỎ QUA QC" : "QC: TẮT"}</span>
-            {p.sponsorSegments && p.sponsorSegments.length > 0 && p.sponsorBlockEnabled && (
-              <span
-                className="px-1 py-0.2 text-[8px] bg-amber-400 text-black font-black rounded-full"
-                title={`Có ${p.sponsorSegments.length} đoạn sponsor sẽ được bỏ qua`}
-              >
-                {p.sponsorSegments.length}
-              </span>
+            💿 ĐĨA NHẠC
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("lyrics")}
+            className={`px-2 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
+              viewMode === "lyrics"
+                ? "bg-white/20 text-white font-bold"
+                : "text-white/50 hover:text-white"
+            }`}
+            title="Xem lời bài hát Karaoke"
+          >
+            <span>🎤</span>
+            <span>LỜI</span>
+            {lyricsHook.hasSynced && (
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => setIsKaraokeModalOpen(true)}
+            className="px-1.5 py-0.5 text-white/50 hover:text-white transition-colors cursor-pointer"
+            title="Mở toàn màn hình sân khấu Karaoke"
+          >
+            ⛶
+          </button>
+          {p.onToggleSponsorBlock && (
+            <button
+              type="button"
+              onClick={p.onToggleSponsorBlock}
+              className={`px-2 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
+                p.sponsorBlockEnabled
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold"
+                  : "text-white/40 hover:text-white/70"
+              }`}
+              title={
+                p.sponsorBlockEnabled
+                  ? "Tự động bỏ qua đoạn quảng cáo/tài trợ: ĐANG BẬT (Bấm để tắt)"
+                  : "Tự động bỏ qua đoạn quảng cáo/tài trợ: ĐÃ TẮT (Bấm để bật)"
+              }
+            >
+              <span>🛡️</span>
+              <span>{p.sponsorBlockEnabled ? "BỎ QUA QC" : "QC: TẮT"}</span>
+              {p.sponsorSegments && p.sponsorSegments.length > 0 && p.sponsorBlockEnabled && (
+                <span
+                  className="px-1 py-0.2 text-[8px] bg-amber-400 text-black font-black rounded-full"
+                  title={`Có ${p.sponsorSegments.length} đoạn sponsor sẽ được bỏ qua`}
+                >
+                  {p.sponsorSegments.length}
+                </span>
+              )}
+            </button>
+          )}
+        </div>
+
+        {viewMode === "turntable" ? (
+          turntableEl
+        ) : (
+          <div
+            className={`${activeLyricsClass} rounded-xl border border-white/20 bg-black/60 backdrop-blur-md overflow-hidden flex flex-col p-1 shadow-inner relative transition-all duration-300`}
+          >
+            <KaraokeView
+              lines={lyricsHook.lines}
+              activeLineIndex={lyricsHook.activeLineIndex}
+              loading={lyricsHook.loading}
+              error={lyricsHook.error}
+              hasSynced={lyricsHook.hasSynced}
+              canSeek={p.canControl}
+              onSeekMs={p.onSeekMs}
+              onSearchManual={lyricsHook.searchManual}
+              onOpenSearchModal={() => setIsSearchModalOpen(true)}
+              elapsedMs={elapsed}
+              isPlaying={room.is_playing}
+              offsetMs={lyricsHook.offsetMs}
+              onChangeOffset={(off) => lyricsHook.setOffsetMs(off, p.canControl)}
+              suggestedIntroOffsetMs={suggestedIntroOffsetMs}
+            />
+          </div>
         )}
       </div>
-
-      {viewMode === "turntable" ? (
-        turntableEl
-      ) : (
-        <div
-          className={`${customClass} rounded-xl border border-white/20 bg-black/60 backdrop-blur-md overflow-hidden flex flex-col p-1 shadow-inner relative`}
-        >
-          <KaraokeView
-            lines={lyricsHook.lines}
-            activeLineIndex={lyricsHook.activeLineIndex}
-            loading={lyricsHook.loading}
-            error={lyricsHook.error}
-            hasSynced={lyricsHook.hasSynced}
-            canSeek={p.canControl}
-            onSeekMs={p.onSeekMs}
-            onSearchManual={lyricsHook.searchManual}
-            onOpenSearchModal={() => setIsSearchModalOpen(true)}
-            elapsedMs={elapsed}
-            isPlaying={room.is_playing}
-            offsetMs={lyricsHook.offsetMs}
-            onChangeOffset={(off) => lyricsHook.setOffsetMs(off, p.canControl)}
-            suggestedIntroOffsetMs={suggestedIntroOffsetMs}
-          />
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   const modalElement = (
     <>
@@ -1536,7 +1543,8 @@ export default function NowPlaying(p: NowPlayingProps) {
         <DragonCorners size={64} />
         {renderCenterpiece(
           <Turntable spinning={room.is_playing && !!current} thumbnail={current?.thumbnail_url} />,
-          "w-[240px] sm:w-[280px] h-[210px] sm:h-[230px]"
+          "w-[240px] sm:w-[280px] h-[210px] sm:h-[230px]",
+          "w-full max-w-[560px] h-[280px] sm:h-[320px]"
         )}
         {current ? (
           <div className="max-w-[92%] flex items-center justify-center gap-2.5 sm:gap-3">
