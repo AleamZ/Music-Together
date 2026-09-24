@@ -28,7 +28,7 @@ describe("RemoteWorld: re-entering the world after a bye", () => {
   it("hello re-creates the walker at the spawn, hidden until the grace passes", () => {
     const w = afterBye();
     w.hello("ann", 2000);
-    expect(w.actors.get("ann")?.pos).toEqual(map.spawn);
+    expect(w.actors.get("ann")?.pos).toEqual({ x: map.spawn.x, y: map.spawn.y });
     expect(w.visible("ann", 2000 + GRACE - 1, GRACE)).toBe(false);
     expect(w.visible("ann", 2000 + GRACE, GRACE)).toBe(true);
   });
@@ -56,7 +56,7 @@ describe("RemoteWorld: re-entering the world after a bye", () => {
     w.setRoster([seated("ann")], 2000); // Ann switched to the classic view
     expect(w.actors.has("ann")).toBe(false);
     w.setRoster([walking("ann")], 3000); // …and back to the game
-    expect(w.actors.get("ann")?.pos).toEqual(map.spawn);
+    expect(w.actors.get("ann")?.pos).toEqual({ x: map.spawn.x, y: map.spawn.y });
     expect(w.visible("ann", 3000, GRACE)).toBe(false);
   });
 });
@@ -127,7 +127,7 @@ describe("RemoteWorld: visibility", () => {
   it("a walker with no state yet is hidden until the caller's grace passes", () => {
     const w = new RemoteWorld(map, "me");
     w.setRoster([walking("ann")], 1000);
-    expect(w.actors.get("ann")?.pos).toEqual(map.spawn);
+    expect(w.actors.get("ann")?.pos).toEqual({ x: map.spawn.x, y: map.spawn.y });
     expect(w.visible("ann", 1000, GRACE)).toBe(false);
     expect(w.visible("ann", 1000 + GRACE - 1, GRACE)).toBe(false);
     expect(w.visible("ann", 1000 + GRACE, GRACE)).toBe(true);

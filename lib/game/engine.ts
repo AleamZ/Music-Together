@@ -1,7 +1,7 @@
 import { createActor, setKeyboard, setPath, tickActor, walkFrame, type Actor } from "@/lib/game/actor";
 import { getCharacterFrames } from "@/lib/game/art/raster";
-import type { HallArt } from "@/lib/game/maps/hall-art";
-import type { GameMap, InteractId } from "@/lib/game/maps/types";
+import type { SceneArt } from "@/lib/game/maps/scene-art";
+import type { GameMap, Interactable } from "@/lib/game/maps/types";
 import { inputDir, type KeyState } from "@/lib/game/movement";
 import { facingToCode, MAX_PATH_POINTS, type FacingCode, type GameMessage, type Unit } from "@/lib/game/net/protocol";
 import { unseenGraceMs } from "@/lib/game/net/replies";
@@ -20,8 +20,8 @@ export interface EngineCallbacks {
   onLocalMove: (m: LocalMoveMsg) => void;
   /** A click/tap path started. */
   onLocalPath: (m: { x: number; y: number; pts: Array<[number, number]> }) => void;
-  onInteract: (id: InteractId) => void;
-  onPromptChange: (id: InteractId | null) => void;
+  onInteract: (it: Interactable) => void;
+  onPromptChange: (it: Interactable | null) => void;
   onActorClick: (accountId: string) => void;
 }
 
@@ -48,7 +48,7 @@ const NO_KEYS: KeyState = { up: false, down: false, left: false, right: false };
 export class GameEngine {
   private readonly canvas: HTMLCanvasElement;
   private readonly map: GameMap;
-  private readonly art: HallArt;
+  private readonly art: SceneArt;
   private readonly cb: EngineCallbacks;
   private readonly opts: EngineOptions;
   private readonly ctx: CanvasRenderingContext2D;
@@ -68,14 +68,14 @@ export class GameEngine {
   private dpr = 1;
   private cam: Vec = { x: 0, y: 0 };
   private inputEnabled = true;
-  private pendingInteract: InteractId | null = null;
-  private prompt: InteractId | null = null;
+  private pendingInteract: Interactable | null = null;
+  private prompt: Interactable | null = null;
   private lastSent = { mv: false, vx: 0, vy: 0, at: 0 };
   private raf = 0;
   private lastT = 0;
   private destroyed = false;
 
-  constructor(canvas: HTMLCanvasElement, map: GameMap, art: HallArt, cb: EngineCallbacks, opts: EngineOptions) {
+  constructor(canvas: HTMLCanvasElement, map: GameMap, art: SceneArt, cb: EngineCallbacks, opts: EngineOptions) {
     const ctx = canvas.getContext("2d");
     const buf = document.createElement("canvas");
     const bctx = buf.getContext("2d");
@@ -88,7 +88,7 @@ export class GameEngine {
     this.ctx = ctx;
     this.buf = buf;
     this.bctx = bctx;
-    this.local = createActor(opts.localId, { ...map.spawn }, "left", performance.now());
+    this.local = createActor(opts.localId, { x: map.spawn.x, y: map.spawn.y }, map.spawn.dir, performance.now());
     this.world = new RemoteWorld(map, opts.localId);
     this.localInfo = { name: opts.name, badges: opts.badges, look: opts.look };
     this.ro = new ResizeObserver(() => this.resize());
@@ -187,9 +187,9 @@ export class GameEngine {
   // ------------------------------------------------------------ internals
 
   /** An explicit interaction (in-range click, E/Enter, HUD button) cancels any earlier walk-to-interact. */
-  private trigger(id: InteractId): void {
+  private trigger(it: Interactable): void {
     this.pendingInteract = null;
-    this.cb.onInteract(id);
+    this.cb.onInteract(it);
   }
 
   private localMove(): LocalMoveMsg {
@@ -277,10 +277,10 @@ export class GameEngine {
     const it = interactableAt(this.map, w);
     if (it) {
       if (inUseRange(it, this.local.pos)) {
-        this.trigger(it.id);
+        this.trigger(it);
         return;
       }
-      this.pendingInteract = it.id;
+      this.pendingInteract = it;
       this.walkTo(it.use);
       return;
     }
@@ -351,11 +351,10 @@ export class GameEngine {
     }
     const arrived = tickActor(this.map, this.local, dt, now, false);
     if (arrived && this.pendingInteract) {
-      const id = this.pendingInteract;
+      const it = this.pendingInteract;
       this.pendingInteract = null;
       // a long walk can end early (smoothPath caps the waypoints) — only trigger when we really got there
-      const it = this.map.interactables.find((i) => i.id === id);
-      if (it && inUseRange(it, this.local.pos)) this.cb.onInteract(id);
+      if (inUseRange(it, this.local.pos)) this.cb.onInteract(it);
     }
     this.announceMove(now);
     const near = nearestInteractable(this.map, this.local.pos);
@@ -385,7 +384,7 @@ export class GameEngine {
     const b = this.bctx;
     const camX = Math.round(this.cam.x), camY = Math.round(this.cam.y);
     b.imageSmoothingEnabled = false;
-    b.fillStyle = "#2f6e8f";
+    b.fillStyle = this.art.edge;
     b.fillRect(0, 0, this.vw, this.vh);
     b.drawImage(this.art.background, -camX, -camY);
     this.art.drawAnimated(b, t, camX, camY, this.opts.reducedMotion);

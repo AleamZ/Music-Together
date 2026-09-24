@@ -35,7 +35,7 @@ describe("hit tests", () => {
     expect(interactableAt(hall, { x: 300, y: 250 })).toBeNull();
   });
   it("prompts only near an interactable's use spot", () => {
-    expect(nearestInteractable(hall, { x: 320, y: 152 })).toBe("dj_booth");
+    expect(nearestInteractable(hall, { x: 320, y: 152 })?.id).toBe("dj_booth");
     expect(nearestInteractable(hall, { x: 320, y: 190 })).toBeNull();
   });
   it("hits a character's body box", () => {

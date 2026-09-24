@@ -114,7 +114,7 @@ export class RemoteWorld {
   }
 
   private addActor(id: string, now: number): Actor {
-    const a = createActor(id, { ...this.map.spawn }, "left", now);
+    const a = createActor(id, { x: this.map.spawn.x, y: this.map.spawn.y }, "left", now);
     this.actorById.set(id, a);
     return a;
   }

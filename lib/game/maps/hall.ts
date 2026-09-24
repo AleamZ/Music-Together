@@ -1,4 +1,8 @@
-import type { GameMap, Interactable, PropPlacement, Rect, Spot } from "./types";
+import { POND_ARRIVE } from "./arrivals";
+import { overlaps } from "./rect";
+import type { GameMap, Interactable, PropPlacement, Rect, Seating, Spot } from "./types";
+
+export { overlaps };
 
 export const HALL_W = 640;
 export const HALL_H = 400;
@@ -33,9 +37,12 @@ export const HALL_SOLIDS: Rect[] = [
 export const HALL_WALKABLE: Rect[] = [{ x: 500, y: 316, w: 32, h: 84 }]; // wooden dock
 
 export const HALL_INTERACTABLES: Interactable[] = [
-  { id: "dj_booth", label: "Quầy DJ", rect: { x: 296, y: 106, w: 48, h: 34 }, use: { x: 320, y: 152 } },
-  { id: "notice_board", label: "Bảng tin", rect: { x: 582, y: 228, w: 28, h: 34 }, use: { x: 596, y: 270 } },
-  { id: "dock_sign", label: "Bến câu cá", rect: { x: 482, y: 300, w: 18, h: 24 }, use: { x: 516, y: 334 } },
+  { id: "dj_booth", kind: "dj_booth", label: "Quầy DJ", prompt: "Mở hàng đợi", rect: { x: 296, y: 106, w: 48, h: 34 }, use: { x: 320, y: 152 } },
+  { id: "notice_board", kind: "notice_board", label: "Bảng tin", prompt: "Xem bảng tin", rect: { x: 582, y: 228, w: 28, h: 34 }, use: { x: 596, y: 270 } },
+  {
+    id: "dock_sign", kind: "portal", label: "Bến câu cá", prompt: "Xuống ao câu cá", rect: { x: 482, y: 300, w: 18, h: 24 },
+    use: { x: 516, y: 334 }, to: { map: "pond", arrive: POND_ARRIVE },
+  },
 ];
 
 /** Classic-mode members stand behind the café tables (the table sprite hides their legs). */
@@ -50,6 +57,9 @@ export const HALL_STAND_SPOTS: Spot[] = [
 ];
 /** A classic-mode DJ is drawn on the stage behind the mixer. */
 export const HALL_DJ_SPOT: Spot = { x: 320, y: 124, dir: "down" };
+export const HALL_SEATING: Seating = { djSpot: HALL_DJ_SPOT, seats: HALL_SEATS, standSpots: HALL_STAND_SPOTS };
+/** Entering game mode: the dirt path at the east edge, facing into the café. */
+export const HALL_SPAWN: Spot = { x: 612, y: 300, dir: "left" };
 
 export const HALL_PROPS: PropPlacement[] = [
   { kind: "palm", x: 90, y: 198, h: 72, lean: 0.35, seed: 3 },
@@ -76,10 +86,6 @@ export const LIGHT_STRINGS: ReadonlyArray<readonly [number, number, number, numb
   [160, 152, 446, 134, 14],  // across the yard between the light poles
 ];
 
-export function overlaps(a: Rect, b: Rect): boolean {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-}
-
 export function buildHallMap(): GameMap {
   const cols = HALL_W / HALL_CELL, rows = HALL_H / HALL_CELL;
   const blocked = new Uint8Array(cols * rows);
@@ -92,7 +98,6 @@ export function buildHallMap(): GameMap {
   }
   return {
     id: "hall", width: HALL_W, height: HALL_H, cell: HALL_CELL, cols, rows, blocked,
-    spawn: { x: 612, y: 300 }, djSpot: HALL_DJ_SPOT, seats: HALL_SEATS, standSpots: HALL_STAND_SPOTS,
-    interactables: HALL_INTERACTABLES, props: HALL_PROPS,
+    spawn: HALL_SPAWN, seating: HALL_SEATING, interactables: HALL_INTERACTABLES, props: HALL_PROPS, npcs: [],
   };
 }

@@ -1,4 +1,4 @@
-import type { GameMap, Interactable, InteractId } from "@/lib/game/maps/types";
+import type { GameMap, Interactable } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 
 // Pure helpers for the engine: view sizing, camera, hit tests and overlay layout.
@@ -32,13 +32,13 @@ export function interactableAt(map: GameMap, p: Vec): Interactable | null {
 }
 
 /** The closest interactable whose use spot is within `range` of the feet. */
-export function nearestInteractable(map: GameMap, feet: Vec, range = PROMPT_RANGE): InteractId | null {
-  let best: InteractId | null = null;
+export function nearestInteractable(map: GameMap, feet: Vec, range = PROMPT_RANGE): Interactable | null {
+  let best: Interactable | null = null;
   let bestD = Infinity;
   for (const i of map.interactables) {
     const d = Math.hypot(feet.x - i.use.x, feet.y - i.use.y);
     if (d <= range && d < bestD) {
-      best = i.id;
+      best = i;
       bestD = d;
     }
   }

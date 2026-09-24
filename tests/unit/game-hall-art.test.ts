@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildHallMap, HALL_PROPS } from "@/lib/game/maps/hall";
-import { propFrame, rng } from "@/lib/game/maps/hall-art";
+import { propFrame } from "@/lib/game/maps/props";
+import { rng } from "@/lib/game/maps/scene-art";
 import type { PropPlacement, Rect } from "@/lib/game/maps/types";
 
 const hall = buildHallMap();

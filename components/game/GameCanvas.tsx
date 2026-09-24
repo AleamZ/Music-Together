@@ -4,7 +4,7 @@ import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { GameEngine, type RosterEntry } from "@/lib/game/engine";
 import { buildHallMap } from "@/lib/game/maps/hall";
 import { paintHall } from "@/lib/game/maps/hall-art";
-import type { InteractId } from "@/lib/game/maps/types";
+import type { Interactable } from "@/lib/game/maps/types";
 import { joinGameChannel } from "@/lib/game/net/channel";
 import { createReplyScheduler, replyWindowMs } from "@/lib/game/net/replies";
 import type { Look } from "@/lib/game/types";
@@ -28,8 +28,8 @@ export interface GameCanvasProps {
   initial: { name: string; badges: string; look: Look };
   /** Is this account a current room member? Game messages from anyone else are dropped (spec §8.3). */
   isMember: (accountId: string) => boolean;
-  onInteract: (id: InteractId) => void;
-  onPromptChange: (id: InteractId | null) => void;
+  onInteract: (it: Interactable) => void;
+  onPromptChange: (it: Interactable | null) => void;
   onActorClick: (accountId: string) => void;
   onConnectionChange: (connected: boolean) => void;
   onLookChanged: (accountId: string) => void;

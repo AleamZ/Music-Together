@@ -15,8 +15,8 @@ import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
 import { formatChatMessageBody, parseChatMessageBody } from "@/lib/chat-helpers";
 import { formatClock } from "@/lib/format";
 import { DEFAULT_LOOK } from "@/lib/game/character";
-import { HALL_DJ_SPOT, HALL_SEATS, HALL_STAND_SPOTS } from "@/lib/game/maps/hall";
-import type { InteractId } from "@/lib/game/maps/types";
+import { HALL_SEATING } from "@/lib/game/maps/hall";
+import type { Interactable } from "@/lib/game/maps/types";
 import { badgesFor, buildRoster, freshChatBubbles, roleAccounts } from "@/lib/game/social";
 import type { Look } from "@/lib/game/types";
 import type { RoomDerived } from "@/lib/room-derived";
@@ -39,13 +39,6 @@ export interface GameShellProps {
 
 type Panel = "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | null;
 
-const HALL_SPOTS = { djSpot: HALL_DJ_SPOT, seats: HALL_SEATS, standSpots: HALL_STAND_SPOTS };
-const PROMPT_TEXT: Record<InteractId, string> = {
-  dj_booth: "Mở hàng đợi",
-  notice_board: "Xem bảng tin",
-  dock_sign: "Bến câu cá",
-};
-
 /** Game mode: the hall canvas + parchment HUD. Music, queue, chat and roles are the same as the classic view. */
 export default function GameShell({ view, derived, playback, sponsorBlock, onExitGame }: GameShellProps) {
   const { state, role, presence, onlineIds, token, accountId, username, myMemberId } = view;
@@ -54,7 +47,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const { admin_member_id, dj_member_id } = room;
   const canvasRef = useRef<GameCanvasHandle | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
-  const [prompt, setPrompt] = useState<InteractId | null>(null);
+  const [prompt, setPrompt] = useState<Interactable | null>(null);
   const [connected, setConnected] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [card, setCard] = useState<string | null>(null);
@@ -91,7 +84,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const { looks, refresh } = useLooks(presence.map((p) => p.accountId).filter((id) => id !== accountId && memberIds.has(id)));
   useEffect(() => {
     canvasRef.current?.setRoster(buildRoster({
-      presence, members, room: { admin_member_id, dj_member_id }, localId: accountId, looks, map: HALL_SPOTS,
+      presence, members, room: { admin_member_id, dj_member_id }, localId: accountId, looks, map: HALL_SEATING,
     }));
   }, [presence, members, admin_member_id, dj_member_id, accountId, looks]);
 
@@ -122,9 +115,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const onInteract = useCallback((id: InteractId) => {
-    if (id === "dj_booth") setPanel("queue");
-    else if (id === "notice_board") setPanel("board");
+  const onInteract = useCallback((it: Interactable) => {
+    if (it.kind === "dj_booth") setPanel("queue");
+    else if (it.kind === "notice_board") setPanel("board");
     else showToast("Ao câu cá sắp mở — hẹn bản sau!");
   }, [showToast]);
 
@@ -213,7 +206,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           className="pch-btn pch-btn-primary absolute bottom-24 left-1/2 z-10 -translate-x-1/2 text-xl"
         >
           <span className="pointer-coarse:hidden">E · </span>
-          {PROMPT_TEXT[prompt]}
+          {prompt.prompt}
         </button>
       )}
 

@@ -1,7 +1,7 @@
 import type { ChatMessage } from "@/lib/chat";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import type { RosterEntry } from "@/lib/game/engine";
-import type { GameMap } from "@/lib/game/maps/types";
+import type { Seating } from "@/lib/game/maps/types";
 import { assignSpots } from "@/lib/game/seating";
 import type { Look } from "@/lib/game/types";
 import type { PresenceEntry } from "@/lib/presence-modes";
@@ -26,7 +26,7 @@ export interface RosterInput {
   room: Pick<Room, "admin_member_id" | "dj_member_id">;
   localId: string;
   looks: Map<string, Look>;
-  map: Pick<GameMap, "djSpot" | "seats" | "standSpots">;
+  map: Seating;
 }
 
 /**
