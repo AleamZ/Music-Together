@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useChat } from "@/hooks/useChat";
 import type { ChatMessage } from "@/lib/chat";
-import { newFromOthers } from "@/lib/chat-notify";
+import { newFromOthers, notificationText } from "@/lib/chat-notify";
 import { formatChatMessageBody, cleanNotificationText } from "@/lib/chat-helpers";
 import { playTing } from "@/lib/sound";
 import { ensureNotifyPermission, notifyDesktop } from "@/lib/notify";
@@ -113,7 +113,7 @@ export default function ChatPanel({
       if (notifyOnRef.current) {
         playTing();
         const latest = fresh[fresh.length - 1];
-        notifyDesktop(latest.username, cleanNotificationText(latest.body));
+        notifyDesktop(latest.username, notificationText(latest));
       }
     }
 
