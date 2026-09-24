@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { BODY_CODES, HEADS, buildBody } from "@/lib/game/art/body";
 import { HAIR, HAIR_CODES } from "@/lib/game/art/hair";
 import { HATS, HAT_CODES } from "@/lib/game/art/hats";
-import { ITEM_ART, swatchOf } from "@/lib/game/art/items";
+import { ITEM_ART } from "@/lib/game/art/items";
 import { SPRITE_H, SPRITE_W, type Dir3, type Frame } from "@/lib/game/art/layers";
 
 const DIRS: Dir3[] = ["down", "up", "left"];
@@ -68,9 +68,5 @@ describe("item art", () => {
     const art = Object.entries(ITEM_ART).map(([id, a]) => `${id}:${a.slot}`).sort();
     expect(seeded).toHaveLength(15);
     expect(art).toEqual(seeded);
-  });
-  it("gives every item a swatch colour", () => {
-    for (const id of Object.keys(ITEM_ART)) expect(swatchOf(id)).toMatch(/^#[0-9a-f]{6}$/);
-    expect(swatchOf("unknown")).toBe("#9aa0a8");
   });
 });

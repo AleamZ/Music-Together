@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { swatchOf } from "@/lib/game/art/items";
 import { HAIR_COLOR, HAIR_COLOR_LABEL, HAIR_STYLE_LABEL, SKIN, SKIN_LABEL } from "@/lib/game/art/palettes";
 import {
   characterErrorMessage, fetchCatalog, saveCharacter, validateLook, type CatalogItem, type LookProblem,
 } from "@/lib/game/character";
 import { HAIR_COLORS, HAIR_STYLES, SKIN_TONES, type ItemSlot, type Look } from "@/lib/game/types";
+import ItemIcon from "./ItemIcon";
 import { ParchmentModal } from "./Parchment";
 import SpritePreview from "./SpritePreview";
 
@@ -36,6 +36,22 @@ function Swatch({ color, label, selected, onClick }: { color: string | null; lab
       style={color ? { background: color } : undefined}
     >
       {color ? <span className="sr-only">{label}</span> : label}
+    </button>
+  );
+}
+
+/** A 56 px wardrobe tile with the item's pixel icon; `id` null is the "Không" tile, which shows its label. */
+function ItemTile({ id, label, selected, onClick }: { id: string | null; label: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      aria-label={label}
+      title={label}
+      className={`flex h-14 w-14 items-center justify-center rounded-sm border-2 bg-cream font-vt text-base leading-none ${selected ? "border-burgundy ring-2 ring-gold" : "border-gold-200"}`}
+    >
+      {id ? <ItemIcon id={id} scale={3} /> : label}
     </button>
   );
 }
@@ -89,6 +105,12 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
   };
 
   const itemsFor = (slot: ItemSlot) => (catalog ?? []).filter((c) => c.slot === slot && c.starter);
+  /** What a row's label names as the current choice: the item's catalog name, "Không" for an empty slot, null while loading. */
+  const choiceName = (field: ItemField): string | null => {
+    if (!catalog) return null;
+    const id = draft[field];
+    return id === null ? "Không" : (catalog.find((c) => c.id === id)?.name ?? null);
+  };
 
   return (
     <ParchmentModal title={mode === "create" ? "Tạo nhân vật" : "Tủ đồ"} onClose={mode === "edit" ? onClose : undefined} className="max-w-2xl">
@@ -124,20 +146,26 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
               ))}
             </div>
           </div>
-          {ITEM_ROWS.map((row) => (
-            <div key={row.field}>
-              <p className="leading-none">{row.label}</p>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {row.optional && (
-                  <Swatch color={null} label="Không" selected={draft[row.field] === null} onClick={() => set(row.field, null)} />
-                )}
-                {itemsFor(row.slot).map((it) => (
-                  <Swatch key={it.id} color={swatchOf(it.id)} label={it.name} selected={draft[row.field] === it.id} onClick={() => set(row.field, it.id)} />
-                ))}
-                {!catalog && !error && <span className="text-base opacity-70">Đang tải…</span>}
+          {ITEM_ROWS.map((row) => {
+            const choice = choiceName(row.field);
+            return (
+              <div key={row.field}>
+                <p className="leading-none">
+                  {row.label}
+                  {choice && <>: <span className="opacity-80">{choice}</span></>}
+                </p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {row.optional && (
+                    <ItemTile id={null} label="Không" selected={draft[row.field] === null} onClick={() => set(row.field, null)} />
+                  )}
+                  {itemsFor(row.slot).map((it) => (
+                    <ItemTile key={it.id} id={it.id} label={it.name} selected={draft[row.field] === it.id} onClick={() => set(row.field, it.id)} />
+                  ))}
+                  {!catalog && !error && <span className="text-base opacity-70">Đang tải…</span>}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {error && <p className="text-base text-burgundy-accent" role="alert">{error}</p>}
           <div className="mt-1 flex flex-wrap justify-end gap-2">
             {mode === "create" ? (

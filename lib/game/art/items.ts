@@ -25,12 +25,3 @@ export const ITEM_ART: Record<string, ItemArt> = {
   neck_khanran: { slot: "neck", colors: ["#f1ece0", "#2b2524"] },
   neck_khanran_red: { slot: "neck", colors: ["#f1ece0", "#c0392b"] },
 };
-
-/** One representative colour per item (editor swatches). */
-export function swatchOf(id: string): string {
-  const a = ITEM_ART[id];
-  if (!a) return "#9aa0a8";
-  if (a.slot === "hat") return a.shape === "nonla" ? a.colors.y : a.colors.x;
-  if (a.slot === "neck") return a.colors[1];
-  return a.colors[0];
-}
