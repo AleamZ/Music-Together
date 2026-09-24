@@ -38,4 +38,17 @@ describe("fish and gear icons", () => {
     expect(iconMatrixFor("rod_carbon")?.[0]).toHaveLength(16);
     expect(iconMatrixFor("nope")).toBeNull();
   });
+  it("give every species its own silhouette", () => {
+    // Occupied-pixel masks (a cell is occupied unless it is ".") must differ in at least 6 cells for every pair.
+    const mask = (icon: PixelIcon) => [...icon.rows.join("")].map((ch) => ch !== ".");
+    const fish = Object.entries(FISH_ICONS).map(([id, icon]) => [id, mask(icon)] as const);
+    const tooClose: string[] = [];
+    fish.forEach(([a, ma], i) => {
+      for (const [b, mb] of fish.slice(i + 1)) {
+        const diff = ma.filter((occupied, k) => occupied !== mb[k]).length;
+        if (diff < 6) tooClose.push(`${a} ~ ${b}: ${diff} cells`);
+      }
+    });
+    expect(tooClose).toEqual([]);
+  });
 });
