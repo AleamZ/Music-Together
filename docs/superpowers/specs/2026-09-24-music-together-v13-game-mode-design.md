@@ -215,7 +215,7 @@ Payload grows from `{ name, online_at }` to `{ name, online_at, mode: "classic" 
 
 ### 8.4 Send gate (pure)
 
-`createSendGate({ ratePerSec: 3, burst: 3 })` — token bucket; `mv` is **coalesced** (only the latest pending state is flushed when a token frees up), `pa`/`hello`/`st`/`lk`/`bye` take a token or wait. Worst case ~3 game messages/s per client, which keeps a client's total (game + reactions, reactions already throttled to 4/s) near the 5/s the app declares.
+`createSendGate({ ratePerSec: 3, burst: 3 })` — token bucket; movement messages (`mv`/`pa`/`st`) are **coalesced** — only the latest pending one is flushed when a token frees up (each carries the sender's full current position, so a newer one supersedes an older one) — while control messages (`hello`/`lk`/`bye`) are never dropped and go first, in order. Worst case ~3 game messages/s per client, which keeps a client's total (game + reactions, reactions already throttled to 4/s) near the 5/s the app declares.
 
 ### 8.5 Remote players — `lib/game/actor.ts` (pure, shared with the local player)
 
@@ -346,7 +346,7 @@ Unit (Vitest):
 - `tests/unit/game-movement.test.ts` — collision box, axis-separated sliding, diagonal normalization, facing.
 - `tests/unit/game-pathfinding.test.ts` — path around obstacles, no corner cutting, blocked-target fallback, unreachable → null, smoothing keeps line of sight and ≤ 32 points.
 - `tests/unit/game-hall-map.test.ts` — spawn, seats, stand spots and every `use` spot are walkable and reachable from the spawn; the dock is walkable, the water is not.
-- `tests/unit/game-protocol.test.ts` — message validation, send gate (rate, burst, `mv` coalescing).
+- `tests/unit/game-protocol.test.ts` — message validation, send gate (rate, burst, movement coalescing, control messages first).
 - `tests/unit/game-actor.test.ts` — snap vs blend, extrapolation with collision, path following, stale stop.
 - `tests/unit/game-compose.test.ts` — palette mapping (scarf / no scarf, shorts / long pants), mirroring, hat placement.
 - `tests/unit/game-hall-art.test.ts` — seeded RNG; prop frames line up with the interaction rects.
