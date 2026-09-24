@@ -13,6 +13,61 @@ import { useLyrics } from "@/hooks/useLyrics";
 import KaraokeView from "./KaraokeView";
 import KaraokeModal from "./KaraokeModal";
 import LyricSearchModal from "./LyricSearchModal";
+import { getCategoryLabel, type SponsorSegment } from "@/lib/sponsorblock";
+import type { SkippedToastInfo } from "@/hooks/useSponsorBlock";
+
+function SeekbarWithSponsors({
+  elapsed,
+  durationMs,
+  disabled,
+  onSeek,
+  accentClass,
+  bgClass = "bg-black/30",
+  segments,
+}: {
+  elapsed: number;
+  durationMs: number;
+  disabled: boolean;
+  onSeek: (ms: number) => void;
+  accentClass: string;
+  bgClass?: string;
+  segments?: SponsorSegment[];
+}) {
+  const dur = durationMs || 0;
+  return (
+    <div className="relative flex-1 flex items-center h-4">
+      {/* Background track & Sponsor markers */}
+      <div className={`absolute left-0 right-0 h-1.5 rounded-lg ${bgClass} overflow-hidden pointer-events-none`}>
+        {dur > 0 &&
+          segments?.map((seg) => {
+            const leftPct = Math.max(0, Math.min(100, ((seg.start * 1000) / dur) * 100));
+            const widthPct = Math.max(
+              0.5,
+              Math.min(100 - leftPct, ((seg.duration * 1000) / dur) * 100)
+            );
+            return (
+              <div
+                key={seg.segmentId}
+                style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                className="absolute top-0 bottom-0 bg-amber-400/90 shadow-[0_0_8px_rgba(251,191,36,0.9)]"
+                title={`${getCategoryLabel(seg.category)} (${formatClock(seg.start * 1000)} - ${formatClock(seg.end * 1000)})`}
+              />
+            );
+          })}
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={dur}
+        value={Math.min(elapsed, dur)}
+        disabled={disabled}
+        onChange={(e) => onSeek(Number(e.target.value))}
+        className={`relative z-10 w-full cursor-pointer disabled:cursor-not-allowed h-1.5 bg-transparent appearance-none ${accentClass}`}
+        aria-label="seek"
+      />
+    </div>
+  );
+}
 
 const MIKU_EQ_BARS = [
   { delay: "0.1s", dur: "0.65s" },
@@ -47,6 +102,11 @@ export interface NowPlayingProps {
   unlocked: boolean;            // autoplay gate passed on this device
   onUnlock: () => void;         // 🔈 button
   playError: string | null;     // this device could not play the current track
+  sponsorSegments?: SponsorSegment[];
+  sponsorBlockEnabled?: boolean;
+  onToggleSponsorBlock?: () => void;
+  lastSkippedToast?: SkippedToastInfo | null;
+  onClearSkippedToast?: () => void;
   children?: React.ReactNode;
 }
 
@@ -141,6 +201,33 @@ export default function NowPlaying(p: NowPlayingProps) {
         >
           ⛶
         </button>
+        {p.onToggleSponsorBlock && (
+          <button
+            type="button"
+            onClick={p.onToggleSponsorBlock}
+            className={`px-2 py-0.5 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
+              p.sponsorBlockEnabled
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold"
+                : "text-white/40 hover:text-white/70"
+            }`}
+            title={
+              p.sponsorBlockEnabled
+                ? "Tự động bỏ qua đoạn quảng cáo/tài trợ: ĐANG BẬT (Bấm để tắt)"
+                : "Tự động bỏ qua đoạn quảng cáo/tài trợ: ĐÃ TẮT (Bấm để bật)"
+            }
+          >
+            <span>🛡️</span>
+            <span>{p.sponsorBlockEnabled ? "BỎ QUA QC" : "QC: TẮT"}</span>
+            {p.sponsorSegments && p.sponsorSegments.length > 0 && p.sponsorBlockEnabled && (
+              <span
+                className="px-1 py-0.2 text-[8px] bg-amber-400 text-black font-black rounded-full"
+                title={`Có ${p.sponsorSegments.length} đoạn sponsor sẽ được bỏ qua`}
+              >
+                {p.sponsorSegments.length}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {viewMode === "turntable" ? (
@@ -169,6 +256,26 @@ export default function NowPlaying(p: NowPlayingProps) {
 
   const modalElement = (
     <>
+      {p.lastSkippedToast && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-950/95 border border-amber-400/80 shadow-[0_0_20px_rgba(245,158,11,0.6)] backdrop-blur-md text-amber-200 text-xs animate-in fade-in slide-in-from-top-2 duration-300">
+          <span className="text-amber-400 font-black">⚡ Đã bỏ qua:</span>
+          <span className="font-semibold text-white">
+            {getCategoryLabel(p.lastSkippedToast.category)}
+          </span>
+          <span className="font-mono text-[11px] text-amber-300/80">
+            ({formatClock(p.lastSkippedToast.start * 1000)} -{" "}
+            {formatClock(p.lastSkippedToast.end * 1000)})
+          </span>
+          <button
+            type="button"
+            onClick={p.onClearSkippedToast}
+            className="ml-1 text-amber-400 hover:text-white text-xs cursor-pointer font-bold"
+            title="Đóng thông báo"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <KaraokeModal
         isOpen={isKaraokeModalOpen}
         onClose={() => setIsKaraokeModalOpen(false)}
@@ -335,15 +442,14 @@ export default function NowPlaying(p: NowPlayingProps) {
                 <span className="font-mono text-[11px] w-9 text-right text-[#00f0ff] font-bold drop-shadow-[0_0_6px_rgba(0,240,255,0.7)]">
                   {formatClock(elapsed)}
                 </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={dur || 0}
-                  value={Math.min(elapsed, dur || 0)}
+                <SeekbarWithSponsors
+                  elapsed={elapsed}
+                  durationMs={dur}
                   disabled={!p.canControl || !dur}
-                  onChange={(e) => p.onSeekMs(Number(e.target.value))}
-                  className="flex-1 accent-[#00f0ff] cursor-pointer disabled:cursor-not-allowed h-1.5 rounded-lg bg-[#0b1928]"
-                  aria-label="seek"
+                  onSeek={p.onSeekMs}
+                  accentClass="accent-[#00f0ff]"
+                  bgClass="bg-[#0b1928]"
+                  segments={p.sponsorSegments}
                 />
                 <span className="font-mono text-[11px] w-9 text-[#ff77b9] font-bold">
                   {formatClock(dur)}
@@ -508,15 +614,14 @@ export default function NowPlaying(p: NowPlayingProps) {
                 <span className="font-mono text-[11px] w-9 text-right text-[#84e800] font-bold">
                   {formatClock(elapsed)}
                 </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={dur || 0}
-                  value={Math.min(elapsed, dur || 0)}
+                <SeekbarWithSponsors
+                  elapsed={elapsed}
+                  durationMs={dur}
                   disabled={!p.canControl || dur === 0}
-                  onChange={(e) => p.onSeekMs(Number(e.target.value))}
-                  className="h-1.5 flex-1 accent-[#76cb00] cursor-pointer"
-                  aria-label="seek"
+                  onSeek={p.onSeekMs}
+                  accentClass="accent-[#76cb00]"
+                  bgClass="bg-black/60"
+                  segments={p.sponsorSegments}
                 />
                 <span className="font-mono text-[11px] w-9 text-[#ff9900] font-bold">
                   {formatClock(dur)}
@@ -1131,15 +1236,14 @@ export default function NowPlaying(p: NowPlayingProps) {
                 <span className="font-mono text-[11px] w-9 text-right text-cyan-400 font-bold">
                   {formatClock(elapsed)}
                 </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={dur || 0}
-                  value={Math.min(elapsed, dur || 0)}
+                <SeekbarWithSponsors
+                  elapsed={elapsed}
+                  durationMs={dur}
                   disabled={!p.canControl || dur === 0}
-                  onChange={(e) => p.onSeekMs(Number(e.target.value))}
-                  className="h-1.5 flex-1 accent-cyan-400 cursor-pointer"
-                  aria-label="seek"
+                  onSeek={p.onSeekMs}
+                  accentClass="accent-cyan-400"
+                  bgClass="bg-amber-950/40"
+                  segments={p.sponsorSegments}
                 />
                 <span className="font-mono text-[11px] w-9 text-pink-400 font-bold">
                   {formatClock(dur)}
@@ -1440,9 +1544,15 @@ export default function NowPlaying(p: NowPlayingProps) {
 
         <div className="flex w-[88%] items-center gap-2 text-xs text-ink/80">
           <span>{formatClock(elapsed)}</span>
-          <input type="range" min={0} max={dur || 0} value={Math.min(elapsed, dur || 0)} disabled={!p.canControl || dur === 0}
-            onChange={(e) => p.onSeekMs(Number(e.target.value))}
-            className="h-1.5 flex-1 accent-burgundy" aria-label="seek" />
+          <SeekbarWithSponsors
+            elapsed={elapsed}
+            durationMs={dur}
+            disabled={!p.canControl || dur === 0}
+            onSeek={p.onSeekMs}
+            accentClass="accent-burgundy"
+            bgClass="bg-burgundy/20"
+            segments={p.sponsorSegments}
+          />
           <span>{formatClock(dur)}</span>
         </div>
 
