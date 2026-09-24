@@ -143,7 +143,7 @@ A fishing spot's click rect covers the water in front of it, so tapping near a s
 Rules, all checked by tests:
 
 - `pondEdge(angle)` is shared by the art and the collision grid, like `hallShoreY`.
-- The 6 fishing spots are ≥ 40 px apart on the platform edges. Each use spot is walkable and reachable. Its **bobber point** (the use spot + 36 px along `face`) is open water: blocked, inside the pond and not under the platform.
+- The 6 fishing spots are ≥ 40 px apart on the platform edges. Each use spot is walkable and reachable. Its **bobber point** (the use spot + the reach along `face`: 56 px facing up, 30 px down, 36 px left or right — facing up the bobber must clear the character's own 48-px sprite) is open water: blocked, inside the pond and not under the platform.
 - The 4 dig spots are on the dirt patch, ≥ 32 px apart.
 - NPCs stand behind their counters, inside blocked cells, facing down. They are drawn like seated classic members (a static frame) with a name tag.
 - The arrival spot and every use spot are walkable and reachable from the arrival spot.
@@ -232,16 +232,17 @@ The bar runs from 0 (bottom) to 1 (top). The zone height is `h = zonePct / 100`.
 
 | Rule | Value |
 |---|---|
-| Start | `progress 0.3`, `zone 0`, `zoneV 0`, `fish h/2`, `target` random |
-| Zone | holding → `zoneV += 3.2·dt`, otherwise `zoneV −= 2.4·dt`; `|zoneV| ≤ 1.6`; `zone += zoneV·dt`. At the bottom it bounces (`zoneV = −0.35·zoneV`); at the top it stops (`zoneV = 0`) |
-| Fish speed | `0.25 + 1.1·d` bar/s towards `target` (`d = difficulty/100`), with no overshoot |
-| New target | when the fish reaches it, or with a chance of `(0.4 + 2.2·d)·dt` per step; `target = clamp(fish + (u − 0.5)·(0.35 + 0.9·d), 0, 1)` |
-| Progress | fish in the zone → `+ 0.7 / (minReelMs/1000)` per s; outside → `− (0.12 + 0.1·d)` per s |
+| Start | `progress 0.3`, `zone 0`, `zoneV 0`, `fish max(0.45, floor)`, `target` random between the floor and the top |
+| Zone | holding → `zoneV += 3.0·dt`, otherwise `zoneV −= 2.2·dt`; `|zoneV| ≤ 1.4`; `zone += zoneV·dt`. At the bottom it bounces (`zoneV = −0.35·zoneV`); at the top it stops (`zoneV = 0`) |
+| Fish floor | the fish never goes below `floor = min(0.5, h + 0.05)`, so a zone resting at the bottom never holds it |
+| Fish speed | `0.18 + 0.62·d` bar/s towards `target` (`d = difficulty/100`), with no overshoot |
+| New target | when the fish reaches it (within 0.02), or with a chance of `(0.3 + 1.2·d)·dt` per step; `target = clamp(fish + (u − 0.5)·(0.25 + 0.6·d), floor, 1)` |
+| Progress | fish in the zone → `+ 0.7 / (minReelMs/1000)` per s; outside → `− (0.075 + 0.07·d)` per s |
 | End | `progress ≥ 1` → caught; `progress ≤ 0` → escaped; `elapsedMs ≥ 60 000` → escaped |
 
 A perfect reel (the fish always in the zone) takes exactly `minReelMs`, because the progress fills from 0.3 to 1. This matches the server's time gate (§8.3).
 
-The motion constants (lift, gravity, fish speed, retarget, drain) may be tuned in the plan's browser prototype; the unit tests pin the final values. The fill rule and the start at 0.3 are fixed, because the server's time gate depends on them.
+The motion constants (lift, gravity, fish speed, retarget, drain) and the fish floor were tuned in a simulation while writing the plan (bots at several skill levels, 200 seeds per difficulty and rod: an idle player never lands a fish, a tracking player lands easy fish); the unit tests pin these values. The fill rule and the start at 0.3 are fixed, because the server's time gate depends on them.
 
 ### 6.3 Hand and bucket
 
@@ -626,7 +627,7 @@ After every error the client re-fetches the state.
   - `f ∈ {0,1,2,3}`;
   - `h` is `null` or matches `/^[a-z_]{1,32}$/`;
   - `c` is a pair of that id and an integer 1…100 000.
-- Receivers draw the bobber at the sender's feet + 36 px along their facing, since the sender stands still at a spot while fishing. A catch label shows for 3 s. A remote player with `f ≠ 0` whose last message is more than 90 s old falls back to idle. This covers a lost `fs`.
+- Receivers draw the bobber at the sender's feet + the same reach along their facing (56 px up, 30 px down, 36 px left or right), since the sender stands still at a spot while fishing. A catch label shows for 3 s. A remote player with `f ≠ 0` whose last message is more than 90 s old falls back to idle. This covers a lost `fs`.
 - The send gate treats `fs` as a **control** message: FIFO, never dropped or coalesced. `st`/`mv`/`pa` stay coalesced; the newest one carries the newest `h`/`f`.
 
 ### 9.4 Budget
@@ -752,7 +753,7 @@ The other v13 minors stay deferred, as recorded in the v13 final triage.
 
 - `tests/unit/game-maps-registry.test.ts` — registry ids and caching; each portal's `arrive` spot is walkable and reachable on its target map; the hall's `dock_sign` is a portal to the pond.
 - `tests/unit/game-pond-map.test.ts` — the arrival spot and every use spot are walkable and reachable; fishing spots face open water and their bobber points are water inside the pond; spot spacing; the dig spots lie on the dirt patch; the stalls and the board are blocked.
-- `tests/unit/game-reel.test.ts` — defaults; holding lifts, releasing falls and bounces, clamps; the fish stays in [0, 1]; a seeded tracker catches an easy fish and never before `minReelMs`; an idle player loses; the 60 s limit; `dt` clamp; determinism.
+- `tests/unit/game-reel.test.ts` — defaults; holding lifts, releasing falls and bounces, clamps; the fish stays between its floor and 1; a seeded tracker catches an easy fish and never before `minReelMs`; an idle player loses; the 60 s limit; `dt` clamp; determinism.
 - `tests/unit/game-cast.test.ts` — phases by time (waiting → bite → missed); hooking inside and outside the window; cancel while waiting.
 - `tests/unit/fishing-state.test.ts` — `parseFishingState`, `castBlocker` (every reason, worm fallback), capacities, `maxBuyQty`, `ownsItem`, `handFish`.
 - `tests/unit/fishing-catalog.test.ts` — `formatWeight` (350 g, 1 150 g → 1,2 kg, 12 000 g → 12,0 kg), `formatXu`, rarity names/colours, `describeItem` for each kind, `fishingErrorMessage` (with `detail` → minutes/seconds).
