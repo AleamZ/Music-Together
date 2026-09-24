@@ -1,3 +1,5 @@
+import { FISH_ICONS } from "./fish";
+import { GEAR_ICONS } from "./gear";
 import { ITEM_ART, type ItemArt } from "./items";
 import { OUTLINE } from "./palettes";
 
@@ -181,4 +183,20 @@ export function itemIconMatrix(id: string): string[][] | null {
   if (!art) return null;
   const pal: Record<string, string> = { o: OUTLINE, ...paletteOf(art) };
   return ITEM_ICONS[kindOf(art)].map((row) => [...row].map((ch) => (ch === "." ? "" : pal[ch] ?? "")));
+}
+
+/** A 16×16 icon with its own palette ("." transparent, "o" outline) — fish and gear (v14). */
+export interface PixelIcon { rows: readonly string[]; pal: Readonly<Record<string, string>> }
+
+/** 16×16 CSS colours ("" = transparent). */
+export function pixelIconMatrix(icon: PixelIcon): string[][] {
+  return icon.rows.map((row) => [...row].map((ch) => (ch === "." ? "" : ch === "o" ? OUTLINE : icon.pal[ch] ?? "")));
+}
+
+/** Any item's icon: clothing (catalog), fish species or fishing gear; null for an unknown id. */
+export function iconMatrixFor(id: string): string[][] | null {
+  const clothing = itemIconMatrix(id);
+  if (clothing) return clothing;
+  const icon = FISH_ICONS[id] ?? GEAR_ICONS[id];
+  return icon ? pixelIconMatrix(icon) : null;
 }
