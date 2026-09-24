@@ -417,3 +417,263 @@ grant execute on function public.sell_fish(text, uuid[]) to anon, authenticated;
 grant execute on function public.release_fish(text, uuid) to anon, authenticated;
 -- Config reads go through the SELECT policies above; grant the privilege explicitly instead of relying on default grants.
 grant select on public.fish_species, public.shop_items to anon, authenticated;
+
+-- ---------- E. Casts (at most one open cast per account; private) ----------
+create table if not exists public.casts (
+  account_id uuid primary key references public.accounts(id) on delete cascade,
+  id uuid not null unique default gen_random_uuid(),
+  room_id uuid references public.rooms(id) on delete set null,
+  species_id text not null references public.fish_species(id),
+  weight_g integer not null,
+  min_reel_ms integer not null,
+  bite_at timestamptz not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+alter table public.casts enable row level security;
+revoke all on public.casts from anon, authenticated;
+
+-- Rarity 1–5 for a rod + bait (spec §7.2): Khá fixed at 28 %, Thường takes the rest.
+create or replace function public._roll_rarity(p_rod text, p_bait text) returns smallint
+language plpgsql volatile security definer set search_path = public, extensions
+as $$
+declare r public.shop_items; b public.shop_items; w3 double precision; w4 double precision; w5 double precision; v_roll double precision;
+begin
+  select * into r from public.shop_items where id = p_rod;
+  select * into b from public.shop_items where id = p_bait;
+  w5 := 0.3 * coalesce(b.mult_legend, 1) * coalesce(r.rare_mult, 1);
+  w4 := 2.7 * coalesce(b.mult_quy, 1) * coalesce(r.rare_mult, 1);
+  w3 := 9 * coalesce(b.mult_hiem, 1) * coalesce(r.rare_mult, 1);
+  v_roll := random() * 100;
+  if v_roll < w5 then return 5; end if;
+  if v_roll < w5 + w4 then return 4; end if;
+  if v_roll < w5 + w4 + w3 then return 3; end if;
+  if v_roll < w5 + w4 + w3 + 28 then return 2; end if;
+  return 1;
+end; $$;
+
+-- "350 g" under 1 kg, else tenths rounded half up with a Vietnamese decimal comma: 1150 → "1,2 kg" (same rule as formatWeight).
+create or replace function public._weight_text(p_g integer) returns text
+language sql immutable set search_path = public, extensions
+as $$
+  select case when p_g < 1000 then p_g || ' g'
+              else (round(p_g / 100.0)::int / 10) || ',' || (round(p_g / 100.0)::int % 10) || ' kg' end
+$$;
+
+revoke all on function public._roll_rarity(text, text) from public, anon, authenticated;
+revoke all on function public._weight_text(integer) from public, anon, authenticated;
+
+create or replace function public.start_cast(p_room_id uuid, p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; p public.fishing_profiles; rod public.shop_items; bob public.shop_items; sp public.fish_species;
+        v_rarity smallint; v_weight integer; v_bite integer; v_window integer; v_min_reel integer; v_id uuid;
+        v_switched boolean := false; v_bucket integer;
+begin
+  perform public._auth(p_room_id, p_session_token, 'any');
+  v_account := public._auth_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  p := public._fishing_profile(v_account);
+  -- 1. hourly cap: a new window starts at the first cast after the previous one ended
+  if p.window_start is null or now() >= p.window_start + interval '1 hour' then
+    update public.fishing_profiles set window_start = now(), window_casts = 0 where account_id = v_account;
+    p.window_start := now();
+    p.window_casts := 0;
+  end if;
+  if p.window_casts >= 40 then
+    raise exception 'cast limit' using errcode = '53400',
+      detail = ceil(extract(epoch from (p.window_start + interval '1 hour' - now())))::int::text;
+  end if;
+  -- 2. a new cast abandons the previous one (its bait is already spent)
+  delete from public.casts where account_id = v_account;
+  -- 3. room for the catch
+  v_bucket := public._bucket_cap(v_account);
+  if (select count(*) from public.fish where account_id = v_account) >= 1 + v_bucket then
+    if v_bucket = 0 then
+      raise exception 'hands full' using errcode = '22023';
+    end if;
+    raise exception 'bucket full' using errcode = '22023';
+  end if;
+  -- 4. one bait: the selected kind, else worms
+  if coalesce((select qty from public.inventory where account_id = v_account and item_id = p.bait), 0) < 1 then
+    if p.bait <> 'bait_worm'
+       and coalesce((select qty from public.inventory where account_id = v_account and item_id = 'bait_worm'), 0) >= 1 then
+      update public.fishing_profiles set bait = 'bait_worm' where account_id = v_account;
+      p.bait := 'bait_worm';
+      v_switched := true;
+    else
+      raise exception 'no bait' using errcode = '22023';
+    end if;
+  end if;
+  update public.inventory set qty = qty - 1 where account_id = v_account and item_id = p.bait;
+  -- 5. roll the fish (spec §7.2)
+  select * into rod from public.shop_items where id = p.rod;
+  select * into bob from public.shop_items where id = p.bobber;
+  v_rarity := public._roll_rarity(p.rod, p.bait);
+  select * into sp from public.fish_species where rarity = v_rarity order by random() limit 1;
+  v_weight := least(sp.max_g, sp.min_g + floor((sp.max_g - sp.min_g + 1) * power(random(), coalesce(rod.weight_k, 2.0)))::int);
+  v_bite := coalesce(bob.bite_min_ms, 3000)
+            + floor(random() * (coalesce(bob.bite_max_ms, 10000) - coalesce(bob.bite_min_ms, 3000) + 1))::int;
+  v_window := coalesce(bob.window_ms, 1500);
+  v_min_reel := 2000 + 40 * sp.difficulty;
+  insert into public.casts (account_id, room_id, species_id, weight_g, min_reel_ms, bite_at, expires_at)
+  values (v_account, p_room_id, sp.id, v_weight, v_min_reel,
+          now() + make_interval(secs => v_bite / 1000.0),
+          now() + make_interval(secs => (v_bite + v_window) / 1000.0 + 90))
+  returning id into v_id;
+  update public.fishing_profiles set window_casts = window_casts + 1 where account_id = v_account;
+  return jsonb_build_object(
+    'cast_id', v_id, 'bite_ms', v_bite, 'window_ms', v_window, 'difficulty', sp.difficulty,
+    'min_reel_ms', v_min_reel, 'zone_pct', coalesce(rod.zone_pct, 25),
+    'rarity', case when bob.shows_rarity then v_rarity end,
+    'bait_switched', v_switched,
+    'state', public._fishing_state(v_account));
+end; $$;
+
+create or replace function public.finish_cast(p_session_token text, p_cast_id uuid, p_success boolean) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; c public.casts; sp public.fish_species; v_fish uuid; v_price integer; v_prev integer;
+        v_record boolean := false; v_name text; v_why text;
+begin
+  v_account := public._auth_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  -- single use: the cast is gone whatever happens next (lost outcomes return instead of raising, so the delete stays)
+  delete from public.casts where account_id = v_account and id = p_cast_id returning * into c;
+  if not found then
+    raise exception 'cast not found' using errcode = '22023';
+  end if;
+  if now() > c.expires_at then
+    v_why := 'expired';
+  elsif not coalesce(p_success, false) then
+    v_why := 'gave_up';
+  elsif now() < c.bite_at + make_interval(secs => 0.9 * c.min_reel_ms / 1000.0) then
+    v_why := 'too_early';
+  elsif (select count(*) from public.fish where account_id = v_account) >= 1 + public._bucket_cap(v_account) then
+    v_why := 'full';
+  end if;
+  if v_why is not null then
+    return jsonb_build_object('result', 'lost', 'why', v_why, 'state', public._fishing_state(v_account));
+  end if;
+  select * into sp from public.fish_species where id = c.species_id;
+  v_price := greatest(1, round(sp.price_per_kg * c.weight_g / 1000.0)::int);
+  insert into public.fish (account_id, species_id, weight_g, price) values (v_account, sp.id, c.weight_g, v_price)
+  returning id into v_fish;
+  select weight_g into v_prev from public.personal_bests where account_id = v_account and species_id = sp.id;
+  if v_prev is null or c.weight_g > v_prev then
+    v_record := true;
+    insert into public.personal_bests (account_id, species_id, weight_g, caught_at)
+    values (v_account, sp.id, c.weight_g, now())
+    on conflict (account_id, species_id) do update set weight_g = excluded.weight_g, caught_at = excluded.caught_at;
+  end if;
+  -- rare+ catches are announced in the room's chat (spec §8.5)
+  if sp.rarity >= 3 and c.room_id is not null and exists (select 1 from public.rooms where id = c.room_id) then
+    select username into v_name from public.accounts where id = v_account;
+    insert into public.chat_messages (room_id, account_id, username, body)
+    values (c.room_id, null, 'Ao cá',
+            format('[catch:%s|%s|%s] 🎣 %s vừa câu được %s %s (%s)!', v_account, sp.id, c.weight_g, v_name, sp.name,
+                   public._weight_text(c.weight_g), (array['Thường','Khá','Hiếm','Quý','Huyền thoại'])[sp.rarity]));
+    delete from public.chat_messages
+     where room_id = c.room_id
+       and id not in (select id from public.chat_messages where room_id = c.room_id order by created_at desc limit 200);
+  end if;
+  return jsonb_build_object('result', 'caught',
+    'fish', jsonb_build_object('id', v_fish, 'species_id', sp.id, 'weight_g', c.weight_g, 'price', v_price, 'rarity', sp.rarity),
+    'record', v_record,
+    'state', public._fishing_state(v_account));
+end; $$;
+
+-- Records per species and the richest members — among the members of the room only.
+create or replace function public.fishing_board(p_room_id uuid, p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_coins integer; v_rank integer;
+begin
+  perform public._auth(p_room_id, p_session_token, 'any');
+  v_account := public._auth_account(p_session_token);
+  v_coins := coalesce((select coins from public.wallets where account_id = v_account), 0);
+  select 1 + count(*) into v_rank
+    from public.members m join public.wallets w on w.account_id = m.account_id
+   where m.room_id = p_room_id and w.coins > v_coins;
+  return jsonb_build_object(
+    'records', coalesce((
+      select jsonb_agg(jsonb_build_object('species_id', r.species_id, 'username', r.username, 'weight_g', r.weight_g)
+                       order by r.species_id)
+        from (select distinct on (pb.species_id) pb.species_id, a.username, pb.weight_g
+                from public.personal_bests pb
+                join public.members m on m.account_id = pb.account_id and m.room_id = p_room_id
+                join public.accounts a on a.id = pb.account_id
+               order by pb.species_id, pb.weight_g desc, pb.caught_at asc) r), '[]'::jsonb),
+    'mine', coalesce((
+      select jsonb_agg(jsonb_build_object('species_id', species_id, 'weight_g', weight_g) order by species_id)
+        from public.personal_bests where account_id = v_account), '[]'::jsonb),
+    'richest', coalesce((
+      select jsonb_agg(jsonb_build_object('username', t.username, 'coins', t.coins) order by t.coins desc, t.username)
+        from (select a.username, w.coins
+                from public.members m
+                join public.wallets w on w.account_id = m.account_id
+                join public.accounts a on a.id = m.account_id
+               where m.room_id = p_room_id and w.coins > 0
+               order by w.coins desc, a.username
+               limit 10) t), '[]'::jsonb),
+    'my_rank', v_rank,
+    'my_coins', v_coins);
+end; $$;
+
+grant execute on function public.start_cast(uuid, text) to anon, authenticated;
+grant execute on function public.finish_cast(text, uuid, boolean) to anon, authenticated;
+grant execute on function public.fishing_board(uuid, text) to anon, authenticated;
+
+-- ---------- F. Song bonus: +10 xu to whoever queued a song that stayed on for ≥ 75 % of its length (spec §8.4) ----------
+alter table public.rooms add column if not exists item_began_at timestamptz;
+
+create or replace function public._item_clock() returns trigger
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  if new.current_item_id is distinct from old.current_item_id then
+    new.item_began_at := case when new.current_item_id is null then null else now() end;
+  end if;
+  return new;
+end; $$;
+drop trigger if exists rooms_item_clock on public.rooms;
+create trigger rooms_item_clock before update of current_item_id on public.rooms
+  for each row execute function public._item_clock();
+
+-- advance_queue clears current_item_id before it deletes the old queue row, so the row is still readable here.
+-- Never raises: advance_queue must not fail because of a bonus.
+create or replace function public._song_bonus() returns trigger
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare q public.queue_items; w public.wallets; v_today date;
+begin
+  begin
+    select * into q from public.queue_items where id = old.current_item_id;
+    if not found or q.added_by_account_id is null or coalesce(q.duration_seconds, 0) < 60
+       or old.item_began_at is null
+       or extract(epoch from (now() - old.item_began_at)) < 0.75 * q.duration_seconds then
+      return null;
+    end if;
+    v_today := public._vn_today();
+    w := public._wallet_lock(q.added_by_account_id);
+    if w.bonus_on is distinct from v_today then
+      update public.wallets set bonus_on = v_today, bonus_count = 0 where account_id = q.added_by_account_id;
+      w.bonus_count := 0;
+    end if;
+    if w.bonus_count >= 10 then
+      return null;
+    end if;
+    update public.wallets set bonus_count = bonus_count + 1 where account_id = q.added_by_account_id;
+    perform public._pay(q.added_by_account_id, 10, 'song', left(q.title, 80));
+  exception when others then
+    raise warning 'song bonus skipped: %', sqlerrm;
+  end;
+  return null;
+end; $$;
+drop trigger if exists rooms_song_bonus on public.rooms;
+create trigger rooms_song_bonus after update of current_item_id on public.rooms
+  for each row when (old.current_item_id is not null and old.current_item_id is distinct from new.current_item_id)
+  execute function public._song_bonus();
+
+revoke all on function public._item_clock() from public, anon, authenticated;
+revoke all on function public._song_bonus() from public, anon, authenticated;

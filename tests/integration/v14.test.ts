@@ -68,4 +68,54 @@ run("v14 fishing economy", () => {
     const wallets = await db.from("wallets").select("*");
     expect(wallets.error).not.toBeNull();
   });
+
+  const room = async (token: string) => {
+    const { data, error } = await db.rpc("create_room", { p_room_name: uniq("ao"), p_password: "pw", p_session_token: token });
+    if (error) throw error;
+    return (Array.isArray(data) ? data[0] : data) as { room_id: string; code: string };
+  };
+  const withWorms = async (token: string) => {
+    const d = await db.rpc("dig_worms", { p_session_token: token });
+    if (d.error) throw d.error;
+  };
+
+  it("casts, gives up, and never lets a cast be finished twice", async () => {
+    const me = await reg();
+    const r = await room(me.token);
+    await withWorms(me.token);
+    const c = await db.rpc("start_cast", { p_room_id: r.room_id, p_session_token: me.token });
+    expect(c.error).toBeNull();
+    const cast = c.data as { cast_id: string; bite_ms: number; window_ms: number; zone_pct: number; rarity: number | null };
+    expect(cast.bite_ms).toBeGreaterThanOrEqual(3000);
+    expect(cast).toMatchObject({ window_ms: 1500, zone_pct: 25, rarity: null });
+    const f = await db.rpc("finish_cast", { p_session_token: me.token, p_cast_id: cast.cast_id, p_success: false });
+    expect(f.data).toMatchObject({ result: "lost", why: "gave_up" });
+    const again = await db.rpc("finish_cast", { p_session_token: me.token, p_cast_id: cast.cast_id, p_success: true });
+    expect(again.error?.message).toBe("cast not found");
+  });
+
+  it("does not accept a catch before the reel could have finished", async () => {
+    const me = await reg();
+    const r = await room(me.token);
+    await withWorms(me.token);
+    const c = await db.rpc("start_cast", { p_room_id: r.room_id, p_session_token: me.token });
+    const f = await db.rpc("finish_cast", { p_session_token: me.token, p_cast_id: (c.data as { cast_id: string }).cast_id, p_success: true });
+    expect(f.data).toMatchObject({ result: "lost", why: "too_early" });
+  });
+
+  it("needs bait and room membership to cast", async () => {
+    const me = await reg();
+    const other = await reg();
+    const r = await room(me.token);
+    expect((await db.rpc("start_cast", { p_room_id: r.room_id, p_session_token: me.token })).error?.message).toBe("no bait");
+    expect((await db.rpc("start_cast", { p_room_id: r.room_id, p_session_token: other.token })).error?.message).toMatch(/not a member/);
+  });
+
+  it("returns the room board", async () => {
+    const me = await reg();
+    const r = await room(me.token);
+    const b = await db.rpc("fishing_board", { p_room_id: r.room_id, p_session_token: me.token });
+    expect(b.error).toBeNull();
+    expect(b.data).toMatchObject({ records: [], mine: [], richest: [], my_rank: 1, my_coins: 0 });
+  });
 });
