@@ -5,9 +5,10 @@ import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { useCastSession, type CastSession, type CastView } from "@/hooks/useCastSession";
 import { useFishing, type FishingData } from "@/hooks/useFishing";
 import {
-  BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NOT_LOADED, promptText as promptFor, SONG_BONUS,
+  BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NOT_LOADED, promptText as promptFor, saleText, SONG_BONUS,
 } from "@/lib/game/fishing/messages";
-import { baitTotal, castWaitMin, digWaitSec, handFish } from "@/lib/game/fishing/state";
+import { fetchFishingBoard, type FishingBoard } from "@/lib/game/fishing/rpc";
+import { baitTotal, castWaitMin, digWaitSec, handFish, type Loadout } from "@/lib/game/fishing/state";
 import type { Interactable } from "@/lib/game/maps/types";
 import type { QueueItem } from "@/lib/supabase";
 
@@ -29,6 +30,14 @@ export interface FishingController {
   panel: FishingPanel | null;
   openPanel: (p: FishingPanel) => void;
   closePanel: () => void;
+  /** A panel action (buy, sell, equip, release) is in flight. */
+  busy: boolean;
+  sell: (fishIds: string[]) => void;
+  release: (fishId: string) => void;
+  buy: (itemId: string, qty: number) => void;
+  equip: (loadout: Loadout) => void;
+  /** fishing_board for this room (the records panel). */
+  loadBoard: () => Promise<FishingBoard>;
   /** Handles the pond's interactables; false for anything else. */
   interact: (it: Interactable) => boolean;
   /** The HUD prompt: dig spots and fishing spots show their wait. */
@@ -56,7 +65,7 @@ const SONG_BONUS_DELAY_MS = 1500;
 export function useFishingController({ token, roomId, accountId, canvas, current, toast }: FishingControllerOptions): FishingController {
   const data = useFishing(token, toast);
   const session = useCastSession({ roomId, data, canvas, toast });
-  const { state, failed, catalog, reload, claimDaily, dig } = data;
+  const { state, failed, catalog, reload, claimDaily, dig, sell: sellFish, release: releaseFish, buy: buyItem, equip: setLoadout } = data;
   const [panel, setPanel] = useState<FishingPanel | null>(null);
   const stateRef = useRef(state);
   const failedRef = useRef(failed);
@@ -177,6 +186,28 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     else if (kind === "cancel" && castPhase === "waiting") reelIn();
   }, [castPhase, hook, reelIn]);
 
+  // --- the depot, the shop, the records board and the bag
+  const [busy, setBusy] = useState(false);
+  const run = useCallback(async (job: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await job();
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+  const sell = useCallback((ids: string[]) => void run(async () => {
+    const r = await sellFish(ids);
+    if (r) toastRef.current(saleText(r.sold, r.earned));
+  }), [run, sellFish]);
+  const release = useCallback((id: string) => void run(() => releaseFish(id)), [run, releaseFish]);
+  const buy = useCallback((itemId: string, qty: number) => void run(async () => {
+    const name = catalog?.items.find((i) => i.id === itemId)?.name ?? itemId;
+    if (await buyItem(itemId, qty)) toastRef.current(`🛒 Đã mua ${name}${qty > 1 ? ` × ${qty}` : ""}.`);
+  }), [run, buyItem, catalog]);
+  const equip = useCallback((l: Loadout) => void run(() => setLoadout(l)), [run, setLoadout]);
+  const loadBoard = useCallback(() => fetchFishingBoard(roomId, token), [roomId, token]);
+
   const interact = useCallback((it: Interactable): boolean => {
     switch (it.kind) {
       case "dig_spot":
@@ -184,6 +215,11 @@ export function useFishingController({ token, roomId, accountId, canvas, current
         return true;
       case "fish_spot":
         fishAt(it);
+        return true;
+      case "depot":
+      case "shop":
+      case "records":
+        setPanel(it.kind);
         return true;
       default:
         return false;
@@ -203,6 +239,12 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     panel,
     openPanel: setPanel,
     closePanel: useCallback(() => setPanel(null), []),
+    busy,
+    sell,
+    release,
+    buy,
+    equip,
+    loadBoard,
     interact,
     promptText,
   };

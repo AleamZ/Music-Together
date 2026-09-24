@@ -141,16 +141,16 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     onEvent: (data) => canvasRef.current?.showReaction(data.accountId ?? null, data.emoji),
   });
 
-  // --- input is off while any panel or the create editor is open
-  const blocking = panel !== null || creating;
-  useEffect(() => {
-    canvasRef.current?.setInputEnabled(!blocking);
-  }, [blocking]);
-
   // --- fishing: coins, bait, the daily check-in, the song bonus, digging (and, later, casting and the shops)
   const getCanvas = useCallback(() => canvasRef.current, []);
   const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: showToast });
   const { interact: fishingInteract, promptText, cancelCast, onFishingInput } = fishing;
+
+  // --- input is off while any panel or the create editor is open
+  const blocking = panel !== null || fishing.panel !== null || creating;
+  useEffect(() => {
+    canvasRef.current?.setInputEnabled(!blocking);
+  }, [blocking]);
 
   // --- the camera may lift the character above the bottom HUD
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -233,9 +233,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           <div className="flex flex-col gap-1">
             <span className="max-w-44 truncate text-xl">{myBadges ? `${myBadges} ` : ""}{myName}</span>
             {!connected && <span className="text-base opacity-80">Đang kết nối thế giới…</span>}
-            <button type="button" className="pch-btn self-start" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
-              👕 Tủ đồ
-            </button>
+            <div className="flex gap-1">
+              <button type="button" className="pch-btn" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
+                👕 Tủ đồ
+              </button>
+              <button type="button" className="pch-btn" onClick={() => fishing.openPanel("bag")}>🎒 Giỏ đồ</button>
+            </div>
             <FishingHud state={fishing.data.state} failed={fishing.data.failed} onReload={() => void fishing.data.reload()} />
           </div>
         </div>

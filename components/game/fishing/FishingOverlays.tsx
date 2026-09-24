@@ -1,13 +1,18 @@
 "use client";
 
 import type { FishingController } from "@/hooks/useFishingController";
+import BagPanel from "./BagPanel";
 import CatchCard from "./CatchCard";
+import DepotPanel from "./DepotPanel";
+import RecordsPanel from "./RecordsPanel";
 import ReelOverlay from "./ReelOverlay";
+import ShopPanel from "./ShopPanel";
 
-/** The cast's HUD (spec §6.1, §10): "🎣 Thu cần" while waiting, "❗ Giật cần!" at the bite, the reel, the catch card. */
+/** Fishing on top of the world (spec §6.1, §10): "🎣 Thu cần" while waiting, "❗ Giật cần!" at the bite, the reel, the
+ *  catch card and the four fishing panels. */
 export default function FishingOverlays({ fishing }: { fishing: FishingController }) {
-  const { cast, caught } = fishing;
-  const catalog = fishing.data.catalog;
+  const { cast, caught, panel, busy, closePanel } = fishing;
+  const { state, catalog } = fishing.data;
   const name = caught ? catalog?.species.find((s) => s.id === caught.fish.speciesId)?.name ?? caught.fish.speciesId : "";
   return (
     <>
@@ -27,6 +32,12 @@ export default function FishingOverlays({ fishing }: { fishing: FishingControlle
       )}
       {cast.phase === "reeling" && <ReelOverlay params={cast.params} rarity={cast.info.rarity} onDone={fishing.reelDone} />}
       {caught && <CatchCard fish={caught.fish} name={name} record={caught.record} onClose={fishing.dismissCatch} />}
+      {panel === "bag" && (
+        <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equip} onRelease={fishing.release} onClose={closePanel} />
+      )}
+      {panel === "depot" && <DepotPanel state={state} catalog={catalog} busy={busy} onSell={fishing.sell} onClose={closePanel} />}
+      {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onClose={closePanel} />}
+      {panel === "records" && <RecordsPanel catalog={catalog} load={fishing.loadBoard} onClose={closePanel} />}
     </>
   );
 }
