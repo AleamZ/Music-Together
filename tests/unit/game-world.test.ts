@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import type { Spot } from "@/lib/game/maps/types";
 import type { GameMessage } from "@/lib/game/net/protocol";
-import { RemoteWorld, type RosterEntry } from "@/lib/game/world";
+import { CATCH_LABEL_MS, FISHING_STALE_MS, RemoteWorld, type RosterEntry } from "@/lib/game/world";
 import { mapFromAscii } from "./helpers/ascii-map";
 
 const map = mapFromAscii(Array(20).fill(".".repeat(40))); // open 320 × 160 px, spawn (4, 4)
@@ -132,5 +132,58 @@ describe("RemoteWorld: visibility", () => {
     expect(w.visible("ann", 1000 + GRACE - 1, GRACE)).toBe(false);
     expect(w.visible("ann", 1000 + GRACE, GRACE)).toBe(true);
     expect(w.visible("ann", 1500, 500)).toBe(true);
+  });
+});
+
+describe("RemoteWorld: fishing", () => {
+  const fs = (id: string, f: 0 | 1 | 2 | 3, h: string | null, c?: [string, number]): GameMessage =>
+    (c ? { t: "fs", id, f, h, c } : { t: "fs", id, f, h });
+
+  it("is idle with empty hands until something says otherwise", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    expect(w.fishing("ann", 0)).toEqual({ phase: 0, hand: null, landed: null });
+  });
+
+  it("follows the phase and the hand fish from fs, and shows a landed fish for 3 s", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    w.applyMessage(fs("ann", 1, null), 1000);
+    expect(w.fishing("ann", 1000).phase).toBe(1);
+    w.applyMessage(fs("ann", 3, null), 5000);
+    w.applyMessage(fs("ann", 0, "ca_loc", ["ca_loc", 1200]), 9000);
+    expect(w.fishing("ann", 9000)).toEqual({ phase: 0, hand: "ca_loc", landed: { speciesId: "ca_loc", weightG: 1200 } });
+    expect(w.fishing("ann", 9000 + CATCH_LABEL_MS - 1).landed).not.toBeNull();
+    expect(w.fishing("ann", 9000 + CATCH_LABEL_MS).landed).toBeNull();
+    expect(w.fishing("ann", 9000 + CATCH_LABEL_MS).hand).toBe("ca_loc");
+  });
+
+  it("reads h (and f on st) from movement messages, e.g. the snapshot answering my hello", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    w.applyMessage({ ...st("ann", 100, 60), h: "ca_ro", f: 2 } as GameMessage, 0);
+    expect(w.fishing("ann", 0)).toMatchObject({ phase: 2, hand: "ca_ro" });
+    w.applyMessage({ ...mv("ann", 100, 60), h: null } as GameMessage, 100);
+    expect(w.fishing("ann", 100)).toMatchObject({ phase: 2, hand: null });
+    w.applyMessage(mv("ann", 110, 60), 200); // no h: the hand is unchanged
+    expect(w.fishing("ann", 200).hand).toBeNull();
+  });
+
+  it("draws a silent angler idle again after 90 s", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    w.applyMessage(fs("ann", 1, "ca_ro"), 0);
+    expect(w.fishing("ann", FISHING_STALE_MS).phase).toBe(1);
+    expect(w.fishing("ann", FISHING_STALE_MS + 1)).toMatchObject({ phase: 0, hand: "ca_ro" });
+  });
+
+  it("forgets it on bye and ignores my own fs", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    w.applyMessage(fs("ann", 1, "ca_ro"), 0);
+    w.remove("ann");
+    expect(w.fishing("ann", 10)).toEqual({ phase: 0, hand: null, landed: null });
+    w.applyMessage(fs("me", 1, null), 20);
+    expect(w.fishing("me", 20).phase).toBe(0);
   });
 });

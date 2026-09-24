@@ -1,10 +1,27 @@
 import { applyPathMsg, applyStateMsg, createActor, tickActor, type Actor } from "@/lib/game/actor";
 import type { GameMap, Spot } from "@/lib/game/maps/types";
-import { codeToFacing, type GameMessage } from "@/lib/game/net/protocol";
+import { codeToFacing, type FishPhase, type GameMessage } from "@/lib/game/net/protocol";
 import type { Look } from "@/lib/game/types";
 
 /** One other online member. `spot` = fixed place for classic-mode members; null = walking (game mode). */
 export interface RosterEntry { id: string; name: string; badges: string; look: Look; spot: Spot | null }
+
+/** What the others see of a member's fishing (v14 spec §9.3). */
+export interface RemoteFishing {
+  phase: FishPhase;
+  /** Species id of the fish in their hand. */
+  hand: string | null;
+  /** A fish they just landed (shown as a label for CATCH_LABEL_MS). */
+  landed: { speciesId: string; weightG: number } | null;
+}
+
+/** An angler silent for this long is drawn idle again (covers a lost `fs`). */
+export const FISHING_STALE_MS = 90_000;
+/** How long a catch label stays over a member's head. */
+export const CATCH_LABEL_MS = 3000;
+
+interface FishingNote { phase: FishPhase; hand: string | null; at: number; landed: { speciesId: string; weightG: number; at: number } | null }
+const IDLE: RemoteFishing = { phase: 0, hand: null, landed: null };
 
 type MoveMsg = Extract<GameMessage, { t: "st" | "mv" | "pa" }>;
 const isMove = (m: GameMessage): m is MoveMsg => m.t === "st" || m.t === "mv" || m.t === "pa";
@@ -27,6 +44,8 @@ export class RemoteWorld {
   private readonly last = new Map<string, { msg: MoveMsg; at: number }>();
   /** Walking members we have no state for yet → since when (ms). */
   private readonly unseen = new Map<string, number>();
+  /** Fishing phase, hand fish and last catch per member, with the time of their last message. */
+  private readonly fishingById = new Map<string, FishingNote>();
   private walking = 0;
 
   constructor(map: GameMap, localId: string) {
@@ -81,9 +100,18 @@ export class RemoteWorld {
     this.unseen.set(id, now);
   }
 
-  /** st / mv / pa from the network; other message types are ignored. */
+  /** st / mv / pa / fs from the network; other message types are ignored. */
   applyMessage(msg: GameMessage, now: number): void {
-    if (msg.id === this.localId || !isMove(msg)) return;
+    if (msg.id === this.localId) return;
+    if (msg.t === "fs") {
+      this.fishingById.set(msg.id, {
+        phase: msg.f, hand: msg.h, at: now,
+        landed: msg.c ? { speciesId: msg.c[0], weightG: msg.c[1], at: now } : this.fishingById.get(msg.id)?.landed ?? null,
+      });
+      return;
+    }
+    if (!isMove(msg)) return;
+    this.noteMove(msg, now);
     const last = { msg, at: now };
     this.last.set(msg.id, last);
     this.unseen.delete(msg.id);
@@ -97,6 +125,18 @@ export class RemoteWorld {
     this.actorById.delete(id);
     this.last.delete(id);
     this.unseen.delete(id);
+    this.fishingById.delete(id);
+  }
+
+  /** A member's fishing as of `now`: a phase older than FISHING_STALE_MS reads as idle, a catch label lasts CATCH_LABEL_MS. */
+  fishing(id: string, now: number): RemoteFishing {
+    const n = this.fishingById.get(id);
+    if (!n) return IDLE;
+    return {
+      phase: now - n.at > FISHING_STALE_MS ? 0 : n.phase,
+      hand: n.hand,
+      landed: n.landed && now - n.landed.at < CATCH_LABEL_MS ? { speciesId: n.landed.speciesId, weightG: n.landed.weightG } : null,
+    };
   }
 
   /** A walking member is shown once we know where they are, or once `graceMs` has passed without a state. */
@@ -107,6 +147,18 @@ export class RemoteWorld {
 
   tick(dtSec: number, now: number): void {
     for (const a of this.actorById.values()) tickActor(this.map, a, dtSec, now, true);
+  }
+
+  /** A movement message refreshes the fishing clock and may carry the hand fish (`h`) and, on `st`, the phase (`f`). */
+  private noteMove(msg: MoveMsg, now: number): void {
+    const prev = this.fishingById.get(msg.id);
+    if (!prev && msg.h === undefined && (msg.t !== "st" || msg.f === undefined)) return;
+    this.fishingById.set(msg.id, {
+      phase: msg.t === "st" && msg.f !== undefined ? msg.f : prev?.phase ?? 0,
+      hand: msg.h !== undefined ? msg.h : prev?.hand ?? null,
+      at: now,
+      landed: prev?.landed ?? null,
+    });
   }
 
   private needsActor(id: string): boolean {
