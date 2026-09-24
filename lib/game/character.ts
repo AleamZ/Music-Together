@@ -88,3 +88,16 @@ export function characterErrorMessage(err: unknown): string {
   if (msg.includes("invalid character option")) return "Lựa chọn ngoại hình không hợp lệ.";
   return "Không lưu được nhân vật — thử lại nhé.";
 }
+
+/**
+ * A wardrobe row's heading: plain `prefix`, then the chosen item's `name` (shown lighter), never naming the category twice.
+ * "Mũ: " + "Nón lá"; "" + "Áo bà ba vàng" when the name already starts with the label (any case); "Khăn: " + "Không" for an
+ * empty slot; just the label (`name` null) while the catalog loads or when the chosen id is not in it.
+ */
+export function rowHeading(label: string, chosen: string | null, catalog: CatalogItem[] | null): { prefix: string; name: string | null } {
+  if (!catalog) return { prefix: label, name: null };
+  if (chosen === null) return { prefix: `${label}: `, name: "Không" };
+  const name = catalog.find((c) => c.id === chosen)?.name;
+  if (name === undefined) return { prefix: label, name: null };
+  return { prefix: name.toLowerCase().startsWith(label.toLowerCase()) ? "" : `${label}: `, name };
+}

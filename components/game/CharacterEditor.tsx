@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { HAIR_COLOR, HAIR_COLOR_LABEL, HAIR_STYLE_LABEL, SKIN, SKIN_LABEL } from "@/lib/game/art/palettes";
 import {
-  characterErrorMessage, fetchCatalog, saveCharacter, validateLook, type CatalogItem, type LookProblem,
+  characterErrorMessage, fetchCatalog, rowHeading, saveCharacter, validateLook, type CatalogItem, type LookProblem,
 } from "@/lib/game/character";
 import { HAIR_COLORS, HAIR_STYLES, SKIN_TONES, type ItemSlot, type Look } from "@/lib/game/types";
 import ItemIcon from "./ItemIcon";
@@ -105,12 +105,6 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
   };
 
   const itemsFor = (slot: ItemSlot) => (catalog ?? []).filter((c) => c.slot === slot && c.starter);
-  /** What a row's label names as the current choice: the item's catalog name, "Không" for an empty slot, null while loading. */
-  const choiceName = (field: ItemField): string | null => {
-    if (!catalog) return null;
-    const id = draft[field];
-    return id === null ? "Không" : (catalog.find((c) => c.id === id)?.name ?? null);
-  };
 
   return (
     <ParchmentModal title={mode === "create" ? "Tạo nhân vật" : "Tủ đồ"} onClose={mode === "edit" ? onClose : undefined} className="max-w-2xl">
@@ -147,12 +141,12 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
             </div>
           </div>
           {ITEM_ROWS.map((row) => {
-            const choice = choiceName(row.field);
+            const heading = rowHeading(row.label, draft[row.field], catalog);
             return (
               <div key={row.field}>
                 <p className="leading-none">
-                  {row.label}
-                  {choice && <>: <span className="opacity-80">{choice}</span></>}
+                  {heading.prefix}
+                  {heading.name !== null && <span className="opacity-80">{heading.name}</span>}
                 </p>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {row.optional && (
