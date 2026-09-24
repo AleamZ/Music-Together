@@ -21,6 +21,7 @@ export interface KaraokeViewProps {
   isPlaying?: boolean;
   offsetMs?: number;
   onChangeOffset?: (offset: number) => void;
+  suggestedIntroOffsetMs?: number | null;
 }
 
 interface CharWord {
@@ -53,6 +54,7 @@ export default function KaraokeView({
   isPlaying = false,
   offsetMs = 0,
   onChangeOffset,
+  suggestedIntroOffsetMs,
 }: KaraokeViewProps) {
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -61,7 +63,14 @@ export default function KaraokeView({
 
   const [align, setAlign] = useState<"left" | "center">("left");
   const [userScrolled, setUserScrolled] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 2500);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
 
   const [manualQuery, setManualQuery] = useState("");
   const [showSearchBox, setShowSearchBox] = useState(false);
@@ -288,29 +297,28 @@ export default function KaraokeView({
 
     if (dist === 1) {
       return {
-        className: `${themeStyles.inactiveClass} opacity-45 scale-[0.98] blur-[0.4px]`,
+        className: `${themeStyles.inactiveClass} opacity-45 hover:!opacity-100 scale-[0.98] hover:!scale-100 blur-[0.4px] hover:!blur-none`,
         isActive: false,
       };
     }
 
     if (dist === 2) {
       return {
-        className: `${themeStyles.inactiveClass} opacity-25 scale-[0.95] blur-[0.8px]`,
+        className: `${themeStyles.inactiveClass} opacity-25 hover:!opacity-100 scale-[0.95] hover:!scale-100 blur-[0.8px] hover:!blur-none`,
         isActive: false,
       };
     }
 
     return {
-      className: `${themeStyles.inactiveClass} opacity-12 scale-[0.92] blur-[1.2px]`,
+      className: `${themeStyles.inactiveClass} opacity-15 hover:!opacity-100 scale-[0.92] hover:!scale-100 blur-[1px] hover:!blur-none`,
       isActive: false,
     };
   };
 
   return (
     <div
-      className={`relative flex flex-col w-full h-full select-none ${
-        fullscreen ? "p-4 sm:p-8" : "p-2 sm:p-3"
-      }`}
+      className={`relative flex flex-col w-full h-full select-none ${fullscreen ? "p-4 sm:p-8" : "p-2 sm:p-3"
+        }`}
     >
       {/* Top Controls Bar */}
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 shrink-0">
@@ -342,9 +350,8 @@ export default function KaraokeView({
                 -0.5s
               </button>
               <span
-                className={`px-1 font-bold ${
-                  offsetMs !== 0 ? "text-gold" : "text-white/50"
-                }`}
+                className={`px-1 font-bold ${offsetMs !== 0 ? "text-gold" : "text-white/50"
+                  }`}
               >
                 {offsetMs > 0
                   ? `+${(offsetMs / 1000).toFixed(1)}s`
@@ -361,7 +368,10 @@ export default function KaraokeView({
               {offsetMs !== 0 && (
                 <button
                   type="button"
-                  onClick={() => onChangeOffset(0)}
+                  onClick={() => {
+                    onChangeOffset(0);
+                    setToastMessage("Đã đặt lại độ lệch (0.0s)");
+                  }}
                   className="text-[9px] text-white/40 hover:text-white ml-0.5 cursor-pointer font-bold"
                   title="Đặt lại độ lệch về 0.0s"
                 >
@@ -369,6 +379,41 @@ export default function KaraokeView({
                 </button>
               )}
             </div>
+          )}
+
+          {/* Quick Intro Offset Suggestion from SponsorBlock */}
+          {hasSynced && onChangeOffset && suggestedIntroOffsetMs && (
+            offsetMs !== suggestedIntroOffsetMs ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onChangeOffset(suggestedIntroOffsetMs);
+                  const sec = (suggestedIntroOffsetMs / 1000).toFixed(1);
+                  setToastMessage(`💡 Đã bù intro MV (${suggestedIntroOffsetMs >= 0 ? `+${sec}s` : `${sec}s`})`);
+                }}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/25 to-yellow-500/25 hover:from-amber-400 hover:to-yellow-400 text-amber-200 hover:text-black border border-amber-400/60 rounded-full px-2.5 py-0.5 text-[11px] font-bold shadow-[0_0_12px_rgba(251,191,36,0.25)] hover:shadow-[0_0_16px_rgba(251,191,36,0.6)] hover:scale-105 transition-all cursor-pointer"
+                title="Phát hiện đoạn intro/thoại đầu MV từ SponsorBlock. Bấm để tự động bù lệch cho bài hát"
+              >
+                <span className="animate-pulse">💡</span>
+                <span>Khớp intro MV</span>
+                <span className="font-mono">({(suggestedIntroOffsetMs / 1000).toFixed(1)}s)</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  onChangeOffset(0);
+                  setToastMessage("Đã huỷ bù intro (0.0s)");
+                }}
+                className="flex items-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all cursor-pointer"
+                title="Đang áp dụng mốc bù intro SponsorBlock. Bấm để huỷ bỏ"
+              >
+                <span>✓</span>
+                <span>Đã khớp intro</span>
+                <span className="font-mono text-emerald-200">({(suggestedIntroOffsetMs / 1000).toFixed(1)}s)</span>
+                <span className="text-[10px] text-white/40 hover:text-white ml-0.5 font-bold">✕</span>
+              </button>
+            )
           )}
 
           {/* Alignment Switcher (Left vs Center) */}
@@ -408,6 +453,13 @@ export default function KaraokeView({
         </div>
       </div>
 
+      {/* Floating toast notification for sync feedback */}
+      {toastMessage && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-40 px-3 py-1.5 rounded-full bg-gold text-burgundy font-bold text-xs shadow-xl backdrop-blur-md flex items-center gap-1.5 pointer-events-none transition-all">
+          {toastMessage}
+        </div>
+      )}
+
       {/* Manual Search Drawer */}
       {showSearchBox && (
         <form onSubmit={handleManualSearch} className="mb-3 flex items-center gap-2 shrink-0">
@@ -441,11 +493,10 @@ export default function KaraokeView({
           WebkitMaskImage:
             "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
         }}
-        className={`relative flex-1 overflow-y-auto overflow-x-hidden min-h-0 space-y-5 sm:space-y-7 no-scrollbar ${
-          align === "left"
+        className={`relative flex-1 overflow-y-auto overflow-x-hidden min-h-0 space-y-5 sm:space-y-7 no-scrollbar ${align === "left"
             ? "text-left max-w-2xl mx-auto px-4 sm:px-10"
             : "text-center px-4 sm:px-8"
-        } ${fullscreen ? "py-[34vh]" : "py-24 sm:py-28"}`}
+          } ${fullscreen ? "py-[34vh]" : "py-24 sm:py-28"}`}
       >
         {loading && (
           <div className="flex flex-col items-center justify-center h-48 gap-2 text-white/70">
@@ -497,33 +548,54 @@ export default function KaraokeView({
                 }}
                 style={{
                   transition:
-                    "transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 600ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 600ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                    "transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 300ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 300ms cubic-bezier(0.2, 0.8, 0.2, 1)",
                   transformOrigin: align === "left" ? "left center" : "center center",
                   willChange: "transform, opacity, filter",
                 }}
-                className={`group py-1.5 sm:py-2.5 rounded-xl w-full select-none transition-all ${
-                  canSeek && line.timeMs >= 0 ? "cursor-pointer" : ""
-                } ${className}`}
+                className={`group py-1.5 sm:py-2.5 px-2 rounded-xl w-full select-none transition-all ${!isActive ? "hover:bg-white/[0.06] hover:!opacity-100 hover:!blur-none hover:!scale-100" : ""
+                  } ${canSeek && line.timeMs >= 0 ? "cursor-pointer" : ""} ${className}`}
               >
                 <div
-                  className={`flex flex-col gap-1 w-full ${
-                    align === "left" ? "items-start" : "items-center"
-                  }`}
+                  className={`flex flex-col gap-1 w-full ${align === "left" ? "items-start" : "items-center"
+                    }`}
                 >
                   {/* Timestamp clearly displayed on the line ABOVE the lyrics */}
                   {hasSynced && line.timeMs >= 0 && (
                     <div
-                      className={`flex items-center gap-1.5 font-mono text-[11px] sm:text-xs select-none transition-colors ${
-                        isActive
+                      className={`flex items-center gap-1.5 font-mono text-[11px] sm:text-xs select-none transition-colors ${isActive
                           ? themeStyles.activeTimestamp
-                          : "text-white/35 group-hover:text-white/60"
-                      }`}
+                          : "text-white/40 group-hover:text-white/80"
+                        }`}
                     >
                       <span>⏱ {formatClock(line.timeMs)}</span>
                       {isActive && isPlaying && (
                         <span
                           className={`inline-block w-1.5 h-1.5 rounded-full ${themeStyles.activeIndicator} animate-pulse`}
                         />
+                      )}
+                      {/* Tap-to-Align 1-Chạm Khớp Lời */}
+                      {onChangeOffset && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const targetOffset = line.timeMs - elapsedMs;
+                            onChangeOffset(targetOffset);
+                            const sec = (targetOffset / 1000).toFixed(1);
+                            setToastMessage(
+                              `🎯 Đã khớp câu này với nhạc (${targetOffset >= 0 ? `+${sec}s` : `${sec}s`})`
+                            );
+                          }}
+                          className={
+                            !isActive
+                              ? "opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-200 ml-2 px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide cursor-pointer flex items-center gap-1.5 shadow-lg bg-gradient-to-r from-amber-500/30 to-yellow-500/30 text-amber-200 border border-amber-400/70 hover:from-amber-400 hover:to-yellow-400 hover:text-black hover:border-amber-300 hover:scale-105 hover:shadow-[0_0_16px_rgba(251,191,36,0.7)]"
+                              : "opacity-0 group-hover:opacity-40 hover:!opacity-90 transition-opacity ml-2 px-1.5 py-0.5 rounded text-[10px] text-white/40 hover:text-white bg-white/10 hover:bg-white/20 border border-white/15 flex items-center gap-1 cursor-pointer font-sans"
+                          }
+                          title="Bấm để đặt câu này khớp với thời điểm ca sĩ đang hát (Tự động căn chỉnh toàn bộ bài)"
+                        >
+                          <span className={!isActive ? "animate-pulse" : ""}>🎯</span>
+                          <span>Khớp câu này</span>
+                        </button>
                       )}
                     </div>
                   )}
@@ -532,11 +604,10 @@ export default function KaraokeView({
                   {isActive && words ? (
                     <div
                       ref={charContainerRef}
-                      className={`font-sans leading-relaxed sm:leading-loose tracking-normal ${
-                        fullscreen
+                      className={`font-sans leading-relaxed sm:leading-loose tracking-normal ${fullscreen
                           ? "text-2xl sm:text-4xl lg:text-5xl font-black"
                           : "text-base sm:text-lg font-bold"
-                      }`}
+                        }`}
                     >
                       {words.map((word, wIdx) => {
                         if (word.isSpace) {
@@ -566,11 +637,10 @@ export default function KaraokeView({
                     </div>
                   ) : (
                     <span
-                      className={`leading-relaxed sm:leading-loose tracking-normal transition-colors font-sans ${
-                        fullscreen
+                      className={`leading-relaxed sm:leading-loose tracking-normal transition-colors font-sans ${fullscreen
                           ? "text-2xl sm:text-4xl lg:text-5xl font-bold"
                           : "text-base sm:text-lg font-medium"
-                      }`}
+                        }`}
                     >
                       {line.text || "♪ ♪ ♪"}
                     </span>

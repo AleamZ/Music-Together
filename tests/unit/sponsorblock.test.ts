@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   findActiveSkipSegment,
   getCategoryLabel,
+  getIntroOffsetSuggestion,
+  isEndOfTrackSegment,
   type SponsorSegment,
 } from "@/lib/sponsorblock";
 
@@ -62,4 +64,134 @@ describe("lib/sponsorblock", () => {
     const res = findActiveSkipSegment(76.0, sampleSegments, skipped);
     expect(res).toBeNull();
   });
+
+  describe("isEndOfTrackSegment", () => {
+    it("returns true for outro category regardless of duration", () => {
+      const seg: SponsorSegment = {
+        segmentId: "outro-1",
+        category: "outro",
+        start: 180,
+        end: 200,
+        duration: 20,
+      };
+      expect(isEndOfTrackSegment(seg, 0)).toBe(true);
+      expect(isEndOfTrackSegment(seg, 200)).toBe(true);
+    });
+
+    it("returns true when segment extends to or near the end (user scenario: skip at 3:24 in 3:25 clip)", () => {
+      const seg: SponsorSegment = {
+        segmentId: "end-sponsor",
+        category: "sponsor",
+        start: 190.0,
+        end: 204.0, // 3:24
+        duration: 14.0,
+      };
+      // Video is 205s (3:25). 204 >= 205 - 3 (202) -> true
+      expect(isEndOfTrackSegment(seg, 205.0)).toBe(true);
+    });
+
+    it("returns true when segment end equals or exceeds video duration", () => {
+      const seg: SponsorSegment = {
+        segmentId: "overflow-seg",
+        category: "sponsor",
+        start: 204.0,
+        end: 215.0,
+        duration: 11.0,
+      };
+      expect(isEndOfTrackSegment(seg, 210.0)).toBe(true);
+    });
+
+    it("returns true when segment starts within threshold of the end", () => {
+      const seg: SponsorSegment = {
+        segmentId: "late-start-seg",
+        category: "selfpromo",
+        start: 208.0,
+        end: 209.5,
+        duration: 1.5,
+      };
+      expect(isEndOfTrackSegment(seg, 210.0)).toBe(true);
+    });
+
+    it("returns false for mid-track segments", () => {
+      const midSeg: SponsorSegment = {
+        segmentId: "mid-1",
+        category: "sponsor",
+        start: 60.0,
+        end: 90.0,
+        duration: 30.0,
+      };
+      expect(isEndOfTrackSegment(midSeg, 240.0)).toBe(false);
+    });
+
+    it("returns false when total duration is 0 and category is not outro", () => {
+      const midSeg: SponsorSegment = {
+        segmentId: "mid-1",
+        category: "sponsor",
+        start: 60.0,
+        end: 90.0,
+        duration: 30.0,
+      };
+      expect(isEndOfTrackSegment(midSeg, 0)).toBe(false);
+    });
+  });
+
+  describe("getIntroOffsetSuggestion", () => {
+    it("returns negative offset when music_offtopic starts near 0s", () => {
+      const segs: SponsorSegment[] = [
+        {
+          segmentId: "offtopic-1",
+          category: "music_offtopic",
+          start: 0.0,
+          end: 18.5,
+          duration: 18.5,
+        },
+      ];
+      expect(getIntroOffsetSuggestion(segs)).toBe(-18500);
+    });
+
+    it("returns negative offset when intro starts within tolerance (e.g. 1.2s)", () => {
+      const segs: SponsorSegment[] = [
+        {
+          segmentId: "intro-1",
+          category: "intro",
+          start: 1.2,
+          end: 12.0,
+          duration: 10.8,
+        },
+      ];
+      expect(getIntroOffsetSuggestion(segs)).toBe(-12000);
+    });
+
+    it("returns null when segments only contain mid-track sponsor", () => {
+      const segs: SponsorSegment[] = [
+        {
+          segmentId: "mid-sponsor",
+          category: "sponsor",
+          start: 60.0,
+          end: 90.0,
+          duration: 30.0,
+        },
+      ];
+      expect(getIntroOffsetSuggestion(segs)).toBeNull();
+    });
+
+    it("returns null when segments is undefined or empty", () => {
+      expect(getIntroOffsetSuggestion(undefined)).toBeNull();
+      expect(getIntroOffsetSuggestion([])).toBeNull();
+    });
+
+    it("returns null when intro duration is too short (< 2s)", () => {
+      const segs: SponsorSegment[] = [
+        {
+          segmentId: "short-intro",
+          category: "intro",
+          start: 0.0,
+          end: 1.0,
+          duration: 1.0,
+        },
+      ];
+      expect(getIntroOffsetSuggestion(segs)).toBeNull();
+    });
+  });
 });
+

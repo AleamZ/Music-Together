@@ -5,7 +5,7 @@ import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
 import { computeElapsedMs } from "@/lib/identity";
 import { needsResync, shouldPlay, targetSeconds } from "@/lib/playback-sync";
 import { advanceQueue, seekPlayback, setPlayback, type QueueItem, type Room } from "@/lib/supabase";
-import { findActiveSkipSegment, type SponsorSegment } from "@/lib/sponsorblock";
+import { findActiveSkipSegment, isEndOfTrackSegment, type SponsorSegment } from "@/lib/sponsorblock";
 
 const VOL_KEY = "music-together:volume";
 const TICK_MS = 1000;
@@ -81,9 +81,11 @@ export function usePlayback({
     skippedSegmentIdsRef.current.clear();
   }, [currentId]);
 
-  // Latest room row for timers/handlers (synced after render — never assigned during render).
+  // Latest room row and current item for timers/handlers (synced after render — never assigned during render).
   const roomRef = useRef(room);
   useEffect(() => { roomRef.current = room; });
+  const currentRef = useRef(current);
+  useEffect(() => { currentRef.current = current; });
 
   const advancingRef = useRef(false);
   const replayAttemptedRef = useRef(false);
@@ -162,7 +164,12 @@ export function usePlayback({
       }
 
       // DJ only: Auto-skip sponsor segments
-      if (isDj && r.is_playing && sponsorBlockEnabledRef.current) {
+      if (
+        isDj &&
+        r.is_playing &&
+        sponsorBlockEnabledRef.current &&
+        !advancingRef.current
+      ) {
         const curSec = targetSeconds(r);
         const seg = findActiveSkipSegment(
           curSec,
@@ -171,15 +178,29 @@ export function usePlayback({
         );
         if (seg) {
           skippedSegmentIdsRef.current.add(seg.segmentId);
-          const targetMs = Math.ceil(seg.end * 1000);
-          seekTo(targetMs / 1000);
-          void seekPlayback(roomId, token, targetMs);
-          onSponsorSkippedRef.current?.(seg);
+          const curItem = currentRef.current;
+          const totalSec =
+            getDuration() > 0
+              ? getDuration()
+              : durationMs > 0
+              ? durationMs / 1000
+              : (curItem?.duration_seconds ?? 0);
+
+          if (isEndOfTrackSegment(seg, totalSec)) {
+            onSponsorSkippedRef.current?.(seg);
+            pause();
+            advance();
+          } else {
+            const targetMs = Math.ceil(seg.end * 1000);
+            seekTo(targetMs / 1000);
+            void seekPlayback(roomId, token, targetMs);
+            onSponsorSkippedRef.current?.(seg);
+          }
         }
       }
     }, TICK_MS);
     return () => clearInterval(id);
-  }, [ready, currentId, unlocked, isDj, roomId, token, getDuration, getCurrentTime, seekTo]);
+  }, [ready, currentId, unlocked, isDj, roomId, token, getDuration, getCurrentTime, seekTo, advance, pause]);
 
   // DJ only — auto-advance: nothing playing and (queue has items OR auto_replay_history) -> start the next track.
   useEffect(() => {
@@ -221,7 +242,7 @@ export function usePlayback({
   const skip = useCallback(() => advance(), [advance]);
 
   const seekMs = useCallback((ms: number) => {
-    if (!isDj) return;
+    if (!isDj || advancingRef.current) return;
     seekTo(ms / 1000);
     void seekPlayback(roomId, token, Math.floor(ms));
   }, [isDj, roomId, token, seekTo]);

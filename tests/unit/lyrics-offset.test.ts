@@ -40,4 +40,48 @@ describe("lyrics offset adjustment", () => {
     expect(effectiveElapsed).toBe(0);
     expect(findActiveLyricIndex(lines, effectiveElapsed)).toBe(-1);
   });
+
+  describe("Tap-to-Align (1-Chạm Khớp Lời)", () => {
+    it("snaps selected line to current playback time using formula offsetMs = line.timeMs - elapsedMs", () => {
+      // Scenario: Singer starts singing line 0 (timeMs = 5000) at video time 18s (18000ms)
+      const currentElapsedMs = 18000;
+      const targetLine = lines[0]; // timeMs: 5000
+      const calculatedOffset = targetLine.timeMs - currentElapsedMs; // 5000 - 18000 = -13000ms
+
+      expect(calculatedOffset).toBe(-13000);
+
+      // Verify that after applying calculatedOffset, effectiveElapsed matches targetLine.timeMs
+      const effectiveElapsed = Math.max(0, currentElapsedMs + calculatedOffset);
+      expect(effectiveElapsed).toBe(targetLine.timeMs);
+      expect(findActiveLyricIndex(lines, effectiveElapsed)).toBe(0);
+    });
+
+    it("snaps a later line (e.g. chorus) accurately when aligned mid-song", () => {
+      // Scenario: User aligns at chorus (line 2: 15000ms), but current video is at 25000ms
+      const currentElapsedMs = 25000;
+      const chorusLine = lines[2]; // timeMs: 15000
+      const calculatedOffset = chorusLine.timeMs - currentElapsedMs; // -10000ms
+
+      const effectiveElapsed = Math.max(0, currentElapsedMs + calculatedOffset);
+      expect(effectiveElapsed).toBe(15000);
+      expect(findActiveLyricIndex(lines, effectiveElapsed)).toBe(2);
+    });
+  });
+
+  describe("Persistent Offset Cache", () => {
+    it("saves and retrieves offset by videoId from localStorage", async () => {
+      const { getSavedLyricOffset, saveLyricOffset } = await import("@/hooks/useLyrics");
+      const videoId = "test-video-123";
+
+      expect(getSavedLyricOffset(videoId)).toBe(0);
+
+      saveLyricOffset(videoId, -15000);
+      expect(getSavedLyricOffset(videoId)).toBe(-15000);
+
+      // Reset to 0 clears storage
+      saveLyricOffset(videoId, 0);
+      expect(getSavedLyricOffset(videoId)).toBe(0);
+    });
+  });
 });
+

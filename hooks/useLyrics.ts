@@ -17,10 +17,39 @@ export interface UseLyricsProps {
   elapsedMs: number;
   roomId?: string | null;
   trackId?: string | null;
+  youtubeVideoId?: string | null;
   username?: string | null;
 }
 
 const lyricsCache = new Map<string, { lines: LyricLine[]; meta: LyricsData }>();
+const OFFSET_STORAGE_PREFIX = "music-together:lyric-offset:";
+
+export function getSavedLyricOffset(videoId?: string | null): number {
+  if (typeof window === "undefined" || !videoId) return 0;
+  try {
+    const val = localStorage.getItem(`${OFFSET_STORAGE_PREFIX}${videoId}`);
+    if (val !== null) {
+      const num = Number(val);
+      if (Number.isFinite(num)) return num;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return 0;
+}
+
+export function saveLyricOffset(videoId: string | null | undefined, offsetMs: number) {
+  if (typeof window === "undefined" || !videoId) return;
+  try {
+    if (offsetMs === 0) {
+      localStorage.removeItem(`${OFFSET_STORAGE_PREFIX}${videoId}`);
+    } else {
+      localStorage.setItem(`${OFFSET_STORAGE_PREFIX}${videoId}`, String(offsetMs));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export function useLyrics({
   title,
@@ -28,6 +57,7 @@ export function useLyrics({
   elapsedMs,
   roomId,
   trackId,
+  youtubeVideoId,
   username,
 }: UseLyricsProps) {
   const [lines, setLines] = useState<LyricLine[]>([]);
@@ -39,10 +69,11 @@ export function useLyrics({
   const currentTitleRef = useRef<string | null>(null);
   const lyricSyncHandleRef = useRef<LyricSyncHandle | null>(null);
 
-  // Reset offset when active track changes
+  // Load saved offset from persistent cache when active track changes, or reset to 0
   useEffect(() => {
-    setOffsetMsState(0);
-  }, [trackId]);
+    const saved = getSavedLyricOffset(youtubeVideoId);
+    setOffsetMsState(saved);
+  }, [trackId, youtubeVideoId]);
 
   // Subscribe to real-time lyric change broadcasts across room members
   useEffect(() => {
@@ -53,6 +84,7 @@ export function useLyrics({
       if (trackId && payload.trackId === trackId) {
         if (typeof payload.offsetMs === "number") {
           setOffsetMsState(payload.offsetMs);
+          saveLyricOffset(youtubeVideoId, payload.offsetMs);
         }
 
         if (payload.syncedLyrics !== undefined || payload.plainLyrics !== undefined) {
@@ -174,6 +206,7 @@ export function useLyrics({
     (newOffset: number | ((prev: number) => number), syncToRoom = false) => {
       setOffsetMsState((prev) => {
         const next = typeof newOffset === "function" ? newOffset(prev) : newOffset;
+        saveLyricOffset(youtubeVideoId, next);
         if (syncToRoom && lyricSyncHandleRef.current && trackId) {
           lyricSyncHandleRef.current.send({
             trackId,
@@ -184,7 +217,7 @@ export function useLyrics({
         return next;
       });
     },
-    [trackId, username]
+    [trackId, youtubeVideoId, username]
   );
 
   const searchManual = useCallback(

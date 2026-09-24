@@ -239,6 +239,7 @@ export default function RoomShell({ view }: { view: RoomView }) {
               onToggleSponsorBlock={sponsorBlock.toggleEnabled}
               lastSkippedToast={sponsorBlock.lastSkippedToast}
               onClearSkippedToast={sponsorBlock.clearSkipToast}
+              username={myUsername}
             >
               <Reactions roomId={room.id} username={myUsername} />
             </NowPlaying>

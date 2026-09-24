@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Turntable from "./Turntable";
 import { computeElapsedMs } from "@/lib/identity";
 import { formatClock } from "@/lib/format";
@@ -13,7 +13,7 @@ import { useLyrics } from "@/hooks/useLyrics";
 import KaraokeView from "./KaraokeView";
 import KaraokeModal from "./KaraokeModal";
 import LyricSearchModal from "./LyricSearchModal";
-import { getCategoryLabel, type SponsorSegment } from "@/lib/sponsorblock";
+import { getCategoryLabel, getIntroOffsetSuggestion, type SponsorSegment } from "@/lib/sponsorblock";
 import type { SkippedToastInfo } from "@/hooks/useSponsorBlock";
 
 function SeekbarWithSponsors({
@@ -107,6 +107,7 @@ export interface NowPlayingProps {
   onToggleSponsorBlock?: () => void;
   lastSkippedToast?: SkippedToastInfo | null;
   onClearSkippedToast?: () => void;
+  username?: string;
   children?: React.ReactNode;
 }
 
@@ -128,12 +129,18 @@ export default function NowPlaying(p: NowPlayingProps) {
 
   const dur = p.durationMs || (current?.duration_seconds ? current.duration_seconds * 1000 : 0);
 
+  const suggestedIntroOffsetMs = useMemo(() => {
+    return getIntroOffsetSuggestion(p.sponsorSegments);
+  }, [p.sponsorSegments]);
+
   const lyricsHook = useLyrics({
     title: current?.title,
     durationSeconds: current?.duration_seconds,
     elapsedMs: elapsed,
     roomId: room.id,
     trackId: current?.id,
+    youtubeVideoId: current?.youtube_video_id,
+    username: p.username,
   });
 
   const [lastVolume, setLastVolume] = useState(p.volume > 0 ? p.volume : 100);
@@ -250,6 +257,7 @@ export default function NowPlaying(p: NowPlayingProps) {
             isPlaying={room.is_playing}
             offsetMs={lyricsHook.offsetMs}
             onChangeOffset={(off) => lyricsHook.setOffsetMs(off, p.canControl)}
+            suggestedIntroOffsetMs={suggestedIntroOffsetMs}
           />
         </div>
       )}
@@ -300,6 +308,7 @@ export default function NowPlaying(p: NowPlayingProps) {
         onVolume={p.onVolume}
         offsetMs={lyricsHook.offsetMs}
         onChangeOffset={(off) => lyricsHook.setOffsetMs(off, p.canControl)}
+        suggestedIntroOffsetMs={suggestedIntroOffsetMs}
       />
       <LyricSearchModal
         isOpen={isSearchModalOpen}
@@ -797,6 +806,9 @@ export default function NowPlaying(p: NowPlayingProps) {
                 onOpenSearchModal={() => setIsSearchModalOpen(true)}
                 elapsedMs={elapsed}
                 isPlaying={room.is_playing}
+                offsetMs={lyricsHook.offsetMs}
+                onChangeOffset={(off) => lyricsHook.setOffsetMs(off, p.canControl)}
+                suggestedIntroOffsetMs={suggestedIntroOffsetMs}
               />
             </div>
           ) : (
