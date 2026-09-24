@@ -96,3 +96,4 @@ begin
   returning c.* into v_row;
   return v_row;
 end; $$;
+grant execute on function public.save_character(text,text,text,text,text,text,text,text,text) to anon, authenticated;
