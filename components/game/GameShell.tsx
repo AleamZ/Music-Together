@@ -15,6 +15,7 @@ import type { RoomView } from "@/hooks/useRoom";
 import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
 import { formatChatMessageBody, parseChatMessageBody } from "@/lib/chat-helpers";
 import { formatClock } from "@/lib/format";
+import { freshAnnouncements } from "@/lib/game/fishing/announce";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
@@ -135,6 +136,15 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       if (m.account_id) canvasRef.current?.showBubble(m.account_id, parseChatMessageBody(m.body).text);
     }
   }, [messages]);
+
+  // --- rare catches the server announced in the chat (my own catch shows the catch card instead)
+  const announcedRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const { id, announcement } of freshAnnouncements(messages, announcedRef.current, Date.now())) {
+      announcedRef.current.add(id);
+      if (announcement.accountId !== accountId) showToast(announcement.text);
+    }
+  }, [messages, accountId, showToast]);
 
   // --- reactions float from the sender's character (from the top of the screen when they are on the other map)
   const { react } = useReactions(room.id, myName, {
