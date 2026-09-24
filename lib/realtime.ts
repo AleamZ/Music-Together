@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase, type Room, type Member, type QueueItem } from "@/lib/supabase";
+import { aggregatePresenceModes, type PresenceEntry, type PresenceMeta, type PresenceMode } from "@/lib/presence-modes";
 
 export interface RoomState { room: Room | null; members: Member[]; queue: QueueItem[]; }
 
@@ -42,20 +43,36 @@ export function subscribeRoom(roomId: string, onState: (s: RoomState) => void): 
   return () => { cancelled = true; if (timer) clearTimeout(timer); void supabase.removeChannel(channel); };
 }
 
-/** Realtime Presence: online member ids, keyed by member id. */
+export interface PresenceHandle { unsubscribe: () => void; setMode: (mode: PresenceMode) => void }
+
+/** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13). */
 export function trackPresence(
-  roomId: string, me: { memberId: string; name: string }, onOnline: (ids: string[]) => void,
-): () => void {
+  roomId: string,
+  me: { memberId: string; name: string; mode: PresenceMode },
+  onChange: (entries: PresenceEntry[]) => void,
+): PresenceHandle {
   const channel = supabase.channel(`presence:${roomId}`, { config: { presence: { key: me.memberId } } });
-  const emit = () => onOnline(Object.keys(channel.presenceState()));
+  let mode = me.mode;
+  let subscribed = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const emit = () => onChange(aggregatePresenceModes(channel.presenceState() as unknown as Record<string, PresenceMeta[]>));
+  const track = () => channel.track({ name: me.name, online_at: new Date().toISOString(), mode });
   channel
     .on("presence", { event: "sync" }, emit)
     .on("presence", { event: "join" }, emit)
     .on("presence", { event: "leave" }, emit)
     .subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await channel.track({ name: me.name, online_at: new Date().toISOString() });
-      }
+      if (status === "SUBSCRIBED") { subscribed = true; await track(); }
+      else subscribed = false;
     });
-  return () => { void supabase.removeChannel(channel); };
+  return {
+    unsubscribe: () => { if (timer) clearTimeout(timer); void supabase.removeChannel(channel); },
+    setMode: (next) => {
+      if (next === mode) return;
+      mode = next;
+      if (timer) clearTimeout(timer);
+      // Presence allows 5 calls per client per 30 s → debounce rapid toggles into one track().
+      timer = setTimeout(() => { timer = null; if (subscribed) void track(); }, 1000);
+    },
+  };
 }
