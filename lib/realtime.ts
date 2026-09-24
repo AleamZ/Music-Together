@@ -71,6 +71,7 @@ export function trackPresence(
   const wanted = (): Published => ({ mode, map: mode === "game" ? map : null });
   const isPublished = () => published !== null && published.mode === wanted().mode && published.map === wanted().map;
   let subscribed = false;
+  let gen = 0;                               // counts (re)joins: an 'ok' for a call sent in an older join is stale
   let closed = false;
   let sending = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -85,6 +86,7 @@ export function trackPresence(
     if (closed || !subscribed || sending || isPublished()) return;
     sending = true;
     const next = wanted();
+    const sentGen = gen;
     const now = Date.now();
     sentAt = [...sentAt.filter((t) => now - t < PRESENCE_BUDGET.windowMs), now];
     // A rejected call counts as failed (retried below) instead of leaving `sending` stuck.
@@ -92,6 +94,12 @@ export function trackPresence(
       .catch(() => "error" as const);
     sending = false;
     if (closed) return;
+    // An 'ok' for a call sent before the latest (re)join proves nothing: the new session starts without our
+    // presence (its own re-track was skipped while this call was in flight) → re-track at once, from the reserve.
+    if (status === "ok" && sentGen !== gen) {
+      schedule(0, { max: PRESENCE_BUDGET.max + 1, windowMs: PRESENCE_BUDGET.windowMs });
+      return;
+    }
     if (status === "ok") published = next;
     // The state changed while the call was in flight, or the call failed/timed out → send again (budgeted).
     if (!isPublished()) schedule(status === "ok" ? 0 : 1000);
@@ -105,7 +113,7 @@ export function trackPresence(
       // this re-track may use the call kept in reserve (5th per 30 s) and never waits behind a pending
       // timer that was computed with the 4-call budget.
       if (status === "SUBSCRIBED") {
-        subscribed = true; published = null;
+        subscribed = true; published = null; gen += 1;
         if (timer) { clearTimeout(timer); timer = null; }
         schedule(0, { max: PRESENCE_BUDGET.max + 1, windowMs: PRESENCE_BUDGET.windowMs });
       } else subscribed = false;

@@ -168,6 +168,24 @@ describe("trackPresence scheduler", () => {
     expect(h.state.calls).toHaveLength(1);
   });
 
+  it("a rejoin while a track is in flight re-tracks at once (reserved call), even when that older call then succeeds", async () => {
+    let resolveOld!: (s: string) => void;
+    h.state.replies = ["ok", "ok", "ok", new Promise<string>((r) => { resolveOld = r; })];
+    const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "game", map: "hall" }, () => {});
+    sub(); await adv(0);
+    for (const m of ["pond", "hall", "pond"] as const) { hd.setMap(m); await adv(1000); }
+    expect(times()).toEqual([0, 1000, 2000, 3000]); // the 4th call (pond) is left in flight; the 4-call budget is used up
+    sub("CHANNEL_ERROR"); sub(); await adv(500);    // (re)join: the new session has none of our presence
+    expect(h.state.calls).toHaveLength(4);
+    resolveOld("ok"); await adv(0);                 // …and the old session's 'ok' does not change that
+    expect(times().at(-1)).toBe(3500);              // re-tracked at once: the reserved 5th call
+    expect(h.state.calls.at(-1)).toMatchObject({ mode: "game", map: "pond" });
+    await adv(60_000); expect(h.state.calls).toHaveLength(5); // acknowledged in the new session → never re-sent
+    const ts = times();
+    for (const t of ts) expect(ts.filter((x) => x >= t && x < t + 30_000).length).toBeLessThanOrEqual(5);
+    hd.unsubscribe();
+  });
+
   it("publishes the map with the mode in one merged track, and never re-sends an acknowledged state", async () => {
     const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "game", map: "hall" }, () => {});
     sub(); await adv(0);
