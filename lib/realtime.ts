@@ -48,8 +48,9 @@ export function subscribeRoom(roomId: string, onState: (s: RoomState) => void): 
 export interface PresenceHandle { unsubscribe: () => void; setMode: (mode: PresenceMode) => void }
 
 /** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13).
- *  track() calls are budgeted to ≤ 4 per 30 s (PRESENCE_BUDGET; Supabase allows 5), mode changes within
- *  1 s are merged, a mode the server already acknowledged is never re-sent, and failed tracks are retried. */
+ *  track() calls are budgeted (Supabase allows 5 per 30 s): ≤ 4 calls per 30 s for mode changes; a re-track
+ *  after a reconnect may use the 5th. Mode changes within 1 s are merged, a mode the server already
+ *  acknowledged is never re-sent, and failed tracks are retried. */
 export function trackPresence(
   roomId: string,
   me: { memberId: string; name: string; mode: PresenceMode },
@@ -64,9 +65,9 @@ export function trackPresence(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let sentAt: number[] = [];                 // times of recent track() calls (pruned to the budget window)
   const emit = () => onChange(aggregatePresenceModes(channel.presenceState<PresenceMeta>()));
-  const schedule = (minDelay = 0) => {
+  const schedule = (minDelay = 0, budget: { max: number; windowMs: number } = PRESENCE_BUDGET) => {
     if (closed || timer || sending) return;
-    timer = setTimeout(() => { void flush(); }, Math.max(minDelay, presenceDelay(sentAt, Date.now())));
+    timer = setTimeout(() => { void flush(); }, Math.max(minDelay, presenceDelay(sentAt, Date.now(), budget)));
   };
   const flush = async () => {
     timer = null;
@@ -87,9 +88,12 @@ export function trackPresence(
     .on("presence", { event: "join" }, emit)
     .on("presence", { event: "leave" }, emit)
     .subscribe((status) => {
-      // A (re)join starts with none of our presence on the server → publish the wanted mode again.
-      if (status === "SUBSCRIBED") { subscribed = true; published = null; schedule(); }
-      else subscribed = false;
+      // A (re)join starts with none of our presence on the server → publish the wanted mode again;
+      // this re-track may use the call kept in reserve (5th per 30 s).
+      if (status === "SUBSCRIBED") {
+        subscribed = true; published = null;
+        schedule(0, { max: PRESENCE_BUDGET.max + 1, windowMs: PRESENCE_BUDGET.windowMs });
+      } else subscribed = false;
     });
   return {
     unsubscribe: () => {
