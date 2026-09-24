@@ -1,4 +1,5 @@
 import { cleanYouTubeTitle } from "@/lib/lyrics/clean-title";
+import { findBestNetEaseLyric } from "@/lib/lyrics/netease";
 
 const LRCLIB_UA = "MusicTogether/1.0 (https://github.com/AleamZ/Music-Together)";
 
@@ -88,12 +89,20 @@ export async function GET(request: Request): Promise<Response> {
           bestCandidate = items.find((item) => !!item.plainLyrics) ?? items[0];
         }
 
-        if (bestCandidate && (bestCandidate.syncedLyrics || bestCandidate.plainLyrics)) {
+        if (bestCandidate && bestCandidate.syncedLyrics) {
           return Response.json(bestCandidate, {
             headers: { "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=43200" },
           });
         }
       }
+    }
+
+    // 3. Fallback to NetEase Cloud Music
+    const neteaseCandidate = await findBestNetEaseLyric(searchQuery, paramDuration);
+    if (neteaseCandidate && (neteaseCandidate.syncedLyrics || neteaseCandidate.plainLyrics)) {
+      return Response.json(neteaseCandidate, {
+        headers: { "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=43200" },
+      });
     }
 
     return Response.json({ error: "Lyrics not found" }, { status: 404 });

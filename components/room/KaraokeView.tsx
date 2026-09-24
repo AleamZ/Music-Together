@@ -19,6 +19,8 @@ export interface KaraokeViewProps {
   onCloseFullscreen?: () => void;
   elapsedMs?: number;
   isPlaying?: boolean;
+  offsetMs?: number;
+  onChangeOffset?: (offset: number) => void;
 }
 
 interface CharWord {
@@ -49,6 +51,8 @@ export default function KaraokeView({
   onCloseFullscreen,
   elapsedMs = 0,
   isPlaying = false,
+  offsetMs = 0,
+  onChangeOffset,
 }: KaraokeViewProps) {
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -161,9 +165,10 @@ export default function KaraokeView({
         const startTime = curLine.timeMs;
 
         const now = performance.now();
-        const currentMs = isPlaying
+        const rawCurrentMs = isPlaying
           ? lastSyncElapsedRef.current + (now - lastSyncTimeRef.current)
           : lastSyncElapsedRef.current;
+        const currentMs = Math.max(0, rawCurrentMs + offsetMs);
 
         const rawDuration =
           nextLine && nextLine.timeMs > startTime ? nextLine.timeMs - startTime : 4500;
@@ -204,7 +209,7 @@ export default function KaraokeView({
 
     animId = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(animId);
-  }, [hasSynced, activeLineIndex, lines, isPlaying, themeStyles]);
+  }, [hasSynced, activeLineIndex, lines, isPlaying, offsetMs, themeStyles]);
 
   // Smooth scroll active line into center of container
   const scrollToActive = useCallback((smooth = true) => {
@@ -321,6 +326,51 @@ export default function KaraokeView({
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Sync Offset Adjuster */}
+          {hasSynced && onChangeOffset && (
+            <div
+              className="flex items-center gap-1 bg-white/5 border border-white/15 rounded px-1.5 py-0.5 text-[11px] font-mono text-white/80"
+              title="Căn chỉnh độ lệch thời gian (Offset) nếu lời chạy nhanh/chậm hơn video"
+            >
+              <span className="text-[10px] text-white/40 hidden md:inline">Lệch:</span>
+              <button
+                type="button"
+                onClick={() => onChangeOffset(offsetMs - 500)}
+                className="px-1 hover:text-gold font-bold transition-colors cursor-pointer"
+                title="Lùi lời 0.5s (-0.5s) khi lời hát bị nhanh hơn ca sĩ"
+              >
+                -0.5s
+              </button>
+              <span
+                className={`px-1 font-bold ${
+                  offsetMs !== 0 ? "text-gold" : "text-white/50"
+                }`}
+              >
+                {offsetMs > 0
+                  ? `+${(offsetMs / 1000).toFixed(1)}s`
+                  : `${(offsetMs / 1000).toFixed(1)}s`}
+              </span>
+              <button
+                type="button"
+                onClick={() => onChangeOffset(offsetMs + 500)}
+                className="px-1 hover:text-gold font-bold transition-colors cursor-pointer"
+                title="Tiến lời 0.5s (+0.5s) khi lời hát bị chậm hơn ca sĩ"
+              >
+                +0.5s
+              </button>
+              {offsetMs !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => onChangeOffset(0)}
+                  className="text-[9px] text-white/40 hover:text-white ml-0.5 cursor-pointer font-bold"
+                  title="Đặt lại độ lệch về 0.0s"
+                >
+                  ↺
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Alignment Switcher (Left vs Center) */}
           <button
             type="button"

@@ -26,6 +26,8 @@ export interface KaraokeModalProps {
   onSkip?: () => void;
   volume: number;
   onVolume: (v: number) => void;
+  offsetMs?: number;
+  onChangeOffset?: (offset: number) => void;
 }
 
 export default function KaraokeModal({
@@ -48,6 +50,8 @@ export default function KaraokeModal({
   onSkip,
   volume,
   onVolume,
+  offsetMs = 0,
+  onChangeOffset,
 }: KaraokeModalProps) {
   // ESC to close
   useEffect(() => {
@@ -119,6 +123,8 @@ export default function KaraokeModal({
           onCloseFullscreen={onClose}
           elapsedMs={elapsedMs}
           isPlaying={isPlaying}
+          offsetMs={offsetMs}
+          onChangeOffset={onChangeOffset}
         />
       </div>
 

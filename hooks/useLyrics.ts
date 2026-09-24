@@ -32,11 +32,17 @@ export function useLyrics({
 }: UseLyricsProps) {
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [meta, setMeta] = useState<LyricsData | null>(null);
+  const [offsetMs, setOffsetMsState] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const currentTitleRef = useRef<string | null>(null);
   const lyricSyncHandleRef = useRef<LyricSyncHandle | null>(null);
+
+  // Reset offset when active track changes
+  useEffect(() => {
+    setOffsetMsState(0);
+  }, [trackId]);
 
   // Subscribe to real-time lyric change broadcasts across room members
   useEffect(() => {
@@ -45,23 +51,29 @@ export function useLyrics({
     const handle = joinLyricSync(roomId, (payload) => {
       // Validate that this lyric update is meant for the currently active track
       if (trackId && payload.trackId === trackId) {
-        const rawText = payload.syncedLyrics || payload.plainLyrics || "";
-        const parsedLines = parseLrc(rawText);
-        const newMeta: LyricsData = {
-          trackName: payload.trackName,
-          artistName: payload.artistName,
-          syncedLyrics: payload.syncedLyrics,
-          plainLyrics: payload.plainLyrics,
-        };
+        if (typeof payload.offsetMs === "number") {
+          setOffsetMsState(payload.offsetMs);
+        }
 
-        setLines(parsedLines);
-        setMeta(newMeta);
-        setError(null);
-        setLoading(false);
+        if (payload.syncedLyrics !== undefined || payload.plainLyrics !== undefined) {
+          const rawText = payload.syncedLyrics || payload.plainLyrics || "";
+          const parsedLines = parseLrc(rawText);
+          const newMeta: LyricsData = {
+            trackName: payload.trackName,
+            artistName: payload.artistName,
+            syncedLyrics: payload.syncedLyrics,
+            plainLyrics: payload.plainLyrics,
+          };
 
-        if (title) {
-          const cacheKey = `${title.trim().toLowerCase()}_${durationSeconds || 0}`;
-          lyricsCache.set(cacheKey, { lines: parsedLines, meta: newMeta });
+          setLines(parsedLines);
+          setMeta(newMeta);
+          setError(null);
+          setLoading(false);
+
+          if (title) {
+            const cacheKey = `${title.trim().toLowerCase()}_${durationSeconds || 0}`;
+            lyricsCache.set(cacheKey, { lines: parsedLines, meta: newMeta });
+          }
         }
       }
     });
@@ -146,13 +158,34 @@ export function useLyrics({
     void fetchLyrics(title, durationSeconds || 0);
   }, [title, durationSeconds, fetchLyrics]);
 
+  const effectiveElapsedMs = useMemo(() => {
+    return Math.max(0, elapsedMs + offsetMs);
+  }, [elapsedMs, offsetMs]);
+
   const activeLineIndex = useMemo(() => {
-    return findActiveLyricIndex(lines, elapsedMs);
-  }, [lines, elapsedMs]);
+    return findActiveLyricIndex(lines, effectiveElapsedMs);
+  }, [lines, effectiveElapsedMs]);
 
   const hasSynced = useMemo(() => {
     return lines.length > 0 && lines[0].timeMs >= 0;
   }, [lines]);
+
+  const setOffsetMs = useCallback(
+    (newOffset: number | ((prev: number) => number), syncToRoom = false) => {
+      setOffsetMsState((prev) => {
+        const next = typeof newOffset === "function" ? newOffset(prev) : newOffset;
+        if (syncToRoom && lyricSyncHandleRef.current && trackId) {
+          lyricSyncHandleRef.current.send({
+            trackId,
+            offsetMs: next,
+            appliedByName: username || undefined,
+          });
+        }
+        return next;
+      });
+    },
+    [trackId, username]
+  );
 
   const searchManual = useCallback(
     async (customQuery: string) => {
@@ -183,11 +216,12 @@ export function useLyrics({
           plainLyrics: data.plainLyrics,
           trackName: data.trackName,
           artistName: data.artistName,
+          offsetMs,
           appliedByName: username || undefined,
         });
       }
     },
-    [title, durationSeconds, trackId, username]
+    [title, durationSeconds, trackId, username, offsetMs]
   );
 
   return {
@@ -197,6 +231,9 @@ export function useLyrics({
     error,
     hasSynced,
     activeLineIndex,
+    offsetMs,
+    setOffsetMs,
+    effectiveElapsedMs,
     searchManual,
     applyCustomLyric,
   };

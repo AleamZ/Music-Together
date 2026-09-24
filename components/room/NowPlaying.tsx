@@ -248,6 +248,8 @@ export default function NowPlaying(p: NowPlayingProps) {
             onOpenSearchModal={() => setIsSearchModalOpen(true)}
             elapsedMs={elapsed}
             isPlaying={room.is_playing}
+            offsetMs={lyricsHook.offsetMs}
+            onChangeOffset={(off) => lyricsHook.setOffsetMs(off, p.canControl)}
           />
         </div>
       )}
@@ -296,6 +298,8 @@ export default function NowPlaying(p: NowPlayingProps) {
         onSkip={p.onSkip}
         volume={p.volume}
         onVolume={p.onVolume}
+        offsetMs={lyricsHook.offsetMs}
+        onChangeOffset={(off) => lyricsHook.setOffsetMs(off, p.canControl)}
       />
       <LyricSearchModal
         isOpen={isSearchModalOpen}
