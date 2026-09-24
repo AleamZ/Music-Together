@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canHook, castPhase, msToNextPhase, reelParamsFor, type CastInfo } from "@/lib/game/fishing/cast";
+import { canHook, castPhase, msToNextPhase, phaseCode, reelParamsFor, type CastInfo, type LocalPhase } from "@/lib/game/fishing/cast";
 import { BOBBER_REACH, bobberPoint, handPoint, rodTip } from "@/lib/game/fishing/geometry";
 
 const INFO: CastInfo = { castId: "c", biteMs: 4000, windowMs: 1500, difficulty: 38, minReelMs: 3520, zonePct: 30, rarity: null };
@@ -21,6 +21,10 @@ describe("cast timeline", () => {
     expect(msToNextPhase(INFO, 1000)).toBe(3000);
     expect(msToNextPhase(INFO, 4200)).toBe(1300);
     expect(msToNextPhase(INFO, 9000)).toBeNull();
+  });
+  it("shows others nothing during the swing, then line out, bite and reeling", () => {
+    const phases: LocalPhase[] = ["idle", "casting", "waiting", "bite", "reeling"];
+    expect(phases.map(phaseCode)).toEqual([0, 0, 1, 2, 3]);
   });
   it("builds the reel parameters from the cast", () => {
     expect(reelParamsFor(INFO, 5)).toEqual({ zonePct: 30, difficulty: 38, minReelMs: 3520, seed: 5 });

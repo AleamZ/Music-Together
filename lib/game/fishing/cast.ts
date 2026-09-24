@@ -1,3 +1,4 @@
+import type { FishPhase } from "@/lib/game/net/protocol";
 import type { Rarity } from "./catalog";
 import type { ReelParams } from "./reel";
 
@@ -31,4 +32,12 @@ export function msToNextPhase(info: CastInfo, sinceAnswerMs: number): number | n
 
 export function reelParamsFor(info: CastInfo, seed: number): ReelParams {
   return { zonePct: info.zonePct, difficulty: info.difficulty, minReelMs: info.minReelMs, seed };
+}
+
+/** What the local player is doing with the rod, as the engine draws it (spec §6.1). */
+export type LocalPhase = "idle" | "casting" | "waiting" | "bite" | "reeling";
+
+/** The `f` code the others see (spec §9.3): the cast swing shows nothing yet. */
+export function phaseCode(p: LocalPhase): FishPhase {
+  return p === "waiting" ? 1 : p === "bite" ? 2 : p === "reeling" ? 3 : 0;
 }

@@ -19,11 +19,13 @@ export function computeView(devW: number, devH: number, mapW: number, mapH: numb
   return { scale, vw: Math.ceil(devW / scale), vh: Math.ceil(devH / scale) };
 }
 
-/** Camera top-left: centred on the character's head (feet y − 24), clamped to the map (centred if the view is bigger). */
-export function cameraFor(feet: Vec, vw: number, vh: number, mapW: number, mapH: number): Vec {
+/** Camera top-left: centred on the character's head (feet y − 24), clamped to the map (centred if the view is bigger).
+ *  `bottomInset` (world px) lets the camera scroll that far past the map's bottom edge, so the bottom HUD never hides
+ *  the character (the band is painted in the scene's edge colour). */
+export function cameraFor(feet: Vec, vw: number, vh: number, mapW: number, mapH: number, bottomInset = 0): Vec {
   const axis = (target: number, span: number, size: number) =>
     size <= span ? (size - span) / 2 : Math.max(0, Math.min(size - span, target));
-  return { x: axis(feet.x - vw / 2, vw, mapW), y: axis(feet.y - 24 - vh / 2, vh, mapH) };
+  return { x: axis(feet.x - vw / 2, vw, mapW), y: axis(feet.y - 24 - vh / 2, vh, mapH + bottomInset) };
 }
 
 /** The interactable whose click rect contains world point p. */

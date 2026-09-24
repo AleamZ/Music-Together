@@ -23,6 +23,10 @@ describe("cameraFor", () => {
     expect(cameraFor({ x: 10, y: 10 }, 320, 180, 640, 400)).toEqual({ x: 0, y: 0 });
     expect(cameraFor({ x: 630, y: 395 }, 320, 180, 640, 400)).toEqual({ x: 320, y: 220 });
   });
+  it("may scroll past the map's bottom by the HUD inset", () => {
+    expect(cameraFor({ x: 630, y: 395 }, 320, 180, 640, 400, 30)).toEqual({ x: 320, y: 250 });
+    expect(cameraFor({ x: 320, y: 200 }, 320, 180, 640, 400, 30)).toEqual({ x: 160, y: 86 });
+  });
   it("centres the map when the view is bigger than it", () => {
     expect(cameraFor({ x: 0, y: 0 }, 800, 500, 640, 400)).toEqual({ x: -80, y: -50 });
   });
