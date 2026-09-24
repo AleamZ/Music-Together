@@ -1,13 +1,16 @@
-import { applyPathMsg, applyStateMsg, createActor, setKeyboard, setPath, tickActor, walkFrame, type Actor } from "@/lib/game/actor";
+import { createActor, setKeyboard, setPath, tickActor, walkFrame, type Actor } from "@/lib/game/actor";
 import { getCharacterFrames } from "@/lib/game/art/raster";
 import type { HallArt } from "@/lib/game/maps/hall-art";
-import type { GameMap, InteractId, Spot } from "@/lib/game/maps/types";
+import type { GameMap, InteractId } from "@/lib/game/maps/types";
 import { inputDir, type KeyState } from "@/lib/game/movement";
-import { codeToFacing, facingToCode, MAX_PATH_POINTS, type FacingCode, type GameMessage, type Unit } from "@/lib/game/net/protocol";
+import { facingToCode, MAX_PATH_POINTS, type FacingCode, type GameMessage, type Unit } from "@/lib/game/net/protocol";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
 import { cameraFor, computeView, hitsCharacter, interactableAt, inUseRange, nearestInteractable, stackBoxes, type Box } from "@/lib/game/scene";
 import { wrapBubble } from "@/lib/game/text";
 import type { Facing, Look, Vec } from "@/lib/game/types";
+import { RemoteWorld, type RosterEntry } from "@/lib/game/world";
+
+export type { RosterEntry } from "@/lib/game/world";
 
 export interface LocalMoveMsg { x: number; y: number; d: FacingCode; mv: boolean; vx: Unit; vy: Unit }
 
@@ -20,9 +23,6 @@ export interface EngineCallbacks {
   onPromptChange: (id: InteractId | null) => void;
   onActorClick: (accountId: string) => void;
 }
-
-/** One other online member. `spot` = fixed place for classic-mode members; null = walking (game mode). */
-export interface RosterEntry { id: string; name: string; badges: string; look: Look; spot: Spot | null }
 
 export interface EngineOptions {
   localId: string;
@@ -57,13 +57,9 @@ export class GameEngine {
   private readonly bctx: CanvasRenderingContext2D;
   private readonly ro: ResizeObserver;
   private readonly local: Actor;
-  private readonly remotes = new Map<string, Actor>();
-  /** Last st/mv/pa per member, so members added to the roster later start at the right place. */
-  private readonly lastState = new Map<string, GameMessage>();
-  /** Walking members we have no state for yet → first seen at (ms). */
-  private readonly unseen = new Map<string, number>();
+  /** Everyone else: roster, remote walkers and their last known state. */
+  private readonly world: RemoteWorld;
   private readonly bubbles = new Map<string, { lines: string[]; until: number }>();
-  private roster = new Map<string, RosterEntry>();
   private reactions: Array<{ id: string | null; emoji: string; born: number; dx: number }> = [];
   private localInfo: { name: string; badges: string; look: Look };
   private keys: KeyState = { ...NO_KEYS };
@@ -94,6 +90,7 @@ export class GameEngine {
     this.buf = buf;
     this.bctx = bctx;
     this.local = createActor(opts.localId, { ...map.spawn }, "left", performance.now());
+    this.world = new RemoteWorld(map, opts.localId);
     this.localInfo = { name: opts.name, badges: opts.badges, look: opts.look };
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
@@ -127,41 +124,27 @@ export class GameEngine {
 
   /** Everyone online except me. Walking members get an actor (placed with their last known state). */
   setRoster(entries: RosterEntry[]): void {
-    const now = performance.now();
-    const next = new Map<string, RosterEntry>();
-    for (const e of entries) if (e.id !== this.opts.localId) next.set(e.id, e);
-    for (const id of [...this.remotes.keys()]) {
-      const e = next.get(id);
-      if (!e || e.spot) {
-        this.remotes.delete(id);
-        this.unseen.delete(id);
-      }
-    }
-    for (const e of next.values()) {
-      if (e.spot || this.remotes.has(e.id)) continue;
-      const a = createActor(e.id, { ...this.map.spawn }, "left", now);
-      this.remotes.set(e.id, a);
-      const last = this.lastState.get(e.id);
-      if (last) this.applyTo(a, last, now);
-      else this.unseen.set(e.id, now);
-    }
-    this.roster = next;
+    this.world.setRoster(entries, performance.now());
+  }
+
+  /** Someone's `hello`: a walking member we had dropped (their `bye`) gets an actor again. */
+  noteHello(id: string): void {
+    this.world.hello(id, performance.now());
   }
 
   /** st / mv / pa from the network (other message types are handled by the caller). */
   applyMessage(msg: GameMessage): void {
-    if (msg.id === this.opts.localId) return;
-    if (msg.t !== "st" && msg.t !== "mv" && msg.t !== "pa") return;
-    this.lastState.set(msg.id, msg);
-    this.unseen.delete(msg.id);
-    const a = this.remotes.get(msg.id);
-    if (a) this.applyTo(a, msg, performance.now());
+    this.world.applyMessage(msg, performance.now());
   }
 
+  /** Someone's `bye`. */
   removeActor(id: string): void {
-    this.remotes.delete(id);
-    this.lastState.delete(id);
-    this.unseen.delete(id);
+    this.world.remove(id);
+  }
+
+  /** How many other members walk in the world (sizes the answer window for `hello`s). */
+  walkers(): number {
+    return this.world.walkers();
   }
 
   showBubble(id: string, text: string): void {
@@ -208,14 +191,6 @@ export class GameEngine {
     this.cb.onInteract(id);
   }
 
-  private applyTo(a: Actor, msg: GameMessage, now: number): void {
-    if (msg.t === "st" || msg.t === "mv") {
-      applyStateMsg(a, { x: msg.x, y: msg.y, facing: codeToFacing(msg.d), moving: msg.mv, vx: msg.vx, vy: msg.vy }, now);
-    } else if (msg.t === "pa") {
-      applyPathMsg(a, { x: msg.x, y: msg.y, pts: msg.pts.map(([x, y]) => ({ x, y })) }, now);
-    }
-  }
-
   private localMove(): LocalMoveMsg {
     return {
       x: Math.round(this.local.pos.x),
@@ -229,8 +204,7 @@ export class GameEngine {
 
   /** A walking member is drawn once we know where they are (or after the grace period). */
   private visible(id: string, now: number): boolean {
-    const since = this.unseen.get(id);
-    return since === undefined || now - since >= UNSEEN_GRACE_MS;
+    return this.world.visible(id, now, UNSEEN_GRACE_MS);
   }
 
   private resize(): void {
@@ -310,8 +284,8 @@ export class GameEngine {
     const now = performance.now();
     let bestId: string | null = null;
     let bestY = -Infinity;
-    for (const e of this.roster.values()) {
-      const feet = e.spot ?? (this.visible(e.id, now) ? this.remotes.get(e.id)?.display : undefined);
+    for (const e of this.world.roster.values()) {
+      const feet = e.spot ?? (this.visible(e.id, now) ? this.world.actors.get(e.id)?.display : undefined);
       if (feet && hitsCharacter(p, feet) && feet.y > bestY) {
         bestId = e.id;
         bestY = feet.y;
@@ -338,10 +312,10 @@ export class GameEngine {
 
   private positionOf(id: string, now: number): Vec | null {
     if (id === this.opts.localId) return this.local.display;
-    const e = this.roster.get(id);
+    const e = this.world.roster.get(id);
     if (!e) return null;
     if (e.spot) return e.spot;
-    return this.visible(id, now) ? this.remotes.get(id)?.display ?? null : null;
+    return this.visible(id, now) ? this.world.actors.get(id)?.display ?? null : null;
   }
 
   private readonly frame = (t: number): void => {
@@ -382,7 +356,7 @@ export class GameEngine {
       this.prompt = near;
       this.cb.onPromptChange(near);
     }
-    for (const a of this.remotes.values()) tickActor(this.map, a, dt, now, true);
+    this.world.tick(dt, now);
     this.cam = cameraFor(this.local.display, this.vw, this.vh, this.map.width, this.map.height);
     for (const [id, b] of this.bubbles) if (b.until < now) this.bubbles.delete(id);
     this.reactions = this.reactions.filter((r) => now - r.born < REACTION_MS);
@@ -411,13 +385,13 @@ export class GameEngine {
       b.fillRect(x - 5, y + 1, 10, 1);
       b.drawImage(getCharacterFrames(look)[facing][frame], x - 12, y - 46);
     };
-    for (const e of this.roster.values()) {
+    for (const e of this.world.roster.values()) {
       const spot = e.spot;
       if (spot) {
         items.push({ y: spot.y, draw: () => drawActor(e.look, spot, spot.dir, 0) });
         continue;
       }
-      const a = this.remotes.get(e.id);
+      const a = this.world.actors.get(e.id);
       if (a && this.visible(e.id, t)) items.push({ y: a.display.y, draw: () => drawActor(e.look, a.display, a.facing, walkFrame(a)) });
     }
     const me = this.local;
@@ -444,7 +418,7 @@ export class GameEngine {
     const tags: Array<{ mine: boolean; label: string; pos: Vec }> = [
       { mine: true, label: this.label(this.localInfo.badges, this.localInfo.name), pos: this.local.display },
     ];
-    for (const e of this.roster.values()) {
+    for (const e of this.world.roster.values()) {
       const pos = this.positionOf(e.id, now);
       if (pos) tags.push({ mine: false, label: this.label(e.badges, e.name), pos });
     }
