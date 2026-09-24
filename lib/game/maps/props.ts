@@ -136,6 +136,48 @@ function drawLightPole(c: Ctx): void {
   rect(c, C.outline, 0, 0, 6, 3); rect(c, C.goldLight, 1, 1, 4, 1);
 }
 
+/** Vựa cá counter: woven baskets of fish, a scale and an ice box. */
+function drawStallFront(c: Ctx): void {
+  rect(c, C.outline, 0, 12, 108, 18);
+  rect(c, C.woodPale, 1, 13, 106, 4); rect(c, "#e0b27a", 1, 13, 106, 1);
+  for (let x = 1; x < 107; x += 7) { rect(c, C.woodLight, x, 17, 6, 12); rect(c, C.wood, x + 6, 17, 1, 12); }
+  for (const bx of [10, 38]) {
+    rect(c, C.outline, bx, 4, 22, 10); rect(c, "#c9a55a", bx + 1, 5, 20, 8);
+    for (let x = bx + 2; x < bx + 21; x += 3) rect(c, "#a8843f", x, 5, 1, 8);
+    for (let i = 0; i < 4; i++) { rect(c, C.silver, bx + 3 + i * 4, 2 + (i % 2), 4, 3); px(c, C.outline, bx + 3 + i * 4, 3 + (i % 2)); }
+  }
+  // the scale (cân đòn)
+  rect(c, C.outline, 74, 0, 2, 13); rect(c, C.outline, 66, 2, 18, 1);
+  rect(c, C.silver, 64, 8, 8, 2); rect(c, C.outline, 64, 10, 8, 1);
+  rect(c, C.silver, 78, 6, 8, 2); rect(c, C.outline, 78, 8, 8, 1);
+  px(c, C.outline, 67, 3); px(c, C.outline, 68, 4); px(c, C.outline, 81, 3); px(c, C.outline, 82, 4);
+  rect(c, C.outline, 90, 3, 14, 10); rect(c, "#e8f4f8", 91, 4, 12, 8); rect(c, "#a6d6e8", 91, 4, 12, 2);
+}
+
+/** Tiệm đồ câu counter: bamboo slats, a tackle box and bait jars. */
+function drawHutFront(c: Ctx): void {
+  rect(c, C.outline, 0, 6, 108, 20);
+  rect(c, C.woodPale, 1, 7, 106, 4); rect(c, "#e0b27a", 1, 7, 106, 1);
+  for (let x = 1; x < 107; x += 4) { rect(c, "#b7c65a", x, 11, 3, 14); rect(c, "#8a9a3a", x + 3, 11, 1, 14); }
+  rect(c, C.outline, 12, 0, 18, 7); rect(c, C.red, 13, 1, 16, 5); rect(c, C.gold, 20, 2, 2, 2);
+  for (const [jx, col] of [[40, "#e98a9a"], [50, "#f29a6a"], [60, C.red]] as const) {
+    rect(c, C.outline, jx, 0, 7, 7); rect(c, "#e8f4f8", jx + 1, 1, 5, 5); rect(c, col, jx + 1, 3, 5, 3);
+  }
+  rect(c, C.outline, 80, 2, 16, 5); rect(c, C.blue, 81, 3, 14, 3);
+}
+
+/** Bảng kỷ lục: a board on two posts with a trophy. */
+function drawRecords(c: Ctx): void {
+  rect(c, C.outline, 3, 18, 3, 16); rect(c, C.outline, 22, 18, 3, 16);
+  rect(c, C.woodDark, 4, 18, 1, 16); rect(c, C.woodDark, 23, 18, 1, 16);
+  rect(c, C.outline, 0, 0, 28, 22); rect(c, C.wood, 1, 1, 26, 20); rect(c, C.woodLight, 2, 2, 24, 18);
+  rect(c, C.red, 2, 2, 24, 4);
+  for (let x = 4; x < 24; x += 3) px(c, C.goldLight, x, 3);
+  rect(c, C.gold, 9, 8, 10, 5); rect(c, C.goldLight, 10, 8, 3, 2);
+  px(c, C.gold, 8, 9); px(c, C.gold, 19, 9);
+  rect(c, C.gold, 13, 13, 2, 2); rect(c, C.gold, 11, 15, 6, 2); rect(c, C.outline, 11, 17, 6, 1);
+}
+
 export function drawProp(c: Ctx, p: PropPlacement): void {
   switch (p.kind) {
     case "palm": return drawPalm(c, p.h, p.lean, p.seed);
@@ -147,6 +189,9 @@ export function drawProp(c: Ctx, p: PropPlacement): void {
     case "sign": return drawSign(c, p.icon ?? "fish");
     case "banana": return drawBanana(c);
     case "lightpole": return drawLightPole(c);
+    case "stall_front": return drawStallFront(c);
+    case "hut_front": return drawHutFront(c);
+    case "records": return drawRecords(c);
   }
 }
 

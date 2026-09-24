@@ -34,7 +34,7 @@ export const C = {
   bamboo: "#8bb84e", bambooDark: "#6a9a38", bambooNode: "#4f7a2a",
   red: "#c0392b", redDark: "#8e2a1f", gold: "#e0b33c", goldLight: "#ffe08a",
   speaker: "#1e1616", speakerFace: "#2b2020", cone: "#4a4040", coneCenter: "#1a1414",
-  paper: "#f4efe0", white: "#f4f1ea",
+  paper: "#f4efe0", white: "#f4f1ea", silver: "#c3c8d4", blue: "#3d6fd1",
 };
 
 /** Deterministic LCG in [0, 1) — the same seed paints the same scene on every client. */
