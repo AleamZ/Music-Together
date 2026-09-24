@@ -1,5 +1,20 @@
-import { describe, it, expect } from "vitest";
-import { parseReaction, throttled, REACTION_EMOJIS, type ReactionData } from "@/lib/reactions";
+import { describe, it, expect, vi } from "vitest";
+import { markLeaving } from "@/lib/channel-lifecycle";
+import { joinReactions, parseReaction, throttled, REACTION_EMOJIS, type ReactionData } from "@/lib/reactions";
+
+// Fake Realtime channel for joinReactions: on/subscribe chain, send and removeChannel resolve "ok".
+const { fakeChannel, sendMock } = vi.hoisted(() => {
+  const sendMock = vi.fn(() => Promise.resolve("ok"));
+  const fakeChannel = {
+    on() { return fakeChannel; },
+    subscribe() { return fakeChannel; },
+    send: sendMock,
+  };
+  return { fakeChannel, sendMock };
+});
+vi.mock("@/lib/supabase", () => ({
+  supabase: { channel: () => fakeChannel, removeChannel: () => Promise.resolve("ok") },
+}));
 
 describe("parseReaction", () => {
   it("reads the broadcast envelope and keeps username + accountId", () => {
@@ -41,5 +56,19 @@ describe("ReactionData", () => {
     const data: ReactionData = { emoji: "🔥", username: "hunglt" };
     expect(data.emoji).toBe("🔥");
     expect(data.username).toBe("hunglt");
+  });
+});
+
+describe("joinReactions", () => {
+  it("delivers a reaction sent while the previous subscriber of the topic is still leaving", async () => {
+    let finishLeave!: () => void;
+    markLeaving("reactions:r1", new Promise<void>((resolve) => { finishLeave = resolve; }));
+    const handle = joinReactions("r1", () => {});
+    handle.send({ emoji: "🔥" });
+    await Promise.resolve();
+    expect(sendMock).not.toHaveBeenCalled();
+    finishLeave();
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledWith({ type: "broadcast", event: "react", payload: { emoji: "🔥" } }));
+    handle.unsubscribe();
   });
 });

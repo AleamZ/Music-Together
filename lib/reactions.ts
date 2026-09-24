@@ -60,7 +60,8 @@ export function joinReactions(
   return {
     send: (data) => {
       const payload: ReactionData = typeof data === "string" ? { emoji: data } : data;
-      channel?.send({ type: "broadcast", event: "react", payload }).catch(() => {});
+      // a reaction sent during a classic ↔ game switch waits for the channel instead of being dropped
+      void ready.then(() => channel?.send({ type: "broadcast", event: "react", payload }).catch(() => {}));
     },
     unsubscribe: () => {
       closed = true;

@@ -58,6 +58,15 @@ describe("buildRoster", () => {
     expect(byId.get("g1")).toMatchObject({ name: "Giang", badges: "", look: TAN });
     expect(byId.get("c2")?.look).toEqual(DEFAULT_LOOK);
   });
+  it("seats classic members by account id whatever the presence order", () => {
+    const shuffled = [
+      { accountId: "c2", name: "Chi", mode: "classic" as const },
+      { accountId: "admin", name: "An", mode: "classic" as const },
+    ];
+    const r = new Map(buildRoster({ presence: shuffled, members, room, localId: "me", looks: new Map(), map }).map((e) => [e.id, e]));
+    expect(r.get("admin")?.spot).toEqual(map.seats[0]);
+    expect(r.get("c2")?.spot).toEqual(map.seats[1]);
+  });
 });
 
 describe("freshChatBubbles", () => {
