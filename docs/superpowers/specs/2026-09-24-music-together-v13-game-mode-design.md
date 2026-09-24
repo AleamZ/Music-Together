@@ -313,7 +313,7 @@ Full-viewport canvas with parchment overlays (cream `#fbf3dc`, brown border `#8b
 
 ### 10.4 `.game-ui` token scope
 
-`app/globals.css` gains `.game-ui { --color-cream: …; --color-parchment: …; --color-ink: …; --color-burgundy: …; --color-gold: …; … }` with the parchment palette, so reused components inside the game look the same whatever app theme is selected. Theme rules that target elements directly (e.g. `html[data-theme="cozy"] button`) may still leak; accepted.
+`app/globals.css` gains `.game-ui { --color-cream: …; --color-parchment: …; --color-ink: …; --color-burgundy: …; --color-gold: …; … }` with the parchment palette, so reused components inside the game look the same whatever app theme is selected. Theme rules that target elements directly with `!important` (e.g. `html[data-theme="cyberpunk"] [role="dialog"]`, `html[data-theme="dragon"] button.border-gold-200`) would still win over the tokens and hide the editor's swatches, so the game shell removes `data-theme` from `<html>` while it is mounted and restores it on exit (the theme toggle is not reachable from the game).
 
 ### 10.5 Social overlays (canvas)
 
