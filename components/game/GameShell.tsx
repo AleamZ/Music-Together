@@ -90,6 +90,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     setFading(true);
     fadeTimer.current = setTimeout(() => {
       fadeTimer.current = null;
+      setPrompt(null);
       setTravel({ mapId: to.map, arrive: to.arrive });
     }, FADE_MS);
   }, []);

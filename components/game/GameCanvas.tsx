@@ -69,11 +69,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const engineRef = useRef<GameEngine | null>(null);
   const sendRef = useRef<((msg: GameMessage) => void) | null>(null);
   const propsRef = useRef(rest);
-  // What every new engine must know again: my hand fish, the species names and the HUD inset.
+  // What every new engine must know again: my hand fish, the species names, the HUD inset and the input lock.
   const handRef = useRef<string | null>(null);
   const phaseRef = useRef<FishPhase>(0);
   const speciesRef = useRef<ReadonlyArray<{ id: string; name: string; rarity: Rarity }>>([]);
   const insetRef = useRef(0);
+  const inputRef = useRef(true);
   useEffect(() => {
     propsRef.current = rest;
   });
@@ -90,7 +91,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       setLocal: (info) => engineRef.current?.setLocal(info),
       showBubble: (id, text) => engineRef.current?.showBubble(id, text),
       showReaction: (id, emoji) => engineRef.current?.showReaction(id, emoji),
-      setInputEnabled: (enabled) => engineRef.current?.setInputEnabled(enabled),
+      setInputEnabled: (enabled) => {
+        inputRef.current = enabled;
+        engineRef.current?.setInputEnabled(enabled);
+      },
       interact: () => engineRef.current?.interact(),
       announceLook: () => sendRef.current?.({ t: "lk", id: localId }),
       setBottomInset: (px) => {
@@ -164,6 +168,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setLocalHand(handRef.current);
     engine.setSpecies(speciesRef.current);
     engine.setBottomInset(insetRef.current);
+    engine.setInputEnabled(inputRef.current);
 
     // One answer (my state) serves every `hello` that arrives before it goes out; answers are spread over a window
     // that grows with the world, because each one reaches every player.
