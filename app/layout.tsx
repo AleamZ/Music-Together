@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Cormorant_Garamond, EB_Garamond, Playfair_Display, Pixelify_Sans } from "next/font/google";
+import { Cormorant_Garamond, EB_Garamond, Playfair_Display, Pixelify_Sans, VT323 } from "next/font/google";
 import "./globals.css";
 import Providers from "./Providers";
 
@@ -12,6 +12,8 @@ const cormorant = Cormorant_Garamond({ variable: "--font-cormorant", subsets: ["
 const ebGaramond = EB_Garamond({ variable: "--font-eb-garamond", subsets: ["latin"], display: "swap" });
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], display: "swap" });
 const pixel = Pixelify_Sans({ variable: "--font-pixel", subsets: ["latin"], display: "swap" });
+// Game mode (v13) HUD + canvas text. Static font → needs `weight`; has a Vietnamese subset.
+const vt323 = VT323({ weight: "400", variable: "--font-vt323", subsets: ["latin", "vietnamese"], display: "swap" });
 
 export const metadata: Metadata = {
   title: "Music Together — Phòng nghe nhạc",
@@ -23,7 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="vi"
-      className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${ebGaramond.variable} ${playfair.variable} ${pixel.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${ebGaramond.variable} ${playfair.variable} ${pixel.variable} ${vt323.variable} h-full antialiased`}
     >
       <body className="min-h-full">
         <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('music-together:theme');if(t==='cozy'||t==='dragon')document.documentElement.setAttribute('data-theme',t)}catch(e){}" }} />
