@@ -275,7 +275,7 @@ Each map has its own Broadcast channel `game:{roomId}:{mapId}`, so a room split 
 
 ### Trust model (v15)
 
-The server decides every time and phase, the water levels, the pests (rolled at sowing and hidden until they fire), the yield, all prices, and land ownership, leases and reclaims. A client reports only the transplant and harvest quality, clamped to [0.9, 1.1] behind a 2 s work gate (always 1.0 in 15.1), so a modified client gains at most 10 %. As in v14, where a player stands is not verified, and the plots' look and the farm animations come from each client's own copy of the field state.
+The server decides every time and phase, the water levels, the pests (rolled at sowing and hidden until they fire), the yield, all prices, and land ownership, leases and reclaims. A client still sends a transplant and harvest quality, but v15.1 ignores it and uses 1.0 (anti-cheat decision D1) until the v15.2 minigames; transplanting and harvesting stay behind the 2 s work gate. As in v14, where a player stands is not verified, and the plots' look and the farm animations come from each client's own copy of the field state.
 
 ### Realtime budget (v15)
 

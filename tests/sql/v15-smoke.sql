@@ -406,7 +406,7 @@ begin
   tp := t + interval '10 hours 3 seconds';
   s := public._farm_do_transplant(room, a2, 8, 5.0, tp);
   assert pg_temp.plot(s, 8)->'crop'->>'phase' = 'tillering'
-     and (select q_transplant from public.crops where room_id = room and plot_no = 8) = 1.1, 'transplanted, quality clamped';
+     and (select q_transplant from public.crops where room_id = room and plot_no = 8) = 1.0, 'transplanted, quality ignored (D1)';
 
   -- pests: a snail at T = 3.6 h (water 2 → hit) and a leaf folder at T = 5.4 h
   update public.crops set pest_rolls = '[{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.1},

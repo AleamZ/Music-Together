@@ -1387,7 +1387,7 @@ begin
   return public._field_view(p_room, p_account, p_now);
 end; $$;
 
--- Cấy: the quality (v15.2 minigame; 1.0 in v15.1) is clamped to [0.9, 1.1].
+-- Cấy: v15.1 ignores the reported quality and uses 1.0 (anti-cheat decision D1); v15.2 decides how it comes back.
 create or replace function public._farm_do_transplant(p_room uuid, p_account uuid, p_plot integer, p_quality double precision,
                                                       p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
@@ -1400,7 +1400,7 @@ begin
   perform public._work_gate(c, 'transplant', p_now);
   perform public._work_check(c, public._variety(c.variety), 'transplant', p_now);
   update public.crops
-     set transplant_at = p_now, q_transplant = least(1.1, greatest(0.9, coalesce(p_quality, 1))),
+     set transplant_at = p_now, q_transplant = 1.0,
          work = null, work_started_at = null
    where room_id = p_room and plot_no = p_plot;
   return public._field_view(p_room, p_account, p_now);
@@ -1488,7 +1488,7 @@ begin
   perform public._work_check(c, v, 'harvest', p_now);
   f := public._plot_row(p_room, p_plot);
   v_kg := (public._crop_yield(c, v, case when f.kind = 'private' then 1.1 else 1.0 end,
-                              least(1.1, greatest(0.9, coalesce(p_quality, 1))), p_now)->>'kg')::int;
+                              1.0, p_now)->>'kg')::int;
   perform public._rice_add(p_account, c.variety, v_kg, 0);
   delete from public.crops where room_id = p_room and plot_no = p_plot;
   delete from public.plot_leases where room_id = p_room and plot_no = p_plot;

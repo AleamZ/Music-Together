@@ -47,7 +47,7 @@ Clarifications made while writing this spec. The owner should confirm them durin
 - **c) Pests.** Each crop has three pest *chances* (§8.5), so 0–3 outbreaks happen, about 1.2 on average.
 - **d) When you can harvest.** Only once the rice is ripe (§8.2). Harvesting during ripening is refused.
 - **e) Water scoring.** The water penalty is sampled every 15 minutes of crop time.
-- **f) Minigame trust.** The quality bounds (0.9–1.1) and the 2-second work gate exist from `0013` on. The phase-2 minigames only change the client and need no SQL change.
+- **f) Minigame trust.** The 2-second work gate exists from `0013` on. v15.1 ignores the reported quality and uses 1.0 (anti-cheat decision D1); v15.2 decides how a minigame quality comes back, which needs an SQL change.
 - **g) Drying keeps the weight.** Drying changes the price, not the kilograms.
 - **h) Farming limit.** An account farms at most **2 plots at once per room**. An unleased private plot of your own counts; a plot you have leased out does not.
 - **i) Newcomer gift.** Given once per account, not once per room.
@@ -377,7 +377,7 @@ kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mp
 | `Mwater` | 1 − min(0.2, 0.01 · off-target hours) |
 | `Mpest` | Π over pests of (1 − min(0.3, 0.015 · active hours)) |
 | `Mlate` | 1 − min(0.6, 0.02 · hours after the ripe window) |
-| `qT`, `qH` | transplant and harvest quality, clamped to [0.9, 1.1]; always 1.0 in v15.1 |
+| `qT`, `qH` | transplant and harvest quality; always 1.0 in v15.1 (the server ignores the reported value, D1) |
 
 **Two implementations of one formula:**
 - The server computes the yield at harvest (`_crop_yield(crop, p_now)`).
@@ -562,7 +562,7 @@ All are SECURITY DEFINER with `grant execute … to anon, authenticated`. Every 
 
 1. `begin_work(plot, w)` records `work = w` and `work_started_at = now()` on the crop.
 2. `transplant(…, q)` and `harvest(…, q)` require `work = w` and `now() − work_started_at ≥ 2 s`.
-3. They clamp `q` to [0.9, 1.1] and clear `work`.
+3. They use `q` = 1.0 whatever the client sends (v15.1, D1) and clear `work`.
 
 This is the v14 trust model: a modified client gains at most +10 %, and never faster than the gate.
 
@@ -640,7 +640,7 @@ After an error the client refetches `field_state`, as in v14.
 - pest rolls, which stay hidden until they fire;
 - prices, yields, land ownership, leases and reclaims.
 
-**Clients only report two things:** the transplant and harvest quality, clamped to [0.9, 1.1] behind a 2 s gate, and (v15.2) crab hits, bounded to 3 per hole visit.
+**Clients only report two things:** the transplant and harvest quality, which v15.1 ignores (always 1.0, D1) behind a 2 s gate, and (v15.2) crab hits, bounded to 3 per hole visit.
 
 ## 12. Networking
 
@@ -748,7 +748,7 @@ Everything is original and drawn in code.
 
 ### 15.1 Minigames
 
-Each returns a quality `q` in [0.9, 1.1].
+Each returns a quality `q` in [0.9, 1.1]; how the server accepts it after D1 is decided in the v15.2 plan.
 
 - **Transplanting (`TransplantGame`):** a marker sweeps across a row.
   - 12 beats; tap or press Space when the marker is inside the green band.
