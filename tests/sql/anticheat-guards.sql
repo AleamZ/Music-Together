@@ -50,7 +50,7 @@ begin
 end $$;
 rollback;
 
--- 2. Dynamic: a locked account gets 'account locked' (the seconds left, hint 'anticheat') from all 39 game RPCs, and
+-- 2. Dynamic: a locked account gets 'account locked' (the seconds left, hint 'anticheat') from all 42 game RPCs, and
 --    the four reads still answer.
 create temp table guards (k text primary key, v text);
 insert into guards select 't', token from public.register('guard_' || floor(random() * 1e9)::text, 'pw123456');
@@ -116,12 +116,15 @@ begin
     format('select public.harvest_part(%L, %L, 5, true)', room, t),
     format('select public.rent_harvester(%L, %L, 5)', room, t),
     format('select public.load_sprayer(%L, %L)', t, 'spray_insect'),
-    format('select public.sell_produce(%L, %L, 1)', t, 'khoai')] loop
+    format('select public.sell_produce(%L, %L, 1)', t, 'khoai'),
+    format('select public.prepare_beds(%L, %L, 5)', room, t),
+    format('select public.plant_crop(%L, %L, 5, %L)', room, t, 'seed_bap'),
+    format('select public.tend_crop(%L, %L, 5, %L)', room, t, 'vun_goc')] loop
     n := n + 1;
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 39, format('%s guarded calls', n);
+  assert n = 42, format('%s guarded calls', n);
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);

@@ -880,4 +880,219 @@ end $$;
 
 select 'v15.2 tools smoke ok' as result;
 
+-- ---------- hoa màu (§8.9): beds, planting, care, a season of each method, and the wipe (§11.5) ----------
+insert into smoke select 'room5', room_id::text from public.create_room('Hoa màu', 'pw', (select v from smoke where k = 't3'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room5')::uuid), 'pw', v)
+  from smoke where k = 't1';
+create function pg_temp.give(a uuid, it text, n integer) returns void language sql
+as $$ insert into public.inventory (account_id, item_id, qty) values (a, it, n)
+      on conflict (account_id, item_id) do update set qty = excluded.qty $$;
+
+-- Lên luống, planting and tending: the refusals in their order (§11.4).
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        room uuid := (select v from smoke where k = 'room5')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        s jsonb; c jsonb; i integer;
+begin
+  perform pg_temp.set_coins(a1, 100000);
+  perform pg_temp.set_coins(a3, 100000);
+  perform public._farm_do_rent(room, a3, 5, t);
+  perform public._farm_do_rent(room, a3, 6, t);
+  perform public._farm_do_rent(room, a1, 7, t);
+  perform pg_temp.give(a3, 'seed_khoai', 2);
+  perform pg_temp.give(a3, 'seed_bap', 1);
+  perform pg_temp.give(a3, 'seed_short', 1);
+  perform pg_temp.give(a1, 'seed_ot', 1);
+  perform pg_temp.give(a1, 'seed_short', 1);
+  -- lên luống: a bare plot of mine, at Ẩm
+  assert pg_temp.err(format('select public._farm_do_prepare_beds(%L, %L, 11, %L)', room, a3, t)) = 'invalid plot', 'plot 11';
+  assert pg_temp.err(format('select public._farm_do_prepare_beds(%L, %L, 5, %L)', room, a1, t)) = 'not your plot', 'a3''s plot';
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 5, %L, %L)', room, a3, 'seed_khoai', t)) = 'not prepared',
+    'a bare plot';
+  s := public._farm_do_prepare_beds(room, a3, 5, t);
+  c := pg_temp.plot(s, 5)->'crop';
+  assert c->>'kind' = 'upland' and c->>'phase' = 'prepared' and c->'water' = '1' and c->'upland' = 'null', format('beds %s', c);
+  assert pg_temp.err(format('select public._farm_do_prepare_beds(%L, %L, 5, %L)', room, a3, t)) = 'crop exists', 'once';
+  assert pg_temp.err(format('select public._farm_do_prepare(%L, %L, 5, %L)', room, a3, t)) = 'crop exists', 'no paddy on beds';
+  assert pg_temp.err(format('select public._farm_do_soak(%L, %L, 5, %L, %L)', room, a3, 'seed_short', t)) = 'wrong crop',
+    'no rice seed on beds';
+  assert pg_temp.err(format('select public._farm_do_sow(%L, %L, 5, %L)', room, a3, t)) = 'wrong crop', 'no sowing on beds';
+  -- a paddy takes no hoa màu, and a soaked rice seed is not làm đất
+  perform public._farm_do_prepare(room, a3, 6, t);
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 6, %L, %L)', room, a3, 'seed_bap', t)) = 'wrong crop', 'a paddy';
+  assert pg_temp.err(format('select public._farm_do_tend(%L, %L, 6, %L, %L)', room, a3, 'vun_goc', t)) = 'wrong crop', 'no tending';
+  assert pg_temp.err(format('select public._farm_do_prepare_beds(%L, %L, 6, %L)', room, a3, t)) = 'crop exists', 'a paddy first';
+  perform public._farm_do_abandon(room, a3, 6, t);
+  perform public._farm_do_prepare_beds(room, a3, 6, t);
+  perform public._farm_do_soak(room, a1, 7, 'seed_short', t);
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 7, %L, %L)', room, a1, 'seed_ot', t)) = 'not prepared',
+    'a soaked seed';
+  assert pg_temp.err(format('select public._farm_do_prepare_beds(%L, %L, 7, %L)', room, a1, t)) = 'crop exists', 'soaking';
+  perform public._farm_do_abandon(room, a1, 7, t);
+  perform public._farm_do_prepare_beds(room, a1, 7, t);
+  -- planting: a hoa-màu seed, on beds with nothing planted, at Ẩm, from the bag
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 5, %L, %L)', room, a3, 'seed_short', t)) = 'invalid item',
+    'a rice seed';
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 5, %L, %L)', room, a3, 'fert_urea', t)) = 'invalid item',
+    'not a seed';
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 8, %L, %L)', room, a3, 'seed_khoai', t)) = 'not your plot',
+    'plot 8';
+  perform public._farm_do_water(room, a3, 5, 1, t);
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 5, %L, %L)', room, a3, 'seed_khoai', t)) = 'need water', 'Đẫm';
+  perform public._farm_do_water(room, a3, 5, -1, t);
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 5, %L, %L)', room, a3, 'seed_ot', t)) = 'no item', 'no ớt seed';
+  -- bón lót before P, then khoai (a cutting: P now), bắp (direct: P now) and ớt (a nursery: sow_at now, P later)
+  perform pg_temp.give(a3, 'fert_manure', 1);
+  perform pg_temp.give(a3, 'fert_phosphate', 1);
+  perform public._farm_do_fertilize(room, a3, 5, 'fert_manure', t);
+  perform public._farm_do_fertilize(room, a3, 5, 'fert_phosphate', t);
+  s := public._farm_do_plant(room, a3, 5, 'seed_khoai', t + interval '1 minute');
+  c := pg_temp.plot(s, 5)->'crop';
+  assert c->>'upland' = 'khoai' and c->>'phase' = 'root' and (c->>'plant_at')::timestamptz = t + interval '1 minute'
+     and c->'sow_at' = 'null' and c->'picking' = '1' and c->'pickings' = '1' and s->'mine'->'items'->'seed_khoai' = '1',
+    format('khoai %s', c);
+  assert (select jsonb_array_length(pest_rolls) = 1 and pest_rolls->0->>'slot' = '1' and (pest_rolls->0->>'u_hit')::float8 < 1
+            from public.crops where room_id = room and plot_no = 5), 'one secret roll per pest slot';
+  assert pg_temp.plot(s, 5)::text not like '%u_hit%', 'the rolls stay secret';
+  assert pg_temp.err(format('select public._farm_do_plant(%L, %L, 5, %L, %L)', room, a3, 'seed_khoai', t + interval '1 minute'))
+         = 'crop exists', 'planted already';
+  s := public._farm_do_plant(room, a3, 6, 'seed_bap', t + interval '1 minute');
+  assert pg_temp.plot(s, 6)->'crop'->>'phase' = 'sprout'
+     and (select jsonb_array_length(pest_rolls) from public.crops where room_id = room and plot_no = 6) = 2, 'bắp, two slots';
+  s := public._farm_do_plant(room, a1, 7, 'seed_ot', t + interval '1 minute');
+  c := pg_temp.plot(s, 7)->'crop';
+  assert c->>'phase' = 'nursery' and (c->>'sow_at')::timestamptz = t + interval '1 minute' and c->'plant_at' = 'null'
+     and c->'pickings' = '3', format('the ớt nursery %s', c);
+  -- tending: one of the crop's acts, after P, recorded whenever it is done; at most 20 a crop
+  assert pg_temp.err(format('select public._farm_do_tend(%L, %L, 5, %L, %L)', room, a3, 'vun_goc', t + interval '24 hours'))
+         = 'wrong crop', 'khoai has no vun gốc';
+  assert pg_temp.err(format('select public._farm_do_tend(%L, %L, 7, %L, %L)', room, a1, 'lat_day', t + interval '2 hours'))
+         = 'wrong crop', 'ớt has no act';
+  assert pg_temp.err(format('select public._farm_do_tend(%L, %L, 5, %L, %L)', room, a3, 'lat_day', t)) = 'wrong phase', 'before P';
+  for i in 1 .. 20 loop
+    s := public._farm_do_tend(room, a3, 6, 'vun_goc', t + interval '20 hours');
+  end loop;
+  assert pg_temp.plot(s, 6)->'crop'->'log'->'work'->0 = jsonb_build_object('t', t + interval '20 hours', 'act', 'vun_goc')
+     and jsonb_array_length(pg_temp.plot(s, 6)->'crop'->'log'->'work') = 20, 'recorded';
+  assert pg_temp.err(format('select public._farm_do_tend(%L, %L, 6, %L, %L)', room, a3, 'vun_goc', t + interval '21 hours'))
+         = 'too fast', 'twenty at most';
+end $$;
+
+-- A khoai season by the book (§8.8): 200 kg, less one hour of a treated weevil = 197 kg.
+do $$
+declare a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room5')::uuid;
+        p timestamptz := (select v from smoke where k = 'now')::timestamptz + interval '1 minute'; s jsonb; c jsonb;
+begin
+  -- the weevil (slot 1, 24–40 h) is due at P + 32 h, on a Khô bed (×2)
+  update public.crops set pest_rolls = '[{"slot": 1, "u_time": 0.5, "u_hit": 0.1}]' where room_id = room and plot_no = 5;
+  perform pg_temp.give(a3, 'fert_potash', 1);
+  perform public._farm_do_fertilize(room, a3, 5, 'fert_potash', p + interval '20 hours');
+  s := public._farm_do_tend(room, a3, 5, 'lat_day', p + interval '28 hours');
+  assert pg_temp.plot(s, 5)->'crop'->>'phase' = 'tuber', 'tuber at 28 h';
+  c := pg_temp.plot(public._field_view(room, a3, p + interval '32 hours'), 5)->'crop';
+  assert c->'pests' = jsonb_build_array(jsonb_build_object('kind', 'weevil', 'since', p + interval '32 hours', 'treated_at', null)),
+    format('the weevil %s', c->'pests');
+  perform pg_temp.give(a3, 'spray_insect', 1);
+  s := public._farm_do_spray(room, a3, 5, 'spray_insect', p + interval '33 hours');
+  assert pg_temp.plot(s, 5)->'crop'->'pests'->0->>'treated_at' is not null, 'treated an hour later';
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 5, %L, %L)', room, a3, 'harvest',
+                            p + interval '47 hours 59 minutes 59 seconds')) = 'wrong phase', 'R_1 − 1 s';
+  perform public._farm_do_begin_work(room, a3, 5, 'harvest', p + interval '48 hours');
+  s := public._farm_do_harvest(room, a3, 5, 1, p + interval '48 hours 2 seconds');
+  assert s->'harvest' = '{"upland": "khoai", "kg": 197, "k": 1, "pickings": 1, "done": true}'
+     and pg_temp.produce(a3, 'khoai') = 197, format('khoai %s', s->'harvest');
+  assert pg_temp.plot(s, 5)->'crop' = 'null' and pg_temp.plot(s, 5)->'lease' = 'null', 'dug; the lease ended';
+end $$;
+
+-- An ớt season (§8.8): ươm, trồng cây con after the 2 s action, three pickings 12 h apart; the last ends the lease.
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; t1 text := (select v from smoke where k = 't1');
+        room uuid := (select v from smoke where k = 'room5')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        p timestamptz := t + interval '12 hours 1 minute'; s jsonb; k integer; kg integer[] := '{}'; r jsonb; c0 integer;
+begin
+  update public.crops set pest_rolls = '[{"slot": 1, "u_time": 0.5, "u_hit": 0.99}, {"slot": 2, "u_time": 0.5, "u_hit": 0.99}]'
+   where room_id = room and plot_no = 7;
+  -- sown at t + 1 min, ready 10 h later; the bed dried to Khô at t + 12 h, so it is watered back to Ẩm first
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 7, %L, %L)', room, a1, 'transplant', p - interval '2 seconds'))
+         = 'need water', 'Khô';
+  perform public._farm_do_water(room, a1, 7, 1, t + interval '12 hours');
+  perform public._farm_do_begin_work(room, a1, 7, 'transplant', p - interval '2 seconds');
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 7, 1, %L)', room, a1, p - interval '1 second')) = 'too fast',
+    'the 2 s gate';
+  s := public._farm_do_transplant(room, a1, 7, 5.0, p);
+  assert pg_temp.plot(s, 7)->'crop'->>'phase' = 'root' and (pg_temp.plot(s, 7)->'crop'->>'plant_at')::timestamptz = p
+     and (pg_temp.crop(room, 7)).transplant_at is null and (pg_temp.crop(room, 7)).work is null, 'P is set; quality ignored';
+  -- pickings at R_1 = P + 46 h, R_2 = R_1 + 12 h, R_3 = R_1 + 24 h
+  for k in 1 .. 3 loop
+    if k > 1 then
+      assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 7, %L, %L)', room, a1, 'harvest',
+                                p + make_interval(hours => 46 + 12 * (k - 1)) - interval '1 second')) = 'wrong phase',
+        format('R_%s − 1 s', k);
+    end if;
+    perform public._farm_do_begin_work(room, a1, 7, 'harvest', p + make_interval(hours => 46 + 12 * (k - 1)));
+    kg := kg || (public._up_yield(pg_temp.crop(room, 7), public._upland('ot'), 1.0, k,
+                                  p + make_interval(hours => 46 + 12 * (k - 1), secs => 2))->>'kg')::int;
+    s := public._farm_do_harvest(room, a1, 7, 1, p + make_interval(hours => 46 + 12 * (k - 1), secs => 2));
+    assert s->'harvest' = jsonb_build_object('upland', 'ot', 'kg', kg[k], 'k', k, 'pickings', 3, 'done', k = 3),
+      format('picking %s: %s', k, s->'harvest');
+  end loop;
+  assert kg[1] > kg[2] and kg[2] > kg[3] and pg_temp.produce(a1, 'ot') = kg[1] + kg[2] + kg[3], format('40/35/25 %s', kg);
+  assert pg_temp.plot(s, 7)->'crop' = 'null' and pg_temp.plot(s, 7)->'lease' = 'null', 'the last picking ends the lease';
+  -- cô Út buys it all
+  c0 := (select coins from public.wallets where account_id = a1);
+  r := public.sell_produce(t1, 'ot', kg[1] + kg[2] + kg[3]);
+  assert r->'mine'->'coins' = to_jsonb(c0 + (kg[1] + kg[2] + kg[3]) * 1590) and r->'mine'->'produce'->'ot' is null, 'sold';
+end $$;
+
+-- The RPCs (§11.4, §11.5): guarded, flagged as the spec lists, public.
+do $$
+declare t3 text := (select v from smoke where k = 't3'); room uuid := (select v from smoke where k = 'room5')::uuid; r jsonb;
+begin
+  r := public.prepare_beds(room, t3, 0);
+  assert r->'anticheat'->>'code' = 'bad_plot' and r->'anticheat'->>'error' = 'invalid plot', format('prepare_beds %s', r);
+  r := public.plant_crop(room, t3, null, 'seed_bap');
+  assert r->'anticheat'->>'code' = 'bad_plot', format('plant_crop %s', r);
+  r := public.plant_crop(room, t3, 6, 'fert_urea');
+  assert r->'anticheat'->>'code' = 'kind_mismatch' and r->'anticheat'->>'strike' = '0' and r->'anticheat'->>'error' = 'invalid item',
+    format('a fertilizer is a soft kind_mismatch %s', r);
+  assert pg_temp.err(format('select public.plant_crop(%L, %L, 6, %L)', room, t3, 'seed_short')) = 'invalid item',
+    'a rice seed is the core''s refusal';
+  r := public.tend_crop(room, t3, 6, 'x');
+  assert r->'anticheat'->>'code' = 'bad_work' and r->'anticheat'->>'strike' = '0' and r->'anticheat'->>'error' = 'invalid act'
+     and r - 'anticheat' = '{}', format('tend_crop x %s', r);
+  assert public.tend_crop(room, t3, 6, null)->'anticheat'->>'code' = 'bad_work', 'no act';
+  assert public.tend_crop(room, t3, 11, 'vun_goc')->'anticheat'->>'code' = 'bad_plot', 'plot 11';
+  assert has_function_privilege('anon', 'public.prepare_beds(uuid,text,integer)', 'execute')
+     and has_function_privilege('anon', 'public.plant_crop(uuid,text,integer,text)', 'execute')
+     and has_function_privilege('anon', 'public.tend_crop(uuid,text,integer,text)', 'execute'), 'public RPCs';
+end $$;
+
+-- The wipe (§11.5): the snapshot lists the hoa màu, the tank and the crops' new fields; the stock goes, the tank empties.
+insert into smoke select 't5', token from public.register('smoke152_e_' || floor(random() * 1e9)::text, 'pw123456');
+do $$
+declare a5 uuid := public._auth_account((select v from smoke where k = 't5')); room uuid := (select v from smoke where k = 'room5')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz; h jsonb;
+begin
+  perform pg_temp.set_coins(a5, 50000);
+  perform public._farm_do_rent(room, a5, 9, t);
+  insert into public.crops (room_id, plot_no, farmer_id, kind, upland, prepared_at, plant_at, water_log)
+  values (room, 9, a5, 'upland', 'bap', t, t, jsonb_build_array(jsonb_build_object('t', t, 'l', 1)));
+  insert into public.produce_stock (account_id, upland, kg) values (a5, 'khoai', 50), (a5, 'ot', 0);
+  perform pg_temp.give(a5, 'tool_sprayer', 1);
+  insert into public.farm_profiles (account_id, tank_item, tank_charges) values (a5, 'spray_fungus', 2);
+  h := public._ac_holdings(a5);
+  assert h->'produce' = '[{"kg": 50, "upland": "khoai"}, {"kg": 0, "upland": "ot"}]'
+     and h->'tank' = '{"item": "spray_fungus", "charges": 2}', format('holdings %s %s', h->'produce', h->'tank');
+  assert h->'crops'->0 @> jsonb_build_object('plot_no', 9, 'kind', 'upland', 'variety', null, 'upland', 'bap', 'plant_at', t,
+                                             'parts', 0, 'harvester_until', null), format('crops %s', h->'crops');
+  insert into public.anticheat_status (account_id, strikes, ban_state, banned_at) values (a5, 2, 'pending_wipe', now());
+  h := public._ac_wipe(a5, null);
+  assert h->'produce'->0->'kg' = '50', 'the snapshot keeps them';
+  assert not exists (select 1 from public.produce_stock where account_id = a5)
+     and (select tank_item is null and tank_charges = 0 from public.farm_profiles where account_id = a5)
+     and public._farm_mine(a5)->'tank' = 'null', 'the hoa màu is gone and the tank is empty';
+end $$;
+
+select 'v15.2 beds smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql

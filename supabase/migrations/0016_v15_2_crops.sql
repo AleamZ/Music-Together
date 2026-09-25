@@ -1114,3 +1114,320 @@ end; $$;
 grant execute on function public.load_sprayer(text, text) to anon, authenticated;
 grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;
 grant execute on function public.sell_produce(text, text, integer) to anon, authenticated;
+
+-- Lên luống (§8.9, S7): a bare plot becomes raised beds at Ẩm (water 1), and the season's crop is hoa màu. Farming
+-- withdraws the owner's listing and sublease offer, as làm đất does.
+create or replace function public._farm_do_prepare_beds(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  perform public._plot_row(p_room, p_plot);
+  if public._farmer(p_room, p_plot, p_now) is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  if public._has_crop(p_room, p_plot) then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  insert into public.crops (room_id, plot_no, farmer_id, kind, prepared_at, water_log)
+  values (p_room, p_plot, p_account, 'upland', p_now, jsonb_build_array(jsonb_build_object('t', p_now, 'l', 1)));
+  update public.field_plots set sale_price = null, sublease_price = null where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Trồng / gieo / ươm (§8.9): one bag of a hoa-màu seed on beds with nothing planted, at Ẩm. A cutting or a direct sowing
+-- sets P now; a nursery crop starts its nursery (sow_at) and gets P at its transplant. The pest chances are rolled now,
+-- one per config slot, and stay secret.
+create or replace function public._farm_do_plant(p_room uuid, p_account uuid, p_plot integer, p_item text, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; u public.upland_crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  u := public._upland((select s.upland from public.shop_items s where s.id = p_item and s.kind = 'seed'));
+  if u.id is null then
+    raise exception 'invalid item' using errcode = '22023';
+  end if;
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  if c.kind <> 'upland' then
+    raise exception 'wrong crop' using errcode = '22023';
+  end if;
+  if c.upland is not null then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  if public._water_at(c.water_log, p_now) <> 1 then
+    raise exception 'need water' using errcode = '22023';
+  end if;
+  perform public._use_item(p_account, p_item);
+  update public.crops
+     set upland = u.id,
+         sow_at = case when u.method = 'nursery' then p_now end,
+         plant_at = case when u.method = 'nursery' then null else p_now end,
+         pest_rolls = (select coalesce(jsonb_agg(jsonb_build_object('slot', (x->>'slot')::int, 'u_time', random(), 'u_hit', random())
+                                                 order by (x->>'slot')::int), '[]'::jsonb)
+                         from jsonb_array_elements(u.pests) x)
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Lật dây, vun gốc (§8.5, §8.9): one of this crop's act cares, after P, recorded whenever it is done (the plot panel warns
+-- outside the windows). The care model reads every entry, so a crop keeps at most 20.
+create or replace function public._farm_do_tend(p_room uuid, p_account uuid, p_plot integer, p_act text, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; u public.upland_crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  u := public._upland(c.upland);
+  if c.kind <> 'upland'
+     or not exists (select 1 from jsonb_array_elements(u.cares) x where x->>'kind' = 'act' and x->>'id' = p_act) then
+    raise exception 'wrong crop' using errcode = '22023';
+  end if;
+  if c.plant_at is null or p_now < c.plant_at then
+    raise exception 'wrong phase' using errcode = '22023';
+  end if;
+  if jsonb_array_length(c.work_log) >= 20 then
+    raise exception 'too fast' using errcode = '22023';
+  end if;
+  update public.crops set work_log = work_log || jsonb_build_array(jsonb_build_object('t', p_now, 'act', p_act))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Ngâm ủ (0013's body): rice seed only, so beds raise 'wrong crop'.
+create or replace function public._farm_do_soak(p_room uuid, p_account uuid, p_plot integer, p_item text, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; v_variety text; v_has boolean;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  select variety into v_variety from public.shop_items where id = p_item and kind = 'seed';
+  if v_variety is null then
+    raise exception 'invalid item' using errcode = '22023';
+  end if;
+  perform public._plot_row(p_room, p_plot);
+  if public._farmer(p_room, p_plot, p_now) is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  select * into c from public.crops where room_id = p_room and plot_no = p_plot;
+  v_has := found;
+  if v_has and c.kind = 'upland' then
+    raise exception 'wrong crop' using errcode = '22023';
+  end if;
+  if v_has and (c.soak_at is not null or c.sow_at is not null) then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  perform public._use_item(p_account, p_item);
+  if v_has then
+    update public.crops set variety = v_variety, soak_at = p_now, rotted_at = null where room_id = p_room and plot_no = p_plot;
+  else
+    insert into public.crops (room_id, plot_no, farmer_id, variety, soak_at) values (p_room, p_plot, p_account, v_variety, p_now);
+    update public.field_plots set sale_price = null, sublease_price = null where room_id = p_room and plot_no = p_plot;
+  end if;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Gieo mạ (0013's body): rice only.
+create or replace function public._farm_do_sow(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.kind = 'upland' then
+    raise exception 'wrong crop' using errcode = '22023';
+  end if;
+  if public._crop_phase(c, public._variety(c.variety), p_now) <> 'sprouted' then
+    raise exception 'wrong phase' using errcode = '22023';
+  end if;
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  if public._water_at(c.water_log, p_now) <> 1 then
+    raise exception 'need water' using errcode = '22023';
+  end if;
+  update public.crops
+     set sow_at = p_now,
+         pest_rolls = jsonb_build_array(
+           jsonb_build_object('slot', 1, 'u_time', random(), 'u_kind', random(), 'u_hit', random()),
+           jsonb_build_object('slot', 2, 'u_time', random(), 'u_kind', random(), 'u_hit', random()),
+           jsonb_build_object('slot', 3, 'u_time', random(), 'u_kind', random(), 'u_hit', random()))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Cấy lúa, or trồng cây ớt con (§8.9): after the 2 s action; rice gets transplant_at, an ớt nursery gets P. The reported
+-- quality is ignored (D1; v15.3 decides how it comes back).
+create or replace function public._farm_do_transplant(p_room uuid, p_account uuid, p_plot integer, p_quality double precision,
+                                                      p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  perform public._work_gate(c, 'transplant', p_now);
+  perform public._work_check(c, public._variety(c.variety), 'transplant', p_now);
+  if c.kind = 'upland' then
+    update public.crops set plant_at = p_now, work = null, work_started_at = null
+     where room_id = p_room and plot_no = p_plot;
+  else
+    update public.crops set transplant_at = p_now, q_transplant = 1.0, work = null, work_started_at = null
+     where room_id = p_room and plot_no = p_plot;
+  end if;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+revoke all on function public._farm_do_prepare_beds(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_plant(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_tend(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_soak(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_sow(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_transplant(uuid, uuid, integer, double precision, timestamptz)
+  from public, anon, authenticated;
+
+create or replace function public.prepare_beds(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'prepare_beds', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_prepare_beds(p_room_id, v_account, p_plot, now());
+end $$;
+
+-- kind_mismatch (§11.5) is soft: an existing item of another kind. An unknown item or a rice seed is the core's refusal.
+create or replace function public.plant_crop(p_room_id uuid, p_session_token text, p_plot integer, p_item_id text)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token); v_kind text;
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'plant_crop', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  select kind into v_kind from public.shop_items where id = p_item_id;
+  if found and v_kind <> 'seed' then
+    return public._ac_flag(v_account, 'kind_mismatch', 'plant_crop', jsonb_build_object('item', p_item_id, 'kind', v_kind),
+                           p_room_id, 'invalid item', false);
+  end if;
+  return public._farm_do_plant(p_room_id, v_account, p_plot, p_item_id, now());
+end $$;
+
+-- bad_work (R19): the plot panel sends only the acts of the crop's config, which are lat_day and vun_goc.
+create or replace function public.tend_crop(p_room_id uuid, p_session_token text, p_plot integer, p_act text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'tend_crop', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  if p_act is null or p_act not in ('lat_day', 'vun_goc') then
+    return public._ac_flag(v_account, 'bad_work', 'tend_crop', jsonb_build_object('plot', p_plot, 'act', left(p_act, 32)),
+                           p_room_id, 'invalid act');
+  end if;
+  return public._farm_do_tend(p_room_id, v_account, p_plot, p_act, now());
+end $$;
+
+grant execute on function public.prepare_beds(uuid, text, integer) to anon, authenticated;
+grant execute on function public.plant_crop(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.tend_crop(uuid, text, integer, text) to anon, authenticated;
+
+-- ---------- F. Anti-cheat touch points (§11.5): the holdings and the wipe gain the hoa màu and the tank ----------
+-- What a wipe removes (0015's body): the snapshot also lists the hoa màu and the tank, and each crop its kind, crop, P,
+-- cut parts and harvester.
+create or replace function public._ac_holdings(p_account uuid) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'wallet', (select jsonb_build_object('coins', w.coins, 'daily_on', w.daily_on, 'bonus_on', w.bonus_on,
+                                         'bonus_count', w.bonus_count)
+                 from public.wallets w where w.account_id = p_account),
+    'inventory', coalesce((select jsonb_agg(jsonb_build_object('item_id', i.item_id, 'qty', i.qty) order by i.item_id)
+                             from public.inventory i where i.account_id = p_account), '[]'::jsonb),
+    'fishing_profile', (select jsonb_build_object('rod', p.rod, 'bobber', p.bobber, 'bait', p.bait)
+                          from public.fishing_profiles p where p.account_id = p_account),
+    'fish', coalesce((select jsonb_agg(jsonb_build_object('species_id', f.species_id, 'weight_g', f.weight_g, 'price', f.price,
+                                                          'caught_at', f.caught_at) order by f.caught_at, f.id)
+                        from public.fish f where f.account_id = p_account), '[]'::jsonb),
+    'personal_bests', coalesce((select jsonb_agg(jsonb_build_object('species_id', b.species_id, 'weight_g', b.weight_g,
+                                                                    'caught_at', b.caught_at) order by b.species_id)
+                                  from public.personal_bests b where b.account_id = p_account), '[]'::jsonb),
+    'rice', coalesce((select jsonb_agg(jsonb_build_object('variety', r.variety, 'wet_kg', r.wet_kg, 'dry_kg', r.dry_kg)
+                                       order by r.variety)
+                        from public.rice_stock r where r.account_id = p_account), '[]'::jsonb),
+    'produce', coalesce((select jsonb_agg(jsonb_build_object('upland', ps.upland, 'kg', ps.kg) order by ps.upland)
+                           from public.produce_stock ps where ps.account_id = p_account), '[]'::jsonb),
+    'tank', (select jsonb_build_object('item', pr.tank_item, 'charges', pr.tank_charges)
+               from public.farm_profiles pr where pr.account_id = p_account),
+    'plots', coalesce((select jsonb_agg(jsonb_build_object('room_id', fp.room_id, 'plot_no', fp.plot_no, 'kind', fp.kind,
+                                                           'owned_at', fp.owned_at, 'sale_price', fp.sale_price,
+                                                           'sublease_price', fp.sublease_price) order by fp.room_id, fp.plot_no)
+                         from public.field_plots fp where fp.owner_id = p_account), '[]'::jsonb),
+    'leases', coalesce((select jsonb_agg(jsonb_build_object('room_id', pl.room_id, 'plot_no', pl.plot_no, 'source', pl.source,
+                                                            'price', pl.price, 'until', pl.until) order by pl.room_id, pl.plot_no)
+                          from public.plot_leases pl where pl.farmer_id = p_account), '[]'::jsonb),
+    'offers', coalesce((select jsonb_agg(jsonb_build_object('room_id', lo.room_id, 'plot_no', lo.plot_no, 'price', lo.price,
+                                                            'created_at', lo.created_at) order by lo.created_at, lo.id)
+                          from public.land_offers lo where lo.buyer_id = p_account), '[]'::jsonb),
+    'crops', coalesce((select jsonb_agg(jsonb_build_object('room_id', c.room_id, 'plot_no', c.plot_no, 'kind', c.kind,
+                                                           'variety', c.variety, 'upland', c.upland,
+                                                           'transplant_at', c.transplant_at, 'plant_at', c.plant_at,
+                                                           'parts', c.harvested_parts, 'harvester_until', c.harvester_until)
+                                        order by c.room_id, c.plot_no)
+                         from public.crops c where c.farmer_id = p_account), '[]'::jsonb),
+    'drying', coalesce((select jsonb_agg(jsonb_build_object('room_id', d.room_id, 'slot', d.slot, 'variety', d.variety,
+                                                            'kg', d.kg, 'ready_at', d.ready_at) order by d.room_id, d.slot)
+                          from public.drying_slots d where d.account_id = p_account), '[]'::jsonb),
+    'announcements', (select count(*) from public.chat_messages m where m.system and m.about_account_id = p_account))
+$$;
+
+-- The wipe (0015's body): it also deletes the hoa màu and empties the tank; the farm profile (the gift) stays.
+create or replace function public._ac_wipe(p_account uuid, p_by uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_snap jsonb := public._ac_holdings(p_account); v_id bigint; v_coins integer;
+begin
+  insert into public.anticheat_wipes (account_id, username, wiped_by, snapshot)
+  values (p_account, (select username from public.accounts where id = p_account), p_by, v_snap)
+  returning id into v_id;
+  select coins into v_coins from public.wallets where account_id = p_account;
+  if found then
+    insert into public.coin_ledger (account_id, delta, balance, reason, ref) values (p_account, -v_coins, 0, 'wipe', 'wipe #' || v_id);
+    delete from public.wallets where account_id = p_account;
+  end if;
+  delete from public.inventory where account_id = p_account;
+  delete from public.casts where account_id = p_account;
+  delete from public.fish where account_id = p_account;
+  delete from public.fishing_profiles where account_id = p_account;
+  delete from public.personal_bests where account_id = p_account;
+  delete from public.rice_stock where account_id = p_account;
+  delete from public.produce_stock where account_id = p_account;
+  update public.farm_profiles set tank_item = null, tank_charges = 0 where account_id = p_account;
+  delete from public.chat_messages where system and about_account_id = p_account;
+  update public.anticheat_status set ban_state = 'wiped', wiped_at = now() where account_id = p_account;
+  return v_snap;
+end $$;
+
+revoke all on function public._ac_holdings(uuid) from public, anon, authenticated;
+revoke all on function public._ac_wipe(uuid, uuid) from public, anon, authenticated;
