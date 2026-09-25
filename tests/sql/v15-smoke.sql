@@ -1,7 +1,11 @@
--- tests/sql/v15-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0013, from the repo
+-- tests/sql/v15-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0015, from the repo
 -- root (the crop fixtures are read with \copy, and the last section re-runs 0013 with \i). Every check is an ASSERT; the
--- first failure stops psql (ON_ERROR_STOP).
+-- first failure stops psql (ON_ERROR_STOP). A refusal the anti-cheat reads as tampering comes back as an envelope
+-- (0015): its `error` is checked instead.
 \set ON_ERROR_STOP on
+
+-- The tampered calls below are only recorded: log mode locks nobody.
+update public.anticheat_config set mode = 'log';
 
 create temp table smoke (k text primary key, v text);
 insert into smoke select 't1', token from public.register('smoke15_a_' || floor(random() * 1e9)::text, 'pw123456');
@@ -108,8 +112,8 @@ do $$
 declare t1 text := (select v from smoke where k = 't1'); a1 uuid := (select v from smoke where k = 'a1')::uuid; s jsonb;
 begin
   insert into public.wallets (account_id, coins) values (a1, 1000) on conflict (account_id) do update set coins = 1000;
-  assert pg_temp.err(format('select public.buy_item(%L, %L, 1)', t1, 'seed_short')) = 'item not available', 'seeds are not fishing gear';
-  assert pg_temp.err(format('select public.buy_item(%L, %L)', t1, 'fert_urea')) = 'item not available', 'nor fertilizer';
+  assert public.buy_item(t1, 'seed_short', 1)->'anticheat'->>'error' = 'item not available', 'seeds are not fishing gear';
+  assert public.buy_item(t1, 'fert_urea')->'anticheat'->>'error' = 'item not available', 'nor fertilizer';
   insert into public.inventory (account_id, item_id, qty) values (a1, 'seed_nep', 2), (a1, 'rod_bamboo', 1)
   on conflict (account_id, item_id) do update set qty = excluded.qty;
   s := public.fishing_state(t1);

@@ -388,3 +388,130 @@ begin
 end $$;
 
 select 'anticheat flow smoke ok' as result;
+
+-- ---------- fishing (§6.3, §7.2–§7.4, §10.2): the daily cap, reel_too_fast, the shop checks, gate hugs, catch lines ----------
+insert into smoke select 'f1', token from public.register('acf1_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'f2', token from public.register('acf2_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'f3', token from public.register('acf3_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'b' || substr(k, 2), public._auth_account(v)::text from smoke where k in ('f1', 'f2', 'f3');
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room')::uuid), 'pw', v)
+  from smoke where k in ('f1', 'f2', 'f3');
+-- An angler with worms, the hourly window fresh and nothing in hand.
+create or replace function pg_temp.angler(a uuid) returns void language sql as $$
+  insert into public.inventory (account_id, item_id, qty) values (a, 'bait_worm', 20)
+  on conflict (account_id, item_id) do update set qty = 20;
+  insert into public.fishing_profiles (account_id) values (a) on conflict (account_id) do nothing;
+  update public.fishing_profiles set window_start = now(), window_casts = 0, bait = 'bait_worm' where account_id = a;
+  delete from public.fish where account_id = a;
+$$;
+
+do $$
+declare f1 text := (select v from smoke where k = 'f1'); b1 uuid := (select v from smoke where k = 'b1')::uuid;
+        room uuid := (select v from smoke where k = 'room')::uuid; c jsonb; e jsonb; r jsonb;
+begin
+  perform pg_temp.angler(b1);
+  -- the daily cap (§6.3): the 300th cast works and is logged once; the 301st is refused until the Vietnam midnight
+  update public.fishing_profiles set day_on = public._vn_today(), day_casts = 298 where account_id = b1;
+  c := public.start_cast(room, f1);
+  assert (select day_casts from public.fishing_profiles where account_id = b1) = 299
+     and not exists (select 1 from public.anticheat_events where account_id = b1), '299: nothing logged';
+  c := public.start_cast(room, f1);
+  assert (select day_casts from public.fishing_profiles where account_id = b1) = 300, '300 casts';
+  assert (select outcome = 'soft' and code = 'cast_daily_cap' and rpc = 'start_cast' and room_id = room
+                 and detail = jsonb_build_object('day', public._vn_today(), 'casts', 300)
+            from public.anticheat_events where account_id = b1), 'cast_daily_cap logged';
+  e := pg_temp.errd(format('select public.start_cast(%L, %L)', room, f1));
+  assert e->>'message' = 'daily cast limit' and (e->>'detail')::int between 1 and 86400, format('daily limit %s', e);
+  assert (select count(*) from public.anticheat_events where account_id = b1) = 1, 'the refusal is not logged';
+  update public.fishing_profiles set day_on = public._vn_today() - 1 where account_id = b1;
+  c := public.start_cast(room, f1);
+  assert (select day_on = public._vn_today() and day_casts = 1 from public.fishing_profiles where account_id = b1), 'a new day';
+
+  -- log mode: a won reel reported at once is reel_too_fast, logged only; the answer stays the lost one
+  update public.anticheat_config set mode = 'log';
+  r := public.finish_cast(f1, (c->>'cast_id')::uuid, true);
+  assert r->>'result' = 'lost' and r->>'why' = 'too_early' and r->'state'->>'coins' is not null, format('lost %s', r);
+  assert r->'anticheat'->>'code' = 'reel_too_fast' and (r->'anticheat'->>'strike')::int = 0 and r->'anticheat'->'error' = 'null',
+    format('envelope %s', r->'anticheat');
+  assert (select outcome = 'log_only' and rpc = 'finish_cast' and room_id = room
+                 and detail ?& array['cast_id', 'species_id', 'bite_at', 'min_reel_ms', 'finished_at', 'ratio']
+                 and detail->>'cast_id' = c->>'cast_id'
+            from public.anticheat_events where account_id = b1 and code = 'reel_too_fast'), 'the reel_too_fast row';
+  assert not exists (select 1 from public.casts where account_id = b1), 'the cast is consumed';
+
+  -- the fishing shop: bad quantities are hard, farm items soft, unknown and unpriced items plain refusals
+  update public.wallets set coins = 5000 where account_id = b1;
+  foreach e in array array[jsonb_build_array('bait_shrimp', 500), jsonb_build_array('bait_shrimp', 0),
+                           jsonb_build_array('bait_shrimp', null), jsonb_build_array('rod_bamboo', 2),
+                           jsonb_build_array('bucket_small', 0)] loop
+    r := public.buy_item(f1, e->>0, (e->>1)::int);
+    assert r = jsonb_build_object('anticheat', jsonb_build_object('code', 'bad_qty', 'strike', 0, 'error', 'invalid quantity',
+                                  'locked_until', null, 'banned', false, 'server_now', now())), format('bad_qty %s: %s', e, r);
+  end loop;
+  assert (select count(*) from public.anticheat_events where account_id = b1 and code = 'bad_qty' and outcome = 'log_only') = 5,
+    'five bad_qty rows';
+  assert (select detail = '{"item": "bait_shrimp", "qty": 500}' from public.anticheat_events
+           where account_id = b1 and code = 'bad_qty' order by id limit 1), 'bad_qty detail';
+  r := public.buy_item(f1, 'seed_short', 5);
+  assert r->'anticheat'->>'code' = 'kind_mismatch' and r->'anticheat'->>'error' = 'item not available', 'kind_mismatch';
+  assert (select outcome = 'soft' and detail = '{"item": "seed_short", "kind": "seed"}' from public.anticheat_events
+           where account_id = b1 and code = 'kind_mismatch'), 'soft kind_mismatch row';
+  assert pg_temp.err(format('select public.buy_item(%L, %L, 1)', f1, 'no_such_item')) = 'item not available', 'unknown';
+  assert pg_temp.err(format('select public.buy_item(%L, %L, 1)', f1, 'rod_wood')) = 'item not available', 'unpriced';
+  assert not exists (select 1 from public.anticheat_events where account_id = b1 and detail->>'item' in ('no_such_item', 'rod_wood')),
+    'plain refusals are not logged';
+  assert (select coins from public.wallets where account_id = b1) = 5000, 'nothing was bought';
+  r := public.buy_item(f1, 'bait_shrimp', 3);
+  assert (r->'state'->'bait'->>'bait_shrimp')::int = 3, 'an honest purchase';
+end $$;
+
+do $$
+declare f2 text := (select v from smoke where k = 'f2'); b2 uuid := (select v from smoke where k = 'b2')::uuid;
+        f3 text := (select v from smoke where k = 'f3'); b3 uuid := (select v from smoke where k = 'b3')::uuid;
+        room uuid := (select v from smoke where k = 'room')::uuid; c jsonb; r jsonb; e jsonb; call text;
+begin
+  update public.anticheat_config set mode = 'enforce';
+  perform pg_temp.angler(b2);
+  -- no false positives in enforce (§7.3): give up, a double finish, a finish after expiry, a won reel at the gate
+  c := public.start_cast(room, f2);
+  r := public.finish_cast(f2, (c->>'cast_id')::uuid, false);
+  assert r->>'why' = 'gave_up' and r->'anticheat' is null, 'gave up';
+  assert pg_temp.err(format('select public.finish_cast(%L, %L, true)', f2, c->>'cast_id')) = 'cast not found', 'double finish';
+  c := public.start_cast(room, f2);
+  update public.casts set expires_at = now() - interval '1 second' where account_id = b2;
+  r := public.finish_cast(f2, (c->>'cast_id')::uuid, true);
+  assert r->>'why' = 'expired' and r->'anticheat' is null, 'expired';
+  c := public.start_cast(room, f2);
+  update public.casts set species_id = 'ca_tra', weight_g = 3150, bite_at = now() - make_interval(secs => min_reel_ms / 1000.0)
+   where account_id = b2;
+  r := public.finish_cast(f2, (c->>'cast_id')::uuid, true);
+  assert r->>'result' = 'caught' and r->'anticheat' is null, 'a won reel at ratio 1.0 is caught';
+  assert (select hug_count = 1 and hug_on = public._vn_today() from public.anticheat_status where account_id = b2), 'a gate hug';
+  assert (select system and account_id is null and username = 'Ao cá' and about_account_id = b2
+            from public.chat_messages where room_id = room and body like '[catch:' || b2 || '|ca_tra|3150]%'), 'a system catch line';
+  assert not exists (select 1 from public.anticheat_events where account_id = b2), 'nothing logged';
+  r := public.buy_item(f2, 'seed_short', 5);
+  assert (r->'anticheat'->>'strike')::int = 0 and (select outcome from public.anticheat_events where account_id = b2) = 'soft'
+     and not exists (select 1 from public.anticheat_status where account_id = b2 and locked_until is not null),
+    'the old v14 client buying a farm item: soft only';
+
+  -- enforce: reel_too_fast is strike 1, the lock stops every fishing RPC with the seconds left
+  perform pg_temp.angler(b3);
+  c := public.start_cast(room, f3);
+  r := public.finish_cast(f3, (c->>'cast_id')::uuid, true);
+  assert r->>'why' = 'too_early' and (r->'anticheat'->>'strike')::int = 1
+     and (r->'anticheat'->>'locked_until')::timestamptz = now() + interval '5 minutes', format('strike 1 %s', r->'anticheat');
+  foreach call in array array[
+    format('select public.claim_daily(%L)', f3), format('select public.dig_worms(%L)', f3),
+    format('select public.buy_item(%L, %L, 1)', f3, 'bait_shrimp'),
+    format('select public.set_loadout(%L, %L, %L, %L)', f3, 'rod_wood', 'bobber_feather', 'bait_worm'),
+    format('select public.start_cast(%L, %L)', room, f3), format('select public.finish_cast(%L, %L, false)', f3, gen_random_uuid()),
+    format('select public.sell_fish(%L, %L)', f3, array[gen_random_uuid()]), format('select public.release_fish(%L, %L)', f3, gen_random_uuid())] loop
+    e := pg_temp.errd(call);
+    assert e->>'message' = 'account locked' and e->>'hint' = 'anticheat' and (e->>'detail')::int = 300, format('%s: %s', call, e);
+  end loop;
+  assert public.fishing_state(f3)->>'coins' is not null and public.fishing_board(room, f3)->>'my_rank' is not null, 'reads stay open';
+  update public.anticheat_config set mode = 'log';
+end $$;
+
+select 'anticheat fishing smoke ok' as result;
