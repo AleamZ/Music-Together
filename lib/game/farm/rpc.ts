@@ -1,0 +1,139 @@
+import { supabase } from "@/lib/supabase";
+import { FARM_KINDS, farmItemFromRow, varietyFromRow, type FarmCatalog, type FarmItemRow, type VarietyRow } from "./catalog";
+import { parseFarmMine, parseFieldState, type FarmMine, type FieldState } from "./state";
+
+// Supabase calls for the field (spec §11.3). Every room answer is the whole field_state; the account-only ones
+// (sell_rice, buy_farm_item, claim_farm_gift) answer with the account part.
+
+let catalogPromise: Promise<FarmCatalog> | null = null;
+
+/** Varieties + farm items, cached per page load (a failed fetch is retried on the next call). */
+export function fetchFarmCatalog(): Promise<FarmCatalog> {
+  if (!catalogPromise) {
+    catalogPromise = (async () => {
+      const [va, it] = await Promise.all([
+        supabase.from("rice_varieties").select("*").order("sort_order"),
+        supabase.from("shop_items").select("*").in("kind", FARM_KINDS).order("kind").order("sort_order"),
+      ]);
+      if (va.error || it.error) throw va.error ?? it.error;
+      return {
+        varieties: ((va.data ?? []) as VarietyRow[]).map(varietyFromRow),
+        items: ((it.data ?? []) as FarmItemRow[]).map(farmItemFromRow),
+      };
+    })().catch((e) => {
+      catalogPromise = null;
+      throw e;
+    });
+  }
+  return catalogPromise;
+}
+
+async function call(fn: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) throw error;
+  return (data ?? {}) as Record<string, unknown>;
+}
+
+function fieldOf(raw: unknown): FieldState {
+  const s = parseFieldState(raw);
+  if (!s) throw new Error("bad field state");
+  return s;
+}
+
+function mineOf(raw: unknown): FarmMine {
+  const m = parseFarmMine(raw);
+  if (!m) throw new Error("bad farm state");
+  return m;
+}
+
+export async function fetchFieldState(roomId: string, token: string): Promise<FieldState> {
+  return fieldOf(await call("field_state", { p_room_id: roomId, p_session_token: token }));
+}
+
+/** Every room-scoped land and farm action (§11.3). */
+export type FieldAction =
+  | { kind: "rent"; plot: number }
+  | { kind: "buy_plot"; plot: number }
+  | { kind: "sell_back"; plot: number }
+  | { kind: "list"; plot: number; price: number | null }
+  | { kind: "buy_listed"; plot: number; expected: number }
+  | { kind: "offer"; plot: number; price: number }
+  | { kind: "withdraw_offer"; offer: string }
+  | { kind: "decline_offer"; offer: string }
+  | { kind: "accept_offer"; offer: string }
+  | { kind: "set_sublease"; plot: number; price: number | null }
+  | { kind: "rent_sublease"; plot: number; expected: number }
+  | { kind: "abandon"; plot: number }
+  | { kind: "prepare"; plot: number }
+  | { kind: "fertilize"; plot: number; item: string }
+  | { kind: "soak"; plot: number; item: string }
+  | { kind: "sow"; plot: number }
+  | { kind: "begin_work"; plot: number; work: "transplant" | "harvest" }
+  | { kind: "transplant"; plot: number; quality: number }
+  | { kind: "water"; plot: number; delta: 1 | -1 }
+  | { kind: "spray"; plot: number; item: string }
+  | { kind: "pick_snails"; plot: number }
+  | { kind: "harvest"; plot: number; quality: number }
+  | { kind: "dry_start"; variety: string; kg: number }
+  | { kind: "dry_collect"; slot: number };
+
+/** The RPC name and its own arguments for an action. */
+export function actionCall(a: FieldAction): [string, Record<string, unknown>] {
+  switch (a.kind) {
+    case "rent": return ["rent_plot", { p_plot: a.plot }];
+    case "buy_plot": return ["buy_plot", { p_plot: a.plot }];
+    case "sell_back": return ["sell_plot_to_village", { p_plot: a.plot }];
+    case "list": return ["list_plot", { p_plot: a.plot, p_price: a.price }];
+    case "buy_listed": return ["buy_listed_plot", { p_plot: a.plot, p_expected_price: a.expected }];
+    case "offer": return ["offer_plot", { p_plot: a.plot, p_price: a.price }];
+    case "withdraw_offer": return ["withdraw_offer", { p_offer_id: a.offer }];
+    case "decline_offer": return ["decline_offer", { p_offer_id: a.offer }];
+    case "accept_offer": return ["accept_offer", { p_offer_id: a.offer }];
+    case "set_sublease": return ["set_sublease", { p_plot: a.plot, p_price: a.price }];
+    case "rent_sublease": return ["rent_sublease", { p_plot: a.plot, p_expected_price: a.expected }];
+    case "abandon": return ["abandon_crop", { p_plot: a.plot }];
+    case "prepare": return ["prepare_plot", { p_plot: a.plot }];
+    case "fertilize": return ["apply_fertilizer", { p_plot: a.plot, p_item_id: a.item }];
+    case "soak": return ["soak_seed", { p_plot: a.plot, p_item_id: a.item }];
+    case "sow": return ["sow_seed", { p_plot: a.plot }];
+    case "begin_work": return ["begin_work", { p_plot: a.plot, p_work: a.work }];
+    case "transplant": return ["transplant", { p_plot: a.plot, p_quality: a.quality }];
+    case "water": return ["water", { p_plot: a.plot, p_delta: a.delta }];
+    case "spray": return ["spray", { p_plot: a.plot, p_item_id: a.item }];
+    case "pick_snails": return ["pick_snails", { p_plot: a.plot }];
+    case "harvest": return ["harvest", { p_plot: a.plot, p_quality: a.quality }];
+    case "dry_start": return ["dry_start", { p_variety: a.variety, p_kg: a.kg }];
+    case "dry_collect": return ["dry_collect", { p_slot: a.slot }];
+  }
+}
+
+export interface FieldAnswer { state: FieldState; harvest: { variety: string; kg: number } | null }
+
+export async function fieldAction(roomId: string, token: string, a: FieldAction): Promise<FieldAnswer> {
+  const [fn, args] = actionCall(a);
+  const r = await call(fn, { p_room_id: roomId, p_session_token: token, ...args });
+  const h = r.harvest && typeof r.harvest === "object" ? (r.harvest as Record<string, unknown>) : null;
+  return {
+    state: fieldOf(r),
+    harvest: h && typeof h.variety === "string" && typeof h.kg === "number" ? { variety: h.variety, kg: h.kg } : null,
+  };
+}
+
+export interface MineAnswer { serverNow: string | null; mine: FarmMine }
+
+function mineAnswer(r: Record<string, unknown>): MineAnswer {
+  return { serverNow: typeof r.server_now === "string" ? r.server_now : null, mine: mineOf(r.mine) };
+}
+
+export async function sellRice(token: string, variety: string, dry: boolean, kg: number): Promise<MineAnswer> {
+  return mineAnswer(await call("sell_rice", { p_session_token: token, p_variety: variety, p_dry: dry, p_kg: kg }));
+}
+
+export async function buyFarmItem(token: string, itemId: string, qty: number): Promise<MineAnswer> {
+  return mineAnswer(await call("buy_farm_item", { p_session_token: token, p_item_id: itemId, p_qty: qty }));
+}
+
+export async function claimFarmGift(token: string): Promise<MineAnswer & { gifted: boolean }> {
+  const r = await call("claim_farm_gift", { p_session_token: token });
+  return { ...mineAnswer(r), gifted: r.gifted === true };
+}
