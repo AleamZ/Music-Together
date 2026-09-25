@@ -325,7 +325,7 @@ The field has its own channel `game:{roomId}:field`. After a land or farm action
 
 - **Chỉ ghi nhận** (log, the default): a flagged call is refused as before and logged; nothing is locked or banned, and log-mode rows never count later.
 - **Thi hành** (enforce): the first hard signal is strike 1 — the warning and a 5-minute lock of fishing, farming, the land market and the shops (chat and music keep working; the player card shows 🔒 m:ss). Another one within 30 days is strike 2 — a permanent ban: the sessions end, login answers "🚫 Tài khoản này đã bị khoá…", and the account waits for the owner. Root is never struck.
-- **/admin → Chống gian lận:** the mode switch, the cases (pending wipes first) and, per account, the evidence: its events with the client build (`X-Client-Info: music-together/<build>`) and the browser, and what a wipe would remove. **Xoá dữ liệu** wipes a banned account's game data (xu, gear, fish, records, rice; its land goes back to the village at the next field visit, and its catch and land lines leave the chat) and keeps a snapshot. **Ân xá** lifts a lock or a ban and clears the strikes, without restoring wiped data; unbanning an anti-cheat ban in the Accounts tab is the same pardon.
+- **/admin → Chống gian lận:** the mode switch, the cases (pending wipes first) and, per account, the evidence: its events with the client build (`X-Client-Info: music-together/<build>`) and the browser, and what a wipe would remove. **Xoá dữ liệu** wipes a banned account's game data (xu, gear, fish, records, rice; its land goes back to the village at the next field visit, and its catch and land lines leave the chat) and keeps a snapshot. **Ân xá** lifts a lock or an anti-cheat ban and clears the strikes, without restoring wiped data; a ban set by hand in the Accounts tab stays. Unbanning an anti-cheat ban in the Accounts tab is the same pardon.
 - **Review before enforcing:** after 7 days in log mode, look at the hard `log_only` rows. If any could come from an honest client, stay in log mode and fix the check; otherwise switch to Thi hành.
 - The evidence is kept 90 days (strikes and wipe snapshots for good), at most 200 rows per account and Vietnam day besides the strikes. No IP address is stored.
 
@@ -335,7 +335,7 @@ The field has its own channel `game:{roomId}:field`. After a land or farm action
 - **Chat:** catch and land announcements are system lines that only the server can post; a look-alike line from a member shows as a normal message.
 - **Queue:** 11-character YouTube ids only; the title is cleaned, the thumbnail comes from the id, and an impossible duration counts as unknown.
 - **Fishing:** at most 300 casts per Vietnam day ("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!").
-- **Banned accounts** leave the records and the richest list, earn no song bonus, and lose their land-market listings and offers.
+- **Banned accounts**, by the anti-cheat or by hand, leave the records, the richest list and the room's fish price index, earn no song bonus, and lose their land-market listings and offers.
 
 ### Trust model (updated)
 

@@ -325,7 +325,8 @@ as $$
 declare v_mode text; v_name text; v_root boolean; s public.anticheat_status; v_outcome text; v_today date := public._vn_today();
         v_write boolean; v_h json; v_client text; v_agent text;
 begin
-  select mode into v_mode from public.anticheat_config where id;
+  -- the mode row is shared: a mode switch waits for the calls in flight, and a call after it reads the new mode (§9.9)
+  select mode into v_mode from public.anticheat_config where id for share;
   select username, is_root into v_name, v_root from public.accounts where id = p_account;
   -- one account escalates one call at a time
   insert into public.anticheat_status (account_id) values (p_account) on conflict (account_id) do nothing;
@@ -365,8 +366,12 @@ begin
       v_client := null;
       v_agent := null;
     end;
+    -- a detail longer than 2 000 characters keeps only its head (§8.1)
     insert into public.anticheat_events (account_id, username, code, outcome, rpc, room_id, detail, client, user_agent)
-    values (p_account, coalesce(v_name, '?'), p_code, v_outcome, p_rpc, p_room, coalesce(p_detail, '{}'::jsonb), v_client, v_agent);
+    values (p_account, coalesce(v_name, '?'), p_code, v_outcome, p_rpc, p_room,
+            case when length(p_detail::text) > 2000 then jsonb_build_object('truncated', true, 'head', left(p_detail::text, 2000))
+                 else coalesce(p_detail, '{}'::jsonb) end,
+            v_client, v_agent);
   end if;
   if v_outcome = 'strike_1' then
     update public.anticheat_status
@@ -378,13 +383,15 @@ begin
            ban_state = 'pending_wipe', banned_at = now()
      where account_id = p_account;
     update public.accounts set is_banned = true where id = p_account;
-    delete from public.sessions where account_id = p_account;
+    -- a session another call of the account holds right now is skipped: is_banned refuses it from here on
+    delete from public.sessions
+     where token_hash in (select token_hash from public.sessions where account_id = p_account for update skip locked);
   end if;
-  -- the lazy purge (§8.4): soft, log-only, root and in-lock rows live 90 days
+  -- the lazy purge (§8.4): soft, log-only, root and in-lock rows live 90 days; rows another call is purging are skipped
   delete from public.anticheat_events
    where id in (select id from public.anticheat_events
                  where outcome in ('soft', 'log_only', 'root', 'in_lock') and created_at < now() - interval '90 days'
-                 order by created_at limit 500);
+                 order by created_at limit 500 for update skip locked);
   return jsonb_build_object('anticheat', jsonb_build_object(
     'code', p_code,
     'strike', case v_outcome when 'strike_1' then 1 when 'strike_2' then 2 else 0 end,
@@ -476,7 +483,8 @@ begin
   return v_snap;
 end $$;
 
--- Pardon (§9.7): unbanned, no strike, no lock; wiped_at stays (R11). No data comes back (R8).
+-- Pardon (§9.7): no strike, no lock, and an anti-cheat ban lifted; a ban root set by hand stays. wiped_at stays (R11).
+-- No data comes back (R8).
 create or replace function public._ac_pardon(p_account uuid, p_by uuid) returns void
 language plpgsql security definer set search_path = public, extensions
 as $$
@@ -487,7 +495,9 @@ begin
                    and not coalesce(s.strikes >= 1 and s.last_strike_at > now() - interval '30 days', false)) then
     raise exception 'nothing to pardon' using errcode = '22023';
   end if;
-  update public.accounts set is_banned = false where id = p_account;
+  if s.ban_state is not null then
+    update public.accounts set is_banned = false where id = p_account;
+  end if;
   update public.anticheat_status
      set strikes = 0, last_strike_at = null, last_strike_code = null, locked_until = null, ban_state = null, banned_at = null,
          pardoned_at = now(), pardoned_by = p_by
@@ -1057,8 +1067,8 @@ begin
     return public._ac_flag(v_account, 'bad_plot', 'begin_work', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
   end if;
   if p_work is null or p_work not in ('transplant', 'harvest') then
-    return public._ac_flag(v_account, 'bad_work', 'begin_work', jsonb_build_object('plot', p_plot, 'work', p_work), p_room_id,
-                           'invalid work');
+    return public._ac_flag(v_account, 'bad_work', 'begin_work', jsonb_build_object('plot', p_plot, 'work', left(p_work, 32)),
+                           p_room_id, 'invalid work');
   end if;
   return public._farm_do_begin_work(p_room_id, v_account, p_plot, p_work, now());
 end $$;
@@ -1147,8 +1157,8 @@ as $$
 declare v_account uuid := public._ac_play(p_room_id, p_session_token);
 begin
   if p_kg is null or p_kg < 1 then
-    return public._ac_flag(v_account, 'bad_qty', 'dry_start', jsonb_build_object('variety', p_variety, 'kg', p_kg), p_room_id,
-                           'invalid quantity');
+    return public._ac_flag(v_account, 'bad_qty', 'dry_start', jsonb_build_object('variety', left(p_variety, 32), 'kg', p_kg),
+                           p_room_id, 'invalid quantity');
   end if;
   return public._farm_do_dry_start(p_room_id, v_account, p_variety, p_kg, now());
 end $$;
@@ -1174,8 +1184,8 @@ begin
   v_account := public._ac_account(p_session_token);
   perform public._wallet_lock(v_account);
   if p_kg is null or p_kg < 1 or p_dry is null then
-    return public._ac_flag(v_account, 'bad_qty', 'sell_rice', jsonb_build_object('variety', p_variety, 'kg', p_kg, 'dry', p_dry),
-                           null, 'invalid quantity');
+    return public._ac_flag(v_account, 'bad_qty', 'sell_rice',
+                           jsonb_build_object('variety', left(p_variety, 32), 'kg', p_kg, 'dry', p_dry), null, 'invalid quantity');
   end if;
   v := public._variety(p_variety);
   if v.id is null then
@@ -1360,13 +1370,15 @@ language plpgsql security definer set search_path = public, extensions
 as $$
 declare f public.field_plots; d public.drying_slots;
 begin
-  -- 0a. banned accounts (review pending or wiped) leave the land market
-  delete from public.land_offers lo using public.anticheat_status s
-   where lo.room_id = p_room and s.account_id = lo.buyer_id and s.ban_state is not null;
+  -- 0a. banned accounts leave the land market: an anti-cheat ban (review pending or wiped) or a ban set by hand
+  delete from public.land_offers lo
+   where lo.room_id = p_room
+     and (exists (select 1 from public.accounts a where a.id = lo.buyer_id and a.is_banned)
+          or exists (select 1 from public.anticheat_status s where s.account_id = lo.buyer_id and s.ban_state is not null));
   update public.field_plots fp set sale_price = null, sublease_price = null
-    from public.anticheat_status s
-   where fp.room_id = p_room and s.account_id = fp.owner_id and s.ban_state is not null
-     and (fp.sale_price is not null or fp.sublease_price is not null);
+   where fp.room_id = p_room and (fp.sale_price is not null or fp.sublease_price is not null)
+     and (exists (select 1 from public.accounts a where a.id = fp.owner_id and a.is_banned)
+          or exists (select 1 from public.anticheat_status s where s.account_id = fp.owner_id and s.ban_state is not null));
   -- 0b. a wipe releases what the account held at the time of the wipe, without refund
   delete from public.plot_leases pl using public.anticheat_status s
    where pl.room_id = p_room and s.account_id = pl.farmer_id and s.wiped_at is not null and pl.starts_at <= s.wiped_at;
@@ -1450,6 +1462,21 @@ begin
   return null;
 end; $$;
 revoke all on function public._song_bonus() from public, anon, authenticated;
+
+-- The room's wealth behind the fish price index (0013 section H): a banned account leaves the average and the count (R30).
+create or replace function public._room_wealth(p_room uuid, p_now timestamptz) returns bigint
+language sql stable security definer set search_path = public, extensions
+as $$
+  select case when count(*) < 2 then 0
+              else floor(avg(coalesce(w.coins, 0)
+                             + 800000 * (select count(*) from public.field_plots fp where fp.owner_id = m.account_id)))
+         end::bigint
+    from public.members m
+    join public.accounts a on a.id = m.account_id and not a.is_banned
+    left join public.wallets w on w.account_id = m.account_id
+   where m.room_id = p_room and coalesce(m.last_seen_at, m.joined_at) > p_now - interval '14 days'
+$$;
+revoke all on function public._room_wealth(uuid, timestamptz) from public, anon, authenticated;
 
 -- The board of 0013 section H (with the room's fish prices) without banned accounts: no record, no place among the
 -- richest, no rank (R30).

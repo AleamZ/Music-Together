@@ -630,6 +630,20 @@ begin
   assert exists (select 1 from public.land_offers where id = o5) and (select coins from public.wallets where account_id = h1) = 750,
     'nothing changed';
 
+  -- a huge input stays out of the evidence (§8.1): a work or a variety keeps 32 characters, any detail 2 000
+  assert pg_temp.env(public.begin_work(room, g1, 8, repeat('w', 1048576)), 'bad_work', 0, 'invalid work'), 'a 1 MB work';
+  assert (select detail = jsonb_build_object('plot', 8, 'work', repeat('w', 32)) and octet_length(row_to_json(e)::text) < 2200
+            from public.anticheat_events e where account_id = h1 order by id desc limit 1), 'the evidence row stays under 2.2 kB';
+  assert pg_temp.env(public.dry_start(room, g1, repeat('v', 100000), 0), 'bad_qty', 0, 'invalid quantity'), 'a long variety';
+  assert (select detail = jsonb_build_object('variety', repeat('v', 32), 'kg', 0)
+            from public.anticheat_events where account_id = h1 order by id desc limit 1), 'the drying variety is cut';
+  assert pg_temp.env(public.sell_rice(g1, repeat('v', 100000), true, 0), 'bad_qty', 0, 'invalid quantity'), 'a long variety';
+  assert (select detail = jsonb_build_object('variety', repeat('v', 32), 'kg', 0, 'dry', true)
+            from public.anticheat_events where account_id = h1 order by id desc limit 1), 'the depot variety is cut';
+  perform public._ac_flag(h1, 'bad_plot', 'water', jsonb_build_object('plot', repeat('9', 5000)), room, 'invalid plot');
+  assert (select detail = jsonb_build_object('truncated', true, 'head', left(jsonb_build_object('plot', repeat('9', 5000))::text, 2000))
+            from public.anticheat_events where account_id = h1 order by id desc limit 1), 'a long detail keeps its head';
+
   -- soft kind mismatches (§7.4) and plain refusals of unknown items
   assert pg_temp.env(public.buy_farm_item(g1, 'rod_bamboo', 1), 'kind_mismatch', 0, 'item not available'), 'buy_farm_item kind';
   assert pg_temp.env(public.apply_fertilizer(room, g1, 8, 'seed_nep'), 'kind_mismatch', 0, 'invalid item'), 'fertilizer kind';
@@ -754,6 +768,7 @@ end $$;
 
 do $$
 declare k1 text := (select v from smoke where k = 'k1'); m1 uuid := (select v from smoke where k = 'm1')::uuid;
+        m2 uuid := (select v from smoke where k = 'm2')::uuid;
         m3 uuid := (select v from smoke where k = 'm3')::uuid; m4 uuid := (select v from smoke where k = 'm4')::uuid;
         m5 uuid := (select v from smoke where k = 'm5')::uuid; room uuid := (select v from smoke where k = 'sroom')::uuid;
         aroot uuid := (select v from smoke where k = 'aroot')::uuid; b jsonb; q uuid; t timestamptz := now();
@@ -769,6 +784,8 @@ begin
   -- the ban (strike 2 sets these): the board hides m3 and the song bonus skips it (R30)
   insert into public.anticheat_status (account_id, strikes, ban_state, banned_at) values (m3, 2, 'pending_wipe', t);
   update public.accounts set is_banned = true where id = m3;
+  -- the fish price index averages the others only: (100 + 0 + 500 + 500) / 4, not m3's 999 999 too (R30)
+  assert public._room_wealth(room, now()) = 275, format('the index without m3: %s', public._room_wealth(room, now()));
   b := public.fishing_board(room, k1);
   assert b->'records'->0->>'username' = (select username from public.accounts where id = m4)
      and not (b->'richest' @> jsonb_build_array(jsonb_build_object('coins', 999999))) and (b->>'my_rank')::int = 3,
@@ -792,10 +809,17 @@ begin
    where room_id = room and plot_no = 2;
   update public.field_plots set owner_id = m5, owned_at = t - interval '2 days' where room_id = room and plot_no = 3;
   insert into public.land_offers (room_id, plot_no, buyer_id, price, created_at) values (room, 3, m3, 7000, t - interval '1 hour');
+  -- a ban root sets by hand freezes the market too: m2 lists plot 4 and offers on plot 3, then is banned in the Accounts tab
+  update public.field_plots set owner_id = m2, owned_at = t - interval '2 days', sale_price = 7000 where room_id = room and plot_no = 4;
+  insert into public.land_offers (room_id, plot_no, buyer_id, price, created_at) values (room, 3, m2, 6000, t - interval '1 hour');
+  update public.accounts set is_banned = true where id = m2;
   perform public._field_open(room, t);
   assert not exists (select 1 from public.land_offers where room_id = room and buyer_id = m3), 'the offer is gone';
   assert (select owner_id = m3 and sale_price is null and sublease_price is null from public.field_plots
            where room_id = room and plot_no = 2), 'listing and sublease cleared, the plot kept until the wipe';
+  assert not exists (select 1 from public.land_offers where room_id = room and buyer_id = m2)
+     and (select owner_id = m2 and sale_price is null from public.field_plots where room_id = room and plot_no = 4),
+    'a manual ban: the offer is gone and the listing cleared, the plot kept';
 
   -- what m3 holds when the owner wipes it: plot 2 subleased to m4, village plot 7 with a crop, a batch, an offer
   insert into public.plot_leases (room_id, plot_no, farmer_id, source, price, starts_at, until) values
@@ -991,6 +1015,12 @@ begin
   r := public.admin_anticheat_set_mode(troot, 'log');
   assert r->>'mode' = 'log' and (pg_temp.status(p6)).locked_until is null, 'the lock is lifted';
   assert (select is_banned from public.accounts where id = p5) and (pg_temp.status(p5)).ban_state = 'pending_wipe', 'the ban stays';
+  -- a pardon lifts the strike, not a ban root set by hand in the Accounts tab
+  perform public.admin_set_ban(troot, p6, true);
+  c := public.admin_anticheat_resolve(troot, p6, 'pardon');
+  assert (c->>'is_banned')::boolean and (c->>'strikes')::int = 0 and (c->>'active_strikes')::int = 0 and c->'ban_state' = 'null',
+    format('pardoned, still banned %s', c);
+  assert (select is_banned from public.accounts where id = p6), 'the manual ban stays';
 end $$;
 
 select 'anticheat admin smoke ok' as result;

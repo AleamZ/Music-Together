@@ -96,7 +96,7 @@ The audit left these details open. Each one is decided here, and the owner confi
 | R7 | Events recorded in log mode never count as strikes later. | Enforcing must not ban anyone for what they did while nothing was enforced. |
 | R8 | Pardon works in every state, including after a wipe, and restores no data. | Unbanning is always safe. Restoring from the snapshot is a manual job (§16). |
 | R9 | `admin_set_ban(…, false)` on an anti-cheat ban runs the pardon. | It keeps the Accounts tab and the new tab consistent. |
-| R10 | A banned account leaves the land market at the next sweep of each room, whether its wipe is pending or done: its offers are deleted, and its sale listings and sublease prices are cleared. | Nobody pays a banned account, and xu cannot be moved out before the wipe. |
+| R10 | A banned account leaves the land market at the next sweep of each room, whether its wipe is pending or done, and whether the anti-cheat or root banned it: its offers are deleted, and its sale listings and sublease prices are cleared. | Nobody pays a banned account, and xu cannot be moved out before the wipe. |
 | R11 | The wipe releases land by time: the plots, leases, offers and drying batches the account got at or before `wiped_at`. | A pardon after the wipe then neither brings old land back in rooms not yet swept nor takes away land bought later. |
 | R12 | `chat_messages` gains `about_account_id` next to `system`. A land line belongs to its buyer. | D6's delete must be exact, and a line where an innocent player bought from the cheater must stay. |
 | R13 | Land lines posted before `0015` stay unattributed, so a wipe cannot find them. | Their buyer appears only in the text, and they roll off the 200-line cap. |
@@ -126,7 +126,7 @@ The audit left these details open. Each one is decided here, and the owner confi
 | R27 | Usernames are stored NFC-normalized with single spaces. Register (for uniqueness) and login compare the same normalized lower-case form, an exact match first. | Decomposed Vietnamese (Unikey "tổ hợp") can then neither create a look-alike twin nor fail to log in. |
 | R28 | Reserved names are compared on a key with the accents and non-letters removed: `aoca`, `hoptacxa`, `hethong`, `quantri`, `quantrivien`, `admin`, `root`, `system`. | This catches "Ao cá", "AO-CA" and "Hợp  tác  xã". Homoglyphs from other scripts remain possible, but they can no longer post system lines. |
 | R29 | The login text for a banned account is neutral ("đã bị khoá") and does not say "vĩnh viễn". | Manual bans from /admin get the same refusal. |
-| R30 | `fishing_board` hides every banned account, and `_song_bonus` never pays one, manual bans included. | A banned account should neither rank nor earn. |
+| R30 | `fishing_board` hides every banned account, `_song_bonus` never pays one, and `_room_wealth` leaves them out of the fish price index, manual bans included. | A banned account should neither rank nor earn, nor move the room's fish prices. |
 
 **Storage, build and scope**
 
@@ -479,6 +479,8 @@ What goes in `detail`, per code:
 | `reel_gate_hug` | `day`, `count`, `ratio` |
 | `cast_daily_cap` | `day`, `casts` |
 
+A client's text is cut before it is stored: `work` and `variety` keep at most 32 characters. `_ac_flag` also caps the whole detail: one whose text is longer than 2 000 characters is stored as `{"truncated": true, "head": <its first 2 000 characters>}`. An evidence row thus stays small, however large the tampered input.
+
 ### 8.2 Changed tables
 
 - `fishing_profiles`:
@@ -586,7 +588,7 @@ end $$;
 
 **`_ac_flag(p_account uuid, p_code text, p_rpc text, p_detail jsonb, p_room uuid default null, p_error text default null, p_hard boolean default true) returns jsonb`** runs these steps:
 
-1. It reads `mode` from `anticheat_config`, and the account's `username` and `is_root`.
+1. It reads `mode` from `anticheat_config` with `for share` on its row (§9.9), and the account's `username` and `is_root`.
 2. It creates the status row if missing (`on conflict do nothing`) and locks it with `select … for update`. This serializes one account's escalation.
 3. **The strike window.** If `strikes = 1 and last_strike_at <= now() - interval '30 days' and ban_state is null`, it sets `strikes = 0`.
 4. **The outcome** is the first of these that applies:
@@ -600,12 +602,13 @@ end $$;
    - The headers come from `nullif(current_setting('request.headers', true), '')::json`. The parse sits in a nested block, so a bad or missing value gives null.
    - `client = left(h->>'x-client-info', 100)` and `user_agent = left(h->>'user-agent', 200)`.
    - The username is a snapshot.
+   - The detail is stored as given, unless its text is longer than 2 000 characters: then `{"truncated": true, "head": left(detail::text, 2000)}` (§8.1).
 6. **`strike_1`:** `strikes = 1`, `last_strike_at = now()`, `last_strike_code = p_code`, `locked_until = now() + interval '5 minutes'`.
 7. **`strike_2`:**
    - the status row gets `strikes = 2`, `last_strike_at = now()`, `last_strike_code = p_code`, `locked_until = null`, `ban_state = 'pending_wipe'` and `banned_at = now()`;
    - then `update accounts set is_banned = true`;
-   - then `delete from sessions where account_id = p_account`.
-8. **The purge.** It deletes up to 500 non-strike event rows older than 90 days.
+   - then it deletes the account's sessions, `for update skip locked`: a session that another call of the account holds is skipped, and the `is_banned` check refuses it from then on.
+8. **The purge.** It deletes up to 500 non-strike event rows older than 90 days, `for update skip locked`, so it never waits for another call's purge.
 9. It returns the envelope, with `strike`, `locked_until` and `banned` taken from the outcome.
 
 ### 9.3 Strike 1: the warning and the 5-minute lock
@@ -650,11 +653,11 @@ end $$;
   - `accounts.is_banned = true`;
   - `delete from sessions`;
   - `ban_state = 'pending_wipe'`.
-- **Every call with the old token** then fails with `invalid session`.
+- **Every call with the old token** then fails with `invalid session`, or with `account banned` for a session that another call held at that moment (§9.2 step 7).
 - **`login`** answers `account banned`.
 - **On the next page load**, `me` fails and the client clears the stored session.
 - **Nothing is deleted until the owner decides**, with one exception: the land-market freeze at each room's next sweep (R10, step 0a in §9.6).
-- **`fishing_board`** hides banned accounts, and **`_song_bonus`** skips them (R30).
+- **`fishing_board`** hides banned accounts, **`_song_bonus`** skips them, and **`_room_wealth`** leaves them out of the fish price index (R30).
 
 ### 9.6 The owner's wipe
 
@@ -696,13 +699,15 @@ end $$;
 
 **`_field_sweep(p_room, p_now)`, re-created with step 0 before the existing steps 1–7:**
 ```sql
--- 0a. banned accounts (review pending or wiped) leave the land market (R10)
-delete from public.land_offers lo using public.anticheat_status s
- where lo.room_id = p_room and s.account_id = lo.buyer_id and s.ban_state is not null;
+-- 0a. banned accounts leave the land market: an anti-cheat ban (review pending or wiped) or a ban set by hand (R10)
+delete from public.land_offers lo
+ where lo.room_id = p_room
+   and (exists (select 1 from public.accounts a where a.id = lo.buyer_id and a.is_banned)
+        or exists (select 1 from public.anticheat_status s where s.account_id = lo.buyer_id and s.ban_state is not null));
 update public.field_plots fp set sale_price = null, sublease_price = null
-  from public.anticheat_status s
- where fp.room_id = p_room and s.account_id = fp.owner_id and s.ban_state is not null
-   and (fp.sale_price is not null or fp.sublease_price is not null);
+ where fp.room_id = p_room and (fp.sale_price is not null or fp.sublease_price is not null)
+   and (exists (select 1 from public.accounts a where a.id = fp.owner_id and a.is_banned)
+        or exists (select 1 from public.anticheat_status s where s.account_id = fp.owner_id and s.ban_state is not null));
 -- 0b. a wipe releases what the account held at the time of the wipe, without refund (R11)
 delete from public.plot_leases pl using public.anticheat_status s
  where pl.room_id = p_room and s.account_id = pl.farmer_id and s.wiped_at is not null and pl.starts_at <= s.wiped_at;
@@ -742,7 +747,7 @@ Step 0 runs before step 3, the reclaim, so a wiped owner is never refunded. It a
 ### 9.7 Pardon
 
 `admin_anticheat_resolve(token, account, 'pardon')`, and `admin_set_ban(token, account, false)` when the account has an anti-cheat `ban_state` (R9), both run `_ac_pardon`:
-1. `accounts.is_banned = false`.
+1. `accounts.is_banned = false`, only when `ban_state` is not null. A ban that root set by hand in the Accounts tab stays: the pardon clears the strikes and the lock of such an account, not its ban.
 2. The status row gets `strikes = 0`, and these become null: `last_strike_at`, `last_strike_code`, `locked_until`, `ban_state`, `banned_at`.
 3. `pardoned_at = now()` and `pardoned_by = root`.
 4. `wiped_at` is kept (R11).
@@ -766,9 +771,11 @@ Step 0 runs before step 3, the reclaim, so a wiped owner is never refunded. It a
 
 ### 9.9 Concurrency
 
-- `_ac_flag` locks the account's status row, `for update`.
+- `_ac_flag` reads the config row `for share`, then locks the account's status row, `for update`.
+- `admin_anticheat_set_mode` updates the config row, so it waits for the flags already in flight, and a flag that starts after it reads the new mode. No lock or ban lands after a switch to `log`: a lock set in flight is lifted by the switch itself.
 - Callers of `_ac_flag` hold either the wallet lock (`finish_cast`, `buy_item`, `buy_farm_item`, `sell_rice`, `start_cast`) or no lock (the room wrappers, which check before `_farm_do_*`).
 - `_ac_flag` never takes a wallet lock.
+- At strike 2, `_ac_flag` skips the session rows that other calls of the account hold (`skip locked`), and its purge skips rows another call is purging, so neither waits for another call.
 - The admin resolve takes the wallet row, then the status row.
 
 So every path takes the wallet row before the status row, or takes only one of them. There is no cycle (R16).
@@ -891,6 +898,7 @@ grant execute on function public.water(uuid, text, integer, integer) to anon, au
 - **`_field_sweep(p_room, p_now)`:** step 0 (§9.6), then steps 1–7 unchanged.
 - **`_land_sale`:** the announcement insert gains `system = true` and `about_account_id = p_buyer`; nothing else changes.
 - **`_song_bonus`:** it also returns early when the adder `is_banned` (R30); nothing else changes.
+- **`_room_wealth(p_room, p_now)`** (`0013` section H, the fish price index): a member who `is_banned` counts neither in the average nor in the "fewer than 2" test (R30); nothing else changes.
 
 ### 10.5 Admin RPCs (new; each runs `_auth_root` first; granted to anon and authenticated like the other `admin_*` RPCs)
 
@@ -948,7 +956,7 @@ The sections are in this order, because `language sql` bodies are checked when t
 | **C** Tables | `anticheat_config` and its row, `anticheat_status`, `anticheat_events`, `anticheat_wipes` with their indexes, RLS and revokes; `fishing_profiles.day_on` and `day_casts`; the `coin_ledger` reason check with `'wipe'`. |
 | **D** Helpers | `_ac_guard`, `_ac_account`, `_ac_play`, `_ac_flag`, `_ac_hug`, `_ac_lock_state`, `_ac_holdings`, `_ac_wipe`, `_ac_pardon`. Each is `revoke all … from public, anon, authenticated`. |
 | **E** Guarded RPCs | the 8 fishing and 27 farm RPCs (§10.2, §10.3) and `_land_sale`, with explicit grants. |
-| **F** Shared functions | the private `_fishing_state`, `_field_sweep` and `_song_bonus`, and the public read `fishing_board` (with its grant). |
+| **F** Shared functions | the private `_fishing_state`, `_field_sweep`, `_song_bonus` and `_room_wealth`, and the public read `fishing_board` (with its grant). |
 | **G** Admin | `admin_anticheat_list`, `admin_anticheat_account`, `admin_anticheat_resolve`, `admin_anticheat_set_mode`, `admin_set_ban`, with grants. |
 
 ### 11.2 Re-running
@@ -969,7 +977,7 @@ Re-running is safe:
 3. **Re-created shared functions keep this spec's parts:**
    - `_field_sweep` keeps step 0;
    - `_fishing_state` keeps `lock`, `casts_today_left` and `day_resets_at`;
-   - `_song_bonus` keeps the banned check;
+   - `_song_bonus` and `_room_wealth` keep the banned check;
    - `_land_sale` and `finish_cast` keep `system` and `about_account_id`.
 4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `critter_sell`.
 5. **Wider honest inputs widen the hard check.** A migration that widens the range of honest inputs widens the matching hard check in the same migration, and ships before its client.
@@ -1309,7 +1317,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
    - with `locked_until` moved into the past, the next hard signal gives strike 2: `is_banned`, sessions gone, `login` → `account banned`, `ban_state = 'pending_wipe'`;
    - with `last_strike_at` 31 days back and no lock, a hard signal gives strike 1 again.
 8. **Root:** outcome `root`, `strike: 0`, no lock.
-9. **Market freeze:** at the next `_field_open`, a banned account's offers are deleted and its listing and sublease price cleared.
+9. **Market freeze:** at the next `_field_open`, a banned account's offers are deleted and its listing and sublease price cleared, for a ban root set by hand too.
 10. **Wipe** (through `admin_anticheat_resolve` with a root token):
     - the wallet, inventory, fish, bests, rice, profile and cast are gone;
     - there is a `wipe` ledger row with `−coins`;
@@ -1319,11 +1327,12 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
     - releases the owned plot with no `land_refund`;
     - deletes the cheater's village lease, crop, drying batch and offers;
     - keeps an innocent sublessee's lease on the cheater's plot until it ends;
-    - `_song_bonus` does not pay the banned account, and `fishing_board` hides it.
+    - `_song_bonus` does not pay the banned account, `fishing_board` hides it, and `_room_wealth` leaves it out.
 12. **Pardon:**
     - while pending: unbanned, strikes 0, and login works;
     - after a wipe: login works with zero data; a plot bought after the pardon survives the next sweep, while a pre-wipe plot in an unswept room is still released;
     - `admin_set_ban(…, false)` on an anti-cheat ban behaves like a pardon;
+    - pardoning a strike-1 account that root banned by hand clears the strike and keeps the ban;
     - `nothing to pardon` and `not pending` refusals.
 13. **Mode:** switching from enforce to log clears running locks and keeps bans.
 14. **No false positives:** in enforce mode, none of these writes a hard row or a lock:
@@ -1337,7 +1346,8 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
     - a refused `add_queue_item`, and a refused `register`.
 15. **Evidence cap and purge:**
     - 201 soft signals in one day leave 200 rows, and strike rows are still written;
-    - a soft row 91 days old is purged by the next flag, and an old strike row stays.
+    - a soft row 91 days old is purged by the next flag, and an old strike row stays;
+    - a 1 MB `work` flags, and its evidence row stays under 2.2 kB; a long variety keeps 32 characters, and a detail over 2 000 characters keeps its head.
 16. **The guard file:** it ends with `\i tests/sql/anticheat-guards.sql`.
 
 **`anticheat-guards.sql`** is self-contained, so later smokes can include it:
