@@ -146,9 +146,11 @@ begin
   assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_source => 'estimated') = 'lyrics too long', 'unknown timing source';
   assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_source => repeat('a', 5000)) = 'lyrics too long', 'huge timing source';
 
-  assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_offset => 60001) = 'invalid offset', 'upsert: offset > 60 s';
-  assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_offset => -60001) = 'invalid offset', 'upsert: offset < -60 s';
-  assert pg_temp.offset_err(room, dj, 'dQw4w9WgXcQ', 60001) = 'invalid offset', 'offset: > 60 s';
+  assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_offset => 600001) = 'invalid offset', 'upsert: offset > 10 min';
+  assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_offset => -600001) = 'invalid offset', 'upsert: offset < -10 min';
+  assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_offset => -2147483648) = 'invalid offset', 'upsert: offset int min';
+  assert pg_temp.offset_err(room, dj, 'dQw4w9WgXcQ', 600001) = 'invalid offset', 'offset: > 10 min';
+  assert pg_temp.offset_err(room, dj, 'dQw4w9WgXcQ', -600001) = 'invalid offset', 'offset: < -10 min';
   assert pg_temp.offset_err(room, dj, 'dQw4w9WgXcQ', -2147483648) = 'invalid offset', 'offset: int min';
 
   assert not exists (select 1 from public.video_lyrics), 'a refused call must not write';
@@ -163,6 +165,16 @@ begin
   -- the old hole left a forged row behind for the queued song
   insert into public.video_lyrics (youtube_video_id, synced_lyrics, offset_ms, updated_by_name)
   values ('kJQP7kiw5Fk', '[00:01.00]pwned', 999, 'Hacker');
+
+  -- both RPCs accept offsets up to ±10 minutes (inclusive)
+  assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_offset => 600000) = 'ok', 'upsert: offset +600 000 accepted';
+  assert (select offset_ms from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ') = 600000, 'upsert: +600 000 stored';
+  assert pg_temp.upsert_err(room, dj, 'dQw4w9WgXcQ', p_offset => -600000) = 'ok', 'upsert: offset -600 000 accepted';
+  assert (select offset_ms from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ') = -600000, 'upsert: -600 000 stored';
+  assert pg_temp.offset_err(room, dj, 'dQw4w9WgXcQ', 600000) = 'ok', 'offset: +600 000 accepted';
+  assert (select offset_ms from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ') = 600000, 'offset: +600 000 stored';
+  assert pg_temp.offset_err(room, dj, 'dQw4w9WgXcQ', -600000) = 'ok', 'offset: -600 000 accepted';
+  assert (select offset_ms from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ') = -600000, 'offset: -600 000 stored';
 
   -- every limit is inclusive; lengths count characters, not bytes
   perform public.upsert_video_lyrics(room, dj, 'dQw4w9WgXcQ', repeat('t', 200), repeat('a', 200),

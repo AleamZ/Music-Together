@@ -8,8 +8,9 @@
 --   * the session-less RPCs upsert_video_lyrics(text,…) and update_video_lyric_offset(text,integer,text).
 -- The new RPCs take (p_room_id, p_session_token, …) and only let the room's DJ write — the same _auth(…, 'dj') check as
 -- set_playback / seek_playback / advance_queue, i.e. the UI's canControl (role.canControlPlayback = isDj) — for a
--- well-formed YouTube id that is the room's current or queued song, within size caps. updated_by_name comes from the
--- account. Reading stays public: the video_lyrics_select policy and the select grant are untouched.
+-- well-formed YouTube id that is the room's current or queued song, within size caps (offset within ±10 minutes).
+-- updated_by_name comes from the account. Reading stays public: the video_lyrics_select policy and the select grant
+-- are untouched.
 -- Old clients call the old signatures, get PGRST202, and their cache writes stop until they reload.
 -- =========================================================
 
@@ -62,7 +63,7 @@ begin
      or (p_timing_source is not null and p_timing_source not in ('auto', 'custom')) then
     raise exception 'lyrics too long' using errcode = '22023';
   end if;
-  if p_offset_ms is not null and p_offset_ms not between -60000 and 60000 then
+  if p_offset_ms is not null and p_offset_ms not between -600000 and 600000 then
     raise exception 'invalid offset' using errcode = '22023';
   end if;
 
@@ -98,7 +99,7 @@ as $$
 declare v_name text;
 begin
   v_name := public._lyrics_writer(p_room_id, p_session_token, p_video_id);
-  if p_offset_ms is not null and p_offset_ms not between -60000 and 60000 then
+  if p_offset_ms is not null and p_offset_ms not between -600000 and 600000 then
     raise exception 'invalid offset' using errcode = '22023';
   end if;
   update public.video_lyrics set
