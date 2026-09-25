@@ -1,0 +1,41 @@
+import { describe, it, expect } from "vitest";
+import { varietyFromRow } from "@/lib/game/farm/catalog";
+import { HOUR_MS } from "@/lib/game/farm/crop";
+import { HANDBOOK_TABS, handbookPage, handbookTabFor } from "@/lib/game/farm/handbook";
+import type { CropView } from "@/lib/game/farm/state";
+
+const nep = varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 18, blast_mult: 1, sort_order: 20 });
+const thom = varietyFromRow({ id: "thom", name: "Lúa thơm", scale: 1.15, base_kg: 60, price_per_kg: 26, blast_mult: 1.3, sort_order: 30 });
+const t0 = Date.parse("2026-09-25T00:00:00Z");
+const at = (h: number) => t0 + h * HOUR_MS;
+
+describe("handbook", () => {
+  it("has the six tabs of spec §8.9, each with something to read", () => {
+    expect(HANDBOOK_TABS.map(([, label]) => label)).toEqual(["Quy trình", "Phân bón", "Sâu bệnh", "Nước", "Giống lúa", "Mẹo"]);
+    for (const [tab] of HANDBOOK_TABS) {
+      const page = handbookPage(tab, [nep, thom]);
+      expect(page.length, tab).toBeGreaterThan(0);
+      for (const sec of page) expect(sec.lines.length, `${tab}: ${sec.title}`).toBeGreaterThan(0);
+    }
+  });
+  it("gives the 11 steps and the hour marks per variety", () => {
+    const [steps, marks] = handbookPage("process", [nep, thom]);
+    expect(steps.lines).toHaveLength(11);
+    expect(marks.lines).toEqual([
+      "Nếp: cấy khi mạ 8–14 giờ tuổi · bón thúc 2–10 giờ sau cấy · phơi ruộng 14–18 · đón đòng 18–24 · rút nước từ 40 · chín 48 giờ sau cấy (~58 giờ từ lúc ngâm).",
+      "Lúa thơm: cấy khi mạ 9–16 giờ tuổi · bón thúc 2–12 giờ sau cấy · phơi ruộng 16–21 · đón đòng 21–28 · rút nước từ 46 · chín 55 giờ sau cấy (~66 giờ từ lúc ngâm).",
+    ]);
+    expect(handbookPage("varieties", [thom])[0].lines).toEqual(["Lúa thơm: chín ~66 giờ · 60 kg mỗi thửa · 26 xu/kg lúa khô · dễ bị đạo ôn"]);
+  });
+  it("links the plot panel to what matters now", () => {
+    const crop = (over: Partial<CropView>): CropView => ({
+      variety: "nep", phase: "prepared", preparedAt: at(0), soakAt: at(0), sowAt: at(3), transplantAt: at(12), water: 2, waterSetAt: at(12),
+      pests: [], excessN: false, ripe: false, rottedAt: null, log: null, ...over,
+    });
+    expect(handbookTabFor(null, null, at(0))).toBe("process");
+    expect(handbookTabFor(crop({ transplantAt: null }), nep, at(5))).toBe("process");
+    expect(handbookTabFor(crop({}), nep, at(16))).toBe("fertilizer");
+    expect(handbookTabFor(crop({ pests: [{ kind: "hopper", since: at(15), treatedAt: null }] }), nep, at(16))).toBe("pests");
+    expect(handbookTabFor(crop({}), nep, at(12 + 45))).toBe("process");
+  });
+});
