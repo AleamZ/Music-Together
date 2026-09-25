@@ -1429,7 +1429,8 @@ begin
   return public._field_view(p_room, p_account, p_now);
 end; $$;
 
--- Bơm (+1) or tháo (−1) one level from the current one (§8.3). The log is capped against spamming.
+-- Bơm (+1) or tháo (−1) one level from the current one (§8.3). The yield samples the log every 15 minutes, so the
+-- harvest's cost grows with it: at most 60 entries per crop, and 6 in any hour (làm đất's entry counts too).
 create or replace function public._farm_do_water(p_room uuid, p_account uuid, p_plot integer, p_delta integer,
                                                  p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
@@ -1445,7 +1446,8 @@ begin
   if c.prepared_at is null then
     raise exception 'not prepared' using errcode = '22023';
   end if;
-  if jsonb_array_length(c.water_log) >= 200 then
+  if jsonb_array_length(c.water_log) >= 60
+     or (select count(*) from jsonb_array_elements(c.water_log) x where (x->>'t')::timestamptz > p_now - interval '1 hour') >= 6 then
     raise exception 'too fast' using errcode = '22023';
   end if;
   v_level := greatest(0, least(3, public._water_at(c.water_log, p_now) + p_delta));

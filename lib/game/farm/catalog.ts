@@ -62,6 +62,9 @@ export const FARM_LIMIT = 2;
 export const OFFER_HOURS = 24;
 export const DRY_HOURS = 3;
 export const DRYING_SLOTS = 4;
+/** A crop's water log: at most this many entries, and this many in any hour (0013's `_farm_do_water`). */
+export const WATER_LOG_MAX = 60;
+export const WATER_PER_HOUR = 6;
 /** A farm consumable stacks up to this many. */
 export const ITEM_CAP = 99;
 

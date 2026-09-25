@@ -1,9 +1,9 @@
-import type { FarmCatalog, FarmItemKind, Variety } from "./catalog";
+import { WATER_LOG_MAX, WATER_PER_HOUR, type FarmCatalog, type FarmItemKind, type Variety } from "./catalog";
 import {
   cropCare, cropModel, cropPhase, HOUR_MS, overripeAt, ripeAt, rotAt, seedlingsOldAt, sowLateAt, sproutAt,
   transplantReadyAt, waterAt, wantedWater, type CropModel,
 } from "./crop";
-import { durationText, NO_SEED, PEST_NAME, PEST_REMEDY, WATER_NAME } from "./messages";
+import { durationText, NO_SEED, PEST_NAME, PEST_REMEDY, TOO_FAST, WATER_NAME } from "./messages";
 import type { FieldAction } from "./rpc";
 import type { FarmMine, PlotView } from "./state";
 
@@ -105,10 +105,16 @@ export function plotActions(p: PlotView, me: string, v: Variety | null, catalog:
     out.push({ key: "harvest", label: "Gặt lúa", run: { kind: "work", plot, work: "harvest" }, enabled: !why, why });
   }
   if (crop.preparedAt !== null) {
-    out.push({ key: "water_up", label: w >= 3 ? "Bơm thêm nước (giữ Sâu)" : `Bơm nước (lên ${WATER_NAME[w + 1]})`, run: { kind: "water", plot, delta: 1 }, enabled: true });
+    // the server refuses a water change past 60 log entries, or past 6 in the last hour
+    const log = crop.log?.water ?? [];
+    const tooFast = log.length >= WATER_LOG_MAX || log.filter((e) => e.t > now - HOUR_MS).length >= WATER_PER_HOUR;
+    out.push({
+      key: "water_up", label: w >= 3 ? "Bơm thêm nước (giữ Sâu)" : `Bơm nước (lên ${WATER_NAME[w + 1]})`, run: { kind: "water", plot, delta: 1 },
+      enabled: !tooFast, why: tooFast ? TOO_FAST : undefined,
+    });
     out.push({
       key: "water_down", label: w === 0 ? "Tháo nước" : `Tháo nước (xuống ${WATER_NAME[w - 1]})`, run: { kind: "water", plot, delta: -1 },
-      enabled: w > 0, why: w === 0 ? "Ruộng đã khô." : undefined,
+      enabled: !tooFast && w > 0, why: tooFast ? TOO_FAST : w === 0 ? "Ruộng đã khô." : undefined,
     });
     for (const f of owned("fertilizer")) {
       const a = fertAdvice(c, v, f.id, now);

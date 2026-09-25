@@ -24,6 +24,7 @@ export const FIELD_LOADING = "Đang tải đồng ruộng…";
 export const FIELD_FAILED = "Chưa tải được đồng ruộng — thử lại nhé.";
 export const FARM_LIMIT_TEXT = "Bạn đang canh tác 2 thửa rồi.";
 export const NO_SEED = "Chưa có giống — ghé tiệm anh Hai.";
+export const TOO_FAST = "Từ từ thôi…";
 
 /** "45 phút", "3 giờ", "2 ngày 5 giờ" — rounded up, as a countdown reads. */
 export function durationText(ms: number): string {
@@ -83,7 +84,7 @@ export function farmErrorMessage(err: unknown, itemName?: string): string {
     case "item not available": return "Món này không mua được.";
     case "invalid quantity":
     case "invalid price": return "Số không hợp lệ.";
-    case "too fast": return "Từ từ thôi…";
+    case "too fast": return TOO_FAST;
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";
   if (msg.includes("account banned")) return "Tài khoản đã bị khoá.";

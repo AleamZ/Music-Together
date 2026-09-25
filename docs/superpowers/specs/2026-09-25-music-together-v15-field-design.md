@@ -288,6 +288,7 @@ A crop row starts when the farmer **prepares** the plot (làm đất). Times bel
   - `prepare` sets 3 (flooded).
   - `water(+1)` pumps in, up to 3; `water(−1)` drains, down to 0.
   - Both act on the *current* level and append an entry.
+  - The log is capped, because the harvest samples it: at most 60 entries per crop and 6 in any hour, `prepare`'s entry included. Past either limit `water` answers `too fast`, and the plot panel disables Bơm and Tháo with "Từ từ thôi…".
 - **Accepted levels per phase:**
 
 | Phase | Accepted | Shown as |

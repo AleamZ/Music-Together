@@ -82,6 +82,18 @@ describe("plotActions", () => {
     expect(find(sick, "spray:spray_hopper")?.hint).toBe("Trị rầy nâu.");
     expect(keys(sick)).toEqual(["water_up", "water_down", "fert:fert_manure", "fert:fert_urea", "spray:spray_hopper", "abandon"]);
   });
+  it("stops pumping and draining at 6 water changes in an hour or 60 in the log, as the server does", () => {
+    const water = (list: PlotAction[]) => [find(list, "water_up"), find(list, "water_down")].map((a) => [a?.enabled, a?.why]);
+    // six entries after 10.5 h
+    const busy = plot(crop({}, [[0, 3], [10.625, 2], [10.75, 1], [10.875, 2], [11, 1], [11.25, 2], [11.5, 1]]));
+    expect(water(plotActions(busy, "me", nep, CATALOG, ALL, at(11.5)))).toEqual([[false, "Từ từ thôi…"], [false, "Từ từ thôi…"]]);
+    // an hour after the oldest of them, five are left
+    expect(water(plotActions(busy, "me", nep, CATALOG, ALL, at(11.625)))).toEqual([[true, undefined], [true, undefined]]);
+    const full = plot(crop({ sowAt: at(3), transplantAt: at(12) }, Array.from({ length: 60 }, (_, i): [number, number] => [i, 2])));
+    expect(water(plotActions(full, "me", nep, CATALOG, ALL, at(70)))).toEqual([[false, "Từ từ thôi…"], [false, "Từ từ thôi…"]]);
+    const room = plot(crop({ sowAt: at(3), transplantAt: at(12) }, Array.from({ length: 59 }, (_, i): [number, number] => [i, 2])));
+    expect(water(plotActions(room, "me", nep, CATALOG, ALL, at(70)))).toEqual([[true, undefined], [true, undefined]]);
+  });
 });
 
 describe("fertAdvice", () => {

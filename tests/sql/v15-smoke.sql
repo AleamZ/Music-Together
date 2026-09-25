@@ -541,6 +541,31 @@ begin
 end $$;
 
 do $$
+declare a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz + interval '130 hours'; i integer;
+begin
+  -- the water log is capped, because the harvest's cost grows with it: 6 changes in any hour and 60 entries per crop,
+  -- both refused as 'too fast'. Làm đất's entry counts too.
+  perform public._farm_do_prepare(room, a3, 10, t);
+  for i in 1..5 loop
+    perform public._farm_do_water(room, a3, 10, -1, t + make_interval(mins => i));
+  end loop;
+  assert pg_temp.err(format('select public._farm_do_water(%L, %L, 10, 1, %L)', room, a3, t + interval '59 minutes')) = 'too fast',
+    'six changes in the last hour';
+  perform public._farm_do_water(room, a3, 10, 1, t + interval '1 hour 1 minute');
+  assert jsonb_array_length((select water_log from public.crops where room_id = room and plot_no = 10)) = 7, 'a rolling hour';
+  -- 59 entries long ago, then the 60th is the last one
+  update public.crops
+     set water_log = (select jsonb_agg(jsonb_build_object('t', t - make_interval(hours => 60 - g), 'l', 2) order by g)
+                        from generate_series(1, 59) g)
+   where room_id = room and plot_no = 10;
+  perform public._farm_do_water(room, a3, 10, 1, t + interval '3 hours');
+  assert jsonb_array_length((select water_log from public.crops where room_id = room and plot_no = 10)) = 60, 'the 60th entry';
+  assert pg_temp.err(format('select public._farm_do_water(%L, %L, 10, -1, %L)', room, a3, t + interval '5 hours')) = 'too fast',
+    'sixty entries per crop';
+end $$;
+
+do $$
 declare f text;
 begin
   assert not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
