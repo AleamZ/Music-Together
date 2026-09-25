@@ -33,4 +33,9 @@ describe("farm icons", () => {
     const looks = Object.keys(FARM_ICONS).map((id) => JSON.stringify(iconMatrixFor(id)));
     expect(new Set(looks).size).toBe(looks.length);
   });
+  it("paint the NPK bag in its own blue, apart from potash's red", () => {
+    const body = (id: string) => iconMatrixFor(id)?.[2][3]; // a pixel of the bag's top band
+    expect(iconMatrixFor("fert_npk")?.flat()).toContain("#3d6fd1");
+    expect(body("fert_npk")).not.toBe(body("fert_potash"));
+  });
 });

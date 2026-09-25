@@ -116,7 +116,7 @@ export const FARM_ICONS: Record<string, PixelIcon> = {
   fert_urea: fertBag("#e8e4d8", "#c3c8d4", ["L..L", "LL.L", "L.LL", "L..L", "L..L"], { L: "#3d6fd1" }),
   fert_potash: fertBag("#c0392b", "#8e2a1f", ["L..L", "L.L.", "LL..", "L.L.", "L..L"], { L: "#8e2a1f" }),
   // N, P and K in their colours
-  fert_npk: fertBag("#3d6fd1", "#2f56a6", ["a..b", "a..b", "....", ".cc.", ".cc."], { a: "#3f7f2e", b: "#c0392b", c: "#2a2f3a" }),
+  fert_npk: fertBag("#3d6fd1", "#2f56a6", ["a..k", "a..k", "....", ".cc.", ".cc."], { a: "#3f7f2e", k: "#c0392b", c: "#2a2f3a" }),
   // a caterpillar, a hopper, a blast spot
   spray_insect: bottle("#5caa4a", "#86c95c", "#2f6e2f", [".LL.", "LLLL", "L..L"], "#3f7f2e"),
   spray_hopper: bottle("#e0873c", "#f2b27a", "#8e4a1f", ["L..L", ".LL.", "L..L"], "#7a4a2a"),
