@@ -167,16 +167,18 @@ describe("GameCanvas presence filter and receive budgets (anti-cheat spec §14)"
   const mv = (id: string) => ({ t: "mv", id, x: 1, y: 1, d: "d", mv: true, vx: 0, vy: 1 });
   const entry = (id: string) => ({ id, name: id, badges: "", look: DEFAULT_LOOK, spot: null });
 
-  it("takes hello, bye, lk, fs, fa and fp only from members on this map; movement from any member", () => {
+  it("takes bye, lk, fs and fa only from members on this map, and nothing from anyone who is not a member", () => {
     const onLookChanged = vi.fn();
     const onPlotChanged = vi.fn();
     render(<GameCanvas mapId="field" {...props} isMember={(id) => id !== "stranger"} isHere={(id) => id === "ann"}
       onLookChanged={onLookChanged} onPlotChanged={onPlotChanged} />);
     const deliver = (msg: unknown) => channels[0].onMessage(msg);
-    for (const id of ["bob", "stranger"]) {
-      for (const msg of [{ t: "hello", id }, { t: "lk", id }, { t: "fp", id, p: 1 }, { t: "fs", id, f: 1, h: null }, { t: "fa", id, a: 1 }, { t: "bye", id }]) {
-        deliver(msg);
-      }
+    for (const msg of [{ t: "lk", id: "bob" }, { t: "fs", id: "bob", f: 1, h: null }, { t: "fa", id: "bob", a: 1 }, { t: "bye", id: "bob" }]) {
+      deliver(msg);
+    }
+    const id = "stranger";
+    for (const msg of [{ t: "hello", id }, { t: "lk", id }, { t: "fp", id, p: 1 }, { t: "fs", id, f: 1, h: null }, { t: "fa", id, a: 1 }, { t: "bye", id }]) {
+      deliver(msg);
     }
     expect(onLookChanged).not.toHaveBeenCalled();
     expect(onPlotChanged).not.toHaveBeenCalled();
@@ -193,6 +195,16 @@ describe("GameCanvas presence filter and receive budgets (anti-cheat spec §14)"
     expect(onLookChanged).toHaveBeenCalledWith("ann");
     expect(onPlotChanged).toHaveBeenCalledWith(1);
     expect(engines[0].applied).toEqual([mv("bob"), { t: "fa", id: "ann", a: 1 }]);
+  });
+
+  it("answers the hello and passes on the fp of a member whose presence has not arrived yet (R34)", () => {
+    const onPlotChanged = vi.fn();
+    render(<GameCanvas mapId="field" {...props} isHere={() => false} onPlotChanged={onPlotChanged} />);
+    channels[0].onMessage({ t: "hello", id: "newbie" });
+    channels[0].onMessage({ t: "fp", id: "newbie", p: 4 });
+    expect(engines[0].hellos).toEqual(["newbie"]);
+    expect(replies.hellos).toBe(1);
+    expect(onPlotChanged).toHaveBeenCalledWith(4);
   });
 
   it("drops what a sender sends over its budget", () => {

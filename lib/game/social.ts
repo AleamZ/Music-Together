@@ -57,8 +57,8 @@ export function buildRoster({ presence, members, room, localId, looks, mapId, se
   });
 }
 
-/** Is this account in the room's presence in game mode on this map? Game messages other than movement are taken only
- *  from such a member (anti-cheat spec §14). */
+/** Is this account in the room's presence in game mode on this map? Game messages other than movement, `hello` and `fp`
+ *  are taken only from such a member (anti-cheat spec §14). */
 export function isHereOn(presence: readonly PresenceEntry[], accountId: string, mapId: MapId): boolean {
   return presence.some((p) => p.accountId === accountId && p.mode === "game" && p.map === mapId);
 }

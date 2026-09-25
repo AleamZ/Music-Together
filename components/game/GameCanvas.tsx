@@ -58,8 +58,8 @@ export interface GameCanvasProps {
   initial: { name: string; badges: string; look: Look };
   /** Is this account a current room member? Game messages from anyone else are dropped (spec §8.3). */
   isMember: (accountId: string) => boolean;
-  /** Is this member in the room's presence, in game mode, on this map? Only movement is taken from members who are not
-   *  (anti-cheat spec §14). */
+  /** Is this member in the room's presence, in game mode, on this map? Only movement, `hello` and `fp` are taken from
+   *  members who are not (anti-cheat spec §14). */
   isHere: (accountId: string) => boolean;
   onInteract: (it: Interactable) => void;
   onPromptChange: (it: Interactable | null) => void;
@@ -108,7 +108,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     return {
       setRoster: (entries) => {
         engineRef.current?.setRoster(entries);
-        // a member who appears on this map gets my state, as their `hello` would bring (anti-cheat R34)
+        // a member who appears on this map gets my state too, in case the budget dropped their `hello` (anti-cheat R34)
         const here = new Set(entries.map((e) => e.id).filter((id) => propsRef.current.isHere(id)));
         const known = hereRef.current;
         if (known && [...here].some((id) => !known.has(id))) repliesRef.current?.onHello();
@@ -228,7 +228,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         }
         const p = propsRef.current;
         if (!p.isMember(msg.id)) return;
-        if (msg.t !== "st" && msg.t !== "mv" && msg.t !== "pa" && !p.isHere(msg.id)) return;
+        // Presence arrives at least a second late: movement, a newcomer's `hello` and `fp` count before it does, the
+        // rest needs the sender on this map (anti-cheat R34)
+        const early = msg.t === "st" || msg.t === "mv" || msg.t === "pa" || msg.t === "hello" || msg.t === "fp";
+        if (!early && !p.isHere(msg.id)) return;
         const kind = budgetKind(msg.t);
         if (kind && !budget.take(msg.id, kind, performance.now())) return;
         switch (msg.t) {

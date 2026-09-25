@@ -135,7 +135,7 @@ The audit left these details open. Each one is decided here, and the owner confi
 | R31 | Retention: strike rows and wipe snapshots are kept forever. Every other row is kept 90 days, purged by `_ac_flag` (at most 500 rows per call). An account gets at most 200 non-strike rows per Vietnam day. | Storage stays bounded even when a script floods in log mode. |
 | R32 | No IP address is stored. The client build comes from `X-Client-Info` and the browser from `User-Agent`. | IPs are personal data, and bans are not IP-based. |
 | R33 | The build id is `NEXT_PUBLIC_CLIENT_BUILD`, set in the `env` of `next.config.ts`: the host's commit SHA (Vercel or Cloudflare Pages), otherwise the build time. | It is automatic on every deploy, with no manual bump. |
-| R34 | Realtime: a `hello` from a member not yet in this map's presence is dropped. A member who appears in this map's presence schedules the reply instead. | This keeps the join handshake without trusting unannounced ids. |
+| R34 | Realtime: `hello` and `fp` are taken from any member, before the sender's presence arrives, within their budgets (`hello` 1 per 10 s; `fp` through the refetch gap of R35). `bye`, `lk`, `fs` and `fa` need the sender in this map's presence. A member who newly appears in this map's presence also schedules the reply, in case the budget dropped their `hello`. | Presence arrives at least 1 s late, and up to about 30 s after four view changes in 30 s. Dropping `hello` and `fp` until then drew the others at the spawn for the newcomer and kept a stale field. An unannounced member id costs at most a reply and a refetch within those budgets. |
 | R35 | `fp`: the 400 ms gather stays, and refetch starts are at least 2 s apart, with one trailing refetch. | This bounds the database load a flood can cause, and honest changes still show within 2 s. |
 | R36 | Two items are out of this spec: the plot locks that `field_state` takes on every read (an audit side finding), and the budget for the lyrics broadcast. | The first is a separate performance fix; the second belongs to `0014`. |
 | R37 | New Vietnamese strings spell "khoá"/"xoá" as the game's texts do. The admin page's existing "Khóa"/"Xóa" buttons are left alone. | The spelling item from v14 stays a separate polish task. |
@@ -1226,10 +1226,11 @@ The numbers are below 1 000, so the `vi-VN` format adds no separator.
 The server never sees Broadcast, so everything here runs in the receiving client. The helpers are pure and have unit tests.
 
 **1. Presence filter** (`GameCanvas`, with a new prop `isHere(accountId)` from `GameShell`):
-- `hello`, `bye`, `lk`, `fs`, `fa` and `fp` from another account are accepted only when the sender is a member **and** is in this room's presence with `mode = "game"` and `map` = this map.
+- `bye`, `lk`, `fs` and `fa` from another account are accepted only when the sender is a member **and** is in this room's presence with `mode = "game"` and `map` = this map.
+- `hello` and `fp` need the sender to be a member only (R34). Presence arrives at least 1 s late, and a newcomer's `hello` must be answered at once, as a changed plot must be fetched. Their budgets bound them: `hello` 1 per 10 s (2 below) and the `fp` refetch gap (3 below).
 - My own id keeps today's handling.
-- Movement already needs a roster entry before an actor is drawn (`lib/game/world.ts` `needsActor`).
-- A member who newly appears in this map's roster calls the reply scheduler once, as a `hello` would (R34). A newcomer whose `hello` arrived before their presence still gets everyone's state.
+- Movement needs membership only, and a roster entry before an actor is drawn (`lib/game/world.ts` `needsActor`). So the others draw a newcomer, and take their `fs`, once the newcomer's presence arrives; the last movement is kept until then.
+- A member who newly appears in this map's roster calls the reply scheduler once, as a `hello` would (R34). This covers a `hello` that the budget dropped, for example after a quick return through a portal. When the answer to the newcomer's `hello` already went out, it costs one more answer.
 
 **2. Per-sender receive budgets** (`lib/game/net/budget.ts`, token buckets keyed by sender and kind):
 
@@ -1254,8 +1255,8 @@ Honest senders stay far below these budgets:
 **What these cannot stop:**
 - **A spoofer using the id of a member who is present on the map passes every filter.** Member ids can be read from `members`. Such a spoofer can:
   - move that member, and hide them with `bye`;
-  - fake their fishing phase, hand fish, catch labels and farm animations;
-  - make the room refetch at the capped rate.
+  - fake their fishing phase, hand fish, catch labels and farm animations.
+- **Any member's id, present or not, can send `hello` and `fp`:** each client then answers at most once per 10 s per id, and refetches the field at the capped rate.
 - **Presence is spoofable too.** Anyone can track presence under any key, so an offline member can be made to look present.
 - **Logged-out and banned users** keep full Realtime access.
 - **Floods still count against the project's Realtime quota** (free plan: 100 messages/s, 2 M per month). The budgets only protect the clients' CPU and the database from amplification.
