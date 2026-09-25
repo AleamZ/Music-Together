@@ -103,7 +103,7 @@ price = max(1, round(price_per_kg × weight_g / 1000 × M(room, period) × S(roo
 
 - An **active member** of room `r` is a `members` row of `r` with `coalesce(last_seen_at, joined_at) > now − 14 days`. This is the same rule as land reclaim (v15 spec §7.6).
 - An account's **assets** are `wallets.coins + 800 000 × (private plots it owns, in any room)`. Land counts at the village price. Rice, fish and items are left out: they are small and change often.
-- `W(r)` is the floor of the average assets over r's active members. It is 0 when there are none.
+- `W(r)` is the floor of the average assets over r's active members. It is 0 when r has fewer than 2 active members, so a room of one keeps ×1: a lone rich player cannot raise their own fish prices.
 
 ### 5.3 The multiplier
 

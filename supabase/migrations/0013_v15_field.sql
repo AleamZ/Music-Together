@@ -1756,12 +1756,14 @@ language sql immutable set search_path = public, extensions
 as $$ select floor((extract(epoch from p_now) + 25200) / 10800)::bigint $$;
 
 -- The floor of the average assets (xu plus 800 000 per private plot owned, in any room) of the room's members seen
--- in the last 14 days (§5.2); 0 when there are none.
+-- in the last 14 days (§5.2); 0 when fewer than 2 are, so a room of one keeps ×1.
 create or replace function public._room_wealth(p_room uuid, p_now timestamptz) returns bigint
 language sql stable security definer set search_path = public, extensions
 as $$
-  select coalesce(floor(avg(coalesce(w.coins, 0)
-                            + 800000 * (select count(*) from public.field_plots fp where fp.owner_id = m.account_id))), 0)::bigint
+  select case when count(*) < 2 then 0
+              else floor(avg(coalesce(w.coins, 0)
+                             + 800000 * (select count(*) from public.field_plots fp where fp.owner_id = m.account_id)))
+         end::bigint
     from public.members m
     left join public.wallets w on w.account_id = m.account_id
    where m.room_id = p_room and coalesce(m.last_seen_at, m.joined_at) > p_now - interval '14 days'

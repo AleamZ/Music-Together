@@ -605,10 +605,12 @@ select 'v15 farm smoke ok' as result;
 insert into smoke select 'froom', room_id::text from public.create_room('Ao giá', 'pw', (select v from smoke where k = 't2'));
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'froom')::uuid), 'pw',
                         (select v from smoke where k = 't1'));
+insert into smoke select 'solo', room_id::text from public.create_room('Ao một mình', 'pw', (select v from smoke where k = 't3'));
 
 do $$
-declare room uuid := (select v from smoke where k = 'froom')::uuid;
+declare room uuid := (select v from smoke where k = 'froom')::uuid; solo uuid := (select v from smoke where k = 'solo')::uuid;
         a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid;
         p1 bigint; p2 bigint; w bigint; r public.fish_price_index; cid uuid; res jsonb; b jsonb;
 begin
   -- the law (§5.3) and the 3-hour Vietnam periods (§5.4)
@@ -617,7 +619,8 @@ begin
      and public._fish_mult(90000000) = 10, 'the multiplier law';
   assert public._fish_period('2026-01-01 03:00:00+07') = public._fish_period('2026-01-01 00:00:00+07') + 1
      and public._fish_period('2026-01-01 02:59:59+07') = public._fish_period('2026-01-01 00:00:00+07'), '3-hour periods, VN time';
-  -- the wealth (§5.2): the average of xu + 800 000 per private plot owned, over the members seen in the last 14 days
+  -- the wealth (§5.2): the average of xu + 800 000 per private plot owned, over the members seen in the last 14 days;
+  -- 0 while fewer than 2 of them are active, so a room of one keeps ×1
   insert into public.wallets (account_id, coins) values (a1, 150000), (a2, 50000)
   on conflict (account_id) do update set coins = excluded.coins;
   p1 := (select count(*) from public.field_plots where owner_id = a1);
@@ -626,8 +629,11 @@ begin
   assert public._room_wealth(room, now()) = w, 'the average assets of the active members';
   update public.members set last_seen_at = now() - interval '15 days', joined_at = now() - interval '20 days'
    where room_id = room and account_id = a1;
-  assert public._room_wealth(room, now()) = 50000 + 800000 * p2, 'a member away 14 days does not count';
+  assert public._room_wealth(room, now()) = 0, 'a member away 14 days does not count: one active member left';
   update public.members set last_seen_at = now() where room_id = room and account_id = a1;
+  perform pg_temp.set_coins(a3, 90000000);
+  assert public._room_wealth(solo, now()) = 0 and (public._fish_index(solo, now())).mult = 1,
+    'a room with a single active member keeps ×1, however rich';
   -- the snapshot (§5.5)
   r := public._fish_index(room, now());
   assert r.period = public._fish_period(now()) and r.wealth = w and r.mult = public._fish_mult(w), 'the snapshot';
