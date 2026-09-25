@@ -256,3 +256,23 @@ The server decides the species, weight, rarity and bite delay of every cast; all
 ### Realtime budget (v14)
 
 Each map has its own Broadcast channel `game:{roomId}:{mapId}`, so a room split across the hall and the pond costs N_hall² + N_pond² deliveries instead of N². A cast sends at most four `fs` messages (cast, bite, reel, end), and selling or releasing a fish adds one. A normal cast cycle takes about 6 s or more, so an angler averages at most about 0.7 messages/s and typically about 0.1. That average is not a hard bound, because giving up and recasting is faster; the hard limits are 40 casts an hour and the send gate's 3 messages/s. A map switch costs one presence track, taken from the same budget as view-mode changes (at most 4 per 30 s), and a rare+ catch costs one chat insert.
+
+## Hotfix: khóa bộ nhớ lời bài hát (lyrics cache lockdown)
+
+### DB migration
+
+`supabase/migrations/0014_lyrics_lockdown.sql` is **additive and re-runnable** (`drop policy/function if exists`, `revoke`, `create or replace`, explicit grants): run it in the Supabase SQL Editor after `0011_v13_video_lyrics.sql`. It does not need `0012` or later.
+
+What it closes — until now anyone holding the public key, even logged out, could overwrite the lyrics, names, offset and "updated by" of any video in the shared `video_lyrics` cache, or fill it with invented ids:
+
+- **Direct writes:** the open `video_lyrics_insert` / `video_lyrics_update` policies are dropped and insert, update and delete are revoked from `anon` and `authenticated`. Reading stays public.
+- **The RPCs:** the session-less `upsert_video_lyrics(text,…)` and `update_video_lyric_offset(text,integer,text)` are dropped. The new ones take `(p_room_id, p_session_token, …)` and accept only the room's **DJ** — the same check as play / pause / seek / skip — for an 11-character YouTube id that is the room's current or queued song, within size caps (lyrics ≤ 20 000 characters each, names ≤ 200, timing source `auto` / `custom`, offset within ±60 s). "Updated by" is the account's username.
+- **The broadcast:** `lyrics:{roomId}` now carries only a hint, `{ trackId, videoId }`, which the DJ sends after the save succeeded; members refetch that row from the database. A broadcast can no longer change anyone's lyrics or offset, nor what their browser remembers.
+
+`tests/sql/lyrics-lockdown-smoke.sql` checks all of it on a throwaway PostgreSQL cluster.
+
+> **Deploy order:** run `0014` in the SQL Editor first, then deploy the client. Until they reload, old clients call the dropped signatures and get `PGRST202`; their fallback direct write is now denied and the error is swallowed, so their lyrics caching just stops (lyrics still show, from the cache or the lyrics search). Old and new clients ignore each other's lyrics broadcasts, so live lyric/offset sync between them waits for the reload.
+
+> Rows written before `0014` may have been forged, and their "updated by" was whatever the client sent. The table is only a cache: if in doubt, `truncate public.video_lyrics;` is safe (DJs refill it as songs play; saved offsets are lost).
+
+**Trust model:** the cache is shared by every room, and any signed-in user is the DJ of a room they create, so they can still write the lyrics of a song they queued there — but only with an account, for songs queued in that room, within the caps, and under their own username.
