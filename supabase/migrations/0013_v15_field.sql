@@ -2,7 +2,8 @@
 -- 0013_v15_field.sql — v15.1 "Ruộng lúa": the field map's land (village rent, private plots, player sales,
 -- subleases, reclaim), the rice cycle (soak → seedbed → transplant → top-dress → water → pests → harvest),
 -- drying, selling and the farm shop. Also: the v14 buy_item kind guard and server_now in _fishing_state (M-3).
--- ADDITIVE (no data drop) and re-runnable. Every function relies on `set search_path = public, extensions`.
+-- ADDITIVE (no data drop, except section A's one-time reset of an earlier build's v15 state) and re-runnable. Every
+-- function relies on `set search_path = public, extensions`.
 -- Time rules live in private functions that take p_now; the public RPCs pass now() (tests pass a fake time).
 -- =========================================================
 
@@ -36,6 +37,21 @@ alter table public.shop_items add column if not exists pest_target text check (p
 alter table public.shop_items drop constraint if exists shop_items_kind_check;
 alter table public.shop_items add constraint shop_items_kind_check
   check (kind in ('rod','bobber','bait','bait_box','bucket','seed','fertilizer','pesticide','critter_box'));
+
+-- A database that ran an earlier build of this file (a demo) sells seed_short at 60 xu. Its v15 state was bought and
+-- grown at the old prices (economy spec §3), so it starts over before the new prices go in: land, leases, offers, crops,
+-- drying batches, rice, gifts and farm items. The plots come back on the next field open, and the gift can be claimed
+-- again. Xu and everything else stay.
+do $$
+begin
+  if to_regclass('public.field_plots') is not null
+     and exists (select 1 from public.shop_items where id = 'seed_short' and price = 60) then
+    truncate public.field_plots, public.plot_leases, public.land_offers, public.crops, public.drying_slots,
+             public.rice_stock, public.farm_profiles cascade;
+    delete from public.inventory i using public.shop_items s
+     where s.id = i.item_id and s.kind in ('seed', 'fertilizer', 'pesticide', 'critter_box');
+  end if;
+end $$;
 
 insert into public.shop_items (id, kind, name, price, starter, sort_order, variety, fert, pest_target) values
   ('seed_short',     'seed',       'Giống lúa ngắn ngày', 600, false, 10, 'short', null,        null),

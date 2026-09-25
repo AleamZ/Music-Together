@@ -6,7 +6,7 @@
 - On 2026-09-25 the owner said "chạy đến Goal … làm theo khuyến nghị", meaning run to the goal and follow the ★ recommendations. Every other choice below is therefore the controller's recommendation, recorded as decided.
 
 **Builds on:** `feat/v15-field` after v15.1 Tasks 1–19, and the v15 spec `2026-09-25-music-together-v15-field-design.md`.
-**Lands in:** v15.1, plan Tasks 20–21, inside `supabase/migrations/0013_v15_field.sql`. 0013 is not in production yet. If the owner already ran it for a demo, running the edited 0013 again brings that database to the new state.
+**Lands in:** v15.1, plan Tasks 20–21, inside `supabase/migrations/0013_v15_field.sql`. 0013 is not in production yet. If the owner already ran an earlier build of it for a demo, running this 0013 brings that database to the new state and resets its v15 state (land, leases, offers, crops, drying batches, rice, gifts and farm items), which was bought and grown at the old prices. Xu stay. The plots come back on the next field open, and the gift can be claimed again.
 
 ## 1. Why
 

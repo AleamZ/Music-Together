@@ -1,5 +1,6 @@
 -- tests/sql/v15-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0013, from the repo
--- root (the crop fixtures are read with \copy). Every check is an ASSERT; the first failure stops psql (ON_ERROR_STOP).
+-- root (the crop fixtures are read with \copy, and the last section re-runs 0013 with \i). Every check is an ASSERT; the
+-- first failure stops psql (ON_ERROR_STOP).
 \set ON_ERROR_STOP on
 
 create temp table smoke (k text primary key, v text);
@@ -626,3 +627,53 @@ begin
 end $$;
 
 select 'v15 fish price smoke ok' as result;
+
+-- ---------- re-running 0013 over an earlier build of it (economy spec §3): the v15 state starts over ----------
+-- The earlier builds sold seed_short at 60 xu. That price is the fingerprint: land, rice and farm items bought and grown
+-- at the old prices are cleared before the new prices go in. Everything else stays.
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; room uuid := (select v from smoke where k = 'room')::uuid;
+begin
+  update public.shop_items set price = 60 where id = 'seed_short';
+  perform public._field_init(room);
+  update public.field_plots set owner_id = a1, owned_at = now(), sale_price = null, sublease_price = null
+   where room_id = room and plot_no = 2;
+  insert into public.inventory (account_id, item_id, qty) values (a1, 'seed_short', 3), (a1, 'fert_urea', 1), (a1, 'rod_bamboo', 1)
+  on conflict (account_id, item_id) do update set qty = excluded.qty;
+  assert exists (select 1 from public.field_plots where owner_id = a1) and exists (select 1 from public.rice_stock)
+     and exists (select 1 from public.farm_profiles), 'the old build''s state is there';
+end $$;
+set client_min_messages = warning;
+\i supabase/migrations/0013_v15_field.sql
+reset client_min_messages;
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid;
+begin
+  assert not exists (select 1 from public.field_plots) and not exists (select 1 from public.plot_leases)
+     and not exists (select 1 from public.land_offers) and not exists (select 1 from public.crops)
+     and not exists (select 1 from public.drying_slots) and not exists (select 1 from public.rice_stock)
+     and not exists (select 1 from public.farm_profiles), 'the v15 state starts over';
+  assert (select price from public.shop_items where id = 'seed_short') = 600, 'seed_short costs 600 again';
+  assert not exists (select 1 from public.inventory i join public.shop_items s on s.id = i.item_id
+                      where s.kind in ('seed', 'fertilizer', 'pesticide', 'critter_box')), 'no farm items left';
+  assert exists (select 1 from public.inventory where account_id = a1 and item_id = 'rod_bamboo'), 'fishing gear stays';
+end $$;
+
+-- a normal re-run (seed_short at 600) keeps the v15 state
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; room uuid := (select v from smoke where k = 'room')::uuid;
+begin
+  insert into public.field_plots (room_id, plot_no, kind, owner_id, owned_at) values (room, 1, 'private', a1, now());
+  insert into public.inventory (account_id, item_id, qty) values (a1, 'seed_nep', 2);
+end $$;
+set client_min_messages = warning;
+\i supabase/migrations/0013_v15_field.sql
+reset client_min_messages;
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; room uuid := (select v from smoke where k = 'room')::uuid;
+begin
+  assert (select owner_id from public.field_plots where room_id = room and plot_no = 1) = a1, 'the plot stays';
+  assert (select qty from public.inventory where account_id = a1 and item_id = 'seed_nep') = 2, 'the farm items stay';
+end $$;
+
+select 'v15 upgrade reset smoke ok' as result;
