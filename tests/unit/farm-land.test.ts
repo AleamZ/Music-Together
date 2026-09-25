@@ -16,7 +16,7 @@ const LEASE = { source: "village" as const, until: 1e15, price: 250 };
 const mine = (coins: number): FieldMine => ({
   items: {}, rice: {}, coins, giftClaimed: true, ownedPlot: null, farming: [], myOffers: [], incomingOffers: [],
 });
-const ctx = (plots: PlotView[], coins = 10_000): LandCtx => ({ me: "me", plots, mine: mine(coins) });
+const ctx = (plots: PlotView[], coins = 1_000_000): LandCtx => ({ me: "me", plots, mine: mine(coins) });
 
 describe("farming and renting", () => {
   it("counts the plots I farm", () => {
@@ -28,7 +28,7 @@ describe("farming and renting", () => {
     expect(rentRefusal(plot(6, { lease: LEASE, farmer: LAN }), ctx([]))).toBe("plot taken");
     const two = [plot(7, { farmer: ME, lease: LEASE }), plot(8, { farmer: ME, lease: LEASE })];
     expect(rentRefusal(free, ctx([free, ...two]))).toBe("farm limit");
-    expect(rentRefusal(free, ctx([free], 249))).toBe("not enough coins");
+    expect(rentRefusal(free, ctx([free], 9_999))).toBe("not enough coins");
     expect(reasonText("farm limit")).toBe("Bạn đang canh tác 2 thửa rồi.");
   });
 });
@@ -40,7 +40,7 @@ describe("buying land", () => {
     expect(buyPlotRefusal(plot(3, { owner: LAN, farmer: LAN }), ctx([]))).toBe("not for sale");
     expect(buyPlotRefusal(plot(2, { lease: LEASE }), ctx([]))).toBe("leased");
     expect(buyPlotRefusal(p2, ctx([p2, plot(1, { owner: ME, farmer: LAN, lease: LEASE })]))).toBe("already own land");
-    expect(buyPlotRefusal(p2, ctx([p2], 3999))).toBe("not enough coins");
+    expect(buyPlotRefusal(p2, ctx([p2], 799_999))).toBe("not enough coins");
   });
   it("a listing, at its price", () => {
     const listed = plot(3, { owner: LAN, farmer: LAN, salePrice: 9000 });
@@ -54,7 +54,7 @@ describe("buying land", () => {
     const theirs = plot(3, { owner: LAN, farmer: LAN });
     expect(offerRefusal(theirs, ctx([theirs]), 5000)).toBeNull();
     expect(offerRefusal(theirs, ctx([theirs]), 0)).toBe("invalid price");
-    expect(offerRefusal(theirs, ctx([theirs]), 1_000_001)).toBe("invalid price");
+    expect(offerRefusal(theirs, ctx([theirs]), 5_000_001)).toBe("invalid price");
     expect(offerRefusal(plot(2), ctx([]), 5000)).toBe("not for sale");
     expect(offerRefusal(theirs, ctx([theirs, plot(1, { owner: ME, farmer: ME })]), 5000)).toBe("already own land");
   });
@@ -71,7 +71,7 @@ describe("the owner's land actions", () => {
     expect(listRefusal(mineBare, ctx([mineBare]), 5000)).toBeNull();
     expect(listRefusal({ ...mineBare, crop: CROP }, ctx([]), 5000)).toBe("crop exists");
     expect(listRefusal({ ...mineBare, crop: CROP }, ctx([]), null)).toBeNull();
-    expect(subleaseRefusal(mineBare, ctx([]), 5001)).toBe("invalid price");
+    expect(subleaseRefusal(mineBare, ctx([]), 100_001)).toBe("invalid price");
     expect(subleaseRefusal({ ...mineBare, lease: LEASE, farmer: LAN }, ctx([]), 300)).toBe("leased");
     expect(listRefusal(plot(2, { owner: LAN }), ctx([]), 5000)).toBe("not your plot");
   });

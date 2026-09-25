@@ -149,12 +149,12 @@ describe("CoopPanel", () => {
     expect(line("Thửa 5 · Lan đang thuê — còn 30 giờ")).toBeInTheDocument();
     expect(line("Thửa 6 · Bạn đang thuê — còn 5 giờ")).toBeInTheDocument();
     const free = line("Thửa 7 · Trống");
-    expect(within(free).getByRole("button", { name: "Thuê · 250 xu" })).toBeDisabled();
+    expect(within(free).getByRole("button", { name: "Thuê · 10.000 xu" })).toBeDisabled();
     expect(within(free).getByText("Bạn đang canh tác 2 thửa rồi.")).toBeInTheDocument();
     cleanup();
     const relaxed = { ...STATE, plots: STATE.plots.map((p) => (p.no === 6 ? { ...p, farmer: null, lease: null } : p)) };
-    const act2 = renderCoop(relaxed);
-    fireEvent.click(within(line("Thửa 7 · Trống")).getByRole("button", { name: "Thuê · 250 xu" }));
+    const act2 = renderCoop({ ...relaxed, mine: { ...relaxed.mine, coins: 10_000 } });
+    fireEvent.click(within(line("Thửa 7 · Trống")).getByRole("button", { name: "Thuê · 10.000 xu" }));
     expect(act2).toHaveBeenCalledWith({ kind: "rent", plot: 7 }, "Đã thuê thửa 7 trong 4 ngày.");
     expect(onAct).not.toHaveBeenCalled();
   });
@@ -162,7 +162,7 @@ describe("CoopPanel", () => {
   it("lists the private plots and who owns them", () => {
     renderCoop();
     tab("Đất tư");
-    expect(within(line("Thửa 1 · làng bán")).getByRole("button", { name: "Mua · 4.000 xu" })).toBeDisabled();
+    expect(within(line("Thửa 1 · làng bán")).getByRole("button", { name: "Mua · 800.000 xu" })).toBeDisabled();
     expect(within(line("Thửa 1 · làng bán")).getByText("Bạn đã có đất tư trong phòng này.")).toBeInTheDocument();
     expect(screen.getByText(/Thửa 3 · của An · rao bán 8\.000 xu · cho thuê 300 xu\/vụ/)).toBeInTheDocument();
   });
@@ -192,13 +192,13 @@ describe("CoopPanel", () => {
     fireEvent.change(screen.getByLabelText("Rao bán"), { target: { value: "12000" } });
     fireEvent.click(screen.getByRole("button", { name: "Rao bán" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "list", plot: 2, price: 12000 }, "Đã rao bán thửa 2 giá 12.000 xu.");
-    fireEvent.change(screen.getByLabelText("Cho thuê một vụ"), { target: { value: "6000" } });
+    fireEvent.change(screen.getByLabelText("Cho thuê một vụ"), { target: { value: "100001" } });
     expect(screen.getByRole("button", { name: "Cho thuê" })).toBeDisabled();
     expect(screen.getByText("Số không hợp lệ.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Bán lại cho làng · 2.000 xu" }));
-    expect(screen.getByText("⚠️ Làng chỉ trả 2.000 xu (một nửa giá) — bán lại thửa 2?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Bán lại cho làng · 400.000 xu" }));
+    expect(screen.getByText("⚠️ Làng chỉ trả 400.000 xu (một nửa giá) — bán lại thửa 2?")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
-    expect(onAct).toHaveBeenLastCalledWith({ kind: "sell_back", plot: 2 }, "Đã bán lại thửa 2 cho làng — nhận 2.000 xu.");
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "sell_back", plot: 2 }, "Đã bán lại thửa 2 cho làng — nhận 400.000 xu.");
     const offer = line("Lan trả 9.000 xu cho thửa 2 — còn 10 giờ");
     fireEvent.click(within(offer).getByRole("button", { name: "Từ chối" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "decline_offer", offer: "o2" }, "Đã từ chối đề nghị.");

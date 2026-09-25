@@ -22,9 +22,9 @@ create policy rice_varieties_select on public.rice_varieties for select to anon 
 grant select on public.rice_varieties to anon, authenticated;
 
 insert into public.rice_varieties (id, name, scale, base_kg, price_per_kg, blast_mult, sort_order) values
-  ('short', 'Lúa ngắn ngày', 0.9,  90, 12, 1.0, 10),
-  ('nep',   'Nếp',           1.0,  75, 18, 1.0, 20),
-  ('thom',  'Lúa thơm',      1.15, 60, 26, 1.3, 30)
+  ('short', 'Lúa ngắn ngày', 0.9,  90,  710, 1.0, 10),
+  ('nep',   'Nếp',           1.0,  75,  950, 1.0, 20),
+  ('thom',  'Lúa thơm',      1.15, 60, 1350, 1.3, 30)
 on conflict (id) do update set
   name = excluded.name, scale = excluded.scale, base_kg = excluded.base_kg, price_per_kg = excluded.price_per_kg,
   blast_mult = excluded.blast_mult, sort_order = excluded.sort_order;
@@ -38,17 +38,17 @@ alter table public.shop_items add constraint shop_items_kind_check
   check (kind in ('rod','bobber','bait','bait_box','bucket','seed','fertilizer','pesticide','critter_box'));
 
 insert into public.shop_items (id, kind, name, price, starter, sort_order, variety, fert, pest_target) values
-  ('seed_short',     'seed',       'Giống lúa ngắn ngày',  60, false, 10, 'short', null,        null),
-  ('seed_nep',       'seed',       'Giống nếp',            90, false, 20, 'nep',   null,        null),
-  ('seed_thom',      'seed',       'Giống lúa thơm',      150, false, 30, 'thom',  null,        null),
-  ('fert_manure',    'fertilizer', 'Phân chuồng hoai',     40, false, 10, null,    'manure',    null),
-  ('fert_phosphate', 'fertilizer', 'Phân lân',             50, false, 20, null,    'phosphate', null),
-  ('fert_urea',      'fertilizer', 'Phân urê',             60, false, 30, null,    'urea',      null),
-  ('fert_potash',    'fertilizer', 'Phân kali',            60, false, 40, null,    'potash',    null),
-  ('fert_npk',       'fertilizer', 'Phân NPK',             90, false, 50, null,    'npk',       null),
-  ('spray_insect',   'pesticide',  'Thuốc trừ sâu',        70, false, 10, null,    null,        'insect'),
-  ('spray_hopper',   'pesticide',  'Thuốc trừ rầy',        80, false, 20, null,    null,        'hopper'),
-  ('spray_fungus',   'pesticide',  'Thuốc trừ bệnh',       90, false, 30, null,    null,        'fungus')
+  ('seed_short',     'seed',       'Giống lúa ngắn ngày', 600, false, 10, 'short', null,        null),
+  ('seed_nep',       'seed',       'Giống nếp',           900, false, 20, 'nep',   null,        null),
+  ('seed_thom',      'seed',       'Giống lúa thơm',     1500, false, 30, 'thom',  null,        null),
+  ('fert_manure',    'fertilizer', 'Phân chuồng hoai',    400, false, 10, null,    'manure',    null),
+  ('fert_phosphate', 'fertilizer', 'Phân lân',            500, false, 20, null,    'phosphate', null),
+  ('fert_urea',      'fertilizer', 'Phân urê',            600, false, 30, null,    'urea',      null),
+  ('fert_potash',    'fertilizer', 'Phân kali',           600, false, 40, null,    'potash',    null),
+  ('fert_npk',       'fertilizer', 'Phân NPK',            900, false, 50, null,    'npk',       null),
+  ('spray_insect',   'pesticide',  'Thuốc trừ sâu',       700, false, 10, null,    null,        'insect'),
+  ('spray_hopper',   'pesticide',  'Thuốc trừ rầy',       800, false, 20, null,    null,        'hopper'),
+  ('spray_fungus',   'pesticide',  'Thuốc trừ bệnh',      900, false, 30, null,    null,        'fungus')
 on conflict (id) do update set
   kind = excluded.kind, name = excluded.name, price = excluded.price, starter = excluded.starter,
   sort_order = excluded.sort_order, variety = excluded.variety, fert = excluded.fert, pest_target = excluded.pest_target;
@@ -68,8 +68,8 @@ create table if not exists public.field_plots (
   kind text not null check (kind in ('private','village')),
   owner_id uuid references public.accounts(id) on delete set null,
   owned_at timestamptz,
-  sale_price integer check (sale_price between 1 and 1000000),
-  sublease_price integer check (sublease_price between 1 and 5000),
+  sale_price integer check (sale_price between 1 and 5000000),
+  sublease_price integer check (sublease_price between 1 and 100000),
   primary key (room_id, plot_no)
 );
 create table if not exists public.plot_leases (                  -- at most one active lease per plot
@@ -88,11 +88,18 @@ create table if not exists public.land_offers (
   room_id uuid not null,
   plot_no smallint not null,
   buyer_id uuid not null references public.accounts(id) on delete cascade,
-  price integer not null check (price between 1 and 1000000),
+  price integer not null check (price between 1 and 5000000),
   created_at timestamptz not null,
   unique (room_id, plot_no, buyer_id),
   foreign key (room_id, plot_no) references public.field_plots(room_id, plot_no) on delete cascade
 );
+-- The price caps (economy spec §3.1), re-created by name so that running this file again moves an existing database too.
+alter table public.field_plots drop constraint if exists field_plots_sale_price_check;
+alter table public.field_plots add constraint field_plots_sale_price_check check (sale_price between 1 and 5000000);
+alter table public.field_plots drop constraint if exists field_plots_sublease_price_check;
+alter table public.field_plots add constraint field_plots_sublease_price_check check (sublease_price between 1 and 100000);
+alter table public.land_offers drop constraint if exists land_offers_price_check;
+alter table public.land_offers add constraint land_offers_price_check check (price between 1 and 5000000);
 create table if not exists public.crops (                        -- one crop per plot, from "làm đất" or soaking to harvest
   room_id uuid not null,
   plot_no smallint not null,
@@ -598,7 +605,7 @@ begin
      where room_id = p_room and plot_no = f.plot_no;
     delete from public.land_offers where room_id = p_room and plot_no = f.plot_no;
     perform public._wallet_lock(f.owner_id);
-    perform public._pay(f.owner_id, 2000, 'land_refund', 'plot ' || f.plot_no);
+    perform public._pay(f.owner_id, 400000, 'land_refund', 'plot ' || f.plot_no);
   end loop;
   -- 4. a crop belongs to the plot's farmer: a crop left by an ended lease or a reclaim is lost
   delete from public.crops cr
@@ -783,7 +790,7 @@ begin
      and id not in (select id from public.chat_messages where room_id = p_room order by created_at desc limit 200);
 end; $$;
 
--- Rent a free village plot for one season: 250 xu to the village, 96 h (§7.2).
+-- Rent a free village plot for one season: 10 000 xu to the village, 96 h (§7.2).
 create or replace function public._farm_do_rent(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
 as $$
@@ -801,16 +808,16 @@ begin
   if public._farm_count(p_room, p_account, p_now) >= 2 then
     raise exception 'farm limit' using errcode = '22023';
   end if;
-  if w.coins < 250 then
+  if w.coins < 10000 then
     raise exception 'not enough coins' using errcode = '22023';
   end if;
-  perform public._pay(p_account, -250, 'rent', 'plot ' || p_plot);
+  perform public._pay(p_account, -10000, 'rent', 'plot ' || p_plot);
   insert into public.plot_leases (room_id, plot_no, farmer_id, source, price, starts_at, until)
-  values (p_room, p_plot, p_account, 'village', 250, p_now, p_now + interval '96 hours');
+  values (p_room, p_plot, p_account, 'village', 10000, p_now, p_now + interval '96 hours');
   return public._field_view(p_room, p_account, p_now);
 end; $$;
 
--- Buy an ownerless private plot from the village for 4 000 xu; one private plot per room (§7.3).
+-- Buy an ownerless private plot from the village for 800 000 xu; one private plot per room (§7.3).
 create or replace function public._farm_do_buy_plot(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
 returns jsonb
 language plpgsql security definer set search_path = public, extensions
@@ -832,17 +839,17 @@ begin
   if public._farm_count(p_room, p_account, p_now) >= 2 then
     raise exception 'farm limit' using errcode = '22023';
   end if;
-  if w.coins < 4000 then
+  if w.coins < 800000 then
     raise exception 'not enough coins' using errcode = '22023';
   end if;
-  perform public._pay(p_account, -4000, 'land_buy', 'plot ' || p_plot);
+  perform public._pay(p_account, -800000, 'land_buy', 'plot ' || p_plot);
   update public.field_plots set owner_id = p_account, owned_at = p_now, sale_price = null, sublease_price = null
    where room_id = p_room and plot_no = p_plot;
   delete from public.land_offers where room_id = p_room and plot_no = p_plot;
   return public._field_view(p_room, p_account, p_now);
 end; $$;
 
--- Sell your plot back to the village for 2 000 xu. A plot on lease goes to the village when the lease ends (§7.3).
+-- Sell your plot back to the village for 400 000 xu. A plot on lease goes to the village when the lease ends (§7.3).
 create or replace function public._farm_do_sell_to_village(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
 returns jsonb
 language plpgsql security definer set search_path = public, extensions
@@ -861,11 +868,11 @@ begin
   update public.field_plots set owner_id = null, owned_at = null, sale_price = null, sublease_price = null
    where room_id = p_room and plot_no = p_plot;
   delete from public.land_offers where room_id = p_room and plot_no = p_plot;
-  perform public._pay(p_account, 2000, 'land_sell', 'plot ' || p_plot || ' to the village');
+  perform public._pay(p_account, 400000, 'land_sell', 'plot ' || p_plot || ' to the village');
   return public._field_view(p_room, p_account, p_now);
 end; $$;
 
--- List your bare, unleased plot for sale at 1–1 000 000 xu; null withdraws the listing (§7.3).
+-- List your bare, unleased plot for sale at 1–5 000 000 xu; null withdraws the listing (§7.3).
 create or replace function public._farm_do_list(p_room uuid, p_account uuid, p_plot integer, p_price integer,
                                                 p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
@@ -879,7 +886,7 @@ begin
     raise exception 'not your plot' using errcode = '22023';
   end if;
   if p_price is not null then
-    if p_price < 1 or p_price > 1000000 then
+    if p_price < 1 or p_price > 5000000 then
       raise exception 'invalid price' using errcode = '22023';
     end if;
     if public._has_crop(p_room, p_plot) then
@@ -948,7 +955,7 @@ begin
   if f.owner_id = p_account then
     raise exception 'invalid plot' using errcode = '22023';
   end if;
-  if p_price is null or p_price < 1 or p_price > 1000000 then
+  if p_price is null or p_price < 1 or p_price > 5000000 then
     raise exception 'invalid price' using errcode = '22023';
   end if;
   if public._owns_land(p_room, p_account) then
@@ -1024,7 +1031,7 @@ begin
   return public._field_view(p_room, p_account, p_now);
 end; $$;
 
--- Offer your bare, unleased plot for one season at 1–5 000 xu; null withdraws it (§7.3).
+-- Offer your bare, unleased plot for one season at 1–100 000 xu; null withdraws it (§7.3).
 create or replace function public._farm_do_set_sublease(p_room uuid, p_account uuid, p_plot integer, p_price integer,
                                                         p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
@@ -1038,7 +1045,7 @@ begin
     raise exception 'not your plot' using errcode = '22023';
   end if;
   if p_price is not null then
-    if p_price < 1 or p_price > 5000 then
+    if p_price < 1 or p_price > 100000 then
       raise exception 'invalid price' using errcode = '22023';
     end if;
     if public._has_crop(p_room, p_plot) then

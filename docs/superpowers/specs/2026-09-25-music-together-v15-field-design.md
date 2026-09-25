@@ -165,24 +165,24 @@ Travel is unchanged from v14 §5.4 (fade, presence map, the cast is cancelled be
 
 ### 7.2 Village plots (rent)
 
-- **Rent:** `rent_plot(room, plot)` rents a village plot with no active lease for **250 xu**. The lease lasts **96 hours** (`lease_until = now + 96 h`) with `source = 'village'`, and the rent goes to the village (a sink).
+- **Rent:** `rent_plot(room, plot)` rents a village plot with no active lease for **10 000 xu**. The lease lasts **96 hours** (`lease_until = now + 96 h`) with `source = 'village'`, and the rent goes to the village (a sink).
 - **Harvest ends the lease early**, and the plot is free for the next renter.
 - **Lease expiry** is checked lazily (§7.7). An unharvested crop of the leaseholder is lost, and the HUD warns 12 h and 3 h before.
 
 ### 7.3 Private plots
 
-- **Buy from the village:** `buy_plot(room, plot)` buys an ownerless private plot for the **list price of 4 000 xu**. You may own at most **1 private plot per room**. Private land gives **+10 % yield** and costs no rent.
-- **Sell back to the village:** `sell_plot_to_village(room, plot)` pays the owner **2 000 xu**, 50 % of the list price, whatever the owner paid.
+- **Buy from the village:** `buy_plot(room, plot)` buys an ownerless private plot for the **list price of 800 000 xu**. You may own at most **1 private plot per room**. Private land gives **+10 % yield** and costs no rent.
+- **Sell back to the village:** `sell_plot_to_village(room, plot)` pays the owner **400 000 xu**, 50 % of the list price, whatever the owner paid.
   - It is refused while the owner is the farmer of a live crop on the plot: harvest or abandon first.
   - If the plot is on lease, the village pays now and takes the plot when the lease ends. The rent already paid stays with the old owner.
 - **Sublease:**
-  - `set_sublease(room, plot, price | null)` lets the owner offer the plot for one season at **1–5 000 xu**. It is only allowed while the plot has no crop and no active lease; `null` withdraws the offer.
+  - `set_sublease(room, plot, price | null)` lets the owner offer the plot for one season at **1–100 000 xu**. It is only allowed while the plot has no crop and no active lease; `null` withdraws the offer.
   - `rent_sublease(room, plot, expected_price)`:
     - the renter pays the owner (`lease_pay` / `lease_income`);
     - the lease runs 96 h with `source = 'owner'`;
     - the sublease price is cleared, and the owner re-offers after the season.
   - `expected_price` must equal the current price, so a price change between showing and clicking cannot catch the renter out.
-- **Sale listing:** `list_plot(room, plot, price | null)` lets the owner list the plot at **1–1 000 000 xu**, visible to every member. It is only allowed while the plot has no crop and no lease.
+- **Sale listing:** `list_plot(room, plot, price | null)` lets the owner list the plot at **1–5 000 000 xu**, visible to every member. It is only allowed while the plot has no crop and no lease.
 - **Farming withdraws the offers.** When the owner prepares their own plot, any sale listing and sublease price on it are withdrawn. Pending purchase offers stay, but `accept_offer` is refused while a crop exists.
 - **Buy a listed plot:** `buy_listed_plot(room, plot, expected_price)`. The buyer must:
   - not be the owner;
@@ -192,7 +192,7 @@ Travel is unchanged from v14 §5.4 (fade, presence map, the cast is cancelled be
 
   The plot must have no crop and no lease.
 - **Offers:**
-  - `offer_plot(room, plot, price)`: any member except the owner may offer **1–1 000 000 xu**. There is one offer per buyer per plot (a new offer replaces the old one), and it expires after **24 h**.
+  - `offer_plot(room, plot, price)`: any member except the owner may offer **1–5 000 000 xu**. There is one offer per buyer per plot (a new offer replaces the old one), and it expires after **24 h**.
   - `withdraw_offer` belongs to the buyer; `decline_offer` belongs to the owner.
   - `accept_offer(room, offer)` is the owner's, and it checks the buyer's funds and plot limit *at acceptance*. Offers do not reserve xu.
 - **A completed sale runs in one transaction**, with the plot row locked `for update` so concurrent buyers cannot both succeed:
@@ -222,7 +222,7 @@ A private plot is reclaimed when its owner O **is no longer a member of the room
   2. the sale listing and sublease price are cleared;
   3. all offers on the plot are deleted;
   4. the owner is cleared;
-  5. O is paid **2 000 xu** (`land_refund`).
+  5. O is paid **400 000 xu** (`land_refund`).
 
 ### 7.7 The sweep
 
@@ -251,9 +251,9 @@ The classic chat renders it as a system line, like the v14 catch line. The annou
 
 | id | Name | Scale `s` | Ripe after ≈ | Base yield | xu/kg (dry) | Blast factor |
 |---|---|---|---|---|---|---|
-| `short` | Lúa ngắn ngày | 0.9 | 54 h | 90 kg | 12 | 1.0 |
-| `nep` | Nếp | 1.0 | 60 h | 75 kg | 18 | 1.0 |
-| `thom` | Lúa thơm | 1.15 | 69 h | 60 kg | 26 | 1.3 |
+| `short` | Lúa ngắn ngày | 0.9 | 52 h | 90 kg | 710 | 1.0 |
+| `nep` | Nếp | 1.0 | 58 h | 75 kg | 950 | 1.0 |
+| `thom` | Lúa thơm | 1.15 | 66 h | 60 kg | 1 350 | 1.3 |
 
 "Ripe after" counts from soaking with prompt actions: 2 h + 56 h × `s`.
 
@@ -426,17 +426,17 @@ The plot panel links to the relevant tab.
 
 | id | kind | Name | Price |
 |---|---|---|---|
-| `seed_short` | seed | Giống lúa ngắn ngày | 60 |
-| `seed_nep` | seed | Giống nếp | 90 |
-| `seed_thom` | seed | Giống lúa thơm | 150 |
-| `fert_manure` | fertilizer | Phân chuồng hoai | 40 |
-| `fert_phosphate` | fertilizer | Phân lân | 50 |
-| `fert_urea` | fertilizer | Phân urê | 60 |
-| `fert_potash` | fertilizer | Phân kali | 60 |
-| `fert_npk` | fertilizer | Phân NPK | 90 |
-| `spray_insect` | pesticide | Thuốc trừ sâu | 70 |
-| `spray_hopper` | pesticide | Thuốc trừ rầy | 80 |
-| `spray_fungus` | pesticide | Thuốc trừ bệnh | 90 |
+| `seed_short` | seed | Giống lúa ngắn ngày | 600 |
+| `seed_nep` | seed | Giống nếp | 900 |
+| `seed_thom` | seed | Giống lúa thơm | 1 500 |
+| `fert_manure` | fertilizer | Phân chuồng hoai | 400 |
+| `fert_phosphate` | fertilizer | Phân lân | 500 |
+| `fert_urea` | fertilizer | Phân urê | 600 |
+| `fert_potash` | fertilizer | Phân kali | 600 |
+| `fert_npk` | fertilizer | Phân NPK | 900 |
+| `spray_insect` | pesticide | Thuốc trừ sâu | 700 |
+| `spray_hopper` | pesticide | Thuốc trừ rầy | 800 |
+| `spray_fungus` | pesticide | Thuốc trừ bệnh | 900 |
 | `box_bucket` (v15.2) | critter_box | Xô nhựa | 150, capacity 15 |
 | `box_basket` (v15.2) | critter_box | Giỏ tre | 600, capacity 30 |
 
@@ -449,20 +449,7 @@ The plot panel links to the relevant tab.
 
 Reference point: in v14 a skilled angler earns about 1 000–1 800 xu per active hour.
 
-**Nếp on a rented plot, full care, 1–2 pests:**
-- Revenue: 75 kg × 18 = **1 350 xu**.
-- Costs: rent 250 + seed 90 + fertilizer 210 (manure, phosphate, urea, potash) + sprays 70–150 = **620–700 xu**.
-- Profit: about **650–730 xu per plot per season**, for about 25 minutes of actions spread over three days.
-- Two plots give about 1 400 xu per 3 days, on top of fishing.
-
-**The other varieties:**
-- *Short* earns less but frees the plot sooner.
-- *Thơm* earns the most (≈ 1 560 xu revenue) but blast hits it more often.
-
-**Private plot:**
-- Break-even from rent savings plus the +10 % (≈ 385 xu per season) takes about 10 seasons.
-- Subleasing adds income, and selling to a player may return more than the purchase price.
-- Owning land is a long-term goal by design.
+The farm numbers changed on 2026-09-25 (rent 10 000, plot 800 000, inputs ×10, rice 710 / 950 / 1 350 xu/kg). The per-variety profits, the poor-care and lost-crop cases and the time to buy land are in `2026-09-25-music-together-economy-design.md` §4.
 
 **Crabs and snails (v15.2):**
 
@@ -564,7 +551,7 @@ All are SECURITY DEFINER with `grant execute … to anon, authenticated`. Every 
 2. `transplant(…, q)` and `harvest(…, q)` require `work = w` and `now() − work_started_at ≥ 2 s`.
 3. They use `q` = 1.0 whatever the client sends (v15.1, D1) and clear `work`.
 
-This is the v14 trust model: a modified client gains at most +10 %, and never faster than the gate.
+v15.1 ignores the reported quality (D1), so a modified client gains nothing from it and can never work faster than the gate.
 
 ### 11.5 `field_state` JSON
 
@@ -685,8 +672,8 @@ A plot's prompt names its next action ("E · Gieo mạ thửa 3", "E · Xem th�
 All panels are parchment modals, and game input is off while one is open (v14).
 
 - **CoopPanel (chú Tám)**, with four tabs:
-  - **Đất làng**: free plots, rent 250 xu.
-  - **Đất tư**: plots for sale by the village, 4 000 xu.
+  - **Đất làng**: free plots, rent 10 000 xu.
+  - **Đất tư**: plots for sale by the village, 800 000 xu.
   - **Chợ đất**: player listings, subleases, and the "Đề nghị mua" form.
   - **Của tôi**: my plot, my offers, incoming offers with Đồng ý / Từ chối, sell back.
 - **FarmShopPanel (anh Hai):** seeds, fertilizers, pesticides with quantity steppers; containers in v15.2. Each row shows its use in one line ("Bón thúc đẻ nhánh").

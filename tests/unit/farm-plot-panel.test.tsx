@@ -101,13 +101,13 @@ describe("PlotPanel", () => {
   it("offers a free plot's land and my own plot's land actions", () => {
     const { onAct } = renderPlot(7);
     expect(screen.getByText("Ruộng còn gốc rạ — chưa làm đất.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Thuê · 250 xu" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Thuê · 10.000 xu" })).toBeDisabled();
     expect(screen.getByText("Bạn đang canh tác 2 thửa rồi.")).toBeInTheDocument();
     cleanup();
     renderPlot(2);
     expect(screen.getByRole("button", { name: "Làm đất" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Rao bán" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Bán lại cho làng · 2.000 xu" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Bán lại cho làng · 400.000 xu" })).toBeEnabled();
     expect(onAct).not.toHaveBeenCalled();
   });
 

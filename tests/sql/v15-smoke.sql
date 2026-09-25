@@ -156,22 +156,22 @@ begin
     'members only';
 
   -- rent a village plot (§7.2)
-  perform pg_temp.set_coins(a1, 20000);
-  perform pg_temp.set_coins(a2, 1000);
-  perform pg_temp.set_coins(a3, 20000);
+  perform pg_temp.set_coins(a1, 2000000);
+  perform pg_temp.set_coins(a2, 50000);
+  perform pg_temp.set_coins(a3, 2000000);
   s := public._farm_do_rent(room, a2, 5, t);
-  assert pg_temp.coins(a2) = 750, 'rent is 250';
+  assert pg_temp.coins(a2) = 40000, 'rent is 10 000';
   assert pg_temp.plot(s, 5)->'lease'->>'source' = 'village' and pg_temp.plot(s, 5)->'farmer'->>'id' = a2::text
      and (pg_temp.plot(s, 5)->'lease'->>'until')::timestamptz = t + interval '96 hours', 'a village lease for 96 h';
   assert s->'mine'->'farming' = '[5]', 'farming plot 5';
-  assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'rent' and delta = -250), 'rent ledger';
+  assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'rent' and delta = -10000), 'rent ledger';
   assert pg_temp.err(format('select public._farm_do_rent(%L, %L, 5, %L)', room, a3, t)) = 'plot taken', 'taken';
   assert pg_temp.err(format('select public._farm_do_rent(%L, %L, 1, %L)', room, a3, t)) = 'invalid plot', 'private plots are not rented';
   perform public._farm_do_rent(room, a2, 6, t);
   assert pg_temp.err(format('select public._farm_do_rent(%L, %L, 7, %L)', room, a2, t)) = 'farm limit', 'two plots at most';
   perform pg_temp.set_coins(a3, 100);
   assert pg_temp.err(format('select public._farm_do_rent(%L, %L, 7, %L)', room, a3, t)) = 'not enough coins', 'coins';
-  perform pg_temp.set_coins(a3, 20000);
+  perform pg_temp.set_coins(a3, 2000000);
   -- the lease ends after 96 h and takes the leaseholder's crop with it
   insert into public.crops (room_id, plot_no, farmer_id, prepared_at) values (room, 5, a2, t);
   perform public._field_open(room, t + interval '96 hours');
@@ -186,16 +186,16 @@ declare a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (selec
 begin
   -- buy from the village (§7.3)
   s := public._farm_do_buy_plot(room, a1, 1, t);
-  assert pg_temp.coins(a1) = 16000 and pg_temp.plot(s, 1)->'owner'->>'id' = a1::text
+  assert pg_temp.coins(a1) = 1200000 and pg_temp.plot(s, 1)->'owner'->>'id' = a1::text
      and s->'mine'->'owned_plot' = '1', 'bought plot 1';
   assert s->'mine'->'farming' = '[1]', 'an unleased own plot is farmed';
-  assert exists (select 1 from public.coin_ledger where account_id = a1 and reason = 'land_buy' and delta = -4000), 'ledger';
+  assert exists (select 1 from public.coin_ledger where account_id = a1 and reason = 'land_buy' and delta = -800000), 'ledger';
   assert pg_temp.err(format('select public._farm_do_buy_plot(%L, %L, 2, %L)', room, a1, t)) = 'already own land', 'one per room';
   assert pg_temp.err(format('select public._farm_do_buy_plot(%L, %L, 1, %L)', room, a3, t)) = 'not for sale', 'owned';
   assert pg_temp.err(format('select public._farm_do_buy_plot(%L, %L, 5, %L)', room, a3, t)) = 'not for sale', 'village land';
   perform public._farm_do_rent(room, a2, 5, t);
   perform public._farm_do_rent(room, a2, 6, t);
-  perform pg_temp.set_coins(a2, 10000);
+  perform pg_temp.set_coins(a2, 1000000);
   assert pg_temp.err(format('select public._farm_do_buy_plot(%L, %L, 2, %L)', room, a2, t)) = 'farm limit', 'land counts too';
 
   -- the owner's own crop blocks selling, listing and subleasing
@@ -208,13 +208,18 @@ begin
   -- list, and buy a listed plot at exactly its price
   assert pg_temp.err(format('select public._farm_do_list(%L, %L, 1, 9000, %L)', room, a2, t)) = 'not your plot', 'owner lists';
   assert pg_temp.err(format('select public._farm_do_list(%L, %L, 1, 0, %L)', room, a1, t)) = 'invalid price', 'price range';
+  assert pg_temp.err(format('select public._farm_do_list(%L, %L, 1, 5000001, %L)', room, a1, t)) = 'invalid price', 'up to 5 000 000';
+  assert pg_temp.err(format('update public.field_plots set sale_price = 5000001 where room_id = %L and plot_no = 1', room))
+    = 'new row for relation "field_plots" violates check constraint "field_plots_sale_price_check"', 'the sale price check';
+  s := public._farm_do_list(room, a1, 1, 5000000, t);
+  assert pg_temp.plot(s, 1)->'sale_price' = '5000000', 'listed at 5 000 000';
   s := public._farm_do_list(room, a1, 1, 9000, t);
   assert pg_temp.plot(s, 1)->'sale_price' = '9000', 'listed';
   assert pg_temp.err(format('select public._farm_do_buy_listed(%L, %L, 1, 8000, %L)', room, a3, t)) = 'price changed', 'exact price';
   assert pg_temp.err(format('select public._farm_do_buy_listed(%L, %L, 1, 9000, %L)', room, a1, t)) = 'invalid plot', 'not your own';
   s := public._farm_do_buy_listed(room, a3, 1, 9000, t);
   assert pg_temp.plot(s, 1)->'owner'->>'id' = a3::text and pg_temp.plot(s, 1)->'sale_price' = 'null', 'sold to a3';
-  assert pg_temp.coins(a3) = 11000 and pg_temp.coins(a1) = 25000, 'paid 9 000';
+  assert pg_temp.coins(a3) = 1991000 and pg_temp.coins(a1) = 1209000, 'paid 9 000';
   assert exists (select 1 from public.chat_messages where room_id = room and account_id is null and username = 'Hợp tác xã'
                    and body like '[land:1] 🏡 % đã mua thửa 1 của % với giá 9.000 xu.'), 'announced in chat';
   assert pg_temp.err(format('select public._farm_do_buy_listed(%L, %L, 1, 9000, %L)', room, a2, t)) = 'not for sale', 'sold once';
@@ -238,7 +243,7 @@ begin
   assert o2 <> o and (select count(*) from public.land_offers where room_id = room) = 1, 'the new offer replaced the old one';
   assert pg_temp.err(format('select public._farm_do_accept_offer(%L, %L, %L, %L)', room, a3, o, t)) = 'offer expired', 'old id';
   s := public._farm_do_accept_offer(room, a3, o2, t);
-  assert pg_temp.plot(s, 1)->'owner'->>'id' = a1::text and pg_temp.coins(a1) = 19500 and pg_temp.coins(a3) = 16500, 'sold for 5 500';
+  assert pg_temp.plot(s, 1)->'owner'->>'id' = a1::text and pg_temp.coins(a1) = 1203500 and pg_temp.coins(a3) = 1996500, 'sold for 5 500';
   assert not exists (select 1 from public.land_offers where room_id = room), 'offers cleared';
   -- withdraw, refusals, expiry
   perform public._farm_do_offer(room, a3, 1, 7000, t);
@@ -248,21 +253,29 @@ begin
   assert pg_temp.err(format('select public._farm_do_offer(%L, %L, 2, 100, %L)', room, a3, t)) = 'not for sale', 'no owner';
   assert pg_temp.err(format('select public._farm_do_offer(%L, %L, 1, 100, %L)', room, a1, t)) = 'invalid plot', 'your own';
   assert pg_temp.err(format('select public._farm_do_offer(%L, %L, 1, 0, %L)', room, a3, t)) = 'invalid price', 'price range';
+  assert pg_temp.err(format('select public._farm_do_offer(%L, %L, 1, 5000001, %L)', room, a3, t)) = 'invalid price', 'up to 5 000 000';
+  assert pg_temp.err(format('insert into public.land_offers (room_id, plot_no, buyer_id, price, created_at) values (%L, 1, %L, 5000001, %L)',
+                            room, a3, t))
+    = 'new row for relation "land_offers" violates check constraint "land_offers_price_check"', 'the offer price check';
   perform public._farm_do_offer(room, a3, 1, 4000, t);
   perform public._field_open(room, t + interval '24 hours');
   assert not exists (select 1 from public.land_offers where room_id = room), 'offers expire after 24 h';
 
   -- sublease: the renter pays the owner; the owner's land offers are frozen while it is leased
   t := t + interval '25 hours';
+  s := public._farm_do_set_sublease(room, a1, 1, 100000, t);
+  assert pg_temp.plot(s, 1)->'sublease_price' = '100000', 'offered at 100 000';
   s := public._farm_do_set_sublease(room, a1, 1, 300, t);
   assert pg_temp.plot(s, 1)->'sublease_price' = '300', 'sublease offered';
-  assert pg_temp.err(format('select public._farm_do_set_sublease(%L, %L, 1, 6000, %L)', room, a1, t)) = 'invalid price', 'range';
+  assert pg_temp.err(format('select public._farm_do_set_sublease(%L, %L, 1, 100001, %L)', room, a1, t)) = 'invalid price', 'range';
+  assert pg_temp.err(format('update public.field_plots set sublease_price = 100001 where room_id = %L and plot_no = 1', room))
+    = 'new row for relation "field_plots" violates check constraint "field_plots_sublease_price_check"', 'the sublease price check';
   assert pg_temp.err(format('select public._farm_do_rent_sublease(%L, %L, 1, 250, %L)', room, a3, t)) = 'price changed', 'exact';
   assert pg_temp.err(format('select public._farm_do_rent_sublease(%L, %L, 1, 300, %L)', room, a1, t)) = 'invalid plot', 'own';
   s := public._farm_do_rent_sublease(room, a3, 1, 300, t);
   assert pg_temp.plot(s, 1)->'lease'->>'source' = 'owner' and pg_temp.plot(s, 1)->'farmer'->>'id' = a3::text
      and pg_temp.plot(s, 1)->'sublease_price' = 'null', 'a3 farms plot 1';
-  assert pg_temp.coins(a1) = 19800 and pg_temp.coins(a3) = 16200, 'paid the owner';
+  assert pg_temp.coins(a1) = 1203800 and pg_temp.coins(a3) = 1996200, 'paid the owner';
   assert exists (select 1 from public.coin_ledger where account_id = a1 and reason = 'lease_income' and delta = 300)
      and exists (select 1 from public.coin_ledger where account_id = a3 and reason = 'lease_pay' and delta = -300), 'ledger';
   assert pg_temp.err(format('select public._farm_do_set_sublease(%L, %L, 1, 300, %L)', room, a1, t)) = 'leased', 'leased';
@@ -271,7 +284,7 @@ begin
   insert into public.crops (room_id, plot_no, farmer_id, prepared_at) values (room, 1, a3, t);
   s := public._farm_do_sell_to_village(room, a1, 1, t);
   assert pg_temp.plot(s, 1)->'owner' = 'null' and pg_temp.plot(s, 1)->'farmer'->>'id' = a3::text, 'the lease goes on';
-  assert pg_temp.coins(a1) = 21800, 'paid 2 000';
+  assert pg_temp.coins(a1) = 1603800, 'paid 400 000';
   assert pg_temp.err(format('select public._farm_do_buy_plot(%L, %L, 1, %L)', room, a2, t)) = 'leased', 'not until the lease ends';
   perform public._field_open(room, t + interval '96 hours');
   assert not exists (select 1 from public.plot_leases where room_id = room and plot_no = 1)
@@ -283,7 +296,7 @@ declare a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (selec
         a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room')::uuid;
         t timestamptz := (select v from smoke where k = 'now')::timestamptz + interval '250 hours';
 begin
-  -- reclaim after 14 days away: the owner is refunded 2 000 (§7.6)
+  -- reclaim after 14 days away: the owner is refunded 400 000 (§7.6)
   perform public._farm_do_buy_plot(room, a3, 2, t);
   insert into public.crops (room_id, plot_no, farmer_id, prepared_at) values (room, 2, a3, t);
   update public.members set joined_at = t - interval '20 days', last_seen_at = t - interval '15 days'
@@ -291,14 +304,14 @@ begin
   perform public._field_open(room, t);
   assert (select owner_id from public.field_plots where room_id = room and plot_no = 2) is null
      and not exists (select 1 from public.crops where room_id = room and plot_no = 2), 'reclaimed with its crop';
-  assert pg_temp.coins(a3) = 14200 and exists (select 1 from public.coin_ledger where account_id = a3 and reason = 'land_refund'),
+  assert pg_temp.coins(a3) = 1596200 and exists (select 1 from public.coin_ledger where account_id = a3 and reason = 'land_refund'),
     'refunded';
   update public.members set last_seen_at = t where room_id = room and account_id = a3;
   -- reclaim when the owner leaves the room
   perform public._farm_do_buy_plot(room, a2, 3, t);
   delete from public.members where room_id = room and account_id = a2;
   perform public._field_open(room, t);
-  assert (select owner_id from public.field_plots where room_id = room and plot_no = 3) is null and pg_temp.coins(a2) = 8000,
+  assert (select owner_id from public.field_plots where room_id = room and plot_no = 3) is null and pg_temp.coins(a2) = 600000,
     'reclaimed from a leaver';
   -- a plot leased out is reclaimed only when the lease ends
   perform public._farm_do_buy_plot(room, a3, 4, t);
@@ -309,7 +322,7 @@ begin
   assert (select owner_id from public.field_plots where room_id = room and plot_no = 4) = a3, 'waits for the lease';
   perform public._field_open(room, t + interval '97 hours');
   assert (select owner_id from public.field_plots where room_id = room and plot_no = 4) is null
-     and pg_temp.coins(a3) = 10200 + 100 + 2000, 'reclaimed after the lease';
+     and pg_temp.coins(a3) = 796200 + 100 + 400000, 'reclaimed after the lease';
   update public.members set last_seen_at = null where room_id = room and account_id = a3;
   -- abandon: the farmer clears the crop, the lease goes on
   t := t + interval '98 hours';
@@ -342,14 +355,14 @@ begin
   -- the farm shop at anh Hai
   perform pg_temp.set_coins(a2, 5000);
   r := public.buy_farm_item(t2, 'fert_manure', 2);
-  assert r->'mine'->'coins' = '4920' and r->'mine'->'items'->'fert_manure' = '2', 'bought 2 manure';
-  assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'farm_buy' and delta = -80), 'ledger';
+  assert r->'mine'->'coins' = '4200' and r->'mine'->'items'->'fert_manure' = '2', 'bought 2 manure';
+  assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'farm_buy' and delta = -800), 'ledger';
   assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 98)', t2, 'fert_manure')) = 'invalid quantity', '99 at most held';
   assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 0)', t2, 'fert_manure')) = 'invalid quantity', 'qty 1-99';
   assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t2, 'rod_bamboo')) = 'item not available', 'no fishing gear';
   perform pg_temp.set_coins(a2, 10);
   assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t2, 'seed_thom')) = 'not enough coins', 'coins';
-  perform pg_temp.set_coins(a2, 5000);
+  perform pg_temp.set_coins(a2, 50000);
   perform public.buy_farm_item(t2, 'fert_phosphate', 1);
   perform public.buy_farm_item(t2, 'fert_potash', 1);
   perform public.buy_farm_item(t2, 'spray_insect', 1);
@@ -479,13 +492,13 @@ begin
   assert not exists (select 1 from public.drying_slots where room_id = room)
      and (select dry_kg from public.rice_stock where account_id = a2 and variety = 'short') = 14, 'collected automatically';
 
-  -- selling at cô Út: dry at 12 xu/kg, wet at 70 %
+  -- selling at cô Út: dry at 710 xu/kg, wet at 70 %
   v_coins := pg_temp.coins(a2);
   r := public.sell_rice(t2, 'short', true, 10);
-  assert r->'mine'->'coins' = to_jsonb(v_coins + 120) and r->'mine'->'rice'->'short'->'dry' = '4', 'dry: 10 × 12';
+  assert r->'mine'->'coins' = to_jsonb(v_coins + 7100) and r->'mine'->'rice'->'short'->'dry' = '4', 'dry: 10 × 710';
   r := public.sell_rice(t2, 'short', false, 5);
-  assert r->'mine'->'coins' = to_jsonb(v_coins + 120 + 42), 'wet: floor(5 × 12 × 0.7)';
-  assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'rice_sell' and delta = 42), 'ledger';
+  assert r->'mine'->'coins' = to_jsonb(v_coins + 7100 + 2485), 'wet: floor(5 × 710 × 0.7)';
+  assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'rice_sell' and delta = 2485), 'ledger';
   assert pg_temp.err(format('select public.sell_rice(%L, %L, true, 999)', t2, 'short')) = 'not enough rice', 'stock';
   assert pg_temp.err(format('select public.sell_rice(%L, %L, true, 1)', t2, 'bogus')) = 'invalid variety', 'variety';
   assert pg_temp.err(format('select public.sell_rice(%L, %L, null, 1)', t2, 'short')) = 'invalid quantity', 'dry or wet';
@@ -498,7 +511,7 @@ declare a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (sel
 begin
   insert into public.inventory (account_id, item_id, qty) values (a3, 'seed_nep', 2)
   on conflict (account_id, item_id) do update set qty = 2;
-  perform pg_temp.set_coins(a3, 1000);
+  perform pg_temp.set_coins(a3, 50000);
   -- sprouted seed rots 24 h after sprouting: back to a prepared plot
   perform public._farm_do_rent(room, a3, 9, t);
   perform public._farm_do_prepare(room, a3, 9, t);

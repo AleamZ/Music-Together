@@ -51,13 +51,13 @@ export function farmItemFromRow(r: FarmItemRow): FarmItem {
   };
 }
 
-// The land rules' numbers — the server's constants in 0013 (spec §7).
-export const RENT_PRICE = 250;
-export const PLOT_PRICE = 4000;
-export const SELL_BACK_PRICE = 2000;
+// The land rules' numbers — the server's constants in 0013 (spec §7; the prices are economy spec §3.1).
+export const RENT_PRICE = 10_000;
+export const PLOT_PRICE = 800_000;
+export const SELL_BACK_PRICE = 400_000;
 export const LEASE_HOURS = 96;
-export const SUBLEASE_MAX = 5000;
-export const SALE_MAX = 1_000_000;
+export const SUBLEASE_MAX = 100_000;
+export const SALE_MAX = 5_000_000;
 export const FARM_LIMIT = 2;
 export const OFFER_HOURS = 24;
 export const DRY_HOURS = 3;

@@ -17,7 +17,7 @@ const STATE = parseFieldState({
   server_now: new Date(NOW).toISOString(),
   plots: [{ no: 5, kind: "village", owner: null, sale_price: null, sublease_price: null, farmer: null, lease: null, offers: 0, crop: null }],
   drying: [],
-  mine: { items: {}, rice: {}, coins: 500, gift_claimed: true, owned_plot: null, farming: [], my_offers: [], incoming_offers: [] },
+  mine: { items: {}, rice: {}, coins: 10_000, gift_claimed: true, owned_plot: null, farming: [], my_offers: [], incoming_offers: [] },
 })!;
 
 const controller = (over: Partial<FarmController> = {}): FarmController => ({
@@ -72,7 +72,7 @@ describe("FarmOverlays", () => {
   it("opens the panel the controller names and wires its actions", () => {
     const coop = controller({ panel: { kind: "coop" } });
     const { rerender } = render(<FarmOverlays farm={coop} me="me" onField />);
-    fireEvent.click(within(screen.getByRole("dialog", { name: "🏛️ Hợp tác xã · chú Tám" })).getByRole("button", { name: "Thuê · 250 xu" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "🏛️ Hợp tác xã · chú Tám" })).getByRole("button", { name: "Thuê · 10.000 xu" }));
     expect(coop.act).toHaveBeenCalledWith({ kind: "rent", plot: 5 }, "Đã thuê thửa 5 trong 4 ngày.");
 
     const plot = controller({ panel: { kind: "plot", plot: 5 } });
