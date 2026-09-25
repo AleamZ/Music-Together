@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import {
   FISHING_KINDS, isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow,
 } from "./catalog";
+import { parseFishPrices, type FishPrices } from "./prices";
 import { parseFishingState, type FishingState, type Loadout } from "./state";
 
 // Supabase calls for the fishing RPCs (spec §8.3). Every answer carries the account's full state.
@@ -121,6 +122,8 @@ export interface FishingBoard {
   richest: Array<{ username: string; coins: number }>;
   myRank: number;
   myCoins: number;
+  /** The room's fish price index (economy spec §5); null from a server without it. */
+  prices: FishPrices | null;
 }
 
 export async function fetchFishingBoard(roomId: string, token: string): Promise<FishingBoard> {
@@ -132,6 +135,7 @@ export async function fetchFishingBoard(roomId: string, token: string): Promise<
     richest: list(r.richest).map((x) => ({ username: String(x.username), coins: Number(x.coins) })),
     myRank: Number(r.my_rank ?? 1),
     myCoins: Number(r.my_coins ?? 0),
+    prices: parseFishPrices(r.prices),
   };
 }
 

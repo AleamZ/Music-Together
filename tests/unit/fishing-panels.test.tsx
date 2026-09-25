@@ -102,6 +102,7 @@ describe("RecordsPanel", () => {
   const BOARD: FishingBoard = {
     records: [{ speciesId: "ca_loc", username: "Dat", weightG: 2400 }], mine: [{ speciesId: "ca_ro", weightG: 210 }],
     richest: [{ username: "Dat", coins: 900 }, { username: "An", coins: 120 }], myRank: 2, myCoins: 120,
+    prices: { mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12, ca_loc: 0.93 } },
   };
   it("shows the room records next to mine, and the richest members", async () => {
     render(<RecordsPanel catalog={CATALOG} load={async () => BOARD} onClose={() => {}} />);
@@ -117,5 +118,21 @@ describe("RecordsPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Thử lại" }));
     expect(await screen.findByText("Dat · 2,4 kg")).toBeInTheDocument();
     expect(load).toHaveBeenCalledTimes(2);
+  });
+  it("shows the room's fish prices: the multiplier, when they change, and each species now", async () => {
+    render(<RecordsPanel catalog={CATALOG} load={async () => BOARD} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
+    expect(await screen.findByText("Hệ số phòng ×2,24 · tài sản trung bình 100.000 xu · giá đổi lúc 15:00")).toBeInTheDocument();
+    const [, ro, loc] = screen.getAllByRole("row");
+    expect(within(ro).getByText("45 xu/kg")).toBeInTheDocument();
+    expect(within(ro).getByText("113 xu/kg ▲")).toBeInTheDocument();
+    expect(within(loc).getByText("60 xu/kg")).toBeInTheDocument();
+    expect(within(loc).getByText("125 xu/kg ▼")).toBeInTheDocument();
+    expect(screen.getByText("Giá chốt lúc câu được cá; bán sau vẫn giữ giá đó.")).toBeInTheDocument();
+  });
+  it("says so when the server sends no fish prices", async () => {
+    render(<RecordsPanel catalog={CATALOG} load={async () => ({ ...BOARD, prices: null })} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
+    expect(await screen.findByText("Chưa có bảng giá.")).toBeInTheDocument();
   });
 });

@@ -564,3 +564,65 @@ begin
 end $$;
 
 select 'v15 farm smoke ok' as result;
+
+-- ---------- the fish price index (economy spec §5) ----------
+insert into smoke select 'froom', room_id::text from public.create_room('Ao giá', 'pw', (select v from smoke where k = 't2'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'froom')::uuid), 'pw',
+                        (select v from smoke where k = 't1'));
+
+do $$
+declare room uuid := (select v from smoke where k = 'froom')::uuid;
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        p1 bigint; p2 bigint; w bigint; r public.fish_price_index; cid uuid; res jsonb; b jsonb;
+begin
+  -- the law (§5.3) and the 3-hour Vietnam periods (§5.4)
+  assert public._fish_mult(0) = 1 and public._fish_mult(20000) = 1 and public._fish_mult(100000) = 2.24
+     and public._fish_mult(500000) = 5 and public._fish_mult(1000000) = 7.07 and public._fish_mult(2000000) = 10
+     and public._fish_mult(90000000) = 10, 'the multiplier law';
+  assert public._fish_period('2026-01-01 03:00:00+07') = public._fish_period('2026-01-01 00:00:00+07') + 1
+     and public._fish_period('2026-01-01 02:59:59+07') = public._fish_period('2026-01-01 00:00:00+07'), '3-hour periods, VN time';
+  -- the wealth (§5.2): the average of xu + 800 000 per private plot owned, over the members seen in the last 14 days
+  insert into public.wallets (account_id, coins) values (a1, 150000), (a2, 50000)
+  on conflict (account_id) do update set coins = excluded.coins;
+  p1 := (select count(*) from public.field_plots where owner_id = a1);
+  p2 := (select count(*) from public.field_plots where owner_id = a2);
+  w := ((150000 + 800000 * p1) + (50000 + 800000 * p2)) / 2;
+  assert public._room_wealth(room, now()) = w, 'the average assets of the active members';
+  update public.members set last_seen_at = now() - interval '15 days', joined_at = now() - interval '20 days'
+   where room_id = room and account_id = a1;
+  assert public._room_wealth(room, now()) = 50000 + 800000 * p2, 'a member away 14 days does not count';
+  update public.members set last_seen_at = now() where room_id = room and account_id = a1;
+  -- the snapshot (§5.5)
+  r := public._fish_index(room, now());
+  assert r.period = public._fish_period(now()) and r.wealth = w and r.mult = public._fish_mult(w), 'the snapshot';
+  -- the season factors (§5.6): deterministic, in [0.80, 1.39]
+  assert (select min(public._fish_factor(room, s.id, g)) >= 0.80 and max(public._fish_factor(room, s.id, g)) <= 1.39
+            from public.fish_species s, generate_series(0, 200) g), 'factors in range';
+  assert public._fish_factor(room, 'ca_ro', 7) = public._fish_factor(room, 'ca_ro', 7), 'factors are deterministic';
+  -- a catch (§5.7): base × kg × M × S of the room's snapshot, stored with the fish
+  delete from public.fish where account_id = a1;
+  insert into public.casts (account_id, room_id, species_id, weight_g, min_reel_ms, bite_at, expires_at)
+  values (a1, room, 'ca_ro', 200, 2000, now() - interval '10 seconds', now() + interval '60 seconds')
+  on conflict (account_id) do update set id = gen_random_uuid(), room_id = excluded.room_id, species_id = excluded.species_id,
+    weight_g = excluded.weight_g, min_reel_ms = excluded.min_reel_ms, bite_at = excluded.bite_at, expires_at = excluded.expires_at
+  returning id into cid;
+  res := public.finish_cast((select v from smoke where k = 't1'), cid, true);
+  assert res->>'result' = 'caught'
+     and (res->'fish'->>'price')::int
+         = greatest(1, round(45 * 200 / 1000.0 * r.mult * public._fish_factor(room, 'ca_ro', r.period))::int)
+     and (select price from public.fish where id = (res->'fish'->>'id')::uuid) = (res->'fish'->>'price')::int,
+    'the catch is priced by the index';
+  -- the board (§5.7)
+  b := public.fishing_board(room, (select v from smoke where k = 't1'))->'prices';
+  assert (b->>'mult')::numeric = r.mult and (b->>'wealth')::bigint = w
+     and (b->>'ends_at')::timestamptz = to_timestamp((r.period + 1) * 10800 - 25200)
+     and (select count(*) from jsonb_object_keys(b->'factors')) = (select count(*) from public.fish_species)
+     and (b->'factors'->>'ca_ro')::numeric = public._fish_factor(room, 'ca_ro', r.period), 'the board shows the index';
+  -- inside its period the snapshot holds; the next period recomputes it
+  update public.wallets set coins = coins + 100000000 where account_id = a1;
+  assert (public._fish_index(room, now())).mult = r.mult, 'stable inside its period';
+  assert (public._fish_index(room, now() + interval '3 hours')).mult = 10, 'recomputed in the next period';
+  assert not has_table_privilege('anon', 'public.fish_price_index', 'select'), 'the index is private';
+end $$;
+
+select 'v15 fish price smoke ok' as result;

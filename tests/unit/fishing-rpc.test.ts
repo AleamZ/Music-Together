@@ -89,8 +89,16 @@ describe("RPC wrappers", () => {
     }, error: null });
     expect(await fetchFishingBoard("room", "tok")).toEqual({
       records: [{ speciesId: "ca_tra", username: "Dat", weightG: 5000 }], mine: [{ speciesId: "ca_ro", weightG: 200 }],
-      richest: [{ username: "Dat", coins: 900 }], myRank: 2, myCoins: 30,
+      richest: [{ username: "Dat", coins: 900 }], myRank: 2, myCoins: 30, prices: null,
     });
+  });
+  it("maps the board's fish prices", async () => {
+    h.rpc.mockResolvedValue({ data: {
+      records: [], mine: [], richest: [], my_rank: 1, my_coins: 0,
+      prices: { mult: 2.24, wealth: 100000, ends_at: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12 } },
+    }, error: null });
+    expect((await fetchFishingBoard("room", "tok")).prices).toEqual(
+      { mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12 } });
   });
   it("throws the Postgres error", async () => {
     h.rpc.mockResolvedValue({ data: null, error: { message: "fish not found" } });

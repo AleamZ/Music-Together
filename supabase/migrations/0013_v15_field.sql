@@ -1712,3 +1712,185 @@ grant execute on function public.dry_collect(uuid, text, integer) to anon, authe
 grant execute on function public.sell_rice(text, text, boolean, integer) to anon, authenticated;
 grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;
 grant execute on function public.claim_farm_gift(text) to anon, authenticated;
+
+-- ---------- H. The fish price index (economy spec §5): the room's wealth sets a 3-hourly multiplier ----------
+create table if not exists public.fish_price_index (                -- one snapshot per room, replaced each 3-hour period
+  room_id uuid primary key references public.rooms(id) on delete cascade,
+  period bigint not null,
+  wealth bigint not null check (wealth >= 0),
+  mult numeric(5,2) not null check (mult between 1 and 10),
+  computed_at timestamptz not null
+);
+alter table public.fish_price_index enable row level security;
+revoke all on public.fish_price_index from public, anon, authenticated;
+
+-- 3-hour periods aligned to Vietnam time: boundaries at 00:00, 03:00, …, 21:00 (UTC+7) (§5.4).
+create or replace function public._fish_period(p_now timestamptz) returns bigint
+language sql immutable set search_path = public, extensions
+as $$ select floor((extract(epoch from p_now) + 25200) / 10800)::bigint $$;
+
+-- The floor of the average assets (xu plus 800 000 per private plot owned, in any room) of the room's members seen
+-- in the last 14 days (§5.2); 0 when there are none.
+create or replace function public._room_wealth(p_room uuid, p_now timestamptz) returns bigint
+language sql stable security definer set search_path = public, extensions
+as $$
+  select coalesce(floor(avg(coalesce(w.coins, 0)
+                            + 800000 * (select count(*) from public.field_plots fp where fp.owner_id = m.account_id))), 0)::bigint
+    from public.members m
+    left join public.wallets w on w.account_id = m.account_id
+   where m.room_id = p_room and coalesce(m.last_seen_at, m.joined_at) > p_now - interval '14 days'
+$$;
+
+-- M = round(least(10, greatest(1, sqrt(W / 20 000))), 2) (§5.3).
+create or replace function public._fish_mult(p_wealth bigint) returns numeric
+language sql immutable set search_path = public, extensions
+as $$ select round(least(10, greatest(1, sqrt(greatest(p_wealth, 0) / 20000.0))), 2) $$;
+
+-- The room's snapshot for the period of p_now (§5.5): stored the first time the period is asked for; concurrent
+-- first callers all end up with the first snapshot written.
+create or replace function public._fish_index(p_room uuid, p_now timestamptz) returns public.fish_price_index
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_period bigint := public._fish_period(p_now); v_wealth bigint; r public.fish_price_index;
+begin
+  select * into r from public.fish_price_index where room_id = p_room;
+  if found and r.period >= v_period then
+    return r;
+  end if;
+  v_wealth := public._room_wealth(p_room, p_now);
+  insert into public.fish_price_index (room_id, period, wealth, mult, computed_at)
+  values (p_room, v_period, v_wealth, public._fish_mult(v_wealth), p_now)
+  on conflict (room_id) do update
+    set period = excluded.period, wealth = excluded.wealth, mult = excluded.mult, computed_at = excluded.computed_at
+    where public.fish_price_index.period < excluded.period;
+  select * into r from public.fish_price_index where room_id = p_room;
+  return r;
+end; $$;
+
+-- S = trunc(0.80 + 0.60 × h, 2), h from the first 32 bits of md5(room:species:period) (§5.6): in [0.80, 1.39].
+create or replace function public._fish_factor(p_room uuid, p_species text, p_period bigint) returns numeric
+language sql immutable set search_path = public, extensions
+as $$
+  select trunc(0.80 + 0.60 * (('x' || left(md5(p_room::text || ':' || p_species || ':' || p_period::text), 8))::bit(32)::bigint
+                              / 4294967296.0), 2)
+$$;
+
+-- What the board shows (§5.7): the multiplier, the wealth behind it, when the period ends and every species' factor.
+create or replace function public._fish_prices(p_room uuid, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare r public.fish_price_index := public._fish_index(p_room, p_now);
+begin
+  return jsonb_build_object(
+    'mult', r.mult, 'wealth', r.wealth, 'ends_at', to_timestamp((r.period + 1) * 10800 - 25200),
+    'factors', coalesce((select jsonb_object_agg(s.id, public._fish_factor(p_room, s.id, r.period)) from public.fish_species s),
+                        '{}'::jsonb));
+end; $$;
+
+-- v14's finish_cast (0012) with one change: the catch is priced with the room's fish price index (§5.7).
+create or replace function public.finish_cast(p_session_token text, p_cast_id uuid, p_success boolean) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; c public.casts; sp public.fish_species; v_fish uuid; v_price integer; v_prev integer;
+        v_record boolean := false; v_name text; v_why text;
+        r public.fish_price_index; v_mult numeric := 1; v_factor numeric := 1;
+begin
+  v_account := public._auth_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  -- single use: the cast is gone whatever happens next (lost outcomes return instead of raising, so the delete stays)
+  delete from public.casts where account_id = v_account and id = p_cast_id returning * into c;
+  if not found then
+    raise exception 'cast not found' using errcode = '22023';
+  end if;
+  if now() > c.expires_at then
+    v_why := 'expired';
+  elsif not coalesce(p_success, false) then
+    v_why := 'gave_up';
+  elsif now() < c.bite_at + make_interval(secs => 0.9 * c.min_reel_ms / 1000.0) then
+    v_why := 'too_early';
+  elsif (select count(*) from public.fish where account_id = v_account) >= 1 + public._bucket_cap(v_account) then
+    v_why := 'full';
+  end if;
+  if v_why is not null then
+    return jsonb_build_object('result', 'lost', 'why', v_why, 'state', public._fishing_state(v_account));
+  end if;
+  select * into sp from public.fish_species where id = c.species_id;
+  -- the room's fish price index at the catch (economy spec §5.7); a cast whose room is gone keeps the base price
+  if c.room_id is not null and exists (select 1 from public.rooms where id = c.room_id) then
+    r := public._fish_index(c.room_id, now());
+    v_mult := r.mult;
+    v_factor := public._fish_factor(c.room_id, sp.id, r.period);
+  end if;
+  v_price := greatest(1, round(sp.price_per_kg * c.weight_g / 1000.0 * v_mult * v_factor)::int);
+  insert into public.fish (account_id, species_id, weight_g, price) values (v_account, sp.id, c.weight_g, v_price)
+  returning id into v_fish;
+  select weight_g into v_prev from public.personal_bests where account_id = v_account and species_id = sp.id;
+  if v_prev is null or c.weight_g > v_prev then
+    v_record := true;
+    insert into public.personal_bests (account_id, species_id, weight_g, caught_at)
+    values (v_account, sp.id, c.weight_g, now())
+    on conflict (account_id, species_id) do update set weight_g = excluded.weight_g, caught_at = excluded.caught_at;
+  end if;
+  -- rare+ catches are announced in the room's chat (spec §8.5)
+  if sp.rarity >= 3 and c.room_id is not null and exists (select 1 from public.rooms where id = c.room_id) then
+    select username into v_name from public.accounts where id = v_account;
+    insert into public.chat_messages (room_id, account_id, username, body)
+    values (c.room_id, null, 'Ao cá',
+            format('[catch:%s|%s|%s] 🎣 %s vừa câu được %s %s (%s)!', v_account, sp.id, c.weight_g, v_name, sp.name,
+                   public._weight_text(c.weight_g), (array['Thường','Khá','Hiếm','Quý','Huyền thoại'])[sp.rarity]));
+    delete from public.chat_messages
+     where room_id = c.room_id
+       and id not in (select id from public.chat_messages where room_id = c.room_id order by created_at desc limit 200);
+  end if;
+  return jsonb_build_object('result', 'caught',
+    'fish', jsonb_build_object('id', v_fish, 'species_id', sp.id, 'weight_g', c.weight_g, 'price', v_price, 'rarity', sp.rarity),
+    'record', v_record,
+    'state', public._fishing_state(v_account));
+end; $$;
+
+-- v14's fishing_board (0012) plus the room's fish prices (§5.7).
+create or replace function public.fishing_board(p_room_id uuid, p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_coins integer; v_rank integer;
+begin
+  perform public._auth(p_room_id, p_session_token, 'any');
+  v_account := public._auth_account(p_session_token);
+  v_coins := coalesce((select coins from public.wallets where account_id = v_account), 0);
+  select 1 + count(*) into v_rank
+    from public.members m join public.wallets w on w.account_id = m.account_id
+   where m.room_id = p_room_id and w.coins > v_coins;
+  return jsonb_build_object(
+    'records', coalesce((
+      select jsonb_agg(jsonb_build_object('species_id', r.species_id, 'username', r.username, 'weight_g', r.weight_g)
+                       order by r.species_id)
+        from (select distinct on (pb.species_id) pb.species_id, a.username, pb.weight_g
+                from public.personal_bests pb
+                join public.members m on m.account_id = pb.account_id and m.room_id = p_room_id
+                join public.accounts a on a.id = pb.account_id
+               order by pb.species_id, pb.weight_g desc, pb.caught_at asc) r), '[]'::jsonb),
+    'mine', coalesce((
+      select jsonb_agg(jsonb_build_object('species_id', species_id, 'weight_g', weight_g) order by species_id)
+        from public.personal_bests where account_id = v_account), '[]'::jsonb),
+    'richest', coalesce((
+      select jsonb_agg(jsonb_build_object('username', t.username, 'coins', t.coins) order by t.coins desc, t.username)
+        from (select a.username, w.coins
+                from public.members m
+                join public.wallets w on w.account_id = m.account_id
+                join public.accounts a on a.id = m.account_id
+               where m.room_id = p_room_id and w.coins > 0
+               order by w.coins desc, a.username
+               limit 10) t), '[]'::jsonb),
+    'my_rank', v_rank,
+    'my_coins', v_coins,
+    'prices', public._fish_prices(p_room_id, now()));
+end; $$;
+
+revoke all on function public._fish_period(timestamptz) from public, anon, authenticated;
+revoke all on function public._room_wealth(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._fish_mult(bigint) from public, anon, authenticated;
+revoke all on function public._fish_index(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._fish_factor(uuid, text, bigint) from public, anon, authenticated;
+revoke all on function public._fish_prices(uuid, timestamptz) from public, anon, authenticated;
+grant execute on function public.finish_cast(text, uuid, boolean) to anon, authenticated;
+grant execute on function public.fishing_board(uuid, text) to anon, authenticated;

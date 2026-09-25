@@ -89,8 +89,22 @@ run("v15 field and land", () => {
     expect((varieties ?? []).map((v) => v.id).sort()).toEqual(["nep", "short", "thom"]);
     const { data: items } = await db.from("shop_items").select("id").in("kind", ["seed", "fertilizer", "pesticide", "critter_box"]);
     expect(items ?? []).toHaveLength(11);
-    for (const table of ["field_plots", "crops", "rice_stock", "land_offers"]) {
+    for (const table of ["field_plots", "crops", "rice_stock", "land_offers", "fish_price_index"]) {
       expect((await db.from(table).select("*")).error, table).not.toBeNull();
     }
+  });
+
+  it("prices fish by the room: a new room pays today's prices, with a season factor per species", async () => {
+    const me = await reg();
+    const r = await room(me.token);
+    const b = await db.rpc("fishing_board", { p_room_id: r.room_id, p_session_token: me.token });
+    expect(b.error).toBeNull();
+    const p = (b.data as { prices: { mult: number; wealth: number; ends_at: string; factors: Record<string, number> } }).prices;
+    expect(p.mult).toBe(1);
+    expect(p.wealth).toBe(0);
+    expect(Date.parse(p.ends_at) - Date.now()).toBeLessThanOrEqual(3 * 3600_000);
+    const { data: species } = await db.from("fish_species").select("id");
+    expect(Object.keys(p.factors).sort()).toEqual((species ?? []).map((s) => s.id).sort());
+    expect(Object.values(p.factors).every((f) => f >= 0.8 && f <= 1.39)).toBe(true);
   });
 });
