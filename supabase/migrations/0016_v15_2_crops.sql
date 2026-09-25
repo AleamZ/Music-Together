@@ -987,3 +987,130 @@ end; $$;
 grant execute on function public.harvest_part(uuid, text, integer, boolean) to anon, authenticated;
 grant execute on function public.rent_harvester(uuid, text, integer) to anon, authenticated;
 grant execute on function public.claim_farm_gift(text) to anon, authenticated;
+
+-- Xịt thuốc (§7): a charge from the sprayer's tank when it holds this pesticide, else a bottle from the bag. One statement
+-- uses the charge and clears the item at the last one (R21), and only while the account owns the sprayer.
+create or replace function public._farm_do_spray(p_room uuid, p_account uuid, p_plot integer, p_item text, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  if not exists (select 1 from public.shop_items where id = p_item and kind = 'pesticide') then
+    raise exception 'invalid item' using errcode = '22023';
+  end if;
+  c := public._care_crop(p_room, p_plot, p_account, p_now);
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  update public.farm_profiles
+     set tank_charges = tank_charges - 1, tank_item = case when tank_charges = 1 then null else tank_item end
+   where account_id = p_account and tank_item = p_item and tank_charges >= 1 and public._owns(p_account, 'tool_sprayer');
+  if not found then
+    perform public._use_item(p_account, p_item);
+  end if;
+  update public.crops set spray_log = spray_log || jsonb_build_array(jsonb_build_object('t', p_now, 'item', p_item))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+revoke all on function public._farm_do_spray(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+
+-- Nạp thuốc (§7): one bottle becomes 3 charges of that pesticide; what was left in the tank is poured out. An item of
+-- another kind is a soft kind_mismatch (§11.5); an unknown one is the plain refusal.
+create or replace function public.load_sprayer(p_session_token text, p_item_id text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_kind text;
+begin
+  v_account := public._ac_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  select kind into v_kind from public.shop_items where id = p_item_id;
+  if not found then
+    raise exception 'invalid item' using errcode = '22023';
+  end if;
+  if v_kind <> 'pesticide' then
+    return public._ac_flag(v_account, 'kind_mismatch', 'load_sprayer', jsonb_build_object('item', p_item_id, 'kind', v_kind),
+                           null, 'invalid item', false);
+  end if;
+  if not public._owns(v_account, 'tool_sprayer') then
+    raise exception 'no sprayer' using errcode = '22023';
+  end if;
+  perform public._use_item(v_account, p_item_id);
+  insert into public.farm_profiles (account_id, tank_item, tank_charges) values (v_account, p_item_id, 3)
+  on conflict (account_id) do update set tank_item = excluded.tank_item, tank_charges = excluded.tank_charges;
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+-- anh Hai's shop (§9, R18): seeds, fertilizers, pesticides and tools. A fishing item is a soft kind_mismatch and a
+-- quantity outside 1–99 a hard bad_qty, as in 0015. A tool is bought once, one at a time: another quantity is a plain
+-- refusal, because the cached v15.1 shop shows a stepper on tool rows.
+create or replace function public.buy_farm_item(p_session_token text, p_item_id text, p_qty integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; w public.wallets; it public.shop_items; v_cost integer;
+begin
+  v_account := public._ac_account(p_session_token);
+  w := public._wallet_lock(v_account);
+  select * into it from public.shop_items where id = p_item_id;
+  if not found or it.price is null then
+    raise exception 'item not available' using errcode = '22023';
+  end if;
+  if it.kind not in ('seed', 'fertilizer', 'pesticide', 'tool') then
+    return public._ac_flag(v_account, 'kind_mismatch', 'buy_farm_item', jsonb_build_object('item', it.id, 'kind', it.kind),
+                           null, 'item not available', false);
+  end if;
+  if p_qty is null or p_qty < 1 or p_qty > 99 then
+    return public._ac_flag(v_account, 'bad_qty', 'buy_farm_item', jsonb_build_object('item', it.id, 'qty', p_qty), null,
+                           'invalid quantity');
+  end if;
+  if it.kind = 'tool' and p_qty <> 1 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  if it.kind = 'tool' and public._owns(v_account, it.id) then
+    raise exception 'already owned' using errcode = '22023';
+  end if;
+  if coalesce((select qty from public.inventory where account_id = v_account and item_id = it.id), 0) + p_qty > 99 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  v_cost := it.price * p_qty;
+  if w.coins < v_cost then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(v_account, -v_cost, 'farm_buy', it.id || ' x' || p_qty);
+  insert into public.inventory (account_id, item_id, qty) values (v_account, it.id, p_qty)
+  on conflict (account_id, item_id) do update set qty = public.inventory.qty + excluded.qty;
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+-- cô Út buys hoa màu fresh, by the kg (§9, S10): kg · price_per_kg, ledger reason produce_sell. A kg under 1 is a hard
+-- bad_qty after the wallet lock (§11.5).
+create or replace function public.sell_produce(p_session_token text, p_upland text, p_kg integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; u public.upland_crops; ps public.produce_stock;
+begin
+  v_account := public._ac_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  if p_kg is null or p_kg < 1 then
+    return public._ac_flag(v_account, 'bad_qty', 'sell_produce', jsonb_build_object('upland', left(p_upland, 32), 'kg', p_kg),
+                           null, 'invalid quantity');
+  end if;
+  u := public._upland(p_upland);
+  if u.id is null then
+    raise exception 'invalid crop' using errcode = '22023';
+  end if;
+  select * into ps from public.produce_stock where account_id = v_account and upland = p_upland for update;
+  if not found or ps.kg < p_kg then
+    raise exception 'not enough crop' using errcode = '22023';
+  end if;
+  update public.produce_stock set kg = kg - p_kg where account_id = v_account and upland = p_upland;
+  perform public._pay(v_account, p_kg * u.price_per_kg, 'produce_sell', p_upland || ' ' || p_kg || ' kg');
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+grant execute on function public.load_sprayer(text, text) to anon, authenticated;
+grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;
+grant execute on function public.sell_produce(text, text, integer) to anon, authenticated;

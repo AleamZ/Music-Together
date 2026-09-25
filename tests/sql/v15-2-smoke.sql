@@ -768,4 +768,116 @@ end $$;
 
 select 'v15.2 harvest smoke ok' as result;
 
+-- ---------- tools and trade (§7, §9, R18, R21): anh Hai's tools, the tank, cô Út buys hoa màu ----------
+insert into smoke select 'room4', room_id::text from public.create_room('Bình phun', 'pw', (select v from smoke where k = 't2'));
+
+do $$
+declare t2 text := (select v from smoke where k = 't2'); a2 uuid := (select v from smoke where k = 'a2')::uuid; r jsonb;
+begin
+  perform pg_temp.set_coins(a2, 20000);
+  delete from public.inventory where account_id = a2 and item_id like 'tool\_%';
+  -- a tool is bought once, one at a time (R18)
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 2)', t2, 'tool_sickle')) = 'invalid quantity', 'one at a time';
+  r := public.buy_farm_item(t2, 'tool_sickle', 0);
+  assert r->'anticheat'->>'code' = 'bad_qty' and r->'anticheat'->>'error' = 'invalid quantity', 'a quantity outside 1–99 stays hard';
+  r := public.buy_farm_item(t2, 'tool_sickle', 1);
+  assert r->'mine'->'items'->'tool_sickle' = '1' and r->'mine'->'coins' = '18500'
+     and exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'farm_buy' and delta = -1500
+                  and ref = 'tool_sickle x1'), 'a sickle for 1 500 xu';
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t2, 'tool_sickle')) = 'already owned', 'bought once';
+  r := public.buy_farm_item(t2, 'rod_bamboo', 1);
+  assert r->'anticheat'->>'code' = 'kind_mismatch' and r->'anticheat'->>'strike' = '0', 'no fishing gear here';
+  -- the sprayer: nothing to load before it is bought; then an empty tank
+  assert pg_temp.err(format('select public.load_sprayer(%L, %L)', t2, 'spray_insect')) = 'no sprayer', 'no sprayer';
+  r := public.buy_farm_item(t2, 'tool_sprayer', 1);
+  assert r->'mine'->'tank' = '{"item": null, "charges": 0}' and r->'mine'->'coins' = '13500', 'an empty tank';
+  r := public.load_sprayer(t2, 'fert_urea');
+  assert r->'anticheat'->>'code' = 'kind_mismatch' and r->'anticheat'->>'strike' = '0' and r->'anticheat'->>'error' = 'invalid item',
+    'a fertilizer is a soft kind_mismatch';
+  assert pg_temp.err(format('select public.load_sprayer(%L, %L)', t2, 'spray_x')) = 'invalid item', 'an unknown item';
+  assert pg_temp.err(format('select public.load_sprayer(%L, %L)', t2, 'spray_insect')) = 'no item', 'no bottle';
+  perform public.buy_farm_item(t2, 'spray_insect', 3);
+  perform public.buy_farm_item(t2, 'spray_fungus', 2);
+  r := public.load_sprayer(t2, 'spray_insect');
+  assert r->'mine'->'tank' = '{"item": "spray_insect", "charges": 3}' and r->'mine'->'items'->'spray_insect' = '2',
+    'one bottle, three charges';
+end $$;
+
+-- Spraying from the tank (§7, R21), and spraying as care (R8, R32).
+do $$
+declare t2 text := (select v from smoke where k = 't2'); a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        room uuid := (select v from smoke where k = 'room4')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        s jsonb; r jsonb;
+begin
+  perform pg_temp.set_coins(a2, 100000);
+  perform public._farm_do_rent(room, a2, 5, t);
+  perform public._farm_do_rent(room, a2, 6, t);
+  insert into public.crops (room_id, plot_no, farmer_id, kind, prepared_at, water_log)
+  values (room, 5, a2, 'upland', t, jsonb_build_array(jsonb_build_object('t', t, 'l', 1)));
+  s := public._farm_do_spray(room, a2, 5, 'spray_insect', t + interval '1 minute');
+  assert s->'mine'->'tank' = '{"item": "spray_insect", "charges": 2}' and s->'mine'->'items'->'spray_insect' = '2',
+    'a matching spray uses a charge, not a bottle';
+  s := public._farm_do_spray(room, a2, 5, 'spray_fungus', t + interval '2 minutes');
+  assert s->'mine'->'tank' = '{"item": "spray_insect", "charges": 2}' and s->'mine'->'items'->'spray_fungus' = '1',
+    'another pesticide uses a bottle';
+  perform public._farm_do_spray(room, a2, 5, 'spray_insect', t + interval '3 minutes');
+  s := public._farm_do_spray(room, a2, 5, 'spray_insect', t + interval '4 minutes');
+  assert s->'mine'->'tank' = '{"item": null, "charges": 0}' and s->'mine'->'items'->'spray_insect' = '2'
+     and (select tank_item is null and tank_charges = 0 from public.farm_profiles where account_id = a2),
+    'the third charge empties the tank';
+  s := public._farm_do_spray(room, a2, 5, 'spray_insect', t + interval '5 minutes');
+  assert s->'mine'->'tank' = '{"item": null, "charges": 0}' and s->'mine'->'items'->'spray_insect' = '1', 'then a bottle';
+  assert jsonb_array_length((pg_temp.crop(room, 5)).spray_log) = 5, 'five sprays logged';
+  -- a reload pours out what is left
+  r := public.load_sprayer(t2, 'spray_fungus');
+  perform public._farm_do_spray(room, a2, 5, 'spray_fungus', t + interval '6 minutes');
+  r := public.load_sprayer(t2, 'spray_insect');
+  assert r->'mine'->'tank' = '{"item": "spray_insect", "charges": 3}' and r->'mine'->'items'->'spray_insect' is null
+     and r->'mine'->'items'->'spray_fungus' is null, 'the fungicide left in the tank is gone';
+  -- no charge without the sprayer
+  delete from public.inventory where account_id = a2 and item_id = 'tool_sprayer';
+  assert pg_temp.err(format('select public._farm_do_spray(%L, %L, 5, %L, %L)', room, a2, 'spray_insect', t + interval '7 minutes'))
+         = 'no item', 'the tank needs its sprayer';
+  assert (select tank_item = 'spray_insect' and tank_charges = 3 from public.farm_profiles where account_id = a2)
+     and public._farm_mine(a2)->'tank' = 'null', 'the tank is kept, and hidden';
+  insert into public.inventory (account_id, item_id, qty) values (a2, 'tool_sprayer', 1);
+  -- spraying is care: not on a partly cut plot, nor under a running harvester
+  insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, transplant_at, harvested_parts,
+                            harvested_kg)
+  values (room, 6, a2, 'nep', t - interval '64 hours', t - interval '63 hours', t - interval '60 hours', t - interval '50 hours', 2, 25);
+  assert pg_temp.err(format('select public._farm_do_spray(%L, %L, 6, %L, %L)', room, a2, 'spray_insect', t + interval '8 minutes'))
+         = 'harvesting', 'partly cut';
+  update public.crops set harvester_at = t + interval '8 minutes', harvester_until = t + interval '8 minutes 30 seconds'
+   where room_id = room and plot_no = 6;
+  assert pg_temp.err(format('select public._farm_do_spray(%L, %L, 6, %L, %L)', room, a2, 'spray_insect', t + interval '8 minutes'))
+         = 'harvester busy', 'a running harvester';
+  assert (select tank_charges from public.farm_profiles where account_id = a2) = 3, 'nothing used';
+end $$;
+
+-- cô Út buys hoa màu (§9, §11.4): kg · price_per_kg, ledger reason produce_sell.
+do $$
+declare t2 text := (select v from smoke where k = 't2'); a2 uuid := (select v from smoke where k = 'a2')::uuid; r jsonb; c0 integer;
+begin
+  insert into public.produce_stock (account_id, upland, kg) values (a2, 'bap', 30)
+  on conflict (account_id, upland) do update set kg = excluded.kg;
+  r := public.sell_produce(t2, 'bap', 0);
+  assert r->'anticheat'->>'code' = 'bad_qty' and r->'anticheat'->>'strike' = '0' and r->'anticheat'->>'error' = 'invalid quantity'
+     and r - 'anticheat' = '{}', format('kg 0 %s', r);
+  assert public.sell_produce(t2, 'bap', null)->'anticheat'->>'code' = 'bad_qty', 'kg null';
+  assert pg_temp.err(format('select public.sell_produce(%L, %L, 1)', t2, 'lua')) = 'invalid crop', 'an unknown crop';
+  assert pg_temp.err(format('select public.sell_produce(%L, null, 1)', t2)) = 'invalid crop', 'no crop';
+  assert pg_temp.err(format('select public.sell_produce(%L, %L, 31)', t2, 'bap')) = 'not enough crop', 'more than held';
+  assert pg_temp.err(format('select public.sell_produce(%L, %L, 1)', t2, 'ot')) = 'not enough crop', 'none held';
+  c0 := (select coins from public.wallets where account_id = a2);
+  r := public.sell_produce(t2, 'bap', 30);
+  assert r->'mine'->'coins' = to_jsonb(c0 + 30 * 460) and r->'mine'->'produce'->'bap' is null and r->>'server_now' is not null
+     and exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'produce_sell' and delta = 13800
+                  and ref = 'bap 30 kg'), 'sold 30 kg of bắp for 13 800 xu';
+  assert has_function_privilege('anon', 'public.load_sprayer(text,text)', 'execute')
+     and has_function_privilege('anon', 'public.sell_produce(text,text,integer)', 'execute')
+     and has_function_privilege('anon', 'public.buy_farm_item(text,text,integer)', 'execute'), 'public RPCs';
+end $$;
+
+select 'v15.2 tools smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql
