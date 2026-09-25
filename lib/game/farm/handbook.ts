@@ -119,7 +119,7 @@ export function handbookPage(tab: HandbookTab, varieties: readonly Variety[]): H
     case "varieties":
       return [{
         title: "Giống lúa",
-        lines: varieties.map((v) => `${v.name}: chín ~${ripeAfterHours(v)} giờ · ${v.baseKg} kg mỗi thửa · ${v.pricePerKg} xu/kg lúa khô`
+        lines: varieties.map((v) => `${v.name}: chín ~${ripeAfterHours(v)} giờ · ${v.baseKg} kg mỗi thửa · ${v.pricePerKg.toLocaleString("vi-VN")} xu/kg lúa khô`
           + (v.blastMult > 1 ? " · dễ bị đạo ôn" : "")),
       }];
     case "tips":

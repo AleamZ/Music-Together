@@ -33,6 +33,10 @@ describe("handbook", () => {
     ]);
     expect(handbookPage("varieties", [thom])[0].lines).toEqual(["Lúa thơm: chín ~66 giờ · 60 kg mỗi thửa · 26 xu/kg lúa khô · dễ bị đạo ôn"]);
   });
+  it("keeps the thousands separator in the price per kg", () => {
+    const dear = varietyFromRow({ id: "thom", name: "Lúa thơm", scale: 1.15, base_kg: 60, price_per_kg: 1350, blast_mult: 1.3, sort_order: 30 });
+    expect(handbookPage("varieties", [dear])[0].lines).toEqual(["Lúa thơm: chín ~66 giờ · 60 kg mỗi thửa · 1.350 xu/kg lúa khô · dễ bị đạo ôn"]);
+  });
   it("links the plot panel to what matters now", () => {
     const crop = (over: Partial<CropView>): CropView => ({
       variety: "nep", phase: "prepared", preparedAt: at(0), soakAt: at(0), sowAt: at(3), transplantAt: at(12), water: 2, waterSetAt: at(12),

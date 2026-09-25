@@ -80,7 +80,7 @@ export function describeFarmItem(it: FarmItem, varieties: readonly Variety[]): s
   switch (it.kind) {
     case "seed": {
       const v = varieties.find((x) => x.id === it.variety);
-      return v ? `Chín sau ~${ripeAfterHours(v)} giờ · ${v.baseKg} kg/thửa · ${v.pricePerKg} xu/kg lúa khô` : "Hạt giống lúa";
+      return v ? `Chín sau ~${ripeAfterHours(v)} giờ · ${v.baseKg} kg/thửa · ${v.pricePerKg.toLocaleString("vi-VN")} xu/kg lúa khô` : "Hạt giống lúa";
     }
     case "fertilizer":
       switch (it.fert) {

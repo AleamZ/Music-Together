@@ -54,4 +54,9 @@ describe("describeFarmItem", () => {
     expect(d({ kind: "pesticide", pest_target: "fungus" })).toBe("Trị đạo ôn lá và đạo ôn cổ bông");
     expect(d({ kind: "critter_box", capacity: 15 })).toBe("Đựng 15 con cua, ốc");
   });
+  it("keeps the thousands separator in the price per kg", () => {
+    const dear = [varietyFromRow({ ...VARIETY_ROWS[2], price_per_kg: 1350 })];
+    expect(describeFarmItem(farmItemFromRow(item({ kind: "seed", variety: "thom" })), dear))
+      .toBe("Chín sau ~66 giờ · 60 kg/thửa · 1.350 xu/kg lúa khô");
+  });
 });
