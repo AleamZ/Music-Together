@@ -1,138 +1,178 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fetchVideoLyrics, saveVideoLyrics, updateVideoLyricOffset } from "@/lib/lyrics/db";
-import { supabase } from "@/lib/supabase";
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 
-describe("lib/lyrics/db", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
+const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
+vi.mock("@/lib/supabase", () => ({ supabase: { rpc: h.rpc, from: h.from } }));
+
+import { fetchVideoLyrics, saveVideoLyrics, updateVideoLyricOffset, type VideoLyricsWrite } from "@/lib/lyrics/db";
+
+const ROOM = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+const TOKEN = "f3a1c2d4e5b6a7980f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6e5f4a3b2";
+/** A full record, as the hook sends it. */
+const record = (over: Partial<VideoLyricsWrite> = {}): VideoLyricsWrite => ({
+  videoId: "dQw4w9WgXcQ",
+  trackName: "Song A",
+  artistName: "Artist B",
+  syncedLyrics: "[00:01.00]x",
+  plainLyrics: null,
+  offsetMs: 0,
+  timingSource: "custom",
+  ...over,
+});
+/** What supabase-js resolves for a `returns void` RPC. */
+const OK = { data: null, error: null, count: null, status: 204, statusText: "No Content" };
+/** What an old client gets once 0014 has dropped the signature it calls. */
+const PGRST202 = {
+  data: null,
+  error: {
+    code: "PGRST202",
+    message: "Could not find the function public.upsert_video_lyrics(p_artist_name, …) in the schema cache",
+    details: "Searched for the function public.upsert_video_lyrics with parameters …",
+    hint: null,
+  },
+  count: null,
+  status: 404,
+  statusText: "Not Found",
+};
+const DENIED = {
+  data: null,
+  error: { code: "42501", message: "dj role required", details: null, hint: null },
+  count: null,
+  status: 403,
+  statusText: "Forbidden",
+};
+
+let warn: MockInstance<typeof console.warn>;
+beforeEach(() => {
+  h.rpc.mockReset();
+  h.from.mockReset();
+  warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+afterEach(() => {
+  warn.mockRestore();
+});
+
+describe("fetchVideoLyrics (read path, unchanged)", () => {
+  const query = (result: { data: unknown; error: unknown }) => {
+    const maybeSingle = vi.fn().mockResolvedValue(result);
+    const eq = vi.fn().mockReturnValue({ maybeSingle });
+    const select = vi.fn().mockReturnValue({ eq });
+    h.from.mockReturnValue({ select });
+    return { select, eq, maybeSingle };
+  };
+
+  it("returns null when videoId is empty", async () => {
+    expect(await fetchVideoLyrics("")).toBeNull();
+    expect(h.from).not.toHaveBeenCalled();
   });
 
-  describe("fetchVideoLyrics", () => {
-    it("returns null when videoId is empty", async () => {
-      const result = await fetchVideoLyrics("");
-      expect(result).toBeNull();
+  it("reads the row of that video from video_lyrics", async () => {
+    const row = {
+      youtube_video_id: "dQw4w9WgXcQ", track_name: "Test Song", artist_name: "Test Artist",
+      synced_lyrics: "[00:01.00] Line 1", plain_lyrics: null, offset_ms: 1200, timing_source: "auto",
+      updated_by_name: "dj", updated_at: "2026-09-25T10:00:00Z",
+    };
+    const q = query({ data: row, error: null });
+    expect(await fetchVideoLyrics("dQw4w9WgXcQ")).toEqual(row);
+    expect(h.from).toHaveBeenCalledWith("video_lyrics");
+    expect(q.select).toHaveBeenCalledWith("*");
+    expect(q.eq).toHaveBeenCalledWith("youtube_video_id", "dQw4w9WgXcQ");
+  });
+
+  it("returns null when the query returns an error", async () => {
+    query({ data: null, error: { message: "Error" } });
+    expect(await fetchVideoLyrics("dQw4w9WgXcQ")).toBeNull();
+  });
+});
+
+describe("saveVideoLyrics", () => {
+  it("calls upsert_video_lyrics with the room and the session, and no updated-by name", async () => {
+    h.rpc.mockResolvedValue(OK);
+    const saved = await saveVideoLyrics(ROOM, TOKEN, record({ syncedLyrics: "[00:02.00] Hi", offsetMs: 500 }));
+    expect(saved).toBe(true);
+    expect(h.rpc).toHaveBeenCalledTimes(1);
+    expect(h.rpc).toHaveBeenCalledWith("upsert_video_lyrics", {
+      p_room_id: ROOM,
+      p_session_token: TOKEN,
+      p_video_id: "dQw4w9WgXcQ",
+      p_track_name: "Song A",
+      p_artist_name: "Artist B",
+      p_synced_lyrics: "[00:02.00] Hi",
+      p_plain_lyrics: null,
+      p_offset_ms: 500,
+      p_timing_source: "custom",
     });
+    expect(h.from).not.toHaveBeenCalled();
+  });
 
-    it("fetches cached record from video_lyrics table", async () => {
-      const mockRecord = {
-        youtube_video_id: "abc-123",
-        track_name: "Test Song",
-        artist_name: "Test Artist",
-        synced_lyrics: "[00:01.00] Line 1",
-        offset_ms: 1200,
-      };
-
-      const maybeSingleMock = vi.fn().mockResolvedValue({ data: mockRecord, error: null });
-      const eqMock = vi.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
-      const selectMock = vi.fn().mockReturnValue({ eq: eqMock });
-      vi.spyOn(supabase, "from").mockReturnValue({ select: selectMock } as any);
-
-      const result = await fetchVideoLyrics("abc-123");
-
-      expect(supabase.from).toHaveBeenCalledWith("video_lyrics");
-      expect(selectMock).toHaveBeenCalledWith("*");
-      expect(eqMock).toHaveBeenCalledWith("youtube_video_id", "abc-123");
-      expect(result).toEqual(mockRecord);
-    });
-
-    it("returns null when query returns error", async () => {
-      const maybeSingleMock = vi.fn().mockResolvedValue({ data: null, error: { message: "Error" } });
-      const eqMock = vi.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
-      const selectMock = vi.fn().mockReturnValue({ eq: eqMock });
-      vi.spyOn(supabase, "from").mockReturnValue({ select: selectMock } as any);
-
-      const result = await fetchVideoLyrics("abc-123");
-      expect(result).toBeNull();
+  it("sends absent text as null, so every argument reaches the RPC (JSON drops undefined)", async () => {
+    h.rpc.mockResolvedValue(OK);
+    await saveVideoLyrics(
+      ROOM,
+      TOKEN,
+      record({ trackName: undefined, artistName: undefined, syncedLyrics: undefined, plainLyrics: "la la", timingSource: "auto" })
+    );
+    expect(h.rpc).toHaveBeenCalledWith("upsert_video_lyrics", {
+      p_room_id: ROOM,
+      p_session_token: TOKEN,
+      p_video_id: "dQw4w9WgXcQ",
+      p_track_name: null,
+      p_artist_name: null,
+      p_synced_lyrics: null,
+      p_plain_lyrics: "la la",
+      p_offset_ms: 0,
+      p_timing_source: "auto",
     });
   });
 
-  describe("saveVideoLyrics", () => {
-    it("does nothing if videoId is missing", async () => {
-      const rpcSpy = vi.spyOn(supabase, "rpc");
-      await saveVideoLyrics({ videoId: "" });
-      expect(rpcSpy).not.toHaveBeenCalled();
-    });
-
-    it("invokes upsert_video_lyrics RPC", async () => {
-      const rpcSpy = vi.spyOn(supabase, "rpc").mockResolvedValue({ error: null } as any);
-
-      await saveVideoLyrics({
-        videoId: "vid-456",
-        trackName: "Song A",
-        artistName: "Artist B",
-        syncedLyrics: "[00:02.00] Hi",
-        offsetMs: 500,
-        timingSource: "custom",
-        updatedByName: "User 1",
-      });
-
-      expect(rpcSpy).toHaveBeenCalledWith("upsert_video_lyrics", {
-        p_video_id: "vid-456",
-        p_track_name: "Song A",
-        p_artist_name: "Artist B",
-        p_synced_lyrics: "[00:02.00] Hi",
-        p_plain_lyrics: null,
-        p_offset_ms: 500,
-        p_timing_source: "custom",
-        p_updated_by: "User 1",
-      });
-    });
-
-    it("falls back to table upsert when RPC returns an error", async () => {
-      vi.spyOn(supabase, "rpc").mockResolvedValue({ error: { message: "RPC not found" } } as any);
-      const upsertMock = vi.fn().mockResolvedValue({ error: null });
-      vi.spyOn(supabase, "from").mockReturnValue({ upsert: upsertMock } as any);
-
-      await saveVideoLyrics({
-        videoId: "vid-789",
-        trackName: "Song B",
-      });
-
-      expect(supabase.from).toHaveBeenCalledWith("video_lyrics");
-      expect(upsertMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          youtube_video_id: "vid-789",
-          track_name: "Song B",
-        })
-      );
-    });
+  it("does nothing without a video, a room or a session", async () => {
+    expect(await saveVideoLyrics(ROOM, TOKEN, record({ videoId: "" }))).toBe(false);
+    expect(await saveVideoLyrics("", TOKEN, record())).toBe(false);
+    expect(await saveVideoLyrics(ROOM, "", record())).toBe(false);
+    expect(h.rpc).not.toHaveBeenCalled();
+    expect(h.from).not.toHaveBeenCalled();
   });
 
-  describe("updateVideoLyricOffset", () => {
-    it("does nothing if videoId is missing", async () => {
-      const rpcSpy = vi.spyOn(supabase, "rpc");
-      await updateVideoLyricOffset("", 1000);
-      expect(rpcSpy).not.toHaveBeenCalled();
+  it.each([
+    ["an RPC error (old signature gone)", () => h.rpc.mockResolvedValue(PGRST202)],
+    ["a refusal (not the DJ)", () => h.rpc.mockResolvedValue(DENIED)],
+    ["a network failure", () => h.rpc.mockRejectedValue(new TypeError("Failed to fetch"))],
+  ])("resolves false on %s, warns once and never writes the table directly", async (_case, arrange) => {
+    arrange();
+    await expect(saveVideoLyrics(ROOM, TOKEN, record())).resolves.toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(h.from).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateVideoLyricOffset", () => {
+  it("calls update_video_lyric_offset with the room and the session, and no updated-by name", async () => {
+    h.rpc.mockResolvedValue(OK);
+    await expect(updateVideoLyricOffset(ROOM, TOKEN, "dQw4w9WgXcQ", -1500)).resolves.toBe(true);
+    expect(h.rpc).toHaveBeenCalledTimes(1);
+    expect(h.rpc).toHaveBeenCalledWith("update_video_lyric_offset", {
+      p_room_id: ROOM,
+      p_session_token: TOKEN,
+      p_video_id: "dQw4w9WgXcQ",
+      p_offset_ms: -1500,
     });
+    expect(h.from).not.toHaveBeenCalled();
+  });
 
-    it("invokes update_video_lyric_offset RPC", async () => {
-      const rpcSpy = vi.spyOn(supabase, "rpc").mockResolvedValue({ error: null } as any);
+  it("does nothing without a video, a room or a session", async () => {
+    expect(await updateVideoLyricOffset(ROOM, TOKEN, "", 1000)).toBe(false);
+    expect(await updateVideoLyricOffset("", TOKEN, "dQw4w9WgXcQ", 1000)).toBe(false);
+    expect(await updateVideoLyricOffset(ROOM, "", "dQw4w9WgXcQ", 1000)).toBe(false);
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
 
-      await updateVideoLyricOffset("vid-456", -1500, "Alice");
-
-      expect(rpcSpy).toHaveBeenCalledWith("update_video_lyric_offset", {
-        p_video_id: "vid-456",
-        p_offset_ms: -1500,
-        p_updated_by: "Alice",
-      });
-    });
-
-    it("falls back to table update when RPC returns an error", async () => {
-      vi.spyOn(supabase, "rpc").mockResolvedValue({ error: { message: "RPC not found" } } as any);
-      const eqMock = vi.fn().mockResolvedValue({ error: null });
-      const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
-      vi.spyOn(supabase, "from").mockReturnValue({ update: updateMock } as any);
-
-      await updateVideoLyricOffset("vid-999", 800, "Bob");
-
-      expect(supabase.from).toHaveBeenCalledWith("video_lyrics");
-      expect(updateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          offset_ms: 800,
-          updated_by_name: "Bob",
-        })
-      );
-      expect(eqMock).toHaveBeenCalledWith("youtube_video_id", "vid-999");
-    });
+  it.each([
+    ["an RPC error (old signature gone)", () => h.rpc.mockResolvedValue(PGRST202)],
+    ["a refusal (not the DJ)", () => h.rpc.mockResolvedValue(DENIED)],
+    ["a network failure", () => h.rpc.mockRejectedValue(new TypeError("Failed to fetch"))],
+  ])("resolves false on %s, warns once and never writes the table directly", async (_case, arrange) => {
+    arrange();
+    await expect(updateVideoLyricOffset(ROOM, TOKEN, "dQw4w9WgXcQ", 800)).resolves.toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(h.from).not.toHaveBeenCalled();
   });
 });

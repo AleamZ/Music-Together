@@ -107,7 +107,7 @@ export interface NowPlayingProps {
   onToggleSponsorBlock?: () => void;
   lastSkippedToast?: SkippedToastInfo | null;
   onClearSkippedToast?: () => void;
-  username?: string;
+  token: string;                // session token: the DJ's lyrics-cache writes are checked with it
   children?: React.ReactNode;
 }
 
@@ -121,15 +121,12 @@ export default function NowPlaying(p: NowPlayingProps) {
 
   const dur = p.durationMs || (current?.duration_seconds ? current.duration_seconds * 1000 : 0);
 
-  // Reset playback bar state immediately whenever the track changes
-  useEffect(() => {
-    setElapsed(0);
-  }, [current?.id]);
-
   // Tick the local clock every 500ms; value derived purely from room fields with duration bounds.
+  // A track change re-runs this effect, whose first tick() resets the playback bar at once.
+  const { is_playing: roomPlaying, started_at: roomStartedAt, paused_elapsed_ms: roomPausedMs } = room;
   useEffect(() => {
     const tick = () => {
-      const raw = computeElapsedMs(room);
+      const raw = computeElapsedMs({ is_playing: roomPlaying, started_at: roomStartedAt, paused_elapsed_ms: roomPausedMs });
       // Sanity clamp: elapsed cannot be negative, and if track duration is known, cannot exceed duration.
       const safe = dur > 0 ? Math.min(dur, Math.max(0, raw)) : Math.max(0, raw);
       setElapsed(safe);
@@ -137,7 +134,7 @@ export default function NowPlaying(p: NowPlayingProps) {
     tick();
     const t = setInterval(tick, 500);
     return () => clearInterval(t);
-  }, [room.is_playing, room.started_at, room.paused_elapsed_ms, dur, current?.id]);
+  }, [roomPlaying, roomStartedAt, roomPausedMs, dur, current?.id]);
 
   const suggestedIntroOffsetMs = useMemo(() => {
     return getIntroOffsetSuggestion(p.sponsorSegments);
@@ -150,7 +147,7 @@ export default function NowPlaying(p: NowPlayingProps) {
     roomId: room.id,
     trackId: current?.id,
     youtubeVideoId: current?.youtube_video_id,
-    username: p.username,
+    sessionToken: p.token,
     canControl: p.canControl,
   });
 
@@ -179,7 +176,7 @@ export default function NowPlaying(p: NowPlayingProps) {
 
   const renderCenterpiece = (
     turntableEl: React.ReactNode,
-    customClass = "w-[210px] sm:w-[240px] h-[190px] sm:h-[220px]",
+    customClass: string, // every caller passes one; not applied (kept for the call sites' positional lyricsClass)
     lyricsClass?: string
   ) => {
     const activeLyricsClass =

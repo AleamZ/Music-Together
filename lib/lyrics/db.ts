@@ -32,79 +32,72 @@ export async function fetchVideoLyrics(videoId: string): Promise<VideoLyricsReco
   }
 }
 
-/**
- * Upsert lyrics and timing configuration for a YouTube video into Supabase.
- */
-export async function saveVideoLyrics(record: {
-  videoId: string;
-  trackName?: string | null;
-  artistName?: string | null;
-  syncedLyrics?: string | null;
-  plainLyrics?: string | null;
-  offsetMs?: number;
-  timingSource?: string | null;
-  updatedByName?: string | null;
-}): Promise<void> {
-  if (!record.videoId) return;
-  try {
-    const { error } = await supabase.rpc("upsert_video_lyrics", {
-      p_video_id: record.videoId,
-      p_track_name: record.trackName ?? null,
-      p_artist_name: record.artistName ?? null,
-      p_synced_lyrics: record.syncedLyrics ?? null,
-      p_plain_lyrics: record.plainLyrics ?? null,
-      p_offset_ms: record.offsetMs ?? 0,
-      p_timing_source: record.timingSource ?? null,
-      p_updated_by: record.updatedByName ?? null,
-    });
+/** The timing sources upsert_video_lyrics accepts (0014_lyrics_lockdown.sql). */
+export type LyricsTimingSource = "auto" | "custom";
 
-    if (error) {
-      // Fallback to direct upsert if RPC is unavailable
-      await supabase.from("video_lyrics").upsert({
-        youtube_video_id: record.videoId,
-        track_name: record.trackName,
-        artist_name: record.artistName,
-        synced_lyrics: record.syncedLyrics,
-        plain_lyrics: record.plainLyrics,
-        offset_ms: record.offsetMs ?? 0,
-        timing_source: record.timingSource,
-        updated_by_name: record.updatedByName,
-        updated_at: new Date().toISOString(),
-      });
-    }
-  } catch {
-    // Non-fatal: caching failure should not disrupt playback
-  }
+/** The full record the DJ applied: the row becomes exactly this, so every field is required (absent text is null). */
+export interface VideoLyricsWrite {
+  videoId: string;
+  trackName: string | null | undefined;
+  artistName: string | null | undefined;
+  syncedLyrics: string | null | undefined;
+  plainLyrics: string | null | undefined;
+  /** The DJ's current offset: stored as sent, 0 included. */
+  offsetMs: number;
+  timingSource: LyricsTimingSource;
 }
 
 /**
- * Update only the offset (timing configuration) for a YouTube video in Supabase.
+ * Runs one cache-writing RPC. The table itself is read-only for clients, so there is no fallback.
+ * Never throws: a failure is logged once and reported as false — lyrics caching must never break the player.
+ */
+async function writeRpc(fn: string, args: Record<string, unknown>): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc(fn, args);
+    if (!error) return true;
+    console.warn(`[lyrics] ${fn} failed: ${error.message}`);
+  } catch (e) {
+    console.warn(`[lyrics] ${fn} failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  return false;
+}
+
+/**
+ * Replace the cached lyrics and timing of a YouTube video with the record the DJ applied. Only the room's DJ may:
+ * the RPC checks the session, the DJ role and that the video is the room's current or queued song, and takes
+ * "updated by" from the account. Resolves true once saved, false when skipped or refused.
+ */
+export async function saveVideoLyrics(roomId: string, sessionToken: string, record: VideoLyricsWrite): Promise<boolean> {
+  if (!roomId || !sessionToken || !record.videoId) return false;
+  // Every argument is sent, absent text as null: JSON drops undefined, and the RPC has no defaults.
+  return writeRpc("upsert_video_lyrics", {
+    p_room_id: roomId,
+    p_session_token: sessionToken,
+    p_video_id: record.videoId,
+    p_track_name: record.trackName ?? null,
+    p_artist_name: record.artistName ?? null,
+    p_synced_lyrics: record.syncedLyrics ?? null,
+    p_plain_lyrics: record.plainLyrics ?? null,
+    p_offset_ms: record.offsetMs,
+    p_timing_source: record.timingSource,
+  });
+}
+
+/**
+ * Update only the cached offset of a YouTube video (same DJ-only checks as saveVideoLyrics).
+ * Resolves true once saved, false when skipped or refused.
  */
 export async function updateVideoLyricOffset(
+  roomId: string,
+  sessionToken: string,
   videoId: string,
-  offsetMs: number,
-  updatedByName?: string | null
-): Promise<void> {
-  if (!videoId) return;
-  try {
-    const { error } = await supabase.rpc("update_video_lyric_offset", {
-      p_video_id: videoId,
-      p_offset_ms: offsetMs,
-      p_updated_by: updatedByName ?? null,
-    });
-
-    if (error) {
-      // Fallback to direct update
-      await supabase
-        .from("video_lyrics")
-        .update({
-          offset_ms: offsetMs,
-          updated_by_name: updatedByName,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("youtube_video_id", videoId);
-    }
-  } catch {
-    // Non-fatal
-  }
+  offsetMs: number
+): Promise<boolean> {
+  if (!roomId || !sessionToken || !videoId) return false;
+  return writeRpc("update_video_lyric_offset", {
+    p_room_id: roomId,
+    p_session_token: sessionToken,
+    p_video_id: videoId,
+    p_offset_ms: offsetMs,
+  });
 }
