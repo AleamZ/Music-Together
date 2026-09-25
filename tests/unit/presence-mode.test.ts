@@ -25,6 +25,8 @@ describe("aggregatePresenceModes", () => {
     expect(aggregatePresenceModes({ a: [tab("hall", "2026-09-24T10:00:00Z"), tab("pond", "2026-09-24T10:05:00Z")] })[0].map).toBe("pond");
     expect(aggregatePresenceModes({ a: [tab("pond", "2026-09-24T10:05:00Z"), tab("hall", "2026-09-24T10:00:00Z")] })[0].map).toBe("pond");
     expect(aggregatePresenceModes({ a: [tab(undefined, "2026-09-24T10:00:00Z")] })[0].map).toBe("hall");
+    expect(aggregatePresenceModes({ a: [tab("field", "2026-09-24T10:00:00Z")] })[0].map).toBe("field");
+    expect(aggregatePresenceModes({ a: [tab("moon", "2026-09-24T10:00:00Z")] })[0].map).toBe("hall");
     expect(aggregatePresenceModes({ a: [tab("pond", "2026-09-24T11:00:00Z", "classic"), tab("hall", "2026-09-24T10:00:00Z")] })[0].map).toBe("hall");
   });
   it("uses an empty name when no tab reports one", () => {
@@ -50,11 +52,13 @@ describe("mapCounts", () => {
       { accountId: "a", name: "Ann", mode: "game", map: "pond" },
       { accountId: "b", name: "Bee", mode: "classic", map: null },
       { accountId: "c", name: "Cee", mode: "game", map: "hall" },
+      { accountId: "d", name: "Dee", mode: "game", map: "field" },
     ];
     expect(mapCounts(presence)).toEqual({
       hall: [{ accountId: "b", name: "Bee", classic: true }, { accountId: "c", name: "Cee", classic: false }],
       pond: [{ accountId: "a", name: "Ann", classic: false }],
+      field: [{ accountId: "d", name: "Dee", classic: false }],
     });
-    expect(mapCounts([])).toEqual({ hall: [], pond: [] });
+    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [] });
   });
 });

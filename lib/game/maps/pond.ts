@@ -124,6 +124,6 @@ export function buildPondMap(): GameMap {
   }
   return {
     id: "pond", width: POND_W, height: POND_H, cell: POND_CELL, cols, rows, blocked,
-    spawn: POND_ARRIVE, seating: null, interactables: POND_INTERACTABLES, props: POND_PROPS, npcs: POND_NPCS,
+    spawn: POND_ARRIVE, seating: null, interactables: POND_INTERACTABLES, props: POND_PROPS, npcs: POND_NPCS, plots: [],
   };
 }

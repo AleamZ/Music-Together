@@ -98,6 +98,6 @@ export function buildHallMap(): GameMap {
   }
   return {
     id: "hall", width: HALL_W, height: HALL_H, cell: HALL_CELL, cols, rows, blocked,
-    spawn: HALL_SPAWN, seating: HALL_SEATING, interactables: HALL_INTERACTABLES, props: HALL_PROPS, npcs: [],
+    spawn: HALL_SPAWN, seating: HALL_SEATING, interactables: HALL_INTERACTABLES, props: HALL_PROPS, npcs: [], plots: [],
   };
 }

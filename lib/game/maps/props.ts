@@ -17,6 +17,13 @@ export function propFrame(p: PropPlacement): PropFrame {
     case "stall_front": return { w: 108, h: 30, ox: 54, oy: 30 };
     case "hut_front": return { w: 108, h: 26, ox: 54, oy: 26 };
     case "records": return { w: 28, h: 34, ox: 14, oy: 34 };
+    case "namepost": return { w: 10, h: 18, ox: 5, oy: 18 };
+    case "coop_front": return { w: 112, h: 30, ox: 56, oy: 30 };
+    case "farmshop_front": return { w: 92, h: 26, ox: 46, oy: 26 };
+    case "ricedepot_front": return { w: 96, h: 26, ox: 48, oy: 26 };
+    case "pump": return { w: 36, h: 48, ox: 18, oy: 48 };
+    case "haystack": return { w: 30, h: 26, ox: 15, oy: 25 };
+    case "scarecrow": return { w: 20, h: 34, ox: 10, oy: 34 };
   }
 }
 
@@ -103,13 +110,14 @@ function drawBoard(c: Ctx): void {
   rect(c, "#b5566f", 7, 6, 3, 1); rect(c, "#3d86a8", 17, 5, 5, 1); rect(c, "#3d86a8", 17, 13, 4, 1);
 }
 
-const SIGN_ICONS: Record<"fish" | "note", { rows: string[]; color: string; x: number; y: number }> = {
+const SIGN_ICONS: Record<"fish" | "note" | "rice", { rows: string[]; color: string; x: number; y: number }> = {
   fish: { rows: ["..####...", ".######.#", "########.", ".######.#", "..####..."], color: "#3d86a8", x: 4, y: 3 },
   note: { rows: ["...##.", "...#.#", "...#..", ".###..", "####..", ".##..."], color: C.red, x: 6, y: 2 },
+  rice: { rows: ["..#.#..", ".#.#.#.", "..#.#..", ".#.#.#.", "...#...", "...#..."], color: C.gold, x: 5, y: 2 },
 };
 
-/** A signpost with a pixel icon: a fish (the hall's "Bến câu cá") or a music note (the pond's "Bến vào"). */
-function drawSign(c: Ctx, icon: "fish" | "note"): void {
+/** A signpost with a pixel icon: a fish (to the pond), a music note (to the hall) or a rice panicle (to the field). */
+function drawSign(c: Ctx, icon: "fish" | "note" | "rice"): void {
   rect(c, C.outline, 7, 10, 4, 16); rect(c, C.wood, 8, 10, 2, 16);
   rect(c, C.outline, 0, 0, 18, 12); rect(c, C.woodLight, 1, 1, 16, 10);
   const ic = SIGN_ICONS[icon];
@@ -178,6 +186,104 @@ function drawRecords(c: Ctx): void {
   rect(c, C.gold, 13, 13, 2, 2); rect(c, C.gold, 11, 15, 6, 2); rect(c, C.outline, 11, 17, 6, 1);
 }
 
+/** A plot's name post: a stake with a small board (the owner's name is drawn over it as a label). */
+function drawNamePost(c: Ctx): void {
+  rect(c, C.outline, 4, 6, 3, 12); rect(c, C.wood, 5, 6, 1, 12);
+  rect(c, C.outline, 0, 0, 10, 8); rect(c, C.woodPale, 1, 1, 8, 6); rect(c, C.woodDark, 2, 3, 6, 1);
+}
+
+const HTX: ReadonlyArray<readonly [number, readonly string[]]> = [
+  [7, ["#..#", "#..#", "####", "#..#", "#..#"]],
+  [13, ["####", ".##.", ".##.", ".##.", ".##."]],
+  [19, ["#..#", ".##.", ".##.", ".##.", "#..#"]],
+];
+
+/** Hợp tác xã: the office's front wall, a window with chú Tám's desk and the red "HTX" board. */
+function drawCoopFront(c: Ctx): void {
+  rect(c, C.outline, 0, 4, 112, 26);
+  rect(c, "#e8dcc0", 1, 5, 110, 24);
+  for (let y = 8; y < 29; y += 4) rect(c, "#d6c8a6", 1, y, 110, 1);
+  // the window and the desk behind it
+  rect(c, C.outline, 36, 8, 40, 14); rect(c, "#a6d6e8", 37, 9, 38, 12); rect(c, C.woodDark, 37, 17, 38, 4);
+  rect(c, C.paper, 42, 15, 8, 2); rect(c, C.blue, 58, 14, 3, 3);
+  // the HTX board
+  rect(c, C.outline, 4, 0, 24, 12); rect(c, C.red, 5, 1, 22, 10);
+  for (const [x, rows] of HTX) {
+    rows.forEach((r, j) => {
+      for (let i = 0; i < r.length; i++) if (r.charAt(i) === "#") px(c, C.goldLight, x + i, 4 + j);
+    });
+  }
+  // a door and a bench
+  rect(c, C.outline, 86, 10, 18, 20); rect(c, C.wood, 87, 11, 16, 19); px(c, C.gold, 100, 20);
+  rect(c, C.outline, 8, 24, 22, 3); rect(c, C.woodLight, 9, 24, 20, 1);
+}
+
+/** Tiệm vật tư nông nghiệp: a counter with fertilizer sacks and pesticide bottles. */
+function drawFarmShopFront(c: Ctx): void {
+  rect(c, C.outline, 0, 10, 92, 16);
+  rect(c, C.woodPale, 1, 11, 90, 3); rect(c, "#e0b27a", 1, 11, 90, 1);
+  for (let x = 1; x < 91; x += 6) { rect(c, C.woodLight, x, 14, 5, 11); rect(c, C.wood, x + 5, 14, 1, 11); }
+  for (const [x, bag, band] of [[6, C.paper, C.water], [20, C.paper, C.red], [34, "#e8dcc0", C.leafLight]] as const) {
+    rect(c, C.outline, x, 1, 12, 11); rect(c, bag, x + 1, 2, 10, 9); rect(c, band, x + 1, 5, 10, 3);
+  }
+  for (const [x, col] of [[56, C.blue], [63, "#d9534f"], [70, "#6fbf4a"]] as const) {
+    rect(c, C.outline, x, 3, 6, 8); rect(c, col, x + 1, 5, 4, 5); rect(c, C.white, x + 2, 3, 2, 2);
+  }
+  rect(c, C.outline, 80, 4, 9, 7); rect(c, C.paper, 81, 5, 7, 5); rect(c, C.outline, 82, 7, 5, 1);
+}
+
+/** Vựa lúa: rice sacks stacked by the counter, a platform scale (cân bàn) and a basket of paddy. */
+function drawRiceDepotFront(c: Ctx): void {
+  rect(c, C.outline, 0, 10, 96, 16);
+  rect(c, C.woodPale, 1, 11, 94, 3); rect(c, "#e0b27a", 1, 11, 94, 1);
+  for (let x = 1; x < 95; x += 6) { rect(c, "#b88a52", x, 14, 5, 11); rect(c, "#a8784a", x + 5, 14, 1, 11); }
+  for (const [x, y] of [[4, 2], [17, 2], [10, -1]] as const) {
+    rect(c, C.outline, x, y + 1, 14, 11); rect(c, "#e8d8a8", x + 1, y + 2, 12, 9); rect(c, "#c9a55a", x + 1, y + 8, 12, 1);
+    px(c, C.gold, x + 6, y + 4); px(c, C.gold, x + 7, y + 5);
+  }
+  rect(c, C.outline, 62, 0, 3, 12); rect(c, C.outline, 54, 8, 22, 4); rect(c, C.silver, 55, 9, 20, 2);
+  rect(c, C.outline, 58, 0, 11, 5); rect(c, C.paper, 59, 1, 9, 3); px(c, C.red, 63, 2);
+  rect(c, C.outline, 78, 3, 14, 9); rect(c, "#c9a55a", 79, 4, 12, 7);
+  for (let x = 80; x < 90; x += 2) px(c, C.goldLight, x, 4);
+}
+
+/** The pump house (cống) at the canal's west end: a brick hut, its roof and a valve on the pipe. */
+function drawPump(c: Ctx): void {
+  rect(c, C.outline, 2, 16, 30, 30);
+  for (let y = 17; y < 45; y += 4) {
+    for (let x = 3; x < 31; x += 7) {
+      const o = (y - 17) % 8 === 0 ? 0 : 3;
+      rect(c, "#b5566f", x + o, y, 6, 3); rect(c, "#8e3a4a", x + o, y + 3, 6, 1);
+    }
+  }
+  for (let j = 0; j < 12; j++) rect(c, j === 11 ? C.outline : j % 3 === 0 ? "#6e8f3a" : "#8fb84e", 12 - j, 4 + j, 10 + j * 2, 1);
+  rect(c, C.outline, 12, 3, 10, 1);
+  rect(c, C.outline, 12, 30, 10, 16); rect(c, C.woodDark, 13, 31, 8, 15);
+  rect(c, C.outline, 28, 38, 8, 5); rect(c, C.silver, 29, 39, 7, 3);
+  rect(c, C.outline, 30, 30, 5, 5); rect(c, C.red, 31, 31, 3, 3);
+}
+
+/** A haystack (đống rơm) by the drying yard. */
+function drawHaystack(c: Ctx): void {
+  for (let j = 0; j < 22; j++) {
+    const half = Math.round(Math.sin(((j + 2) / 24) * Math.PI) * 13);
+    rect(c, C.outline, 15 - half - 1, 2 + j, half * 2 + 2, 1);
+    rect(c, j % 4 === 1 ? "#c9a55a" : j % 4 === 3 ? "#a8843f" : "#e0c27a", 15 - half, 2 + j, half * 2, 1);
+  }
+  rect(c, C.outline, 2, 24, 26, 1);
+  rect(c, C.woodDark, 14, 0, 2, 4);
+}
+
+/** Bù nhìn: a straw scarecrow in a nón lá with outstretched sleeves. */
+function drawScarecrow(c: Ctx): void {
+  rect(c, C.outline, 9, 10, 2, 24); rect(c, C.woodDark, 9, 10, 1, 24);
+  rect(c, C.outline, 1, 14, 18, 3); rect(c, C.woodLight, 2, 15, 16, 1);
+  rect(c, C.outline, 5, 15, 10, 11); rect(c, C.blue, 6, 16, 8, 9); rect(c, "#2f63a0", 6, 22, 8, 1);
+  rect(c, "#e0c27a", 1, 16, 3, 3); rect(c, "#e0c27a", 16, 16, 3, 3);
+  rect(c, C.outline, 7, 6, 6, 6); rect(c, "#e8d8a8", 8, 7, 4, 4);
+  for (let j = 0; j < 5; j++) rect(c, j === 4 ? "#b89758" : "#f3e3b0", 10 - j * 2, 2 + j, j * 4 + 1, 1);
+}
+
 export function drawProp(c: Ctx, p: PropPlacement): void {
   switch (p.kind) {
     case "palm": return drawPalm(c, p.h, p.lean, p.seed);
@@ -192,6 +298,13 @@ export function drawProp(c: Ctx, p: PropPlacement): void {
     case "stall_front": return drawStallFront(c);
     case "hut_front": return drawHutFront(c);
     case "records": return drawRecords(c);
+    case "namepost": return drawNamePost(c);
+    case "coop_front": return drawCoopFront(c);
+    case "farmshop_front": return drawFarmShopFront(c);
+    case "ricedepot_front": return drawRiceDepotFront(c);
+    case "pump": return drawPump(c);
+    case "haystack": return drawHaystack(c);
+    case "scarecrow": return drawScarecrow(c);
   }
 }
 

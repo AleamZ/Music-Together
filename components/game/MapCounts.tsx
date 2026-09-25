@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import type { MapMember } from "@/lib/presence-modes";
-import type { MapId } from "@/lib/game/maps/types";
+import { MAP_IDS, type MapId } from "@/lib/game/maps/types";
 
-const MAPS: Array<{ id: MapId; icon: string; name: string }> = [
-  { id: "hall", icon: "🎵", name: "Sảnh" },
-  { id: "pond", icon: "🎣", name: "Ao cá" },
-];
+const LABEL: Record<MapId, { icon: string; name: string }> = {
+  hall: { icon: "🎵", name: "Sảnh" },
+  pond: { icon: "🎣", name: "Ao cá" },
+  field: { icon: "🌾", name: "Đồng" },
+};
+const MAPS = MAP_IDS.map((id) => ({ id, ...LABEL[id] }));
 
 /** Top-centre chip: how many members are on each map; tap for the names (classic-view members marked 🖥️). */
 export default function MapCounts({ counts }: { counts: Record<MapId, MapMember[]> }) {

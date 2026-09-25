@@ -8,9 +8,17 @@ export interface PresenceEntry { accountId: string; name: string; mode: Presence
 
 const onlineAt = (m: PresenceMeta): number => (typeof m.online_at === "string" ? Date.parse(m.online_at) || 0 : 0);
 
+/** Every map id (a new one is a type error until it is listed). */
+const KNOWN_MAPS: Record<MapId, true> = { hall: true, pond: true, field: true };
+
+/** A presence `map` value; anything unknown (an old client) is the hall. */
+export function presenceMap(v: unknown): MapId {
+  return typeof v === "string" && Object.hasOwn(KNOWN_MAPS, v) ? (v as MapId) : "hall";
+}
+
 /** Presence state (key = account id, one meta per open tab) → one entry per account.
  *  An account counts as "game" when ANY of its tabs is in game mode; its map comes from the game tab that tracked
- *  last (an old client without a map is in the hall). Sorted by account id. */
+ *  last (an old client without a map, or with one it does not know, is in the hall). Sorted by account id. */
 export function aggregatePresenceModes(state: Record<string, PresenceMeta[] | undefined>): PresenceEntry[] {
   const out: PresenceEntry[] = [];
   for (const [accountId, metas] of Object.entries(state)) {
@@ -22,7 +30,7 @@ export function aggregatePresenceModes(state: Record<string, PresenceMeta[] | un
       continue;
     }
     const latest = games.reduce((a, b) => (onlineAt(b) > onlineAt(a) ? b : a));
-    out.push({ accountId, name, mode: "game", map: latest.map === "pond" ? "pond" : "hall" });
+    out.push({ accountId, name, mode: "game", map: presenceMap(latest.map) });
   }
   return out.sort((a, b) => (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
 }
@@ -31,7 +39,7 @@ export interface MapMember { accountId: string; name: string; classic: boolean }
 
 /** Who is on which map (me included): classic-view members count in the hall. */
 export function mapCounts(presence: readonly PresenceEntry[]): Record<MapId, MapMember[]> {
-  const out: Record<MapId, MapMember[]> = { hall: [], pond: [] };
+  const out: Record<MapId, MapMember[]> = { hall: [], pond: [], field: [] };
   for (const p of presence) {
     const classic = p.mode === "classic";
     out[classic ? "hall" : p.map ?? "hall"].push({ accountId: p.accountId, name: p.name, classic });

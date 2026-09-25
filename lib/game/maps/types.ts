@@ -3,10 +3,12 @@ import type { Facing, Look, Vec } from "@/lib/game/types";
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Spot { x: number; y: number; dir: Facing }
 
-export type MapId = "hall" | "pond";
-export const MAP_IDS: readonly MapId[] = ["hall", "pond"];
+export type MapId = "hall" | "pond" | "field";
+export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field"];
 
-export type InteractKind = "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records";
+export type InteractKind =
+  | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
+  | "plot" | "coop" | "farm_shop" | "rice_depot" | "drying";
 
 export interface Interactable {
   /** Unique per map: "dock_sign", "fish_3", … */
@@ -24,7 +26,12 @@ export interface Interactable {
   face?: Facing;
   /** portal: where it leads. */
   to?: { map: MapId; arrive: Spot };
+  /** plot: its number (1–10). */
+  plot?: number;
 }
+
+/** A rice plot on the field (v15): its number, its land and where its name post stands. */
+export interface PlotGeom { no: number; kind: "private" | "village"; rect: Rect; post: Vec }
 
 /** A shopkeeper: a static character with a name tag. */
 export interface Npc { id: string; name: string; look: Look; spot: Spot }
@@ -37,12 +44,19 @@ export type PropPlacement =
   | { kind: "table"; x: number; y: number }
   | { kind: "mixer"; x: number; y: number }
   | { kind: "board"; x: number; y: number }
-  | { kind: "sign"; x: number; y: number; icon?: "fish" | "note" }
+  | { kind: "sign"; x: number; y: number; icon?: "fish" | "note" | "rice" }
   | { kind: "banana"; x: number; y: number }
   | { kind: "lightpole"; x: number; y: number }
   | { kind: "stall_front"; x: number; y: number }
   | { kind: "hut_front"; x: number; y: number }
-  | { kind: "records"; x: number; y: number };
+  | { kind: "records"; x: number; y: number }
+  | { kind: "namepost"; x: number; y: number }
+  | { kind: "coop_front"; x: number; y: number }
+  | { kind: "farmshop_front"; x: number; y: number }
+  | { kind: "ricedepot_front"; x: number; y: number }
+  | { kind: "pump"; x: number; y: number }
+  | { kind: "haystack"; x: number; y: number }
+  | { kind: "scarecrow"; x: number; y: number };
 
 /** Where classic-mode members are shown (the hall only). */
 export interface Seating {
@@ -69,4 +83,6 @@ export interface GameMap {
   interactables: Interactable[];
   props: PropPlacement[];
   npcs: Npc[];
+  /** Rice plots (the field only). */
+  plots: PlotGeom[];
 }
