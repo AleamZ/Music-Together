@@ -128,6 +128,29 @@ describe("useLyrics: the lyrics broadcast is only a hint", () => {
     expect(db.fetchVideoLyrics).toHaveBeenCalledTimes(2);
   });
 
+  it("applies a DB offset of 0 from a hint: the DJ's reset reaches the viewer and clears the remembered offset", async () => {
+    db.fetchVideoLyrics.mockResolvedValueOnce(row({ offset_ms: 1200 }));
+    const { result } = mount(props());
+    await waitFor(() => expect(result.current.offsetMs).toBe(1200));
+    expect(localStorage.getItem(OFFSET_KEY)).toBe("1200");
+
+    db.fetchVideoLyrics.mockResolvedValueOnce(row({ offset_ms: 0 }));
+    await receive({ trackId: TRACK, videoId: VIDEO });
+
+    await waitFor(() => expect(result.current.offsetMs).toBe(0));
+    expect(localStorage.getItem(OFFSET_KEY)).toBeNull();
+    expect(db.fetchVideoLyrics).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the first load as it was: a DB offset of 0 leaves the viewer's own remembered offset", async () => {
+    localStorage.setItem(OFFSET_KEY, "900");
+    db.fetchVideoLyrics.mockResolvedValueOnce(row({ offset_ms: 0 }));
+    const { result } = mount(props());
+    await waitFor(() => expect(result.current.meta?.trackName).toBe("DB Track"));
+    expect(result.current.offsetMs).toBe(900);
+    expect(localStorage.getItem(OFFSET_KEY)).toBe("900");
+  });
+
   it("ignores a hint for another track or another video", async () => {
     db.fetchVideoLyrics.mockResolvedValue(row());
     const { result } = mount(props());

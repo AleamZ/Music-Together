@@ -97,10 +97,10 @@ export function useLyrics({
   }
 
   /**
-   * Show a video_lyrics row: lines, meta, the in-memory cache and a non-zero DB offset (also kept in localStorage).
+   * Show the lyrics of a video_lyrics row: lines, meta and the in-memory cache.
    * The first load and a DJ's hint both go through here. Returns false for a row without lyrics.
    */
-  const applyDbRecord = useCallback((record: VideoLyricsRecord, videoId: string, cacheKey: string): boolean => {
+  const showDbLyrics = useCallback((record: VideoLyricsRecord, cacheKey: string): boolean => {
     if (!record.synced_lyrics && !record.plain_lyrics) return false;
     const parsedLines = parseLrc(record.synced_lyrics || record.plain_lyrics || "");
     const dbMeta: LyricsData = {
@@ -113,20 +113,25 @@ export function useLyrics({
     setLines(parsedLines);
     setMeta(dbMeta);
     setError(null);
-    if (typeof record.offset_ms === "number" && record.offset_ms !== 0) {
-      setOffsetMsState(record.offset_ms);
-      saveLyricOffset(videoId, record.offset_ms);
-    }
     setLoading(false);
     return true;
   }, []);
 
+  /** Use a video_lyrics row's offset and remember it in this browser (0 forgets the remembered one). */
+  const adoptDbOffset = useCallback((record: VideoLyricsRecord, videoId: string) => {
+    if (typeof record.offset_ms !== "number") return;
+    setOffsetMsState(record.offset_ms);
+    saveLyricOffset(videoId, record.offset_ms);
+  }, []);
+
   // A DJ's hint names a track and a video, nothing else: refetch that row from the database (never the in-memory
-  // cache, never the payload — anyone can broadcast on the topic) and show it as the first load does.
+  // cache, never the payload — anyone can broadcast on the topic) and show it as the first load does, except that
+  // its offset applies even when it is 0: the hint follows a DJ change, which may be a reset.
   const showHintedRecord = useEffectEvent((hint: LyricHint, record: VideoLyricsRecord | null) => {
     // The room may have moved on while the row was loading.
     if (!record || !title || hint.trackId !== trackId || hint.videoId !== youtubeVideoId) return;
-    applyDbRecord(record, hint.videoId, lyricsCacheKey(title, durationSeconds || 0));
+    showDbLyrics(record, lyricsCacheKey(title, durationSeconds || 0));
+    adoptDbOffset(record, hint.videoId);
   });
   const onLyricHint = useEffectEvent((hint: LyricHint) => {
     if (!trackId || !youtubeVideoId || hint.trackId !== trackId || hint.videoId !== youtubeVideoId) return;
@@ -173,7 +178,11 @@ export function useLyrics({
       if (videoId) {
         try {
           const dbRecord = await fetchVideoLyrics(videoId);
-          if (dbRecord && applyDbRecord(dbRecord, videoId, cacheKey)) return;
+          if (dbRecord && showDbLyrics(dbRecord, cacheKey)) {
+            // First load: an offset of 0 means "not calibrated", so this browser keeps its own remembered offset.
+            if (dbRecord.offset_ms !== 0) adoptDbOffset(dbRecord, videoId);
+            return;
+          }
         } catch {
           // Fall back to external API query
         }
@@ -228,7 +237,7 @@ export function useLyrics({
         setLoading(false);
       }
     },
-    [applyDbRecord, canControl, roomId, sessionToken, offsetMs]
+    [showDbLyrics, adoptDbOffset, canControl, roomId, sessionToken, offsetMs]
   );
 
   // Fetch automatically when song title or YouTube video changes (no title: the panel is cleared above)
