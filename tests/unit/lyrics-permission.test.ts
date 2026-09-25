@@ -82,9 +82,11 @@ describe("useLyrics permission gating (DJ vs listener)", () => {
     expect(db.updateVideoLyricOffset).toHaveBeenCalledWith(ROOM, TOKEN, VIDEO, 2500);
   });
 
-  it("writes the DJ's custom lyrics with the room and the session, and no name", async () => {
+  it("writes the DJ's custom lyrics as a full record with the DJ's current offset, the room and the session", async () => {
+    localStorage.setItem(`music-together:lyric-offset:${VIDEO}`, "2500"); // the DJ calibrated this video before
     const { result } = mount(props({ canControl: true }));
     await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.offsetMs).toBe(2500);
     act(() =>
       result.current.applyCustomLyric(
         { trackName: "Official Track", artistName: "Official Artist", syncedLyrics: "[00:05.00] Chorus" },
@@ -99,12 +101,12 @@ describe("useLyrics permission gating (DJ vs listener)", () => {
       artistName: "Official Artist",
       syncedLyrics: "[00:05.00] Chorus",
       plainLyrics: undefined,
-      offsetMs: 0,
+      offsetMs: 2500,
       timingSource: "custom",
     });
   });
 
-  it("caches what the lyrics API found for the DJ, with the room and the session", async () => {
+  it("caches what the lyrics API found for the DJ as a full record, with the room and the session", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(API_LYRICS)));
     mount(props({ canControl: true }));
     await waitFor(() => expect(db.saveVideoLyrics).toHaveBeenCalledTimes(1));
@@ -117,5 +119,14 @@ describe("useLyrics permission gating (DJ vs listener)", () => {
       offsetMs: 0,
       timingSource: "auto",
     });
+  });
+
+  it("caches the API result with the DJ's current offset, since the row stores the offset as sent", async () => {
+    localStorage.setItem(`music-together:lyric-offset:${VIDEO}`, "1500"); // the DJ calibrated this video before
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(API_LYRICS)));
+    const { result } = mount(props({ canControl: true }));
+    await waitFor(() => expect(db.saveVideoLyrics).toHaveBeenCalledTimes(1));
+    expect(result.current.offsetMs).toBe(1500);
+    expect(db.saveVideoLyrics).toHaveBeenCalledWith(ROOM, TOKEN, expect.objectContaining({ offsetMs: 1500, timingSource: "auto" }));
   });
 });

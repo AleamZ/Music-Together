@@ -3,10 +3,21 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock("@/lib/supabase", () => ({ supabase: { rpc: h.rpc, from: h.from } }));
 
-import { fetchVideoLyrics, saveVideoLyrics, updateVideoLyricOffset } from "@/lib/lyrics/db";
+import { fetchVideoLyrics, saveVideoLyrics, updateVideoLyricOffset, type VideoLyricsWrite } from "@/lib/lyrics/db";
 
 const ROOM = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 const TOKEN = "f3a1c2d4e5b6a7980f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6e5f4a3b2";
+/** A full record, as the hook sends it. */
+const record = (over: Partial<VideoLyricsWrite> = {}): VideoLyricsWrite => ({
+  videoId: "dQw4w9WgXcQ",
+  trackName: "Song A",
+  artistName: "Artist B",
+  syncedLyrics: "[00:01.00]x",
+  plainLyrics: null,
+  offsetMs: 0,
+  timingSource: "custom",
+  ...over,
+});
 /** What supabase-js resolves for a `returns void` RPC. */
 const OK = { data: null, error: null, count: null, status: 204, statusText: "No Content" };
 /** What an old client gets once 0014 has dropped the signature it calls. */
@@ -76,14 +87,7 @@ describe("fetchVideoLyrics (read path, unchanged)", () => {
 describe("saveVideoLyrics", () => {
   it("calls upsert_video_lyrics with the room and the session, and no updated-by name", async () => {
     h.rpc.mockResolvedValue(OK);
-    const saved = await saveVideoLyrics(ROOM, TOKEN, {
-      videoId: "dQw4w9WgXcQ",
-      trackName: "Song A",
-      artistName: "Artist B",
-      syncedLyrics: "[00:02.00] Hi",
-      offsetMs: 500,
-      timingSource: "custom",
-    });
+    const saved = await saveVideoLyrics(ROOM, TOKEN, record({ syncedLyrics: "[00:02.00] Hi", offsetMs: 500 }));
     expect(saved).toBe(true);
     expect(h.rpc).toHaveBeenCalledTimes(1);
     expect(h.rpc).toHaveBeenCalledWith("upsert_video_lyrics", {
@@ -100,9 +104,13 @@ describe("saveVideoLyrics", () => {
     expect(h.from).not.toHaveBeenCalled();
   });
 
-  it("sends missing fields as null and a missing offset as 0", async () => {
+  it("sends absent text as null, so every argument reaches the RPC (JSON drops undefined)", async () => {
     h.rpc.mockResolvedValue(OK);
-    await saveVideoLyrics(ROOM, TOKEN, { videoId: "dQw4w9WgXcQ", plainLyrics: "la la" });
+    await saveVideoLyrics(
+      ROOM,
+      TOKEN,
+      record({ trackName: undefined, artistName: undefined, syncedLyrics: undefined, plainLyrics: "la la", timingSource: "auto" })
+    );
     expect(h.rpc).toHaveBeenCalledWith("upsert_video_lyrics", {
       p_room_id: ROOM,
       p_session_token: TOKEN,
@@ -112,14 +120,14 @@ describe("saveVideoLyrics", () => {
       p_synced_lyrics: null,
       p_plain_lyrics: "la la",
       p_offset_ms: 0,
-      p_timing_source: null,
+      p_timing_source: "auto",
     });
   });
 
   it("does nothing without a video, a room or a session", async () => {
-    expect(await saveVideoLyrics(ROOM, TOKEN, { videoId: "" })).toBe(false);
-    expect(await saveVideoLyrics("", TOKEN, { videoId: "dQw4w9WgXcQ" })).toBe(false);
-    expect(await saveVideoLyrics(ROOM, "", { videoId: "dQw4w9WgXcQ" })).toBe(false);
+    expect(await saveVideoLyrics(ROOM, TOKEN, record({ videoId: "" }))).toBe(false);
+    expect(await saveVideoLyrics("", TOKEN, record())).toBe(false);
+    expect(await saveVideoLyrics(ROOM, "", record())).toBe(false);
     expect(h.rpc).not.toHaveBeenCalled();
     expect(h.from).not.toHaveBeenCalled();
   });
@@ -130,7 +138,7 @@ describe("saveVideoLyrics", () => {
     ["a network failure", () => h.rpc.mockRejectedValue(new TypeError("Failed to fetch"))],
   ])("resolves false on %s, warns once and never writes the table directly", async (_case, arrange) => {
     arrange();
-    await expect(saveVideoLyrics(ROOM, TOKEN, { videoId: "dQw4w9WgXcQ", syncedLyrics: "[00:01.00]x" })).resolves.toBe(false);
+    await expect(saveVideoLyrics(ROOM, TOKEN, record())).resolves.toBe(false);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(h.from).not.toHaveBeenCalled();
   });

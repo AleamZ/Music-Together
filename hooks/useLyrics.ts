@@ -207,8 +207,8 @@ export function useLyrics({
         setMeta(data);
 
         // 3. Asynchronously cache to database so future plays load instantly
-        // ONLY DJ / Controller writes the new song cache to DB to prevent duplicate writes and overwriting offset
-        // (the RPC checks the session and the DJ role again).
+        // ONLY DJ / Controller writes the new song cache to DB to prevent duplicate writes (the RPC checks the
+        // session and the DJ role again). The row becomes this full record, with the DJ's current offset.
         if (canControl && roomId && sessionToken && videoId && (data.syncedLyrics || data.plainLyrics)) {
           void saveVideoLyrics(roomId, sessionToken, {
             videoId,
@@ -216,7 +216,7 @@ export function useLyrics({
             artistName: data.artistName,
             syncedLyrics: data.syncedLyrics,
             plainLyrics: data.plainLyrics,
-            offsetMs: 0,
+            offsetMs,
             timingSource: "auto",
           });
         }
@@ -228,7 +228,7 @@ export function useLyrics({
         setLoading(false);
       }
     },
-    [applyDbRecord, canControl, roomId, sessionToken]
+    [applyDbRecord, canControl, roomId, sessionToken, offsetMs]
   );
 
   // Fetch automatically when song title or YouTube video changes (no title: the panel is cleared above)

@@ -35,14 +35,16 @@ export async function fetchVideoLyrics(videoId: string): Promise<VideoLyricsReco
 /** The timing sources upsert_video_lyrics accepts (0014_lyrics_lockdown.sql). */
 export type LyricsTimingSource = "auto" | "custom";
 
+/** The full record the DJ applied: the row becomes exactly this, so every field is required (absent text is null). */
 export interface VideoLyricsWrite {
   videoId: string;
-  trackName?: string | null;
-  artistName?: string | null;
-  syncedLyrics?: string | null;
-  plainLyrics?: string | null;
-  offsetMs?: number;
-  timingSource?: LyricsTimingSource | null;
+  trackName: string | null | undefined;
+  artistName: string | null | undefined;
+  syncedLyrics: string | null | undefined;
+  plainLyrics: string | null | undefined;
+  /** The DJ's current offset: stored as sent, 0 included. */
+  offsetMs: number;
+  timingSource: LyricsTimingSource;
 }
 
 /**
@@ -61,12 +63,13 @@ async function writeRpc(fn: string, args: Record<string, unknown>): Promise<bool
 }
 
 /**
- * Upsert the cached lyrics and timing of a YouTube video. Only the room's DJ may: the RPC checks the session,
- * the DJ role and that the video is the room's current or queued song, and takes "updated by" from the account.
- * Resolves true once saved, false when skipped or refused.
+ * Replace the cached lyrics and timing of a YouTube video with the record the DJ applied. Only the room's DJ may:
+ * the RPC checks the session, the DJ role and that the video is the room's current or queued song, and takes
+ * "updated by" from the account. Resolves true once saved, false when skipped or refused.
  */
 export async function saveVideoLyrics(roomId: string, sessionToken: string, record: VideoLyricsWrite): Promise<boolean> {
   if (!roomId || !sessionToken || !record.videoId) return false;
+  // Every argument is sent, absent text as null: JSON drops undefined, and the RPC has no defaults.
   return writeRpc("upsert_video_lyrics", {
     p_room_id: roomId,
     p_session_token: sessionToken,
@@ -75,8 +78,8 @@ export async function saveVideoLyrics(roomId: string, sessionToken: string, reco
     p_artist_name: record.artistName ?? null,
     p_synced_lyrics: record.syncedLyrics ?? null,
     p_plain_lyrics: record.plainLyrics ?? null,
-    p_offset_ms: record.offsetMs ?? 0,
-    p_timing_source: record.timingSource ?? null,
+    p_offset_ms: record.offsetMs,
+    p_timing_source: record.timingSource,
   });
 }
 
