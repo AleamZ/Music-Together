@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { codeToFacing, createSendGate, facingToCode, parseGameMessage, toPayload, type GameMessage } from "@/lib/game/net/protocol";
+import { codeToFacing, createSendGate, facingToCode, FARM_ANIM, GAME_EVENTS, parseGameMessage, toPayload, type GameMessage } from "@/lib/game/net/protocol";
 
 const B = { width: 640, height: 400 };
 const mv = (x: number): GameMessage => ({ t: "mv", id: "me", x, y: 0, d: "r", mv: true, vx: 1, vy: 0 });
@@ -51,6 +51,18 @@ describe("parseGameMessage", () => {
     expect(codeToFacing(facingToCode("left"))).toBe("left");
     expect(toPayload({ t: "lk", id: "a" })).toEqual({ event: "lk", payload: { id: "a" } });
   });
+  it("accepts the field's fp (plot 0–10) and fa (animation 0–8)", () => {
+    expect(GAME_EVENTS).toEqual(expect.arrayContaining(["fp", "fa"]));
+    expect(parseGameMessage("fp", { id: "a", p: 0 }, B)).toEqual({ t: "fp", id: "a", p: 0 });
+    expect(parseGameMessage("fp", { id: "a", p: 10 }, B)).toEqual({ t: "fp", id: "a", p: 10 });
+    expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.prepare }, B)).toEqual({ t: "fa", id: "a", a: 8 });
+    expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.stop }, B)).toEqual({ t: "fa", id: "a", a: 0 });
+    const bad: Array<[string, unknown]> = [
+      ["fp", { id: "a", p: 11 }], ["fp", { id: "a", p: -1 }], ["fp", { id: "a", p: 1.5 }], ["fp", { id: "a", p: "3" }], ["fp", { id: "a" }],
+      ["fa", { id: "a", a: 9 }], ["fa", { id: "a", a: -1 }], ["fa", { id: "a", a: "1" }], ["fa", { id: "" , a: 1 }],
+    ];
+    for (const [event, payload] of bad) expect(parseGameMessage(event, payload, B), `${event} ${JSON.stringify(payload)}`).toBeNull();
+  });
 });
 
 describe("createSendGate", () => {
@@ -97,6 +109,20 @@ describe("createSendGate", () => {
     gate.push(mv(2));
     vi.advanceTimersByTime(3000);
     expect(sent.map((m) => (m.t === "fs" ? `fs${m.f}` : m.t))).toEqual(["fs1", "fs2", "fs3", "fs0", "mv"]);
+    gate.dispose();
+  });
+
+  it("treats fp and fa as control messages too", () => {
+    vi.useFakeTimers();
+    const sent: GameMessage[] = [];
+    const gate = createSendGate((m) => sent.push(m));
+    gate.push(mv(1));
+    gate.push({ t: "fa", id: "me", a: 5 });
+    gate.push({ t: "fp", id: "me", p: 3 });
+    gate.push(mv(2));
+    gate.push({ t: "fa", id: "me", a: 0 });
+    vi.advanceTimersByTime(3000);
+    expect(sent.map((m) => m.t)).toEqual(["mv", "fa", "fp", "fa", "mv"]);
     gate.dispose();
   });
 

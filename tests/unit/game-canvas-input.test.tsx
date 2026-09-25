@@ -4,16 +4,19 @@ import { createRef } from "react";
 import GameCanvas, { type GameCanvasHandle, type GameCanvasProps } from "@/components/game/GameCanvas";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 
-// One fake engine per world: it records what the canvas tells it about the input lock and the plots.
-const { engines } = vi.hoisted(() => ({
-  engines: [] as Array<{ mapId: string; input: boolean[]; plots: unknown[]; destroyed: boolean }>,
+// One fake engine and channel per world: they record what the canvas tells them (input lock, plots, farm
+// animations, messages) and let a test deliver messages.
+type EngineRec = { mapId: string; input: boolean[]; plots: unknown[]; anims: number[]; applied: unknown[]; destroyed: boolean };
+const { engines, channels } = vi.hoisted(() => ({
+  engines: [] as EngineRec[],
+  channels: [] as Array<{ onMessage: (msg: unknown) => void; sent: unknown[] }>,
 }));
 
 vi.mock("@/lib/game/engine", () => ({
   GameEngine: class {
-    rec: { mapId: string; input: boolean[]; plots: unknown[]; destroyed: boolean };
+    rec: EngineRec;
     constructor(_canvas: unknown, map: { id: string }) {
-      this.rec = { mapId: map.id, input: [], plots: [], destroyed: false };
+      this.rec = { mapId: map.id, input: [], plots: [], anims: [], applied: [], destroyed: false };
       engines.push(this.rec);
     }
     setInputEnabled(enabled: boolean) {
@@ -21,6 +24,12 @@ vi.mock("@/lib/game/engine", () => ({
     }
     setPlots(plots: unknown) {
       this.rec.plots.push(plots);
+    }
+    showFarmAnim(a: number) {
+      this.rec.anims.push(a);
+    }
+    applyMessage(msg: unknown) {
+      this.rec.applied.push(msg);
     }
     setLocalHand() {}
     setSpecies() {}
@@ -42,7 +51,11 @@ vi.mock("@/lib/game/maps/registry", () => ({
   paintMap: () => ({}),
 }));
 vi.mock("@/lib/game/net/channel", () => ({
-  joinGameChannel: () => ({ send: () => {}, leave: () => {} }),
+  joinGameChannel: (_room: string, _map: unknown, h: { onMessage: (msg: unknown) => void }) => {
+    const ch = { onMessage: h.onMessage, sent: [] as unknown[] };
+    channels.push(ch);
+    return { send: (msg: unknown) => ch.sent.push(msg), leave: () => {} };
+  },
 }));
 vi.mock("@/lib/game/net/replies", () => ({
   createReplyScheduler: () => ({ onHello: () => {}, dispose: () => {} }),
@@ -52,6 +65,7 @@ vi.mock("@/lib/game/net/replies", () => ({
 // braces matter: a function returned from beforeEach is run as a teardown
 beforeEach(() => {
   engines.length = 0;
+  channels.length = 0;
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query }));
 });
 afterEach(() => {
@@ -113,5 +127,25 @@ describe("GameCanvas plots across travel", () => {
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
     rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
     expect(engines[2].plots.at(-1)).toBe(plots);
+  });
+});
+
+describe("GameCanvas farm messages", () => {
+  it("plays my farm animation and sends fa and fp", () => {
+    const ref = createRef<GameCanvasHandle>();
+    render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    ref.current!.farmAnim(3);
+    ref.current!.plotChanged(7);
+    expect(engines[0].anims).toEqual([3]);
+    expect(channels[0].sent).toEqual([{ t: "fa", id: "me", a: 3 }, { t: "fp", id: "me", p: 7 }]);
+  });
+  it("passes on fp from the others and from my other tab, and gives fa to the engine", () => {
+    const onPlotChanged = vi.fn();
+    render(<GameCanvas mapId="field" {...props} onPlotChanged={onPlotChanged} />);
+    channels[0].onMessage({ t: "fp", id: "ann", p: 7 });
+    channels[0].onMessage({ t: "fp", id: "me", p: 0 });
+    expect(onPlotChanged.mock.calls).toEqual([[7], [0]]);
+    channels[0].onMessage({ t: "fa", id: "ann", a: 1 });
+    expect(engines[0].applied).toEqual([{ t: "fa", id: "ann", a: 1 }]);
   });
 });

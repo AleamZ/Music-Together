@@ -8,19 +8,29 @@ export type FacingCode = "u" | "d" | "l" | "r";
 export type Unit = -1 | 0 | 1;
 /** Fishing phase (v14): 0 idle, 1 line out, 2 bite, 3 reeling. */
 export type FishPhase = 0 | 1 | 2 | 3;
+/** Farm animation (v15 spec §12), played for 2.5 s; 0 stops it. */
+export type FarmAnim = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+export const FARM_ANIM = {
+  stop: 0, transplant: 1, harvest: 2, pump: 3, spray: 4, fertilize: 5, crab: 6, snails: 7, prepare: 8,
+} as const satisfies Record<string, FarmAnim>;
+/** The highest plot number on the field; `fp` with p = 0 means the drying yard or the offers. */
+export const MAX_PLOT = 10;
 
-/** Broadcast messages on channel `game:{roomId}:{mapId}` (v13 spec §8.2, v14 spec §9.3). `id` = sender account id.
- *  `h` = the species id of the fish in the sender's hand (null = none; absent = unchanged); `st` may carry `f`. */
+/** Broadcast messages on channel `game:{roomId}:{mapId}` (v13 spec §8.2, v14 spec §9.3, v15 spec §12). `id` = sender
+ *  account id. `h` = the species id of the fish in the sender's hand (null = none; absent = unchanged); `st` may carry
+ *  `f`. `fp` = "plot p changed, fetch the field again"; `fa` = the sender's farm animation. */
 export type GameMessage =
   | { t: "hello"; id: string }
   | { t: "st" | "mv"; id: string; x: number; y: number; d: FacingCode; mv: boolean; vx: Unit; vy: Unit; h?: string | null; f?: FishPhase }
   | { t: "pa"; id: string; x: number; y: number; pts: Array<[number, number]>; h?: string | null }
   | { t: "fs"; id: string; f: FishPhase; h: string | null; c?: [string, number] }
+  | { t: "fp"; id: string; p: number }
+  | { t: "fa"; id: string; a: FarmAnim }
   | { t: "lk"; id: string }
   | { t: "bye"; id: string };
 export type GameEvent = GameMessage["t"];
 
-export const GAME_EVENTS: readonly GameEvent[] = ["hello", "st", "mv", "pa", "fs", "lk", "bye"];
+export const GAME_EVENTS: readonly GameEvent[] = ["hello", "st", "mv", "pa", "fs", "fp", "fa", "lk", "bye"];
 
 const TO_CODE: Record<Facing, FacingCode> = { up: "u", down: "d", left: "l", right: "r" };
 const FROM_CODE: Record<FacingCode, Facing> = { u: "up", d: "down", l: "left", r: "right" };
@@ -32,6 +42,7 @@ const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 
 const isUnit = (v: unknown): v is Unit => v === -1 || v === 0 || v === 1;
 const isCode = (v: unknown): v is FacingCode => v === "u" || v === "d" || v === "l" || v === "r";
 const isPhase = (v: unknown): v is FishPhase => v === 0 || v === 1 || v === 2 || v === 3;
+const isFarmAnim = (v: unknown): v is FarmAnim => isInt(v) && v >= 0 && v <= 8;
 const isSpecies = (v: unknown): v is string => typeof v === "string" && /^[a-z_]{1,32}$/.test(v);
 /** Optional hand fish: absent → undefined (unchanged), else null or a species id; anything else is malformed. */
 const handOf = (v: unknown): string | null | undefined | false => (v === undefined || v === null || isSpecies(v) ? v : false);
@@ -78,6 +89,10 @@ export function parseGameMessage(event: string, payload: unknown, bounds: { widt
       // a catch label only comes with the end of a cast
       return p.f === 0 ? { t: "fs", id: p.id, f: 0, h, c: [c[0], c[1]] } : { t: "fs", id: p.id, f: p.f, h };
     }
+    case "fp":
+      return isInt(p.p) && p.p >= 0 && p.p <= MAX_PLOT ? { t: "fp", id: p.id, p: p.p } : null;
+    case "fa":
+      return isFarmAnim(p.a) ? { t: "fa", id: p.id, a: p.a } : null;
     default:
       return null;
   }
@@ -105,7 +120,7 @@ export interface SendGateOptions {
 }
 
 /** Token bucket (default 3 msgs/s, burst 3). Movement messages (mv/pa/st) are coalesced to the latest one;
- *  control messages (hello/fs/lk/bye) are queued FIFO, never dropped, and go first. */
+ *  control messages (hello/fs/fp/fa/lk/bye) are queued FIFO, never dropped, and go first. */
 export function createSendGate(send: (msg: GameMessage) => void, opts: SendGateOptions = {}): SendGate {
   const rate = opts.ratePerSec ?? 3;
   const burst = opts.burst ?? 3;

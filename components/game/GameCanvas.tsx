@@ -8,7 +8,7 @@ import type { Rarity } from "@/lib/game/fishing/catalog";
 import { getMap, paintMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import { joinGameChannel } from "@/lib/game/net/channel";
-import type { FishPhase, GameMessage } from "@/lib/game/net/protocol";
+import type { FarmAnim, FishPhase, GameMessage } from "@/lib/game/net/protocol";
 import { createReplyScheduler, replyWindowMs } from "@/lib/game/net/replies";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 
@@ -39,6 +39,10 @@ export interface GameCanvasHandle {
   puff: (at: Vec) => void;
   /** What the field's plots show (crops, name posts, my urgent rings). */
   setPlots: (plots: ReadonlyArray<PlotDraw>) => void;
+  /** Play a farm animation on my character and show it to the others (`fa`; 0 stops it). */
+  farmAnim: (a: FarmAnim) => void;
+  /** Tell the others that plot `p` (0 = the drying yard or the offers) changed: they fetch the field again (`fp`). */
+  plotChanged: (p: number) => void;
 }
 
 export interface GameCanvasProps {
@@ -60,6 +64,8 @@ export interface GameCanvasProps {
   onLookChanged: (accountId: string) => void;
   /** While my rod is out: a tap/click/Space ("tap") or Esc ("cancel"). */
   onFishingInput: (kind: "tap" | "cancel") => void;
+  /** Someone (or my other tab) changed plot `p` on this map (`fp`). */
+  onPlotChanged?: (p: number) => void;
   /** A new world drew its first frame. */
   onFirstFrame: () => void;
   /** The browser has no usable 2D canvas. */
@@ -140,6 +146,11 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         plotsRef.current = plots;
         engineRef.current?.setPlots(plots);
       },
+      farmAnim: (a) => {
+        engineRef.current?.showFarmAnim(a);
+        sendRef.current?.({ t: "fa", id: localId, a });
+      },
+      plotChanged: (p) => sendRef.current?.({ t: "fp", id: localId, p }),
     };
   }, [localId]);
 
@@ -193,6 +204,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         if (msg.id === localId) {
           // Another tab of my account left the world and everyone just dropped my character: tell them where I am.
           if (msg.t === "bye") channel.send(engine.snapshot());
+          // …or it changed a plot: this tab fetches the field again too
+          else if (msg.t === "fp") propsRef.current.onPlotChanged?.(msg.p);
           return;
         }
         if (!propsRef.current.isMember(msg.id)) return;
@@ -203,6 +216,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
             break;
           case "lk":
             propsRef.current.onLookChanged(msg.id);
+            break;
+          case "fp":
+            propsRef.current.onPlotChanged?.(msg.p);
             break;
           case "bye":
             engine.removeActor(msg.id);

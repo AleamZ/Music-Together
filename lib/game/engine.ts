@@ -1,5 +1,6 @@
 import { createActor, setKeyboard, setPath, tickActor, walkFrame, type Actor } from "@/lib/game/actor";
 import { drawPlotShimmer, drawUrgentRing, lookKey, paintPlot, type PlotDraw } from "@/lib/game/art/crops";
+import { drawFarmAnim } from "@/lib/game/art/farm-anim";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { getCharacterFrames } from "@/lib/game/art/raster";
 import { phaseCode, type LocalPhase } from "@/lib/game/fishing/cast";
@@ -8,13 +9,13 @@ import { SWING_MS } from "@/lib/game/fishing/geometry";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap, Interactable, Spot } from "@/lib/game/maps/types";
 import { inputDir, type KeyState } from "@/lib/game/movement";
-import { facingToCode, MAX_PATH_POINTS, type FacingCode, type GameMessage, type Unit } from "@/lib/game/net/protocol";
+import { facingToCode, MAX_PATH_POINTS, type FacingCode, type FarmAnim, type GameMessage, type Unit } from "@/lib/game/net/protocol";
 import { unseenGraceMs } from "@/lib/game/net/replies";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
 import { cameraFor, computeView, hitsCharacter, interactableAt, inUseRange, nearestInteractable, stackBoxes, type Box } from "@/lib/game/scene";
 import { wrapBubble } from "@/lib/game/text";
 import type { Facing, Look, Vec } from "@/lib/game/types";
-import { CATCH_LABEL_MS, RemoteWorld, type RosterEntry } from "@/lib/game/world";
+import { CATCH_LABEL_MS, FARM_ANIM_MS, RemoteWorld, type RosterEntry } from "@/lib/game/world";
 
 export type { RosterEntry } from "@/lib/game/world";
 
@@ -106,6 +107,8 @@ export class GameEngine {
   private landed: { speciesId: string; weightG: number; until: number } | null = null;
   private puffs: Array<{ x: number; y: number; born: number }> = [];
   private species = new Map<string, SpeciesInfo>();
+  /** My farm animation and when it started. */
+  private farm: { a: FarmAnim; at: number } | null = null;
   private plots = new Map<number, PlotDraw>();
   /** Each plot's painted crop, repainted when its look's key changes. */
   private plotArt = new Map<number, { key: string; canvas: HTMLCanvasElement }>();
@@ -174,7 +177,7 @@ export class GameEngine {
     this.world.hello(id, performance.now());
   }
 
-  /** st / mv / pa / fs from the network (other message types are handled by the caller). */
+  /** st / mv / pa / fs / fa from the network (other message types are handled by the caller). */
   applyMessage(msg: GameMessage): void {
     this.world.applyMessage(msg, performance.now());
   }
@@ -221,6 +224,11 @@ export class GameEngine {
   /** The field's plots: the crops, the name posts' labels and my urgent rings (spec §13.4). */
   setPlots(plots: ReadonlyArray<PlotDraw>): void {
     this.plots = new Map(plots.map((p) => [p.no, p]));
+  }
+
+  /** Play farm animation `a` on my character for FARM_ANIM_MS (0 stops it). */
+  showFarmAnim(a: FarmAnim): void {
+    this.farm = a === 0 ? null : { a, at: performance.now() };
   }
 
   /** Trigger the interactable in range (E key / HUD button). Nothing happens while the rod is out. */
@@ -562,10 +570,11 @@ export class GameEngine {
       b.fillRect(x - 5, y + 1, 10, 1);
       b.drawImage(getCharacterFrames(look)[facing][frame], x - 12, y - 46);
     };
-    /** The rod (while fishing) or the fish in hand, drawn over the character. */
-    const drawGear = (pos: Vec, facing: Facing, phase: 0 | 1 | 2 | 3, hand: string | null, rod: { swing: number; tint: string | null; glow: boolean } | null) => {
+    /** The rod (while fishing), the fish in hand or a farm animation, drawn over the character. */
+    const drawGear = (pos: Vec, facing: Facing, phase: 0 | 1 | 2 | 3, hand: string | null, rod: { swing: number; tint: string | null; glow: boolean } | null, farm: FarmAnim) => {
       const feet = { x: Math.round(pos.x) - camX, y: Math.round(pos.y) - camY };
       if (rod) drawRod(b, feet, facing, { phase, swing: rod.swing, tint: rod.tint, glow: rod.glow, t, reducedMotion: reduced });
+      else if (farm !== 0) drawFarmAnim(b, feet, facing, farm, t, reduced);
       else if (hand) drawHeldFish(b, feet, facing, hand);
     };
     for (const e of this.world.roster.values()) {
@@ -577,11 +586,12 @@ export class GameEngine {
       const a = this.world.actors.get(e.id);
       if (!a || !this.visible(e.id, t) || !onScreen(a.display)) continue;
       const f = this.world.fishing(e.id, t);
+      const farm = this.world.farmAnim(e.id, t);
       items.push({
         y: a.display.y,
         draw: () => {
           drawActor(e.look, a.display, a.facing, walkFrame(a));
-          drawGear(a.display, a.facing, f.phase, f.hand, f.phase === 0 ? null : { swing: 1, tint: null, glow: false });
+          drawGear(a.display, a.facing, f.phase, f.hand, f.phase === 0 ? null : { swing: 1, tint: null, glow: false }, farm);
         },
       });
     }
@@ -590,13 +600,14 @@ export class GameEngine {
     }
     const me = this.local;
     const fishing = this.fishing;
+    const myFarm = this.farm && t - this.farm.at < FARM_ANIM_MS ? this.farm.a : 0;
     items.push({
       y: me.display.y,
       draw: () => {
         drawActor(this.localInfo.look, me.display, me.facing, walkFrame(me));
         const swing = Math.min(1, (t - this.castAt) / SWING_MS);
         drawGear(me.display, me.facing, phaseCode(fishing.phase), this.hand,
-          fishing.phase === "idle" ? null : { swing, tint: fishing.tint, glow: fishing.glow });
+          fishing.phase === "idle" ? null : { swing, tint: fishing.tint, glow: fishing.glow }, myFarm);
       },
     });
     items.sort((p, q) => p.y - q.y);
