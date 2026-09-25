@@ -182,4 +182,17 @@ describe("useFarmController", () => {
     expect(toast).toHaveBeenCalledWith("💰 Bán 50 kg nếp khô được 900 xu.");
     expect(onCoinsChanged).toHaveBeenCalledTimes(1);
   });
+
+  it("toasts the price paid even when the shared wallet moved without a field answer", async () => {
+    const { result, toast } = setup();
+    await flush();
+    // A song bonus (+10 xu) landed after the last field answer: the wallet held 1010 before the sale, not the field's 1000.
+    rpc.sellRice.mockResolvedValue({ serverNow: iso(0), mine: parseFarmMine({ items: {}, rice: {}, coins: 1910, gift_claimed: true }) });
+    await act(async () => { await result.current.sell("nep", true, 50); });
+    expect(toast).toHaveBeenLastCalledWith("💰 Bán 50 kg nếp khô được 900 xu.");
+    // A variety the catalog does not know: the wallet's change is all there is to go by.
+    rpc.sellRice.mockResolvedValue({ serverNow: iso(0), mine: parseFarmMine({ items: {}, rice: {}, coins: 2010, gift_claimed: true }) });
+    await act(async () => { await result.current.sell("thom", false, 10); });
+    expect(toast).toHaveBeenLastCalledWith("💰 Bán 10 kg thom ướt được 100 xu.");
+  });
 });

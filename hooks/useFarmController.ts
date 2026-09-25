@@ -5,6 +5,7 @@ import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { useField, type FieldData } from "@/hooks/useField";
 import { plotDraws } from "@/lib/game/art/crops";
 import { dueTasks, plotPrompt, type FarmTask, type PlotRun } from "@/lib/game/farm/actions";
+import { ricePrice } from "@/lib/game/farm/catalog";
 import { serverNow } from "@/lib/game/farm/clock";
 import { boughtText, GIFT_TEXT, harvestText, NOT_OPEN, riceSaleText } from "@/lib/game/farm/messages";
 import type { FieldAction } from "@/lib/game/farm/rpc";
@@ -208,8 +209,11 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     try {
       const before = live.current.state?.mine.coins ?? 0;
       const r = await sellRice(variety, dry, kg);
-      const name = live.current.catalog?.varieties.find((v) => v.id === variety)?.name ?? variety;
-      if (r) live.current.toast(riceSaleText(kg, name, dry, r.mine.coins - before));
+      const v = live.current.catalog?.varieties.find((x) => x.id === variety);
+      const name = v?.name ?? variety;
+      // What sell_rice paid, by its own arithmetic. The wallet is shared with fishing and moves without a field answer
+      // (a song bonus, another tab's sale, a buyer of my plot), so its change is only the fallback for an unknown variety.
+      if (r) live.current.toast(riceSaleText(kg, name, dry, v ? ricePrice(kg, v.pricePerKg, dry) : r.mine.coins - before));
       return r !== null;
     } finally {
       setBusy(false);
