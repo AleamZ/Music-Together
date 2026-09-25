@@ -592,7 +592,7 @@ begin
     assert not has_table_privilege('anon', 'public.' || f, 'select'), f;
   end loop;
   assert has_table_privilege('anon', 'public.rice_varieties', 'select'), 'varieties are public config';
-  foreach f in array array['rice_varieties', 'shop_items'] loop
+  foreach f in array array['rice_varieties', 'shop_items', 'fish_species'] loop
     assert has_table_privilege('anon', 'public.' || f, 'select') and has_table_privilege('authenticated', 'public.' || f, 'select')
        and not has_table_privilege('anon', 'public.' || f, 'insert, update, delete, truncate')
        and not has_table_privilege('authenticated', 'public.' || f, 'insert, update, delete, truncate'), f || ' is read-only';
@@ -686,7 +686,7 @@ begin
 end $$;
 -- Supabase's default privileges give the API roles every right on a new table (TRUNCATE ignores RLS); this cluster has
 -- none, so grant them here: the re-run must take the writes on the config tables back.
-grant insert, update, delete, truncate on public.rice_varieties, public.shop_items to anon, authenticated;
+grant insert, update, delete, truncate on public.rice_varieties, public.shop_items, public.fish_species to anon, authenticated;
 set client_min_messages = warning;
 \i supabase/migrations/0013_v15_field.sql
 reset client_min_messages;
@@ -701,7 +701,7 @@ begin
   assert not exists (select 1 from public.inventory i join public.shop_items s on s.id = i.item_id
                       where s.kind in ('seed', 'fertilizer', 'pesticide', 'critter_box')), 'no farm items left';
   assert exists (select 1 from public.inventory where account_id = a1 and item_id = 'rod_bamboo'), 'fishing gear stays';
-  assert not exists (select 1 from unnest(array['anon', 'authenticated']) r, unnest(array['public.rice_varieties', 'public.shop_items']) tb
+  assert not exists (select 1 from unnest(array['anon', 'authenticated']) r, unnest(array['public.rice_varieties', 'public.shop_items', 'public.fish_species']) tb
                       where has_table_privilege(r, tb, 'insert, update, delete, truncate'))
      and has_table_privilege('anon', 'public.shop_items', 'select'), 'the config tables are read-only again';
 end $$;

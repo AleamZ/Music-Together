@@ -71,7 +71,7 @@ on conflict (id) do update set
 
 -- The config tables are read-only for the API roles. Supabase's default privileges give them every right on a new table,
 -- and TRUNCATE ignores RLS. Select stays.
-revoke insert, update, delete, truncate on public.rice_varieties, public.shop_items from anon, authenticated;
+revoke insert, update, delete, truncate on public.rice_varieties, public.shop_items, public.fish_species from anon, authenticated;
 
 alter table public.coin_ledger drop constraint if exists coin_ledger_reason_check;
 alter table public.coin_ledger add constraint coin_ledger_reason_check
