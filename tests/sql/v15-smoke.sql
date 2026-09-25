@@ -451,7 +451,8 @@ begin
   assert pg_temp.err(format('select public._farm_do_spray(%L, %L, 8, %L, %L)', room, a2, 'spray_fungus', tp)) = 'no item', 'none';
   perform public._farm_do_fertilize(room, a2, 8, 'fert_potash', tp + interval '18 hours');
 
-  -- harvest: ripe at T = 43.2 h (short), in a drained plot, after a 2 s action; the lease ends with it
+  -- harvest: ripe at T = 43.2 h (short), in a drained plot, with a sickle (v15.2), after a 2 s action; the lease ends with it
+  insert into public.inventory (account_id, item_id, qty) values (a2, 'tool_sickle', 1);
   assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'harvest', tp + interval '40 hours'))
     = 'wrong phase', 'not ripe';
   perform public._farm_do_water(room, a2, 8, 1, tp + interval '44 hours');

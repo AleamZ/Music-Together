@@ -260,4 +260,200 @@ end $$;
 
 select 'v15.2 model smoke ok' as result;
 
+-- ---------- the field (§6.4, §6.5, §11.6): the crop row, the checks, the views, the sweep ----------
+insert into smoke select 't3', token from public.register('smoke152_c_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 't4', token from public.register('smoke152_d_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'a2', public._auth_account((select v from smoke where k = 't2'))::text;
+insert into smoke select 'a3', public._auth_account((select v from smoke where k = 't3'))::text;
+insert into smoke select 'a4', public._auth_account((select v from smoke where k = 't4'))::text;
+insert into smoke select 'room', room_id::text from public.create_room('Nông cụ', 'pw', (select v from smoke where k = 't1'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room')::uuid), 'pw', v)
+  from smoke where k in ('t2', 't3', 't4');
+insert into smoke select 'now', date_trunc('minute', now())::text;
+create function pg_temp.set_coins(a uuid, n integer) returns void language sql
+as $$ insert into public.wallets (account_id, coins) values (a, n) on conflict (account_id) do update set coins = n $$;
+create function pg_temp.plot(s jsonb, n integer) returns jsonb language sql as $$ select s->'plots'->(n - 1) $$;
+create function pg_temp.crop(r uuid, n integer) returns public.crops language sql
+as $$ select * from public.crops where room_id = r and plot_no = n $$;
+-- The work check of plot n's crop as it is now.
+create function pg_temp.wc(r uuid, n integer, w text, t timestamptz) returns void language plpgsql as $$
+declare c public.crops := pg_temp.crop(r, n);
+begin
+  perform public._work_check(c, public._variety(c.variety), w, t);
+end $$;
+-- A ripe nếp crop on plot n (transplanted 50 h before t, drained 5 h before t): ripe until t + 10 h.
+create function pg_temp.ripe_nep(r uuid, n integer, a uuid, t timestamptz) returns void language sql
+as $$ insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, transplant_at, water_log)
+      values (r, n, a, 'nep', t - interval '64 hours', t - interval '63 hours', t - interval '60 hours', t - interval '50 hours',
+              jsonb_build_array(jsonb_build_object('t', t - interval '64 hours', 'l', 3),
+                                jsonb_build_object('t', t - interval '5 hours', 'l', 1))) $$;
+-- The wet rice of an account.
+create function pg_temp.wet(a uuid) returns integer language sql
+as $$ select coalesce((select sum(wet_kg)::int from public.rice_stock where account_id = a), 0) $$;
+
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        room uuid := (select v from smoke where k = 'room')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        s jsonb; c jsonb;
+begin
+  perform pg_temp.set_coins(a1, 100000);
+  perform public._farm_do_rent(room, a1, 5, t);
+  perform public._farm_do_rent(room, a1, 6, t);
+  -- a rice round (§6.2): ripe, drained, and a sickle in the bag
+  perform pg_temp.ripe_nep(room, 5, a1, t);
+  assert pg_temp.err(format('select pg_temp.wc(%L, 5, %L, %L)', room, 'harvest', t - interval '3 hours')) = 'wrong phase', 'not ripe';
+  assert pg_temp.err(format('select pg_temp.wc(%L, 5, %L, %L)', room, 'harvest', t)) = 'no sickle', 'a sickle';
+  insert into public.inventory (account_id, item_id, qty) values (a1, 'tool_sickle', 1);
+  assert pg_temp.err(format('select pg_temp.wc(%L, 5, %L, %L)', room, 'harvest', t)) is null, 'a round may start';
+  update public.crops set water_log = water_log || jsonb_build_array(jsonb_build_object('t', t, 'l', 2))
+   where room_id = room and plot_no = 5;
+  assert pg_temp.err(format('select pg_temp.wc(%L, 5, %L, %L)', room, 'harvest', t)) = 'need water', 'drained first';
+  update public.crops set water_log = water_log || jsonb_build_array(jsonb_build_object('t', t, 'l', 1))
+   where room_id = room and plot_no = 5;
+  assert pg_temp.err(format('select pg_temp.wc(%L, 5, %L, %L)', room, 'dig', t)) = 'invalid work', 'two works';
+  -- the row is locked for the call; a partly cut plot takes a round but no care (R8); a running harvester takes nothing
+  assert (select provolatile = 'v' from pg_proc where proname = '_farm_crop' and pronamespace = 'public'::regnamespace),
+    '_farm_crop locks, so it is volatile';
+  update public.crops set harvested_parts = 2, harvested_kg = 25 where room_id = room and plot_no = 5;
+  assert (public._farm_crop(room, 5, a1, t)).harvested_parts = 2, 'a partly cut plot';
+  assert pg_temp.err(format('select public._care_crop(%L, 5, %L, %L)', room, a1, t)) = 'harvesting', 'no care while cutting';
+  update public.crops set harvester_at = t, harvester_until = t + interval '30 seconds' where room_id = room and plot_no = 5;
+  assert pg_temp.err(format('select public._farm_crop(%L, 5, %L, %L)', room, a1, t)) = 'harvester busy', 'a running harvester';
+  -- the view (§11.6): the kind, the parts and the harvester; the logs for the farmer only
+  s := public._field_view(room, a1, t);
+  c := pg_temp.plot(s, 5)->'crop';
+  assert c->>'kind' = 'rice' and c->>'variety' = 'nep' and c->'upland' = 'null' and c->>'phase' = 'ripe' and c->'parts' = '2'
+     and c->'picking' = 'null' and c->'pickings' = '1' and c->'plant_at' = 'null'
+     and c->'harvester' = jsonb_build_object('started_at', t, 'ends_at', t + interval '30 seconds'), format('rice %s', c);
+  assert c->'log'->'harvested_kg' = '25' and c->'log'->'work' = '[]' and c->'log'->'harvests' = '[]', format('the log %s', c->'log');
+  assert pg_temp.plot(public._field_view(room, a3, t), 5)->'crop'->'log' is null, 'no log for a neighbour';
+
+  -- beds on plot 6: nothing planted, then an ớt nursery
+  insert into public.crops (room_id, plot_no, farmer_id, kind, prepared_at, water_log)
+  values (room, 6, a1, 'upland', t, jsonb_build_array(jsonb_build_object('t', t, 'l', 1)));
+  c := pg_temp.plot(public._field_view(room, a1, t), 6)->'crop';
+  assert c->>'kind' = 'upland' and c->'upland' = 'null' and c->>'phase' = 'prepared' and c->'picking' = 'null'
+     and c->'pickings' = '0' and c->'parts' = '0' and c->'harvester' = 'null' and c->'pests' = '[]' and c->'water' = '1',
+    format('bare beds %s', c);
+  update public.crops set upland = 'ot', sow_at = t,
+         pest_rolls = '[{"slot": 1, "u_time": 0, "u_hit": 0.1}, {"slot": 2, "u_time": 0, "u_hit": 0.99}]'
+   where room_id = room and plot_no = 6;
+  c := pg_temp.plot(public._field_view(room, a1, t + interval '1 hour'), 6)->'crop';
+  assert c->>'upland' = 'ot' and c->>'phase' = 'nursery' and c->'picking' = '1' and c->'pickings' = '3'
+     and (c->>'sow_at')::timestamptz = t and c->'plant_at' = 'null', format('the nursery %s', c);
+  assert pg_temp.plot(public._field_view(room, a1, t), 6)::text not like '%u_hit%', 'the rolls stay secret';
+  -- the ớt transplant (§8.9): ≥ nursery_ready_h old, on an Ẩm bed
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'transplant', t + interval '9 hours 59 minutes 59 seconds'))
+         = 'wrong phase', 'the seedlings are too young';
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'transplant', t + interval '10 hours')) is null, 'ready';
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'transplant', t + interval '12 hours')) = 'need water',
+    'the bed dried to Khô at 12 h';
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'harvest', t + interval '10 hours')) = 'wrong phase',
+    'nothing to pick in the nursery';
+  -- transplanted at 11 h: the pests fire from P, the view counts the pickings from P
+  update public.crops set plant_at = t + interval '11 hours',
+         water_log = water_log || jsonb_build_array(jsonb_build_object('t', t + interval '11 hours', 'l', 1))
+   where room_id = room and plot_no = 6;
+  c := pg_temp.plot(public._field_view(room, a1, t + interval '18 hours'), 6)->'crop';
+  assert c->>'phase' = 'root' and c->'picking' = '1' and c->'pests' = jsonb_build_array(jsonb_build_object(
+           'kind', 'thrips', 'since', t + interval '17 hours', 'treated_at', null)), format('ớt at 18 h %s', c);
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'transplant', t + interval '18 hours')) = 'wrong phase',
+    'transplanted once';
+  -- a picking (§8.9): the next picking ready, the bed at most Ẩm
+  update public.crops set water_log = water_log || jsonb_build_array(jsonb_build_object('t', t + interval '57 hours', 'l', 2))
+   where room_id = room and plot_no = 6;
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'harvest', t + interval '56 hours 59 minutes 59 seconds'))
+         = 'wrong phase', 'R_1 − 1 s';
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'harvest', t + interval '57 hours')) = 'need water', 'Đẫm';
+  update public.crops set water_log = water_log || jsonb_build_array(jsonb_build_object('t', t + interval '57 hours', 'l', 1))
+   where room_id = room and plot_no = 6;
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'harvest', t + interval '57 hours')) is null, 'R_1';
+  update public.crops set harvests = jsonb_build_array(jsonb_build_object('t', t + interval '57 hours', 'k', 1, 'kg', 24))
+   where room_id = room and plot_no = 6;
+  c := pg_temp.plot(public._field_view(room, a1, t + interval '58 hours'), 6)->'crop';
+  assert c->>'phase' = 'waiting' and c->'picking' = '2' and c->'log'->'harvests'->0->'kg' = '24', format('after picking 1 %s', c);
+  assert pg_temp.err(format('select pg_temp.wc(%L, 6, %L, %L)', room, 'harvest', t + interval '58 hours')) = 'wrong phase', 'R_2';
+end $$;
+
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        m jsonb;
+begin
+  -- mine (§11.6): the tools, the hoa màu in stock and the tank (null without a sprayer)
+  insert into public.produce_stock (account_id, upland, kg) values (a1, 'khoai', 180), (a1, 'bap', 0);
+  m := public._farm_mine(a1);
+  assert m->'items'->'tool_sickle' = '1' and m->'produce' = '{"khoai": 180}' and m->'tank' = 'null', format('mine %s', m);
+  insert into public.inventory (account_id, item_id, qty) values (a1, 'tool_sprayer', 1);
+  delete from public.farm_profiles where account_id = a1;
+  assert public._farm_mine(a1)->'tank' = '{"item": null, "charges": 0}', 'a sprayer, no profile yet';
+  insert into public.farm_profiles (account_id, tank_item, tank_charges) values (a1, 'spray_insect', 2);
+  assert public._farm_mine(a1)->'tank' = '{"item": "spray_insect", "charges": 2}', 'a loaded tank';
+end $$;
+
+-- The sweep (§6.4): step J pays a finished harvester job; step 6 spares a running one and takes hoa màu whose last picking
+-- is lost, leaving the lease.
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a4 uuid := (select v from smoke where k = 'a4')::uuid; room uuid := (select v from smoke where k = 'room')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz; y integer; w0 integer;
+begin
+  -- plot 5 (a1): 2 of 6 parts cut by hand at a constant Y, then the harvester, from t to t + 30 s
+  y := (public._crop_yield(pg_temp.crop(room, 5), public._variety('nep'), 1.0, 1.0, t + interval '30 seconds')->>'kg')::int;
+  delete from public.rice_stock where account_id = a1;
+  perform public._rice_add(a1, 'nep', public._part_kg(1, y) + public._part_kg(2, y), 0);
+  w0 := pg_temp.wet(a1);
+  perform public._field_open(room, t + interval '29 seconds');
+  assert exists (select 1 from public.crops where room_id = room and plot_no = 5) and pg_temp.wet(a1) = w0, 'still cutting';
+  perform public._field_open(room, t + interval '30 seconds');
+  assert pg_temp.wet(a1) = w0 + y - (2 * y) / 6, format('the machine pays the 4 parts left: %s + %s', w0, y - (2 * y) / 6);
+  assert pg_temp.wet(a1) = y, 'hand plus machine is exactly Y';
+  assert not exists (select 1 from public.crops where room_id = room and plot_no = 5)
+     and not exists (select 1 from public.plot_leases where room_id = room and plot_no = 5), 'the harvest ends the lease';
+  perform public._field_open(room, t + interval '31 seconds');
+  assert pg_temp.wet(a1) = y, 'paid once';
+
+  -- plot 7 (a4, wiped during the job): the job is not paid (R10), the crop goes
+  perform pg_temp.set_coins(a4, 20000);
+  perform public._farm_do_rent(room, a4, 7, t);
+  perform pg_temp.ripe_nep(room, 7, a4, t);
+  update public.crops set harvester_at = t, harvester_until = t + interval '30 seconds' where room_id = room and plot_no = 7;
+  insert into public.anticheat_status (account_id, strikes, ban_state, banned_at) values (a4, 2, 'pending_wipe', now());
+  perform public._ac_wipe(a4, null);
+  perform public._field_open(room, t + interval '30 seconds');
+  assert not exists (select 1 from public.crops where room_id = room and plot_no = 7) and pg_temp.wet(a4) = 0, 'a wiped farmer is not paid';
+
+  -- plot 8 (a2): rice past its fall time is spared while a harvester runs, and paid at its end
+  perform pg_temp.set_coins(a2, 20000);
+  perform public._farm_do_rent(room, a2, 8, t);
+  perform pg_temp.ripe_nep(room, 8, a2, t - interval '60 hours');
+  update public.crops set harvester_at = t - interval '10 seconds', harvester_until = t + interval '20 seconds'
+   where room_id = room and plot_no = 8;
+  perform public._field_open(room, t);
+  assert exists (select 1 from public.crops where room_id = room and plot_no = 8), 'a running harvester keeps fallen rice';
+  perform public._field_open(room, t + interval '20 seconds');
+  assert not exists (select 1 from public.crops where room_id = room and plot_no = 8) and pg_temp.wet(a2) > 0, 'paid at its end';
+
+  -- plot 9 (a2): khoai whose only picking is lost at L_1 = P + 108 h; the lease stays (R26)
+  perform public._farm_do_rent(room, a2, 9, t);
+  insert into public.crops (room_id, plot_no, farmer_id, kind, upland, prepared_at, plant_at, water_log)
+  values (room, 9, a2, 'upland', 'khoai', t - interval '109 hours', t - interval '108 hours',
+          jsonb_build_array(jsonb_build_object('t', t - interval '109 hours', 'l', 1)));
+  perform public._field_open(room, t - interval '1 second');
+  assert exists (select 1 from public.crops where room_id = room and plot_no = 9), 'L_1 − 1 s';
+  perform public._field_open(room, t);
+  assert not exists (select 1 from public.crops where room_id = room and plot_no = 9)
+     and exists (select 1 from public.plot_leases where room_id = room and plot_no = 9), 'lost at L_1; the lease stays';
+
+  -- step 0 stays 0015's: an owner banned by hand leaves the land market
+  update public.field_plots set owner_id = a2, owned_at = t - interval '1 day', sale_price = 9000, sublease_price = 300
+   where room_id = room and plot_no = 2;
+  update public.accounts set is_banned = true where id = a2;
+  perform public._field_open(room, t);
+  assert (select owner_id = a2 and sale_price is null and sublease_price is null from public.field_plots
+           where room_id = room and plot_no = 2), 'a ban set by hand withdraws the listing and the sublease';
+  update public.accounts set is_banned = false where id = a2;
+end $$;
+
+select 'v15.2 field smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql
