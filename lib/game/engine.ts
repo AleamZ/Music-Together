@@ -1,4 +1,5 @@
 import { createActor, setKeyboard, setPath, tickActor, walkFrame, type Actor } from "@/lib/game/actor";
+import { drawPlotShimmer, drawUrgentRing, lookKey, paintPlot, type PlotDraw } from "@/lib/game/art/crops";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { getCharacterFrames } from "@/lib/game/art/raster";
 import { phaseCode, type LocalPhase } from "@/lib/game/fishing/cast";
@@ -105,6 +106,9 @@ export class GameEngine {
   private landed: { speciesId: string; weightG: number; until: number } | null = null;
   private puffs: Array<{ x: number; y: number; born: number }> = [];
   private species = new Map<string, SpeciesInfo>();
+  private plots = new Map<number, PlotDraw>();
+  /** Each plot's painted crop, repainted when its look's key changes. */
+  private plotArt = new Map<number, { key: string; canvas: HTMLCanvasElement }>();
   private raf = 0;
   private lastT = 0;
   private failures = 0;
@@ -212,6 +216,11 @@ export class GameEngine {
   /** Names and rarities for the catch labels. */
   setSpecies(list: ReadonlyArray<{ id: string; name: string; rarity: Rarity }>): void {
     this.species = new Map(list.map((s) => [s.id, { name: s.name, rarity: s.rarity }]));
+  }
+
+  /** The field's plots: the crops, the name posts' labels and my urgent rings (spec §13.4). */
+  setPlots(plots: ReadonlyArray<PlotDraw>): void {
+    this.plots = new Map(plots.map((p) => [p.no, p]));
   }
 
   /** Trigger the interactable in range (E key / HUD button). Nothing happens while the rod is out. */
@@ -534,6 +543,7 @@ export class GameEngine {
     b.fillRect(0, 0, this.vw, this.vh);
     b.drawImage(this.art.background, -camX, -camY);
     this.art.drawAnimated(b, t, camX, camY, reduced);
+    this.drawPlots(b, t, camX, camY, reduced);
 
     const items: Array<{ y: number; draw: () => void }> = [];
     for (const p of this.art.props) {
@@ -612,11 +622,47 @@ export class GameEngine {
     this.drawOverlays(t, camX, camY);
   }
 
+  /** The crops on the plots (between the background and the props), their glints and my urgent rings. */
+  private drawPlots(b: CanvasRenderingContext2D, t: number, camX: number, camY: number, reduced: boolean): void {
+    for (const g of this.map.plots) {
+      const d = this.plots.get(g.no);
+      if (!d) continue;
+      const { w, h } = g.rect;
+      const x = g.rect.x - camX, y = g.rect.y - camY;
+      if (x > this.vw || y > this.vh || x + w < 0 || y + h < 0) continue;
+      if (d.look) {
+        const key = lookKey(d.look);
+        let art = this.plotArt.get(g.no);
+        if (!art || art.key !== key) {
+          art = { key, canvas: paintPlot(d.look, w, h) };
+          this.plotArt.set(g.no, art);
+        }
+        b.drawImage(art.canvas, x, y);
+        drawPlotShimmer(b, x, y, w, h, d.look, t, reduced);
+      }
+      if (d.urgent) drawUrgentRing(b, x, y, w, h, t, reduced);
+    }
+  }
+
   private drawOverlays(now: number, camX: number, camY: number): void {
     const c = this.ctx, s = this.scale, font = this.opts.fontFamily;
     const dev = (x: number, y: number): [number, number] => [(x - camX) * s, (y - camY) * s];
     c.textAlign = "center";
     c.textBaseline = "middle";
+
+    // the plots' name posts: a label over each post, under the people's tags
+    c.font = `${Math.round(4 * s)}px ${font}`;
+    for (const g of this.map.plots) {
+      const d = this.plots.get(g.no);
+      if (!d) continue;
+      const [x, y] = dev(g.post.x, g.post.y - 22);
+      const w = Math.round(c.measureText(d.label).width + 3 * s), h = Math.round(4.8 * s);
+      if (x + w / 2 < 0 || x - w / 2 > this.canvas.width || y + h < 0 || y - h > this.canvas.height) continue;
+      c.fillStyle = "rgba(110, 68, 36, 0.88)";
+      c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
+      c.fillStyle = "#fbf3dc";
+      c.fillText(d.label, x, y + s * 0.3);
+    }
 
     // name tags under the feet — neighbours at a table would overlap, so later tags move down
     const tags: Array<{ kind: "me" | "other" | "npc"; label: string; pos: Vec }> = [

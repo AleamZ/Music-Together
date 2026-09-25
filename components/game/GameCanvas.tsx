@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import type { PlotDraw } from "@/lib/game/art/crops";
 import { GameEngine, type LocalFishing, type RosterEntry } from "@/lib/game/engine";
 import { phaseCode } from "@/lib/game/fishing/cast";
 import type { Rarity } from "@/lib/game/fishing/catalog";
@@ -36,6 +37,8 @@ export interface GameCanvasHandle {
   anglerNear: (p: Vec) => boolean;
   /** A dust puff (digging worms). */
   puff: (at: Vec) => void;
+  /** What the field's plots show (crops, name posts, my urgent rings). */
+  setPlots: (plots: ReadonlyArray<PlotDraw>) => void;
 }
 
 export interface GameCanvasProps {
@@ -71,12 +74,13 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const engineRef = useRef<GameEngine | null>(null);
   const sendRef = useRef<((msg: GameMessage) => void) | null>(null);
   const propsRef = useRef(rest);
-  // What every new engine must know again: my hand fish, the species names, the HUD inset and the input lock.
+  // What every new engine must know again: my hand fish, the species names, the HUD inset, the input lock and the plots.
   const handRef = useRef<string | null>(null);
   const phaseRef = useRef<FishPhase>(0);
   const speciesRef = useRef<ReadonlyArray<{ id: string; name: string; rarity: Rarity }>>([]);
   const insetRef = useRef(0);
   const inputRef = useRef(true);
+  const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
   useEffect(() => {
     propsRef.current = rest;
   });
@@ -132,6 +136,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       },
       anglerNear: (p) => engineRef.current?.anglerNear(p) ?? false,
       puff: (at) => engineRef.current?.puff(at),
+      setPlots: (plots) => {
+        plotsRef.current = plots;
+        engineRef.current?.setPlots(plots);
+      },
     };
   }, [localId]);
 
@@ -172,6 +180,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setSpecies(speciesRef.current);
     engine.setBottomInset(insetRef.current);
     engine.setInputEnabled(inputRef.current);
+    engine.setPlots(plotsRef.current);
 
     // One answer (my state) serves every `hello` that arrives before it goes out; answers are spread over a window
     // that grows with the world, because each one reaches every player.

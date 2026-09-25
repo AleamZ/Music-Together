@@ -4,20 +4,23 @@ import { createRef } from "react";
 import GameCanvas, { type GameCanvasHandle, type GameCanvasProps } from "@/components/game/GameCanvas";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 
-// One fake engine per world: it records what the canvas tells it about the input lock.
+// One fake engine per world: it records what the canvas tells it about the input lock and the plots.
 const { engines } = vi.hoisted(() => ({
-  engines: [] as Array<{ mapId: string; input: boolean[]; destroyed: boolean }>,
+  engines: [] as Array<{ mapId: string; input: boolean[]; plots: unknown[]; destroyed: boolean }>,
 }));
 
 vi.mock("@/lib/game/engine", () => ({
   GameEngine: class {
-    rec: { mapId: string; input: boolean[]; destroyed: boolean };
+    rec: { mapId: string; input: boolean[]; plots: unknown[]; destroyed: boolean };
     constructor(_canvas: unknown, map: { id: string }) {
-      this.rec = { mapId: map.id, input: [], destroyed: false };
+      this.rec = { mapId: map.id, input: [], plots: [], destroyed: false };
       engines.push(this.rec);
     }
     setInputEnabled(enabled: boolean) {
       this.rec.input.push(enabled);
+    }
+    setPlots(plots: unknown) {
+      this.rec.plots.push(plots);
     }
     setLocalHand() {}
     setSpecies() {}
@@ -97,5 +100,18 @@ describe("GameCanvas input lock across travel", () => {
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
     expect(engines.map((e) => e.mapId)).toEqual(["hall", "pond", "hall"]);
     expect(engines[2].input.at(-1)).toBe(true);
+  });
+});
+
+describe("GameCanvas plots across travel", () => {
+  it("passes the plots on at once and gives them to the next map's engine", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    const plots = [{ no: 1, look: null, label: "1 · An", urgent: false }];
+    ref.current!.setPlots(plots);
+    expect(engines[0].plots.at(-1)).toBe(plots);
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(engines[2].plots.at(-1)).toBe(plots);
   });
 });
