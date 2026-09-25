@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { findActiveLyricIndex, parseLrc, type LyricLine } from "@/lib/lyrics/parse-lrc";
-import { joinLyricSync, type LyricSyncHandle } from "@/lib/lyrics/channel";
-import { fetchVideoLyrics, saveVideoLyrics, updateVideoLyricOffset } from "@/lib/lyrics/db";
+import { joinLyricSync, type LyricHint, type LyricSyncHandle } from "@/lib/lyrics/channel";
+import { fetchVideoLyrics, saveVideoLyrics, updateVideoLyricOffset, type VideoLyricsRecord } from "@/lib/lyrics/db";
 
 export interface LyricsData {
   trackName?: string;
@@ -25,6 +25,7 @@ export interface UseLyricsProps {
 }
 
 const lyricsCache = new Map<string, { lines: LyricLine[]; meta: LyricsData }>();
+const lyricsCacheKey = (title: string, durationSec: number) => `${title.trim().toLowerCase()}_${durationSec}`;
 const OFFSET_STORAGE_PREFIX = "music-together:lyric-offset:";
 
 export function getSavedLyricOffset(videoId?: string | null): number {
@@ -72,6 +73,7 @@ export function useLyrics({
 
   const currentTitleRef = useRef<string | null>(null);
   const lyricSyncHandleRef = useRef<LyricSyncHandle | null>(null);
+  const hintSeqRef = useRef(0); // numbers the hint refetches: only the newest one is shown
 
   // Load the saved offset (persistent cache) when the active track changes, or reset to 0.
   // Adjusted while rendering, so the new track never renders with the previous track's offset.
@@ -94,47 +96,56 @@ export function useLyrics({
     }
   }
 
-  // Subscribe to real-time lyric change broadcasts across room members
+  /**
+   * Show a video_lyrics row: lines, meta, the in-memory cache and a non-zero DB offset (also kept in localStorage).
+   * The first load and a DJ's hint both go through here. Returns false for a row without lyrics.
+   */
+  const applyDbRecord = useCallback((record: VideoLyricsRecord, videoId: string, cacheKey: string): boolean => {
+    if (!record.synced_lyrics && !record.plain_lyrics) return false;
+    const parsedLines = parseLrc(record.synced_lyrics || record.plain_lyrics || "");
+    const dbMeta: LyricsData = {
+      trackName: record.track_name || undefined,
+      artistName: record.artist_name || undefined,
+      syncedLyrics: record.synced_lyrics || undefined,
+      plainLyrics: record.plain_lyrics || undefined,
+    };
+    lyricsCache.set(cacheKey, { lines: parsedLines, meta: dbMeta });
+    setLines(parsedLines);
+    setMeta(dbMeta);
+    setError(null);
+    if (typeof record.offset_ms === "number" && record.offset_ms !== 0) {
+      setOffsetMsState(record.offset_ms);
+      saveLyricOffset(videoId, record.offset_ms);
+    }
+    setLoading(false);
+    return true;
+  }, []);
+
+  // A DJ's hint names a track and a video, nothing else: refetch that row from the database (never the in-memory
+  // cache, never the payload — anyone can broadcast on the topic) and show it as the first load does.
+  const showHintedRecord = useEffectEvent((hint: LyricHint, record: VideoLyricsRecord | null) => {
+    // The room may have moved on while the row was loading.
+    if (!record || !title || hint.trackId !== trackId || hint.videoId !== youtubeVideoId) return;
+    applyDbRecord(record, hint.videoId, lyricsCacheKey(title, durationSeconds || 0));
+  });
+  const onLyricHint = useEffectEvent((hint: LyricHint) => {
+    if (!trackId || !youtubeVideoId || hint.trackId !== trackId || hint.videoId !== youtubeVideoId) return;
+    const seq = ++hintSeqRef.current;
+    void fetchVideoLyrics(hint.videoId).then((record) => {
+      if (seq === hintSeqRef.current) showHintedRecord(hint, record); // an older refetch never overwrites a newer one
+    });
+  });
+
+  // Subscribe to the room's lyric hints (one subscription per room; the handlers above read the current track)
   useEffect(() => {
     if (!roomId) return;
-
-    const handle = joinLyricSync(roomId, (payload) => {
-      // Validate that this lyric update is meant for the currently active track
-      if (trackId && payload.trackId === trackId) {
-        if (typeof payload.offsetMs === "number") {
-          setOffsetMsState(payload.offsetMs);
-          saveLyricOffset(youtubeVideoId, payload.offsetMs);
-        }
-
-        if (payload.syncedLyrics !== undefined || payload.plainLyrics !== undefined) {
-          const rawText = payload.syncedLyrics || payload.plainLyrics || "";
-          const parsedLines = parseLrc(rawText);
-          const newMeta: LyricsData = {
-            trackName: payload.trackName,
-            artistName: payload.artistName,
-            syncedLyrics: payload.syncedLyrics,
-            plainLyrics: payload.plainLyrics,
-          };
-
-          setLines(parsedLines);
-          setMeta(newMeta);
-          setError(null);
-          setLoading(false);
-
-          if (title) {
-            const cacheKey = `${title.trim().toLowerCase()}_${durationSeconds || 0}`;
-            lyricsCache.set(cacheKey, { lines: parsedLines, meta: newMeta });
-          }
-        }
-      }
-    });
-
+    const handle = joinLyricSync(roomId, (hint) => onLyricHint(hint));
     lyricSyncHandleRef.current = handle;
     return () => {
       handle.unsubscribe();
       lyricSyncHandleRef.current = null;
     };
-  }, [roomId, trackId, youtubeVideoId, title, durationSeconds]);
+  }, [roomId]);
 
   const fetchLyrics = useCallback(
     async (searchTitle: string, durationSec = 0, videoId?: string | null) => {
@@ -145,7 +156,7 @@ export function useLyrics({
         return;
       }
 
-      const cacheKey = `${searchTitle.trim().toLowerCase()}_${durationSec}`;
+      const cacheKey = lyricsCacheKey(searchTitle, durationSec);
       if (lyricsCache.has(cacheKey)) {
         const cached = lyricsCache.get(cacheKey)!;
         setLines(cached.lines);
@@ -162,25 +173,7 @@ export function useLyrics({
       if (videoId) {
         try {
           const dbRecord = await fetchVideoLyrics(videoId);
-          if (dbRecord && (dbRecord.synced_lyrics || dbRecord.plain_lyrics)) {
-            const rawText = dbRecord.synced_lyrics || dbRecord.plain_lyrics || "";
-            const parsedLines = parseLrc(rawText);
-            const dbMeta: LyricsData = {
-              trackName: dbRecord.track_name || undefined,
-              artistName: dbRecord.artist_name || undefined,
-              syncedLyrics: dbRecord.synced_lyrics || undefined,
-              plainLyrics: dbRecord.plain_lyrics || undefined,
-            };
-            lyricsCache.set(cacheKey, { lines: parsedLines, meta: dbMeta });
-            setLines(parsedLines);
-            setMeta(dbMeta);
-            if (typeof dbRecord.offset_ms === "number" && dbRecord.offset_ms !== 0) {
-              setOffsetMsState(dbRecord.offset_ms);
-              saveLyricOffset(videoId, dbRecord.offset_ms);
-            }
-            setLoading(false);
-            return;
-          }
+          if (dbRecord && applyDbRecord(dbRecord, videoId, cacheKey)) return;
         } catch {
           // Fall back to external API query
         }
@@ -235,7 +228,7 @@ export function useLyrics({
         setLoading(false);
       }
     },
-    [canControl, roomId, sessionToken]
+    [applyDbRecord, canControl, roomId, sessionToken]
   );
 
   // Fetch automatically when song title or YouTube video changes (no title: the panel is cleared above)
@@ -271,12 +264,12 @@ export function useLyrics({
       setOffsetMsState(next);
       saveLyricOffset(youtubeVideoId, next);
 
-      // ONLY DJ / Controller (canControl) with syncToRoom can broadcast and update DB
-      if (canControl && syncToRoom && trackId) {
-        lyricSyncHandleRef.current?.send({ trackId, offsetMs: next });
-        if (youtubeVideoId && roomId && sessionToken) {
-          void updateVideoLyricOffset(roomId, sessionToken, youtubeVideoId, next);
-        }
+      // ONLY DJ / Controller (canControl) with syncToRoom updates the DB, then hints the room to refetch it
+      if (canControl && syncToRoom && trackId && youtubeVideoId && roomId && sessionToken) {
+        const hint: LyricHint = { trackId, videoId: youtubeVideoId };
+        void updateVideoLyricOffset(roomId, sessionToken, youtubeVideoId, next).then((saved) => {
+          if (saved) lyricSyncHandleRef.current?.send(hint);
+        });
       }
     },
     [offsetMs, youtubeVideoId, canControl, trackId, roomId, sessionToken]
@@ -300,31 +293,23 @@ export function useLyrics({
       setLoading(false);
 
       if (title) {
-        const cacheKey = `${title.trim().toLowerCase()}_${durationSeconds || 0}`;
-        lyricsCache.set(cacheKey, { lines: parsedLines, meta: data });
+        lyricsCache.set(lyricsCacheKey(title, durationSeconds || 0), { lines: parsedLines, meta: data });
       }
 
-      // ONLY DJ / Controller (canControl) with syncToRoom can broadcast and update DB
-      if (canControl && syncToRoom && trackId) {
-        lyricSyncHandleRef.current?.send({
-          trackId,
-          syncedLyrics: data.syncedLyrics,
-          plainLyrics: data.plainLyrics,
+      // ONLY DJ / Controller (canControl) with syncToRoom saves to the DB, then hints the room to refetch it
+      if (canControl && syncToRoom && trackId && youtubeVideoId && roomId && sessionToken) {
+        const hint: LyricHint = { trackId, videoId: youtubeVideoId };
+        void saveVideoLyrics(roomId, sessionToken, {
+          videoId: youtubeVideoId,
           trackName: data.trackName,
           artistName: data.artistName,
+          syncedLyrics: data.syncedLyrics,
+          plainLyrics: data.plainLyrics,
           offsetMs,
+          timingSource: "custom",
+        }).then((saved) => {
+          if (saved) lyricSyncHandleRef.current?.send(hint);
         });
-        if (youtubeVideoId && roomId && sessionToken) {
-          void saveVideoLyrics(roomId, sessionToken, {
-            videoId: youtubeVideoId,
-            trackName: data.trackName,
-            artistName: data.artistName,
-            syncedLyrics: data.syncedLyrics,
-            plainLyrics: data.plainLyrics,
-            offsetMs,
-            timingSource: "custom",
-          });
-        }
       }
     },
     [title, durationSeconds, canControl, trackId, roomId, sessionToken, offsetMs, youtubeVideoId]
