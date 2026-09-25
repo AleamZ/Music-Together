@@ -11754,3 +11754,168 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 5. Dry the harvest (3 h) and sell dry and wet rice to cô Út.
 6. Account A buys a private plot, subleases it; account B rents the sublease and farms it; A lists it, B offers, A accepts: the chat shows the 🏡 line as a system line, both see the toast.
 7. Phone layout: the HUD button row wraps, panels scroll, the progress bar and "Huỷ" fit.
+
+---
+
+### Task 19: Ignore the farm quality in v15.1 (anti-cheat decision D1)
+
+Added on 2026-09-25, after the anti-cheat audit (H3). The owner decided that v15.1 ignores the quality a client reports and always uses 1.0. The v15.2 minigames decide how a quality comes back. Until this task lands, a modified client could claim 1.1 and gain ×1.21 yield, while the honest v15.1 client always sends 1. The anti-cheat plan (`0015_anticheat.sql`) re-creates these functions and keeps this behaviour. See `docs/superpowers/specs/2026-09-25-music-together-anticheat-design.md` §2 D1 and §6.4.
+
+**Files:**
+- Modify: `supabase/migrations/0013_v15_field.sql` (`_farm_do_transplant`, `_farm_do_harvest`)
+- Modify: `tests/sql/v15-smoke.sql` (the transplant check)
+- Modify: `README.md` (the v15 trust model, as Task 18 wrote it)
+- Modify: `docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md` (the five lines that describe the clamp)
+
+**Interfaces:**
+- Consumes: Tasks 1–3 (0013 and the smoke test); Task 18 (the README's v15 section).
+- Produces: `transplant(p_room_id, p_session_token, p_plot, p_quality)` and `harvest(p_room_id, p_session_token, p_plot, p_quality)` keep their signatures. The server ignores `p_quality`: it stores `crops.q_transplant = 1.0` and passes a harvest quality of 1.0 to `_crop_yield`. The client already sends 1 (Task 14), so nothing on the client changes.
+
+- [ ] **Step 1: Expect the ignored quality in the smoke test**
+
+**tests/sql/v15-smoke.sql.** Replace:
+
+```sql
+     and (select q_transplant from public.crops where room_id = room and plot_no = 8) = 1.1, 'transplanted, quality clamped';
+```
+
+with:
+
+```sql
+     and (select q_transplant from public.crops where room_id = room and plot_no = 8) = 1.0, 'transplanted, quality ignored (D1)';
+```
+
+- [ ] **Step 2: Run the smoke test to verify it fails**
+
+Run the same commands as Task 1 Step 4: a fresh throwaway cluster on port 5499, `export PGCLIENTENCODING=UTF8`, run from the repo root.
+Expected: `0013 ok`, `0013 re-run ok`, then psql stops with `ERROR:  transplanted, quality ignored (D1)`. The call passes 5.0, and today's code clamps it to 1.1.
+
+- [ ] **Step 3: Ignore the quality in 0013**
+
+**supabase/migrations/0013_v15_field.sql — edit 1 of 3.** Replace:
+
+```sql
+-- Cấy: the quality (v15.2 minigame; 1.0 in v15.1) is clamped to [0.9, 1.1].
+```
+
+with:
+
+```sql
+-- Cấy: v15.1 ignores the reported quality and uses 1.0 (anti-cheat decision D1); v15.2 decides how it comes back.
+```
+
+**supabase/migrations/0013_v15_field.sql — edit 2 of 3.** Replace:
+
+```sql
+     set transplant_at = p_now, q_transplant = least(1.1, greatest(0.9, coalesce(p_quality, 1))),
+```
+
+with:
+
+```sql
+     set transplant_at = p_now, q_transplant = 1.0,
+```
+
+**supabase/migrations/0013_v15_field.sql — edit 3 of 3.** Replace:
+
+```sql
+                              least(1.1, greatest(0.9, coalesce(p_quality, 1))), p_now)->>'kg')::int;
+```
+
+with:
+
+```sql
+                              1.0, p_now)->>'kg')::int;
+```
+
+`p_quality` stays in both signatures and is unused, so the public RPCs and the client stay as they are.
+
+- [ ] **Step 4: Run the smoke test**
+
+Run the same commands as Task 1 Step 4.
+Expected: no `FAILED`, then `0013 ok` and `0013 re-run ok`, then the smoke test prints `v15 crop smoke ok`, `v15 land smoke ok` and `v15 farm smoke ok`. The harvest check still passes: it recomputes the expected kilograms from the stored crop row, which now holds `q_transplant = 1.0`.
+
+- [ ] **Step 5: README — the v15 trust model**
+
+**README.md.** Replace:
+
+```markdown
+A client reports only the transplant and harvest quality, clamped to [0.9, 1.1] behind a 2 s work gate (always 1.0 in 15.1), so a modified client gains at most 10 %.
+```
+
+with:
+
+```markdown
+A client still sends a transplant and harvest quality, but v15.1 ignores it and uses 1.0 (anti-cheat decision D1) until the v15.2 minigames; transplanting and harvesting stay behind the 2 s work gate.
+```
+
+- [ ] **Step 6: The v15 spec — the five clamp lines**
+
+**docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md — edit 1 of 5.** Replace:
+
+```markdown
+- **f) Minigame trust.** The quality bounds (0.9–1.1) and the 2-second work gate exist from `0013` on. The phase-2 minigames only change the client and need no SQL change.
+```
+
+with:
+
+```markdown
+- **f) Minigame trust.** The 2-second work gate exists from `0013` on. v15.1 ignores the reported quality and uses 1.0 (anti-cheat decision D1); v15.2 decides how a minigame quality comes back, which needs an SQL change.
+```
+
+**docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md — edit 2 of 5.** Replace:
+
+```markdown
+| `qT`, `qH` | transplant and harvest quality, clamped to [0.9, 1.1]; always 1.0 in v15.1 |
+```
+
+with:
+
+```markdown
+| `qT`, `qH` | transplant and harvest quality; always 1.0 in v15.1 (the server ignores the reported value, D1) |
+```
+
+**docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md — edit 3 of 5.** Replace:
+
+```markdown
+3. They clamp `q` to [0.9, 1.1] and clear `work`.
+```
+
+with:
+
+```markdown
+3. They use `q` = 1.0 whatever the client sends (v15.1, D1) and clear `work`.
+```
+
+**docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md — edit 4 of 5.** Replace:
+
+```markdown
+**Clients only report two things:** the transplant and harvest quality, clamped to [0.9, 1.1] behind a 2 s gate, and (v15.2) crab hits, bounded to 3 per hole visit.
+```
+
+with:
+
+```markdown
+**Clients only report two things:** the transplant and harvest quality, which v15.1 ignores (always 1.0, D1) behind a 2 s gate, and (v15.2) crab hits, bounded to 3 per hole visit.
+```
+
+**docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md — edit 5 of 5.** Replace:
+
+```markdown
+Each returns a quality `q` in [0.9, 1.1].
+```
+
+with:
+
+```markdown
+Each returns a quality `q` in [0.9, 1.1]; how the server accepts it after D1 is decided in the v15.2 plan.
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add supabase/migrations/0013_v15_field.sql tests/sql/v15-smoke.sql README.md docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md
+git commit -m "fix(v15): v15.1 ignores the farm quality (anti-cheat D1)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
