@@ -458,9 +458,9 @@ begin
   perform public._farm_do_begin_work(room, a2, 8, 'harvest', tp + interval '44 hours');
   select * into c from public.crops where room_id = room and plot_no = 8;
   v_kg := (public._crop_yield(c, public._variety('short'), 1.0, 1.0, tp + interval '44 hours 2 seconds')->>'kg')::int;
-  s := public._farm_do_harvest(room, a2, 8, 1, tp + interval '44 hours 2 seconds');
+  s := public._farm_do_harvest(room, a2, 8, 5.0, tp + interval '44 hours 2 seconds');
   assert s->'harvest' = jsonb_build_object('variety', 'short', 'kg', v_kg) and s->'mine'->'rice'->'short'->'wet' = to_jsonb(v_kg),
-    format('harvested %s kg wet', v_kg);
+    format('harvested %s kg wet, quality ignored (D1)', v_kg);
   assert pg_temp.plot(s, 8)->'crop' = 'null' and pg_temp.plot(s, 8)->'lease' = 'null' and s->'mine'->'farming' = '[]',
     'bare, and the lease ended';
   insert into smoke values ('kg', v_kg::text);
