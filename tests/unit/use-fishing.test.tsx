@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
+import { clockOffset } from "@/lib/game/farm/clock";
 import { parseFishingState, type FishingState } from "@/lib/game/fishing/state";
 import type { QueueItem } from "@/lib/supabase";
 
@@ -43,6 +44,13 @@ describe("useFishing", () => {
     expect(result.current.state?.coins).toBe(50);
     expect(result.current.catalog?.species[0].id).toBe("ca_ro");
     expect(result.current.failed).toBe(false);
+  });
+
+  it("sets the shared server clock from the state's server_now (v15 §11.6)", async () => {
+    rpc.fetchFishingState.mockResolvedValue(state({ server_now: new Date(Date.now() + 90_000).toISOString() }));
+    renderHook(() => useFishing("tok", () => {}));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(Math.abs(clockOffset() - 90_000)).toBeLessThan(1000);
   });
 
   it("marks a failed load so the HUD can offer a reload", async () => {

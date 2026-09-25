@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  boughtText, durationText, farmErrorMessage, harvestText, isMissingRpc, PEST_NAME, PEST_REMEDY, PHASE_NAME, riceSaleText,
+  boughtText, durationText, farmErrorMessage, harvestText, isMissingRpc, PEST_NAME, PEST_REMEDY, PHASE_NAME, riceSaleText, riceSummary,
 } from "@/lib/game/farm/messages";
 
 describe("farmErrorMessage", () => {
@@ -61,5 +61,9 @@ describe("names and texts", () => {
     expect(boughtText("Giống nếp", 3)).toBe("🛒 Đã mua Giống nếp × 3.");
     expect(riceSaleText(120, "Lúa thơm", true, 3120)).toBe("💰 Bán 120 kg lúa thơm khô được 3.120 xu.");
     expect(riceSaleText(10, "Nếp", false, 126)).toBe("💰 Bán 10 kg nếp ướt được 126 xu.");
+  });
+  it("sums the rice for the HUD", () => {
+    expect(riceSummary({})).toBe("🌾 Chưa có lúa");
+    expect(riceSummary({ nep: { wet: 30, dry: 50 }, thom: { wet: 0, dry: 12 } })).toBe("🌾 62 kg khô · 30 kg ướt");
   });
 });

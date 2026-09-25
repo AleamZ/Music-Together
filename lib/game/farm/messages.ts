@@ -39,6 +39,13 @@ export function harvestText(kg: number, varietyName: string): string {
   return `🌾 Gặt được ${kg} kg ${varietyName.toLowerCase()} (lúa ướt) — đem phơi rồi bán cho cô Út nhé!`;
 }
 
+/** The HUD's rice line on the field: every variety together. */
+export function riceSummary(rice: Record<string, { wet: number; dry: number }>): string {
+  const all = Object.values(rice);
+  const dry = all.reduce((a, r) => a + r.dry, 0), wet = all.reduce((a, r) => a + r.wet, 0);
+  return dry + wet === 0 ? "🌾 Chưa có lúa" : `🌾 ${dry} kg khô · ${wet} kg ướt`;
+}
+
 export function boughtText(itemName: string, qty: number): string {
   return `🛒 Đã mua ${itemName}${qty > 1 ? ` × ${qty}` : ""}.`;
 }

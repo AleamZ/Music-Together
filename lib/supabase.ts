@@ -121,6 +121,11 @@ export async function kickMember(roomId: string, token: string, targetMemberId: 
   const { error } = await supabase.rpc("kick_member", { p_room_id: roomId, p_session_token: token, p_target_member: targetMemberId });
   if (error) throw error;
 }
+/** Marks me as seen in the room (v15: a private plot is reclaimed after 14 days away). */
+export async function touchRoom(roomId: string, token: string) {
+  const { error } = await supabase.rpc("touch_room", { p_room_id: roomId, p_session_token: token });
+  if (error) throw error;
+}
 export async function renameRoom(roomId: string, token: string, newName: string) {
   const { error } = await supabase.rpc("rename_room", { p_room_id: roomId, p_session_token: token, p_new_name: newName });
   if (error) throw error;

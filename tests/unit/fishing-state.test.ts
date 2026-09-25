@@ -30,8 +30,9 @@ describe("parseFishingState", () => {
     expect(S).toMatchObject({
       coins: 120, dailyClaimed: true, loadout: { rod: "rod_bamboo", bobber: "bobber_feather", bait: "bait_shrimp" },
       owned: ["rod_bamboo", "bucket_small"], baitCap: 20, fishCap: 6, castsLeft: 37,
-      windowResetsAt: "2026-09-24T11:00:00Z", digReadyAt: null,
+      windowResetsAt: "2026-09-24T11:00:00Z", digReadyAt: null, serverNow: null,
     });
+    expect(parseFishingState({ ...RAW, server_now: "2026-09-24T10:30:00Z" })?.serverNow).toBe("2026-09-24T10:30:00Z");
     expect(S.fish[0]).toEqual({ id: "f1", speciesId: "ca_loc", weightG: 1200, price: 72, caughtAt: "2026-09-24T10:00:00Z" });
   });
   it("rejects non-objects and fills defaults", () => {

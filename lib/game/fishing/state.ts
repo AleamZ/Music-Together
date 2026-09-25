@@ -19,6 +19,8 @@ export interface FishingState {
   castsLeft: number;
   windowResetsAt: string | null;
   digReadyAt: string | null;
+  /** The server's clock at the answer (v15 §11.6; null before migration 0013). */
+  serverNow: string | null;
 }
 export type CastBlocker = "no_bait" | "hands_full" | "bucket_full" | "cast_limit";
 
@@ -49,6 +51,7 @@ export function parseFishingState(json: unknown): FishingState | null {
     castsLeft: num(j.casts_left, 40),
     windowResetsAt: strOrNull(j.window_resets_at),
     digReadyAt: strOrNull(j.dig_ready_at),
+    serverNow: strOrNull(j.server_now),
   };
 }
 
@@ -72,7 +75,7 @@ export function ownsItem(s: FishingState, item: ShopItem): boolean {
   return false;
 }
 
-/** Why start_cast would refuse right now (same order as the server), or null. `now` = Date.now(). */
+/** Why start_cast would refuse right now (same order as the server), or null. `now` = serverNow(). */
 export function castBlocker(s: FishingState, now: number): CastBlocker | null {
   const windowOver = s.windowResetsAt !== null && Date.parse(s.windowResetsAt) <= now;
   if (s.castsLeft <= 0 && !windowOver) return "cast_limit";

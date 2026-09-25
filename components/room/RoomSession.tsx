@@ -7,6 +7,7 @@ import { useViewMode } from "@/hooks/useViewMode";
 import { usePlayback } from "@/hooks/usePlayback";
 import { useSponsorBlock } from "@/hooks/useSponsorBlock";
 import { deriveRoom } from "@/lib/room-derived";
+import { touchRoom } from "@/lib/supabase";
 import BrandSpinner from "@/components/brand/BrandSpinner";
 import GameErrorBoundary from "@/components/game/GameErrorBoundary";
 import RoomShell from "./RoomShell";
@@ -37,6 +38,8 @@ export default function RoomSession({ view }: { view: RoomView }) {
 
   const { setPresenceMode } = view;
   useEffect(() => { setPresenceMode(mode); }, [mode, setPresenceMode]);
+  // "last seen" for the land rules, once per room visit (before migration 0013 the RPC is missing: ignored)
+  useEffect(() => { touchRoom(room.id, view.token).catch(() => {}); }, [room.id, view.token]);
 
   if (mode === "game") {
     return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { syncClock } from "@/lib/game/farm/clock";
 import type { FishingCatalog } from "@/lib/game/fishing/catalog";
 import {
   buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, finishCast, fishingErrorMessage, releaseFish,
@@ -46,6 +47,7 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
   const seq = useRef(0);
   const applied = useRef(0);
   const apply = useCallback((n: number, s: FishingState) => {
+    syncClock(s.serverNow);
     if (n < applied.current) return;
     applied.current = n;
     setState(s);

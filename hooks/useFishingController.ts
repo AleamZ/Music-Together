@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { useCastSession, type CastSession, type CastView } from "@/hooks/useCastSession";
 import { useFishing, type FishingData } from "@/hooks/useFishing";
+import { serverNow } from "@/lib/game/farm/clock";
 import {
   BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NOT_LOADED, promptText as promptFor, saleText, SONG_BONUS,
 } from "@/lib/game/fishing/messages";
@@ -135,7 +136,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   const ticking = digRunning || capRunning;
   useEffect(() => {
     if (!ticking) return;
-    const tick = () => setNow(Date.now());
+    const tick = () => setNow(serverNow());
     const first = setTimeout(tick, 0);
     const timer = setInterval(tick, 1000);
     return () => {
@@ -153,7 +154,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       toastRef.current(failedRef.current ? NOT_LOADED : LOADING);
       return;
     }
-    const wait = digWaitSec(s, Date.now());
+    const wait = digWaitSec(s, serverNow());
     if (wait > 0) {
       toastRef.current(digWaitText(wait));
       return;
@@ -176,7 +177,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   // --- casting: the checks of spec §6.1, then the session takes over
   const { cast: castAt, hook, reelIn } = session;
   const fishAt = useCallback((it: Interactable) => {
-    const refusal = castRefusal(stateRef.current, failedRef.current, Date.now(), canvas()?.anglerNear(it.use) ?? false);
+    const refusal = castRefusal(stateRef.current, failedRef.current, serverNow(), canvas()?.anglerNear(it.use) ?? false);
     if (refusal) toastRef.current(refusal);
     else castAt(it);
   }, [canvas, castAt]);

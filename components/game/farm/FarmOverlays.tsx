@@ -1,0 +1,80 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { WORK_MS, type FarmController, type FarmWork } from "@/hooks/useFarmController";
+import { NOT_OPEN } from "@/lib/game/farm/messages";
+import CoopPanel from "./CoopPanel";
+import DryingPanel from "./DryingPanel";
+import FarmShopPanel from "./FarmShopPanel";
+import FarmTasksPanel from "./FarmTasks";
+import Handbook from "./Handbook";
+import PlotPanel from "./PlotPanel";
+import RiceDepotPanel from "./RiceDepotPanel";
+
+/** Transplanting or harvesting: a bar that fills in WORK_MS, and "Huỷ" (or Esc) before it is sent. */
+function WorkProgress({ work, onCancel }: { work: FarmWork; onCancel: () => void }) {
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setFull(true));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onCancel]);
+  return (
+    <div className="pch absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5 p-2 font-vt text-xl" role="status">
+      <span>{work.work === "transplant" ? `🌱 Đang cấy thửa ${work.plot}…` : `🌾 Đang gặt thửa ${work.plot}…`}</span>
+      <div className="h-3 w-48 overflow-hidden rounded-sm bg-ink/20">
+        <div
+          className="h-full bg-burgundy motion-reduce:transition-none"
+          style={{ width: full ? "100%" : "0%", transition: `width ${WORK_MS}ms linear` }}
+        />
+      </div>
+      <button type="button" className="pch-btn" onClick={onCancel}>Huỷ <span className="pointer-coarse:hidden">(Esc)</span></button>
+    </div>
+  );
+}
+
+/** The field on top of the world (spec §13): the banner before the migration, the work progress and the field's
+ *  panels. */
+export default function FarmOverlays({ farm, me, onField }: { farm: FarmController; me: string; onField: boolean }) {
+  const { panel, closePanel, openPanel, busy, now } = farm;
+  const { state, catalog, failed, notOpen, reload } = farm.data;
+  const onReload = () => void reload();
+  const act = (a: Parameters<FarmController["act"]>[0], done?: string) => void farm.act(a, done);
+  return (
+    <>
+      {onField && notOpen && (
+        <p className="pch pointer-events-none absolute left-1/2 top-28 z-10 -translate-x-1/2 px-3 py-1.5 text-center font-vt text-xl">{NOT_OPEN}</p>
+      )}
+      {farm.work && <WorkProgress key={farm.work.startedAt} work={farm.work} onCancel={farm.cancelWork} />}
+      {panel?.kind === "plot" && (
+        <PlotPanel no={panel.plot} state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act}
+          onOpenHandbook={(tab) => openPanel({ kind: "handbook", tab })} onReload={onReload} onClose={closePanel} />
+      )}
+      {panel?.kind === "coop" && (
+        <CoopPanel state={state} failed={failed} me={me} busy={busy} now={now} onAct={act} onReload={onReload} onClose={closePanel} />
+      )}
+      {panel?.kind === "shop" && (
+        <FarmShopPanel mine={state?.mine ?? null} catalog={catalog} failed={failed} busy={busy}
+          onBuy={(id, qty) => void farm.buy(id, qty)} onReload={onReload} onClose={closePanel} />
+      )}
+      {panel?.kind === "depot" && (
+        <RiceDepotPanel mine={state?.mine ?? null} catalog={catalog} failed={failed} busy={busy}
+          onSell={(v, dry, kg) => void farm.sell(v, dry, kg)} onReload={onReload} onClose={closePanel} />
+      )}
+      {panel?.kind === "drying" && (
+        <DryingPanel state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act} onReload={onReload} onClose={closePanel} />
+      )}
+      {panel?.kind === "handbook" && <Handbook varieties={catalog?.varieties ?? []} initial={panel.tab} onClose={closePanel} />}
+      {panel?.kind === "tasks" && (
+        <FarmTasksPanel tasks={farm.tasks} farming={(state?.mine.farming.length ?? 0) > 0}
+          onOpenHandbook={() => openPanel({ kind: "handbook", tab: null })} onClose={closePanel} />
+      )}
+    </>
+  );
+}

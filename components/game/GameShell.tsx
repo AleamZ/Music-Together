@@ -6,6 +6,7 @@ import MemberList from "@/components/room/MemberList";
 import RoomChartModal from "@/components/room/RoomChartModal";
 import SettingsDialog from "@/components/room/SettingsDialog";
 import { useChat } from "@/hooks/useChat";
+import { useFarmController } from "@/hooks/useFarmController";
 import { useFishingController } from "@/hooks/useFishingController";
 import { useLooks } from "@/hooks/useLooks";
 import { useMyCharacter } from "@/hooks/useMyCharacter";
@@ -15,6 +16,7 @@ import type { RoomView } from "@/hooks/useRoom";
 import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
 import { formatChatMessageBody, parseChatMessageBody } from "@/lib/chat-helpers";
 import { formatClock } from "@/lib/format";
+import { riceSummary } from "@/lib/game/farm/messages";
 import { freshAnnouncements } from "@/lib/game/fishing/announce";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
@@ -25,6 +27,8 @@ import { mapCounts } from "@/lib/presence-modes";
 import type { RoomDerived } from "@/lib/room-derived";
 import { getCategoryLabel } from "@/lib/sponsorblock";
 import CharacterEditor from "./CharacterEditor";
+import FarmOverlays from "./farm/FarmOverlays";
+import { FarmTasksButton } from "./farm/FarmTasks";
 import FishingHud from "./fishing/FishingHud";
 import FishingOverlays from "./fishing/FishingOverlays";
 import GameCanvas, { type GameCanvasHandle } from "./GameCanvas";
@@ -48,7 +52,7 @@ type Panel = "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | 
 /** A portal fades to dark in FADE_MS, the new map starts, and it fades back in after the map's first frame. */
 const FADE_MS = 250;
 
-/** Game mode: the room world (hall + pond) and the parchment HUD. Music, queue, chat and roles are the same as the
+/** Game mode: the room world (hall, pond and field) and the parchment HUD. Music, queue, chat and roles are the same as the
  *  classic view. */
 export default function GameShell({ view, derived, playback, sponsorBlock, onExitGame }: GameShellProps) {
   const { state, role, presence, onlineIds, token, accountId, username, myMemberId, setPresenceMap } = view;
@@ -156,8 +160,16 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: showToast });
   const { interact: fishingInteract, promptText, cancelCast, onFishingInput } = fishing;
 
-  // --- input is off while any panel or the create editor is open
-  const blocking = panel !== null || fishing.panel !== null || creating;
+  // --- farming: the field of this room, its panels, the due tasks, the plots on the canvas and the work progress
+  const farm = useFarmController({
+    token, roomId: room.id, accountId, mapId: travel.mapId, canvas: getCanvas, toast: showToast,
+    // the HUD's wallet is the fishing state's: fetch it again when the field moved my coins
+    onCoinsChanged: () => void fishing.data.reload(),
+  });
+  const { interact: farmInteract, promptText: farmPrompt } = farm;
+
+  // --- input is off while any panel, the farm work or the create editor is open
+  const blocking = panel !== null || fishing.panel !== null || farm.panel !== null || farm.work !== null || creating;
   useEffect(() => {
     canvasRef.current?.setInputEnabled(!blocking);
   }, [blocking]);
@@ -188,9 +200,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         travelTo(it.to);
         break;
       default:
-        if (!fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
+        if (!farmInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, cancelCast]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, cancelCast]);
 
   const leaveBroken = useCallback((message: string) => {
     window.alert(message);
@@ -229,6 +241,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         onConnectionChange={setConnected}
         onLookChanged={refresh}
         onFishingInput={onFishingInput}
+        onPlotChanged={farm.data.plotChanged}
         onFirstFrame={onFirstFrame}
         onUnsupported={onUnsupported}
         onFatal={onFatal}
@@ -244,13 +257,19 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           <div className="flex flex-col gap-1">
             <span className="max-w-44 truncate text-xl">{myBadges ? `${myBadges} ` : ""}{myName}</span>
             {!connected && <span className="text-base opacity-80">Đang kết nối thế giới…</span>}
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               <button type="button" className="pch-btn" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
                 👕 Tủ đồ
               </button>
               <button type="button" className="pch-btn" onClick={() => fishing.openPanel("bag")}>🎒 Giỏ đồ</button>
+              {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
             </div>
-            <FishingHud state={fishing.data.state} failed={fishing.data.failed} onReload={() => void fishing.data.reload()} />
+            <FishingHud
+              state={fishing.data.state}
+              failed={fishing.data.failed}
+              onReload={() => void fishing.data.reload()}
+              riceLine={map.id === "field" && farm.data.state ? riceSummary(farm.data.state.mine.rice) : null}
+            />
           </div>
         </div>
         <MapCounts counts={counts} />
@@ -296,11 +315,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           className="pch-btn pch-btn-primary absolute bottom-24 left-1/2 z-10 -translate-x-1/2 text-xl"
         >
           <span className="pointer-coarse:hidden">E · </span>
-          {promptText(prompt)}
+          {farmPrompt(prompt) ?? promptText(prompt)}
         </button>
       )}
 
       <FishingOverlays fishing={fishing} />
+      <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} />
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
         <HudChatBar
