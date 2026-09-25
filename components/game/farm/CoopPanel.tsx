@@ -37,6 +37,54 @@ export function LandButton({ refusal, busy, warn, primary, onClick, children }: 
   );
 }
 
+// The land buttons the co-op and the plot panel share: each keeps its rule, its warning, its RPC and its toast in one
+// place; the label comes as children.
+interface PlotButtonProps { p: PlotView; ctx: LandCtx; busy: boolean; onAct: Act; children: ReactNode }
+
+/** Rents a free village plot for one lease. */
+export function RentButton({ p, ctx, busy, onAct, children }: PlotButtonProps) {
+  return (
+    <LandButton refusal={rentRefusal(p, ctx)} busy={busy} primary
+      onClick={() => onAct({ kind: "rent", plot: p.no }, `Đã thuê thửa ${p.no} trong ${LEASE_HOURS / 24} ngày.`)}>
+      {children}
+    </LandButton>
+  );
+}
+
+/** Buys an ownerless private plot from the village, after asking. */
+export function BuyPlotButton({ p, ctx, busy, onAct, children }: PlotButtonProps) {
+  return (
+    <LandButton refusal={buyPlotRefusal(p, ctx)} busy={busy} primary
+      warn={`Mua thửa ${p.no} với giá ${formatXu(PLOT_PRICE)}?`}
+      onClick={() => onAct({ kind: "buy_plot", plot: p.no }, `🏡 Đã mua thửa ${p.no}.`)}>
+      {children}
+    </LandButton>
+  );
+}
+
+/** Buys another owner's listed plot at the price shown (the server refuses if it changed), after asking. For a plot with
+ *  an owner and a sale price only. */
+export function BuyListedButton({ p, ctx, busy, onAct, children }: PlotButtonProps) {
+  return (
+    <LandButton refusal={buyListedRefusal(p, ctx)} busy={busy} primary
+      warn={`Mua thửa ${p.no} của ${p.owner!.name} với giá ${formatXu(p.salePrice!)}?`}
+      onClick={() => onAct({ kind: "buy_listed", plot: p.no, expected: p.salePrice! }, `🏡 Đã mua thửa ${p.no}.`)}>
+      {children}
+    </LandButton>
+  );
+}
+
+/** Rents another owner's plot for one season at the price shown (the server refuses if it changed). For a plot with an
+ *  owner and a sublease price only. */
+export function RentSubleaseButton({ p, ctx, busy, onAct, children }: PlotButtonProps) {
+  return (
+    <LandButton refusal={rentSubleaseRefusal(p, ctx)} busy={busy} primary
+      onClick={() => onAct({ kind: "rent_sublease", plot: p.no, expected: p.subleasePrice! }, `Đã thuê thửa ${p.no} của ${p.owner!.name} một vụ.`)}>
+      {children}
+    </LandButton>
+  );
+}
+
 function Line({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/20 py-1.5 last:border-b-0">
@@ -73,10 +121,7 @@ function VillageTab({ ctx, busy, now, onAct }: { ctx: LandCtx; busy: boolean; no
       <ul>
         {ctx.plots.filter((p) => p.kind === "village").map((p) => (
           <Line key={p.no} action={!p.lease && (
-            <LandButton refusal={rentRefusal(p, ctx)} busy={busy} primary
-              onClick={() => onAct({ kind: "rent", plot: p.no }, `Đã thuê thửa ${p.no} trong ${LEASE_HOURS / 24} ngày.`)}>
-              Thuê · {formatXu(RENT_PRICE)}
-            </LandButton>
+            <RentButton p={p} ctx={ctx} busy={busy} onAct={onAct}>Thuê · {formatXu(RENT_PRICE)}</RentButton>
           )}>
             Thửa {p.no} · {p.lease ? `${who(p, ctx.me)} đang thuê — còn ${durationText(p.lease.until - now)}` : "Trống"}
           </Line>
@@ -93,11 +138,7 @@ function PrivateTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: 
       <ul>
         {ctx.plots.filter((p) => p.kind === "private").map((p) => (
           <Line key={p.no} action={!p.owner && (
-            <LandButton refusal={buyPlotRefusal(p, ctx)} busy={busy} primary
-              warn={`Mua thửa ${p.no} với giá ${formatXu(PLOT_PRICE)}?`}
-              onClick={() => onAct({ kind: "buy_plot", plot: p.no }, `🏡 Đã mua thửa ${p.no}.`)}>
-              Mua · {formatXu(PLOT_PRICE)}
-            </LandButton>
+            <BuyPlotButton p={p} ctx={ctx} busy={busy} onAct={onAct}>Mua · {formatXu(PLOT_PRICE)}</BuyPlotButton>
           )}>
             Thửa {p.no} · {p.owner ? (
               <>
@@ -127,23 +168,12 @@ function MarketTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: A
       {listed.length + subleased.length === 0 && <p className="opacity-80">Chưa ai rao bán hay cho thuê đất.</p>}
       <ul>
         {listed.map((p) => (
-          <Line key={`sale:${p.no}`} action={
-            <LandButton refusal={buyListedRefusal(p, ctx)} busy={busy} primary
-              warn={`Mua thửa ${p.no} của ${p.owner!.name} với giá ${formatXu(p.salePrice!)}?`}
-              onClick={() => onAct({ kind: "buy_listed", plot: p.no, expected: p.salePrice! }, `🏡 Đã mua thửa ${p.no}.`)}>
-              Mua
-            </LandButton>
-          }>
+          <Line key={`sale:${p.no}`} action={<BuyListedButton p={p} ctx={ctx} busy={busy} onAct={onAct}>Mua</BuyListedButton>}>
             Thửa {p.no} của {p.owner!.name} — bán {formatXu(p.salePrice!)}
           </Line>
         ))}
         {subleased.map((p) => (
-          <Line key={`lease:${p.no}`} action={
-            <LandButton refusal={rentSubleaseRefusal(p, ctx)} busy={busy} primary
-              onClick={() => onAct({ kind: "rent_sublease", plot: p.no, expected: p.subleasePrice! }, `Đã thuê thửa ${p.no} của ${p.owner!.name} một vụ.`)}>
-              Thuê
-            </LandButton>
-          }>
+          <Line key={`lease:${p.no}`} action={<RentSubleaseButton p={p} ctx={ctx} busy={busy} onAct={onAct}>Thuê</RentSubleaseButton>}>
             Thửa {p.no} của {p.owner!.name} — cho thuê một vụ {formatXu(p.subleasePrice!)}
           </Line>
         ))}

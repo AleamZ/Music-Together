@@ -5,12 +5,12 @@ import { plotActions, type PlotAction, type PlotRun } from "@/lib/game/farm/acti
 import { PLOT_PRICE, RENT_PRICE, type FarmCatalog } from "@/lib/game/farm/catalog";
 import { cropModel, cropPhase, nextPhaseAt, waterAt, wantedWater, yieldEstimate } from "@/lib/game/farm/crop";
 import { HANDBOOK_TABS, handbookTabFor, type HandbookTab } from "@/lib/game/farm/handbook";
-import { buyListedRefusal, buyPlotRefusal, rentRefusal, rentSubleaseRefusal, type LandCtx } from "@/lib/game/farm/land";
+import type { LandCtx } from "@/lib/game/farm/land";
 import { durationText, PEST_NAME, PEST_REMEDY, PHASE_NAME, WATER_NAME } from "@/lib/game/farm/messages";
 import type { FieldState, PlotView } from "@/lib/game/farm/state";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import ConfirmButton from "./ConfirmButton";
-import { LandButton, MyPlot } from "./CoopPanel";
+import { BuyListedButton, BuyPlotButton, MyPlot, RentButton, RentSubleaseButton } from "./CoopPanel";
 import FieldStatus from "./FieldStatus";
 
 /** Toasts for the plot actions that do not show at once on the panel. */
@@ -54,27 +54,16 @@ function Land({ p, ctx, busy, onAct }: { p: PlotView; ctx: LandCtx; busy: boolea
   if (p.owner?.id === ctx.me) return <MyPlot p={p} ctx={ctx} busy={busy} onAct={onAct} />;
   const buttons = [
     p.kind === "village" && !p.lease && (
-      <LandButton key="rent" refusal={rentRefusal(p, ctx)} busy={busy} primary onClick={() => onAct({ kind: "rent", plot: p.no }, `Đã thuê thửa ${p.no} trong 4 ngày.`)}>
-        Thuê · {formatXu(RENT_PRICE)}
-      </LandButton>
+      <RentButton key="rent" p={p} ctx={ctx} busy={busy} onAct={onAct}>Thuê · {formatXu(RENT_PRICE)}</RentButton>
     ),
     p.kind === "private" && !p.owner && (
-      <LandButton key="buy" refusal={buyPlotRefusal(p, ctx)} busy={busy} primary warn={`Mua thửa ${p.no} với giá ${formatXu(PLOT_PRICE)}?`}
-        onClick={() => onAct({ kind: "buy_plot", plot: p.no }, `🏡 Đã mua thửa ${p.no}.`)}>
-        Mua · {formatXu(PLOT_PRICE)}
-      </LandButton>
+      <BuyPlotButton key="buy" p={p} ctx={ctx} busy={busy} onAct={onAct}>Mua · {formatXu(PLOT_PRICE)}</BuyPlotButton>
     ),
     p.owner && p.salePrice !== null && (
-      <LandButton key="listed" refusal={buyListedRefusal(p, ctx)} busy={busy} primary warn={`Mua thửa ${p.no} của ${p.owner.name} với giá ${formatXu(p.salePrice)}?`}
-        onClick={() => onAct({ kind: "buy_listed", plot: p.no, expected: p.salePrice! }, `🏡 Đã mua thửa ${p.no}.`)}>
-        Mua · {formatXu(p.salePrice)}
-      </LandButton>
+      <BuyListedButton key="listed" p={p} ctx={ctx} busy={busy} onAct={onAct}>Mua · {formatXu(p.salePrice)}</BuyListedButton>
     ),
     p.owner && p.subleasePrice !== null && (
-      <LandButton key="sublease" refusal={rentSubleaseRefusal(p, ctx)} busy={busy} primary
-        onClick={() => onAct({ kind: "rent_sublease", plot: p.no, expected: p.subleasePrice! }, `Đã thuê thửa ${p.no} của ${p.owner!.name} một vụ.`)}>
-        Thuê một vụ · {formatXu(p.subleasePrice)}
-      </LandButton>
+      <RentSubleaseButton key="sublease" p={p} ctx={ctx} busy={busy} onAct={onAct}>Thuê một vụ · {formatXu(p.subleasePrice)}</RentSubleaseButton>
     ),
   ].filter(Boolean);
   return buttons.length > 0 ? <div className="flex flex-wrap justify-end gap-2">{buttons}</div> : null;
