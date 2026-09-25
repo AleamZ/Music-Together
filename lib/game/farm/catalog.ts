@@ -62,6 +62,8 @@ export const FARM_LIMIT = 2;
 export const OFFER_HOURS = 24;
 export const DRY_HOURS = 3;
 export const DRYING_SLOTS = 4;
+/** Batches one account may dry at a time in a room. */
+export const DRYING_PER_ACCOUNT = 2;
 /** A crop's water log: at most this many entries, and this many in any hour (0013's `_farm_do_water`). */
 export const WATER_LOG_MAX = 60;
 export const WATER_PER_HOUR = 6;

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { ParchmentModal } from "@/components/game/Parchment";
-import { DRY_HOURS, DRYING_SLOTS, type FarmCatalog } from "@/lib/game/farm/catalog";
-import { durationText } from "@/lib/game/farm/messages";
+import { DRY_HOURS, DRYING_PER_ACCOUNT, DRYING_SLOTS, type FarmCatalog } from "@/lib/game/farm/catalog";
+import { DRYING_LIMIT_TEXT, durationText } from "@/lib/game/farm/messages";
 import type { FieldAction } from "@/lib/game/farm/rpc";
 import type { FieldState } from "@/lib/game/farm/state";
 import FieldStatus from "./FieldStatus";
@@ -29,6 +29,8 @@ export default function DryingPanel({ state, catalog, failed, me, busy, now, onA
   const n = Math.min(Math.max(1, kg ?? stock), stock);
   const name = (id: string) => catalog?.varieties.find((v) => v.id === id)?.name ?? id;
   const full = (state?.drying.length ?? 0) >= DRYING_SLOTS;
+  // the server checks a full yard first, then my own batches (2 at a time)
+  const limited = !full && (state?.drying.filter((d) => d.owner?.id === me).length ?? 0) >= DRYING_PER_ACCOUNT;
   return (
     <ParchmentModal title="☀️ Sân phơi lúa" onClose={onClose}>
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
@@ -76,12 +78,13 @@ export default function DryingPanel({ state, catalog, failed, me, busy, now, onA
                 {chosen && (
                   <div className="flex flex-wrap items-center justify-between gap-1">
                     <Stepper value={n} max={stock} label={`Số kg ${chosen.name}`} unit=" kg" onChange={setKg} />
-                    <button type="button" className="pch-btn pch-btn-primary" disabled={busy || full}
+                    <button type="button" className="pch-btn pch-btn-primary" disabled={busy || full || limited}
                       onClick={() => onAct({ kind: "dry_start", variety: chosen.id, kg: n }, `Đang phơi ${n} kg ${chosen.name.toLowerCase()} — ${DRY_HOURS} giờ nữa là khô.`)}>
                       {full ? "Sân phơi đã đầy" : "Phơi lúa"}
                     </button>
                   </div>
                 )}
+                {limited && <p className="text-base opacity-80">{DRYING_LIMIT_TEXT}</p>}
               </section>
             )}
           </>

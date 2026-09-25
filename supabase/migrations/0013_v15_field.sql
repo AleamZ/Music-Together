@@ -1521,7 +1521,8 @@ begin
          || jsonb_build_object('harvest', jsonb_build_object('variety', c.variety, 'kg', v_kg));
 end; $$;
 
--- Phơi lúa: wet rice into a free drying slot; dry after 3 h (§8.7).
+-- Phơi lúa: wet rice into a free drying slot; dry after 3 h (§8.7). An account dries at most 2 batches at a time in a
+-- room, so one player cannot hold the whole yard.
 create or replace function public._farm_do_dry_start(p_room uuid, p_account uuid, p_variety text, p_kg integer,
                                                      p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
@@ -1541,6 +1542,9 @@ begin
    where not exists (select 1 from public.drying_slots ds where ds.room_id = p_room and ds.slot = n);
   if v_slot is null then
     raise exception 'drying full' using errcode = '22023';
+  end if;
+  if (select count(*) from public.drying_slots ds where ds.room_id = p_room and ds.account_id = p_account) >= 2 then
+    raise exception 'drying limit' using errcode = '22023';
   end if;
   update public.rice_stock set wet_kg = wet_kg - p_kg where account_id = p_account and variety = p_variety;
   insert into public.drying_slots (room_id, slot, account_id, variety, kg, ready_at)

@@ -20,6 +20,7 @@ describe("farmErrorMessage", () => {
     expect(m("need water")).toBe("Mực nước chưa đúng — xem Sổ tay.");
     expect(m("no item", "Phân kali")).toBe("Chưa có Phân kali — ghé tiệm anh Hai.");
     expect(m("drying full")).toBe("Sân phơi đã đầy.");
+    expect(m("drying limit")).toBe("Bạn đang phơi 2 mẻ rồi — thu lúa trước nhé.");
     expect(m("not ready")).toBe("Chưa xong.");
     expect(m("not enough rice")).toBe("Không đủ lúa.");
     expect(m("not enough coins")).toBe("Không đủ xu.");

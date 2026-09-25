@@ -25,6 +25,7 @@ export const FIELD_FAILED = "Chưa tải được đồng ruộng — thử lạ
 export const FARM_LIMIT_TEXT = "Bạn đang canh tác 2 thửa rồi.";
 export const NO_SEED = "Chưa có giống — ghé tiệm anh Hai.";
 export const TOO_FAST = "Từ từ thôi…";
+export const DRYING_LIMIT_TEXT = "Bạn đang phơi 2 mẻ rồi — thu lúa trước nhé.";
 
 /** "45 phút", "3 giờ", "2 ngày 5 giờ" — rounded up, as a countdown reads. */
 export function durationText(ms: number): string {
@@ -78,6 +79,7 @@ export function farmErrorMessage(err: unknown, itemName?: string): string {
     case "no snails": return "Không có ốc để bắt.";
     case "no crop": return "Thửa đang trống.";
     case "drying full": return "Sân phơi đã đầy.";
+    case "drying limit": return DRYING_LIMIT_TEXT;
     case "not ready": return "Chưa xong.";
     case "not enough rice": return "Không đủ lúa.";
     case "not enough coins": return "Không đủ xu.";

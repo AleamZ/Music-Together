@@ -125,6 +125,13 @@ describe("DryingPanel", () => {
     render(<DryingPanel state={full} catalog={CATALOG} failed={false} me="me" busy={false} now={NOW} onAct={noop} onReload={noop} onClose={noop} />);
     expect(screen.getByRole("button", { name: "Sân phơi đã đầy" })).toBeDisabled();
   });
+  it("waits while 2 of the batches are mine", () => {
+    const two = { ...STATE, drying: [1, 2].map((slot) => ({ slot, owner: ME, variety: "nep", kg: 10, readyAt: NOW + 3_600_000 })) };
+    render(<DryingPanel state={two} catalog={CATALOG} failed={false} me="me" busy={false} now={NOW} onAct={noop} onReload={noop} onClose={noop} />);
+    expect(screen.getAllByText("Trống")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Phơi lúa" })).toBeDisabled();
+    expect(screen.getByText("Bạn đang phơi 2 mẻ rồi — thu lúa trước nhé.")).toBeInTheDocument();
+  });
   it("offers a reload when the catalog failed", () => {
     const onReload = vi.fn();
     render(<DryingPanel state={STATE} catalog={null} failed me="me" busy={false} now={NOW} onAct={noop} onReload={onReload} onClose={noop} />);

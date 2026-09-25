@@ -484,19 +484,24 @@ begin
     'yours only';
   s := public._farm_do_dry_collect(room, a2, 1, t + interval '3 hours');
   assert s->'drying' = '[]' and s->'mine'->'rice'->'short'->'dry' = '10', 'dry rice';
+  -- an account dries at most 2 batches at a time in a room, so two accounts fill the 4 slots
   perform public._farm_do_dry_start(room, a2, 'short', 1, t);
   perform public._farm_do_dry_start(room, a2, 'short', 1, t);
-  perform public._farm_do_dry_start(room, a2, 'short', 1, t);
-  perform public._farm_do_dry_start(room, a2, 'short', 1, t);
+  assert pg_temp.err(format('select public._farm_do_dry_start(%L, %L, %L, 1, %L)', room, a2, 'short', t)) = 'drying limit',
+    'two batches each';
+  perform public._rice_add(a3, 'nep', 5, 0);
+  perform public._farm_do_dry_start(room, a3, 'nep', 2, t);
+  perform public._farm_do_dry_start(room, a3, 'nep', 3, t);
   assert pg_temp.err(format('select public._farm_do_dry_start(%L, %L, %L, 1, %L)', room, a2, 'short', t)) = 'drying full', 'full';
   perform public._field_open(room, t + interval '27 hours');
   assert not exists (select 1 from public.drying_slots where room_id = room)
-     and (select dry_kg from public.rice_stock where account_id = a2 and variety = 'short') = 14, 'collected automatically';
+     and (select dry_kg from public.rice_stock where account_id = a2 and variety = 'short') = 12
+     and (select dry_kg from public.rice_stock where account_id = a3 and variety = 'nep') = 5, 'collected automatically';
 
   -- selling at cô Út: dry at 710 xu/kg, wet at 70 %
   v_coins := pg_temp.coins(a2);
   r := public.sell_rice(t2, 'short', true, 10);
-  assert r->'mine'->'coins' = to_jsonb(v_coins + 7100) and r->'mine'->'rice'->'short'->'dry' = '4', 'dry: 10 × 710';
+  assert r->'mine'->'coins' = to_jsonb(v_coins + 7100) and r->'mine'->'rice'->'short'->'dry' = '2', 'dry: 10 × 710';
   r := public.sell_rice(t2, 'short', false, 5);
   assert r->'mine'->'coins' = to_jsonb(v_coins + 7100 + 2485), 'wet: floor(5 × 710 × 0.7)';
   assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'rice_sell' and delta = 2485), 'ledger';

@@ -392,6 +392,7 @@ kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mp
   - It adds the yield as **wet** rice of the variety to the farmer's `rice_stock`, deletes the crop, leaves the plot bare, and ends a lease.
 - **Drying:**
   - `dry_start(room, variety, kg)` moves wet rice to a free drying slot. There is one batch per slot, of any positive kg up to the wet stock.
+  - An account dries at most 2 batches at a time in a room (`drying limit`), so one player cannot hold the whole yard. A full yard is checked first (`drying full`).
   - The batch is ready after **3 h**, and `dry_collect(room, slot)` moves it to dry stock.
   - Everyone sees the slots ("Lúa của A đang phơi — còn 1 giờ").
   - The sweep auto-collects a batch 24 h after it is ready.
@@ -612,6 +613,7 @@ v15.1 ignores the reported quality (D1), so a modified client gains nothing from
 | `need water` | "Mực nước chưa đúng — xem Sổ tay." (the panel names the level) |
 | `no item` | "Chưa có {tên} — ghé tiệm anh Hai." |
 | `drying full` | "Sân phơi đã đầy." |
+| `drying limit` | "Bạn đang phơi 2 mẻ rồi — thu lúa trước nhé." |
 | `not ready` | "Chưa xong." |
 | `not enough rice` | "Không đủ lúa." |
 | `not enough coins` | "Không đủ xu." |
