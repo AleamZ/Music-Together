@@ -1,173 +1,132 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
-import { useLyrics } from "@/hooks/useLyrics";
-import * as dbModule from "@/lib/lyrics/db";
-import * as channelModule from "@/lib/lyrics/channel";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 
-describe("useLyrics permission gating (DJ vs Guest)", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    localStorage.clear();
-  });
+const db = vi.hoisted(() => ({ fetchVideoLyrics: vi.fn(), saveVideoLyrics: vi.fn(), updateVideoLyricOffset: vi.fn() }));
+vi.mock("@/lib/lyrics/db", () => db);
+const sync = vi.hoisted(() => ({ joinLyricSync: vi.fn(), send: vi.fn(), unsubscribe: vi.fn() }));
+vi.mock("@/lib/lyrics/channel", () => ({ joinLyricSync: sync.joinLyricSync }));
 
-  it("prevents guest (canControl=false) from broadcasting or saving offset to database", () => {
-    const updateSpy = vi.spyOn(dbModule, "updateVideoLyricOffset").mockResolvedValue();
-    const sendMock = vi.fn();
-    vi.spyOn(channelModule, "joinLyricSync").mockReturnValue({
-      send: sendMock,
-      unsubscribe: vi.fn(),
-    });
+import { useLyrics, type UseLyricsProps } from "@/hooks/useLyrics";
 
-    const { result } = renderHook(() =>
-      useLyrics({
-        title: "Test Song",
-        durationSeconds: 180,
-        elapsedMs: 5000,
-        roomId: "room-abc",
-        trackId: "track-123",
-        youtubeVideoId: "yt-video-1",
-        username: "GuestBob",
-        canControl: false,
-      })
-    );
+const ROOM = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+const TOKEN = "f3a1c2d4e5b6a7980f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6e5f4a3b2";
+const VIDEO = "dQw4w9WgXcQ";
+const API_LYRICS = { trackName: "API Track", artistName: "API Artist", syncedLyrics: "[00:01.00] From the API" };
 
-    // Guest tries to adjust offset with syncToRoom = true
-    act(() => {
-      result.current.setOffsetMs(1500, true);
-    });
+let song = 0;
+/** A fresh title per render: the hook's lyrics cache is module-wide. */
+const props = (over: Partial<UseLyricsProps> = {}): UseLyricsProps => ({
+  title: `Permission song ${++song}`,
+  durationSeconds: 180,
+  elapsedMs: 5000,
+  roomId: ROOM,
+  trackId: "track-123",
+  youtubeVideoId: VIDEO,
+  sessionToken: TOKEN,
+  canControl: false,
+  ...over,
+});
 
-    // Local offset updates for the guest
+/** Props are built once: a new title on every render would refetch forever. */
+const mount = (p: UseLyricsProps) => renderHook(() => useLyrics(p));
+
+beforeEach(() => {
+  for (const f of [...Object.values(db), ...Object.values(sync)]) f.mockReset();
+  db.fetchVideoLyrics.mockResolvedValue(null);
+  db.saveVideoLyrics.mockResolvedValue(true);
+  db.updateVideoLyricOffset.mockResolvedValue(true);
+  sync.joinLyricSync.mockReturnValue({ send: sync.send, unsubscribe: sync.unsubscribe });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
+  localStorage.clear();
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("useLyrics permission gating (DJ vs listener)", () => {
+  it("keeps a listener's offset change local: no cache write, no broadcast", async () => {
+    const { result } = mount(props());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.setOffsetMs(1500, true));
     expect(result.current.offsetMs).toBe(1500);
-
-    // But DB update and room broadcast are NOT called
-    expect(updateSpy).not.toHaveBeenCalled();
-    expect(sendMock).not.toHaveBeenCalled();
+    await act(async () => {});
+    expect(db.updateVideoLyricOffset).not.toHaveBeenCalled();
+    expect(sync.send).not.toHaveBeenCalled();
   });
 
-  it("prevents guest (canControl=false) from saving custom lyrics to database or broadcasting", () => {
-    const saveSpy = vi.spyOn(dbModule, "saveVideoLyrics").mockResolvedValue();
-    const sendMock = vi.fn();
-    vi.spyOn(channelModule, "joinLyricSync").mockReturnValue({
-      send: sendMock,
-      unsubscribe: vi.fn(),
-    });
-
-    const { result } = renderHook(() =>
-      useLyrics({
-        title: "Test Song",
-        durationSeconds: 180,
-        elapsedMs: 5000,
-        roomId: "room-abc",
-        trackId: "track-123",
-        youtubeVideoId: "yt-video-1",
-        username: "GuestBob",
-        canControl: false,
-      })
-    );
-
-    act(() => {
-      result.current.applyCustomLyric(
-        {
-          trackName: "Custom",
-          syncedLyrics: "[00:01.00] Line 1",
-        },
-        true // Guest tries to sync to room
-      );
-    });
-
-    // Local lyrics updated for the guest
+  it("keeps a listener's custom lyrics local: no cache write, no broadcast", async () => {
+    const { result } = mount(props());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.applyCustomLyric({ trackName: "Custom", syncedLyrics: "[00:01.00] Line 1" }, true));
     expect(result.current.meta?.trackName).toBe("Custom");
-
-    // DB save and room broadcast are NOT called
-    expect(saveSpy).not.toHaveBeenCalled();
-    expect(sendMock).not.toHaveBeenCalled();
+    await act(async () => {});
+    expect(db.saveVideoLyrics).not.toHaveBeenCalled();
+    expect(sync.send).not.toHaveBeenCalled();
   });
 
-  it("allows DJ (canControl=true) to update offset in database and broadcast to room", () => {
-    const updateSpy = vi.spyOn(dbModule, "updateVideoLyricOffset").mockResolvedValue();
-    const sendMock = vi.fn();
-    vi.spyOn(channelModule, "joinLyricSync").mockReturnValue({
-      send: sendMock,
-      unsubscribe: vi.fn(),
-    });
+  it("never lets a listener cache what the lyrics API found", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(API_LYRICS)));
+    const { result } = mount(props());
+    await waitFor(() => expect(result.current.meta?.trackName).toBe("API Track"));
+    await act(async () => {});
+    expect(db.saveVideoLyrics).not.toHaveBeenCalled();
+  });
 
-    const { result } = renderHook(() =>
-      useLyrics({
-        title: "Test Song",
-        durationSeconds: 180,
-        elapsedMs: 5000,
-        roomId: "room-abc",
-        trackId: "track-123",
-        youtubeVideoId: "yt-video-1",
-        username: "DjAlice",
-        canControl: true,
-      })
-    );
-
-    act(() => {
-      result.current.setOffsetMs(2500, true);
-    });
-
+  it("writes the DJ's offset with the room and the session", async () => {
+    const { result } = mount(props({ canControl: true }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.setOffsetMs(2500, true));
     expect(result.current.offsetMs).toBe(2500);
-    expect(updateSpy).toHaveBeenCalledWith("yt-video-1", 2500, "DjAlice");
-    expect(sendMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        trackId: "track-123",
-        offsetMs: 2500,
-        appliedByName: "DjAlice",
-      })
-    );
+    await waitFor(() => expect(db.updateVideoLyricOffset).toHaveBeenCalledTimes(1));
+    expect(db.updateVideoLyricOffset).toHaveBeenCalledWith(ROOM, TOKEN, VIDEO, 2500);
   });
 
-  it("allows DJ (canControl=true) to save custom lyrics to database and broadcast to room", () => {
-    const saveSpy = vi.spyOn(dbModule, "saveVideoLyrics").mockResolvedValue();
-    const sendMock = vi.fn();
-    vi.spyOn(channelModule, "joinLyricSync").mockReturnValue({
-      send: sendMock,
-      unsubscribe: vi.fn(),
-    });
-
-    const { result } = renderHook(() =>
-      useLyrics({
-        title: "Test Song",
-        durationSeconds: 180,
-        elapsedMs: 5000,
-        roomId: "room-abc",
-        trackId: "track-123",
-        youtubeVideoId: "yt-video-1",
-        username: "DjAlice",
-        canControl: true,
-      })
-    );
-
-    act(() => {
+  it("writes the DJ's custom lyrics as a full record with the DJ's current offset, the room and the session", async () => {
+    localStorage.setItem(`music-together:lyric-offset:${VIDEO}`, "2500"); // the DJ calibrated this video before
+    const { result } = mount(props({ canControl: true }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.offsetMs).toBe(2500);
+    act(() =>
       result.current.applyCustomLyric(
-        {
-          trackName: "Official Track",
-          artistName: "Official Artist",
-          syncedLyrics: "[00:05.00] Chorus",
-        },
+        { trackName: "Official Track", artistName: "Official Artist", syncedLyrics: "[00:05.00] Chorus" },
         true
-      );
-    });
-
+      )
+    );
     expect(result.current.meta?.trackName).toBe("Official Track");
-    expect(saveSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        videoId: "yt-video-1",
-        trackName: "Official Track",
-        artistName: "Official Artist",
-        timingSource: "custom",
-        updatedByName: "DjAlice",
-      })
-    );
-    expect(sendMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        trackId: "track-123",
-        trackName: "Official Track",
-        syncedLyrics: "[00:05.00] Chorus",
-        appliedByName: "DjAlice",
-      })
-    );
+    await waitFor(() => expect(db.saveVideoLyrics).toHaveBeenCalledTimes(1));
+    expect(db.saveVideoLyrics).toHaveBeenCalledWith(ROOM, TOKEN, {
+      videoId: VIDEO,
+      trackName: "Official Track",
+      artistName: "Official Artist",
+      syncedLyrics: "[00:05.00] Chorus",
+      plainLyrics: undefined,
+      offsetMs: 2500,
+      timingSource: "custom",
+    });
+  });
+
+  it("caches what the lyrics API found for the DJ as a full record, with the room and the session", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(API_LYRICS)));
+    mount(props({ canControl: true }));
+    await waitFor(() => expect(db.saveVideoLyrics).toHaveBeenCalledTimes(1));
+    expect(db.saveVideoLyrics).toHaveBeenCalledWith(ROOM, TOKEN, {
+      videoId: VIDEO,
+      trackName: "API Track",
+      artistName: "API Artist",
+      syncedLyrics: "[00:01.00] From the API",
+      plainLyrics: undefined,
+      offsetMs: 0,
+      timingSource: "auto",
+    });
+  });
+
+  it("caches the API result with the DJ's current offset, since the row stores the offset as sent", async () => {
+    localStorage.setItem(`music-together:lyric-offset:${VIDEO}`, "1500"); // the DJ calibrated this video before
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(API_LYRICS)));
+    const { result } = mount(props({ canControl: true }));
+    await waitFor(() => expect(db.saveVideoLyrics).toHaveBeenCalledTimes(1));
+    expect(result.current.offsetMs).toBe(1500);
+    expect(db.saveVideoLyrics).toHaveBeenCalledWith(ROOM, TOKEN, expect.objectContaining({ offsetMs: 1500, timingSource: "auto" }));
   });
 });
