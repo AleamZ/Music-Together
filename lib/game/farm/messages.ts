@@ -1,7 +1,9 @@
 import { lockSeconds, lockText } from "@/lib/anticheat";
+import type { UplandCrop } from "./catalog";
 import type { PestKind, Phase } from "./state";
 
-// The farm's Vietnamese texts (spec §8, §11.7, §13): names, durations, toasts and the RPC errors. Pure.
+// The farm's Vietnamese texts (spec §8, §11.7, §13; v15.2 §11.7, §13): names, durations, toasts and the RPC errors.
+// Pure.
 
 export const PHASE_NAME: Record<Phase, string> = {
   prepared: "Đã làm đất", soaking: "Đang ngâm ủ", sprouted: "Hạt nứt nanh", seedling: "Mạ non", tillering: "Đẻ nhánh",
@@ -20,9 +22,28 @@ export const PEST_REMEDY: Record<PestKind, string | null> = {
 };
 
 export const WATER_NAME: readonly string[] = ["Khô", "Ẩm", "Nông", "Sâu"];
+/** The same four levels on raised beds (v15.2 R22). */
+export const BED_WATER_NAME: readonly string[] = ["Khô", "Ẩm", "Đẫm", "Ngập"];
 
-export const GIFT_TEXT = "🌾 Chú Tám tặng bạn 1 bao giống lúa ngắn ngày và 1 bao urê — xem Sổ tay nhà nông nhé!";
+/** A run of levels on beds: [1] → "Ẩm", [0, 1] → "Khô–Ẩm". */
+export function bedLevelsText(levels: readonly number[]): string {
+  if (levels.length === 0) return "";
+  const lo = Math.min(...levels), hi = Math.max(...levels);
+  return lo === hi ? BED_WATER_NAME[lo] : `${BED_WATER_NAME[lo]}–${BED_WATER_NAME[hi]}`;
+}
+
+/** The phases of a crop on beds (v15.2 §13.1); a stage is named by the crop's config. */
+const UP_PHASE_NAME: Record<string, string> = {
+  prepared: "Đã lên luống", nursery: "Đang ươm cây con", waiting: "Chờ lứa sau", ripe: "Chín", overripe: "Chín quá", done: "Hết lứa",
+};
+export function uplandPhaseName(u: UplandCrop | null, phase: string): string {
+  return UP_PHASE_NAME[phase] ?? u?.stages.find((s) => s.id === phase)?.name ?? phase;
+}
+
+export const GIFT_TEXT = "🌾 Chú Tám tặng bạn 1 bao giống lúa ngắn ngày, 1 bao urê và 1 cây liềm — xem Sổ tay nhà nông nhé!";
 export const NOT_OPEN = "Đồng ruộng chưa mở — chủ phòng cần chạy migration 0013.";
+/** A v15.2 action against a database without 0016 (R28). */
+export const NOT_OPEN_152 = "Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.";
 export const FIELD_LOADING = "Đang tải đồng ruộng…";
 export const FIELD_FAILED = "Chưa tải được đồng ruộng — thử lại nhé.";
 export const FARM_LIMIT_TEXT = "Bạn đang canh tác 2 thửa rồi.";
@@ -44,11 +65,47 @@ export function harvestText(kg: number, varietyName: string): string {
   return `🌾 Gặt được ${kg} kg ${varietyName.toLowerCase()} (lúa ướt) — đem phơi rồi bán cho cô Út nhé!`;
 }
 
+/** A won round's part (§13.2), and the sixth part's whole harvest. */
+export function partText(k: number, kg: number): string {
+  return `✅ Xong phần ${k}/6: ${kg} kg lúa.`;
+}
+export function partsDoneText(plot: number, total: number, varietyName: string): string {
+  return `🌾 Gặt xong thửa ${plot}: tổng ${total} kg ${varietyName.toLowerCase()} (lúa ướt) — đem phơi rồi bán cho cô Út nhé!`;
+}
+
+/** The harvester's toasts (§13.4): at the rent, and at its end with the wet stock it brought (R15). */
+export function harvesterStartText(plot: number): string {
+  return `🚜 Máy gặt đang vào thửa ${plot} — 30 giây nữa xong.`;
+}
+export function harvesterDoneText(plot: number, kg: number, varietyName: string): string {
+  return `🚜 Máy gặt gặt xong thửa ${plot}: ${kg} kg ${varietyName.toLowerCase()} (lúa ướt).`;
+}
+
+/** A picking (§13.6); "(lứa k/n)" only for a crop picked more than once. */
+export function pickingText(kg: number, cropName: string, k: number, n: number): string {
+  return `🧺 Thu hoạch ${kg} kg ${cropName.toLowerCase()}${n > 1 ? ` (lứa ${k}/${n})` : ""} — đem bán cho cô Út nhé!`;
+}
+
+export function produceSaleText(kg: number, cropName: string, earned: number): string {
+  return `💰 Bán ${kg} kg ${cropName.toLowerCase()} được ${earned.toLocaleString("vi-VN")} xu.`;
+}
+
+/** Nạp thuốc (§13.5). */
+export function loadedText(itemName: string): string {
+  return `🧴 Đã nạp ${itemName.charAt(0).toLowerCase()}${itemName.slice(1)} vào bình phun — 3 lần xịt.`;
+}
+
 /** The HUD's rice line on the field: every variety together. */
 export function riceSummary(rice: Record<string, { wet: number; dry: number }>): string {
   const all = Object.values(rice);
   const dry = all.reduce((a, r) => a + r.dry, 0), wet = all.reduce((a, r) => a + r.wet, 0);
   return dry + wet === 0 ? "🌾 Chưa có lúa" : `🌾 ${dry} kg khô · ${wet} kg ướt`;
+}
+
+/** The HUD's line (§13.6): the rice, then the hoa màu when there is any. */
+export function produceSummary(rice: Record<string, { wet: number; dry: number }>, produce: Record<string, number>): string {
+  const kg = Object.values(produce).reduce((a, x) => a + x, 0);
+  return kg > 0 ? `${riceSummary(rice)} · 🧺 ${kg} kg màu` : riceSummary(rice);
 }
 
 export function boughtText(itemName: string, qty: number): string {
@@ -59,12 +116,14 @@ export function riceSaleText(kg: number, varietyName: string, dry: boolean, earn
   return `💰 Bán ${kg} kg ${varietyName.toLowerCase()} ${dry ? "khô" : "ướt"} được ${earned.toLocaleString("vi-VN")} xu.`;
 }
 
-/** Vietnamese toast text for a farm RPC error (spec §11.7). `itemName` names the item a "no item" error is about. */
-export function farmErrorMessage(err: unknown, itemName?: string): string {
+/** Vietnamese toast text for a farm RPC error (spec §11.7, v15.2 §11.7). `itemName` names the item a "no item" error is
+ *  about; `action` = "harvest_part" reads a harvest round's refusals (the HarvestGame overlay). */
+export function farmErrorMessage(err: unknown, itemName?: string, action?: string): string {
   const e = (err && typeof err === "object" ? err : {}) as { message?: unknown };
   const msg = typeof e.message === "string" ? e.message : "";
+  const round = action === "harvest_part";
   switch (msg) {
-    case "not your plot": return "Thửa này không phải của bạn.";
+    case "not your plot": return round ? "Hết hạn thuê — phần lúa chưa gặt đã mất." : "Thửa này không phải của bạn.";
     case "plot taken": return "Thửa này đã có người canh tác.";
     case "farm limit": return FARM_LIMIT_TEXT;
     case "already own land": return "Bạn đã có đất tư trong phòng này.";
@@ -73,7 +132,7 @@ export function farmErrorMessage(err: unknown, itemName?: string): string {
     case "offer expired":
     case "offer not found": return "Đề nghị không còn nữa.";
     case "buyer cannot buy": return "Người mua không còn đủ điều kiện (xu hoặc đất).";
-    case "crop exists": return "Đang có lúa trên thửa — gặt hoặc bỏ vụ trước.";
+    case "crop exists": return "Đang có vụ trên thửa — thu hoạch hoặc bỏ vụ trước.";
     case "leased": return "Thửa đang cho thuê.";
     case "wrong phase": return "Chưa tới lúc làm việc này.";
     case "not prepared": return "Làm đất trước đã.";
@@ -89,7 +148,17 @@ export function farmErrorMessage(err: unknown, itemName?: string): string {
     case "item not available": return "Món này không mua được.";
     case "invalid quantity":
     case "invalid price": return "Số không hợp lệ.";
-    case "too fast": return TOO_FAST;
+    case "too fast": return round ? "Chưa xong bó lúa — thử lại sau vài giây." : TOO_FAST;
+    case "no sickle": return "Chưa có liềm — mua ở tiệm anh Hai (hoặc thuê máy gặt ở Hợp tác xã).";
+    case "no sprayer": return "Chưa có bình phun — mua ở tiệm anh Hai.";
+    case "harvesting": return "Đang gặt dở — gặt cho xong đã.";
+    case "harvester busy": return "Máy gặt đang gặt thửa này.";
+    case "work expired": return "Lượt gặt đã quá lâu — bắt đầu lại nhé.";
+    case "lease ending": return "Sắp hết hạn thuê — không kịp gặt phần này.";
+    case "lease ends": return "Không kịp gặt xong trước khi hết hạn thuê.";
+    case "wrong crop": return "Việc này không hợp với cây trên thửa.";
+    case "already owned": return "Bạn đã có món này rồi.";
+    case "not enough crop": return "Không đủ hàng để bán.";
     case "account locked": return lockText(lockSeconds(err) ?? 300);
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";

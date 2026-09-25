@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  boughtText, durationText, farmErrorMessage, harvestText, isMissingRpc, PEST_NAME, PEST_REMEDY, PHASE_NAME, riceSaleText, riceSummary,
+  bedLevelsText, boughtText, durationText, farmErrorMessage, GIFT_TEXT, harvesterDoneText, harvesterStartText, harvestText, isMissingRpc,
+  loadedText, NOT_OPEN_152, partsDoneText, partText, PEST_NAME, PEST_REMEDY, PHASE_NAME, pickingText, produceSaleText, produceSummary,
+  riceSaleText, riceSummary, uplandPhaseName,
 } from "@/lib/game/farm/messages";
+import { uplandFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
+import fixtures from "@/tests/fixtures/upland-cases.json";
 import { AnticheatError } from "@/lib/anticheat";
 
 describe("farmErrorMessage", () => {
@@ -14,7 +18,7 @@ describe("farmErrorMessage", () => {
     expect(m("not for sale")).toBe("Thửa này không rao bán.");
     expect(m("price changed")).toBe("Giá vừa đổi — xem lại nhé.");
     expect([m("offer expired"), m("offer not found")]).toEqual(["Đề nghị không còn nữa.", "Đề nghị không còn nữa."]);
-    expect(m("crop exists")).toBe("Đang có lúa trên thửa — gặt hoặc bỏ vụ trước.");
+    expect(m("crop exists")).toBe("Đang có vụ trên thửa — thu hoạch hoặc bỏ vụ trước.");
     expect(m("leased")).toBe("Thửa đang cho thuê.");
     expect(m("wrong phase")).toBe("Chưa tới lúc làm việc này.");
     expect(m("not prepared")).toBe("Làm đất trước đã.");
@@ -38,6 +42,24 @@ describe("farmErrorMessage", () => {
     const info = { code: "bad_price", strike: 0 as const, error: "invalid price", lockedUntil: null, banned: false, serverNow: null };
     expect(farmErrorMessage(new AnticheatError(info))).toBe("Số không hợp lệ.");
     expect(farmErrorMessage({ message: "account banned" })).toBe("Tài khoản đã bị khoá.");
+  });
+  it("maps the v15.2 refusals (§11.7), and reads a harvest round's in its context", () => {
+    const m = (message: string, action?: string) => farmErrorMessage({ message }, undefined, action);
+    expect(m("no sickle")).toBe("Chưa có liềm — mua ở tiệm anh Hai (hoặc thuê máy gặt ở Hợp tác xã).");
+    expect(m("no sprayer")).toBe("Chưa có bình phun — mua ở tiệm anh Hai.");
+    expect(m("harvesting")).toBe("Đang gặt dở — gặt cho xong đã.");
+    expect(m("harvester busy")).toBe("Máy gặt đang gặt thửa này.");
+    expect(m("work expired")).toBe("Lượt gặt đã quá lâu — bắt đầu lại nhé.");
+    expect(m("lease ending")).toBe("Sắp hết hạn thuê — không kịp gặt phần này.");
+    expect(m("lease ends")).toBe("Không kịp gặt xong trước khi hết hạn thuê.");
+    expect(m("wrong crop")).toBe("Việc này không hợp với cây trên thửa.");
+    expect(m("already owned")).toBe("Bạn đã có món này rồi.");
+    expect(m("not enough crop")).toBe("Không đủ hàng để bán.");
+    expect([m("invalid crop"), m("invalid act")]).toEqual(["Có lỗi, thử lại nhé.", "Có lỗi, thử lại nhé."]);
+    expect([m("too fast", "harvest_part"), m("too fast")]).toEqual(["Chưa xong bó lúa — thử lại sau vài giây.", "Từ từ thôi…"]);
+    expect([m("not your plot", "harvest_part"), m("not your plot")])
+      .toEqual(["Hết hạn thuê — phần lúa chưa gặt đã mất.", "Thửa này không phải của bạn."]);
+    expect(NOT_OPEN_152).toBe("Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.");
   });
   it("recognises a database without the v15 functions", () => {
     expect(isMissingRpc({ code: "PGRST202", message: "Could not find the function public.field_state in the schema cache" })).toBe(true);
@@ -75,5 +97,32 @@ describe("names and texts", () => {
   it("sums the rice for the HUD", () => {
     expect(riceSummary({})).toBe("🌾 Chưa có lúa");
     expect(riceSummary({ nep: { wet: 30, dry: 50 }, thom: { wet: 0, dry: 12 } })).toBe("🌾 62 kg khô · 30 kg ướt");
+  });
+});
+
+describe("v15.2 texts (§9, §13)", () => {
+  const [khoai, , ot] = (fixtures as unknown as { crops: UplandCropRow[] }).crops.map(uplandFromRow);
+  it("names the beds' water and the hoa-màu phases", () => {
+    expect([bedLevelsText([1]), bedLevelsText([0, 1]), bedLevelsText([1, 2]), bedLevelsText([3])]).toEqual(["Ẩm", "Khô–Ẩm", "Ẩm–Đẫm", "Ngập"]);
+    expect(["prepared", "nursery", "grow", "waiting", "ripe", "overripe"].map((p) => uplandPhaseName(ot, p))).toEqual([
+      "Đã lên luống", "Đang ươm cây con", "Phát triển thân lá", "Chờ lứa sau", "Chín", "Chín quá",
+    ]);
+    expect(uplandPhaseName(khoai, "tuber")).toBe("Tượng củ");
+  });
+  it("tells the gift, the parts, the harvester, the pickings, the sale and the tank", () => {
+    expect(GIFT_TEXT).toBe("🌾 Chú Tám tặng bạn 1 bao giống lúa ngắn ngày, 1 bao urê và 1 cây liềm — xem Sổ tay nhà nông nhé!");
+    expect(partText(2, 13)).toBe("✅ Xong phần 2/6: 13 kg lúa.");
+    expect(partsDoneText(3, 75, "Nếp")).toBe("🌾 Gặt xong thửa 3: tổng 75 kg nếp (lúa ướt) — đem phơi rồi bán cho cô Út nhé!");
+    expect(harvesterStartText(3)).toBe("🚜 Máy gặt đang vào thửa 3 — 30 giây nữa xong.");
+    expect(harvesterDoneText(3, 50, "Nếp")).toBe("🚜 Máy gặt gặt xong thửa 3: 50 kg nếp (lúa ướt).");
+    expect(pickingText(24, "Ớt", 1, 3)).toBe("🧺 Thu hoạch 24 kg ớt (lứa 1/3) — đem bán cho cô Út nhé!");
+    expect(pickingText(197, "Khoai lang", 1, 1)).toBe("🧺 Thu hoạch 197 kg khoai lang — đem bán cho cô Út nhé!");
+    expect(produceSaleText(180, "Khoai lang", 47_700)).toBe("💰 Bán 180 kg khoai lang được 47.700 xu.");
+    expect(loadedText("Thuốc trừ sâu")).toBe("🧴 Đã nạp thuốc trừ sâu vào bình phun — 3 lần xịt.");
+  });
+  it("adds the hoa màu to the HUD's line when there is any", () => {
+    expect(produceSummary({ nep: { wet: 0, dry: 70 } }, {})).toBe("🌾 70 kg khô · 0 kg ướt");
+    expect(produceSummary({ nep: { wet: 0, dry: 70 } }, { khoai: 180 })).toBe("🌾 70 kg khô · 0 kg ướt · 🧺 180 kg màu");
+    expect(produceSummary({}, { ot: 22, bap: 8 })).toBe("🌾 Chưa có lúa · 🧺 30 kg màu");
   });
 });
