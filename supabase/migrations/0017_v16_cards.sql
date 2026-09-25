@@ -718,6 +718,17 @@ as $$
                             'coins', coalesce((select w.coins from public.wallets w where w.account_id = p_account), 0))
 $$;
 
+-- Lock the wallets of every seat at a table in account-id order (§11.6), before a hand's money moves.
+create or replace function public._card_lock_wallets(p_room uuid, p_game text) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare r record;
+begin
+  for r in select account_id from public.card_seats where room_id = p_room and game = p_game order by account_id loop
+    perform public._wallet_lock(r.account_id);
+  end loop;
+end $$;
+
 -- Pay one seat out (§6.2): its balance (Tiến lên, Cào) or its stack (poker) goes to its wallet with p_reason, and the seat
 -- keeps 0. No ledger row when it is 0. Returns the amount.
 create or replace function public._card_payout(p_room uuid, p_game text, p_seat integer, p_reason text) returns integer
@@ -776,8 +787,32 @@ as $$
      where t.room_id = p_room and t.game = p_game and t.phase in ('playing', 'peek'))
 $$;
 
--- The leave operation (§6.3), for one seat: a seat that is not in the live hand is paid out (a poker stack is cashed
--- out) and goes at once; the last seat to go resets the table. p_how: leave, timeout, sweep or forfeit_all.
+-- The leave operation for seats in the live hand (§6.3), the table's wallets locked first: each game's own rules.
+create or replace function public._card_leave_live(p_room uuid, p_game text, p_seats integer[], p_how text, p_now timestamptz)
+returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._card_lock_wallets(p_room, p_game);
+  if p_game = 'tienlen' then
+    perform public._tl_leave(p_room, p_seats, p_how, p_now);
+  end if;
+end $$;
+
+-- The step that is due at a table (§10), by game: true when it changed anything.
+create or replace function public._card_due(p_room uuid, p_game text, p_now timestamptz, p_deck integer[]) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  if p_game = 'tienlen' then
+    return public._tl_due(p_room, p_now, p_deck);
+  end if;
+  return false;
+end $$;
+
+-- The leave operation (§6.3), for one seat: a seat in the live hand leaves by its game's rules (_card_leave_live); any
+-- other seat is paid out (a poker stack is cashed out) and goes at once, and the last seat to go resets the table.
+-- p_how: leave, timeout, sweep, idle (stood up at a deal, R28) or forfeit_all.
 create or replace function public._card_leave_seat(p_room uuid, p_game text, p_seat integer, p_how text, p_now timestamptz)
 returns void
 language plpgsql security definer set search_path = public, extensions
@@ -788,6 +823,10 @@ begin
   if not found then
     return;
   end if;
+  if public._card_live(p_room, p_game, p_seat) then
+    perform public._card_leave_live(p_room, p_game, array[p_seat], p_how, p_now);
+    return;
+  end if;
   select hand_no into v_hand from public.card_tables where room_id = p_room and game = p_game;
   perform public._card_payout(p_room, p_game, p_seat, case when p_game = 'poker' then 'card_cashout' else 'card_settle' end);
   delete from public.card_seats where room_id = p_room and game = p_game and seat = p_seat;
@@ -795,19 +834,23 @@ begin
   perform public._card_reset_if_empty(p_room, p_game);
 end $$;
 
--- Several seats leave together, as one sweep removes them (§6.3): their wallets are locked in account-id order first.
+-- Several seats leave together, as one sweep removes them (§6.3, R13): the table's wallets are locked in account-id
+-- order first; the seats in the live hand leave in one go, then the others.
 create or replace function public._card_leave_seats(p_room uuid, p_game text, p_seats integer[], p_how text, p_now timestamptz)
 returns void
 language plpgsql security definer set search_path = public, extensions
 as $$
-declare r record; v_seat integer;
+declare v_live integer[]; v_seat integer;
 begin
-  for r in select account_id from public.card_seats where room_id = p_room and game = p_game and seat = any(p_seats)
-            order by account_id loop
-    perform public._wallet_lock(r.account_id);
-  end loop;
+  perform public._card_lock_wallets(p_room, p_game);
+  v_live := array(select x from unnest(p_seats) x where public._card_live(p_room, p_game, x) order by x);
+  if cardinality(v_live) > 0 then
+    perform public._card_leave_live(p_room, p_game, v_live, p_how, p_now);
+  end if;
   foreach v_seat in array p_seats loop
-    perform public._card_leave_seat(p_room, p_game, v_seat, p_how, p_now);
+    if not (v_seat = any(v_live)) then
+      perform public._card_leave_seat(p_room, p_game, v_seat, p_how, p_now);
+    end if;
   end loop;
 end $$;
 
@@ -848,6 +891,11 @@ begin
   if cardinality(f) > 0 then
     perform public._card_leave_seats(p_room, p_game, f, 'sweep', p_now);
     v_changed := true;
+  end if;
+  if (select deadline from public.card_tables where room_id = p_room and game = p_game) <= p_now then
+    if public._card_due(p_room, p_game, p_now, p_deck) then
+      v_changed := true;
+    end if;
   end if;
   if v_changed then
     perform public._card_ready(p_room, p_game, p_now);
@@ -932,6 +980,41 @@ begin
   return jsonb_build_object('changed', v_changed, 'state', public._card_view(p_room, p_game, p_now));
 end $$;
 
+-- A game action (§11.3): the lock, the sweep, the caller's seat and the seq (R24), then the move. A move the state refuses
+-- is a soft bad_move (R30): logged and answered with the envelope, and nothing moves. A real action resets the misses.
+create or replace function public._card_action(p_room uuid, p_account uuid, p_game text, p_kind text, p_seq integer,
+                                               p_args jsonb, p_now timestamptz, p_deck integer[] default null) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_seat integer; v_err text;
+begin
+  perform public._card_open(p_room, p_game);
+  perform public._card_touch(p_room, p_account, p_now);
+  perform public._card_sweep(p_room, p_game, p_now, p_deck);
+  select seat into v_seat from public.card_seats
+   where room_id = p_room and game = p_game and account_id = p_account and not leaving;
+  if v_seat is null then
+    raise exception 'not seated' using errcode = '22023';
+  end if;
+  if p_seq is distinct from (select seq from public.card_tables where room_id = p_room and game = p_game) then
+    raise exception 'stale' using errcode = '22023';
+  end if;
+  if p_kind = 'tl_play' then
+    v_err := public._tl_do_play(p_room, v_seat, public._card_ints(p_args->'cards'), p_now);
+  elsif p_kind = 'tl_pass' then
+    v_err := public._tl_do_pass(p_room, v_seat, p_now);
+  end if;
+  if v_err is not null then
+    return public._ac_flag(p_account, 'bad_move', p_kind,
+                           jsonb_build_object('game', p_game, 'seat', v_seat, 'seq', p_seq) || coalesce(p_args, '{}'::jsonb),
+                           p_room, v_err, false);
+  end if;
+  update public.card_seats set missed = 0
+   where room_id = p_room and game = p_game and seat = v_seat and account_id = p_account;
+  perform public._card_bump(p_room, p_game, true);
+  return public._card_answer(p_room, p_game, p_account, p_now);
+end $$;
+
 revoke all on function public._card_init(uuid) from public, anon, authenticated;
 revoke all on function public._card_open(uuid, text) from public, anon, authenticated;
 revoke all on function public._card_game(text) from public, anon, authenticated;
@@ -942,10 +1025,13 @@ revoke all on function public._card_touch(uuid, uuid, timestamptz) from public, 
 revoke all on function public._card_view(uuid, text, timestamptz) from public, anon, authenticated;
 revoke all on function public._card_hand(uuid, text, uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public._card_answer(uuid, text, uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._card_lock_wallets(uuid, text) from public, anon, authenticated;
 revoke all on function public._card_payout(uuid, text, integer, text) from public, anon, authenticated;
 revoke all on function public._card_settle(uuid, text) from public, anon, authenticated;
 revoke all on function public._card_reset_if_empty(uuid, text) from public, anon, authenticated;
 revoke all on function public._card_live(uuid, text, integer) from public, anon, authenticated;
+revoke all on function public._card_leave_live(uuid, text, integer[], text, timestamptz) from public, anon, authenticated;
+revoke all on function public._card_due(uuid, text, timestamptz, integer[]) from public, anon, authenticated;
 revoke all on function public._card_leave_seat(uuid, text, integer, text, timestamptz) from public, anon, authenticated;
 revoke all on function public._card_leave_seats(uuid, text, integer[], text, timestamptz) from public, anon, authenticated;
 revoke all on function public._card_ready(uuid, text, timestamptz) from public, anon, authenticated;
@@ -953,6 +1039,417 @@ revoke all on function public._card_sweep(uuid, text, timestamptz, integer[]) fr
 revoke all on function public._card_sit(uuid, uuid, text, integer, integer, integer, timestamptz) from public, anon, authenticated;
 revoke all on function public._card_leave(uuid, uuid, text, timestamptz) from public, anon, authenticated;
 revoke all on function public._card_tick(uuid, uuid, text, timestamptz, integer[]) from public, anon, authenticated;
+revoke all on function public._card_action(uuid, uuid, text, text, integer, jsonb, timestamptz, integer[])
+  from public, anon, authenticated;
+
+-- ---------- D. The engines (§7.3, §8.2, §9.2): each step takes p_now, each deal p_deck ----------
+-- Tiến lên (§7). The cards each seat of the current hand holds now ({seat: [c…]}), for thối.
+create or replace function public._tl_hands(p_room uuid) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select coalesce(jsonb_object_agg(h.seat::text, to_jsonb(h.cards)), '{}'::jsonb)
+    from public.card_hands h
+    join public.card_tables t on t.room_id = h.room_id and t.game = h.game and t.hand_no = h.hand_no
+   where h.room_id = p_room and h.game = 'tienlen'
+$$;
+
+-- The active seats (§7.3): dealt, still holding cards, neither out, cóng nor forfeited; in turn order.
+create or replace function public._tl_active(p_pub jsonb) returns integer[]
+language sql immutable set search_path = public, extensions
+as $$
+  select coalesce(array_agg(s order by s), '{}') from unnest(public._card_ints(p_pub->'order')) s
+   where p_pub->'players'->(s::text)->>'out' is null
+$$;
+
+-- One money event (§7.5) on the table's pub: _tl_money gives the next pub, and its new lines move their paid amounts
+-- (half-stakes × S / 2) between the seats' balances at once (§6.2). Returns the stored pub.
+create or replace function public._tl_event(p_room uuid, p_ev jsonb) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_pub jsonb; l jsonb; x integer;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'tienlen';
+  v_pub := public._tl_money(t.pub, p_ev, public._tl_hands(p_room));
+  for l in select e.value from jsonb_array_elements(v_pub->'lines') with ordinality e(value, n)
+            where e.n > coalesce(jsonb_array_length(t.pub->'lines'), 0) loop
+    x := (l->>'paid')::int * t.stake / 2;
+    update public.card_seats set escrow = escrow - x
+     where room_id = p_room and game = 'tienlen' and seat = (l->>'from')::int
+       and account_id = (v_pub->'players'->(l->>'from')->>'id')::uuid;
+    update public.card_seats set escrow = escrow + x
+     where room_id = p_room and game = 'tienlen' and seat = (l->>'to')::int
+       and account_id = (v_pub->'players'->(l->>'to')->>'id')::uuid;
+  end loop;
+  update public.card_tables set pub = v_pub where room_id = p_room and game = 'tienlen';
+  return v_pub;
+end $$;
+
+-- A game's result (§11.4): the places, the outs, the cards still held (the tới trắng hand alone), the lines and nets in xu.
+create or replace function public._tl_last(p_room uuid, p_trang jsonb) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'hand_no', t.hand_no, 'trang', p_trang,
+    'places', coalesce((select jsonb_agg(p.key::int order by (p.value->>'place')::int) from jsonb_each(t.pub->'players') p
+                         where p.value->>'place' is not null), '[]'::jsonb),
+    'out', coalesce((select jsonb_object_agg(p.key, p.value->'out') from jsonb_each(t.pub->'players') p
+                      where p.value->>'out' is not null), '{}'::jsonb),
+    'hands', case when p_trang is not null then jsonb_build_object(p_trang->>'seat', p_trang->'cards')
+             else coalesce((select jsonb_object_agg(h.seat::text, to_jsonb(h.cards)) from public.card_hands h
+                             where h.room_id = p_room and h.game = 'tienlen' and h.hand_no = t.hand_no
+                               and cardinality(h.cards) > 0), '{}'::jsonb) end,
+    'lines', coalesce((select jsonb_agg(jsonb_build_object('from', l->'from', 'to', l->'to', 'xu', (l->>'h')::int * t.stake / 2,
+                                                           'paid', (l->>'paid')::int * t.stake / 2, 'why', l->'why') order by n)
+                         from jsonb_array_elements(t.pub->'lines') with ordinality e(l, n)), '[]'::jsonb),
+    'net', (select jsonb_object_agg(q, coalesce((select sum(case when l->>'to' = q then (l->>'paid')::int else -(l->>'paid')::int end)
+                                                   from jsonb_array_elements(t.pub->'lines') l
+                                                  where q in (l->>'from', l->>'to')), 0) * t.stake / 2)
+              from jsonb_array_elements_text(t.pub->'order') q))
+  from public.card_tables t where t.room_id = p_room and t.game = 'tienlen'
+$$;
+
+-- The deal (§7.3, §7.6): the table's wallets locked in account-id order, then the unseen (R28) and those short of 10 S
+-- stand up; fewer than two players → idle. 10 S held from each; 13 cards each in seat order; the leader (R15); tới trắng.
+create or replace function public._tl_deal(p_room uuid, p_now timestamptz, p_deck integer[]) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; r record; v_seats integer[]; v_deck integer[]; v_hand integer; i integer; v_cards integer[];
+        v_first boolean; v_low integer; v_leader integer; v_best integer; v_rank integer := 0; v_r integer; s integer;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'tienlen';
+  perform public._card_lock_wallets(p_room, 'tienlen');
+  for r in select cs.seat from public.card_seats cs left join public.wallets w on w.account_id = cs.account_id
+            where cs.room_id = p_room and cs.game = 'tienlen' and not cs.leaving
+              and (cs.seen_at < p_now - interval '60 seconds' or coalesce(w.coins, 0) < 10 * t.stake)
+            order by cs.seat loop
+    perform public._card_leave_seat(p_room, 'tienlen', r.seat, 'idle', p_now);
+  end loop;
+  v_seats := array(select seat from public.card_seats where room_id = p_room and game = 'tienlen' and not leaving order by seat);
+  if cardinality(v_seats) < 2 then
+    update public.card_tables set phase = 'idle', turn = null, deadline = null, pub = '{}'::jsonb
+     where room_id = p_room and game = 'tienlen';
+    return true;
+  end if;
+  v_deck := coalesce(p_deck, public._card_shuffle());
+  v_hand := t.hand_no + 1;
+  delete from public.card_hands where room_id = p_room and game = 'tienlen';
+  delete from public.card_secrets where room_id = p_room and game = 'tienlen';
+  for i in 1..cardinality(v_seats) loop
+    v_cards := array(select c from unnest(v_deck[13 * i - 12 : 13 * i]) c order by c);
+    insert into public.card_hands (room_id, game, hand_no, seat, account_id, dealt, cards)
+    select p_room, 'tienlen', v_hand, v_seats[i], account_id, v_cards, v_cards
+      from public.card_seats where room_id = p_room and game = 'tienlen' and seat = v_seats[i];
+  end loop;
+  for r in select seat, account_id from public.card_seats where room_id = p_room and game = 'tienlen' and seat = any(v_seats)
+            order by seat loop
+    perform public._pay(r.account_id, -10 * t.stake, 'card_hold', public._card_ref('tienlen', v_hand));
+    update public.card_seats set escrow = 10 * t.stake where room_id = p_room and game = 'tienlen' and seat = r.seat;
+  end loop;
+  -- the first game, a game after tới trắng, or one the last nhất is not dealt into: the lowest dealt card leads (R15)
+  v_first := t.first_game or not exists (select 1 from public.card_seats where room_id = p_room and game = 'tienlen'
+                                            and account_id = t.lead_id and seat = any(v_seats));
+  v_low := (select min(c) from public.card_hands h, unnest(h.cards) c where h.room_id = p_room and h.game = 'tienlen');
+  v_leader := case when v_first
+                then (select seat from public.card_hands where room_id = p_room and game = 'tienlen' and v_low = any(cards))
+                else (select seat from public.card_seats where room_id = p_room and game = 'tienlen' and account_id = t.lead_id) end;
+  update public.card_tables
+     set hand_no = v_hand, phase = 'playing', turn = v_leader, deadline = p_now + interval '20 seconds',
+         pub = jsonb_build_object(
+           'first', v_first, 'must', case when v_first then v_low end, 'order', to_jsonb(v_seats),
+           'players', (select jsonb_object_agg(cs.seat::text, jsonb_build_object('id', cs.account_id, 'n', 13, 'played', false,
+                                                 'out', null, 'place', null, 'paid', 0, 'settled', false))
+                         from public.card_seats cs where cs.room_id = p_room and cs.game = 'tienlen' and cs.seat = any(v_seats)),
+           'top', null, 'passed', '[]'::jsonb, 'pile', '[]'::jsonb, 'chain', null, 'lines', '[]'::jsonb)
+   where room_id = p_room and game = 'tienlen';
+  perform public._card_log(p_room, 'tienlen', v_hand, null, null, 'deal',
+    jsonb_build_object('hands', (select jsonb_object_agg(seat::text, to_jsonb(dealt)) from public.card_hands
+                                  where room_id = p_room and game = 'tienlen'), 'leader', v_leader, 'first', v_first), p_now);
+  delete from public.card_log where id in (select id from public.card_log where at < p_now - interval '14 days' order by at limit 500);
+  -- tới trắng (§7.4): the best pattern wins; the same pattern goes to the first in turn order from the leader
+  foreach s in array array[v_leader] || public._card_after(v_seats, v_leader) loop
+    v_r := public._tl_trang_rank(public._tl_trang((select cards from public.card_hands
+                                                     where room_id = p_room and game = 'tienlen' and seat = s)));
+    if v_r > v_rank then
+      v_rank := v_r;
+      v_best := s;
+    end if;
+  end loop;
+  if v_best is not null then
+    perform public._tl_do_trang(p_room, v_best, p_now);
+  end if;
+  return true;
+end $$;
+
+-- Tới trắng (§7.3 trang()): every other player pays 2 S, every seat is paid out, and the next deal is a first game (R15).
+create or replace function public._tl_do_trang(p_room uuid, p_seat integer, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_cards integer[]; v_hand integer;
+begin
+  select cards, hand_no into v_cards, v_hand from public.card_hands where room_id = p_room and game = 'tienlen' and seat = p_seat;
+  perform public._tl_event(p_room, jsonb_build_object('k', 'trang', 'seat', p_seat));
+  update public.card_tables
+     set last = public._tl_last(p_room, jsonb_build_object('seat', p_seat, 'pattern', public._tl_trang(v_cards),
+                                                           'cards', to_jsonb(v_cards)))
+   where room_id = p_room and game = 'tienlen';
+  perform public._card_settle(p_room, 'tienlen');
+  update public.card_tables
+     set first_game = true, lead_id = null, phase = 'result', turn = null, deadline = p_now + interval '8 seconds'
+   where room_id = p_room and game = 'tienlen';
+  perform public._card_log(p_room, 'tienlen', v_hand, null, p_seat, 'trang',
+                           jsonb_build_object('pattern', public._tl_trang(v_cards)), p_now);
+end $$;
+
+-- The next turn (§7.3 advance): the first seat after p_from that is active, does not own the top and has not passed;
+-- nobody left closes the round.
+create or replace function public._tl_advance(p_room uuid, p_from integer, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_pub jsonb; v_cand integer[]; v_turn integer;
+begin
+  select pub into v_pub from public.card_tables where room_id = p_room and game = 'tienlen';
+  v_cand := array(select s from unnest(public._tl_active(v_pub)) s
+                   where s is distinct from (v_pub->'top'->>'seat')::int and not (s = any(public._card_ints(v_pub->'passed'))));
+  if cardinality(v_cand) = 0 then
+    perform public._tl_close(p_room, p_now);
+    return;
+  end if;
+  v_turn := (select s from unnest(public._card_after(public._card_ints(v_pub->'order'), p_from)) with ordinality u(s, n)
+              where s = any(v_cand) order by n limit 1);
+  update public.card_tables set turn = v_turn, deadline = p_now + interval '20 seconds'
+   where room_id = p_room and game = 'tienlen';
+end $$;
+
+-- The round closes (§7.3 close_round): the chain is paid, and the top's owner leads — or, when it went out, the next
+-- active seat after it ("hưởng sái").
+create or replace function public._tl_close(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_pub jsonb; v_top integer; v_turn integer;
+begin
+  v_pub := public._tl_event(p_room, '{"k": "close"}'::jsonb);
+  v_top := (v_pub->'top'->>'seat')::int;
+  v_turn := case when v_pub->'players'->(v_top::text)->>'out' is null then v_top
+                 else (select s from unnest(public._card_after(public._card_ints(v_pub->'order'), v_top)) with ordinality u(s, n)
+                        where v_pub->'players'->(s::text)->>'out' is null order by n limit 1) end;
+  update public.card_tables
+     set pub = v_pub || jsonb_build_object('top', null, 'passed', '[]'::jsonb, 'pile', '[]'::jsonb),
+         turn = v_turn, deadline = p_now + interval '20 seconds'
+   where room_id = p_room and game = 'tienlen';
+end $$;
+
+-- A play (§7.3 play): the refusal of a move that is not legal (a bad_move, §11.5), else null. In turn: any combination to
+-- lead (a first game's lead includes `must`), or one that beats the top. Out of turn: only a 4 đôi thông that beats the
+-- top (R9). A bomb over a heo combination or another bomb cuts (§7.2).
+create or replace function public._tl_do_play(p_room uuid, p_seat integer, p_cards integer[], p_now timestamptz) returns text
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_pub jsonb; v_acc uuid; v_hand integer[]; x jsonb; v_top jsonb; v_left integer[];
+        s text := p_seat::text;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'tienlen';
+  if t.phase <> 'playing' then
+    return 'wrong phase';
+  end if;
+  v_pub := t.pub;
+  select account_id into v_acc from public.card_seats where room_id = p_room and game = 'tienlen' and seat = p_seat;
+  if v_pub->'players'->s->>'out' is not null or (v_pub->'players'->s->>'id')::uuid is distinct from v_acc then
+    return 'not your turn';
+  end if;
+  select cards into v_hand from public.card_hands
+   where room_id = p_room and game = 'tienlen' and hand_no = t.hand_no and seat = p_seat;
+  x := public._tl_combo(p_cards);
+  if x is null or not coalesce(v_hand @> p_cards, false) then
+    return 'invalid play';
+  end if;
+  v_top := case when jsonb_typeof(v_pub->'top') = 'object' then v_pub->'top' end;
+  if t.turn = p_seat then
+    if v_top is null then
+      if jsonb_typeof(v_pub->'must') = 'number' and not ((v_pub->>'must')::int = any(p_cards)) then
+        return 'must include';
+      end if;
+    elsif not public._tl_beats(v_top, x) then
+      return 'cannot beat';
+    end if;
+  else
+    if x->>'type' <> 'pairs' or (x->>'len')::int <> 4 or v_top is null or (v_top->>'seat')::int = p_seat then
+      return 'not your turn';
+    end if;
+    if not public._tl_beats(v_top, x) then
+      return 'cannot beat';
+    end if;
+  end if;
+  if v_top is not null and x->>'type' in ('quad', 'pairs')
+     and (v_top->>'type' in ('quad', 'pairs') or (v_top->>'type' in ('single', 'pair') and (v_top->>'key')::int / 4 = 12)) then
+    v_pub := public._tl_event(p_room, jsonb_build_object('k', 'cut', 'seat', p_seat, 'top', v_top));
+  end if;
+  v_left := array(select c from unnest(v_hand) c where not (c = any(p_cards)) order by c);
+  update public.card_hands set cards = v_left
+   where room_id = p_room and game = 'tienlen' and hand_no = t.hand_no and seat = p_seat;
+  v_pub := jsonb_set(jsonb_set(v_pub, array['players', s, 'played'], 'true'), array['players', s, 'n'], to_jsonb(cardinality(v_left)))
+    || jsonb_build_object(
+         'must', null,
+         'passed', coalesce((select jsonb_agg(q) from jsonb_array_elements(v_pub->'passed') q where q::int <> p_seat), '[]'::jsonb),
+         'top', x || jsonb_build_object('seat', p_seat, 'done', cardinality(v_left) = 0),
+         'pile', (select coalesce(jsonb_agg(z.e order by z.n), '[]'::jsonb)
+                    from (select e, n from jsonb_array_elements(coalesce(v_pub->'pile', '[]'::jsonb)
+                                         || jsonb_build_array(jsonb_build_object('seat', p_seat, 'cards', x->'cards')))
+                                         with ordinality w(e, n) order by n desc limit 8) z));
+  update public.card_tables set pub = v_pub where room_id = p_room and game = 'tienlen';
+  perform public._card_log(p_room, 'tienlen', t.hand_no, v_acc, p_seat, 'play', jsonb_build_object('cards', x->'cards'), p_now);
+  if cardinality(v_left) = 0 then
+    v_pub := public._tl_event(p_room, jsonb_build_object('k', 'out', 'seat', p_seat));
+  end if;
+  if cardinality(public._tl_active(v_pub)) <= 1 then
+    perform public._tl_end(p_room, p_now);
+  else
+    perform public._tl_advance(p_room, p_seat, p_now);
+  end if;
+  return null;
+end $$;
+
+-- A pass (§7.3 pass): only in turn, and never while leading.
+create or replace function public._tl_do_pass(p_room uuid, p_seat integer, p_now timestamptz) returns text
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'tienlen';
+  if t.phase <> 'playing' then
+    return 'wrong phase';
+  end if;
+  if t.turn is distinct from p_seat then
+    return 'not your turn';
+  end if;
+  if coalesce(jsonb_typeof(t.pub->'top'), 'null') <> 'object' then
+    return 'must play';
+  end if;
+  update public.card_tables set pub = jsonb_set(pub, '{passed}', coalesce(pub->'passed', '[]'::jsonb) || to_jsonb(p_seat))
+   where room_id = p_room and game = 'tienlen';
+  perform public._card_log(p_room, 'tienlen', t.hand_no,
+                           (select account_id from public.card_seats where room_id = p_room and game = 'tienlen' and seat = p_seat),
+                           p_seat, 'pass', '{}'::jsonb, p_now);
+  perform public._tl_advance(p_room, p_seat, p_now);
+  return null;
+end $$;
+
+-- A turn that ran out (§10): the lowest card when leading, else a pass; the second miss in a row leaves the game as
+-- card_leave would (R28).
+create or replace function public._tl_timeout(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_missed integer; v_acc uuid; v_low integer;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'tienlen';
+  update public.card_seats set missed = missed + 1 where room_id = p_room and game = 'tienlen' and seat = t.turn
+  returning missed, account_id into v_missed, v_acc;
+  perform public._card_log(p_room, 'tienlen', t.hand_no, v_acc, t.turn, 'timeout', jsonb_build_object('missed', v_missed), p_now);
+  if v_missed >= 2 then
+    perform public._card_leave_seat(p_room, 'tienlen', t.turn, 'timeout', p_now);
+  elsif coalesce(jsonb_typeof(t.pub->'top'), 'null') <> 'object' then
+    select min(c) into v_low from public.card_hands h, unnest(h.cards) c
+     where h.room_id = p_room and h.game = 'tienlen' and h.hand_no = t.hand_no and h.seat = t.turn;
+    perform public._tl_do_play(p_room, t.turn, array[v_low], p_now);
+  else
+    perform public._tl_do_pass(p_room, t.turn, p_now);
+  end if;
+end $$;
+
+-- The leave operation in a live game (§6.3), with the table's wallets locked: seats still holding cards forfeit together
+-- (R13) and are paid out at once; seats already out or cóng are paid out and receive nothing more. The rows stay
+-- `leaving` until the game ends; the others play on as a smaller game.
+create or replace function public._tl_leave(p_room uuid, p_seats integer[], p_how text, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_pub jsonb; v_hold integer[]; v_done integer[]; s integer;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'tienlen';
+  v_pub := t.pub;
+  v_hold := array(select x from unnest(p_seats) x where v_pub->'players'->(x::text)->>'out' is null
+                   and not coalesce((v_pub->'players'->(x::text)->>'settled')::boolean, true) order by x);
+  v_done := array(select x from unnest(p_seats) x where v_pub->'players'->(x::text)->>'out' is not null
+                   and not coalesce((v_pub->'players'->(x::text)->>'settled')::boolean, true) order by x);
+  if cardinality(v_hold) > 0 then
+    -- a first lead's `must` goes with the forfeiter who holds it
+    if jsonb_typeof(v_pub->'must') = 'number'
+       and exists (select 1 from public.card_hands where room_id = p_room and game = 'tienlen' and hand_no = t.hand_no
+                      and seat = any(v_hold) and (v_pub->>'must')::int = any(cards)) then
+      update public.card_tables set pub = jsonb_set(pub, '{must}', 'null') where room_id = p_room and game = 'tienlen';
+    end if;
+    v_pub := public._tl_event(p_room, jsonb_build_object('k', 'forfeit', 'seats', to_jsonb(v_hold)));
+  end if;
+  foreach s in array v_done loop
+    v_pub := public._tl_event(p_room, jsonb_build_object('k', 'leave', 'seat', s));
+  end loop;
+  perform public._card_lock_wallets(p_room, 'tienlen');
+  foreach s in array v_hold || v_done loop
+    perform public._card_payout(p_room, 'tienlen', s, 'card_settle');
+    update public.card_seats set leaving = true where room_id = p_room and game = 'tienlen' and seat = s;
+    perform public._card_log(p_room, 'tienlen', t.hand_no, (v_pub->'players'->(s::text)->>'id')::uuid, s, 'leave',
+                             jsonb_build_object('how', p_how, 'forfeit', s = any(v_hold)), p_now);
+  end loop;
+  if cardinality(v_hold) > 0 then
+    if cardinality(public._tl_active(v_pub)) <= 1 then
+      perform public._tl_end(p_room, p_now);
+    elsif t.turn = any(v_hold) then
+      perform public._tl_advance(p_room, t.turn, p_now);
+    end if;
+  end if;
+end $$;
+
+-- The end of a game (§7.3 end_game): the end lines, the result, every balance paid, the leaving rows gone; nhất leads the
+-- next game (R15).
+create or replace function public._tl_end(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_pub jsonb; v_hand integer; v_nhat text;
+begin
+  v_pub := public._tl_event(p_room, '{"k": "end"}'::jsonb);
+  v_nhat := (select key from jsonb_each(v_pub->'players') where (value->>'place')::int = 1);
+  update public.card_tables set last = public._tl_last(p_room, null) where room_id = p_room and game = 'tienlen'
+  returning hand_no into v_hand;
+  perform public._card_settle(p_room, 'tienlen');
+  delete from public.card_seats where room_id = p_room and game = 'tienlen' and leaving;
+  update public.card_tables
+     set lead_id = (v_pub->'players'->v_nhat->>'id')::uuid, first_game = false, phase = 'result', turn = null,
+         deadline = p_now + interval '8 seconds'
+   where room_id = p_room and game = 'tienlen';
+  perform public._card_log(p_room, 'tienlen', v_hand, null, null, 'end',
+                           (select jsonb_build_object('places', last->'places', 'net', last->'net') from public.card_tables
+                             where room_id = p_room and game = 'tienlen'), p_now);
+  perform public._card_reset_if_empty(p_room, 'tienlen');
+end $$;
+
+-- What is due at a Tiến lên table (§10): the deal after the countdown or the result, or the turn's timeout.
+create or replace function public._tl_due(p_room uuid, p_now timestamptz, p_deck integer[]) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_phase text;
+begin
+  select phase into v_phase from public.card_tables where room_id = p_room and game = 'tienlen';
+  if v_phase in ('countdown', 'result') then
+    return public._tl_deal(p_room, p_now, p_deck);
+  elsif v_phase = 'playing' then
+    perform public._tl_timeout(p_room, p_now);
+    return true;
+  end if;
+  return false;
+end $$;
+
+revoke all on function public._tl_hands(uuid) from public, anon, authenticated;
+revoke all on function public._tl_active(jsonb) from public, anon, authenticated;
+revoke all on function public._tl_event(uuid, jsonb) from public, anon, authenticated;
+revoke all on function public._tl_last(uuid, jsonb) from public, anon, authenticated;
+revoke all on function public._tl_deal(uuid, timestamptz, integer[]) from public, anon, authenticated;
+revoke all on function public._tl_do_trang(uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._tl_advance(uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._tl_close(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._tl_do_play(uuid, integer, integer[], timestamptz) from public, anon, authenticated;
+revoke all on function public._tl_do_pass(uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._tl_timeout(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._tl_leave(uuid, integer[], text, timestamptz) from public, anon, authenticated;
+revoke all on function public._tl_end(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._tl_due(uuid, timestamptz, integer[]) from public, anon, authenticated;
 
 -- ---------- E. Public RPCs (§11.3): membership first (R38); reads are snapshots (R37); ticks and writes lock and sweep ----------
 -- The hall's table labels (R27): every table's stake, phase and seats; no touch, no lock.
@@ -1040,9 +1537,36 @@ begin
   return public._card_sit(p_room_id, v_account, p_game, p_seat, p_stake, p_buyin, now());
 end $$;
 
+-- Play cards (§7.3). Guarded; bad_cards (§11.5) comes before any lock.
+create or replace function public.tl_play(p_room_id uuid, p_session_token text, p_seq integer, p_cards integer[]) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_cards is null or coalesce(cardinality(p_cards), 0) = 0 or cardinality(p_cards) > 13 or array_ndims(p_cards) <> 1
+     or exists (select 1 from unnest(p_cards) c where c is null or c not between 0 and 51)
+     or (select count(distinct c) from unnest(p_cards) c) <> cardinality(p_cards) then
+    return public._ac_flag(v_account, 'bad_cards', 'tl_play', jsonb_build_object('seq', p_seq, 'cards', to_jsonb(p_cards)),
+                           p_room_id, 'invalid cards');
+  end if;
+  return public._card_action(p_room_id, v_account, 'tienlen', 'tl_play', p_seq, jsonb_build_object('cards', to_jsonb(p_cards)),
+                             now());
+end $$;
+
+-- Pass (§7.3). Guarded.
+create or replace function public.tl_pass(p_room_id uuid, p_session_token text, p_seq integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  return public._card_action(p_room_id, v_account, 'tienlen', 'tl_pass', p_seq, '{}'::jsonb, now());
+end $$;
+
 grant execute on function public.card_lobby(uuid, text) to anon, authenticated;
 grant execute on function public.card_state(uuid, text, text) to anon, authenticated;
 grant execute on function public.card_hand(uuid, text, text) to anon, authenticated;
 grant execute on function public.card_tick(uuid, text, text) to anon, authenticated;
 grant execute on function public.card_leave(uuid, text, text) to anon, authenticated;
 grant execute on function public.card_sit(uuid, text, text, integer, integer, integer) to anon, authenticated;
+grant execute on function public.tl_play(uuid, text, integer, integer[]) to anon, authenticated;
+grant execute on function public.tl_pass(uuid, text, integer) to anon, authenticated;

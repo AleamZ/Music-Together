@@ -123,12 +123,14 @@ begin
     format('select public.plant_crop(%L, %L, 5, %L)', room, t, 'seed_bap'),
     format('select public.tend_crop(%L, %L, 5, %L)', room, t, 'vun_goc'),
     -- the card tables (v16)
-    format('select public.card_sit(%L, %L, %L, 1, 1000, null)', room, t, 'tienlen')] loop
+    format('select public.card_sit(%L, %L, %L, 1, 1000, null)', room, t, 'tienlen'),
+    format('select public.tl_play(%L, %L, 0, array[0])', room, t),
+    format('select public.tl_pass(%L, %L, 0)', room, t)] loop
     n := n + 1;
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 43, format('%s guarded calls', n);
+  assert n = 45, format('%s guarded calls', n);
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);

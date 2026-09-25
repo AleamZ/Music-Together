@@ -338,3 +338,464 @@ begin
 end $$;
 
 select 'v16 tables smoke ok' as result;
+
+-- ---------- Tiến lên (§7, §17): four players, fixed decks, the public RPCs; the clock through _card_tick ----------
+-- A hand from its codes ("3S 10H"), the same sorted as card_hand shows it, a deck that deals these hands in seat order
+-- (the other cards follow in card order), the money of the six accounts plus the room's tables, the Tiến lên row, the
+-- balances by seat, the lines so far (half-stakes) and the last result (xu).
+create function pg_temp.hand(p text) returns integer[] language sql immutable as $$
+  select array_agg(pg_temp.c(x) order by n) from unnest(string_to_array(p, ' ')) with ordinality u(x, n)
+$$;
+create function pg_temp.sorted(p text) returns jsonb language sql immutable as $$
+  select to_jsonb(array(select x from unnest(pg_temp.hand(p)) x order by x))
+$$;
+create function pg_temp.deck(variadic p text[]) returns integer[] language sql immutable as $$
+  select d || array(select c from generate_series(0, 51) c where not (c = any(d)) order by c)
+    from (select array_agg(x order by i, j) d
+            from unnest(p) with ordinality h(s, i), unnest(pg_temp.hand(s)) with ordinality u(x, j)) z
+$$;
+create function pg_temp.total() returns bigint language sql as $$
+  select pg_temp.money((select v from smoke where k = 'room')::uuid, array(select v::uuid from smoke where k ~ '^a[1-6]$'))
+$$;
+create function pg_temp.tt() returns public.card_tables language sql as $$
+  select * from public.card_tables where room_id = (select v from smoke where k = 'room')::uuid and game = 'tienlen'
+$$;
+create function pg_temp.esc() returns jsonb language sql as $$
+  select coalesce(jsonb_object_agg(seat::text, escrow), '{}') from public.card_seats
+   where room_id = (select v from smoke where k = 'room')::uuid and game = 'tienlen'
+$$;
+create function pg_temp.plines() returns jsonb language sql as $$
+  select coalesce(jsonb_agg(jsonb_build_array(l->'from', l->'to', l->'h', l->'paid', l->'why') order by n), '[]')
+    from jsonb_array_elements((pg_temp.tt()).pub->'lines') with ordinality e(l, n)
+$$;
+create function pg_temp.result() returns jsonb language sql as $$
+  select jsonb_build_object('places', t.last->'places', 'out', t.last->'out', 'net', t.last->'net',
+    'lines', (select coalesce(jsonb_agg(jsonb_build_array(l->'from', l->'to', l->'xu', l->'paid', l->'why') order by n), '[]')
+                from jsonb_array_elements(t.last->'lines') with ordinality e(l, n)))
+    from pg_temp.tt() t
+$$;
+-- The deal that is due, at the table's deadline, with this deck.
+create function pg_temp.deal(p_deck integer[]) returns public.card_tables language plpgsql as $$
+declare r jsonb;
+begin
+  r := public._card_tick((select v from smoke where k = 'room')::uuid, (select v from smoke where k = 'a1')::uuid, 'tienlen',
+                         (pg_temp.tt()).deadline, p_deck);
+  assert (r->>'changed')::boolean, format('the deal: %s', r);
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the deal';
+  return pg_temp.tt();
+end $$;
+-- A play (codes) or a pass (null) with the table's seq: an action answer, the seq moved on, and the money in place.
+create function pg_temp.tl(p_token text, p_cards text) returns jsonb language plpgsql as $$
+declare room uuid := (select v from smoke where k = 'room')::uuid; q integer := (pg_temp.tt()).seq; r jsonb;
+begin
+  if p_cards is null then
+    r := public.tl_pass(room, p_token, q);
+  else
+    r := public.tl_play(room, p_token, q, pg_temp.hand(p_cards));
+  end if;
+  assert r ? 'state' and (r->'state'->>'seq')::int > q, format('%s: %s', coalesce(p_cards, 'pass'), r);
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, format('zero-sum after %s', coalesce(p_cards, 'pass'));
+  return r;
+end $$;
+-- A move the state refuses: a soft bad_move with this error (R30), and nothing changes.
+create function pg_temp.tl_bad(p_token text, p_cards text, p_error text) returns void language plpgsql as $$
+declare room uuid := (select v from smoke where k = 'room')::uuid; q integer := (pg_temp.tt()).seq; r jsonb;
+begin
+  if p_cards is null then
+    r := public.tl_pass(room, p_token, q);
+  else
+    r := public.tl_play(room, p_token, q, pg_temp.hand(p_cards));
+  end if;
+  assert pg_temp.env(r, 'bad_move', p_error), format('%s: %s, want %s', coalesce(p_cards, 'pass'), r, p_error);
+  assert (pg_temp.tt()).seq = q, format('%s changed the table', coalesce(p_cards, 'pass'));
+end $$;
+
+-- Game 1 (Example 1): the first game and its `must`, the hard signals, stale, the refused moves, a cut chain across three
+-- players, the settlement.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        c6 text := (select v from smoke where k = 'c6');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        a6 uuid := (select v from smoke where k = 'a6')::uuid; t public.card_tables; r jsonb; s jsonb; q integer;
+begin
+  perform pg_temp.set_coins(a, 100000) from unnest(array[a1, a2, a3, a4, a6]) a;
+  insert into smoke values ('m', pg_temp.total()::text) on conflict (k) do update set v = excluded.v;
+  perform public.card_sit(room, c1, 'tienlen', 1, 1000, null);
+  perform public.card_sit(room, c2, 'tienlen', 2, 1000, null);
+  perform public.card_sit(room, c3, 'tienlen', 3, 1000, null);
+  perform public.card_sit(room, c4, 'tienlen', 4, 1000, null);
+  t := pg_temp.deal(pg_temp.deck('3S 4H 5H 6H 7H 8H 9H 10H JH QH KH 2C 2D', '4S 5C 5D 6C 6D 7C 7D 8S 9S 10S JS QS KS',
+                                 '5S AS AC AD AH 3C 3D 8C 9C 10C JC QC KC', '2H 2S 3H 4C 4D 6S 7S 8D 9D 10D JD QD KD'));
+  -- the first game (R15): the holder of 3♠ leads, and the lead must include it
+  assert t.phase = 'playing' and t.hand_no = 1 and t.turn = 1 and (t.pub->>'first')::boolean and (t.pub->>'must')::int = 0
+         and t.pub->'order' = '[1, 2, 3, 4]' and (select bool_and(p.value->'n' = '13') from jsonb_each(t.pub->'players') p),
+    format('the first game: %s', t.pub);
+  assert pg_temp.esc() = '{"1": 10000, "2": 10000, "3": 10000, "4": 10000}' and pg_temp.coins(a1) = 90000
+         and (select count(*) from public.coin_ledger where reason = 'card_hold' and ref = 'tl#1' and delta = -10000) = 4,
+    'each player holds 10 S';
+  -- the hands are private (§6.4, R25): card_hand shows the owner's cards only, and the state holds none
+  r := public.card_hand(room, c1, 'tienlen');
+  assert r->'cards' = pg_temp.sorted('3S 4H 5H 6H 7H 8H 9H 10H JH QH KH 2C 2D') and (r->>'seat')::int = 1, format('c1: %s', r);
+  r := public.card_hand(room, c6, 'tienlen');
+  assert r->'cards' = '[]' and r->'seat' = 'null', format('a spectator: %s', r);
+  s := public.card_state(room, c1, 'tienlen');
+  assert s = public.card_state(room, c6, 'tienlen'), 'every viewer reads the same state';
+  assert (select array_agg(k order by k collate "C") from jsonb_object_keys(s->'pub') k)
+         = array['chain', 'first', 'lines', 'must', 'order', 'passed', 'pile', 'players', 'top'], format('the public keys: %s', s->'pub');
+  assert (select bool_and((select array_agg(k order by k collate "C") from jsonb_object_keys(p.value) k)
+                          = array['id', 'n', 'out', 'paid', 'place', 'played', 'settled'])
+            from jsonb_each(s->'pub'->'players') p), format('the players show counts, never cards: %s', s->'pub'->'players');
+  -- the hard signal of tl_play (§11.5): an envelope in log mode, before any lock
+  q := (pg_temp.tt()).seq;
+  assert pg_temp.env(public.tl_play(room, c1, q, null), 'bad_cards', 'invalid cards'), 'null cards';
+  assert pg_temp.env(public.tl_play(room, c1, q, '{}'), 'bad_cards', 'invalid cards'), 'no cards';
+  assert pg_temp.env(public.tl_play(room, c1, q, array(select generate_series(0, 13))), 'bad_cards', 'invalid cards'), '14 cards';
+  assert pg_temp.env(public.tl_play(room, c1, q, array[52]), 'bad_cards', 'invalid cards'), 'card 52';
+  assert pg_temp.env(public.tl_play(room, c1, q, array[-1]), 'bad_cards', 'invalid cards'), 'card -1';
+  assert pg_temp.env(public.tl_play(room, c1, q, array[0, 0]), 'bad_cards', 'invalid cards'), 'a card twice';
+  assert pg_temp.env(public.tl_play(room, c1, q, array[0, null]), 'bad_cards', 'invalid cards'), 'a null card';
+  assert pg_temp.env(public.tl_play(room, c1, q, '{{0, 1}, {2, 3}}'), 'bad_cards', 'invalid cards'), 'a 2-D array';
+  assert (select count(*) from public.anticheat_events where account_id = a1 and code = 'bad_cards' and outcome = 'log_only'
+            and rpc = 'tl_play') = 8, 'eight hard signals logged';
+  -- stale (R24) and not seated are raised and never logged
+  assert pg_temp.err(format('select public.tl_play(%L, %L, %s, array[0])', room, c1, q - 1)) = 'stale', 'an old seq';
+  assert pg_temp.err(format('select public.tl_pass(%L, %L, null)', room, c1)) = 'stale', 'no seq';
+  assert pg_temp.err(format('select public.tl_pass(%L, %L, %s)', room, c6, q)) = 'not seated', 'a spectator acts';
+  -- well-formed moves the state refuses are soft (R30)
+  perform pg_temp.tl_bad(c1, '4H', 'must include');
+  perform pg_temp.tl_bad(c1, null, 'must play');
+  perform pg_temp.tl_bad(c1, '3S 4H', 'invalid play');
+  perform pg_temp.tl_bad(c1, '3C', 'invalid play');
+  perform pg_temp.tl_bad(c2, '4S', 'not your turn');
+  perform pg_temp.tl_bad(c2, null, 'not your turn');
+  assert (select count(*) from public.anticheat_events where account_id in (a1, a2) and code = 'bad_move' and outcome = 'soft'
+            and rpc in ('tl_play', 'tl_pass')) = 6, 'six soft signals';
+  -- round 1: D's 2♥ is cut by B's 3 đôi thông, B by C's tứ quý; B pays C the chain when the round closes (R7)
+  perform pg_temp.tl(c1, '3S');
+  perform pg_temp.tl(c2, '4S');
+  perform pg_temp.tl_bad(c3, '3C', 'cannot beat');
+  perform pg_temp.tl(c3, '5S');
+  perform pg_temp.tl(c4, '2H');
+  perform pg_temp.tl(c1, null);
+  perform pg_temp.tl(c2, '5C 5D 6C 6D 7C 7D');
+  assert (pg_temp.tt()).pub->'chain' = '{"h": 2, "victim": 4, "cutter": 2, "void": false}', format('the first cut: %s', (pg_temp.tt()).pub->'chain');
+  perform pg_temp.tl(c3, 'AS AC AD AH');
+  t := pg_temp.tt();
+  assert t.pub->'chain' = '{"h": 5, "victim": 2, "cutter": 3, "void": false}' and t.turn = 4, format('the second cut: %s', t.pub);
+  perform pg_temp.tl(c4, null);
+  t := pg_temp.tt();
+  assert t.turn = 2 and t.pub->'passed' = '[1, 4]', format('the passed seats are skipped: %s', t.pub->'passed');
+  perform pg_temp.tl(c2, null);
+  t := pg_temp.tt();
+  assert t.turn = 3 and t.pub->'chain' = 'null' and t.pub->'top' = 'null' and t.pub->'passed' = '[]' and t.pub->'pile' = '[]'
+         and pg_temp.plines() = '[[2, 3, 5, 5, "chat"]]', format('the round closed: %s', t.pub);
+  assert pg_temp.esc() = '{"1": 10000, "2": 7500, "3": 12500, "4": 10000}', format('the chain moved at once: %s', pg_temp.esc());
+  -- round 2: a pair of 2s takes the round
+  perform pg_temp.tl(c3, '3C 3D');
+  perform pg_temp.tl(c4, null);
+  perform pg_temp.tl(c1, '2C 2D');
+  perform pg_temp.tl(c2, null);
+  perform pg_temp.tl(c3, null);
+  assert (pg_temp.tt()).turn = 1, 'the pair of 2s leads';
+  -- round 3: A goes out; everyone has played, so nobody is cóng; the next seat leads (hưởng sái)
+  perform pg_temp.tl(c1, '4H 5H 6H 7H 8H 9H 10H JH QH KH');
+  t := pg_temp.tt();
+  assert t.pub->'players'->'1' @> '{"out": "done", "place": 1, "n": 0}' and t.turn = 2
+         and not exists (select 1 from jsonb_each(t.pub->'players') p where p.value->>'out' = 'cong'), format('nhất: %s', t.pub);
+  perform pg_temp.tl(c2, null);
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c4, null);
+  assert (pg_temp.tt()).turn = 2, 'hưởng sái';
+  -- round 4: B and C go out; D, still holding 2♠, is bét
+  perform pg_temp.tl(c2, '8S 9S 10S JS QS KS');
+  r := pg_temp.tl(c3, '8C 9C 10C JC QC KC');
+  t := pg_temp.tt();
+  assert t.phase = 'result' and t.turn is null and t.deadline = now() + interval '8 seconds' and t.lead_id = a1 and not t.first_game,
+    format('the result: %s', to_jsonb(t));
+  assert pg_temp.result() = '{"places": [1, 2, 3, 4], "out": {"1": "done", "2": "done", "3": "done"},
+                              "net": {"1": 1000, "2": -2000, "3": 2500, "4": -1500},
+                              "lines": [[2, 3, 2500, 2500, "chat"], [4, 1, 1000, 1000, "bet"], [3, 2, 500, 500, "ba"],
+                                        [4, 3, 500, 500, "thoi"]]}', format('Example 1: %s', pg_temp.result());
+  assert t.last->'hands' = jsonb_build_object('4', pg_temp.sorted('2S 3H 4C 4D 6S 7S 8D 9D 10D JD QD KD')),
+    format('the cards still held: %s', t.last->'hands');
+  assert pg_temp.coins(a1) = 101000 and pg_temp.coins(a2) = 98000 and pg_temp.coins(a3) = 102500 and pg_temp.coins(a4) = 98500
+         and (r->>'coins')::int = 102500 and pg_temp.esc() = '{"1": 0, "2": 0, "3": 0, "4": 0}'
+         and (select count(*) from public.coin_ledger where reason = 'card_settle' and ref = 'tl#1') = 4, 'everyone is paid out';
+end $$;
+
+-- Game 2: nhất leads; a chain of three cuts, the last a 4 đôi thông out of turn after passing (R9); D leaves while the
+-- chain is open on it — the forfeit at once, capped at 10 S (R13, R14); `still leaving`; the others finish as three.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        c6 text := (select v from smoke where k = 'c6');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        t public.card_tables; r jsonb;
+begin
+  t := pg_temp.deal(pg_temp.deck('2D 2H 6D 7D 8D 9D 10D JD QD KC KD AC AD', '6S 6C 7S 7C 8S 8C 9S 9C 10S JS QS KS AS',
+                                 '3S 3C 3D 3H 6H 7H 8H 9H 10H JH QH KH AH', '4S 4C 4D 4H 5S 5C 5D 5H 2S 2C 10C JC QC'));
+  assert t.hand_no = 2 and t.turn = 1 and not (t.pub->>'first')::boolean and t.pub->'must' = 'null', format('nhất leads: %s', t.pub);
+  perform pg_temp.tl(c1, '2D 2H');
+  perform pg_temp.tl(c2, null);
+  perform pg_temp.tl(c3, '3S 3C 3D 3H');
+  perform pg_temp.tl(c4, '4S 4C 4D 4H');
+  t := pg_temp.tt();
+  assert t.turn = 1 and t.pub->'chain' = '{"h": 8, "victim": 3, "cutter": 4, "void": false}', format('two cuts: %s', t.pub);
+  perform pg_temp.tl_bad(c3, '6H', 'not your turn');
+  perform pg_temp.tl_bad(c2, '6S 6C 7S 7C 8S 8C', 'not your turn');
+  perform pg_temp.tl(c2, '6S 6C 7S 7C 8S 8C 9S 9C');
+  t := pg_temp.tt();
+  assert t.turn = 3 and t.pub->'passed' = '[]' and t.pub->'chain' = '{"h": 12, "victim": 4, "cutter": 2, "void": false}',
+    format('4 đôi thông after passing: %s', t.pub);
+  r := public.card_leave(room, c4, 'tienlen');
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the forfeit';
+  t := pg_temp.tt();
+  assert t.turn = 3 and t.pub->'chain' = 'null' and t.pub->'players'->'4' @> '{"out": "forfeit", "settled": true, "paid": 20}'
+         and pg_temp.plines() = '[[4, 2, 12, 12, "chat"], [4, 1, 2, 2, "forfeit"], [4, 2, 2, 2, "forfeit"],
+                                  [4, 3, 2, 2, "forfeit"], [4, 1, 6, 2, "thoi"]]', format('the forfeit: %s', t.pub);
+  assert pg_temp.esc() = '{"1": 12000, "2": 17000, "3": 11000, "4": 0}' and (r->>'coins')::int = 88500 and pg_temp.coins(a4) = 88500
+         and (select leaving from public.card_seats where room_id = room and game = 'tienlen' and seat = 4)
+         and not exists (select 1 from public.coin_ledger where account_id = a4 and ref = 'tl#2' and reason = 'card_settle'),
+    format('D pays 10 S and leaves with nothing: %s', pg_temp.esc());
+  -- the leaving row keeps the seat and the account's one seat in the room until the game ends (R2)
+  assert pg_temp.err(format('select public.card_sit(%L, %L, %L, 1, 100, null)', room, c4, 'cao')) = 'still leaving', 'cao';
+  assert pg_temp.err(format('select public.card_sit(%L, %L, %L, 1, 100, 5000)', room, c4, 'poker')) = 'still leaving', 'poker';
+  assert pg_temp.err(format('select public.card_sit(%L, %L, %L, 4, 1000, null)', room, c4, 'tienlen')) = 'still leaving', 'tienlen';
+  assert pg_temp.err(format('select public.card_sit(%L, %L, %L, 4, 1000, null)', room, c6, 'tienlen')) = 'table full', 'the seat is held';
+  assert pg_temp.err(format('select public.tl_pass(%L, %L, %s)', room, c4, (pg_temp.tt()).seq)) = 'not seated', 'D never acts again';
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c1, null);
+  assert (pg_temp.tt()).turn = 2, 'the last cutter leads';
+  perform pg_temp.tl(c2, '10S JS QS KS AS');
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c1, null);
+  assert (pg_temp.tt()).turn = 3, 'hưởng sái';
+  perform pg_temp.tl(c3, '6H 7H 8H 9H 10H JH QH KH AH');
+  t := pg_temp.tt();
+  assert pg_temp.result() = '{"places": [2, 3, 1], "out": {"2": "done", "3": "done", "4": "forfeit"},
+                              "net": {"1": 1000, "2": 8000, "3": 1000, "4": -10000},
+                              "lines": [[4, 2, 6000, 6000, "chat"], [4, 1, 1000, 1000, "forfeit"], [4, 2, 1000, 1000, "forfeit"],
+                                        [4, 3, 1000, 1000, "forfeit"], [4, 1, 3000, 1000, "thoi"], [1, 2, 1000, 1000, "bet"]]}',
+    format('a smaller game: %s', pg_temp.result());
+  assert t.last->'hands' = jsonb_build_object('1', pg_temp.sorted('6D 7D 8D 9D 10D JD QD KC KD AC AD'),
+                                              '4', pg_temp.sorted('5S 5C 5D 5H 2S 2C 10C JC QC')), format('hands: %s', t.last->'hands');
+  assert t.lead_id = a2 and not exists (select 1 from public.card_seats where room_id = room and account_id = a4),
+    'the leaving row goes when the game ends';
+  assert pg_temp.coins(a1) = 102000 and pg_temp.coins(a2) = 106000 and pg_temp.coins(a3) = 103500, 'paid out';
+  perform public.card_sit(room, c4, 'tienlen', 4, 1000, null);
+end $$;
+
+-- Game 3 (Example 3): C is dealt 6 đôi — tới trắng; the next deal is a first game (R10, R15).
+do $$
+declare t public.card_tables; d timestamptz := (pg_temp.tt()).deadline;
+begin
+  t := pg_temp.deal(pg_temp.deck('3D 4S 5D 6S 7D 8S 9D 10S JD QS KD 2C 2D', '3H 4C 4D 5H 6C 6D 7H 8C 8D AS AC AD AH',
+                                 '3S 3C 5S 5C 7S 7C 9S 9C JS JC KS KC 2S', '4H 6H 8H 9H 10C 10D 10H JH QC QD QH KH 2H'));
+  assert t.hand_no = 3 and t.phase = 'result' and t.turn is null and t.deadline = d + interval '8 seconds'
+         and t.first_game and t.lead_id is null, format('tới trắng: %s', to_jsonb(t));
+  assert t.last->'trang' = jsonb_build_object('seat', 3, 'pattern', 'sau_doi',
+                                              'cards', pg_temp.sorted('3S 3C 5S 5C 7S 7C 9S 9C JS JC KS KC 2S'))
+         and t.last->'hands' = jsonb_build_object('3', pg_temp.sorted('3S 3C 5S 5C 7S 7C 9S 9C JS JC KS KC 2S')),
+    format('the winner''s cards: %s', t.last);
+  assert pg_temp.result() = '{"places": [], "out": {}, "net": {"1": -2000, "2": -2000, "3": 6000, "4": -2000},
+                              "lines": [[4, 3, 2000, 2000, "trang"], [1, 3, 2000, 2000, "trang"], [2, 3, 2000, 2000, "trang"]]}',
+    format('Example 3: %s', pg_temp.result());
+  assert pg_temp.esc() = '{"1": 0, "2": 0, "3": 0, "4": 0}', 'everyone is paid out';
+end $$;
+
+-- Game 4: a first game again (3♠ leads with `must`, although B was the last nhất); three cóng, placed in turn order from
+-- nhất, the farthest bét (R11). Then nhất leaves.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        a4 uuid := (select v from smoke where k = 'a4')::uuid; t public.card_tables; r jsonb;
+begin
+  t := pg_temp.deal(pg_temp.deck('4S 5S 6S 7S 8S 9S 10S JS QS KS AS AC 2H', '4C 5C 6C 7C 8C 9C 10C JC QC KC AD AH 2S',
+                                 '3H 4D 5D 6D 7D 8D 9D 10D JD QD KD 2C 2D', '3S 3C 3D 4H 5H 6H 7H 8H 9H 10H JH QH KH'));
+  assert t.hand_no = 4 and t.turn = 4 and (t.pub->>'first')::boolean and (t.pub->>'must')::int = 0, format('3♠ leads: %s', t.pub);
+  perform pg_temp.tl_bad(c4, '4H', 'must include');
+  perform pg_temp.tl(c4, '3S 3C 3D');
+  perform pg_temp.tl(c1, null);
+  perform pg_temp.tl(c2, null);
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c4, '4H 5H 6H 7H 8H 9H 10H JH QH KH');
+  assert pg_temp.result() = '{"places": [4, 1, 2, 3], "out": {"1": "cong", "2": "cong", "3": "cong", "4": "done"},
+                              "net": {"1": -3000, "2": -2500, "3": -3500, "4": 9000},
+                              "lines": [[1, 4, 3000, 3000, "cong"], [2, 4, 2500, 2500, "cong"], [3, 4, 3500, 3500, "cong"]]}',
+    format('three cóng: %s', pg_temp.result());
+  r := public.card_leave(room, c4, 'tienlen');
+  assert jsonb_array_length(r->'state'->'seats') = 3 and (pg_temp.tt()).lead_id = a4, 'nhất stood up between games';
+end $$;
+
+-- Game 5: three players, a first game because the last nhất left (R15); reads never apply a deadline (R37); two
+-- timeouts in a row forfeit B before anyone has gone out: C, who has played nothing, is paid and not made cóng — until A
+-- goes out (R11, R13, R28).
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        t public.card_tables; r jsonb; s jsonb; v0 bigint;
+begin
+  t := pg_temp.deal(pg_temp.deck('3S 4S 3C 4C 5H 6H 7H 8H 9H 10H JH QH KH', '2D 3D 5S 6S 7S 8S 9S 10S JS QS KS AS AC',
+                                 '2C 3H 4D 4H 5C 6C 7C 8C 9C 10C JC QC KC'));
+  assert t.hand_no = 5 and t.pub->'order' = '[1, 2, 3]' and t.turn = 1 and (t.pub->>'first')::boolean
+         and (t.pub->>'must')::int = 0 and (select count(*) from public.card_hands where room_id = room and game = 'tienlen') = 3,
+    format('three players: %s', t.pub);
+  perform pg_temp.tl(c1, '3S');
+  update public.card_tables set deadline = now() - interval '1 second' where room_id = room and game = 'tienlen';
+  v0 := (pg_temp.tt()).v;
+  s := public.card_state(room, c1, 'tienlen');
+  perform public.card_hand(room, c2, 'tienlen');
+  perform public.card_lobby(room, c3);
+  assert s->>'phase' = 'playing' and (s->>'turn')::int = 2 and (s->>'v')::bigint = v0 and (pg_temp.tt()).v = v0
+         and (pg_temp.tt()).turn = 2, 'a read past the deadline changes nothing';
+  r := public.card_tick(room, c1, 'tienlen');
+  assert (r->>'changed')::boolean and (r->'state'->>'turn')::int = 3 and r->'state'->'pub'->'passed' = '[2]'
+         and (select missed from public.card_seats where room_id = room and game = 'tienlen' and seat = 2) = 1,
+    format('the tick passes for B: %s', r->'state');
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the timeout';
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c1, '4S');
+  update public.card_tables set deadline = now() - interval '1 second' where room_id = room and game = 'tienlen';
+  r := public.card_tick(room, c1, 'tienlen');
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the forfeit';
+  t := pg_temp.tt();
+  assert t.turn = 3 and t.pub->'players'->'2' @> '{"out": "forfeit", "settled": true}'
+         and t.pub->'players'->'3' @> '{"out": null, "played": false}'
+         and pg_temp.plines() = '[[2, 3, 2, 2, "forfeit"], [2, 1, 2, 2, "forfeit"], [2, 3, 2, 2, "thoi"]]',
+    format('B forfeits, the turn moves on: %s', t.pub);
+  assert (select leaving and escrow = 0 and missed = 2 from public.card_seats where room_id = room and game = 'tienlen' and seat = 2)
+         and pg_temp.coins(a2) = 98500, 'B is paid out at once';
+  assert pg_temp.err(format('select public.tl_pass(%L, %L, %s)', room, c2, t.seq)) = 'not seated', 'B never plays or passes again';
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c1, '3C 4C 5H 6H 7H 8H 9H 10H JH QH KH');
+  assert pg_temp.result() = '{"places": [1, 3], "out": {"1": "done", "2": "forfeit", "3": "cong"},
+                              "net": {"1": 3500, "2": -3000, "3": -500},
+                              "lines": [[2, 3, 1000, 1000, "forfeit"], [2, 1, 1000, 1000, "forfeit"], [2, 3, 1000, 1000, "thoi"],
+                                        [3, 1, 2500, 2500, "cong"]]}', format('cóng at the first go-out: %s', pg_temp.result());
+  assert (select count(*) from public.card_log where room_id = room and game = 'tienlen' and hand_no = 5 and action = 'timeout') = 2,
+    'the timeouts are logged';
+end $$;
+
+-- Game 6 (Example 4): A goes out, D leaves holding 2♥ — 1 S to B and C, the thối of 2♥ to B — and B, C finish.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        t public.card_tables; r jsonb;
+begin
+  perform public.card_sit(room, c2, 'tienlen', 2, 1000, null);
+  perform public.card_sit(room, c4, 'tienlen', 4, 1000, null);
+  t := pg_temp.deal(pg_temp.deck('3D 2S 3C 4C 5C 6C 7C 8C 9C 10C JC QC KC', '5D 6S 7S 8S 9S 10S JS QS KS AS AC 2C 2D',
+                                 '3S 3H 4S 4D 5S 6D 7D 8D 9D 10D JD QD KD', '2H 4H 5H 6H 7H 8H 9H 10H JH QH KH AD AH'));
+  assert t.hand_no = 6 and t.turn = 1 and not (t.pub->>'first')::boolean, format('A leads: %s', t.pub);
+  perform pg_temp.tl(c1, '3D');
+  perform pg_temp.tl(c2, '5D');
+  perform pg_temp.tl(c3, '6D');
+  perform pg_temp.tl(c4, '7H');
+  perform pg_temp.tl(c1, '2S');
+  perform pg_temp.tl(c2, null);
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c4, null);
+  perform pg_temp.tl(c1, '3C 4C 5C 6C 7C 8C 9C 10C JC QC KC');
+  r := public.card_leave(room, c4, 'tienlen');
+  assert pg_temp.plines() = '[[4, 2, 2, 2, "forfeit"], [4, 3, 2, 2, "forfeit"], [4, 2, 2, 2, "thoi"]]'
+         and (r->>'coins')::int = 92500 and (pg_temp.tt()).turn = 2, format('Example 4''s forfeit: %s', pg_temp.plines());
+  perform pg_temp.tl(c2, null);
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c2, 'AS AC');
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c2, '2C 2D');
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c2, '6S 7S 8S 9S 10S JS QS KS');
+  assert pg_temp.result() = '{"places": [1, 2, 3], "out": {"1": "done", "2": "done", "4": "forfeit"},
+                              "net": {"1": 1000, "2": 2000, "3": 0, "4": -3000},
+                              "lines": [[4, 2, 1000, 1000, "forfeit"], [4, 3, 1000, 1000, "forfeit"], [4, 2, 1000, 1000, "thoi"],
+                                        [3, 1, 1000, 1000, "bet"]]}', format('Example 4: %s', pg_temp.result());
+end $$;
+
+-- Game 7: C and D are banned mid-game; one sweep forfeits them together and they pay each other nothing (R13, anti-cheat
+-- R10); A and B finish as two.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        t public.card_tables; r jsonb;
+begin
+  perform public.card_sit(room, c4, 'tienlen', 4, 1000, null);
+  t := pg_temp.deal(pg_temp.deck('3S 3H 4S 5S 5C 6C 7C 8C 9C 10C JC QC KC', '4D 6S 7S 8S 9S 10S JS QS KS AS AC AD AH',
+                                 '3D 4C 5D 6D 7D 8D 9D 10D JD QD KD 2C 2D', '3C 4H 5H 6H 7H 8H 9H 10H JH QH KH 2S 2H'));
+  assert t.hand_no = 7 and t.turn = 1, 'A leads';
+  perform pg_temp.tl(c1, '3S');
+  perform pg_temp.tl(c2, '4D');
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c4, null);
+  perform pg_temp.tl(c1, null);
+  update public.accounts set is_banned = true where id in (a3, a4);
+  r := public.card_tick(room, c1, 'tienlen');
+  update public.accounts set is_banned = false where id in (a3, a4);
+  assert (r->>'changed')::boolean and pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'the sweep';
+  t := pg_temp.tt();
+  assert t.turn = 2 and pg_temp.plines() = '[[3, 1, 2, 2, "forfeit"], [3, 2, 2, 2, "forfeit"], [3, 1, 3, 3, "thoi"],
+                                             [4, 1, 2, 2, "forfeit"], [4, 2, 2, 2, "forfeit"], [4, 1, 3, 3, "thoi"]]',
+    format('swept together: %s', t.pub);
+  assert (select count(*) from public.card_log where room_id = room and game = 'tienlen' and hand_no = 7 and action = 'leave'
+            and detail->>'how' = 'sweep') = 2, 'both leave by the sweep';
+  perform pg_temp.tl(c2, 'AS AC AD AH');
+  perform pg_temp.tl(c1, null);
+  perform pg_temp.tl(c2, '6S 7S 8S 9S 10S JS QS KS');
+  assert pg_temp.result() = '{"places": [2, 1], "out": {"2": "done", "3": "forfeit", "4": "forfeit"},
+                              "net": {"1": 4000, "2": 3000, "3": -3500, "4": -3500},
+                              "lines": [[3, 1, 1000, 1000, "forfeit"], [3, 2, 1000, 1000, "forfeit"], [3, 1, 1500, 1500, "thoi"],
+                                        [4, 1, 1000, 1000, "forfeit"], [4, 2, 1000, 1000, "forfeit"], [4, 1, 1500, 1500, "thoi"],
+                                        [1, 2, 1000, 1000, "bet"]]}', format('two players finish: %s', pg_temp.result());
+end $$;
+
+-- Game 8: the table empties and resets (R36); a third seat unseen for 60 s is stood up at the deal (R28); two players,
+-- 3♠ undealt, so 3♣ leads (R15).
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c6 text := (select v from smoke where k = 'c6');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        a6 uuid := (select v from smoke where k = 'a6')::uuid; t public.card_tables;
+begin
+  perform public.card_leave(room, c1, 'tienlen');
+  perform public.card_leave(room, c2, 'tienlen');
+  t := pg_temp.tt();
+  assert t.stake is null and t.first_game and t.lead_id is null and t.phase = 'idle', 'the empty table reset';
+  perform public.card_sit(room, c1, 'tienlen', 1, 1000, null);
+  perform public.card_sit(room, c2, 'tienlen', 2, 1000, null);
+  perform public.card_sit(room, c6, 'tienlen', 3, 1000, null);
+  update public.card_seats set seen_at = now() - interval '2 minutes' where room_id = room and account_id = a6;
+  t := pg_temp.deal(pg_temp.deck('3C 5S 6S 7S 8S 9S 10S JS QS KS AS AC AH', '2H 2D 3D 4D 5D 6D 7D 8D 9D 10D JD QD KD'));
+  assert t.hand_no = 8 and t.pub->'order' = '[1, 2]' and t.turn = 1 and (t.pub->>'must')::int = 1
+         and not exists (select 1 from public.card_seats where room_id = room and account_id = a6)
+         and (select count(*) from public.card_log where room_id = room and account_id = a6 and action = 'leave'
+                and detail->>'how' = 'idle') = 1, format('two players, 3♣ leads: %s', t.pub);
+  perform pg_temp.tl_bad(c1, '5S', 'must include');
+  perform pg_temp.tl(c1, '3C');
+  perform pg_temp.tl(c2, '2H');
+  perform pg_temp.tl(c1, null);
+  perform pg_temp.tl(c2, '3D 4D 5D 6D 7D 8D 9D 10D JD QD KD');
+  perform pg_temp.tl(c1, null);
+  perform pg_temp.tl(c2, '2D');
+  assert pg_temp.result() = '{"places": [2, 1], "out": {"2": "done"}, "net": {"1": -1000, "2": 1000},
+                              "lines": [[1, 2, 1000, 1000, "bet"]]}', format('a 2-player game: %s', pg_temp.result());
+  perform public.card_leave(room, c1, 'tienlen');
+  perform public.card_leave(room, c2, 'tienlen');
+  assert not exists (select 1 from public.card_seats where room_id = room)
+         and pg_temp.total() = (select v from smoke where k = 'm')::bigint
+         and pg_temp.coins(a1) = 104500 and pg_temp.coins(a2) = 104500 and pg_temp.coins(a3) = 102000
+         and pg_temp.coins(a4) = 89000 and pg_temp.coins(a6) = 100000, 'eight games, zero-sum';
+end $$;
+
+select 'v16 tienlen smoke ok' as result;
