@@ -7,6 +7,8 @@ const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 export const supabase: SupabaseClient = createClient(url, publishableKey, {
   auth: { persistSession: false },
   realtime: { params: { eventsPerSecond: 5 } },
+  // the anti-cheat evidence reads the client build from this header (anti-cheat spec §12.6)
+  global: { headers: { "X-Client-Info": `music-together/${process.env.NEXT_PUBLIC_CLIENT_BUILD ?? "dev"}` } },
 });
 
 export type PlayMode = "order" | "shuffle";
