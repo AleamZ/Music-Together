@@ -172,6 +172,12 @@ export function pestHours(c: CropModel, p: PestView, until: number): number {
 
 export interface YieldFactors { kg: number; mcare: number; mseed: number; mwater: number; mpest: number; mlate: number }
 
+/** Rice part i (1..6) of a plot yielding y kg (v15.2 R5): floor(i·y/6) − floor((i − 1)·y/6), so the six parts of a
+ *  constant y sum to y, and after n parts the harvester's y − floor(n·y/6) is exactly the rest. */
+export function partKg(i: number, y: number): number {
+  return Math.floor((i * y) / 6) - Math.floor(((i - 1) * y) / 6);
+}
+
 function factors(
   v: Variety, land: number, qT: number, qH: number, care: Care, lateSow: number, oldSeedlings: number, offHours: number,
   pestH: readonly number[], lateHarvest: number,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { varietyFromRow, type Variety } from "@/lib/game/farm/catalog";
 import {
-  cropCare, cropPhase, cropYield, excessN, HOUR_MS, nextPhaseAt, nextWaterDrop, pestHours, waterAt, waterOffHours, wantedWater,
+  cropCare, cropPhase, cropYield, excessN, HOUR_MS, nextPhaseAt, nextWaterDrop, partKg, pestHours, waterAt, waterOffHours, wantedWater,
   yieldEstimate, type CropModel,
 } from "@/lib/game/farm/crop";
 import type { PestKind, PestView } from "@/lib/game/farm/state";
@@ -21,6 +21,8 @@ interface Case {
     kg: number; mcare: number; mseed: number; mwater: number; mpest: number; mlate: number;
     pests: Array<{ kind: PestKind; since_s: number; treated_s: number | null }>;
   };
+  /** v15.2: six hand parts, [hours, kg] each — part i pays partKg(i, Y) with Y the plot's yield at its cut. */
+  parts?: Array<[number, number]>;
 }
 const FX = fixtures as unknown as { t0: string; cases: Case[] };
 const t0 = Date.parse(FX.t0);
@@ -40,6 +42,28 @@ describe("the shared crop fixtures (the SQL smoke replays the same cases)", () =
       const y = cropYield(cropOf(k), V[k.variety], k.land, k.q_harvest, pests, at(k.harvest));
       expect(y.kg).toBe(k.expect.kg);
       for (const f of ["mcare", "mseed", "mwater", "mpest", "mlate"] as const) expect(y[f], f).toBeCloseTo(k.expect[f], 12);
+    });
+  }
+});
+
+describe("rice in six parts (v15.2 §6.1, R5)", () => {
+  it("splits Y exactly", () => {
+    const parts = (y: number) => [1, 2, 3, 4, 5, 6].map((i) => partKg(i, y));
+    expect(parts(75)).toEqual([12, 13, 12, 13, 12, 13]);
+    expect(parts(99)).toEqual([16, 17, 16, 17, 16, 17]);
+    expect(parts(7)).toEqual([1, 1, 1, 1, 1, 2]);
+    for (let y = 6; y <= 200; y++) {
+      expect(parts(y).reduce((a, b) => a + b, 0)).toBe(y);
+      // after n parts the harvester pays y − floor(n·y/6): exactly parts n+1..6
+      for (let n = 0; n <= 5; n++) expect(y - Math.floor((n * y) / 6)).toBe(parts(y).slice(n).reduce((a, b) => a + b, 0));
+    }
+  });
+  for (const k of FX.cases.filter((c) => c.parts)) {
+    it(`pays each part of Y at its cut: ${k.name}`, () => {
+      k.parts!.forEach(([h, kg], i) => {
+        const y = cropYield(cropOf(k), V[k.variety], k.land, 1, [], at(h)).kg;
+        expect(partKg(i + 1, y), `part ${i + 1} at ${h} h (Y = ${y})`).toBe(kg);
+      });
     });
   }
 });
