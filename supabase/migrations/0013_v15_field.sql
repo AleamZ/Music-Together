@@ -1195,3 +1195,513 @@ grant execute on function public.accept_offer(uuid, text, uuid) to anon, authent
 grant execute on function public.set_sublease(uuid, text, integer, integer) to anon, authenticated;
 grant execute on function public.rent_sublease(uuid, text, integer, integer) to anon, authenticated;
 grant execute on function public.abandon_crop(uuid, text, integer) to anon, authenticated;
+
+-- ---------- G. Farming, drying and trade (spec §8, §9). Each _farm_do_* takes p_now; its RPC passes now(). ----------
+-- The crop of a plot the account farms.
+create or replace function public._farm_crop(p_room uuid, p_plot integer, p_account uuid, p_now timestamptz)
+returns public.crops
+language plpgsql stable security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._plot_row(p_room, p_plot);
+  if public._farmer(p_room, p_plot, p_now) is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  select * into c from public.crops where room_id = p_room and plot_no = p_plot;
+  if not found then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  return c;
+end; $$;
+
+-- One farm consumable out of the inventory.
+create or replace function public._use_item(p_account uuid, p_item text) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  update public.inventory set qty = qty - 1 where account_id = p_account and item_id = p_item and qty >= 1;
+  if not found then
+    raise exception 'no item' using errcode = '22023';
+  end if;
+end; $$;
+
+-- Transplanting needs seedlings ≥ 8·s h old in shallow water (Nông); harvesting needs ripe rice in a drained plot (≤ Ẩm).
+create or replace function public._work_check(c public.crops, v public.rice_varieties, p_work text, p_now timestamptz)
+returns void
+language plpgsql stable set search_path = public, extensions
+as $$
+begin
+  if p_work = 'transplant' then
+    if public._crop_phase(c, v, p_now) <> 'seedling' or public._hrs(c.sow_at, p_now) < 8 * v.scale then
+      raise exception 'wrong phase' using errcode = '22023';
+    end if;
+    if public._water_at(c.water_log, p_now) <> 2 then
+      raise exception 'need water' using errcode = '22023';
+    end if;
+  elsif p_work = 'harvest' then
+    if public._crop_phase(c, v, p_now) not in ('ripe', 'overripe') then
+      raise exception 'wrong phase' using errcode = '22023';
+    end if;
+    if public._water_at(c.water_log, p_now) > 1 then
+      raise exception 'need water' using errcode = '22023';
+    end if;
+  else
+    raise exception 'invalid work' using errcode = '22023';
+  end if;
+end; $$;
+
+-- The work gate (§11.4): the matching begin_work at least 2 s earlier.
+create or replace function public._work_gate(c public.crops, p_work text, p_now timestamptz) returns void
+language plpgsql stable set search_path = public, extensions
+as $$
+begin
+  if c.work is distinct from p_work or c.work_started_at is null or p_now - c.work_started_at < interval '2 seconds' then
+    raise exception 'too fast' using errcode = '22023';
+  end if;
+end; $$;
+
+-- Làm đất: floods the plot (water 3). Farming withdraws the owner's listing and sublease offer (§7.3).
+create or replace function public._farm_do_prepare(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  perform public._plot_row(p_room, p_plot);
+  if public._farmer(p_room, p_plot, p_now) is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  select * into c from public.crops where room_id = p_room and plot_no = p_plot;
+  if found and c.prepared_at is not null then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  if found then
+    update public.crops
+       set prepared_at = p_now, water_log = water_log || jsonb_build_array(jsonb_build_object('t', p_now, 'l', 3))
+     where room_id = p_room and plot_no = p_plot;
+  else
+    insert into public.crops (room_id, plot_no, farmer_id, prepared_at, water_log)
+    values (p_room, p_plot, p_account, p_now, jsonb_build_array(jsonb_build_object('t', p_now, 'l', 3)));
+  end if;
+  update public.field_plots set sale_price = null, sublease_price = null where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Any fertilizer, any time after làm đất; the plot panel warns before a wasted one (§8.4).
+create or replace function public._farm_do_fertilize(p_room uuid, p_account uuid, p_plot integer, p_item text,
+                                                     p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  if not exists (select 1 from public.shop_items where id = p_item and kind = 'fertilizer') then
+    raise exception 'invalid item' using errcode = '22023';
+  end if;
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  perform public._use_item(p_account, p_item);
+  update public.crops set fert_log = fert_log || jsonb_build_array(jsonb_build_object('t', p_now, 'item', p_item))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Ngâm ủ: one bag of seed, before or after làm đất. Sprouted after 2 h, rots 24 h later if not sown (§8.2).
+create or replace function public._farm_do_soak(p_room uuid, p_account uuid, p_plot integer, p_item text, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; v_variety text; v_has boolean;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  select variety into v_variety from public.shop_items where id = p_item and kind = 'seed';
+  if v_variety is null then
+    raise exception 'invalid item' using errcode = '22023';
+  end if;
+  perform public._plot_row(p_room, p_plot);
+  if public._farmer(p_room, p_plot, p_now) is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  select * into c from public.crops where room_id = p_room and plot_no = p_plot;
+  v_has := found;
+  if v_has and (c.soak_at is not null or c.sow_at is not null) then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  perform public._use_item(p_account, p_item);
+  if v_has then
+    update public.crops set variety = v_variety, soak_at = p_now, rotted_at = null where room_id = p_room and plot_no = p_plot;
+  else
+    insert into public.crops (room_id, plot_no, farmer_id, variety, soak_at) values (p_room, p_plot, p_account, v_variety, p_now);
+    update public.field_plots set sale_price = null, sublease_price = null where room_id = p_room and plot_no = p_plot;
+  end if;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Gieo mạ: sprouted seed on a prepared, moist (Ẩm) seedbed. The three pest chances are rolled now and stay secret (§8.5).
+create or replace function public._farm_do_sow(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if public._crop_phase(c, public._variety(c.variety), p_now) <> 'sprouted' then
+    raise exception 'wrong phase' using errcode = '22023';
+  end if;
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  if public._water_at(c.water_log, p_now) <> 1 then
+    raise exception 'need water' using errcode = '22023';
+  end if;
+  update public.crops
+     set sow_at = p_now,
+         pest_rolls = jsonb_build_array(
+           jsonb_build_object('slot', 1, 'u_time', random(), 'u_kind', random(), 'u_hit', random()),
+           jsonb_build_object('slot', 2, 'u_time', random(), 'u_kind', random(), 'u_hit', random()),
+           jsonb_build_object('slot', 3, 'u_time', random(), 'u_kind', random(), 'u_hit', random()))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Starts the 2-second transplant or harvest action (§11.4).
+create or replace function public._farm_do_begin_work(p_room uuid, p_account uuid, p_plot integer, p_work text,
+                                                      p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  perform public._work_check(c, public._variety(c.variety), p_work, p_now);
+  update public.crops set work = p_work, work_started_at = p_now where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Cấy: the quality (v15.2 minigame; 1.0 in v15.1) is clamped to [0.9, 1.1].
+create or replace function public._farm_do_transplant(p_room uuid, p_account uuid, p_plot integer, p_quality double precision,
+                                                      p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  perform public._work_gate(c, 'transplant', p_now);
+  perform public._work_check(c, public._variety(c.variety), 'transplant', p_now);
+  update public.crops
+     set transplant_at = p_now, q_transplant = least(1.1, greatest(0.9, coalesce(p_quality, 1))),
+         work = null, work_started_at = null
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Bơm (+1) or tháo (−1) one level from the current one (§8.3). The log is capped against spamming.
+create or replace function public._farm_do_water(p_room uuid, p_account uuid, p_plot integer, p_delta integer,
+                                                 p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; v_level integer;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  if p_delta is null or p_delta not in (1, -1) then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  if jsonb_array_length(c.water_log) >= 200 then
+    raise exception 'too fast' using errcode = '22023';
+  end if;
+  v_level := greatest(0, least(3, public._water_at(c.water_log, p_now) + p_delta));
+  update public.crops set water_log = water_log || jsonb_build_array(jsonb_build_object('t', p_now, 'l', v_level))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Xịt thuốc: treats an active pest of its kind at this moment; otherwise it is wasted (§8.5).
+create or replace function public._farm_do_spray(p_room uuid, p_account uuid, p_plot integer, p_item text, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  if not exists (select 1 from public.shop_items where id = p_item and kind = 'pesticide') then
+    raise exception 'invalid item' using errcode = '22023';
+  end if;
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  perform public._use_item(p_account, p_item);
+  update public.crops set spray_log = spray_log || jsonb_build_array(jsonb_build_object('t', p_now, 'item', p_item))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Bắt ốc: anyone may pick the golden apple snails off any plot that has them (§8.5).
+create or replace function public._farm_do_pick_snails(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  perform public._plot_row(p_room, p_plot);
+  select * into c from public.crops where room_id = p_room and plot_no = p_plot;
+  if not found or not exists (select 1 from jsonb_array_elements(public._crop_pests(c, public._variety(c.variety), p_now)) x
+                               where x->>'kind' = 'snail' and x->>'treated_at' is null) then
+    raise exception 'no snails' using errcode = '22023';
+  end if;
+  update public.crops set picks = picks || jsonb_build_array(jsonb_build_object('t', p_now))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Gặt: the yield goes to the farmer's wet rice; the plot is bare and a lease ends with the season (§8.7).
+create or replace function public._farm_do_harvest(p_room uuid, p_account uuid, p_plot integer, p_quality double precision,
+                                                   p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; v public.rice_varieties; f public.field_plots; v_kg integer;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  v := public._variety(c.variety);
+  perform public._work_gate(c, 'harvest', p_now);
+  perform public._work_check(c, v, 'harvest', p_now);
+  f := public._plot_row(p_room, p_plot);
+  v_kg := (public._crop_yield(c, v, case when f.kind = 'private' then 1.1 else 1.0 end,
+                              least(1.1, greatest(0.9, coalesce(p_quality, 1))), p_now)->>'kg')::int;
+  perform public._rice_add(p_account, c.variety, v_kg, 0);
+  delete from public.crops where room_id = p_room and plot_no = p_plot;
+  delete from public.plot_leases where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now)
+         || jsonb_build_object('harvest', jsonb_build_object('variety', c.variety, 'kg', v_kg));
+end; $$;
+
+-- Phơi lúa: wet rice into a free drying slot; dry after 3 h (§8.7).
+create or replace function public._farm_do_dry_start(p_room uuid, p_account uuid, p_variety text, p_kg integer,
+                                                     p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_wet integer; v_slot integer;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  if p_kg is null or p_kg < 1 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  select wet_kg into v_wet from public.rice_stock where account_id = p_account and variety = p_variety;
+  if coalesce(v_wet, 0) < p_kg then
+    raise exception 'not enough rice' using errcode = '22023';
+  end if;
+  select min(n) into v_slot from generate_series(1, 4) n
+   where not exists (select 1 from public.drying_slots ds where ds.room_id = p_room and ds.slot = n);
+  if v_slot is null then
+    raise exception 'drying full' using errcode = '22023';
+  end if;
+  update public.rice_stock set wet_kg = wet_kg - p_kg where account_id = p_account and variety = p_variety;
+  insert into public.drying_slots (room_id, slot, account_id, variety, kg, ready_at)
+  values (p_room, v_slot, p_account, p_variety, p_kg, p_now + interval '3 hours');
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+create or replace function public._farm_do_dry_collect(p_room uuid, p_account uuid, p_slot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare d public.drying_slots;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  select * into d from public.drying_slots where room_id = p_room and slot = p_slot and account_id = p_account;
+  if not found then
+    raise exception 'invalid slot' using errcode = '22023';
+  end if;
+  if d.ready_at > p_now then
+    raise exception 'not ready' using errcode = '22023';
+  end if;
+  delete from public.drying_slots where room_id = p_room and slot = p_slot;
+  perform public._rice_add(p_account, d.variety, 0, d.kg);
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+revoke all on function public._farm_crop(uuid, integer, uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._use_item(uuid, text) from public, anon, authenticated;
+revoke all on function public._work_check(public.crops, public.rice_varieties, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._work_gate(public.crops, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_prepare(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_fertilize(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_soak(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_sow(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_begin_work(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_transplant(uuid, uuid, integer, double precision, timestamptz)
+  from public, anon, authenticated;
+revoke all on function public._farm_do_water(uuid, uuid, integer, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_spray(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_pick_snails(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_harvest(uuid, uuid, integer, double precision, timestamptz)
+  from public, anon, authenticated;
+revoke all on function public._farm_do_dry_start(uuid, uuid, text, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_dry_collect(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+
+create or replace function public.prepare_plot(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_prepare(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, now()) $$;
+
+create or replace function public.apply_fertilizer(p_room_id uuid, p_session_token text, p_plot integer, p_item_id text)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_fertilize(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_item_id, now()) $$;
+
+create or replace function public.soak_seed(p_room_id uuid, p_session_token text, p_plot integer, p_item_id text)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_soak(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_item_id, now()) $$;
+
+create or replace function public.sow_seed(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_sow(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, now()) $$;
+
+create or replace function public.begin_work(p_room_id uuid, p_session_token text, p_plot integer, p_work text)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_begin_work(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_work, now()) $$;
+
+create or replace function public.transplant(p_room_id uuid, p_session_token text, p_plot integer,
+                                             p_quality double precision) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_transplant(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_quality, now()) $$;
+
+create or replace function public.water(p_room_id uuid, p_session_token text, p_plot integer, p_delta integer)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_water(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_delta, now()) $$;
+
+create or replace function public.spray(p_room_id uuid, p_session_token text, p_plot integer, p_item_id text)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_spray(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_item_id, now()) $$;
+
+create or replace function public.pick_snails(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_pick_snails(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, now()) $$;
+
+create or replace function public.harvest(p_room_id uuid, p_session_token text, p_plot integer,
+                                          p_quality double precision) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_harvest(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_quality, now()) $$;
+
+create or replace function public.dry_start(p_room_id uuid, p_session_token text, p_variety text, p_kg integer)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_dry_start(p_room_id, public._farm_auth(p_room_id, p_session_token), p_variety, p_kg, now()) $$;
+
+create or replace function public.dry_collect(p_room_id uuid, p_session_token text, p_slot integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_dry_collect(p_room_id, public._farm_auth(p_room_id, p_session_token), p_slot, now()) $$;
+
+-- Bán lúa at cô Út: dry rice at the full price per kg, wet rice at 70 % (§8.7). No room: answers { server_now, mine }.
+create or replace function public.sell_rice(p_session_token text, p_variety text, p_dry boolean, p_kg integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v public.rice_varieties; rs public.rice_stock; v_pay integer;
+begin
+  v_account := public._auth_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  v := public._variety(p_variety);
+  if v.id is null then
+    raise exception 'invalid variety' using errcode = '22023';
+  end if;
+  if p_kg is null or p_kg < 1 or p_dry is null then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  select * into rs from public.rice_stock where account_id = v_account and variety = p_variety for update;
+  if not found or (case when p_dry then rs.dry_kg else rs.wet_kg end) < p_kg then
+    raise exception 'not enough rice' using errcode = '22023';
+  end if;
+  v_pay := case when p_dry then p_kg * v.price_per_kg else (p_kg * v.price_per_kg * 7) / 10 end;
+  update public.rice_stock
+     set dry_kg = dry_kg - case when p_dry then p_kg else 0 end, wet_kg = wet_kg - case when p_dry then 0 else p_kg end
+   where account_id = v_account and variety = p_variety;
+  perform public._pay(v_account, v_pay, 'rice_sell',
+                      p_variety || case when p_dry then ' dry ' else ' wet ' end || p_kg || ' kg');
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+-- The farm shop at anh Hai: seeds, fertilizers and pesticides, 1–99 at a time and at most 99 held (§9).
+create or replace function public.buy_farm_item(p_session_token text, p_item_id text, p_qty integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; w public.wallets; it public.shop_items; v_cost integer;
+begin
+  v_account := public._auth_account(p_session_token);
+  w := public._wallet_lock(v_account);
+  select * into it from public.shop_items where id = p_item_id;
+  if not found or it.price is null or it.kind not in ('seed', 'fertilizer', 'pesticide') then
+    raise exception 'item not available' using errcode = '22023';
+  end if;
+  if p_qty is null or p_qty < 1 or p_qty > 99
+     or coalesce((select qty from public.inventory where account_id = v_account and item_id = it.id), 0) + p_qty > 99 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  v_cost := it.price * p_qty;
+  if w.coins < v_cost then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(v_account, -v_cost, 'farm_buy', it.id || ' x' || p_qty);
+  insert into public.inventory (account_id, item_id, qty) values (v_account, it.id, p_qty)
+  on conflict (account_id, item_id) do update set qty = public.inventory.qty + excluded.qty;
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+-- Chú Tám's gift on the first field visit: 1 seed_short and 1 fert_urea, once per account (§8.8).
+create or replace function public.claim_farm_gift(p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_gifted boolean;
+begin
+  v_account := public._auth_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  insert into public.farm_profiles (account_id) values (v_account) on conflict (account_id) do nothing;
+  update public.farm_profiles set gift_at = now() where account_id = v_account and gift_at is null;
+  v_gifted := found;
+  if v_gifted then
+    insert into public.inventory (account_id, item_id, qty) values (v_account, 'seed_short', 1), (v_account, 'fert_urea', 1)
+    on conflict (account_id, item_id) do update set qty = least(99, public.inventory.qty + 1);
+  end if;
+  return jsonb_build_object('gifted', v_gifted, 'server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+grant execute on function public.prepare_plot(uuid, text, integer) to anon, authenticated;
+grant execute on function public.apply_fertilizer(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.soak_seed(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.sow_seed(uuid, text, integer) to anon, authenticated;
+grant execute on function public.begin_work(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.transplant(uuid, text, integer, double precision) to anon, authenticated;
+grant execute on function public.water(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.spray(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.pick_snails(uuid, text, integer) to anon, authenticated;
+grant execute on function public.harvest(uuid, text, integer, double precision) to anon, authenticated;
+grant execute on function public.dry_start(uuid, text, text, integer) to anon, authenticated;
+grant execute on function public.dry_collect(uuid, text, integer) to anon, authenticated;
+grant execute on function public.sell_rice(text, text, boolean, integer) to anon, authenticated;
+grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;
+grant execute on function public.claim_farm_gift(text) to anon, authenticated;

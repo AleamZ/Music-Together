@@ -324,3 +324,230 @@ end $$;
 select public.join_room((select v from smoke where k = 'code'), 'pw', (select v from smoke where k = 't2'));
 
 select 'v15 land smoke ok' as result;
+
+-- ---------- farming (§8, §9): a whole season with the clock moved by hand, drying, selling, the gift ----------
+insert into smoke select 'room2', room_id::text from public.create_room('Ruộng test', 'pw', (select v from smoke where k = 't2'));
+insert into smoke select 'code2', code from public.rooms where id = (select v from smoke where k = 'room2')::uuid;
+select public.join_room((select v from smoke where k = 'code2'), 'pw', (select v from smoke where k = 't3'));
+
+do $$
+declare t2 text := (select v from smoke where k = 't2'); a2 uuid := (select v from smoke where k = 'a2')::uuid; r jsonb;
+begin
+  -- chú Tám's gift, once per account
+  r := public.claim_farm_gift(t2);
+  assert r->'gifted' = 'true' and r->'mine'->'items' = '{"fert_urea": 1, "seed_short": 1}' and r->>'server_now' is not null, 'gift';
+  r := public.claim_farm_gift(t2);
+  assert r->'gifted' = 'false' and r->'mine'->'items' = '{"fert_urea": 1, "seed_short": 1}' and r->'mine'->'gift_claimed' = 'true',
+    'only once';
+  -- the farm shop at anh Hai
+  perform pg_temp.set_coins(a2, 5000);
+  r := public.buy_farm_item(t2, 'fert_manure', 2);
+  assert r->'mine'->'coins' = '4920' and r->'mine'->'items'->'fert_manure' = '2', 'bought 2 manure';
+  assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'farm_buy' and delta = -80), 'ledger';
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 98)', t2, 'fert_manure')) = 'invalid quantity', '99 at most held';
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 0)', t2, 'fert_manure')) = 'invalid quantity', 'qty 1-99';
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t2, 'rod_bamboo')) = 'item not available', 'no fishing gear';
+  perform pg_temp.set_coins(a2, 10);
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t2, 'seed_thom')) = 'not enough coins', 'coins';
+  perform pg_temp.set_coins(a2, 5000);
+  perform public.buy_farm_item(t2, 'fert_phosphate', 1);
+  perform public.buy_farm_item(t2, 'fert_potash', 1);
+  perform public.buy_farm_item(t2, 'spray_insect', 1);
+  perform public.buy_farm_item(t2, 'spray_hopper', 1);
+end $$;
+
+do $$
+declare a2 uuid := (select v from smoke where k = 'a2')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        room uuid := (select v from smoke where k = 'room2')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        tp timestamptz; s jsonb; c public.crops; v_kg integer;
+begin
+  perform public._farm_do_rent(room, a2, 8, t);
+  assert pg_temp.err(format('select public._farm_do_prepare(%L, %L, 8, %L)', room, a3, t)) = 'not your plot', 'farmer only';
+  s := public._farm_do_prepare(room, a2, 8, t);
+  assert pg_temp.plot(s, 8)->'crop'->>'phase' = 'prepared' and pg_temp.plot(s, 8)->'crop'->'water' = '3', 'prepared, flooded';
+  assert pg_temp.err(format('select public._farm_do_prepare(%L, %L, 8, %L)', room, a2, t)) = 'crop exists', 'once';
+  assert pg_temp.err(format('select public._farm_do_sow(%L, %L, 8, %L)', room, a2, t)) = 'wrong phase', 'soak first';
+  assert pg_temp.err(format('select public._farm_do_soak(%L, %L, 8, %L, %L)', room, a2, 'fert_urea', t)) = 'invalid item', 'seed';
+  assert pg_temp.err(format('select public._farm_do_soak(%L, %L, 8, %L, %L)', room, a2, 'seed_nep', t)) = 'no item', 'no nep';
+  s := public._farm_do_soak(room, a2, 8, 'seed_short', t);
+  assert pg_temp.plot(s, 8)->'crop'->>'phase' = 'soaking' and pg_temp.plot(s, 8)->'crop'->>'variety' = 'short'
+     and s->'mine'->'items'->'seed_short' is null, 'soaking; the seed is used';
+  assert pg_temp.err(format('select public._farm_do_soak(%L, %L, 8, %L, %L)', room, a2, 'seed_short', t)) = 'crop exists', 'once';
+  perform public._farm_do_fertilize(room, a2, 8, 'fert_manure', t + interval '15 minutes');
+  perform public._farm_do_fertilize(room, a2, 8, 'fert_phosphate', t + interval '15 minutes');
+  assert pg_temp.err(format('select public._farm_do_fertilize(%L, %L, 8, %L, %L)', room, a2, 'seed_nep', t)) = 'invalid item', 'fert';
+  assert pg_temp.err(format('select public._farm_do_sow(%L, %L, 8, %L)', room, a2, t + interval '1 hour')) = 'wrong phase',
+    'still soaking';
+  assert pg_temp.err(format('select public._farm_do_sow(%L, %L, 8, %L)', room, a2, t + interval '2 hours')) = 'need water',
+    'sow on a moist bed';
+  assert pg_temp.err(format('select public._farm_do_water(%L, %L, 8, 2, %L)', room, a2, t)) = 'invalid quantity', '+1 or -1';
+  perform public._farm_do_water(room, a2, 8, -1, t + interval '2 hours');
+  s := public._farm_do_water(room, a2, 8, -1, t + interval '2 hours');
+  assert pg_temp.plot(s, 8)->'crop'->'water' = '1'
+     and (pg_temp.plot(s, 8)->'crop'->>'water_set_at')::timestamptz = t + interval '2 hours', 'drained to Ẩm';
+  s := public._farm_do_sow(room, a2, 8, t + interval '2 hours 30 minutes');
+  assert pg_temp.plot(s, 8)->'crop'->>'phase' = 'seedling', 'sown';
+  assert (select jsonb_array_length(pest_rolls) from public.crops where room_id = room and plot_no = 8) = 3, 'three secret rolls';
+  assert pg_temp.plot(s, 8)->'crop'->'log' is not null and pg_temp.plot(s, 8)::text not like '%u_hit%', 'rolls stay secret';
+  assert pg_temp.plot(public._field_view(room, a3, t + interval '3 hours'), 8)->'crop'->'log' is null, 'logs for the farmer only';
+
+  -- transplant: seedlings ≥ 7.2 h (short) in shallow water, after a 2 s action
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'transplant', t + interval '9 hours'))
+    = 'wrong phase', 'too young';
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'transplant', t + interval '10 hours'))
+    = 'need water', 'needs Nông';
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'dig', t)) = 'invalid work', 'work';
+  perform public._farm_do_water(room, a2, 8, 1, t + interval '10 hours');
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 8, 1, %L)', room, a2, t + interval '10 hours'))
+    = 'too fast', 'begin first';
+  perform public._farm_do_begin_work(room, a2, 8, 'transplant', t + interval '10 hours');
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 8, 1, %L)', room, a2, t + interval '10 hours 1 second'))
+    = 'too fast', 'the 2 s gate';
+  tp := t + interval '10 hours 3 seconds';
+  s := public._farm_do_transplant(room, a2, 8, 5.0, tp);
+  assert pg_temp.plot(s, 8)->'crop'->>'phase' = 'tillering'
+     and (select q_transplant from public.crops where room_id = room and plot_no = 8) = 1.1, 'transplanted, quality clamped';
+
+  -- pests: a snail at T = 3.6 h (water 2 → hit) and a leaf folder at T = 5.4 h
+  update public.crops set pest_rolls = '[{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.1},
+                                         {"slot": 2, "u_time": 0, "u_kind": 0.9, "u_hit": 0.1},
+                                         {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}]'
+   where room_id = room and plot_no = 8;
+  s := public._field_view(room, a2, tp + interval '3 hours 30 minutes');
+  assert pg_temp.plot(s, 8)->'crop'->'pests' = '[]', 'not yet due';
+  s := public._field_view(room, a2, tp + interval '4 hours');
+  assert pg_temp.plot(s, 8)->'crop'->'pests'->0->>'kind' = 'snail'
+     and pg_temp.plot(s, 8)->'crop'->'pests'->0->'treated_at' = 'null', 'golden snails';
+  s := public._farm_do_pick_snails(room, a3, 8, tp + interval '4 hours');
+  assert pg_temp.plot(s, 8)->'crop'->'pests'->0->'treated_at' <> 'null', 'anyone may pick them';
+  assert pg_temp.err(format('select public._farm_do_pick_snails(%L, %L, 8, %L)', room, a3, tp + interval '4 hours'))
+    = 'no snails', 'picked already';
+  perform public._farm_do_fertilize(room, a2, 8, 'fert_urea', tp + interval '4 hours');
+  perform public._farm_do_spray(room, a2, 8, 'spray_hopper', tp + interval '5 hours 30 minutes');
+  s := public._field_view(room, a2, tp + interval '5 hours 30 minutes');
+  assert pg_temp.plot(s, 8)->'crop'->'pests'->1->>'kind' = 'leaf_folder'
+     and pg_temp.plot(s, 8)->'crop'->'pests'->1->'treated_at' = 'null', 'the wrong spray does nothing';
+  s := public._farm_do_spray(room, a2, 8, 'spray_insect', tp + interval '5 hours 45 minutes');
+  assert (pg_temp.plot(s, 8)->'crop'->'pests'->1->>'treated_at')::timestamptz = tp + interval '5 hours 45 minutes', 'treated';
+  assert pg_temp.err(format('select public._farm_do_spray(%L, %L, 8, %L, %L)', room, a2, 'fert_urea', tp)) = 'invalid item', 'spray';
+  assert pg_temp.err(format('select public._farm_do_spray(%L, %L, 8, %L, %L)', room, a2, 'spray_fungus', tp)) = 'no item', 'none';
+  perform public._farm_do_fertilize(room, a2, 8, 'fert_potash', tp + interval '18 hours');
+
+  -- harvest: ripe at T = 43.2 h (short), in a drained plot, after a 2 s action; the lease ends with it
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'harvest', tp + interval '40 hours'))
+    = 'wrong phase', 'not ripe';
+  perform public._farm_do_water(room, a2, 8, 1, tp + interval '44 hours');
+  perform public._farm_do_water(room, a2, 8, 1, tp + interval '44 hours');
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'harvest', tp + interval '44 hours'))
+    = 'need water', 'drain first';
+  perform public._farm_do_water(room, a2, 8, -1, tp + interval '44 hours');
+  perform public._farm_do_begin_work(room, a2, 8, 'harvest', tp + interval '44 hours');
+  select * into c from public.crops where room_id = room and plot_no = 8;
+  v_kg := (public._crop_yield(c, public._variety('short'), 1.0, 1.0, tp + interval '44 hours 2 seconds')->>'kg')::int;
+  s := public._farm_do_harvest(room, a2, 8, 1, tp + interval '44 hours 2 seconds');
+  assert s->'harvest' = jsonb_build_object('variety', 'short', 'kg', v_kg) and s->'mine'->'rice'->'short'->'wet' = to_jsonb(v_kg),
+    format('harvested %s kg wet', v_kg);
+  assert pg_temp.plot(s, 8)->'crop' = 'null' and pg_temp.plot(s, 8)->'lease' = 'null' and s->'mine'->'farming' = '[]',
+    'bare, and the lease ended';
+  insert into smoke values ('kg', v_kg::text);
+end $$;
+
+do $$
+declare t2 text := (select v from smoke where k = 't2'); a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz + interval '60 hours';
+        v_kg integer := (select v from smoke where k = 'kg')::int; s jsonb; r jsonb; v_coins integer;
+begin
+  -- drying: 3 h per batch, 4 slots, collected automatically 24 h after it is ready
+  assert pg_temp.err(format('select public._farm_do_dry_start(%L, %L, %L, 0, %L)', room, a2, 'short', t)) = 'invalid quantity', 'kg';
+  assert pg_temp.err(format('select public._farm_do_dry_start(%L, %L, %L, 999, %L)', room, a2, 'short', t)) = 'not enough rice', 'kg';
+  s := public._farm_do_dry_start(room, a2, 'short', 10, t);
+  assert s->'drying'->0->'slot' = '1' and s->'drying'->0->'owner'->>'id' = a2::text and s->'drying'->0->'kg' = '10'
+     and (s->'drying'->0->>'ready_at')::timestamptz = t + interval '3 hours' and s->'mine'->'rice'->'short'->'wet' = to_jsonb(v_kg - 10),
+    'drying';
+  assert pg_temp.err(format('select public._farm_do_dry_collect(%L, %L, 1, %L)', room, a2, t + interval '2 hours')) = 'not ready', 'ready';
+  assert pg_temp.err(format('select public._farm_do_dry_collect(%L, %L, 1, %L)', room, a3, t + interval '3 hours')) = 'invalid slot',
+    'yours only';
+  s := public._farm_do_dry_collect(room, a2, 1, t + interval '3 hours');
+  assert s->'drying' = '[]' and s->'mine'->'rice'->'short'->'dry' = '10', 'dry rice';
+  perform public._farm_do_dry_start(room, a2, 'short', 1, t);
+  perform public._farm_do_dry_start(room, a2, 'short', 1, t);
+  perform public._farm_do_dry_start(room, a2, 'short', 1, t);
+  perform public._farm_do_dry_start(room, a2, 'short', 1, t);
+  assert pg_temp.err(format('select public._farm_do_dry_start(%L, %L, %L, 1, %L)', room, a2, 'short', t)) = 'drying full', 'full';
+  perform public._field_open(room, t + interval '27 hours');
+  assert not exists (select 1 from public.drying_slots where room_id = room)
+     and (select dry_kg from public.rice_stock where account_id = a2 and variety = 'short') = 14, 'collected automatically';
+
+  -- selling at cô Út: dry at 12 xu/kg, wet at 70 %
+  v_coins := pg_temp.coins(a2);
+  r := public.sell_rice(t2, 'short', true, 10);
+  assert r->'mine'->'coins' = to_jsonb(v_coins + 120) and r->'mine'->'rice'->'short'->'dry' = '4', 'dry: 10 × 12';
+  r := public.sell_rice(t2, 'short', false, 5);
+  assert r->'mine'->'coins' = to_jsonb(v_coins + 120 + 42), 'wet: floor(5 × 12 × 0.7)';
+  assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'rice_sell' and delta = 42), 'ledger';
+  assert pg_temp.err(format('select public.sell_rice(%L, %L, true, 999)', t2, 'short')) = 'not enough rice', 'stock';
+  assert pg_temp.err(format('select public.sell_rice(%L, %L, true, 1)', t2, 'bogus')) = 'invalid variety', 'variety';
+  assert pg_temp.err(format('select public.sell_rice(%L, %L, null, 1)', t2, 'short')) = 'invalid quantity', 'dry or wet';
+  assert pg_temp.err(format('select public.sell_rice(%L, %L, true, 0)', t2, 'short')) = 'invalid quantity', 'kg';
+end $$;
+
+do $$
+declare a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz + interval '100 hours'; s jsonb;
+begin
+  insert into public.inventory (account_id, item_id, qty) values (a3, 'seed_nep', 2)
+  on conflict (account_id, item_id) do update set qty = 2;
+  perform pg_temp.set_coins(a3, 1000);
+  -- sprouted seed rots 24 h after sprouting: back to a prepared plot
+  perform public._farm_do_rent(room, a3, 9, t);
+  perform public._farm_do_prepare(room, a3, 9, t);
+  perform public._farm_do_soak(room, a3, 9, 'seed_nep', t);
+  s := public._field_view(room, a3, t + interval '25 hours 59 minutes');
+  assert pg_temp.plot(s, 9)->'crop'->>'phase' = 'sprouted', 'still sprouted';
+  perform public._field_open(room, t + interval '26 hours');
+  s := public._field_view(room, a3, t + interval '26 hours');
+  assert pg_temp.plot(s, 9)->'crop'->>'phase' = 'prepared' and pg_temp.plot(s, 9)->'crop'->'variety' = 'null'
+     and (pg_temp.plot(s, 9)->'crop'->>'rotted_at')::timestamptz = t + interval '26 hours', 'rotted';
+  -- soaking before làm đất: sowing and water need a prepared plot; unprepared rotten seed leaves the plot bare
+  perform public._farm_do_rent(room, a3, 10, t);
+  perform public._farm_do_soak(room, a3, 10, 'seed_nep', t);
+  assert pg_temp.err(format('select public._farm_do_sow(%L, %L, 10, %L)', room, a3, t + interval '3 hours')) = 'not prepared', 'sow';
+  assert pg_temp.err(format('select public._farm_do_water(%L, %L, 10, -1, %L)', room, a3, t)) = 'not prepared', 'water';
+  perform public._field_open(room, t + interval '26 hours');
+  assert not exists (select 1 from public.crops where room_id = room and plot_no = 10), 'bare again';
+  -- rice left 48 h past its ripe window is lost
+  update public.crops set variety = 'nep', soak_at = t - interval '200 hours', sow_at = t - interval '190 hours',
+                          transplant_at = t - interval '108 hours', rotted_at = null
+   where room_id = room and plot_no = 9;
+  perform public._field_open(room, t - interval '1 second');
+  assert exists (select 1 from public.crops where room_id = room and plot_no = 9), 'not yet';
+  perform public._field_open(room, t);
+  assert not exists (select 1 from public.crops where room_id = room and plot_no = 9), 'the grain has fallen';
+end $$;
+
+do $$
+declare f text;
+begin
+  assert not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname like '\_%' and has_function_privilege('anon', p.oid, 'execute')),
+    'private helpers are not callable';
+  foreach f in array array['touch_room(uuid,text)', 'field_state(uuid,text)', 'rent_plot(uuid,text,integer)',
+    'buy_plot(uuid,text,integer)', 'sell_plot_to_village(uuid,text,integer)', 'list_plot(uuid,text,integer,integer)',
+    'buy_listed_plot(uuid,text,integer,integer)', 'offer_plot(uuid,text,integer,integer)', 'withdraw_offer(uuid,text,uuid)',
+    'decline_offer(uuid,text,uuid)', 'accept_offer(uuid,text,uuid)', 'set_sublease(uuid,text,integer,integer)',
+    'rent_sublease(uuid,text,integer,integer)', 'abandon_crop(uuid,text,integer)', 'prepare_plot(uuid,text,integer)',
+    'apply_fertilizer(uuid,text,integer,text)', 'soak_seed(uuid,text,integer,text)', 'sow_seed(uuid,text,integer)',
+    'begin_work(uuid,text,integer,text)', 'transplant(uuid,text,integer,double precision)', 'water(uuid,text,integer,integer)',
+    'spray(uuid,text,integer,text)', 'pick_snails(uuid,text,integer)', 'harvest(uuid,text,integer,double precision)',
+    'dry_start(uuid,text,text,integer)', 'dry_collect(uuid,text,integer)', 'sell_rice(text,text,boolean,integer)',
+    'buy_farm_item(text,text,integer)', 'claim_farm_gift(text)'] loop
+    assert has_function_privilege('anon', 'public.' || f, 'execute'), f;
+  end loop;
+  foreach f in array array['field_plots', 'plot_leases', 'land_offers', 'crops', 'drying_slots', 'rice_stock', 'farm_profiles'] loop
+    assert not has_table_privilege('anon', 'public.' || f, 'select'), f;
+  end loop;
+  assert has_table_privilege('anon', 'public.rice_varieties', 'select'), 'varieties are public config';
+end $$;
+
+select 'v15 farm smoke ok' as result;
