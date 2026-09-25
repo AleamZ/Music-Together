@@ -823,4 +823,176 @@ end $$;
 
 select 'anticheat shared functions smoke ok' as result;
 
+-- ---------- admin (§9.5–§9.8, §10.5): the preview, the wipe, the pardon, the ban switch, the mode, the list ----------
+insert into smoke select 'n' || n, token from generate_series(1, 6) n,
+  lateral public.register('acn' || n || '_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'p' || substr(k, 2), public._auth_account(v)::text from smoke where k in ('n1', 'n2', 'n3', 'n4', 'n5', 'n6');
+insert into smoke select 'aroom', room_id::text from public.create_room('Phòng xử', 'pw', (select v from smoke where k = 'n1'));
+insert into smoke select 'aroom2', room_id::text from public.create_room('Phòng xử 2', 'pw', (select v from smoke where k = 'n1'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = r)::uuid), 'pw', v)
+  from smoke, unnest(array['aroom', 'aroom2']) r where k in ('n2', 'n3', 'n4', 'n5', 'n6');
+
+do $$
+declare n1 text := (select v from smoke where k = 'n1'); p2 uuid := (select v from smoke where k = 'p2')::uuid;
+        troot text := (select v from smoke where k = 'troot'); aroot uuid := (select v from smoke where k = 'aroot')::uuid;
+        call text; r jsonb;
+begin
+  foreach call in array array[format('select public.admin_anticheat_list(%L)', n1),
+                              format('select public.admin_anticheat_account(%L, %L)', n1, p2),
+                              format('select public.admin_anticheat_resolve(%L, %L, %L)', n1, p2, 'pardon'),
+                              format('select public.admin_anticheat_set_mode(%L, %L)', n1, 'log')] loop
+    assert pg_temp.err(call) = 'root role required', call;
+  end loop;
+  assert pg_temp.err(format('select public.admin_anticheat_set_mode(%L, %L)', troot, 'off')) = 'invalid mode', 'no off mode (R2)';
+  assert pg_temp.err(format('select public.admin_anticheat_resolve(%L, %L, %L)', troot, p2, 'erase')) = 'invalid action', 'action';
+  assert not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname = '_ac_case'
+                       and has_function_privilege('anon', oid, 'execute')), '_ac_case is private';
+  r := public.admin_anticheat_set_mode(troot, 'enforce');
+  assert r = jsonb_build_object('mode', 'enforce', 'mode_changed_at', now()), format('set mode %s', r);
+  assert (select mode = 'enforce' and mode_changed_by = aroot from public.anticheat_config), 'recorded';
+end $$;
+
+do $$
+declare n2 text := (select v from smoke where k = 'n2'); p2 uuid := (select v from smoke where k = 'p2')::uuid;
+        troot text := (select v from smoke where k = 'troot'); room uuid := (select v from smoke where k = 'aroom')::uuid;
+        room2 uuid := (select v from smoke where k = 'aroom2')::uuid; r jsonb; a jsonb; h jsonb; c jsonb;
+begin
+  -- p2 holds xu, a fish, a record, rice, a catch line and a plot in each room, then strikes twice
+  perform pg_temp.set_coins(p2, 1230);
+  insert into public.fish (account_id, species_id, weight_g, price) values (p2, 'ca_loc', 900, 54);
+  insert into public.personal_bests (account_id, species_id, weight_g) values (p2, 'ca_loc', 900);
+  insert into public.rice_stock (account_id, variety, wet_kg, dry_kg) values (p2, 'short', 12, 30);
+  insert into public.chat_messages (room_id, account_id, username, body, system, about_account_id) values
+    (room, null, 'Ao cá', '[catch:' || p2 || '|ca_ho|39000] 🎣 x', true, p2),
+    (room, p2, 'x', 'tin nhắn thường', false, null);
+  perform public._field_init(room);
+  perform public._field_init(room2);
+  update public.field_plots set owner_id = p2, owned_at = now() - interval '1 day' where room_id in (room, room2) and plot_no = 2;
+  r := public.water(room, n2, 5, 5);
+  assert (r->'anticheat'->>'strike')::int = 1, 'strike 1';
+  update public.anticheat_status set locked_until = now() - interval '1 second' where account_id = p2;
+  r := public.water(room, n2, 5, 5);
+  assert (r->'anticheat'->>'strike')::int = 2 and (r->'anticheat'->>'banned')::boolean, 'strike 2';
+  assert pg_temp.err(format('select public.login(%L, %L)', (select username from public.accounts where id = p2), 'pw123456'))
+         = 'account banned', 'login refused';
+
+  -- the case, the preview and the evidence, newest first
+  a := public.admin_anticheat_account(troot, p2);
+  assert a->'case'->>'ban_state' = 'pending_wipe' and (a->'case'->>'active_strikes')::int = 2 and (a->'case'->>'strikes')::int = 2
+     and (a->'case'->>'hard_events')::int = 2 and (a->'case'->>'soft_events')::int = 0 and a->'case'->>'last_strike_code' = 'bad_water'
+     and a->'case'->'locked_until' = 'null' and (a->'case'->>'is_banned')::boolean, format('case %s', a->'case');
+  assert a->'holdings' = public._ac_holdings(p2) and jsonb_array_length(a->'holdings'->'plots') = 2, 'the preview';
+  assert jsonb_array_length(a->'events') = 2 and a->'events'->0->>'outcome' = 'strike_2' and a->'events'->1->>'outcome' = 'strike_1'
+     and a->'events'->0->'detail' = '{"plot": 5, "delta": 5}' and a->'events'->0->>'rpc' = 'water'
+     and a->'events'->0->>'room_id' = room::text and a->'wipes' = '[]', format('events %s', a->'events');
+
+  -- the wipe (§9.6)
+  h := public._ac_holdings(p2);
+  c := public.admin_anticheat_resolve(troot, p2, 'wipe');
+  assert c->>'ban_state' = 'wiped' and (c->>'wiped_at')::timestamptz = now() and c->>'account_id' = p2::text, format('wiped %s', c);
+  assert (select snapshot = h from public.anticheat_wipes where account_id = p2), 'the snapshot is the preview';
+  assert (select delta = -1230 and balance = 0 from public.coin_ledger where account_id = p2 and reason = 'wipe'), 'ledger';
+  assert not exists (select 1 from public.wallets where account_id = p2) and not exists (select 1 from public.fish where account_id = p2)
+     and not exists (select 1 from public.personal_bests where account_id = p2)
+     and not exists (select 1 from public.rice_stock where account_id = p2), 'data gone';
+  assert not exists (select 1 from public.chat_messages where about_account_id = p2)
+     and exists (select 1 from public.chat_messages where account_id = p2 and body = 'tin nhắn thường'), 'catch line gone, chat kept';
+  a := public.admin_anticheat_account(troot, p2);
+  assert a->'wipes'->0->>'wiped_by' = (select username from public.accounts where id = (select v from smoke where k = 'aroot')::uuid)
+     and a->'wipes'->0->'snapshot' = h, 'the wipe as the tab shows it';
+  assert pg_temp.err(format('select public.admin_anticheat_resolve(%L, %L, %L)', troot, p2, 'wipe')) = 'not pending', 'wiped once';
+  assert pg_temp.err(format('select public.admin_anticheat_resolve(%L, %L, %L)', troot, (select v from smoke where k = 'p1'), 'wipe'))
+         = 'not pending', 'nothing pending';
+  assert pg_temp.err(format('select public.admin_anticheat_resolve(%L, %L, %L)', troot, gen_random_uuid(), 'wipe')) = 'not pending',
+    'unknown account';
+  -- room 1 is swept now; room 2 is not
+  perform public._field_open(room, now());
+  assert (select owner_id is null from public.field_plots where room_id = room and plot_no = 2)
+     and (select owner_id = p2 from public.field_plots where room_id = room2 and plot_no = 2), 'released lazily';
+end $$;
+
+-- A later transaction: the pardon, and land bought after it.
+do $$
+declare p2 uuid := (select v from smoke where k = 'p2')::uuid; troot text := (select v from smoke where k = 'troot');
+        room uuid := (select v from smoke where k = 'aroom')::uuid; room2 uuid := (select v from smoke where k = 'aroom2')::uuid;
+        c jsonb; l record;
+begin
+  c := public.admin_anticheat_resolve(troot, p2, 'pardon');
+  assert c->'ban_state' = 'null' and not (c->>'is_banned')::boolean and (c->>'active_strikes')::int = 0
+     and (c->>'pardoned_at')::timestamptz = now() and c->'wiped_at' <> 'null', format('pardoned %s', c);
+  select * into l from public.login((select username from public.accounts where id = p2), 'pw123456');
+  assert (public.fishing_state(l.token)->>'coins')::int = 0 and public.fishing_state(l.token)->'fish' = '[]', 'back with zero data (R8)';
+  perform pg_temp.set_coins(p2, 801000);
+  perform public.buy_plot(room, l.token, 4);
+  assert (select owned_at > (select wiped_at from public.anticheat_status where account_id = p2)
+            from public.field_plots where room_id = room and plot_no = 4 and owner_id = p2), 'bought after the wipe';
+  insert into smoke values ('p2token', l.token);
+end $$;
+
+do $$
+declare p2 uuid := (select v from smoke where k = 'p2')::uuid; room uuid := (select v from smoke where k = 'aroom')::uuid;
+        room2 uuid := (select v from smoke where k = 'aroom2')::uuid;
+begin
+  perform public._field_open(room, now());
+  perform public._field_open(room2, now());
+  assert (select owner_id = p2 from public.field_plots where room_id = room and plot_no = 4), 'land bought after the pardon stays (R11)';
+  assert (select owner_id is null from public.field_plots where room_id = room2 and plot_no = 2), 'pre-wipe land is still released';
+end $$;
+
+do $$
+declare n3 text := (select v from smoke where k = 'n3'); p3 uuid := (select v from smoke where k = 'p3')::uuid;
+        p4 uuid := (select v from smoke where k = 'p4')::uuid; p5 uuid := (select v from smoke where k = 'p5')::uuid;
+        n6 text := (select v from smoke where k = 'n6'); p6 uuid := (select v from smoke where k = 'p6')::uuid;
+        troot text := (select v from smoke where k = 'troot'); c jsonb; r jsonb; bad int;
+begin
+  -- pardon while pending: unbanned, no strike, login works
+  perform pg_temp.flag(p3);
+  update public.anticheat_status set locked_until = null where account_id = p3;
+  perform pg_temp.flag(p3);
+  assert (pg_temp.status(p3)).ban_state = 'pending_wipe', 'p3 pending';
+  c := public.admin_anticheat_resolve(troot, p3, 'pardon');
+  assert c->'ban_state' = 'null' and (c->>'strikes')::int = 0 and not (c->>'is_banned')::boolean and c->'wiped_at' = 'null', 'pardon';
+  perform public.login((select username from public.accounts where id = p3), 'pw123456');
+  assert pg_temp.err(format('select public.admin_anticheat_resolve(%L, %L, %L)', troot, p3, 'pardon')) = 'nothing to pardon', 'twice';
+  -- the Accounts tab's unban of an anti-cheat ban is the pardon (R9); a manual ban stays a plain ban
+  perform pg_temp.flag(p4);
+  update public.anticheat_status set locked_until = null where account_id = p4;
+  perform pg_temp.flag(p4);
+  perform public.admin_set_ban(troot, p4, false);
+  assert not (select is_banned from public.accounts where id = p4)
+     and (select ban_state is null and strikes = 0 and pardoned_at = now() from public.anticheat_status where account_id = p4),
+    'admin_set_ban false = pardon';
+  perform public.admin_set_ban(troot, p5, true);
+  assert (select is_banned from public.accounts where id = p5) and not exists (select 1 from public.sessions where account_id = p5)
+     and not exists (select 1 from public.anticheat_status where account_id = p5), 'a manual ban';
+  assert pg_temp.err(format('select public.admin_anticheat_resolve(%L, %L, %L)', troot, p5, 'pardon')) = 'nothing to pardon',
+    'a manual ban is not the anti-cheat''s';
+  perform public.admin_set_ban(troot, p5, false);
+  assert not (select is_banned from public.accounts where id = p5), 'a manual unban';
+  -- the list: pending wipes first, then running locks, then by the last event
+  perform pg_temp.flag(p5);
+  update public.anticheat_status set locked_until = null where account_id = p5;
+  perform pg_temp.flag(p5);
+  r := public.water((select v from smoke where k = 'aroom')::uuid, n6, 5, 5);
+  assert (r->'anticheat'->>'strike')::int = 1, 'p6 locked';
+  r := public.admin_anticheat_list(troot);
+  assert r->>'mode' = 'enforce' and (r->>'server_now')::timestamptz = now() and r->>'mode_changed_at' is not null, 'list header';
+  assert exists (select 1 from jsonb_array_elements(r->'cases') x where x->>'account_id' = p6::text
+                   and (x->>'locked_until')::timestamptz = now() + interval '5 minutes' and (x->>'active_strikes')::int = 1),
+    'the locked case';
+  assert (select count(*) from jsonb_object_keys(r->'cases'->0)) = 16, 'sixteen keys a case';
+  select count(*) into bad from jsonb_array_elements(r->'cases') with ordinality a(x, i)
+    join jsonb_array_elements(r->'cases') with ordinality b(y, j) on j > i
+   where ((y->>'ban_state') = 'pending_wipe' and (x->>'ban_state') is distinct from 'pending_wipe')
+      or ((x->>'ban_state') is distinct from 'pending_wipe' and (y->>'ban_state') is distinct from 'pending_wipe'
+          and x->'locked_until' = 'null' and y->'locked_until' <> 'null');
+  assert bad = 0, format('%s cases out of order', bad);
+  -- back to log mode: running locks end, bans stay (R6)
+  r := public.admin_anticheat_set_mode(troot, 'log');
+  assert r->>'mode' = 'log' and (pg_temp.status(p6)).locked_until is null, 'the lock is lifted';
+  assert (select is_banned from public.accounts where id = p5) and (pg_temp.status(p5)).ban_state = 'pending_wipe', 'the ban stays';
+end $$;
+
+select 'anticheat admin smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql

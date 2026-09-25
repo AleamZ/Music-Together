@@ -1491,3 +1491,134 @@ begin
     'prices', public._fish_prices(p_room_id, now()));
 end; $$;
 grant execute on function public.fishing_board(uuid, text) to anon, authenticated;
+
+-- ---------- G. Admin (§10.5): root only, granted like the other admin_* RPCs ----------
+-- One case as the /admin tab lists it; null for an unknown account.
+create or replace function public._ac_case(p_account uuid) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'account_id', a.id, 'username', a.username, 'is_root', a.is_root, 'is_banned', a.is_banned,
+    'strikes', coalesce(s.strikes, 0),
+    'active_strikes', case when s.ban_state is not null then 2
+                           when s.strikes >= 1 and s.last_strike_at > now() - interval '30 days' then 1 else 0 end,
+    'last_strike_at', s.last_strike_at, 'last_strike_code', s.last_strike_code,
+    'locked_until', case when s.locked_until > now() then s.locked_until end,
+    'ban_state', s.ban_state, 'banned_at', s.banned_at, 'wiped_at', s.wiped_at, 'pardoned_at', s.pardoned_at,
+    'hard_events', (select count(*) from public.anticheat_events e where e.account_id = a.id and e.outcome <> 'soft'),
+    'soft_events', (select count(*) from public.anticheat_events e where e.account_id = a.id and e.outcome = 'soft'),
+    'last_event_at', (select max(e.created_at) from public.anticheat_events e where e.account_id = a.id))
+  from public.accounts a left join public.anticheat_status s on s.account_id = a.id
+  where a.id = p_account
+$$;
+revoke all on function public._ac_case(uuid) from public, anon, authenticated;
+
+-- The mode and the cases: pending wipes first, then running locks, then by the last event; at most 200.
+create or replace function public.admin_anticheat_list(p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.anticheat_config;
+begin
+  perform public._auth_root(p_session_token);
+  select * into c from public.anticheat_config where id;
+  return jsonb_build_object(
+    'mode', coalesce(c.mode, 'log'), 'mode_changed_at', c.mode_changed_at, 'server_now', now(),
+    'cases', coalesce((
+      select jsonb_agg(public._ac_case(x.account_id) order by x.pending desc, x.locked desc, x.last_event_at desc nulls last)
+        from (select s.account_id,
+                     coalesce(s.ban_state = 'pending_wipe', false) as pending,
+                     coalesce(s.locked_until > now(), false) as locked,
+                     (select max(e.created_at) from public.anticheat_events e where e.account_id = s.account_id) as last_event_at
+                from public.anticheat_status s
+               where s.strikes > 0 or s.ban_state is not null or s.locked_until > now() or s.pardoned_at is not null
+                  or exists (select 1 from public.anticheat_events e
+                              where e.account_id = s.account_id and e.created_at > now() - interval '90 days')
+               order by pending desc, locked desc, last_event_at desc nulls last
+               limit 200) x), '[]'::jsonb));
+end $$;
+
+-- One account: the case, what a wipe would remove now, the newest 300 events and the wipes with their snapshots.
+create or replace function public.admin_anticheat_account(p_session_token text, p_account_id uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._auth_root(p_session_token);
+  return jsonb_build_object(
+    'case', public._ac_case(p_account_id),
+    'holdings', public._ac_holdings(p_account_id),
+    'events', coalesce((
+      select jsonb_agg(jsonb_build_object('id', e.id, 'created_at', e.created_at, 'code', e.code, 'outcome', e.outcome,
+                                          'rpc', e.rpc, 'room_id', e.room_id, 'detail', e.detail, 'client', e.client,
+                                          'user_agent', e.user_agent) order by e.created_at desc, e.id desc)
+        from (select * from public.anticheat_events where account_id = p_account_id
+               order by created_at desc, id desc limit 300) e), '[]'::jsonb),
+    'wipes', coalesce((
+      select jsonb_agg(jsonb_build_object('id', w.id, 'wiped_at', w.wiped_at, 'wiped_by', a.username, 'snapshot', w.snapshot)
+                       order by w.wiped_at desc, w.id desc)
+        from public.anticheat_wipes w left join public.accounts a on a.id = w.wiped_by
+       where w.account_id = p_account_id), '[]'::jsonb));
+end $$;
+
+-- 'wipe' (§9.6: the wallet row, then the status row — R16) or 'pardon' (§9.7); the answer is the updated case.
+create or replace function public.admin_anticheat_resolve(p_session_token text, p_account_id uuid, p_action text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_root uuid := public._auth_root(p_session_token); s public.anticheat_status;
+begin
+  if p_action is null or p_action not in ('wipe', 'pardon') then
+    raise exception 'invalid action' using errcode = '22023';
+  end if;
+  if p_action = 'wipe' then
+    if not exists (select 1 from public.accounts where id = p_account_id) then
+      raise exception 'not pending' using errcode = '22023';
+    end if;
+    perform public._wallet_lock(p_account_id);
+    select * into s from public.anticheat_status where account_id = p_account_id for update;
+    if not found or s.ban_state is distinct from 'pending_wipe' then
+      raise exception 'not pending' using errcode = '22023';
+    end if;
+    perform public._ac_wipe(p_account_id, v_root);
+  else
+    perform public._ac_pardon(p_account_id, v_root);
+  end if;
+  return public._ac_case(p_account_id);
+end $$;
+
+-- log or enforce; switching to log lifts the running locks, bans stay (R6).
+create or replace function public.admin_anticheat_set_mode(p_session_token text, p_mode text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_root uuid := public._auth_root(p_session_token); c public.anticheat_config;
+begin
+  if p_mode is null or p_mode not in ('log', 'enforce') then
+    raise exception 'invalid mode' using errcode = '22023';
+  end if;
+  update public.anticheat_config set mode = p_mode, mode_changed_at = now(), mode_changed_by = v_root where id
+  returning * into c;
+  if p_mode = 'log' then
+    update public.anticheat_status set locked_until = null where locked_until > now();
+  end if;
+  return jsonb_build_object('mode', c.mode, 'mode_changed_at', c.mode_changed_at);
+end $$;
+
+-- The Accounts tab's unban of an anti-cheat ban is the pardon (R9); everything else as in 0005.
+create or replace function public.admin_set_ban(p_session_token text, p_account_id uuid, p_banned boolean)
+returns void language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_self uuid;
+begin
+  v_self := public._auth_root(p_session_token);
+  if p_account_id = v_self then raise exception 'cannot ban yourself' using errcode='42501'; end if;
+  if not p_banned and exists (select 1 from public.anticheat_status where account_id = p_account_id and ban_state is not null) then
+    perform public._ac_pardon(p_account_id, v_self);
+    return;
+  end if;
+  update public.accounts set is_banned = p_banned where id = p_account_id;
+  if p_banned then delete from public.sessions where account_id = p_account_id; end if;
+end; $$;
+
+grant execute on function public.admin_anticheat_list(text) to anon, authenticated;
+grant execute on function public.admin_anticheat_account(text, uuid) to anon, authenticated;
+grant execute on function public.admin_anticheat_resolve(text, uuid, text) to anon, authenticated;
+grant execute on function public.admin_anticheat_set_mode(text, text) to anon, authenticated;
+grant execute on function public.admin_set_ban(text, uuid, boolean) to anon, authenticated;
