@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { WORK_MS, type FarmController, type FarmWork } from "@/hooks/useFarmController";
 import { NOT_OPEN } from "@/lib/game/farm/messages";
+import { isTyping } from "@/lib/game/keys";
 import CoopPanel from "./CoopPanel";
 import DryingPanel from "./DryingPanel";
 import FarmShopPanel from "./FarmShopPanel";
@@ -11,20 +12,22 @@ import Handbook from "./Handbook";
 import PlotPanel from "./PlotPanel";
 import RiceDepotPanel from "./RiceDepotPanel";
 
-/** Transplanting or harvesting: a bar that fills in WORK_MS, and "Huỷ" (or Esc) before it is sent. */
-function WorkProgress({ work, onCancel }: { work: FarmWork; onCancel: () => void }) {
+/** Transplanting or harvesting: a bar that fills in WORK_MS, and "Huỷ" (or Esc) before it is sent. An Esc typed into a
+ *  text field, or one that closes an open panel, is not for the work (v13/v14 input rules). */
+function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen: boolean; onCancel: () => void }) {
   const [full, setFull] = useState(false);
   useEffect(() => {
     const raf = requestAnimationFrame(() => setFull(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  useEffect(() => {
+    if (panelOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape" && !isTyping(e.target)) onCancel();
     };
     window.addEventListener("keydown", onKey);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onCancel]);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panelOpen, onCancel]);
   return (
     <div className="pch absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5 p-2 font-vt text-xl" role="status">
       <span>{work.work === "transplant" ? `🌱 Đang cấy thửa ${work.plot}…` : `🌾 Đang gặt thửa ${work.plot}…`}</span>
@@ -41,7 +44,13 @@ function WorkProgress({ work, onCancel }: { work: FarmWork; onCancel: () => void
 
 /** The field on top of the world (spec §13): the banner before the migration, the work progress and the field's
  *  panels. */
-export default function FarmOverlays({ farm, me, onField }: { farm: FarmController; me: string; onField: boolean }) {
+export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
+  farm: FarmController;
+  me: string;
+  onField: boolean;
+  /** A panel or modal outside the field's own is open (the shell's, fishing's or the character editor): Esc is its. */
+  panelOpen?: boolean;
+}) {
   const { panel, closePanel, openPanel, busy, now } = farm;
   const { state, catalog, failed, notOpen, reload } = farm.data;
   const onReload = () => void reload();
@@ -51,7 +60,10 @@ export default function FarmOverlays({ farm, me, onField }: { farm: FarmControll
       {onField && notOpen && (
         <p className="pch pointer-events-none absolute left-1/2 top-28 z-10 -translate-x-1/2 px-3 py-1.5 text-center font-vt text-xl">{NOT_OPEN}</p>
       )}
-      {farm.work && <WorkProgress key={farm.work.startedAt} work={farm.work} onCancel={farm.cancelWork} />}
+      {farm.work && (
+        // the field's own tasks panel and handbook can open from the HUD while the work runs
+        <WorkProgress key={farm.work.startedAt} work={farm.work} panelOpen={panelOpen || panel !== null} onCancel={farm.cancelWork} />
+      )}
       {panel?.kind === "plot" && (
         <PlotPanel no={panel.plot} state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act}
           onOpenHandbook={(tab) => openPanel({ kind: "handbook", tab })} onReload={onReload} onClose={closePanel} />

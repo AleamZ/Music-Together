@@ -49,6 +49,26 @@ describe("FarmOverlays", () => {
     expect(farm.cancelWork).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps working on an Esc typed into a text field", () => {
+    const farm = controller({ work: { plot: 5, work: "transplant", startedAt: 1 } });
+    render(<><input aria-label="Chat" /><FarmOverlays farm={farm} me="me" onField /></>);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Chat" }), { key: "Escape" });
+    expect(farm.cancelWork).not.toHaveBeenCalled();
+  });
+
+  it("keeps working on an Esc that closes another panel", () => {
+    const farm = controller({ work: { plot: 5, work: "harvest", startedAt: 1 } });
+    const { rerender } = render(<FarmOverlays farm={farm} me="me" onField panelOpen />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(farm.cancelWork).not.toHaveBeenCalled();
+    // the field's own panel: 🌾 Việc đồng áng stays live in the HUD while the work runs
+    const tasks = controller({ work: farm.work, panel: { kind: "tasks" }, cancelWork: farm.cancelWork });
+    rerender(<FarmOverlays farm={tasks} me="me" onField />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(tasks.closePanel).toHaveBeenCalledTimes(1);
+    expect(farm.cancelWork).not.toHaveBeenCalled();
+  });
+
   it("opens the panel the controller names and wires its actions", () => {
     const coop = controller({ panel: { kind: "coop" } });
     const { rerender } = render(<FarmOverlays farm={coop} me="me" onField />);

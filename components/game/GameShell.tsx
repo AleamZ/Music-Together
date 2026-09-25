@@ -320,7 +320,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       )}
 
       <FishingOverlays fishing={fishing} />
-      <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} />
+      <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panel !== null || fishing.panel !== null || creating} />
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
         <HudChatBar

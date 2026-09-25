@@ -4,14 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { FISH_ICONS } from "@/lib/game/art/fish";
 import { RARITY_COLOR, type Rarity } from "@/lib/game/fishing/catalog";
 import { createReel, fishFloor, stepReel, zoneHeight, type ReelParams } from "@/lib/game/fishing/reel";
+import { isTyping } from "@/lib/game/keys";
 
 /** An unknown rarity (the bobber does not reveal it) shows a grey fish. */
 const UNKNOWN = "#6b6f74";
 const SILHOUETTE = FISH_ICONS.ca_ro.rows;
-
-/** A key typed into a text field is not a game key (spec §12); the same test as the engine's. */
-const isTyping = (t: EventTarget | null): boolean =>
-  t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
 
 /** A fish shape in one colour (16 × 16). */
 function FishSilhouette({ color }: { color: string }) {
