@@ -193,9 +193,9 @@ tests/sql/anticheat-smoke.sql, tests/sql/anticheat-guards.sql
 | Class | Code points |
 |---|---|
 | **C** controls | `\u0001-\u001f\u007f-\u009f` |
-| **S** odd spaces | `   -     　` |
-| **Z** invisible and format | `­͏؜ᅟᅠ឴឵᠋-᠏​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ￰-￿\U000e0000-\U000e0fff` |
-| **M** combining marks (names only) | `̀-ͯ᪰-᫿᷀-᷿⃐-⃿︠-︯` |
+| **S** odd spaces | `\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000` |
+| **Z** invisible and format | `\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000e0000-\U000e0fff` |
+| **M** combining marks (names only) | `\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f` |
 
 **Helpers** (private, revoked):
 - `_name_norm(t text) returns text`, `immutable`:
@@ -354,8 +354,8 @@ When `v_day = 300`, it logs the soft signal `cast_daily_cap` (§7.4).
 | `bad_qty` | `buy_farm_item`, after the kind check | `p_qty` null or outside 1–99 | `invalid quantity` | `FarmShopPanel` `n` ∈ [1, min(`ITEM_CAP` − held, affordable)] through `Stepper`. |
 | `bad_qty` | `sell_rice` | `p_kg` null or < 1, or `p_dry` null | `invalid quantity` | `RiceDepotPanel` `n` ∈ [1, stock] and "Bán hết" sends the stock (≥ 1). `dry` is a boolean. |
 | `bad_qty` | `dry_start` | `p_kg` null or < 1 | `invalid quantity` | `DryingPanel` `n` ∈ [1, wet stock]; it only lists varieties with wet stock > 0. |
-| `bad_price` | `list_plot`, `set_sublease` | a non-null price outside 1–1 000 000 / 1–5 000 | `invalid price` | `CoopPanel` sends only prices that pass `toPrice` → `priceRefusal` → `priceOk`. `LandButton` stays disabled unless the refusal is null, including "" and "0". |
-| `bad_price` | `offer_plot` | the price is null, or outside 1–1 000 000 | `invalid price` | as above; an offer always carries a price |
+| `bad_price` | `list_plot`, `set_sublease` | a non-null price outside 1–5 000 000 / 1–100 000 (the economy spec's caps) | `invalid price` | `CoopPanel` sends only prices that pass `toPrice` → `priceRefusal` → `priceOk`. `LandButton` stays disabled unless the refusal is null, including "" and "0". |
+| `bad_price` | `offer_plot` | the price is null, or outside 1–5 000 000 | `invalid price` | as above; an offer always carries a price |
 | `foreign_offer` | `withdraw_offer` | the id is an offer **of this room** whose buyer is someone else | `offer not found` | The panel offers "Rút" only for `mine.my_offers`. A replaced offer gets a new id (`0013` `_farm_do_offer`), so an old id never points at someone else's offer. |
 | `foreign_offer` | `decline_offer`, `accept_offer` | the id is an offer **of this room** on a plot the caller does not own | decline `offer not found`, accept `not your plot` | The panel offers these only for `mine.incoming_offers`. Every change of owner deletes the plot's offers in the same transaction: `_land_sale`, `_farm_do_buy_plot`, `_farm_do_sell_to_village`, the reclaim in the sweep and the release in §9.6. The check runs before the sweep, and a pending sweep still shows the old owner. |
 
@@ -974,6 +974,7 @@ Re-running is safe:
 4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `critter_sell`.
 5. **Wider honest inputs widen the hard check.** A migration that widens the range of honest inputs widens the matching hard check in the same migration, and ships before its client.
 6. **Every later smoke run ends with `tests/sql/anticheat-guards.sql`.** The dynamic loop in that file gains the new game RPCs.
+7. **Re-running `0013` after `0015` undoes the guards.** `0013` re-creates the game RPCs and the `coin_ledger` reason check without the anti-cheat parts. After any re-run of `0013`, run `0015` again right away. On a database that has already seen a wipe, `0013`'s reason check (without `'wipe'`) fails, so add `'wipe'` to its list first. Later migrations follow the same order: `0013` → `0015` → the rest.
 
 ### 11.4 Pre-deploy checks (owner, in the SQL editor, before running `0015`)
 
@@ -982,8 +983,8 @@ Re-running is safe:
 select id, username, created_at from public.accounts
  where regexp_replace(lower(extensions.unaccent(normalize(username, NFC))), '[^a-z0-9]+', '', 'g')
        in ('aoca','hoptacxa','hethong','quantri','quantrivien','admin','root','system')
-    or username ~ '[\u0001-\u001f\u007f-\u009f   -     　­͏؜ᅟᅠ឴឵᠋-᠏​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ￰-￿\U000e0000-\U000e0fff]'
-    or normalize(username, NFC) ~ '[̀-ͯ᪰-᫿᷀-᷿⃐-⃿︠-︯]'
+    or username ~ '[\u0001-\u001f\u007f-\u009f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000e0000-\U000e0fff]'
+    or normalize(username, NFC) ~ '[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]'
     or char_length(username) not between 2 and 24
  order by created_at;
 -- 2. Author-less announcer lines: the backfill marks the well-formed ones as system lines.
@@ -1263,7 +1264,7 @@ Honest senders stay far below these budgets:
 
 **Run twice:**
 1. Replay `0004`…`0013` (with D1), then `0014` if it has been merged, then `0015`.
-2. Run `v14-smoke.sql`, `v15-smoke.sql` and `anticheat-smoke.sql`. The existing smokes' accounts (`smoke14_a_…`, 19 characters) pass the new name rules.
+2. Run `v15-smoke.sql` and `anticheat-smoke.sql` (and `lyrics-lockdown-smoke.sql` once, when `0014` is applied). `v14-smoke.sql` runs right after `0012` only: since the fish price index (economy spec §5) a catch's price carries the room's factor, so its price check no longer holds after `0013`. The existing smokes' accounts (`smoke14_a_…`, 19 characters) pass the new name rules.
 3. Replay `0015` again, and run `anticheat-smoke.sql` and `v15-smoke.sql` again.
 
 Each phase sets the mode explicitly, so a second run passes too. The house style applies: `\set ON_ERROR_STOP on`, `pg_temp.err(sql)`, and `assert` in `do` blocks.
