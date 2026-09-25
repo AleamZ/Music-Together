@@ -13,14 +13,18 @@ export const HANDBOOK_TABS: ReadonlyArray<[HandbookTab, string]> = [
 
 export interface HandbookSection { title: string; lines: string[] }
 
-const h = (x: number) => `${Math.round(x)}`;
+// The hour marks stay inside the model's windows, whose edges scale with the variety (lúa thơm top-dresses at
+// 2.3–11.5 h): a window's start rounds up and its end or deadline rounds down, so acting at a printed hour is never
+// early or late.
+const start = (x: number) => `${Math.ceil(x)}`;
+const end = (x: number) => `${Math.floor(x)}`;
 
 /** The hour marks of a season for one variety (hours after transplanting unless said). */
 function timings(v: Variety): string {
   const s = v.scale;
-  return `${v.name}: cấy khi mạ ${h(8 * s)}–${h(14 * s)} giờ tuổi · bón thúc ${h(2 * s)}–${h(10 * s)} giờ sau cấy · `
-    + `phơi ruộng ${h(14 * s)}–${h(18 * s)} · đón đòng ${h(18 * s)}–${h(24 * s)} · rút nước từ ${h(40 * s)} · `
-    + `chín ${h(48 * s)} giờ sau cấy (~${ripeAfterHours(v)} giờ từ lúc ngâm).`;
+  return `${v.name}: cấy khi mạ ${start(8 * s)}–${end(14 * s)} giờ tuổi · bón thúc ${start(2 * s)}–${end(10 * s)} giờ sau cấy · `
+    + `phơi ruộng ${start(14 * s)}–${end(18 * s)} · đón đòng ${start(18 * s)}–${end(24 * s)} · rút nước từ ${start(40 * s)} · `
+    + `chín ${start(48 * s)} giờ sau cấy (~${ripeAfterHours(v)} giờ từ lúc ngâm).`;
 }
 
 export function handbookPage(tab: HandbookTab, varieties: readonly Variety[]): HandbookSection[] {
