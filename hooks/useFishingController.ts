@@ -9,7 +9,7 @@ import {
   BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NOT_LOADED, promptText as promptFor, saleText, SONG_BONUS,
 } from "@/lib/game/fishing/messages";
 import { fetchFishingBoard, type FishingBoard } from "@/lib/game/fishing/rpc";
-import { baitTotal, castWaitMin, digWaitSec, handFish, type Loadout } from "@/lib/game/fishing/state";
+import { baitTotal, castWaitMin, dayCapped, digWaitSec, handFish, type Loadout } from "@/lib/game/fishing/state";
 import type { Interactable } from "@/lib/game/maps/types";
 import type { QueueItem } from "@/lib/supabase";
 
@@ -129,11 +129,12 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     }, SONG_BONUS_DELAY_MS);
   }, [currentId, currentMine, reload, later]);
 
-  // --- a clock for the prompts while a cooldown or the hourly cap runs
+  // --- a clock for the prompts while a cooldown, the hourly cap or the daily cap runs
   const [now, setNow] = useState<number | null>(null);
   const digRunning = !!state?.digReadyAt && (now === null || Date.parse(state.digReadyAt) > now);
   const capRunning = !!state && castWaitMin(state, now ?? 0) > 0;
-  const ticking = digRunning || capRunning;
+  const dayRunning = !!state && dayCapped(state, now ?? 0);
+  const ticking = digRunning || capRunning || dayRunning;
   useEffect(() => {
     if (!ticking) return;
     const tick = () => setNow(serverNow());

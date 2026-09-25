@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock("@/lib/supabase", () => ({ supabase: { rpc: h.rpc, from: h.from } }));
 
+import { AnticheatError, subscribeAnticheat, type AnticheatEvent } from "@/lib/anticheat";
 import { actionCall, buyFarmItem, claimFarmGift, fetchFarmCatalog, fetchFieldState, fieldAction, sellRice } from "@/lib/game/farm/rpc";
 
 const FIELD = {
@@ -91,5 +92,27 @@ describe("account RPCs", () => {
     expect(h.rpc).toHaveBeenLastCalledWith("buy_farm_item", { p_session_token: "tok", p_item_id: "fert_npk", p_qty: 3 });
     h.rpc.mockResolvedValue({ data: { gifted: true, server_now: "2026-09-25T10:00:00+00:00", mine: MINE }, error: null });
     expect((await claimFarmGift("tok")).gifted).toBe(true);
+  });
+});
+
+describe("the anti-cheat envelope (anti-cheat spec §12.1)", () => {
+  it("throws an AnticheatError for an envelope, reports a strike, and reports a lock", async () => {
+    const events: AnticheatEvent[] = [];
+    const off = subscribeAnticheat((e) => events.push(e));
+    const envelope = { code: "bad_water", strike: 0, error: "invalid quantity", locked_until: null, banned: false, server_now: "2026-10-02T10:15:00+00:00" };
+    h.rpc.mockResolvedValueOnce({ data: { anticheat: envelope }, error: null });
+    const err = await fieldAction("r", "tok", { kind: "water", plot: 7, delta: 1 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AnticheatError);
+    expect(err).toMatchObject({ message: "invalid quantity", info: { code: "bad_water", strike: 0 } });
+    expect(events).toEqual([]);
+    h.rpc.mockResolvedValueOnce({
+      data: { anticheat: { ...envelope, code: "bad_qty", strike: 1, locked_until: "2026-10-02T10:20:00+00:00" } }, error: null,
+    });
+    await expect(sellRice("tok", "nep", true, 0)).rejects.toBeInstanceOf(AnticheatError);
+    expect(events).toMatchObject([{ kind: "strike", info: { code: "bad_qty", strike: 1 } }]);
+    h.rpc.mockResolvedValueOnce({ data: null, error: { message: "account locked", details: "60", hint: "anticheat" } });
+    await expect(claimFarmGift("tok")).rejects.toMatchObject({ message: "account locked" });
+    expect(events[1]).toEqual({ kind: "lock", until: expect.any(Number), code: null });
+    off();
   });
 });

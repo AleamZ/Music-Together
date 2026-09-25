@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   boughtText, durationText, farmErrorMessage, harvestText, isMissingRpc, PEST_NAME, PEST_REMEDY, PHASE_NAME, riceSaleText, riceSummary,
 } from "@/lib/game/farm/messages";
+import { AnticheatError } from "@/lib/anticheat";
 
 describe("farmErrorMessage", () => {
   it("maps the server's errors to the spec's Vietnamese (§11.7)", () => {
@@ -30,6 +31,13 @@ describe("farmErrorMessage", () => {
     expect(m("invalid session")).toBe("Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.");
     expect(m("boom")).toBe("Có lỗi, thử lại nhé.");
     expect(farmErrorMessage(new TypeError("Failed to fetch"))).toBe("Có lỗi, thử lại nhé.");
+  });
+  it("tells a locked account how long the lock runs, and reads a strike-0 envelope as its refusal (anti-cheat §13)", () => {
+    expect(farmErrorMessage({ message: "account locked", details: "125", hint: "anticheat" }))
+      .toBe("🔒 Tài khoản đang bị tạm khoá vì thao tác bất thường — còn 2 phút 5 giây.");
+    const info = { code: "bad_price", strike: 0 as const, error: "invalid price", lockedUntil: null, banned: false, serverNow: null };
+    expect(farmErrorMessage(new AnticheatError(info))).toBe("Số không hợp lệ.");
+    expect(farmErrorMessage({ message: "account banned" })).toBe("Tài khoản đã bị khoá.");
   });
   it("recognises a database without the v15 functions", () => {
     expect(isMissingRpc({ code: "PGRST202", message: "Could not find the function public.field_state in the schema cache" })).toBe(true);

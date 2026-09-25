@@ -1,3 +1,4 @@
+import { lockSeconds, lockText } from "@/lib/anticheat";
 import type { PestKind, Phase } from "./state";
 
 // The farm's Vietnamese texts (spec §8, §11.7, §13): names, durations, toasts and the RPC errors. Pure.
@@ -87,6 +88,7 @@ export function farmErrorMessage(err: unknown, itemName?: string): string {
     case "invalid quantity":
     case "invalid price": return "Số không hợp lệ.";
     case "too fast": return TOO_FAST;
+    case "account locked": return lockText(lockSeconds(err) ?? 300);
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";
   if (msg.includes("account banned")) return "Tài khoản đã bị khoá.";

@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock("@/lib/supabase", () => ({ supabase: { rpc: h.rpc, from: h.from } }));
 
-import { fetchFishingBoard, fetchFishingCatalog, finishCast, fishingErrorMessage, sellFish, startCast } from "@/lib/game/fishing/rpc";
+import { AnticheatError, subscribeAnticheat, type AnticheatEvent } from "@/lib/anticheat";
+import {
+  buyItem, fetchFishingBoard, fetchFishingCatalog, finishCast, fishingErrorMessage, sellFish, startCast,
+} from "@/lib/game/fishing/rpc";
 
 const STATE = {
   coins: 5, loadout: { rod: "rod_wood", bobber: "bobber_feather", bait: "bait_worm" }, owned: [],
@@ -106,6 +109,49 @@ describe("RPC wrappers", () => {
   });
 });
 
+describe("the anti-cheat envelope (anti-cheat spec §12.1)", () => {
+  const envelope = (strike: 0 | 1 | 2) => ({
+    code: "bad_qty", strike, error: "invalid quantity", locked_until: strike === 1 ? "2026-10-02T10:20:00+00:00" : null,
+    banned: strike === 2, server_now: "2026-10-02T10:15:00+00:00",
+  });
+  const events: AnticheatEvent[] = [];
+  let off = () => {};
+  beforeEach(() => {
+    events.length = 0;
+    off = subscribeAnticheat((e) => events.push(e));
+  });
+  afterEach(() => off());
+
+  it("throws an AnticheatError for every strike, and reports strikes 1 and 2", async () => {
+    for (const strike of [0, 1, 2] as const) {
+      h.rpc.mockResolvedValueOnce({ data: { anticheat: envelope(strike) }, error: null });
+      const err = await buyItem("tok", "bait_shrimp", 500).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AnticheatError);
+      expect(err).toMatchObject({ message: "invalid quantity", info: { code: "bad_qty", strike } });
+    }
+    expect(events.map((e) => (e.kind === "strike" ? e.info.strike : null))).toEqual([1, 2]);
+  });
+
+  it("returns the lost answer of finish_cast with its envelope", async () => {
+    h.rpc.mockResolvedValueOnce({
+      data: { result: "lost", why: "too_early", state: STATE, anticheat: { ...envelope(1), code: "reel_too_fast", error: null } },
+      error: null,
+    });
+    expect(await finishCast("tok", "c1", true)).toMatchObject({
+      result: "lost", why: "too_early", anticheat: { code: "reel_too_fast", strike: 1, error: null },
+    });
+    expect(events).toHaveLength(1);
+    h.rpc.mockResolvedValueOnce({ data: { result: "lost", why: "gave_up", state: STATE }, error: null });
+    expect(await finishCast("tok", "c1", false)).toMatchObject({ result: "lost", why: "gave_up", anticheat: null });
+  });
+
+  it("reports the lock of an account locked refusal, then throws it", async () => {
+    h.rpc.mockResolvedValueOnce({ data: null, error: { message: "account locked", details: "125", hint: "anticheat" } });
+    await expect(sellFish("tok", ["x"])).rejects.toMatchObject({ message: "account locked" });
+    expect(events).toEqual([{ kind: "lock", until: expect.any(Number), code: null }]);
+  });
+});
+
 describe("fishingErrorMessage", () => {
   it("translates every server message", () => {
     const t = (message: string, details?: string) => fishingErrorMessage({ message, details });
@@ -125,5 +171,12 @@ describe("fishingErrorMessage", () => {
     expect(t("account banned")).toBe("Tài khoản đã bị khoá.");
     expect(t("account is not a member of this room")).toBe("Bạn không còn ở trong phòng này.");
     expect(fishingErrorMessage(new TypeError("Failed to fetch"))).toBe("Có lỗi, thử lại nhé.");
+  });
+  it("tells a locked account how long the lock runs, and a capped angler to come back tomorrow (anti-cheat §13)", () => {
+    expect(fishingErrorMessage({ message: "account locked", details: "125", hint: "anticheat" }))
+      .toBe("🔒 Tài khoản đang bị tạm khoá vì thao tác bất thường — còn 2 phút 5 giây.");
+    expect(fishingErrorMessage({ message: "daily cast limit", details: "3600" })).toBe("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!");
+    const info = { code: "bad_qty", strike: 0 as const, error: "invalid quantity", lockedUntil: null, banned: false, serverNow: null };
+    expect(fishingErrorMessage(new AnticheatError(info))).toBe("Món này không mua được.");
   });
 });

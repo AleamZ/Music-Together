@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
+import { AnticheatError, type AnticheatInfo } from "@/lib/anticheat";
 import { clockOffset } from "@/lib/game/farm/clock";
 import { parseFarmMine, parseFieldState, type FieldState } from "@/lib/game/farm/state";
 
@@ -90,6 +91,26 @@ describe("useField", () => {
     expect(onError).toHaveBeenCalledWith("Không đủ xu.");
     await flush();
     expect(result.current.state?.mine.coins).toBe(7);
+  });
+
+  it("shows no toast for a strike but fetches again; a strike-0 envelope toasts its refusal (anti-cheat §12.1)", async () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() => useField("r", "tok", true, onError));
+    await flush();
+    rpc.fetchFieldState.mockClear();
+    const info = (strike: 0 | 1 | 2, error: string): AnticheatInfo => ({
+      code: "bad_plot", strike, error, lockedUntil: null, banned: strike === 2, serverNow: null,
+    });
+    rpc.fieldAction.mockRejectedValueOnce(new AnticheatError(info(1, "invalid plot")));
+    await act(async () => { expect(await result.current.run({ kind: "rent", plot: 11 })).toBeNull(); });
+    rpc.buyFarmItem.mockRejectedValueOnce(new AnticheatError(info(2, "invalid quantity")));
+    await act(async () => { expect(await result.current.buyItem("fert_urea", 100)).toBeNull(); });
+    await flush();
+    expect(onError).not.toHaveBeenCalled();
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(2);
+    rpc.fieldAction.mockRejectedValueOnce(new AnticheatError(info(0, "invalid price")));
+    await act(async () => { await result.current.run({ kind: "list", plot: 1, price: 0 }); });
+    expect(onError).toHaveBeenCalledWith("Số không hợp lệ.");
   });
 
   it("keeps the newest answer when answers overtake each other", async () => {

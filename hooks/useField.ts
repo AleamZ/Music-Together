@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnticheatError } from "@/lib/anticheat";
 import type { FarmCatalog } from "@/lib/game/farm/catalog";
 import { syncClock } from "@/lib/game/farm/clock";
 import { farmErrorMessage, isMissingRpc } from "@/lib/game/farm/messages";
@@ -131,7 +132,8 @@ export function useField(roomId: string, token: string, active: boolean, onError
     }, FP_GATHER_MS);
   }, [reload]);
 
-  /** Run an RPC and apply its answer. On error: toast, refetch, null. */
+  /** Run an RPC and apply its answer. On error: toast, refetch, null. A strike shows no toast: the warning or the ban
+   *  modal shows instead (anti-cheat §12.1). */
   const call = useCallback(async <T,>(job: () => Promise<T>, keep: (n: number, r: T) => void, itemName?: string): Promise<T | null> => {
     const n = ++seq.current;
     try {
@@ -140,7 +142,7 @@ export function useField(roomId: string, token: string, active: boolean, onError
       return r;
     } catch (err) {
       if (isMissingRpc(err)) setNotOpen(true);
-      onErrorRef.current(farmErrorMessage(err, itemName));
+      if (!(err instanceof AnticheatError && err.info.strike >= 1)) onErrorRef.current(farmErrorMessage(err, itemName));
       void reload();
       return null;
     }

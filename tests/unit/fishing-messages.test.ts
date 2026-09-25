@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { blockerText, castRefusal, dailyText, digText, digWaitText, lostText, promptText, saleText } from "@/lib/game/fishing/messages";
+import {
+  blockerText, castRefusal, DAILY_LIMIT_TEXT, dailyText, digText, digWaitText, lostText, promptText, saleText,
+} from "@/lib/game/fishing/messages";
 import { parseFishingState, type FishingState } from "@/lib/game/fishing/state";
 import type { Interactable } from "@/lib/game/maps/types";
 
@@ -22,6 +24,8 @@ describe("fishing texts", () => {
     expect(blockerText("bucket_full", 0)).toBe("Xô đầy rồi — ra vựa bán bớt nhé!");
     expect(blockerText("cast_limit", 25)).toBe("Câu nhiều quá rồi, nghỉ tay chút nhé (còn 25 phút).");
     expect(blockerText("cast_limit", 0)).toBe("Câu nhiều quá rồi, nghỉ tay chút nhé (còn 1 phút).");
+    expect(blockerText("daily_limit", 0)).toBe("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!");
+    expect(DAILY_LIMIT_TEXT).toBe("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!");
   });
 });
 
@@ -36,6 +40,14 @@ describe("promptText", () => {
     const spot = it_("fish_spot", "Quăng cần");
     expect(promptText(spot, S, NOW)).toBe("Quăng cần");
     expect(promptText(spot, withS({ castsLeft: 0 }), NOW)).toBe("Nghỉ tay — còn 30 phút");
+  });
+  it("tells an angler at the daily cap that today is over (anti-cheat §12.4)", () => {
+    const spot = it_("fish_spot", "Quăng cần");
+    const capped = withS({ castsTodayLeft: 0, dayResetsAt: "2026-09-24T17:00:00Z" });
+    expect(promptText(spot, capped, NOW)).toBe("Hết lượt câu hôm nay");
+    expect(promptText(spot, { ...capped, castsLeft: 0 }, NOW)).toBe("Nghỉ tay — còn 30 phút");
+    expect(promptText(spot, capped, Date.parse("2026-09-24T17:00:00Z"))).toBe("Quăng cần");
+    expect(castRefusal({ ...capped, bait: { bait_worm: 1 } }, false, NOW, false)).toBe("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!");
   });
   it("leaves other prompts and an unknown state alone", () => {
     expect(promptText(it_("depot", "Bán cá · cô Ba"), S, NOW)).toBe("Bán cá · cô Ba");

@@ -1,3 +1,4 @@
+import { AnticheatError, screenAnswer } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
 import { FARM_KINDS, farmItemFromRow, varietyFromRow, type FarmCatalog, type FarmItemRow, type VarietyRow } from "./catalog";
 import { parseFarmMine, parseFieldState, type FarmMine, type FieldState } from "./state";
@@ -28,9 +29,12 @@ export function fetchFarmCatalog(): Promise<FarmCatalog> {
   return catalogPromise;
 }
 
+/** An RPC's answer; a flagged answer (anti-cheat §9.1) throws an AnticheatError. */
 async function call(fn: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await supabase.rpc(fn, args);
+  const flagged = screenAnswer(data, error);
   if (error) throw error;
+  if (flagged) throw new AnticheatError(flagged);
   return (data ?? {}) as Record<string, unknown>;
 }
 
