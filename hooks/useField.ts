@@ -8,13 +8,13 @@ import {
   buyFarmItem, claimFarmGift, fetchFarmCatalog, fetchFieldState, fieldAction, sellRice,
   type FieldAction, type FieldAnswer, type MineAnswer,
 } from "@/lib/game/farm/rpc";
-import { withMine, type FieldState } from "@/lib/game/farm/state";
+import { withMine, type FarmMine, type FieldState } from "@/lib/game/farm/state";
 
 export interface FieldData {
   /** null until the first field_state answer. */
   state: FieldState | null;
   catalog: FarmCatalog | null;
-  /** field_state failed: the panels show FIELD_FAILED with a reload button. */
+  /** field_state or the catalog failed: the panels show FIELD_FAILED with a reload button. */
   failed: boolean;
   /** Migration 0013 is not run: the field shows the NOT_OPEN banner. */
   notOpen: boolean;
@@ -45,50 +45,66 @@ function newest(applied: { current: number }, n: number): boolean {
 export function useField(roomId: string, token: string, active: boolean, onError: (text: string) => void): FieldData {
   const [state, setState] = useState<FieldState | null>(null);
   const [catalog, setCatalog] = useState<FarmCatalog | null>(null);
-  const [failed, setFailed] = useState(false);
+  // The panels need both the field and the catalog: either one failing offers the reload button (`failed`).
+  const [fieldFailed, setFieldFailed] = useState(false);
+  const [catalogFailed, setCatalogFailed] = useState(false);
   const [notOpen, setNotOpen] = useState(false);
   const onErrorRef = useRef(onError);
   useEffect(() => {
     onErrorRef.current = onError;
   });
-  // Answers can overtake each other: only an answer to a call started after the last applied one is kept.
+  // Answers can overtake each other: only an answer to a call started after the last applied one is kept. The field
+  // and the account part count apart: sell_rice, buy_farm_item and claim_farm_gift answer with the account part only,
+  // so they must not make a field_state that is still on its way look old.
   const seq = useRef(0);
-  const applied = useRef(0);
+  const fieldAt = useRef(0);
+  const mineAt = useRef(0);
+  /** The account part of the last account-only answer applied. */
+  const lastMine = useRef<FarmMine | null>(null);
   const apply = useCallback((n: number, s: FieldState) => {
     syncClock(s.serverNow);
-    if (!newest(applied, n)) return;
-    setState(s);
-    setFailed(false);
+    if (!newest(fieldAt, n)) return;
+    // An account answer to a later call has landed: its account part is newer than this answer's, so it stays.
+    const newer = newest(mineAt, n) ? null : lastMine.current;
+    setState(newer ? withMine(s, newer) : s);
+    setFieldFailed(false);
     setNotOpen(false);
   }, []);
   const applyMine = useCallback((n: number, r: MineAnswer) => {
     syncClock(r.serverNow);
-    if (newest(applied, n)) setState((s) => s && withMine(s, r.mine));
+    if (!newest(mineAt, n)) return;
+    lastMine.current = r.mine;
+    setState((s) => s && withMine(s, r.mine));
   }, []);
 
   const mounted = useRef(false);
   const catalogLoaded = useRef(false);
-  const loadCatalog = useCallback(() => {
-    fetchFarmCatalog().then((c) => {
-      if (!mounted.current) return;
-      catalogLoaded.current = true;
-      setCatalog(c);
-    }).catch(() => {});
-  }, []);
+  const loadCatalog = useCallback(() => fetchFarmCatalog().then((c) => {
+    if (!mounted.current) return;
+    catalogLoaded.current = true;
+    setCatalog(c);
+    setCatalogFailed(false);
+  }, () => {
+    // Another reload may have loaded it meanwhile.
+    if (mounted.current && !catalogLoaded.current) setCatalogFailed(true);
+  }), []);
 
   const reload = useCallback(async () => {
-    if (!catalogLoaded.current) loadCatalog();
+    // The catalog comes along until it has loaded, so the next reload fetches a failed one again.
+    const catalogDone = catalogLoaded.current ? null : loadCatalog();
     const n = ++seq.current;
     try {
       const s = await fetchFieldState(roomId, token);
       apply(n, s);
       return s;
     } catch (err) {
-      if (n >= applied.current) {
+      if (n >= fieldAt.current) {
         if (isMissingRpc(err)) setNotOpen(true);
-        else setFailed(true);
+        else setFieldFailed(true);
       }
       return null;
+    } finally {
+      await catalogDone; // the reload is done when the catalog is
     }
   }, [roomId, token, apply, loadCatalog]);
 
@@ -131,7 +147,7 @@ export function useField(roomId: string, token: string, active: boolean, onError
   }, [reload]);
 
   return {
-    state, catalog, failed, notOpen, reload, plotChanged,
+    state, catalog, failed: fieldFailed || catalogFailed, notOpen, reload, plotChanged,
     run: useCallback((a: FieldAction, itemName?: string) =>
       call(() => fieldAction(roomId, token, a), (n, r) => apply(n, r.state), itemName), [call, apply, roomId, token]),
     sellRice: useCallback((variety: string, dry: boolean, kg: number) =>

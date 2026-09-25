@@ -61,6 +61,19 @@ describe("useField", () => {
     expect(result.current).toMatchObject({ failed: false, notOpen: false, state: { mine: { coins: 100 } } });
   });
 
+  it("offers the reload while the catalog has not loaded, and fetches it again with the next reload", async () => {
+    rpc.fetchFarmCatalog.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const { result } = renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    expect(result.current).toMatchObject({ catalog: null, failed: true, state: { mine: { coins: 100 } } });
+    rpc.fieldAction.mockResolvedValueOnce({ state: field(90), harvest: null });
+    await act(async () => { await result.current.run({ kind: "rent", plot: 5 }); });
+    expect(result.current.failed).toBe(true); // a field answer does not bring the catalog
+    await act(async () => { await result.current.reload(); });
+    expect(result.current).toMatchObject({ catalog: CATALOG, failed: false });
+    expect(rpc.fetchFarmCatalog).toHaveBeenCalledTimes(2);
+  });
+
   it("applies an action's answer; on error it toasts the Vietnamese text and fetches again", async () => {
     const onError = vi.fn();
     const { result } = renderHook(() => useField("r", "tok", true, onError));
@@ -90,6 +103,41 @@ describe("useField", () => {
     await act(async () => { await result.current.run({ kind: "prepare", plot: 1 }); });
     await act(async () => { slow(field(1)); await reloading; });
     expect(result.current.state?.mine.coins).toBe(300);
+  });
+
+  it("keeps a field answer that an account answer overtook, with the newer account part", async () => {
+    const { result } = renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    let slow!: (s: FieldState) => void;
+    rpc.fetchFieldState.mockReturnValueOnce(new Promise((resolve) => { slow = resolve; }));
+    let reloading!: Promise<unknown>;
+    act(() => { reloading = result.current.reload(); }); // an fp's refetch, waiting behind the plot locks
+    rpc.buyFarmItem.mockResolvedValueOnce({ serverNow: NOW, mine: parseFarmMine({ items: { urea: 2 }, coins: 60 })! });
+    await act(async () => { await result.current.buyItem("urea", 2); });
+    const planted = field(100);
+    planted.plots[0] = { ...planted.plots[0], farmer: { id: "lan", name: "Lan" } };
+    await act(async () => { slow(planted); await reloading; });
+    expect(result.current.state?.plots[0].farmer).toEqual({ id: "lan", name: "Lan" });
+    expect(result.current.state?.mine).toMatchObject({ coins: 60, items: { urea: 2 } });
+  });
+
+  it("shows the first field, or its failure, even when an account answer overtook it", async () => {
+    let answer!: { resolve: (s: FieldState) => void; reject: (e: unknown) => void };
+    const pending = () => new Promise<FieldState>((resolve, reject) => { answer = { resolve, reject }; });
+    rpc.fetchFieldState.mockReturnValueOnce(pending());
+    const { result } = renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    rpc.claimFarmGift.mockResolvedValueOnce({ serverNow: NOW, mine: parseFarmMine({ coins: 1100, gift_claimed: true })!, gifted: true });
+    await act(async () => { await result.current.claimGift(); });
+    await act(async () => { answer.reject(new Error("down")); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current).toMatchObject({ state: null, failed: true });
+    rpc.fetchFieldState.mockReturnValueOnce(pending());
+    let reloading!: Promise<unknown>;
+    act(() => { reloading = result.current.reload(); });
+    rpc.buyFarmItem.mockResolvedValueOnce({ serverNow: NOW, mine: parseFarmMine({ items: { urea: 1 }, coins: 1050, gift_claimed: true })! });
+    await act(async () => { await result.current.buyItem("urea", 1); });
+    await act(async () => { answer.resolve(field(100)); await reloading; });
+    expect(result.current).toMatchObject({ failed: false, state: { mine: { coins: 1050, items: { urea: 1 }, giftClaimed: true } } });
   });
 
   it("puts the account part of sell_rice, buy_farm_item and claim_farm_gift into the field", async () => {
