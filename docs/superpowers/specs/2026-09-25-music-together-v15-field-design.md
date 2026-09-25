@@ -381,7 +381,7 @@ kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mp
 | `qT`, `qH` | transplant and harvest quality; always 1.0 in v15.1 (the server ignores the reported value, D1) |
 
 **Two implementations of one formula:**
-- The server computes the yield at harvest (`_crop_yield(crop, p_now)`).
+- The server computes the yield at harvest (`_crop_yield(crop, variety, land, q_harvest, p_now)`).
 - `lib/game/farm/crop.ts` implements the same formula for the plot panel's **estimate**. The estimate cannot count hidden pests; the panel labels it "ước tính".
 - A shared fixture set (§17) pins both implementations to the same numbers.
 
@@ -406,7 +406,7 @@ kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mp
 
 ### 8.9 Handbook — Sổ tay nhà nông
 
-A parchment modal with six tabs, all static Vietnamese text in `lib/game/farm/messages.ts`:
+A parchment modal with six tabs, all static Vietnamese text in `lib/game/farm/handbook.ts`:
 
 1. **Quy trình**: the 11 steps with times per variety.
 2. **Phân bón**: the §8.4 table in plain words.
@@ -495,11 +495,13 @@ All new tables have RLS on and no policies, except the config tables, which get 
 | `_field_sweep(room, p_now)` | §7.7 |
 | `_farmer(room, plot, p_now)` | the farmer (§7.1) |
 | `_farm_count(room, account, p_now)` | the farming limit |
+| `_field_open(room, p_now)` | `_field_init`, then locks the room's 10 plot rows `for update` in plot order, then `_field_sweep` |
 | `_water_at(log, t)` | the water level at time t |
-| `_phase(crop, variety, p_now)` | the phase (§8.2) |
-| `_pests(crop, variety, p_now)` | revealed pests with their active hours |
-| `_care(crop, variety)` | the top-dress scores and the excess-N flag |
-| `_crop_yield(crop, variety, land_mult, p_now)` | §8.6 |
+| `_crop_phase(crop, variety, t)` | the phase (§8.2) |
+| `_crop_pests(crop, variety, p_now)` | the revealed pests: kind, since and when treated |
+| `_pest_hours(crop, pest, p_until)` | a pest's damaging hours |
+| `_crop_care(crop, variety)` | the base and top-dress scores, phơi ruộng and the excess-N flag |
+| `_crop_yield(crop, variety, land, q_harvest, p_now)` | §8.6 |
 | `_plot_view(room, plot, viewer, p_now)` | the public JSON of one plot, plus the private log when the viewer is its farmer |
 | `_field_view(room, viewer, p_now)` | the full `field_state` JSON (§11.5) |
 | `_farm_do_*(…, p_now)` | one per action: the logic, with `p_now` injected |
@@ -508,7 +510,7 @@ Every public RPC is a thin wrapper that passes `now()`.
 
 ### 11.3 Public RPCs
 
-All are SECURITY DEFINER with `grant execute … to anon, authenticated`. Every mutating RPC takes the wallet lock first (v14 `_wallet_lock`) and locks the plot row `for update`. Each returns `field_state` JSON unless noted.
+All are SECURITY DEFINER with `grant execute … to anon, authenticated`. `field_state` and every land and farm RPC lock the plots first: `_field_open` locks the room's 10 plot rows `for update`, and only then are wallets locked (v14 `_wallet_lock`), so a sale that pays the other party cannot deadlock with that party's own field call. `sell_rice`, `buy_farm_item` and `claim_farm_gift` take the wallet lock only. Each returns `field_state` JSON unless noted.
 
 **Room and field:**
 - `touch_room(p_room_id, p_session_token)` → void.
@@ -637,7 +639,7 @@ After an error the client refetches `field_state`, as in v14.
 - **Channel:** `game:{roomId}:field`, one channel per map, as in v14.
 - **`fp` {t, id, p}:** "plot p changed", with `p = 0` meaning the drying yard or offers.
   - Sent after every successful land or farm action.
-  - Receivers debounce it by 400 ms, then refetch `field_state`.
+  - Receivers gather it: the first `fp` of a burst starts a 400 ms timer, then one refetch of `field_state` follows. Later `fp`s in that window add nothing.
   - Rendered state always comes from the server.
 - **`fa` {t, id, a}:** a farm animation code, played for 2.5 s. `a = 0` stops it.
   - Codes: 1 transplant, 2 harvest, 3 pump, 4 spray, 5 fertilize, 6 grab a crab, 7 pick snails, 8 prepare.

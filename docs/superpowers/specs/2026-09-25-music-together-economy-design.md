@@ -41,8 +41,8 @@ In 0013 these are literals in the `_farm_do_*` functions. They are mirrored in `
 | What | Old | New | SQL | TS constant |
 |---|---|---|---|---|
 | Village rent (96 h) | 250 | **10 000** | `_farm_do_rent`: the balance check, `_pay`, the lease `price` | `RENT_PRICE` |
-| Private plot | 4 000 | **800 000** | `_farm_do_buy`: balance check, `_pay` | `PLOT_PRICE` |
-| Sell-back to the village, and the reclaim refund | 2 000 | **400 000** | `_farm_do_sell_to_village`; the reclaim refund in `_field_open` | `SELL_BACK_PRICE` |
+| Private plot | 4 000 | **800 000** | `_farm_do_buy_plot`: balance check, `_pay` | `PLOT_PRICE` |
+| Sell-back to the village, and the reclaim refund | 2 000 | **400 000** | `_farm_do_sell_to_village`; the reclaim refund in `_field_sweep` | `SELL_BACK_PRICE` |
 | Sublease price | 1–5 000 | **1–100 000** | `_farm_do_set_sublease`, the `field_plots.sublease_price` check | `SUBLEASE_MAX` |
 | Sale listing and offer price | 1–1 000 000 | **1–5 000 000** | `_farm_do_list`, `_farm_do_offer`, the checks on `field_plots.sale_price` and `land_offers.price` | `SALE_MAX` |
 

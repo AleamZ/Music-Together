@@ -69,6 +69,10 @@ on conflict (id) do update set
   kind = excluded.kind, name = excluded.name, price = excluded.price, starter = excluded.starter,
   sort_order = excluded.sort_order, variety = excluded.variety, fert = excluded.fert, pest_target = excluded.pest_target;
 
+-- The config tables are read-only for the API roles. Supabase's default privileges give them every right on a new table,
+-- and TRUNCATE ignores RLS. Select stays.
+revoke insert, update, delete, truncate on public.rice_varieties, public.shop_items from anon, authenticated;
+
 alter table public.coin_ledger drop constraint if exists coin_ledger_reason_check;
 alter table public.coin_ledger add constraint coin_ledger_reason_check
   check (reason in ('daily','song','sell','buy','rent','land_buy','land_sell','land_refund','lease_pay','lease_income',

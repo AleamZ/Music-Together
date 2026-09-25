@@ -592,6 +592,11 @@ begin
     assert not has_table_privilege('anon', 'public.' || f, 'select'), f;
   end loop;
   assert has_table_privilege('anon', 'public.rice_varieties', 'select'), 'varieties are public config';
+  foreach f in array array['rice_varieties', 'shop_items'] loop
+    assert has_table_privilege('anon', 'public.' || f, 'select') and has_table_privilege('authenticated', 'public.' || f, 'select')
+       and not has_table_privilege('anon', 'public.' || f, 'insert, update, delete, truncate')
+       and not has_table_privilege('authenticated', 'public.' || f, 'insert, update, delete, truncate'), f || ' is read-only';
+  end loop;
 end $$;
 
 select 'v15 farm smoke ok' as result;
@@ -673,6 +678,9 @@ begin
   assert exists (select 1 from public.field_plots where owner_id = a1) and exists (select 1 from public.rice_stock)
      and exists (select 1 from public.farm_profiles), 'the old build''s state is there';
 end $$;
+-- Supabase's default privileges give the API roles every right on a new table (TRUNCATE ignores RLS); this cluster has
+-- none, so grant them here: the re-run must take the writes on the config tables back.
+grant insert, update, delete, truncate on public.rice_varieties, public.shop_items to anon, authenticated;
 set client_min_messages = warning;
 \i supabase/migrations/0013_v15_field.sql
 reset client_min_messages;
@@ -687,6 +695,9 @@ begin
   assert not exists (select 1 from public.inventory i join public.shop_items s on s.id = i.item_id
                       where s.kind in ('seed', 'fertilizer', 'pesticide', 'critter_box')), 'no farm items left';
   assert exists (select 1 from public.inventory where account_id = a1 and item_id = 'rod_bamboo'), 'fishing gear stays';
+  assert not exists (select 1 from unnest(array['anon', 'authenticated']) r, unnest(array['public.rice_varieties', 'public.shop_items']) tb
+                      where has_table_privilege(r, tb, 'insert, update, delete, truncate'))
+     and has_table_privilege('anon', 'public.shop_items', 'select'), 'the config tables are read-only again';
 end $$;
 
 -- a normal re-run (seed_short at 600) keeps the v15 state

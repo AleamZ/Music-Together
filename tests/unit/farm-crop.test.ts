@@ -8,9 +8,9 @@ import type { PestKind, PestView } from "@/lib/game/farm/state";
 import fixtures from "@/tests/fixtures/crop-cases.json";
 
 const V: Record<string, Variety> = Object.fromEntries([
-  { id: "short", name: "Lúa ngắn ngày", scale: 0.9, base_kg: 90, price_per_kg: 12, blast_mult: 1, sort_order: 10 },
-  { id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 18, blast_mult: 1, sort_order: 20 },
-  { id: "thom", name: "Lúa thơm", scale: 1.15, base_kg: 60, price_per_kg: 26, blast_mult: 1.3, sort_order: 30 },
+  { id: "short", name: "Lúa ngắn ngày", scale: 0.9, base_kg: 90, price_per_kg: 710, blast_mult: 1, sort_order: 10 },
+  { id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 950, blast_mult: 1, sort_order: 20 },
+  { id: "thom", name: "Lúa thơm", scale: 1.15, base_kg: 60, price_per_kg: 1350, blast_mult: 1.3, sort_order: 30 },
 ].map((r) => [r.id, varietyFromRow(r)]));
 
 interface Case {
