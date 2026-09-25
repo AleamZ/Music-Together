@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dueTasks, fertAdvice, plotActions, type PlotAction } from "@/lib/game/farm/actions";
+import { dueTasks, fertAdvice, plotActions, plotPrompt, type PlotAction } from "@/lib/game/farm/actions";
 import { farmItemFromRow, varietyFromRow, type FarmCatalog } from "@/lib/game/farm/catalog";
 import { HOUR_MS, type CropModel } from "@/lib/game/farm/crop";
 import type { CropView, FarmMine, PestView, PlotView } from "@/lib/game/farm/state";
@@ -122,5 +122,22 @@ describe("dueTasks", () => {
     ]);
     const ripe = plot(crop({ sowAt: at(3), transplantAt: at(12) }, [[0, 3], [52, 1]]));
     expect(dueTasks([ripe], "me", [nep], at(70))).toEqual([{ plot: 5, text: "Thửa 5 · Gặt — còn 2 giờ", urgent: true }]);
+  });
+});
+
+describe("plotPrompt", () => {
+  const prompt = (p: PlotView, h: number) => plotPrompt(p, "me", nep, CATALOG, ALL, at(h));
+  it("names my next job on a plot I farm", () => {
+    expect(prompt(plot(null), 0)).toBe("Làm đất thửa 5");
+    expect(prompt(plot(crop({ soakAt: null, variety: null })), 0)).toBe("Ngâm giống thửa 5");
+    expect(prompt(plot(crop({}, [[0, 3], [2.75, 1]])), 3)).toBe("Gieo mạ thửa 5");
+    expect(prompt(plot(crop({ sowAt: at(3), transplantAt: at(12) })), 20)).toBe("Xem thửa 5");
+  });
+  it("says whose plot it is otherwise", () => {
+    const lan = { id: "lan", name: "Lan" };
+    expect(prompt(plot(null, { farmer: lan }), 0)).toBe("Xem thửa 5 (của Lan)");
+    expect(prompt(plot(null, { farmer: null, lease: null }), 0)).toBe("Xem thửa 5 (đất trống)");
+    expect(prompt(plot(null, { no: 2, kind: "private", farmer: null, lease: null }), 0)).toBe("Xem thửa 2 (đất bán)");
+    expect(prompt(plot(null, { no: 2, kind: "private", owner: lan, farmer: null, lease: null }), 0)).toBe("Xem thửa 2 (của Lan)");
   });
 });

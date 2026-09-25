@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { durationText, farmErrorMessage, harvestText, isMissingRpc, PEST_NAME, PEST_REMEDY, PHASE_NAME } from "@/lib/game/farm/messages";
+import {
+  boughtText, durationText, farmErrorMessage, harvestText, isMissingRpc, PEST_NAME, PEST_REMEDY, PHASE_NAME, riceSaleText,
+} from "@/lib/game/farm/messages";
 
 describe("farmErrorMessage", () => {
   it("maps the server's errors to the spec's Vietnamese (§11.7)", () => {
@@ -53,5 +55,11 @@ describe("names and texts", () => {
   });
   it("tells the harvest", () => {
     expect(harvestText(70, "Nếp")).toBe("🌾 Gặt được 70 kg nếp (lúa ướt) — đem phơi rồi bán cho cô Út nhé!");
+  });
+  it("tells a purchase and a rice sale", () => {
+    expect(boughtText("Phân urê", 1)).toBe("🛒 Đã mua Phân urê.");
+    expect(boughtText("Giống nếp", 3)).toBe("🛒 Đã mua Giống nếp × 3.");
+    expect(riceSaleText(120, "Lúa thơm", true, 3120)).toBe("💰 Bán 120 kg lúa thơm khô được 3.120 xu.");
+    expect(riceSaleText(10, "Nếp", false, 126)).toBe("💰 Bán 10 kg nếp ướt được 126 xu.");
   });
 });

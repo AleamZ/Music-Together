@@ -39,6 +39,14 @@ export function harvestText(kg: number, varietyName: string): string {
   return `🌾 Gặt được ${kg} kg ${varietyName.toLowerCase()} (lúa ướt) — đem phơi rồi bán cho cô Út nhé!`;
 }
 
+export function boughtText(itemName: string, qty: number): string {
+  return `🛒 Đã mua ${itemName}${qty > 1 ? ` × ${qty}` : ""}.`;
+}
+
+export function riceSaleText(kg: number, varietyName: string, dry: boolean, earned: number): string {
+  return `💰 Bán ${kg} kg ${varietyName.toLowerCase()} ${dry ? "khô" : "ướt"} được ${earned.toLocaleString("vi-VN")} xu.`;
+}
+
 /** Vietnamese toast text for a farm RPC error (spec §11.7). `itemName` names the item a "no item" error is about. */
 export function farmErrorMessage(err: unknown, itemName?: string): string {
   const e = (err && typeof err === "object" ? err : {}) as { message?: unknown };

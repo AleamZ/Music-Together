@@ -125,6 +125,21 @@ export function plotActions(p: PlotView, me: string, v: Variety | null, catalog:
   return out;
 }
 
+/** The jobs a plot's prompt can name, by action key (before the ":"). */
+const PROMPT_JOB: Record<string, string> = {
+  pick: "Bắt ốc", prepare: "Làm đất", soak: "Ngâm giống", sow: "Gieo mạ", transplant: "Cấy lúa", harvest: "Gặt lúa",
+};
+
+/** A plot's HUD prompt (spec §13.2): my next job there ("Gieo mạ thửa 3"), else whose plot it is ("Xem thửa 5 (của Lan)"). */
+export function plotPrompt(p: PlotView, me: string, v: Variety | null, catalog: FarmCatalog, mine: FarmMine, now: number): string {
+  if (p.farmer?.id === me) {
+    const job = plotActions(p, me, v, catalog, mine, now).map((a) => (a.enabled ? PROMPT_JOB[a.key.split(":")[0]] : undefined)).find(Boolean);
+    return job ? `${job} thửa ${p.no}` : `Xem thửa ${p.no}`;
+  }
+  const who = p.farmer ?? p.owner;
+  return `Xem thửa ${p.no} (${who ? `của ${who.name}` : p.kind === "private" ? "đất bán" : "đất trống"})`;
+}
+
 /** What is due on the plots I farm (spec §13.1): urgent tasks first, then by plot. */
 export function dueTasks(plots: readonly PlotView[], me: string, varieties: readonly Variety[], now: number): FarmTask[] {
   const out: FarmTask[] = [];
