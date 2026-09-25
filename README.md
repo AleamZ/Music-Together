@@ -256,3 +256,27 @@ The server decides the species, weight, rarity and bite delay of every cast; all
 ### Realtime budget (v14)
 
 Each map has its own Broadcast channel `game:{roomId}:{mapId}`, so a room split across the hall and the pond costs N_hall² + N_pond² deliveries instead of N². A cast sends at most four `fs` messages (cast, bite, reel, end), and selling or releasing a fish adds one. A normal cast cycle takes about 6 s or more, so an angler averages at most about 0.7 messages/s and typically about 0.1. That average is not a hard bound, because giving up and recasting is faster; the hard limits are 40 casts an hour and the send gate's 3 messages/s. A map switch costs one presence track, taken from the same budget as view-mode changes (at most 4 per 30 s), and a rare+ catch costs one chat insert.
+
+## v15: Đồng ruộng — ruộng lúa và đất đai
+
+### DB migration
+
+`supabase/migrations/0013_v15_field.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop … if exists`, seeds with `on conflict … do update`): run it in the Supabase SQL Editor after `0012`. It adds `rice_varieties` (3 varieties, public read) and 11 farm items in `shop_items` (the `kind` check gains `seed`, `fertilizer`, `pesticide` and `critter_box`); `members.last_seen_at`; the private tables `field_plots` (10 plots per room, made the first time anyone opens the field), `plot_leases`, `land_offers`, `crops`, `drying_slots`, `rice_stock` and `farm_profiles`, which only the RPCs touch; and the RPCs `field_state`, `touch_room`, the land RPCs (`rent_plot`, `buy_plot`, `sell_plot_to_village`, `list_plot`, `buy_listed_plot`, `offer_plot`, `withdraw_offer`, `decline_offer`, `accept_offer`, `set_sublease`, `rent_sublease`, `abandon_crop`), the farming RPCs (`prepare_plot`, `apply_fertilizer`, `soak_seed`, `sow_seed`, `begin_work`, `transplant`, `water`, `spray`, `pick_snails`, `harvest`), `dry_start`, `dry_collect`, `sell_rice`, `buy_farm_item` and `claim_farm_gift`. It also limits `buy_item` to fishing gear and adds `server_now` to the fishing state. `tests/sql/v15-smoke.sql` checks all of it on a throwaway PostgreSQL cluster (run `psql` from the repo root: it reads `tests/fixtures/crop-cases.json`).
+
+> **Deploy order:** apply `0013` to the hosted database **before** the v15 client goes live. A v15 client against a database without it shows the field with the banner "Đồng ruộng chưa mở — chủ phòng cần chạy migration 0013."; the hall, the pond and fishing keep working. Older clients never see the field (their presence says hall or pond) and ignore its `fp` / `fa` messages.
+
+### What's new in v15 (15.1 "Ruộng lúa")
+
+- **🌾 Đồng ruộng:** the hall's **Ra đồng** sign and the pond's **Cầu khỉ ra đồng** lead to one shared field per room: 4 private plots north of the canal, 6 village plots south of it, the **Hợp tác xã** (chú Tám), the **Tiệm vật tư** (anh Hai), the **Vựa lúa** (cô Út) and the drying yard. The chip at the top shows **🌾 Đồng N**.
+- **Land:** rent a village plot for 250 xu a 4-day season (harvesting ends the lease), or buy one private plot per room for 4 000 xu (+10 % yield, no rent); nobody farms more than 2 plots. Owners list a plot for sale, sublet it for a season, accept or decline purchase offers, or sell it back to the village for 2 000 xu. A plot whose owner leaves the room or stays away 14 days is reclaimed with a 2 000 xu refund. Sales between players are announced in the chat by **Hợp tác xã**.
+- **Rice:** a real wet-rice season in 2–3 days, in 3 varieties: prepare the plot, base-fertilize, soak, sow the seedbed, transplant, top-dress twice, dry the field, keep the water right (it drops a level every 12 h), treat golden apple snails, leaf folders, planthoppers and blast, drain, harvest, dry the grain on the yard (3 h) and sell it to cô Út (wet rice pays 70 %). The server rolls the pests secretly and computes the yield; the plot panel shows the next job, why a button is disabled and a yield estimate. **🌾 Việc đồng áng** lists what is due on your plots (a dot counts the urgent tasks) and **📖 Sổ tay nhà nông** explains every step.
+- **Newcomers** get a bag of Giống lúa ngắn ngày and a bag of urea from chú Tám on their first visit.
+- The fishing prompts now count down on the server's clock.
+
+### Trust model (v15)
+
+The server decides every time and phase, the water levels, the pests (rolled at sowing and hidden until they fire), the yield, all prices, and land ownership, leases and reclaims. A client reports only the transplant and harvest quality, clamped to [0.9, 1.1] behind a 2 s work gate (always 1.0 in 15.1), so a modified client gains at most 10 %. As in v14, where a player stands is not verified, and the plots' look and the farm animations come from each client's own copy of the field state.
+
+### Realtime budget (v15)
+
+The field has its own channel `game:{roomId}:field`. After a land or farm action the client sends at most two messages, `fa` (a 2.5 s animation) and `fp` (a plot changed); everyone on the field then fetches `field_state` once, 400 ms after the first `fp` of a burst. Farm actions are minutes apart, so that stays well under one RPC a minute per person. `touch_room` is one call per room visit.

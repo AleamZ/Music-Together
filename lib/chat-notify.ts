@@ -1,6 +1,6 @@
 import type { ChatMessage } from "@/lib/chat";
 import { cleanNotificationText } from "@/lib/chat-helpers";
-import { parseCatchAnnouncement } from "@/lib/game/fishing/announce";
+import { parseAnnouncement, parseCatchAnnouncement } from "@/lib/game/fishing/announce";
 
 /** Pure: messages that are unseen AND authored by someone other than the viewer
  *  (a null author — e.g. a deleted account — counts as "other"). In order.
@@ -13,7 +13,8 @@ export function newFromOthers(
   );
 }
 
-/** Pure: a message's desktop-notification text — the readable part of a catch announcement, else the cleaned body. */
+/** Pure: a message's desktop-notification text — the readable part of a server announcement (a catch, a land sale),
+ *  else the cleaned body. */
 export function notificationText(m: ChatMessage): string {
-  return parseCatchAnnouncement(m)?.text ?? cleanNotificationText(m.body);
+  return parseAnnouncement(m)?.text ?? cleanNotificationText(m.body);
 }

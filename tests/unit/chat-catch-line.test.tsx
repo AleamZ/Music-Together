@@ -31,6 +31,11 @@ describe("ChatMessageItem — catch announcements", () => {
     renderItem(msg({}), false);
     expect(screen.queryByTitle("Xóa tin nhắn")).toBeNull();
   });
+  it("shows a land sale by the co-op as a system line too", () => {
+    renderItem(msg({ username: "Hợp tác xã", body: "[land:3] 🏡 Lan đã mua thửa 3 của Dat với giá 8.500 xu." }), false);
+    expect(screen.getByText("🏡 Lan đã mua thửa 3 của Dat với giá 8.500 xu.")).toBeInTheDocument();
+    expect(screen.queryByTitle("Trả lời tin nhắn")).toBeNull();
+  });
   it("renders a member typing the prefix as a normal message", () => {
     renderItem(msg({ account_id: ACC, username: "Dat" }), false);
     expect(screen.getByTitle("Trả lời tin nhắn")).toBeInTheDocument();

@@ -37,6 +37,11 @@ describe("newFromOthers", () => {
 });
 
 describe("notificationText", () => {
+  it("shows the readable part of a land sale", () => {
+    const sale: ChatMessage = { id: "l", room_id: "r", account_id: null, username: "Hợp tác xã", body: "[land:3] 🏡 Lan đã mua thửa 3 của Dat với giá 8.500 xu.", created_at: "l" };
+    expect(notificationText(sale)).toBe("🏡 Lan đã mua thửa 3 của Dat với giá 8.500 xu.");
+    expect(newFromOthers([sale], new Set(), ME).map((m) => m.id)).toEqual(["l"]);
+  });
   it("shows the readable part of a catch announcement", () => {
     expect(notificationText(catchMsg("1", OTHER))).toBe("🎣 Dat vừa câu được Cá tra 3,2 kg (Hiếm)!");
   });

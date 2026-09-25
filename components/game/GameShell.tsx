@@ -141,12 +141,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     }
   }, [messages]);
 
-  // --- rare catches the server announced in the chat (my own catch shows the catch card instead)
+  // --- rare catches and land sales the server announced in the chat (my own catch shows the catch card instead)
   const announcedRef = useRef(new Set<string>());
   useEffect(() => {
     for (const { id, announcement } of freshAnnouncements(messages, announcedRef.current, Date.now())) {
       announcedRef.current.add(id);
-      if (announcement.accountId !== accountId) showToast(announcement.text);
+      if (announcement.kind !== "catch" || announcement.accountId !== accountId) showToast(announcement.text);
     }
   }, [messages, accountId, showToast]);
 

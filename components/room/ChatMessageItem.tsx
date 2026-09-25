@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { ChatMessage } from "@/lib/chat";
 import { parseChatMessageBody, MENTION_REGEX } from "@/lib/chat-helpers";
-import { parseCatchAnnouncement } from "@/lib/game/fishing/announce";
+import { parseAnnouncement } from "@/lib/game/fishing/announce";
 import type { Member, Room } from "@/lib/supabase";
 
 interface ChatMessageItemProps {
@@ -36,8 +36,9 @@ export default function ChatMessageItem({
   onMentionUser,
 }: ChatMessageItemProps) {
   const isMe = !!message.account_id && message.account_id === currentAccountId;
-  // A rare catch posted by the server (v14): a system line — no avatar, no reply; the room admin may still delete it.
-  const announcement = useMemo(() => parseCatchAnnouncement(message), [message]);
+  // A rare catch (v14) or a land sale (v15) posted by the server: a system line — no avatar, no reply; the room admin
+  // may still delete it.
+  const announcement = useMemo(() => parseAnnouncement(message), [message]);
 
   // Find member info for role badges
   const member = members.find((m) => m.account_id === message.account_id);
