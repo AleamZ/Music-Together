@@ -125,6 +125,13 @@ describe("DryingPanel", () => {
     render(<DryingPanel state={full} catalog={CATALOG} failed={false} me="me" busy={false} now={NOW} onAct={noop} onReload={noop} onClose={noop} />);
     expect(screen.getByRole("button", { name: "Sân phơi đã đầy" })).toBeDisabled();
   });
+  it("offers a reload when the catalog failed", () => {
+    const onReload = vi.fn();
+    render(<DryingPanel state={STATE} catalog={null} failed me="me" busy={false} now={NOW} onAct={noop} onReload={onReload} onClose={noop} />);
+    expect(screen.queryByText(/chưa có lúa ướt/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "🔄 Tải lại" }));
+    expect(onReload).toHaveBeenCalled();
+  });
 });
 
 describe("CoopPanel", () => {

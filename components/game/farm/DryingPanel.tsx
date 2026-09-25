@@ -32,7 +32,7 @@ export default function DryingPanel({ state, catalog, failed, me, busy, now, onA
   return (
     <ParchmentModal title="☀️ Sân phơi lúa" onClose={onClose}>
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
-        {!state ? (
+        {!state || !catalog ? (
           <FieldStatus failed={failed} onReload={onReload} />
         ) : (
           <>
