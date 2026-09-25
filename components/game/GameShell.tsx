@@ -5,6 +5,7 @@ import ChatDrawer from "@/components/room/ChatDrawer";
 import MemberList from "@/components/room/MemberList";
 import RoomChartModal from "@/components/room/RoomChartModal";
 import SettingsDialog from "@/components/room/SettingsDialog";
+import { useAnticheat } from "@/hooks/useAnticheat";
 import { useChat } from "@/hooks/useChat";
 import { useFarmController } from "@/hooks/useFarmController";
 import { useFishingController } from "@/hooks/useFishingController";
@@ -26,6 +27,8 @@ import type { Look } from "@/lib/game/types";
 import { mapCounts } from "@/lib/presence-modes";
 import type { RoomDerived } from "@/lib/room-derived";
 import { getCategoryLabel } from "@/lib/sponsorblock";
+import AnticheatChip from "./AnticheatChip";
+import AnticheatModal from "./AnticheatModal";
 import CharacterEditor from "./CharacterEditor";
 import FarmOverlays from "./farm/FarmOverlays";
 import { FarmTasksButton } from "./farm/FarmTasks";
@@ -168,8 +171,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   });
   const { interact: farmInteract, promptText: farmPrompt } = farm;
 
-  // --- input is off while any panel, the farm work or the create editor is open
-  const blocking = panel !== null || fishing.panel !== null || farm.panel !== null || farm.work !== null || creating;
+  // --- anti-cheat: the warning or the ban after a strike, and the lock's countdown (anti-cheat spec §12.1)
+  const anticheat = useAnticheat();
+
+  // --- input is off while any panel, the farm work, the create editor or an anti-cheat modal is open
+  const blocking = panel !== null || fishing.panel !== null || farm.panel !== null || farm.work !== null || creating
+    || anticheat.modal !== null;
   useEffect(() => {
     canvasRef.current?.setInputEnabled(!blocking);
   }, [blocking]);
@@ -270,6 +277,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               onReload={() => void fishing.data.reload()}
               riceLine={map.id === "field" && farm.data.state ? riceSummary(farm.data.state.mine.rice) : null}
             />
+            <AnticheatChip secondsLeft={anticheat.secondsLeft} />
           </div>
         </div>
         <MapCounts counts={counts} />
@@ -361,6 +369,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {creating && (
         <CharacterEditor mode="create" initial={DEFAULT_LOOK} token={token} onSaved={onSaved} onClose={onExitGame} onBackToClassic={onExitGame} />
       )}
+      {anticheat.modal && <AnticheatModal kind={anticheat.modal} reason={anticheat.reason} onClose={anticheat.dismiss} />}
     </div>
   );
 }
