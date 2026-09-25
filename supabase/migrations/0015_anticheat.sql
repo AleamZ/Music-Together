@@ -723,7 +723,8 @@ end; $$;
 
 -- finish_cast is 0013 section H's, which prices the catch with the room's fish price index. A won reel reported before
 -- the time gate is the hard reel_too_fast (§7.2): still the lost answer, plus the envelope.
--- A catch within 5 % of the gate counts a gate hug (§7.4). The catch line is a system line about the catcher (§6.1).
+-- A catch reported less than 1.05 × min_reel_ms after the bite (the gate is 0.9 ×) counts a gate hug (§7.4). The catch
+-- line is a system line about the catcher (§6.1).
 create or replace function public.finish_cast(p_session_token text, p_cast_id uuid, p_success boolean) returns jsonb
 language plpgsql security definer set search_path = public, extensions
 as $$
