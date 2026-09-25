@@ -46,7 +46,7 @@ export function subscribeChat(
     .channel(`chat:${roomId}:${subId}`)
     .on("postgres_changes",
       { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` },
-      (payload) => handlers.onInsert(payload.new as ChatMessage))
+      (payload) => handlers.onInsert({ ...(payload.new as ChatMessage), system: (payload.new as { system?: unknown }).system === true }))
     .on("postgres_changes",
       { event: "DELETE", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` },
       (payload) => { const id = (payload.old as { id?: string }).id; if (id) handlers.onDelete(id); })

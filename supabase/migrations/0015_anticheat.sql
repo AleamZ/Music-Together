@@ -425,6 +425,8 @@ language plpgsql security definer set search_path = public, extensions
 as $$
 declare v_today date := public._vn_today(); v_count integer;
 begin
+  -- the config row before the status row, the order _ac_flag and admin_anticheat_set_mode use (§9.9: no cycle)
+  perform 1 from public.anticheat_config where id for share;
   insert into public.anticheat_status as s (account_id, hug_on, hug_count) values (p_account, v_today, 1)
   on conflict (account_id) do update
     set hug_count = case when s.hug_on = v_today then s.hug_count + 1 else 1 end, hug_on = v_today
