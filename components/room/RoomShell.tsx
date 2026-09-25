@@ -13,9 +13,6 @@ import AddSong from "./AddSong";
 import Queue from "./Queue";
 import PendingQueue from "./PendingQueue";
 import MyPending from "./MyPending";
-import { usePlayback } from "@/hooks/usePlayback";
-import { useSponsorBlock } from "@/hooks/useSponsorBlock";
-import { countMyOrders } from "@/lib/queue-rules";
 import { fetchPlayHistory, type PlayHistoryItem } from "@/lib/room-stats";
 import type { PlaybackController } from "@/hooks/usePlayback";
 import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
@@ -225,7 +222,7 @@ export default function RoomShell({ view, derived, playback: dj, sponsorBlock, o
               onToggleSponsorBlock={sponsorBlock.toggleEnabled}
               lastSkippedToast={sponsorBlock.lastSkippedToast}
               onClearSkippedToast={sponsorBlock.clearSkipToast}
-              username={myUsername}
+              token={token}
             >
               <Reactions roomId={room.id} username={myUsername} />
             </NowPlaying>
