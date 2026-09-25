@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { bobberPoint } from "@/lib/game/fishing/geometry";
-import { HALL_DOCK_ARRIVE, POND_ARRIVE } from "@/lib/game/maps/arrivals";
+import { FIELD_EAST_ARRIVE, HALL_DOCK_ARRIVE, POND_ARRIVE } from "@/lib/game/maps/arrivals";
 import { buildPondMap, DIG_MOUNDS, inDirtPatch, inPond, onPlatform, pondEdge } from "@/lib/game/maps/pond";
 import { propFrame } from "@/lib/game/maps/props";
 import type { InteractKind } from "@/lib/game/maps/types";
@@ -20,7 +20,7 @@ describe("pond map", () => {
     expect(pond.seating).toBeNull();
     expect(pond.spawn).toEqual(POND_ARRIVE);
     expect(pond.interactables.map((i) => i.id).sort()).toEqual([
-      "depot", "dig_1", "dig_2", "dig_3", "dig_4", "fish_1", "fish_2", "fish_3", "fish_4", "fish_5", "fish_6",
+      "depot", "dig_1", "dig_2", "dig_3", "dig_4", "field_bridge", "fish_1", "fish_2", "fish_3", "fish_4", "fish_5", "fish_6",
       "pond_exit", "records", "shop",
     ]);
   });
@@ -32,6 +32,7 @@ describe("pond map", () => {
     expect(prompt("depot")).toBe("Bán cá · cô Ba");
     expect(prompt("shop")).toBe("Tiệm đồ câu · chú Tư");
     expect(prompt("records")).toBe("Xem bảng kỷ lục");
+    expect(prompt("field_bridge")).toBe("Qua cầu khỉ ra đồng");
   });
   it("keeps the arrival spot and every use spot walkable and reachable from the arrival", () => {
     for (const s of [POND_ARRIVE, ...pond.interactables.map((i) => i.use)]) {
@@ -39,8 +40,11 @@ describe("pond map", () => {
       expect(findPath(pond, POND_ARRIVE, s), JSON.stringify(s)).not.toBeNull();
     }
   });
-  it("leads back to the hall's dock", () => {
-    expect(ofKind("portal")).toEqual([expect.objectContaining({ id: "pond_exit", to: { map: "hall", arrive: HALL_DOCK_ARRIVE } })]);
+  it("leads back to the hall's dock and over the monkey bridge to the field", () => {
+    expect(ofKind("portal")).toEqual([
+      expect.objectContaining({ id: "pond_exit", to: { map: "hall", arrive: HALL_DOCK_ARRIVE } }),
+      expect.objectContaining({ id: "field_bridge", to: { map: "field", arrive: FIELD_EAST_ARRIVE } }),
+    ]);
   });
   it("puts six fishing spots on the platform, ≥ 40 px apart, each casting into open water it can be clicked on", () => {
     const spots = ofKind("fish_spot");

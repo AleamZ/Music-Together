@@ -1,4 +1,4 @@
-import { POND_ARRIVE } from "./arrivals";
+import { FIELD_WEST_ARRIVE, HALL_FIELD_ARRIVE, POND_ARRIVE } from "./arrivals";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, PropPlacement, Rect, Seating, Spot } from "./types";
 
@@ -27,6 +27,7 @@ export const HALL_SOLIDS: Rect[] = [
   { x: 501, y: 250, w: 28, h: 12 },   // table 3
   { x: 584, y: 250, w: 24, h: 12 },   // notice board
   { x: 484, y: 314, w: 14, h: 10 },   // dock sign
+  { x: 34, y: 222, w: 14, h: 10 },    // "Ra đồng" sign
   { x: 204, y: 138, w: 12, h: 8 },    // banana plant west of the stage
   { x: 434, y: 132, w: 12, h: 8 },    // banana plant east of the stage
   { x: 158, y: 184, w: 4, h: 4 },     // light pole west
@@ -42,6 +43,10 @@ export const HALL_INTERACTABLES: Interactable[] = [
   {
     id: "dock_sign", kind: "portal", label: "Bến câu cá", prompt: "Xuống ao câu cá", rect: { x: 482, y: 300, w: 18, h: 24 },
     use: { x: 516, y: 334 }, to: { map: "pond", arrive: POND_ARRIVE },
+  },
+  {
+    id: "field_sign", kind: "portal", label: "Ra đồng", prompt: "Ra đồng ruộng", rect: { x: 31, y: 206, w: 18, h: 26 },
+    use: { x: HALL_FIELD_ARRIVE.x, y: HALL_FIELD_ARRIVE.y }, to: { map: "field", arrive: FIELD_WEST_ARRIVE },
   },
 ];
 
@@ -73,6 +78,7 @@ export const HALL_PROPS: PropPlacement[] = [
   { kind: "table", x: 515, y: 262 },
   { kind: "board", x: 596, y: 262 },
   { kind: "sign", x: 491, y: 324 },
+  { kind: "sign", x: 40, y: 232, icon: "rice" },
   { kind: "banana", x: 210, y: 146 },
   { kind: "banana", x: 440, y: 140 },
   { kind: "lightpole", x: 160, y: 188 },

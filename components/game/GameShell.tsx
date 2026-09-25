@@ -210,10 +210,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const cardMember = card ? members.find((m) => m.account_id === card) : undefined;
   const cardPresence = card ? presence.find((p) => p.accountId === card) : undefined;
   const cardWhere = cardPresence?.mode === "classic" ? "🖥️ Đang ở giao diện cũ"
-    : cardPresence?.map === "pond" ? "🎣 Đang ở ao câu cá" : "🎮 Đang dạo quanh sảnh";
+    : cardPresence?.map === "pond" ? "🎣 Đang ở ao câu cá"
+    : cardPresence?.map === "field" ? "🌾 Đang ở đồng ruộng" : "🎮 Đang dạo quanh sảnh";
 
   return (
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "pond" ? "bg-[#5a8f32]" : "bg-[#2f6e8f]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}

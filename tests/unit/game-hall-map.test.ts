@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { POND_ARRIVE } from "@/lib/game/maps/arrivals";
+import { FIELD_WEST_ARRIVE, POND_ARRIVE } from "@/lib/game/maps/arrivals";
 import { buildHallMap, HALL_CELL, HALL_H, HALL_W } from "@/lib/game/maps/hall";
 import { isBlockedAt } from "@/lib/game/movement";
 import { findPath } from "@/lib/game/pathfinding";
@@ -24,8 +24,12 @@ describe("hall map", () => {
     expect(isBlockedAt(hall, 516, 380)).toBe(false);
     expect(isBlockedAt(hall, 320, 80)).toBe(true);
   });
-  it("has unique interactables with the three v13 ids", () => {
-    expect(hall.interactables.map((i) => i.id).sort()).toEqual(["dj_booth", "dock_sign", "notice_board"]);
+  it("has unique interactables: the three v13 ones and the v15 field sign", () => {
+    expect(hall.interactables.map((i) => i.id).sort()).toEqual(["dj_booth", "dock_sign", "field_sign", "notice_board"]);
+  });
+  it("makes the field sign a portal to the field's west entrance", () => {
+    const sign = hall.interactables.find((i) => i.id === "field_sign")!;
+    expect(sign).toMatchObject({ kind: "portal", prompt: "Ra đồng ruộng", to: { map: "field", arrive: FIELD_WEST_ARRIVE } });
   });
   it("makes the dock sign a portal to the pond, with a prompt for every interactable", () => {
     const dock = hall.interactables.find((i) => i.id === "dock_sign")!;
