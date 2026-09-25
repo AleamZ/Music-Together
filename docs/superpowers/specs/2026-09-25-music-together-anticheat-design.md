@@ -1241,11 +1241,11 @@ The server never sees Broadcast, so everything here runs in the receiving client
 | `st`, `mv`, `pa` | 5 per s, burst 5 | dropped; the next one carries the position |
 | `hello` | 1 per 10 s | dropped |
 | `bye` | 1 per 10 s | dropped |
-| `fs`, `fa` | 2 per s, burst 3 | dropped |
+| `fs`, `fa` | 3 per s, burst 5 | dropped |
 | `lk` | 1 per 30 s per account (`useLooks.refresh`) | one trailing refresh at the end of the window |
-| `react` (`reactions:{roomId}`) | 4 per s, burst 4, keyed by `accountId`, else `username`, else one shared bucket; at most 12 per s in total | dropped |
+| `react` (`reactions:{roomId}`) | 5 per s, burst 5, keyed by `accountId`, else `username`, else one shared bucket; at most 12 per s in total | dropped |
 
-Honest senders stay far below these budgets:
+Honest senders stay within these budgets, with room for network jitter:
 - the send gate allows 3 game messages per second in total (`createSendGate`);
 - a sender throttles reactions to one per 250 ms (`throttled`).
 

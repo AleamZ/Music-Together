@@ -35,7 +35,7 @@ describe("the game and reaction budgets (anti-cheat spec §14)", () => {
   it("matches the spec's table", () => {
     expect(GAME_LIMITS).toEqual({
       move: { rate: 5, burst: 5 }, hello: { rate: 0.1, burst: 1 }, bye: { rate: 0.1, burst: 1 },
-      fs: { rate: 2, burst: 3 }, fa: { rate: 2, burst: 3 },
+      fs: { rate: 3, burst: 5 }, fa: { rate: 3, burst: 5 },
     });
     expect((["st", "mv", "pa", "hello", "bye", "fs", "fa", "lk", "fp"] as const).map(budgetKind))
       .toEqual(["move", "move", "move", "hello", "bye", "fs", "fa", null, null]);
@@ -45,11 +45,11 @@ describe("the game and reaction budgets (anti-cheat spec §14)", () => {
     const b = createReactionBudget();
     const passed = (d: { accountId?: string; username?: string }, times: number, now = 0) =>
       Array.from({ length: times }, () => b.take(d, now)).filter(Boolean).length;
-    expect(passed({ accountId: "a" }, 6)).toBe(4);
-    expect(passed({ accountId: "b", username: "a" }, 6)).toBe(4);
-    expect(passed({ username: "Lan" }, 6)).toBe(4);
+    expect(passed({ accountId: "a" }, 7)).toBe(5);
+    expect(passed({ accountId: "b", username: "a" }, 7)).toBe(5);
+    expect(passed({ username: "Lan" }, 7)).toBe(2); // 12 in all
     expect(passed({ username: "Minh" }, 1)).toBe(0);
-    expect(passed({}, 6, 1000)).toBe(4);
+    expect(passed({}, 7, 1000)).toBe(5);
     expect(passed({}, 1, 1000)).toBe(0);
     expect(passed({ username: "Minh" }, 1, 1000)).toBe(1);
   });

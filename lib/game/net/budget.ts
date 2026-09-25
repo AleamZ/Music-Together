@@ -46,14 +46,14 @@ export function createBudget(limits: Readonly<Record<string, Bucket>>, maxKeys =
   };
 }
 
-/** The game channel (anti-cheat spec §14): movement 5 a second, burst 5; hello and bye 1 per 10 s; fs and fa 2 a second,
- *  burst 3. */
+/** The game channel (anti-cheat spec §14): movement 5 a second, burst 5; hello and bye 1 per 10 s; fs and fa 3 a second,
+ *  burst 5. */
 export const GAME_LIMITS = {
   move: { rate: 5, burst: 5 },
   hello: { rate: 0.1, burst: 1 },
   bye: { rate: 0.1, burst: 1 },
-  fs: { rate: 2, burst: 3 },
-  fa: { rate: 2, burst: 3 },
+  fs: { rate: 3, burst: 5 },
+  fa: { rate: 3, burst: 5 },
 } as const satisfies Record<string, Bucket>;
 
 /** The budget a game message counts against; null for `lk` and `fp`, which are capped where they are handled. */
@@ -73,8 +73,8 @@ export function budgetKind(t: GameEvent): keyof typeof GAME_LIMITS | null {
   }
 }
 
-/** Reactions: 4 a second per sender, burst 4; at most 12 a second in all. */
-export const REACTION_LIMITS = { sender: { rate: 4, burst: 4 }, total: { rate: 12, burst: 12 } } as const;
+/** Reactions: 5 a second per sender, burst 5; at most 12 a second in all. */
+export const REACTION_LIMITS = { sender: { rate: 5, burst: 5 }, total: { rate: 12, burst: 12 } } as const;
 
 export interface ReactionBudget {
   take(sender: { accountId?: string; username?: string }, now: number): boolean;

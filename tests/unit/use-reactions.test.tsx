@@ -29,13 +29,13 @@ describe("useReactions", () => {
     const onEvent = vi.fn();
     renderHook(() => useReactions("r", "Me", { onEvent }));
     act(() => {
-      for (let i = 0; i < 6; i++) h.onReact!({ emoji: "🔥", accountId: "spam", username: "Spam" });
+      for (let i = 0; i < 7; i++) h.onReact!({ emoji: "🔥", accountId: "spam", username: "Spam" });
     });
-    expect(onEvent).toHaveBeenCalledTimes(4);
-    act(() => h.onReact!({ emoji: "🎉", accountId: "lan", username: "Lan" }));
     expect(onEvent).toHaveBeenCalledTimes(5);
+    act(() => h.onReact!({ emoji: "🎉", accountId: "lan", username: "Lan" }));
+    expect(onEvent).toHaveBeenCalledTimes(6);
     act(() => { vi.advanceTimersByTime(1000); });
     act(() => h.onReact!({ emoji: "🔥", accountId: "spam", username: "Spam" }));
-    expect(onEvent).toHaveBeenCalledTimes(6);
+    expect(onEvent).toHaveBeenCalledTimes(7);
   });
 });
