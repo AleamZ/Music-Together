@@ -301,3 +301,47 @@ The server decides every time and phase, the water levels, the pests (rolled at 
 ### Realtime budget (v15)
 
 The field has its own channel `game:{roomId}:field`. After a land or farm action the client sends at most two messages, `fa` (a 2.5 s animation) and `fp` (a plot changed); everyone on the field then fetches `field_state` once, 400 ms after the first `fp` of a burst. Farm actions are minutes apart, so that stays well under one RPC a minute per person. `touch_room` is one call per room visit.
+
+## Anti-cheat: chống gian lận
+
+### DB migration
+
+`supabase/migrations/0015_anticheat.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop constraint if exists` + `add constraint`; the config row is inserted `on conflict do nothing`, so a re-run never switches `enforce` back to `log`): run it in the Supabase SQL Editor last: the production order is `0012` → `0014` → `0013` → `0015` (`0015` does not need `0014`). It adds the private tables `anticheat_config` (the mode), `anticheat_status`, `anticheat_events` and `anticheat_wipes`; `chat_messages.system` and `about_account_id`; the daily cast counters in `fishing_profiles`; the lock guard and the hard checks in the 8 fishing and the 27 farm and land RPCs; and the root-only RPCs `admin_anticheat_list`, `admin_anticheat_account`, `admin_anticheat_resolve` and `admin_anticheat_set_mode`. `tests/sql/anticheat-smoke.sql` checks it on a throwaway PostgreSQL cluster with Supabase's default grants (after `0004`–`0015` in that order, from the repo root). It ends with `tests/sql/anticheat-guards.sql`, which fails for any SECURITY DEFINER function in `public` that anon may call and that is neither on its allowlist nor guarded: every later migration keeps it passing.
+
+> **Before running `0015`**, run the two pre-deploy queries in the spec (`docs/superpowers/specs/2026-09-25-music-together-anticheat-design.md`, §11.4): the names the new rules would refuse (they keep working), and the author-less announcer lines that the backfill marks as system lines.
+>
+> **Deploy order:** `0015` first, then the anti-cheat client — the client reads `chat_messages.system`, so it must never go live before the migration. The v15.1 client against `0015` only shows the raw `invalid username` / `account banned` on the login screen, and "Có lỗi, thử lại nhé." for the daily cast cap and for the calls only a tampered client makes. `0015` starts in **log** mode.
+>
+> **Re-running `0013` after `0015`** puts back its unguarded versions of the functions `0015` re-creates (the game RPCs, the sweep, the fishing state and board): run `0015` again right after it. Once an account has been wiped, `0013` cannot be re-run as it is, because its `coin_ledger` reason check lacks `'wipe'`: add `'wipe'` to that list first.
+
+### What is detected
+
+- **Hard signals**, inputs that no shipped client can produce: a reel reported won before the reel time gate; a transplant or harvest quality outside [0.9, 1.1]; a plot outside 1–10 or a drying slot outside 1–4; a water change other than ±1 or a work other than transplanting or harvesting; a quantity no shop sends (bait 1–99, gear 1, farm items 1–99, rice at least 1 kg); a land price outside 1–1 000 000 (a sublease 1–5 000); an offer of this room that belongs to someone else. `tests/unit/anticheat-pins.test.tsx` pins, for each one, the client code that keeps honest players clear of it.
+- **Soft signals**, logged for review and never a strike: the 20th catch of a day within 5 % of the reel gate, the 300th cast of a day, and an item bought or used at the wrong counter (the old v14 client lists farm items as bait).
+- **Never counted:** the refusals an honest player can cause — double clicks, two tabs, stale state, slow networks, clock drift, a cached client after a deploy.
+- **Not detected:** where a player stands, a script that reels exactly at the gate (now held to 300 casts a day), and anything sent over Realtime; the receiving clients filter and rate-limit that instead (below).
+
+### Modes, strikes and the review
+
+- **Chỉ ghi nhận** (log, the default): a flagged call is refused as before and logged; nothing is locked or banned, and log-mode rows never count later.
+- **Thi hành** (enforce): the first hard signal is strike 1 — the warning and a 5-minute lock of fishing, farming, the land market and the shops (chat and music keep working; the player card shows 🔒 m:ss). Another one within 30 days is strike 2 — a permanent ban: the sessions end, login answers "🚫 Tài khoản này đã bị khoá…", and the account waits for the owner. Root is never struck.
+- **/admin → Chống gian lận:** the mode switch, the cases (pending wipes first) and, per account, the evidence: its events with the client build (`X-Client-Info: music-together/<build>`) and the browser, and what a wipe would remove. **Xoá dữ liệu** wipes a banned account's game data (xu, gear, fish, records, rice; its land goes back to the village at the next field visit, and its catch and land lines leave the chat) and keeps a snapshot. **Ân xá** lifts a lock or a ban and clears the strikes, without restoring wiped data; unbanning an anti-cheat ban in the Accounts tab is the same pardon.
+- **Review before enforcing:** after 7 days in log mode, look at the hard `log_only` rows. If any could come from an honest client, stay in log mode and fix the check; otherwise switch to Thi hành.
+- The evidence is kept 90 days (strikes and wipe snapshots for good), at most 200 rows per account and Vietnam day besides the strikes. No IP address is stored.
+
+### Also in this release
+
+- **Names:** 2–24 characters, no hidden characters and no reserved names (Ao cá, Hợp tác xã, root…); names that differ only in case, spacing or Unicode form are the same name. A banned account is told so at login, after the right password.
+- **Chat:** catch and land announcements are system lines that only the server can post; a look-alike line from a member shows as a normal message.
+- **Queue:** 11-character YouTube ids only; the title is cleaned, the thumbnail comes from the id, and an impossible duration counts as unknown.
+- **Fishing:** at most 300 casts per Vietnam day ("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!").
+- **Banned accounts** leave the records and the richest list, earn no song bonus, and lose their land-market listings and offers.
+
+### Trust model (updated)
+
+- **v14:** as above, plus the daily cap: a script that reels at the gate lands at most 300 fish a day instead of 960, and a reel reported faster than the gate is a strike.
+- **v15:** v15.1 ignores the transplant and harvest quality and uses 1.0 until the v15.2 minigames; a quality outside [0.9, 1.1] is a strike.
+
+### Realtime hardening
+
+The server never sees Broadcast, so each client filters what it receives. `hello`, `bye`, `lk`, `fs`, `fa` and `fp` count only from a member who is in this map's presence in game mode. Each sender has a budget — movement 5/s, `hello` and `bye` 1 per 10 s, `fs` and `fa` 2/s, reactions 4/s (12/s in all) — and the rest is dropped; `fp` refetches start at least 2 s apart, and a look is fetched again at most once per 30 s. A member whose `hello` arrived before their presence still gets everyone's state. Not stopped: a spoofer using the id of a member who is on the map, fake presence, and floods against the project's Realtime quota (spec §14).

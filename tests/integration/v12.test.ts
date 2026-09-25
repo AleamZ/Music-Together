@@ -21,8 +21,10 @@ run("v12 auto-replay history", () => {
     if (error) throw error;
     return (Array.isArray(data) ? data[0] : data) as { code: string; room_id: string; member_id: string };
   };
+  /** 0015 takes 11-character YouTube ids only: the short test ids are padded. */
+  const vid = (id: string) => id.padEnd(11, "0");
   const add = (roomId: string, token: string, videoId: string) =>
-    db.rpc("add_queue_item", { p_room_id: roomId, p_session_token: token, p_video_id: videoId, p_title: videoId, p_thumb: null, p_duration: 100 });
+    db.rpc("add_queue_item", { p_room_id: roomId, p_session_token: token, p_video_id: vid(videoId), p_title: videoId, p_thumb: null, p_duration: 100 });
   const setReplay = (roomId: string, token: string, enable: boolean) =>
     db.rpc("update_room_settings", {
       p_room_id: roomId, p_session_token: token,

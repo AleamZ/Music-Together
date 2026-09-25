@@ -78,8 +78,10 @@ run("v15 field and land", () => {
     const me = await reg();
     expect((await db.rpc("sell_rice", { p_session_token: me.token, p_variety: "nep", p_dry: true, p_kg: 1 })).error?.message).toBe("not enough rice");
     expect((await db.rpc("buy_farm_item", { p_session_token: me.token, p_item_id: "seed_nep", p_qty: 1 })).error?.message).toBe("not enough coins");
-    expect((await db.rpc("buy_farm_item", { p_session_token: me.token, p_item_id: "rod_bamboo", p_qty: 1 })).error?.message).toBe("item not available");
-    expect((await db.rpc("buy_item", { p_session_token: me.token, p_item_id: "seed_nep", p_qty: 1 })).error?.message).toBe("item not available");
+    // an item of the other shop: since 0015 a soft kind_mismatch, answered with an envelope instead of raising
+    const wrongShop = { anticheat: { code: "kind_mismatch", strike: 0, error: "item not available" } };
+    expect((await db.rpc("buy_farm_item", { p_session_token: me.token, p_item_id: "rod_bamboo", p_qty: 1 })).data).toMatchObject(wrongShop);
+    expect((await db.rpc("buy_item", { p_session_token: me.token, p_item_id: "seed_nep", p_qty: 1 })).data).toMatchObject(wrongShop);
     const fishing = await db.rpc("fishing_state", { p_session_token: me.token });
     expect(typeof (fishing.data as { server_now?: unknown }).server_now).toBe("string");
   });
