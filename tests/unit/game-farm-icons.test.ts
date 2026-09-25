@@ -3,13 +3,14 @@ import { readFileSync } from "node:fs";
 import { FARM_ICONS } from "@/lib/game/art/farm-icons";
 import { ICON_SIZE, iconMatrixFor } from "@/lib/game/art/icons";
 
-const sql = readFileSync("supabase/migrations/0013_v15_field.sql", "utf8");
-/** The farm items seeded by `insert into public.shop_items … on conflict`. */
-const seededItems = (): string[] => {
-  const start = sql.indexOf("insert into public.shop_items");
+/** The ids seeded by `insert into public.<table> … on conflict` in a migration. */
+const seeded = (file: string, table: string): string[] => {
+  const sql = readFileSync(`supabase/migrations/${file}`, "utf8");
+  const start = sql.indexOf(`insert into public.${table}`);
   const block = sql.slice(start, sql.indexOf("on conflict", start));
   return [...block.matchAll(/^\s*\('([a-z_]+)',/gm)].map((m) => m[1]);
 };
+const seededItems = (): string[] => [...seeded("0013_v15_field.sql", "shop_items"), ...seeded("0016_v15_2_crops.sql", "shop_items")];
 
 describe("farm icons", () => {
   it("are 16×16 and only use '.', 'o' and their own palette", () => {
@@ -21,8 +22,15 @@ describe("farm icons", () => {
       }
     }
   });
-  it("cover every seeded farm item and the two rice sacks", () => {
-    expect(Object.keys(FARM_ICONS).sort()).toEqual([...seededItems(), "rice_dry", "rice_wet"].sort());
+  it("cover every seeded farm item, the two rice sacks and each hoa-màu crop's produce", () => {
+    const produce = seeded("0016_v15_2_crops.sql", "upland_crops").map((u) => `produce_${u}`);
+    expect(produce).toEqual(["produce_khoai", "produce_bap", "produce_ot"]);
+    expect(Object.keys(FARM_ICONS).sort()).toEqual([...seededItems(), "rice_dry", "rice_wet", ...produce].sort());
+  });
+  it("draw the v15.2 tools in their colours", () => {
+    expect(iconMatrixFor("tool_sickle")?.flat()).toEqual(expect.arrayContaining(["#5a5f68", "#e8e8ee", "#6e4424"]));
+    expect(iconMatrixFor("tool_sprayer")?.flat()).toEqual(expect.arrayContaining(["#3d6fd1", "#2f56a6"]));
+    expect(iconMatrixFor("produce_ot")?.flat()).toContain("#d8342a");
   });
   it("resolve through iconMatrixFor", () => {
     expect(iconMatrixFor("seed_thom")).toHaveLength(16);

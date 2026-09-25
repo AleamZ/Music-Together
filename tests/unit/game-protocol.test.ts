@@ -51,15 +51,18 @@ describe("parseGameMessage", () => {
     expect(codeToFacing(facingToCode("left"))).toBe("left");
     expect(toPayload({ t: "lk", id: "a" })).toEqual({ event: "lk", payload: { id: "a" } });
   });
-  it("accepts the field's fp (plot 0–10) and fa (animation 0–8)", () => {
+  it("accepts the field's fp (plot 0–10) and fa (animation 0–10)", () => {
     expect(GAME_EVENTS).toEqual(expect.arrayContaining(["fp", "fa"]));
     expect(parseGameMessage("fp", { id: "a", p: 0 }, B)).toEqual({ t: "fp", id: "a", p: 0 });
     expect(parseGameMessage("fp", { id: "a", p: 10 }, B)).toEqual({ t: "fp", id: "a", p: 10 });
     expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.prepare }, B)).toEqual({ t: "fa", id: "a", a: 8 });
     expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.stop }, B)).toEqual({ t: "fa", id: "a", a: 0 });
+    // v15.2: đào khoai digs (9); bẻ bắp and hái ớt pick (10)
+    expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.dig }, B)).toEqual({ t: "fa", id: "a", a: 9 });
+    expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.pick }, B)).toEqual({ t: "fa", id: "a", a: 10 });
     const bad: Array<[string, unknown]> = [
       ["fp", { id: "a", p: 11 }], ["fp", { id: "a", p: -1 }], ["fp", { id: "a", p: 1.5 }], ["fp", { id: "a", p: "3" }], ["fp", { id: "a" }],
-      ["fa", { id: "a", a: 9 }], ["fa", { id: "a", a: -1 }], ["fa", { id: "a", a: "1" }], ["fa", { id: "" , a: 1 }],
+      ["fa", { id: "a", a: 11 }], ["fa", { id: "a", a: -1 }], ["fa", { id: "a", a: "1" }], ["fa", { id: "" , a: 1 }],
     ];
     for (const [event, payload] of bad) expect(parseGameMessage(event, payload, B), `${event} ${JSON.stringify(payload)}`).toBeNull();
   });

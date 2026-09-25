@@ -1,8 +1,8 @@
 import type { PixelIcon } from "./icons";
 
-// 16×16 icons for the farm (spec §14): seed sacks in the variety's colour, fertilizer bags with their nutrient on
-// the label, pesticide bottles with their pest, and rice sacks (wet/dry). "." transparent, "o" outline, other letters
-// from the icon's own palette. Original art.
+// 16×16 icons for the farm (spec §14, v15.2 §15): seed sacks in the variety's colour, fertilizer bags with their
+// nutrient on the label, pesticide bottles with their pest, rice sacks (wet/dry); hoa-màu seeds, the sickle, the
+// sprayer and the hoa màu itself. "." transparent, "o" outline, other letters from the icon's own palette. Original art.
 
 const SEED_SACK = [
   "................",
@@ -106,6 +106,168 @@ const riceSack = (Y: string, y: string, M: string): PixelIcon => ({
   rows: RICE_SACK, pal: { Y, y, M, s: "#c8a46a", S: "#a8844f" },
 });
 
+/** A paper seed packet; "____" rows carry the picture. */
+const PACKET = [
+  "................",
+  "...oooooooooo...",
+  "...oPPPPPPPPo...",
+  "...oppppppppo...",
+  "...o________o...",
+  "...o________o...",
+  "...o________o...",
+  "...o________o...",
+  "...o________o...",
+  "...o________o...",
+  "...o________o...",
+  "...o________o...",
+  "...oppppppppo...",
+  "...oPPPPPPPPo...",
+  "...oooooooooo...",
+  "................",
+];
+
+/** Put an 8-wide picture ("." = the paper) into the packet's "________" rows. */
+function packet(picture: readonly string[], ink: Record<string, string>): PixelIcon {
+  let i = 0;
+  return {
+    rows: PACKET.map((row) => (row.includes("________") ? row.replace("________", picture[i++].replace(/\./g, "p")) : row)),
+    pal: { p: "#f4efe0", P: "#d8cfb8", ...ink },
+  };
+}
+
+// v15.2: a tied bundle of three khoai cuttings
+const SEED_KHOAI: PixelIcon = {
+  rows: [
+    "................",
+    "...oo.....oo....",
+    "..oggo...oGgo...",
+    "..oggGo.oGggo...",
+    "...oGgGoggGo....",
+    "....ogggGgo.....",
+    "....oovvvoo.....",
+    ".....ovVvo......",
+    "....orrrrro.....",
+    ".....ovVvo......",
+    ".....ovVvo......",
+    "....ovvoVvo.....",
+    "....ovo.oVo.....",
+    "...ovo...oVo....",
+    "...oo.....oo....",
+    "................",
+  ],
+  pal: { g: "#6fbf4a", G: "#4f9a38", v: "#8e4a8a", V: "#6e3a6a", r: "#8b5a33" },
+};
+
+const TOOL_SICKLE: PixelIcon = {
+  rows: [
+    "................",
+    "......oooo......",
+    "....oobbbboo....",
+    "...obbeeeebbo...",
+    "..obeo....oebo..",
+    "..obo......obo..",
+    "..oo.......obo..",
+    "...........obo..",
+    "..........oebo..",
+    ".........oebo...",
+    "........ohoo....",
+    ".......ohHo.....",
+    "......ohHo......",
+    ".....ohHo.......",
+    ".....ooo........",
+    "................",
+  ],
+  pal: { b: "#5a5f68", e: "#e8e8ee", h: "#6e4424", H: "#4a2e18" },
+};
+
+const TOOL_SPRAYER: PixelIcon = {
+  rows: [
+    "................",
+    "....oooooo......",
+    "...ottttTTo.....",
+    "o.otuttttTTo...n",
+    "l.otuttttTTo...w",
+    "l.otuttttTTo..w.",
+    "l.oTTTTTTTTo..w.",
+    "l.otttttTTTo..w.",
+    "l.otttttTTTo.w..",
+    "llotttttTTTo.w..",
+    "..otttttTTTohh..",
+    "..oTTTTTTTTo....",
+    "...oTTTTTTo.....",
+    "....oooooo......",
+    "................",
+    "................",
+  ],
+  pal: { t: "#3d6fd1", T: "#2f56a6", u: "#6f95e0", l: "#5a5f68", w: "#5a5f68", n: "#e8e8ee", h: "#2a2f3a" },
+};
+
+const PRODUCE_KHOAI: PixelIcon = {
+  rows: [
+    "................",
+    "................",
+    ".....oooo.......",
+    "...ookjkkoo.....",
+    "..okkjkkkkKo....",
+    "..okkkkkkKKo....",
+    "...ooKKKKKo.....",
+    ".....ooooo......",
+    "........oooo....",
+    "......ookjkkoo..",
+    ".....okkjkkkkKo.",
+    ".....okkkkkkKKo.",
+    "......ooKKKKKo..",
+    "........ooooo...",
+    "................",
+    "................",
+  ],
+  pal: { k: "#b0486e", K: "#7e2f4e", j: "#d77a9a" },
+};
+
+const PRODUCE_BAP: PixelIcon = {
+  rows: [
+    "................",
+    "..........oo....",
+    ".........oyYo...",
+    "........oyYyYo..",
+    ".......oyYyYyo..",
+    "......oyYyYyo...",
+    ".....oyYyYyo....",
+    "....oyYyYyo.....",
+    "...ogyYyYo......",
+    "..ogGgyYo.......",
+    ".ogGgGgo........",
+    ".oGgGgo.........",
+    "..ooGo..........",
+    "....o...........",
+    "................",
+    "................",
+  ],
+  pal: { y: "#f6c945", Y: "#e0b33c", g: "#8fbf5a", G: "#5f8f3a" },
+};
+
+const PRODUCE_OT: PixelIcon = {
+  rows: [
+    "................",
+    "..s.....s....s..",
+    ".oso...oso..oso.",
+    ".oro...oro..oro.",
+    ".orRo..orRo.orRo",
+    ".orRo..orRo.orRo",
+    ".orRo..orRo.orRo",
+    "..orRo.orRo.orRo",
+    "..orRo..orRo.oRo",
+    "..orRo..orRo.oo.",
+    "...orRo.oRo.....",
+    "...orRo..oo.....",
+    "....oRo.........",
+    ".....o..........",
+    "................",
+    "................",
+  ],
+  pal: { r: "#d8342a", R: "#a82a22", s: "#4f9a38" },
+};
+
 export const FARM_ICONS: Record<string, PixelIcon> = {
   seed_short: seedSack("#7fb548", "#5a8f32"),
   seed_nep: seedSack("#efe6cf", "#cfc3a3"),
@@ -123,4 +285,19 @@ export const FARM_ICONS: Record<string, PixelIcon> = {
   spray_fungus: bottle("#7a5cc0", "#a58be0", "#4a3480", [".LL.", "L..L", ".LL."], "#8e5a2a"),
   rice_wet: riceSack("#c9c46a", "#a8a24a", "#6fb2cf"),
   rice_dry: riceSack("#f6c945", "#e0b33c", "#e0662f"),
+  // v15.2: hoa-màu seeds (a cob and a chili on paper packets), the two tools and the hoa màu
+  seed_khoai: SEED_KHOAI,
+  seed_bap: packet(
+    ["...gYY..", "..gYyY..", ".gYyYYg.", ".gYYyYg.", ".gYyYYg.", "..gYyY..", "..gYYg..", "...gg..."],
+    { Y: "#f6c945", y: "#e0b33c", g: "#8fbf5a" },
+  ),
+  seed_ot: packet(
+    [".....gg.", "....rg..", "....rr..", "...rrR..", "..rrR...", ".rrR....", ".rR.....", "........"],
+    { r: "#d8342a", R: "#a82a22", g: "#4f9a38" },
+  ),
+  tool_sickle: TOOL_SICKLE,
+  tool_sprayer: TOOL_SPRAYER,
+  produce_khoai: PRODUCE_KHOAI,
+  produce_bap: PRODUCE_BAP,
+  produce_ot: PRODUCE_OT,
 };
