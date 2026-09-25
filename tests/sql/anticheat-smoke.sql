@@ -515,3 +515,212 @@ begin
 end $$;
 
 select 'anticheat fishing smoke ok' as result;
+
+-- ---------- farm and land (§7.2, §7.3, §10.3): the hard signals, the lock, foreign offers, no false positives ----------
+insert into smoke select 'g' || n, token from generate_series(1, 5) n,
+  lateral public.register('acg' || n || '_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'h' || substr(k, 2), public._auth_account(v)::text from smoke where k in ('g1', 'g2', 'g3', 'g4', 'g5');
+insert into smoke select 'froom', room_id::text from public.create_room('Đồng gian lận', 'pw', (select v from smoke where k = 'g1'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'froom')::uuid), 'pw', v)
+  from smoke where k in ('g2', 'g3', 'g4', 'g5');
+create or replace function pg_temp.set_coins(a uuid, n integer) returns void language sql
+as $$ insert into public.wallets (account_id, coins) values (a, n) on conflict (account_id) do update set coins = n $$;
+-- An envelope with this code, strike and error, and nothing else in the answer.
+create or replace function pg_temp.env(r jsonb, code text, strike int, error text) returns boolean language sql
+as $$ select r->'anticheat'->>'code' = code and (r->'anticheat'->>'strike')::int = strike and r->'anticheat'->>'error' = error
+             and r - 'anticheat' = '{}'::jsonb $$;
+
+-- g1 farms village plot 8 (prepared, flooded); g4 owns plot 1; g5 offers on it
+do $$
+declare h1 uuid := (select v from smoke where k = 'h1')::uuid; h4 uuid := (select v from smoke where k = 'h4')::uuid;
+        h5 uuid := (select v from smoke where k = 'h5')::uuid; room uuid := (select v from smoke where k = 'froom')::uuid;
+        t timestamptz := now();
+begin
+  perform pg_temp.set_coins(h1, 10750);
+  perform public._farm_do_rent(room, h1, 8, t);
+  perform public._farm_do_prepare(room, h1, 8, t);
+  perform pg_temp.set_coins(h4, 801000);
+  perform public._farm_do_buy_plot(room, h4, 1, t);
+  perform pg_temp.set_coins(h5, 20000);
+  perform public._farm_do_offer(room, h5, 1, 5000, t);
+  insert into smoke select 'o5', id::text from public.land_offers where room_id = room and buyer_id = h5;
+end $$;
+
+-- Every hard signal of the farm and the shops (§7.2) as g1 sends it, with the refusal it stands for.
+create temp table hard_calls as
+select v.code, v.error, v.call
+  from (select (select v from smoke where k = 'froom') as room, (select v from smoke where k = 'g1') as g1,
+               (select v from smoke where k = 'o5') as o5) s,
+       lateral (values
+         ('bad_plot', 'invalid plot', format('select public.rent_plot(%L, %L, 0)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.buy_plot(%L, %L, 11)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.sell_plot_to_village(%L, %L, null)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.list_plot(%L, %L, -1, 100)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.buy_listed_plot(%L, %L, 11, 100)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.offer_plot(%L, %L, 0, 100)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.set_sublease(%L, %L, 11, 100)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.rent_sublease(%L, %L, 0, 100)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.abandon_crop(%L, %L, 99)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.prepare_plot(%L, %L, 0)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.apply_fertilizer(%L, %L, 0, %L)', s.room, s.g1, 'fert_urea')),
+         ('bad_plot', 'invalid plot', format('select public.soak_seed(%L, %L, 0, %L)', s.room, s.g1, 'seed_nep')),
+         ('bad_plot', 'invalid plot', format('select public.sow_seed(%L, %L, 0)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.begin_work(%L, %L, 0, %L)', s.room, s.g1, 'transplant')),
+         ('bad_plot', 'invalid plot', format('select public.transplant(%L, %L, 0, 1)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.water(%L, %L, 0, 1)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.spray(%L, %L, 0, %L)', s.room, s.g1, 'spray_insect')),
+         ('bad_plot', 'invalid plot', format('select public.pick_snails(%L, %L, 0)', s.room, s.g1)),
+         ('bad_plot', 'invalid plot', format('select public.harvest(%L, %L, 0, 1)', s.room, s.g1)),
+         ('bad_price', 'invalid price', format('select public.list_plot(%L, %L, 1, 0)', s.room, s.g1)),
+         ('bad_price', 'invalid price', format('select public.list_plot(%L, %L, 1, 5000001)', s.room, s.g1)),
+         ('bad_price', 'invalid price', format('select public.set_sublease(%L, %L, 1, 100001)', s.room, s.g1)),
+         ('bad_price', 'invalid price', format('select public.offer_plot(%L, %L, 1, null)', s.room, s.g1)),
+         ('bad_price', 'invalid price', format('select public.offer_plot(%L, %L, 1, 0)', s.room, s.g1)),
+         ('bad_slot', 'invalid slot', format('select public.dry_collect(%L, %L, 0)', s.room, s.g1)),
+         ('bad_slot', 'invalid slot', format('select public.dry_collect(%L, %L, 5)', s.room, s.g1)),
+         ('bad_slot', 'invalid slot', format('select public.dry_collect(%L, %L, null)', s.room, s.g1)),
+         ('bad_water', 'invalid quantity', format('select public.water(%L, %L, 8, 5)', s.room, s.g1)),
+         ('bad_water', 'invalid quantity', format('select public.water(%L, %L, 8, 0)', s.room, s.g1)),
+         ('bad_water', 'invalid quantity', format('select public.water(%L, %L, 8, null)', s.room, s.g1)),
+         ('bad_work', 'invalid work', format('select public.begin_work(%L, %L, 8, %L)', s.room, s.g1, 'dig')),
+         ('bad_work', 'invalid work', format('select public.begin_work(%L, %L, 8, null)', s.room, s.g1)),
+         ('quality_range', 'invalid quality', format('select public.transplant(%L, %L, 8, %L)', s.room, s.g1, 'NaN')),
+         ('quality_range', 'invalid quality', format('select public.transplant(%L, %L, 8, 1.2)', s.room, s.g1)),
+         ('quality_range', 'invalid quality', format('select public.transplant(%L, %L, 8, 0.8)', s.room, s.g1)),
+         ('quality_range', 'invalid quality', format('select public.harvest(%L, %L, 8, %L)', s.room, s.g1, 'Infinity')),
+         ('quality_range', 'invalid quality', format('select public.harvest(%L, %L, 8, null)', s.room, s.g1)),
+         ('bad_qty', 'invalid quantity', format('select public.dry_start(%L, %L, %L, 0)', s.room, s.g1, 'nep')),
+         ('bad_qty', 'invalid quantity', format('select public.dry_start(%L, %L, %L, null)', s.room, s.g1, 'nep')),
+         ('bad_qty', 'invalid quantity', format('select public.sell_rice(%L, %L, true, 0)', s.g1, 'nep')),
+         ('bad_qty', 'invalid quantity', format('select public.sell_rice(%L, %L, null, 5)', s.g1, 'nep')),
+         ('bad_qty', 'invalid quantity', format('select public.buy_farm_item(%L, %L, 0)', s.g1, 'fert_urea')),
+         ('bad_qty', 'invalid quantity', format('select public.buy_farm_item(%L, %L, 100)', s.g1, 'fert_urea')),
+         ('bad_qty', 'invalid quantity', format('select public.buy_item(%L, %L, 500)', s.g1, 'bait_shrimp')),
+         ('bad_qty', 'invalid quantity', format('select public.buy_item(%L, %L, 2)', s.g1, 'rod_bamboo')),
+         ('foreign_offer', 'offer not found', format('select public.withdraw_offer(%L, %L, %L)', s.room, s.g1, s.o5)),
+         ('foreign_offer', 'offer not found', format('select public.decline_offer(%L, %L, %L)', s.room, s.g1, s.o5)),
+         ('foreign_offer', 'not your plot', format('select public.accept_offer(%L, %L, %L)', s.room, s.g1, s.o5))
+       ) v(code, error, call);
+
+do $$
+declare g1 text := (select v from smoke where k = 'g1'); h1 uuid := (select v from smoke where k = 'h1')::uuid;
+        h4 uuid := (select v from smoke where k = 'h4')::uuid; h5 uuid := (select v from smoke where k = 'h5')::uuid;
+        room uuid := (select v from smoke where k = 'froom')::uuid; o5 uuid := (select v from smoke where k = 'o5')::uuid;
+        v_log jsonb; r jsonb; c record; n int := 0;
+begin
+  update public.anticheat_config set mode = 'log';
+  select water_log into v_log from public.crops where room_id = room and plot_no = 8;
+  -- log mode: every hard signal is an envelope with strike 0 and the refusal it replaces, logged, nothing changed
+  for c in select * from hard_calls loop
+    n := n + 1;
+    execute c.call into r;
+    assert pg_temp.env(r, c.code, 0, c.error), format('%s → %s', c.call, r);
+    assert pg_temp.last_outcome(h1) = 'log_only'
+       and (select code from public.anticheat_events where account_id = h1 order by id desc limit 1) = c.code, c.call;
+  end loop;
+  assert n = 48 and (select count(*) from public.anticheat_events where account_id = h1 and outcome = 'log_only') = 48, 'all logged';
+  assert (pg_temp.status(h1)).strikes = 0 and (pg_temp.status(h1)).locked_until is null, 'no strike, no lock in log mode';
+  assert (select water_log from public.crops where room_id = room and plot_no = 8) = v_log, 'water with delta 5 changed nothing';
+  assert (select detail from public.anticheat_events where account_id = h1 and code = 'quality_range' order by id limit 1)
+         = '{"plot": 8, "quality": "NaN"}', 'NaN kept as text';
+  assert (select detail from public.anticheat_events where account_id = h1 and code = 'foreign_offer' and rpc = 'withdraw_offer')
+         = jsonb_build_object('offer_id', o5, 'buyer_id', h5), 'withdraw detail';
+  assert (select detail from public.anticheat_events where account_id = h1 and code = 'foreign_offer' and rpc = 'accept_offer')
+         = jsonb_build_object('offer_id', o5, 'plot', 1, 'owner_id', h4), 'accept detail';
+  assert exists (select 1 from public.land_offers where id = o5) and (select coins from public.wallets where account_id = h1) = 750,
+    'nothing changed';
+
+  -- soft kind mismatches (§7.4) and plain refusals of unknown items
+  assert pg_temp.env(public.buy_farm_item(g1, 'rod_bamboo', 1), 'kind_mismatch', 0, 'item not available'), 'buy_farm_item kind';
+  assert pg_temp.env(public.apply_fertilizer(room, g1, 8, 'seed_nep'), 'kind_mismatch', 0, 'invalid item'), 'fertilizer kind';
+  assert pg_temp.env(public.soak_seed(room, g1, 8, 'fert_urea'), 'kind_mismatch', 0, 'invalid item'), 'seed kind';
+  assert pg_temp.env(public.spray(room, g1, 8, 'fert_urea'), 'kind_mismatch', 0, 'invalid item'), 'pesticide kind';
+  assert (select count(*) from public.anticheat_events where account_id = h1 and outcome = 'soft' and code = 'kind_mismatch') = 4,
+    'four soft rows';
+  assert pg_temp.err(format('select public.apply_fertilizer(%L, %L, 8, %L)', room, g1, 'no_such_item')) = 'invalid item', 'unknown';
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', g1, 'no_such_item')) = 'item not available', 'unknown';
+
+  -- honest calls still work
+  perform public.water(room, g1, 8, -1);
+  assert (select jsonb_array_length(water_log) from public.crops where room_id = room and plot_no = 8) = 2, 'a real water change';
+end $$;
+
+do $$
+declare h1 uuid := (select v from smoke where k = 'h1')::uuid; r jsonb; c record;
+begin
+  -- enforce: every hard signal is strike 1, a strike_1 row and a 5-minute lock (each call starts unlocked)
+  update public.anticheat_config set mode = 'enforce';
+  for c in select * from hard_calls loop
+    update public.anticheat_status set strikes = 0, locked_until = null where account_id = h1;
+    execute c.call into r;
+    assert pg_temp.env(r, c.code, 1, c.error) and (r->'anticheat'->>'locked_until')::timestamptz = now() + interval '5 minutes',
+      format('%s → %s', c.call, r);
+    assert pg_temp.last_outcome(h1) = 'strike_1' and (pg_temp.status(h1)).locked_until = now() + interval '5 minutes', c.call;
+  end loop;
+  assert (select count(*) from public.anticheat_events where account_id = h1 and outcome = 'strike_1') = 48, 'every one struck';
+  update public.anticheat_status set strikes = 0, locked_until = null where account_id = h1;
+  update public.anticheat_config set mode = 'log';
+end $$;
+
+do $$
+declare g2 text := (select v from smoke where k = 'g2'); h2 uuid := (select v from smoke where k = 'h2')::uuid;
+        g3 text := (select v from smoke where k = 'g3'); h3 uuid := (select v from smoke where k = 'h3')::uuid;
+        g4 text := (select v from smoke where k = 'g4'); h4 uuid := (select v from smoke where k = 'h4')::uuid;
+        g5 text := (select v from smoke where k = 'g5'); h5 uuid := (select v from smoke where k = 'h5')::uuid;
+        room uuid := (select v from smoke where k = 'froom')::uuid; other uuid := (select v from smoke where k = 'room')::uuid;
+        t timestamptz := now(); r jsonb; e jsonb; o5 uuid; call text;
+begin
+  update public.anticheat_config set mode = 'enforce';
+  -- no false positives in enforce (§7.3)
+  perform pg_temp.set_coins(h3, 10750);
+  perform public._farm_do_rent(room, h3, 9, t);
+  insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, water_log, work, work_started_at)
+  values (room, 9, h3, 'short', t - interval '20 hours', t - interval '20 hours', t - interval '18 hours',
+          jsonb_build_array(jsonb_build_object('t', t - interval '1 hour', 'l', 2)), 'transplant', t - interval '3 seconds')
+  on conflict (room_id, plot_no) do nothing;
+  r := public.transplant(room, g3, 9, 1);
+  assert (select transplant_at = t from public.crops where room_id = room and plot_no = 9), 'transplanted';
+  assert pg_temp.err(format('select public.transplant(%L, %L, 9, 1)', room, g3)) = 'too fast', 'a repeated transplant is refused';
+  perform public.water(room, g3, 9, 1);
+  perform public.water(room, g3, 9, 1);   -- level 3: "Bơm thêm nước (giữ Sâu)"
+  insert into public.drying_slots (room_id, slot, account_id, variety, kg, ready_at) values (room, 3, h3, 'short', 5, t - interval '25 hours');
+  assert pg_temp.err(format('select public.dry_collect(%L, %L, 3)', room, g3)) = 'invalid slot', 'the sweep collected it first';
+  update public.field_plots set sale_price = 9000 where room_id = room and plot_no = 1;
+  perform pg_temp.set_coins(h3, 20000);
+  assert pg_temp.err(format('select public.buy_listed_plot(%L, %L, 1, 8000)', room, g3)) = 'price changed', 'price changed';
+  select id into o5 from public.land_offers where room_id = room and buyer_id = h5;
+  perform public.join_room((select code from public.rooms where id = other), 'pw', g5);
+  assert pg_temp.err(format('select public.withdraw_offer(%L, %L, %L)', other, g5, o5)) = 'offer not found', 'another room';
+  assert pg_temp.err(format('select public.accept_offer(%L, %L, %L)', other, g5, o5)) = 'offer expired', 'another room';
+  assert pg_temp.err(format('select public.add_queue_item(%L, %L, %L, %L, null, 100)', room, g3, 'short', 'x')) = 'invalid video',
+    'a refused queue add';
+  assert pg_temp.err(format('select public.register(%L, %L)', 'Ao cá', 'pw123456')) = 'invalid username', 'a refused register';
+  assert not exists (select 1 from public.anticheat_events where account_id in (h3, h5) and outcome <> 'soft')
+     and not exists (select 1 from public.anticheat_status where account_id in (h3, h5) and locked_until is not null),
+    'no hard row, no lock';
+
+  -- a player-to-player sale is a system line about the buyer (R12)
+  r := public.buy_listed_plot(room, g5, 1, 9000);
+  assert (select system and about_account_id = h5 and account_id is null and username = 'Hợp tác xã'
+            from public.chat_messages where room_id = room and body like '[land:1] %'), 'the land line';
+
+  -- enforce: a hard signal is strike 1; the farm RPCs are locked, the reads, chat and the queue are not
+  r := public.water(room, g2, 8, 5);
+  assert pg_temp.env(r, 'bad_water', 1, 'invalid quantity'), format('strike 1 %s', r);
+  foreach call in array array[
+    format('select public.water(%L, %L, 8, 1)', room, g2), format('select public.dry_collect(%L, %L, 1)', room, g2),
+    format('select public.sell_rice(%L, %L, true, 1)', g2, 'nep'), format('select public.buy_farm_item(%L, %L, 1)', g2, 'fert_urea'),
+    format('select public.claim_farm_gift(%L)', g2)] loop
+    e := pg_temp.errd(call);
+    assert e->>'message' = 'account locked' and e->>'hint' = 'anticheat' and (e->>'detail')::int = 300, format('%s: %s', call, e);
+  end loop;
+  perform public.field_state(room, g2);
+  perform public.touch_room(room, g2);
+  perform public.send_chat_message(g2, room, 'vẫn chat được');
+  perform public.add_queue_item(room, g2, 'ddddddddddd', 'vẫn gọi bài được', null, 200);
+  update public.anticheat_config set mode = 'log';
+end $$;
+
+select 'anticheat farm smoke ok' as result;
+
+\i tests/sql/anticheat-guards.sql

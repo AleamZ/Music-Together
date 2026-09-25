@@ -363,8 +363,8 @@ begin
   assert r->'mine'->'coins' = '4200' and r->'mine'->'items'->'fert_manure' = '2', 'bought 2 manure';
   assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'farm_buy' and delta = -800), 'ledger';
   assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 98)', t2, 'fert_manure')) = 'invalid quantity', '99 at most held';
-  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 0)', t2, 'fert_manure')) = 'invalid quantity', 'qty 1-99';
-  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t2, 'rod_bamboo')) = 'item not available', 'no fishing gear';
+  assert public.buy_farm_item(t2, 'fert_manure', 0)->'anticheat'->>'error' = 'invalid quantity', 'qty 1-99';
+  assert public.buy_farm_item(t2, 'rod_bamboo', 1)->'anticheat'->>'error' = 'item not available', 'no fishing gear';
   perform pg_temp.set_coins(a2, 10);
   assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t2, 'seed_thom')) = 'not enough coins', 'coins';
   perform pg_temp.set_coins(a2, 50000);
@@ -511,8 +511,8 @@ begin
   assert exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'rice_sell' and delta = 2485), 'ledger';
   assert pg_temp.err(format('select public.sell_rice(%L, %L, true, 999)', t2, 'short')) = 'not enough rice', 'stock';
   assert pg_temp.err(format('select public.sell_rice(%L, %L, true, 1)', t2, 'bogus')) = 'invalid variety', 'variety';
-  assert pg_temp.err(format('select public.sell_rice(%L, %L, null, 1)', t2, 'short')) = 'invalid quantity', 'dry or wet';
-  assert pg_temp.err(format('select public.sell_rice(%L, %L, true, 0)', t2, 'short')) = 'invalid quantity', 'kg';
+  assert public.sell_rice(t2, 'short', null, 1)->'anticheat'->>'error' = 'invalid quantity', 'dry or wet';
+  assert public.sell_rice(t2, 'short', true, 0)->'anticheat'->>'error' = 'invalid quantity', 'kg';
 end $$;
 
 do $$

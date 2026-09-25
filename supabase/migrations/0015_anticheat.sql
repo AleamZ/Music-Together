@@ -823,3 +823,479 @@ grant execute on function public.start_cast(uuid, text) to anon, authenticated;
 grant execute on function public.finish_cast(text, uuid, boolean) to anon, authenticated;
 grant execute on function public.sell_fish(text, uuid[]) to anon, authenticated;
 grant execute on function public.release_fish(text, uuid) to anon, authenticated;
+
+-- Farm and land (cores from 0013). The 24 room wrappers become plpgsql: the lock gate, the hard checks of §10.3 in
+-- order, then the unchanged core with now(). The checks run before the core, so before the room's sweep.
+create or replace function public.rent_plot(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'rent_plot', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_rent(p_room_id, v_account, p_plot, now());
+end $$;
+
+create or replace function public.buy_plot(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'buy_plot', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_buy_plot(p_room_id, v_account, p_plot, now());
+end $$;
+
+create or replace function public.sell_plot_to_village(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'sell_plot_to_village', jsonb_build_object('plot', p_plot), p_room_id,
+                           'invalid plot');
+  end if;
+  return public._farm_do_sell_to_village(p_room_id, v_account, p_plot, now());
+end $$;
+
+create or replace function public.list_plot(p_room_id uuid, p_session_token text, p_plot integer, p_price integer)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'list_plot', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  if p_price is not null and p_price not between 1 and 5000000 then
+    return public._ac_flag(v_account, 'bad_price', 'list_plot', jsonb_build_object('plot', p_plot, 'price', p_price), p_room_id,
+                           'invalid price');
+  end if;
+  return public._farm_do_list(p_room_id, v_account, p_plot, p_price, now());
+end $$;
+
+create or replace function public.buy_listed_plot(p_room_id uuid, p_session_token text, p_plot integer,
+                                                  p_expected_price integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'buy_listed_plot', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_buy_listed(p_room_id, v_account, p_plot, p_expected_price, now());
+end $$;
+
+create or replace function public.offer_plot(p_room_id uuid, p_session_token text, p_plot integer, p_price integer)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'offer_plot', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  if p_price is null or p_price not between 1 and 5000000 then
+    return public._ac_flag(v_account, 'bad_price', 'offer_plot', jsonb_build_object('plot', p_plot, 'price', p_price), p_room_id,
+                           'invalid price');
+  end if;
+  return public._farm_do_offer(p_room_id, v_account, p_plot, p_price, now());
+end $$;
+
+-- foreign_offer (§7.2): an offer of this room whose buyer is someone else (R18: another room's id is a plain refusal).
+create or replace function public.withdraw_offer(p_room_id uuid, p_session_token text, p_offer_id uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token); v_buyer uuid;
+begin
+  select lo.buyer_id into v_buyer from public.land_offers lo where lo.id = p_offer_id and lo.room_id = p_room_id;
+  if found and v_buyer <> v_account then
+    return public._ac_flag(v_account, 'foreign_offer', 'withdraw_offer',
+                           jsonb_build_object('offer_id', p_offer_id, 'buyer_id', v_buyer), p_room_id, 'offer not found');
+  end if;
+  return public._farm_do_withdraw_offer(p_room_id, v_account, p_offer_id, now());
+end $$;
+
+-- foreign_offer: an offer of this room on a plot the caller does not own (every change of owner deletes its offers).
+create or replace function public.decline_offer(p_room_id uuid, p_session_token text, p_offer_id uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token); v_plot integer; v_owner uuid;
+begin
+  select lo.plot_no, fp.owner_id into v_plot, v_owner
+    from public.land_offers lo join public.field_plots fp on fp.room_id = lo.room_id and fp.plot_no = lo.plot_no
+   where lo.id = p_offer_id and lo.room_id = p_room_id;
+  if found and v_owner is distinct from v_account then
+    return public._ac_flag(v_account, 'foreign_offer', 'decline_offer',
+                           jsonb_build_object('offer_id', p_offer_id, 'plot', v_plot, 'owner_id', v_owner), p_room_id,
+                           'offer not found');
+  end if;
+  return public._farm_do_decline_offer(p_room_id, v_account, p_offer_id, now());
+end $$;
+
+create or replace function public.accept_offer(p_room_id uuid, p_session_token text, p_offer_id uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token); v_plot integer; v_owner uuid;
+begin
+  select lo.plot_no, fp.owner_id into v_plot, v_owner
+    from public.land_offers lo join public.field_plots fp on fp.room_id = lo.room_id and fp.plot_no = lo.plot_no
+   where lo.id = p_offer_id and lo.room_id = p_room_id;
+  if found and v_owner is distinct from v_account then
+    return public._ac_flag(v_account, 'foreign_offer', 'accept_offer',
+                           jsonb_build_object('offer_id', p_offer_id, 'plot', v_plot, 'owner_id', v_owner), p_room_id,
+                           'not your plot');
+  end if;
+  return public._farm_do_accept_offer(p_room_id, v_account, p_offer_id, now());
+end $$;
+
+create or replace function public.set_sublease(p_room_id uuid, p_session_token text, p_plot integer, p_price integer)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'set_sublease', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  if p_price is not null and p_price not between 1 and 100000 then
+    return public._ac_flag(v_account, 'bad_price', 'set_sublease', jsonb_build_object('plot', p_plot, 'price', p_price),
+                           p_room_id, 'invalid price');
+  end if;
+  return public._farm_do_set_sublease(p_room_id, v_account, p_plot, p_price, now());
+end $$;
+
+create or replace function public.rent_sublease(p_room_id uuid, p_session_token text, p_plot integer,
+                                                p_expected_price integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'rent_sublease', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_rent_sublease(p_room_id, v_account, p_plot, p_expected_price, now());
+end $$;
+
+create or replace function public.abandon_crop(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'abandon_crop', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_abandon(p_room_id, v_account, p_plot, now());
+end $$;
+
+create or replace function public.prepare_plot(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'prepare_plot', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_prepare(p_room_id, v_account, p_plot, now());
+end $$;
+
+-- kind_mismatch (§7.4) is soft: an existing item of another kind; an unknown item is the core's plain refusal.
+create or replace function public.apply_fertilizer(p_room_id uuid, p_session_token text, p_plot integer, p_item_id text)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token); v_kind text;
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'apply_fertilizer', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  select kind into v_kind from public.shop_items where id = p_item_id;
+  if found and v_kind <> 'fertilizer' then
+    return public._ac_flag(v_account, 'kind_mismatch', 'apply_fertilizer', jsonb_build_object('item', p_item_id, 'kind', v_kind),
+                           p_room_id, 'invalid item', false);
+  end if;
+  return public._farm_do_fertilize(p_room_id, v_account, p_plot, p_item_id, now());
+end $$;
+
+create or replace function public.soak_seed(p_room_id uuid, p_session_token text, p_plot integer, p_item_id text)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token); v_kind text;
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'soak_seed', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  select kind into v_kind from public.shop_items where id = p_item_id;
+  if found and v_kind <> 'seed' then
+    return public._ac_flag(v_account, 'kind_mismatch', 'soak_seed', jsonb_build_object('item', p_item_id, 'kind', v_kind),
+                           p_room_id, 'invalid item', false);
+  end if;
+  return public._farm_do_soak(p_room_id, v_account, p_plot, p_item_id, now());
+end $$;
+
+create or replace function public.sow_seed(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'sow_seed', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_sow(p_room_id, v_account, p_plot, now());
+end $$;
+
+create or replace function public.begin_work(p_room_id uuid, p_session_token text, p_plot integer, p_work text)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'begin_work', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  if p_work is null or p_work not in ('transplant', 'harvest') then
+    return public._ac_flag(v_account, 'bad_work', 'begin_work', jsonb_build_object('plot', p_plot, 'work', p_work), p_room_id,
+                           'invalid work');
+  end if;
+  return public._farm_do_begin_work(p_room_id, v_account, p_plot, p_work, now());
+end $$;
+
+-- quality_range (§6.4): NaN is larger than every number, so the range test catches it; the detail keeps it as text.
+create or replace function public.transplant(p_room_id uuid, p_session_token text, p_plot integer,
+                                             p_quality double precision) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'transplant', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  if p_quality is null or p_quality not between 0.9 - 1e-9 and 1.1 + 1e-9 then
+    return public._ac_flag(v_account, 'quality_range', 'transplant', jsonb_build_object('plot', p_plot, 'quality', p_quality::text),
+                           p_room_id, 'invalid quality');
+  end if;
+  return public._farm_do_transplant(p_room_id, v_account, p_plot, p_quality, now());
+end $$;
+
+create or replace function public.water(p_room_id uuid, p_session_token text, p_plot integer, p_delta integer)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'water', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  if p_delta is null or p_delta not in (1, -1) then
+    return public._ac_flag(v_account, 'bad_water', 'water', jsonb_build_object('plot', p_plot, 'delta', p_delta),
+                           p_room_id, 'invalid quantity');
+  end if;
+  return public._farm_do_water(p_room_id, v_account, p_plot, p_delta, now());
+end $$;
+
+create or replace function public.spray(p_room_id uuid, p_session_token text, p_plot integer, p_item_id text)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token); v_kind text;
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'spray', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  select kind into v_kind from public.shop_items where id = p_item_id;
+  if found and v_kind <> 'pesticide' then
+    return public._ac_flag(v_account, 'kind_mismatch', 'spray', jsonb_build_object('item', p_item_id, 'kind', v_kind),
+                           p_room_id, 'invalid item', false);
+  end if;
+  return public._farm_do_spray(p_room_id, v_account, p_plot, p_item_id, now());
+end $$;
+
+create or replace function public.pick_snails(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'pick_snails', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_pick_snails(p_room_id, v_account, p_plot, now());
+end $$;
+
+create or replace function public.harvest(p_room_id uuid, p_session_token text, p_plot integer,
+                                          p_quality double precision) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'harvest', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  if p_quality is null or p_quality not between 0.9 - 1e-9 and 1.1 + 1e-9 then
+    return public._ac_flag(v_account, 'quality_range', 'harvest', jsonb_build_object('plot', p_plot, 'quality', p_quality::text),
+                           p_room_id, 'invalid quality');
+  end if;
+  return public._farm_do_harvest(p_room_id, v_account, p_plot, p_quality, now());
+end $$;
+
+create or replace function public.dry_start(p_room_id uuid, p_session_token text, p_variety text, p_kg integer)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_kg is null or p_kg < 1 then
+    return public._ac_flag(v_account, 'bad_qty', 'dry_start', jsonb_build_object('variety', p_variety, 'kg', p_kg), p_room_id,
+                           'invalid quantity');
+  end if;
+  return public._farm_do_dry_start(p_room_id, v_account, p_variety, p_kg, now());
+end $$;
+
+-- bad_slot (R17): the drying panel only offers slots 1–4.
+create or replace function public.dry_collect(p_room_id uuid, p_session_token text, p_slot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_slot is null or p_slot not between 1 and 4 then
+    return public._ac_flag(v_account, 'bad_slot', 'dry_collect', jsonb_build_object('slot', p_slot), p_room_id, 'invalid slot');
+  end if;
+  return public._farm_do_dry_collect(p_room_id, v_account, p_slot, now());
+end $$;
+
+-- The account-only farm RPCs (bodies from 0013).
+create or replace function public.sell_rice(p_session_token text, p_variety text, p_dry boolean, p_kg integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v public.rice_varieties; rs public.rice_stock; v_pay integer;
+begin
+  v_account := public._ac_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  if p_kg is null or p_kg < 1 or p_dry is null then
+    return public._ac_flag(v_account, 'bad_qty', 'sell_rice', jsonb_build_object('variety', p_variety, 'kg', p_kg, 'dry', p_dry),
+                           null, 'invalid quantity');
+  end if;
+  v := public._variety(p_variety);
+  if v.id is null then
+    raise exception 'invalid variety' using errcode = '22023';
+  end if;
+  select * into rs from public.rice_stock where account_id = v_account and variety = p_variety for update;
+  if not found or (case when p_dry then rs.dry_kg else rs.wet_kg end) < p_kg then
+    raise exception 'not enough rice' using errcode = '22023';
+  end if;
+  v_pay := case when p_dry then p_kg * v.price_per_kg else (p_kg * v.price_per_kg * 7) / 10 end;
+  update public.rice_stock
+     set dry_kg = dry_kg - case when p_dry then p_kg else 0 end, wet_kg = wet_kg - case when p_dry then 0 else p_kg end
+   where account_id = v_account and variety = p_variety;
+  perform public._pay(v_account, v_pay, 'rice_sell',
+                      p_variety || case when p_dry then ' dry ' else ' wet ' end || p_kg || ' kg');
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+-- A fishing item is a soft kind_mismatch, a quantity outside 1–99 a hard bad_qty; more than 99 held stays a plain refusal.
+create or replace function public.buy_farm_item(p_session_token text, p_item_id text, p_qty integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; w public.wallets; it public.shop_items; v_cost integer;
+begin
+  v_account := public._ac_account(p_session_token);
+  w := public._wallet_lock(v_account);
+  select * into it from public.shop_items where id = p_item_id;
+  if not found or it.price is null then
+    raise exception 'item not available' using errcode = '22023';
+  end if;
+  if it.kind not in ('seed', 'fertilizer', 'pesticide') then
+    return public._ac_flag(v_account, 'kind_mismatch', 'buy_farm_item', jsonb_build_object('item', it.id, 'kind', it.kind),
+                           null, 'item not available', false);
+  end if;
+  if p_qty is null or p_qty < 1 or p_qty > 99 then
+    return public._ac_flag(v_account, 'bad_qty', 'buy_farm_item', jsonb_build_object('item', it.id, 'qty', p_qty), null,
+                           'invalid quantity');
+  end if;
+  if coalesce((select qty from public.inventory where account_id = v_account and item_id = it.id), 0) + p_qty > 99 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  v_cost := it.price * p_qty;
+  if w.coins < v_cost then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(v_account, -v_cost, 'farm_buy', it.id || ' x' || p_qty);
+  insert into public.inventory (account_id, item_id, qty) values (v_account, it.id, p_qty)
+  on conflict (account_id, item_id) do update set qty = public.inventory.qty + excluded.qty;
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+create or replace function public.claim_farm_gift(p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_gifted boolean;
+begin
+  v_account := public._ac_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  insert into public.farm_profiles (account_id) values (v_account) on conflict (account_id) do nothing;
+  update public.farm_profiles set gift_at = now() where account_id = v_account and gift_at is null;
+  v_gifted := found;
+  if v_gifted then
+    insert into public.inventory (account_id, item_id, qty) values (v_account, 'seed_short', 1), (v_account, 'fert_urea', 1)
+    on conflict (account_id, item_id) do update set qty = least(99, public.inventory.qty + 1);
+  end if;
+  return jsonb_build_object('gifted', v_gifted, 'server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+-- A player-to-player sale (0013): the announcement is a system line about the buyer (R12); nothing else changes.
+create or replace function public._land_sale(p_room uuid, p_plot integer, p_buyer uuid, p_price integer, p_now timestamptz)
+returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_seller uuid;
+begin
+  select owner_id into v_seller from public.field_plots where room_id = p_room and plot_no = p_plot;
+  perform public._wallet_lock(p_buyer);
+  perform public._wallet_lock(v_seller);
+  perform public._pay(p_buyer, -p_price, 'land_buy', 'plot ' || p_plot);
+  perform public._pay(v_seller, p_price, 'land_sell', 'plot ' || p_plot);
+  update public.field_plots set owner_id = p_buyer, owned_at = p_now, sale_price = null, sublease_price = null
+   where room_id = p_room and plot_no = p_plot;
+  delete from public.land_offers where room_id = p_room and plot_no = p_plot;
+  insert into public.chat_messages (room_id, account_id, username, body, system, about_account_id)
+  values (p_room, null, 'Hợp tác xã',
+          format('[land:%s] 🏡 %s đã mua thửa %s của %s với giá %s xu.', p_plot,
+                 (select username from public.accounts where id = p_buyer), p_plot,
+                 (select username from public.accounts where id = v_seller),
+                 replace(to_char(p_price, 'FM9,999,999'), ',', '.')),
+          true, p_buyer);
+  delete from public.chat_messages
+   where room_id = p_room
+     and id not in (select id from public.chat_messages where room_id = p_room order by created_at desc limit 200);
+end; $$;
+revoke all on function public._land_sale(uuid, integer, uuid, integer, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.rent_plot(uuid, text, integer) to anon, authenticated;
+grant execute on function public.buy_plot(uuid, text, integer) to anon, authenticated;
+grant execute on function public.sell_plot_to_village(uuid, text, integer) to anon, authenticated;
+grant execute on function public.list_plot(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.buy_listed_plot(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.offer_plot(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.withdraw_offer(uuid, text, uuid) to anon, authenticated;
+grant execute on function public.decline_offer(uuid, text, uuid) to anon, authenticated;
+grant execute on function public.accept_offer(uuid, text, uuid) to anon, authenticated;
+grant execute on function public.set_sublease(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.rent_sublease(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.abandon_crop(uuid, text, integer) to anon, authenticated;
+grant execute on function public.prepare_plot(uuid, text, integer) to anon, authenticated;
+grant execute on function public.apply_fertilizer(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.soak_seed(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.sow_seed(uuid, text, integer) to anon, authenticated;
+grant execute on function public.begin_work(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.transplant(uuid, text, integer, double precision) to anon, authenticated;
+grant execute on function public.water(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.spray(uuid, text, integer, text) to anon, authenticated;
+grant execute on function public.pick_snails(uuid, text, integer) to anon, authenticated;
+grant execute on function public.harvest(uuid, text, integer, double precision) to anon, authenticated;
+grant execute on function public.dry_start(uuid, text, text, integer) to anon, authenticated;
+grant execute on function public.dry_collect(uuid, text, integer) to anon, authenticated;
+grant execute on function public.sell_rice(text, text, boolean, integer) to anon, authenticated;
+grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;
+grant execute on function public.claim_farm_gift(text) to anon, authenticated;
