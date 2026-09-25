@@ -796,6 +796,8 @@ begin
   perform public._card_lock_wallets(p_room, p_game);
   if p_game = 'tienlen' then
     perform public._tl_leave(p_room, p_seats, p_how, p_now);
+  elsif p_game = 'cao' then
+    perform public._cao_leave(p_room, p_seats, p_how, p_now);
   end if;
 end $$;
 
@@ -806,6 +808,8 @@ as $$
 begin
   if p_game = 'tienlen' then
     return public._tl_due(p_room, p_now, p_deck);
+  elsif p_game = 'cao' then
+    return public._cao_due(p_room, p_now, p_deck);
   end if;
   return false;
 end $$;
@@ -854,8 +858,8 @@ begin
   end loop;
 end $$;
 
--- Two seats start a table (§6.1): the countdown (Tiến lên 8 s, poker 5 s) or the dealer's wait (Cào, 15 s). Before the
--- deal, fewer than two seats send it back to idle.
+-- Two seats start a table (§6.1): the countdown (Tiến lên 8 s, poker 5 s) or the dealer's wait (Cào, _cao_start). Before
+-- the deal, fewer than two seats send it back to idle, and a Cào wait whose previewed dealer is gone starts again.
 create or replace function public._card_ready(p_room uuid, p_game text, p_now timestamptz) returns void
 language plpgsql security definer set search_path = public, extensions
 as $$
@@ -863,15 +867,20 @@ declare t public.card_tables; n integer;
 begin
   select * into t from public.card_tables where room_id = p_room and game = p_game;
   n := (select count(*) from public.card_seats where room_id = p_room and game = p_game and not leaving);
-  if t.phase = 'idle' and n >= 2 then
+  if t.phase = 'idle' and n >= 2 and p_game = 'cao' then
+    perform public._cao_start(p_room, p_now);
+  elsif t.phase = 'idle' and n >= 2 then
     update public.card_tables
-       set phase = case p_game when 'cao' then 'deal_wait' else 'countdown' end, turn = null, pub = '{}'::jsonb,
-           deadline = p_now + case p_game when 'tienlen' then interval '8 seconds' when 'cao' then interval '15 seconds'
-                                          else interval '5 seconds' end
+       set phase = 'countdown', turn = null, pub = '{}'::jsonb,
+           deadline = p_now + case p_game when 'tienlen' then interval '8 seconds' else interval '5 seconds' end
      where room_id = p_room and game = p_game;
   elsif t.phase in ('countdown', 'deal_wait') and n < 2 then
     update public.card_tables set phase = 'idle', deadline = null, turn = null, pub = '{}'::jsonb
      where room_id = p_room and game = p_game;
+  elsif t.phase = 'deal_wait'
+        and not exists (select 1 from public.card_seats where room_id = p_room and game = p_game and not leaving
+                         and seat = (t.pub->>'dealer')::int) then
+    perform public._cao_start(p_room, p_now);
   end if;
 end $$;
 
@@ -947,7 +956,7 @@ begin
   return public._card_answer(p_room, p_game, p_account, p_now);
 end $$;
 
--- Stand up (§6.3): the leave operation on the caller's seat.
+-- Stand up (§6.3): the leave operation on the caller's seat; the Cào dealer waits for the showdown (R35).
 create or replace function public._card_leave(p_room uuid, p_account uuid, p_game text, p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
 as $$
@@ -961,6 +970,10 @@ begin
     raise exception 'not seated' using errcode = '22023';
   end if;
   v_live := public._card_live(p_room, p_game, v_seat);
+  if v_live and p_game = 'cao'
+     and (select (pub->>'dealer')::int from public.card_tables where room_id = p_room and game = p_game) = v_seat then
+    raise exception 'dealer busy' using errcode = '22023';
+  end if;
   perform public._card_leave_seat(p_room, p_game, v_seat, 'leave', p_now);
   perform public._card_ready(p_room, p_game, p_now);
   perform public._card_bump(p_room, p_game, v_live);
@@ -1003,6 +1016,8 @@ begin
     v_err := public._tl_do_play(p_room, v_seat, public._card_ints(p_args->'cards'), p_now);
   elsif p_kind = 'tl_pass' then
     v_err := public._tl_do_pass(p_room, v_seat, p_now);
+  elsif p_kind = 'cao_deal' then
+    v_err := public._cao_do_deal(p_room, v_seat, p_now, p_deck);
   end if;
   if v_err is not null then
     return public._ac_flag(p_account, 'bad_move', p_kind,
@@ -1451,6 +1466,252 @@ revoke all on function public._tl_leave(uuid, integer[], text, timestamptz) from
 revoke all on function public._tl_end(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public._tl_due(uuid, timestamptz, integer[]) from public, anon, authenticated;
 
+-- Cào (§8). The dealer a deal_wait shows (§8.2): among the seats that look able to play (seen within 60 s, a wallet ≥ S),
+-- the first — from the first to sit at a new table, else from the seat after the last dealer — whose wallet covers
+-- (n − 1) S. A preview only: the deal rebuilds it under the locks (R20).
+create or replace function public._cao_preview(p_room uuid, p_now timestamptz) returns integer
+language sql stable security definer set search_path = public, extensions
+as $$
+  with t as (select stake, pos from public.card_tables where room_id = p_room and game = 'cao'),
+  p as (select s.seat, s.sat_at, coalesce(w.coins, 0) as coins
+          from public.card_seats s left join public.wallets w on w.account_id = s.account_id
+         where s.room_id = p_room and s.game = 'cao' and not s.leaving and s.seen_at >= p_now - interval '60 seconds'
+           and coalesce(w.coins, 0) >= (select stake from t))
+  select p.seat from p, t
+   where p.coins >= ((select count(*) from p) - 1) * t.stake
+   order by case when t.pos is not null and p.seat <= t.pos then 1 else 0 end, case when t.pos is null then p.sat_at end, p.seat
+   limit 1
+$$;
+
+-- The dealer's wait (§8.2): 15 s for the previewed dealer's "Chia bài"; nobody able to deal is noted ("no_dealer"). Fewer
+-- than two seats → idle.
+create or replace function public._cao_start(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_dealer integer;
+begin
+  if (select count(*) from public.card_seats where room_id = p_room and game = 'cao' and not leaving) < 2 then
+    update public.card_tables set phase = 'idle', turn = null, deadline = null, pub = '{}'::jsonb
+     where room_id = p_room and game = 'cao';
+    return;
+  end if;
+  v_dealer := public._cao_preview(p_room, p_now);
+  update public.card_tables
+     set phase = 'deal_wait', turn = v_dealer, deadline = p_now + interval '15 seconds',
+         pub = jsonb_build_object('dealer', v_dealer, 'order', '[]'::jsonb, 'left', '[]'::jsonb,
+                                  'note', case when v_dealer is null then 'no_dealer' end)
+   where room_id = p_room and game = 'cao';
+end $$;
+
+-- The deal (§8.2): the previewed dealer's cao_deal (p_seat), or the deadline (p_seat null: a miss for the previewed
+-- dealer). The table's wallets are locked; the players are rebuilt (seen, not leaving, a wallet ≥ S; the others stand
+-- up) and the dealer from the preview on (R20); then S is held from each player and (n − 1) S from the dealer, and 3 cards
+-- are dealt to each in seat order. The refusal of a move that is not legal, else null.
+create or replace function public._cao_do_deal(p_room uuid, p_seat integer, p_now timestamptz, p_deck integer[]) returns text
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_prev integer; r record; v_players integer[]; n integer; v_dealer integer;
+        v_deck integer[]; v_hand integer; i integer; v_cards integer[]; v_missed integer; v_acc uuid;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'cao';
+  if t.phase <> 'deal_wait' then
+    return 'wrong phase';
+  end if;
+  v_prev := (t.pub->>'dealer')::int;
+  if p_seat is not null and p_seat is distinct from v_prev then
+    return 'not dealer';
+  end if;
+  if p_seat is null and v_prev is not null then
+    update public.card_seats set missed = missed + 1
+     where room_id = p_room and game = 'cao' and seat = v_prev and not leaving
+    returning missed, account_id into v_missed, v_acc;
+    if found then
+      perform public._card_log(p_room, 'cao', t.hand_no, v_acc, v_prev, 'timeout', jsonb_build_object('missed', v_missed), p_now);
+    end if;
+  end if;
+  perform public._card_lock_wallets(p_room, 'cao');
+  for r in select cs.seat from public.card_seats cs left join public.wallets w on w.account_id = cs.account_id
+            where cs.room_id = p_room and cs.game = 'cao' and not cs.leaving
+              and (cs.seen_at < p_now - interval '60 seconds' or coalesce(w.coins, 0) < t.stake)
+            order by cs.seat loop
+    perform public._card_leave_seat(p_room, 'cao', r.seat, 'idle', p_now);
+  end loop;
+  v_players := array(select seat from public.card_seats where room_id = p_room and game = 'cao' and not leaving order by seat);
+  n := cardinality(v_players);
+  if n < 2 then
+    update public.card_tables set phase = 'idle', turn = null, deadline = null, pub = '{}'::jsonb
+     where room_id = p_room and game = 'cao';
+    return null;
+  end if;
+  v_dealer := (select cs.seat from public.card_seats cs join public.wallets w on w.account_id = cs.account_id
+                where cs.room_id = p_room and cs.game = 'cao' and cs.seat = any(v_players) and w.coins >= (n - 1) * t.stake
+                order by case when v_prev is not null then (cs.seat < v_prev)::int
+                              when t.pos is not null then (cs.seat <= t.pos)::int else 0 end,
+                         case when v_prev is null and t.pos is null then cs.sat_at end, cs.seat
+                limit 1);
+  if v_dealer is null then
+    perform public._cao_start(p_room, p_now);
+    return null;
+  end if;
+  v_deck := coalesce(p_deck, public._card_shuffle());
+  v_hand := t.hand_no + 1;
+  delete from public.card_hands where room_id = p_room and game = 'cao';
+  delete from public.card_secrets where room_id = p_room and game = 'cao';
+  for i in 1..n loop
+    v_cards := array(select c from unnest(v_deck[3 * i - 2 : 3 * i]) c order by c);
+    insert into public.card_hands (room_id, game, hand_no, seat, account_id, dealt, cards)
+    select p_room, 'cao', v_hand, v_players[i], account_id, v_cards, v_cards
+      from public.card_seats where room_id = p_room and game = 'cao' and seat = v_players[i];
+  end loop;
+  for r in select seat, account_id from public.card_seats where room_id = p_room and game = 'cao' and seat = any(v_players)
+            order by seat loop
+    perform public._pay(r.account_id, -(case when r.seat = v_dealer then n - 1 else 1 end) * t.stake, 'card_hold',
+                        public._card_ref('cao', v_hand));
+    update public.card_seats set escrow = (case when r.seat = v_dealer then n - 1 else 1 end) * t.stake
+     where room_id = p_room and game = 'cao' and seat = r.seat;
+  end loop;
+  update public.card_tables
+     set hand_no = v_hand, pos = v_dealer, phase = 'peek', turn = null, deadline = p_now + interval '15 seconds',
+         pub = jsonb_build_object('dealer', v_dealer, 'order', to_jsonb(v_players), 'left', '[]'::jsonb, 'note', null)
+   where room_id = p_room and game = 'cao';
+  perform public._card_log(p_room, 'cao', v_hand, null, v_dealer, 'deal',
+    jsonb_build_object('hands', (select jsonb_object_agg(seat::text, to_jsonb(dealt)) from public.card_hands
+                                  where room_id = p_room and game = 'cao'), 'by', coalesce(p_seat::text, 'timeout')), p_now);
+  delete from public.card_log where id in (select id from public.card_log where at < p_now - interval '14 days' order by at limit 500);
+  return null;
+end $$;
+
+-- A hand cancelled (§6.3, R35): its dealer was removed by the sweep or _card_forfeit_all. What players who left already
+-- lost stands; every seat is paid its balance, and `last` says "Ván huỷ" (cancelled).
+create or replace function public._cao_cancel(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_dealer integer; v_left integer[];
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'cao';
+  v_dealer := (t.pub->>'dealer')::int;
+  v_left := public._card_ints(t.pub->'left');
+  update public.card_tables
+     set last = jsonb_build_object('hand_no', t.hand_no, 'dealer', v_dealer, 'cancelled', true, 'hands', '{}'::jsonb,
+           'lines', coalesce((select jsonb_agg(jsonb_build_object('from', s, 'to', v_dealer, 'xu', t.stake, 'why', 'left') order by n)
+                                from unnest(v_left) with ordinality u(s, n)), '[]'::jsonb),
+           'net', (select jsonb_object_agg(q::text, (case when q = v_dealer then cardinality(v_left) when q = any(v_left) then -1
+                                                           else 0 end) * t.stake)
+                     from unnest(public._card_ints(t.pub->'order')) q))
+   where room_id = p_room and game = 'cao';
+  perform public._card_settle(p_room, 'cao');
+  delete from public.card_seats where room_id = p_room and game = 'cao' and leaving;
+  update public.card_tables set phase = 'result', turn = null, deadline = p_now + interval '6 seconds'
+   where room_id = p_room and game = 'cao';
+  perform public._card_log(p_room, 'cao', t.hand_no, null, v_dealer, 'cancel', '{}'::jsonb, p_now);
+  perform public._card_reset_if_empty(p_room, 'cao');
+end $$;
+
+-- The leave operation during peek (§6.3), with the table's wallets locked: a player loses S to the dealer at once and is
+-- paid out, the row stays `leaving`, and the hand is left out of the showdown. A dealer among the seats (the sweep or
+-- _card_forfeit_all; card_leave refuses it, R35) cancels the hand, and those seats pay nothing.
+create or replace function public._cao_leave(p_room uuid, p_seats integer[], p_how text, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_dealer integer; v_dacc uuid; s integer;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'cao';
+  v_dealer := (t.pub->>'dealer')::int;
+  if v_dealer = any(p_seats) then
+    perform public._cao_cancel(p_room, p_now);
+    foreach s in array p_seats loop
+      perform public._card_leave_seat(p_room, 'cao', s, p_how, p_now);
+    end loop;
+    return;
+  end if;
+  select account_id into v_dacc from public.card_hands
+   where room_id = p_room and game = 'cao' and hand_no = t.hand_no and seat = v_dealer;
+  foreach s in array p_seats loop
+    update public.card_seats set escrow = escrow - t.stake where room_id = p_room and game = 'cao' and seat = s;
+    update public.card_seats set escrow = escrow + t.stake
+     where room_id = p_room and game = 'cao' and seat = v_dealer and account_id = v_dacc;
+    update public.card_tables set pub = jsonb_set(pub, '{left}', coalesce(pub->'left', '[]'::jsonb) || to_jsonb(s))
+     where room_id = p_room and game = 'cao';
+    perform public._card_payout(p_room, 'cao', s, 'card_settle');
+    update public.card_seats set leaving = true where room_id = p_room and game = 'cao' and seat = s;
+    perform public._card_log(p_room, 'cao', t.hand_no, (select account_id from public.card_seats
+                                                          where room_id = p_room and game = 'cao' and seat = s),
+                             s, 'leave', jsonb_build_object('how', p_how, 'lost', t.stake), p_now);
+  end loop;
+end $$;
+
+-- The showdown at the peek deadline (§8.2, §8.3): each hand still in play against the dealer's, S a line; the hands in
+-- play shown in `last`; every balance paid; the leaving rows gone, and a dealer with two misses in a row stood up (§6.3).
+create or replace function public._cao_showdown(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_set jsonb; l jsonb; r record; v_left integer[];
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'cao';
+  v_left := public._card_ints(t.pub->'left');
+  v_set := public._cao_settle(jsonb_build_object('dealer', t.pub->'dealer', 'order', t.pub->'order', 'left', t.pub->'left',
+             'hands', (select jsonb_object_agg(seat::text, to_jsonb(cards)) from public.card_hands
+                        where room_id = p_room and game = 'cao' and hand_no = t.hand_no)));
+  for l in select e.value from jsonb_array_elements(v_set->'lines') e where e.value->>'why' = 'cao' loop
+    update public.card_seats cs set escrow = cs.escrow - t.stake
+      from public.card_hands h
+     where cs.room_id = p_room and cs.game = 'cao' and cs.seat = (l->>'from')::int
+       and h.room_id = p_room and h.game = 'cao' and h.hand_no = t.hand_no and h.seat = cs.seat and h.account_id = cs.account_id;
+    update public.card_seats cs set escrow = cs.escrow + t.stake
+      from public.card_hands h
+     where cs.room_id = p_room and cs.game = 'cao' and cs.seat = (l->>'to')::int
+       and h.room_id = p_room and h.game = 'cao' and h.hand_no = t.hand_no and h.seat = cs.seat and h.account_id = cs.account_id;
+  end loop;
+  update public.card_tables
+     set last = jsonb_build_object('hand_no', t.hand_no, 'dealer', t.pub->'dealer', 'cancelled', false,
+           'hands', (select jsonb_object_agg(h.seat::text, jsonb_build_object('cards', to_jsonb(h.cards))
+                                                            || (public._cao_eval(h.cards) - 'rank' - 'top'))
+                       from public.card_hands h
+                      where h.room_id = p_room and h.game = 'cao' and h.hand_no = t.hand_no and not (h.seat = any(v_left))),
+           'lines', (select coalesce(jsonb_agg(jsonb_build_object('from', l2->'from', 'to', l2->'to', 'xu', t.stake, 'why', l2->'why')
+                                               order by n), '[]'::jsonb)
+                       from jsonb_array_elements(v_set->'lines') with ordinality e(l2, n)),
+           'net', (select jsonb_object_agg(key, value::int * t.stake) from jsonb_each_text(v_set->'net')))
+   where room_id = p_room and game = 'cao';
+  perform public._card_settle(p_room, 'cao');
+  delete from public.card_seats where room_id = p_room and game = 'cao' and leaving;
+  update public.card_tables set phase = 'result', turn = null, deadline = p_now + interval '6 seconds'
+   where room_id = p_room and game = 'cao';
+  for r in select seat from public.card_seats where room_id = p_room and game = 'cao' and missed >= 2 order by seat loop
+    perform public._card_leave_seat(p_room, 'cao', r.seat, 'timeout', p_now);
+  end loop;
+  perform public._card_log(p_room, 'cao', t.hand_no, null, (t.pub->>'dealer')::int, 'end',
+                           jsonb_build_object('net', v_set->'net'), p_now);
+  perform public._card_reset_if_empty(p_room, 'cao');
+end $$;
+
+-- What is due at a Cào table (§10): the automatic deal, the showdown, or the next dealer's wait.
+create or replace function public._cao_due(p_room uuid, p_now timestamptz, p_deck integer[]) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_phase text;
+begin
+  select phase into v_phase from public.card_tables where room_id = p_room and game = 'cao';
+  if v_phase = 'deal_wait' then
+    perform public._cao_do_deal(p_room, null, p_now, p_deck);
+  elsif v_phase = 'peek' then
+    perform public._cao_showdown(p_room, p_now);
+  elsif v_phase = 'result' then
+    perform public._cao_start(p_room, p_now);
+  else
+    return false;
+  end if;
+  return true;
+end $$;
+
+revoke all on function public._cao_preview(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._cao_start(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._cao_do_deal(uuid, integer, timestamptz, integer[]) from public, anon, authenticated;
+revoke all on function public._cao_cancel(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._cao_leave(uuid, integer[], text, timestamptz) from public, anon, authenticated;
+revoke all on function public._cao_showdown(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._cao_due(uuid, timestamptz, integer[]) from public, anon, authenticated;
+
 -- ---------- E. Public RPCs (§11.3): membership first (R38); reads are snapshots (R37); ticks and writes lock and sweep ----------
 -- The hall's table labels (R27): every table's stake, phase and seats; no touch, no lock.
 create or replace function public.card_lobby(p_room_id uuid, p_session_token text) returns jsonb
@@ -1562,6 +1823,15 @@ begin
   return public._card_action(p_room_id, v_account, 'tienlen', 'tl_pass', p_seq, '{}'::jsonb, now());
 end $$;
 
+-- Deal (§8.2): the previewed dealer's "Chia bài". Guarded.
+create or replace function public.cao_deal(p_room_id uuid, p_session_token text, p_seq integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  return public._card_action(p_room_id, v_account, 'cao', 'cao_deal', p_seq, '{}'::jsonb, now());
+end $$;
+
 grant execute on function public.card_lobby(uuid, text) to anon, authenticated;
 grant execute on function public.card_state(uuid, text, text) to anon, authenticated;
 grant execute on function public.card_hand(uuid, text, text) to anon, authenticated;
@@ -1570,3 +1840,4 @@ grant execute on function public.card_leave(uuid, text, text) to anon, authentic
 grant execute on function public.card_sit(uuid, text, text, integer, integer, integer) to anon, authenticated;
 grant execute on function public.tl_play(uuid, text, integer, integer[]) to anon, authenticated;
 grant execute on function public.tl_pass(uuid, text, integer) to anon, authenticated;
+grant execute on function public.cao_deal(uuid, text, integer) to anon, authenticated;

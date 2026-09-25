@@ -799,3 +799,184 @@ begin
 end $$;
 
 select 'v16 tienlen smoke ok' as result;
+
+-- ---------- Cào (§8, §17): five players, the dealer rotating; time stands still (each step's deadline is moved back) ----------
+create function pg_temp.ct() returns public.card_tables language sql as $$
+  select * from public.card_tables where room_id = (select v from smoke where k = 'room')::uuid and game = 'cao'
+$$;
+create function pg_temp.cesc() returns jsonb language sql as $$
+  select coalesce(jsonb_object_agg(seat::text, escrow), '{}') from public.card_seats
+   where room_id = (select v from smoke where k = 'room')::uuid and game = 'cao'
+$$;
+create function pg_temp.cresult() returns jsonb language sql as $$
+  select jsonb_build_object('dealer', t.last->'dealer', 'cancelled', t.last->'cancelled', 'net', t.last->'net',
+    'lines', (select coalesce(jsonb_agg(jsonb_build_array(l->'from', l->'to', l->'xu', l->'why') order by n), '[]')
+                from jsonb_array_elements(t.last->'lines') with ordinality e(l, n)))
+    from pg_temp.ct() t
+$$;
+-- What is due at the Cào table: its deadline moved to the past, then a tick with this deck.
+create function pg_temp.cao_due(p_deck integer[]) returns public.card_tables language plpgsql as $$
+declare room uuid := (select v from smoke where k = 'room')::uuid; r jsonb;
+begin
+  update public.card_tables set deadline = now() - interval '1 second' where room_id = room and game = 'cao';
+  r := public._card_tick(room, (select v from smoke where k = 'a1')::uuid, 'cao', now(), p_deck);
+  assert (r->>'changed')::boolean, format('the tick: %s', r);
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the tick';
+  return pg_temp.ct();
+end $$;
+-- The previewed dealer's cao_deal with this deck, through the action path.
+create function pg_temp.cao_deal(p_account uuid, p_deck integer[]) returns jsonb language plpgsql as $$
+declare r jsonb;
+begin
+  r := public._card_action((select v from smoke where k = 'room')::uuid, p_account, 'cao', 'cao_deal', (pg_temp.ct()).seq,
+                           '{}'::jsonb, now(), p_deck);
+  assert r ? 'state', format('cao_deal: %s', r);
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the deal';
+  return r;
+end $$;
+
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        c6 text := (select v from smoke where k = 'c6');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        a6 uuid := (select v from smoke where k = 'a6')::uuid; t public.card_tables; r jsonb; s jsonb;
+begin
+  perform pg_temp.set_coins(a1, 20000);
+  perform pg_temp.set_coins(a2, 20000);
+  perform pg_temp.set_coins(a3, 2000);
+  perform pg_temp.set_coins(a4, 20000);
+  perform pg_temp.set_coins(a6, 20000);
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  -- the first dealer is the first to sit (§8.2); the preview holds while others sit
+  perform public.card_sit(room, c2, 'cao', 2, 1000, null);
+  update public.card_seats set sat_at = now() - interval '1 minute' where room_id = room and account_id = a2;
+  r := public.card_sit(room, c1, 'cao', 1, 1000, null);
+  assert r->'state'->>'phase' = 'deal_wait' and r->'state'->'pub'->'dealer' = '2' and r->'state'->'turn' = '2'
+         and (r->'state'->>'deadline')::timestamptz = now() + interval '15 seconds' and (r->>'coins')::int = 20000,
+    format('the dealer waits: %s', r->'state');
+  perform public.card_sit(room, c3, 'cao', 3, 1000, null);
+  perform public.card_sit(room, c4, 'cao', 4, 1000, null);
+  perform public.card_sit(room, c6, 'cao', 5, 1000, null);
+  t := pg_temp.ct();
+  assert t.pub = '{"dealer": 2, "order": [], "left": [], "note": null}' and t.hand_no = 0, format('the preview: %s', t.pub);
+  -- only the previewed dealer deals, with the table's seq (§11.5, R24)
+  assert pg_temp.env(public.cao_deal(room, c1, t.seq), 'bad_move', 'not dealer'), 'not dealer';
+  assert pg_temp.err(format('select public.cao_deal(%L, %L, %s)', room, c2, t.seq - 1)) = 'stale', 'stale';
+  perform public.cao_deal(room, c1, t.seq);
+  assert (select count(*) from public.anticheat_events where account_id = a1 and code = 'bad_move' and outcome = 'soft'
+            and rpc = 'cao_deal') = 2 and (pg_temp.ct()).seq = t.seq, 'a refused deal is logged each time, and changes nothing';
+  -- hand 1 (§8.3's example): B deals; the escrows total 2 (n − 1) S
+  r := pg_temp.cao_deal(a2, pg_temp.deck('9S 8C 2H', 'KD 5S 3C', 'JS QH KC', '4D 4C 4S', '7H 10C AD'));
+  t := pg_temp.ct();
+  assert t.phase = 'peek' and t.hand_no = 1 and t.pos = 2 and t.turn is null and t.deadline = now() + interval '15 seconds'
+         and t.pub = '{"dealer": 2, "order": [1, 2, 3, 4, 5], "left": [], "note": null}', format('peek: %s', to_jsonb(t));
+  assert pg_temp.cesc() = '{"1": 1000, "2": 4000, "3": 1000, "4": 1000, "5": 1000}'
+         and (select count(*) from public.coin_ledger where reason = 'card_hold' and ref = 'cao#1') = 5, format('escrows: %s', pg_temp.cesc());
+  assert r->'hand'->'cards' = pg_temp.sorted('KD 5S 3C') and (r->>'coins')::int = 16000, 'the dealer sees its own cards';
+  -- the hands stay private until the showdown (§6.4)
+  s := public.card_state(room, c6, 'cao');
+  assert s->'pub' = t.pub and s->'last' = 'null', format('no cards in the state: %s', s);
+  assert public.card_hand(room, c3, 'cao')->'cards' = pg_temp.sorted('JS QH KC'), 'c3 sees its own';
+  assert pg_temp.env(public.cao_deal(room, c2, t.seq), 'bad_move', 'wrong phase'), 'no deal during peek';
+  -- the showdown at the peek deadline: every hand in play is shown
+  t := pg_temp.cao_due(null);
+  assert t.phase = 'result' and t.deadline = now() + interval '6 seconds', 'the result for 6 s';
+  assert pg_temp.cresult() = '{"dealer": 2, "cancelled": false, "net": {"1": 1000, "2": -2000, "3": 1000, "4": 1000, "5": -1000},
+                               "lines": [[2, 1, 1000, "cao"], [2, 3, 1000, "cao"], [2, 4, 1000, "cao"], [5, 2, 1000, "cao"]]}',
+    format('the example: %s', pg_temp.cresult());
+  assert t.last->'hands'->'3' = jsonb_build_object('cards', pg_temp.sorted('JS QH KC'), 'kind', 'ba_tay', 'points', 0)
+         and t.last->'hands'->'4' = jsonb_build_object('cards', pg_temp.sorted('4D 4C 4S'), 'kind', 'sap', 'points', 2)
+         and (select count(*) from jsonb_object_keys(t.last->'hands')) = 5, format('every hand is shown: %s', t.last->'hands');
+  assert pg_temp.coins(a1) = 21000 and pg_temp.coins(a2) = 18000 and pg_temp.coins(a3) = 3000 and pg_temp.coins(a4) = 21000
+         and pg_temp.coins(a6) = 19000 and pg_temp.cesc() = '{"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}', 'everyone is paid';
+  -- hand 2: after B comes C, who cannot cover 4 S, so D is previewed (R20); D does not deal in time: the automatic deal,
+  -- and a miss for D
+  t := pg_temp.cao_due(null);
+  assert t.phase = 'deal_wait' and t.pub->'dealer' = '4' and t.turn = 4, format('C is skipped: %s', t.pub);
+  t := pg_temp.cao_due(pg_temp.deck('2S 3S 4S', '5C 6C 7C', '8S 9S AS', 'KS KC KD', '10S JC QC'));
+  assert t.phase = 'peek' and t.hand_no = 2 and t.pub->'dealer' = '4'
+         and (select missed from public.card_seats where room_id = room and game = 'cao' and seat = 4) = 1
+         and pg_temp.cesc() = '{"1": 1000, "2": 1000, "3": 1000, "4": 4000, "5": 1000}', format('the automatic deal: %s', t.pub);
+  t := pg_temp.cao_due(null);
+  assert pg_temp.cresult()->'net' = '{"1": -1000, "2": -1000, "3": -1000, "4": 4000, "5": -1000}', 'sáp K takes all';
+  -- hand 3: E is previewed, then its wallet runs dry: at the deal E stands up and the dealer passes on to A (§8.2)
+  t := pg_temp.cao_due(null);
+  assert t.pub->'dealer' = '5', 'E is previewed';
+  perform pg_temp.set_coins(a6, 500);
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  t := pg_temp.cao_due(pg_temp.deck('3S 3C 3D', '5S 5C 5D', '2C 7S AC', 'JD QD KH'));
+  assert t.pub = '{"dealer": 1, "order": [1, 2, 3, 4], "left": [], "note": null}'
+         and pg_temp.cesc() = '{"1": 3000, "2": 1000, "3": 1000, "4": 1000}'
+         and not exists (select 1 from public.card_seats where room_id = room and account_id = a6)
+         and (select count(*) from public.card_log where room_id = room and game = 'cao' and account_id = a6 and action = 'leave'
+                and detail->>'how' = 'idle') = 1, format('rebuilt under the locks: %s', t.pub);
+  t := pg_temp.cao_due(null);
+  assert pg_temp.cresult()->'lines' = '[[1, 2, 1000, "cao"], [3, 1, 1000, "cao"], [4, 1, 1000, "cao"]]',
+    format('hand 3: %s', pg_temp.cresult());
+  -- hand 4: B deals; the dealer cannot leave during peek (R35); C leaves and loses S at once (§6.3)
+  t := pg_temp.cao_due(null);
+  assert t.pub->'dealer' = '2', 'B is next';
+  perform pg_temp.cao_deal(a2, pg_temp.deck('4C 4H 4D', '9H 10H QH', '2S 3H 5H', '6D 6H 7D'));
+  assert pg_temp.err(format('select public.card_leave(%L, %L, %L)', room, c2, 'cao')) = 'dealer busy', 'dealer busy';
+  r := public.card_leave(room, c3, 'cao');
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the leave';
+  t := pg_temp.ct();
+  assert t.pub->'left' = '[3]' and pg_temp.cesc() = '{"1": 1000, "2": 4000, "3": 0, "4": 1000}' and (r->>'coins')::int = 0
+         and (select leaving from public.card_seats where room_id = room and game = 'cao' and seat = 3), format('C left: %s', t.pub);
+  assert pg_temp.err(format('select public.card_sit(%L, %L, %L, 1, 1000, null)', room, c3, 'tienlen')) = 'still leaving',
+    'still leaving';
+  t := pg_temp.cao_due(null);
+  assert pg_temp.cresult() = '{"dealer": 2, "cancelled": false, "net": {"1": 1000, "2": 1000, "3": -1000, "4": -1000},
+                               "lines": [[2, 1, 1000, "cao"], [3, 2, 1000, "left"], [4, 2, 1000, "cao"]]}',
+    format('hand 4: %s', pg_temp.cresult());
+  assert not (t.last->'hands' ? '3') and not exists (select 1 from public.card_seats where room_id = room and account_id = a3),
+    'the leaver''s hand stays out of the showdown, and its row goes';
+  -- hand 5: D's second miss in a row as dealer: D deals automatically, then stands up once the hand settles (§8.2)
+  t := pg_temp.cao_due(null);
+  assert t.pub->'dealer' = '4', 'D is next';
+  t := pg_temp.cao_due(pg_temp.deck('2D 3D 4H', '5H 6C 7H', 'AH 2H 3H'));
+  assert t.pub->'dealer' = '4' and pg_temp.cesc() = '{"1": 1000, "2": 1000, "4": 2000}'
+         and (select missed from public.card_seats where room_id = room and game = 'cao' and seat = 4) = 2, 'the second miss';
+  t := pg_temp.cao_due(null);
+  assert pg_temp.cresult()->'net' = '{"1": 1000, "2": 1000, "4": -2000}'
+         and not exists (select 1 from public.card_seats where room_id = room and account_id = a4)
+         and pg_temp.coins(a4) = 21000, 'D is stood up after the hand';
+  -- hand 6: a banned dealer is swept during peek: the hand is cancelled and every balance refunded (§6.3, R35)
+  t := pg_temp.cao_due(null);
+  assert t.pub->'dealer' = '1', 'A is next';
+  perform pg_temp.cao_deal(a1, pg_temp.deck('5D 6D 8H', '9C JH 2D'));
+  update public.accounts set is_banned = true where id = a1;
+  r := public.card_tick(room, c2, 'cao');
+  update public.accounts set is_banned = false where id = a1;
+  t := pg_temp.ct();
+  assert (r->>'changed')::boolean and t.phase = 'result'
+         and pg_temp.cresult() = '{"dealer": 1, "cancelled": true, "net": {"1": 0, "2": 0}, "lines": []}'
+         and pg_temp.cesc() = '{"2": 0}' and pg_temp.coins(a1) = 23000 and pg_temp.coins(a2) = 20000
+         and pg_temp.total() = (select v from smoke where k = 'm')::bigint, format('Ván huỷ: %s', to_jsonb(t));
+  -- nobody can cover the dealer's escrow: the wait says so and starts again (R20)
+  perform public.card_sit(room, c1, 'cao', 1, 1000, null);
+  perform public.card_sit(room, c4, 'cao', 4, 1000, null);
+  perform pg_temp.set_coins(a, 1500) from unnest(array[a1, a2, a4]) a;
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  t := pg_temp.cao_due(null);
+  assert t.phase = 'deal_wait' and t.pub = '{"dealer": null, "order": [], "left": [], "note": "no_dealer"}' and t.turn is null,
+    format('nobody can deal: %s', t.pub);
+  t := pg_temp.cao_due(null);
+  assert t.phase = 'deal_wait' and t.pub->>'note' = 'no_dealer' and t.hand_no = 6, 'still nobody';
+  -- wallets drained before the deal: fewer than two players, so the table goes idle (§8.2)
+  perform pg_temp.set_coins(a, 500) from unnest(array[a2, a4]) a;
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  t := pg_temp.cao_due(null);
+  assert t.phase = 'idle' and t.pub = '{}' and (select count(*) from public.card_seats where room_id = room and game = 'cao') = 1,
+    format('idle: %s', to_jsonb(t));
+  perform public.card_leave(room, c1, 'cao');
+  assert not exists (select 1 from public.card_seats where room_id = room) and (pg_temp.ct()).stake is null
+         and pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'the Cào table is empty';
+  assert not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like '\_cao\_%'
+                      and has_function_privilege('anon', p.oid, 'execute')), 'the Cào helpers are private';
+end $$;
+
+select 'v16 cao smoke ok' as result;
