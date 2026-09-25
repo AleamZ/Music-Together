@@ -12,6 +12,7 @@ const item = (id: string, kind: string, name: string, over: Record<string, unkno
 });
 const CATALOG: FarmCatalog = {
   varieties: [nep],
+  uplands: [],
   items: [
     item("seed_nep", "seed", "Giống nếp", { variety: "nep" }),
     item("fert_manure", "fertilizer", "Phân chuồng hoai", { fert: "manure" }),
@@ -20,14 +21,18 @@ const CATALOG: FarmCatalog = {
   ],
 };
 const ME = { id: "me", name: "Me" };
-const mine = (items: Record<string, number>): FarmMine => ({ items, rice: {}, coins: 0, giftClaimed: true });
+const mine = (items: Record<string, number>): FarmMine => ({ items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null });
 const ALL = mine({ seed_nep: 1, fert_manure: 1, fert_urea: 2, spray_hopper: 1 });
 
 /** A crop on plot 5 farmed by me: soaked at 0 h, flooded (3) at 0 h, plus whatever `over` sets. */
 const crop = (over: Partial<CropView> = {}, water: Array<[number, number]> = [[0, 3]], fert: Array<[number, string]> = []): CropView => ({
-  variety: "nep", phase: "prepared", preparedAt: at(0), soakAt: at(0), sowAt: null, transplantAt: null, water: 0, waterSetAt: null,
-  pests: [], excessN: false, ripe: false, rottedAt: null,
-  log: { water: water.map(([h, l]) => ({ t: at(h), l })), fert: fert.map(([h, i]) => ({ t: at(h), item: i })), spray: [], picks: [], qTransplant: 1 },
+  kind: "rice", variety: "nep", upland: null, phase: "prepared", preparedAt: at(0), soakAt: at(0), sowAt: null, transplantAt: null,
+  plantAt: null, water: 0, waterSetAt: null, pests: [], excessN: false, ripe: false, rottedAt: null, picking: null, pickings: 1, parts: 0,
+  harvester: null,
+  log: {
+    water: water.map(([h, l]) => ({ t: at(h), l })), fert: fert.map(([h, i]) => ({ t: at(h), item: i })), spray: [], picks: [],
+    qTransplant: 1, work: [], harvests: [], harvestedKg: 0,
+  },
   ...over,
 });
 const plot = (c: CropView | null, over: Partial<PlotView> = {}): PlotView => ({

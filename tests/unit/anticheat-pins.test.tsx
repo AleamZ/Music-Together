@@ -63,6 +63,7 @@ const item = (id: string, kind: string, name: string, price: number, over: Recor
 const nep = varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 18, blast_mult: 1, sort_order: 20 });
 const FARM: FarmCatalog = {
   varieties: [nep],
+  uplands: [],
   items: [
     item("seed_nep", "seed", "Giống nếp", 90, { variety: "nep" }),
     item("fert_urea", "fertilizer", "Phân urê", 60, { fert: "urea" }),
@@ -230,9 +231,13 @@ describe("bad_price", () => {
 describe("bad_plot, bad_water and bad_work", () => {
   const at = (h: number) => NOW + h * HOUR_MS;
   const crop = (over: Partial<CropView>, water: Array<[number, number]>): CropView => ({
-    variety: "nep", phase: "prepared", preparedAt: at(0), soakAt: at(0), sowAt: null, transplantAt: null, water: 0, waterSetAt: null,
-    pests: [], excessN: false, ripe: false, rottedAt: null,
-    log: { water: water.map(([h, l]) => ({ t: at(h), l })), fert: [], spray: [], picks: [], qTransplant: 1 },
+    kind: "rice", variety: "nep", upland: null, phase: "prepared", preparedAt: at(0), soakAt: at(0), sowAt: null, transplantAt: null,
+    plantAt: null, water: 0, waterSetAt: null, pests: [], excessN: false, ripe: false, rottedAt: null, picking: null, pickings: 1,
+    parts: 0, harvester: null,
+    log: {
+      water: water.map(([h, l]) => ({ t: at(h), l })), fert: [], spray: [], picks: [], qTransplant: 1, work: [], harvests: [],
+      harvestedKg: 0,
+    },
     ...over,
   });
   const plot = (no: number, c: CropView | null): PlotView => ({
@@ -247,7 +252,9 @@ describe("bad_plot, bad_water and bad_work", () => {
   });
 
   it("the plot panel sends its plot's number, pumps or drains one level, and works only at transplanting and harvesting", () => {
-    const mine: FarmMine = { items: { seed_nep: 1, fert_urea: 1, fert_manure: 1, spray_hopper: 1 }, rice: {}, coins: 0, giftClaimed: true };
+    const mine: FarmMine = {
+      items: { seed_nep: 1, fert_urea: 1, fert_manure: 1, spray_hopper: 1 }, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null,
+    };
     const plots = [
       plot(1, null),
       plot(5, crop({ sowAt: at(3) }, [[0, 1], [11, 2]])),

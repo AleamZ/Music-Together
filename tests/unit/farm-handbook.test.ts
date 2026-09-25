@@ -39,8 +39,9 @@ describe("handbook", () => {
   });
   it("links the plot panel to what matters now", () => {
     const crop = (over: Partial<CropView>): CropView => ({
-      variety: "nep", phase: "prepared", preparedAt: at(0), soakAt: at(0), sowAt: at(3), transplantAt: at(12), water: 2, waterSetAt: at(12),
-      pests: [], excessN: false, ripe: false, rottedAt: null, log: null, ...over,
+      kind: "rice", variety: "nep", upland: null, phase: "prepared", preparedAt: at(0), soakAt: at(0), sowAt: at(3), transplantAt: at(12),
+      plantAt: null, water: 2, waterSetAt: at(12), pests: [], excessN: false, ripe: false, rottedAt: null, picking: null, pickings: 1,
+      parts: 0, harvester: null, log: null, ...over,
     });
     expect(handbookTabFor(null, null, at(0))).toBe("process");
     expect(handbookTabFor(crop({ transplantAt: null }), nep, at(5))).toBe("process");

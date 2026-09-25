@@ -11,9 +11,11 @@ const short = varietyFromRow({ id: "short", name: "Lúa ngắn ngày", scale: 0.
 
 /** Nếp on plot 5: prepared and soaked at 0 h, sown at 3 h, transplanted at 12 h unless `over` says otherwise. */
 const crop = (over: Partial<CropView> = {}): CropView => ({
-  variety: "nep", phase: "tillering", preparedAt: at(0), soakAt: at(0), sowAt: at(3), transplantAt: at(12), water: 2, waterSetAt: at(12),
-  pests: [], excessN: false, ripe: false, rottedAt: null, log: null, ...over,
+  kind: "rice", variety: "nep", upland: null, phase: "tillering", preparedAt: at(0), soakAt: at(0), sowAt: at(3), transplantAt: at(12),
+  plantAt: null, water: 2, waterSetAt: at(12), pests: [], excessN: false, ripe: false, rottedAt: null, picking: null, pickings: 1,
+  parts: 0, harvester: null, log: null, ...over,
 });
+const NO_LOG = { work: [], harvests: [], harvestedKg: 0 };
 const plot = (over: Partial<PlotView> = {}): PlotView => ({
   no: 5, kind: "village", owner: null, salePrice: null, subleasePrice: null, farmer: null, lease: null, offers: 0, crop: null, ...over,
 });
@@ -46,12 +48,12 @@ describe("plotLook", () => {
       { kind: "leaf_folder" as const, since: at(18), treatedAt: at(19) },
     ];
     expect(plotLook(5, crop({ pests }), nep, at(22))).toMatchObject({ pests: ["hopper"], wobble: false });
-    const log = { water: [], fert: [], spray: [], picks: [], qTransplant: 0.95 };
+    const log = { water: [], fert: [], spray: [], picks: [], qTransplant: 0.95, ...NO_LOG };
     expect(plotLook(5, crop({ log }), nep, at(22))?.wobble).toBe(true);
   });
   it("reads the water from the farmer's log at any time, else the level fetched", () => {
     expect(plotLook(5, crop({ water: 3 }), nep, at(40))?.water).toBe(3);
-    const log = { water: [{ t: at(12), l: 3 }], fert: [], spray: [], picks: [], qTransplant: 1 };
+    const log = { water: [{ t: at(12), l: 3 }], fert: [], spray: [], picks: [], qTransplant: 1, ...NO_LOG };
     // one level lost per 12 h: 3 at 12 h → 1 at 36 h
     expect(plotLook(5, crop({ water: 3, log }), nep, at(36))?.water).toBe(1);
   });

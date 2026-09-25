@@ -11,6 +11,7 @@ afterEach(cleanup);
 const NOW = Date.parse("2026-09-25T10:00:00Z");
 const CATALOG = {
   varieties: [varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 18, blast_mult: 1, sort_order: 20 })],
+  uplands: [],
   items: [farmItemFromRow({ id: "fert_urea", kind: "fertilizer", name: "Phân urê", price: 60, sort_order: 30, variety: null, fert: "urea", pest_target: null, capacity: null })],
 };
 const STATE = parseFieldState({

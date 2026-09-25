@@ -1,24 +1,38 @@
 import { AnticheatError, screenAnswer } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
-import { FARM_KINDS, farmItemFromRow, varietyFromRow, type FarmCatalog, type FarmItemRow, type VarietyRow } from "./catalog";
+import {
+  FARM_KINDS, farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type FarmItemRow, type UplandCropRow, type VarietyRow,
+} from "./catalog";
 import { parseFarmMine, parseFieldState, type FarmMine, type FieldState } from "./state";
 
-// Supabase calls for the field (spec §11.3). Every room answer is the whole field_state; the account-only ones
-// (sell_rice, buy_farm_item, claim_farm_gift) answer with the account part.
+// Supabase calls for the field (spec §11.3; v15.2 §11.4). Every room answer is the whole field_state; the account-only
+// ones (sell_rice, buy_farm_item, claim_farm_gift, load_sprayer, sell_produce) answer with the account part.
+
+/** The RPCs 0016 adds: before it runs, PostgREST cannot find them (v15.2 R28). */
+export const RPCS_152: ReadonlySet<string> = new Set([
+  "prepare_beds", "plant_crop", "tend_crop", "harvest_part", "rent_harvester", "load_sprayer", "sell_produce",
+]);
+
+/** No such table: upland_crops before 0016 (PostgREST's PGRST205, Postgres' 42P01). */
+const isMissingTable = (e: { code?: unknown } | null): boolean => e?.code === "PGRST205" || e?.code === "42P01";
 
 let catalogPromise: Promise<FarmCatalog> | null = null;
 
-/** Varieties + farm items, cached per page load (a failed fetch is retried on the next call). */
+/** Varieties, hoa-màu crops and farm items, cached per page load (a failed fetch is retried on the next call). Before
+ *  0016 there are no hoa-màu crops. */
 export function fetchFarmCatalog(): Promise<FarmCatalog> {
   if (!catalogPromise) {
     catalogPromise = (async () => {
-      const [va, it] = await Promise.all([
+      const [va, up, it] = await Promise.all([
         supabase.from("rice_varieties").select("*").order("sort_order"),
+        supabase.from("upland_crops").select("*").order("sort_order"),
         supabase.from("shop_items").select("*").in("kind", FARM_KINDS).order("kind").order("sort_order"),
       ]);
-      if (va.error || it.error) throw va.error ?? it.error;
+      const upErr = isMissingTable(up.error) ? null : up.error;
+      if (va.error || upErr || it.error) throw va.error ?? upErr ?? it.error;
       return {
         varieties: ((va.data ?? []) as VarietyRow[]).map(varietyFromRow),
+        uplands: (up.error ? [] : ((up.data ?? []) as UplandCropRow[])).map(uplandFromRow),
         items: ((it.data ?? []) as FarmItemRow[]).map(farmItemFromRow),
       };
     })().catch((e) => {
@@ -69,6 +83,11 @@ export type FieldAction =
   | { kind: "rent_sublease"; plot: number; expected: number }
   | { kind: "abandon"; plot: number }
   | { kind: "prepare"; plot: number }
+  | { kind: "prepare_beds"; plot: number }
+  | { kind: "plant"; plot: number; item: string }
+  | { kind: "tend"; plot: number; act: string }
+  | { kind: "harvest_part"; plot: number; success: boolean }
+  | { kind: "rent_harvester"; plot: number }
   | { kind: "fertilize"; plot: number; item: string }
   | { kind: "soak"; plot: number; item: string }
   | { kind: "sow"; plot: number }
@@ -97,6 +116,11 @@ export function actionCall(a: FieldAction): [string, Record<string, unknown>] {
     case "rent_sublease": return ["rent_sublease", { p_plot: a.plot, p_expected_price: a.expected }];
     case "abandon": return ["abandon_crop", { p_plot: a.plot }];
     case "prepare": return ["prepare_plot", { p_plot: a.plot }];
+    case "prepare_beds": return ["prepare_beds", { p_plot: a.plot }];
+    case "plant": return ["plant_crop", { p_plot: a.plot, p_item_id: a.item }];
+    case "tend": return ["tend_crop", { p_plot: a.plot, p_act: a.act }];
+    case "harvest_part": return ["harvest_part", { p_plot: a.plot, p_success: a.success }];
+    case "rent_harvester": return ["rent_harvester", { p_plot: a.plot }];
     case "fertilize": return ["apply_fertilizer", { p_plot: a.plot, p_item_id: a.item }];
     case "soak": return ["soak_seed", { p_plot: a.plot, p_item_id: a.item }];
     case "sow": return ["sow_seed", { p_plot: a.plot }];
@@ -111,15 +135,33 @@ export function actionCall(a: FieldAction): [string, Record<string, unknown>] {
   }
 }
 
-export interface FieldAnswer { state: FieldState; harvest: { variety: string; kg: number } | null }
+/** A rice part cut by hand (§6.2): its kg, the parts cut now, the plot's kg so far, and whether it was the sixth. */
+export interface PartAnswer { variety: string; kg: number; parts: number; total: number; done: boolean }
+/** A hoa-màu picking (§8.9): picking k of n gave kg; `done` = it was the last. */
+export interface PickingAnswer { upland: string; kg: number; k: number; pickings: number; done: boolean }
+
+export interface FieldAnswer {
+  state: FieldState;
+  /** A whole rice harvest (a database without 0016). */
+  harvest: { variety: string; kg: number } | null;
+  harvestPart: PartAnswer | null;
+  picking: PickingAnswer | null;
+}
+
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 export async function fieldAction(roomId: string, token: string, a: FieldAction): Promise<FieldAnswer> {
   const [fn, args] = actionCall(a);
   const r = await call(fn, { p_room_id: roomId, p_session_token: token, ...args });
   const h = r.harvest && typeof r.harvest === "object" ? (r.harvest as Record<string, unknown>) : null;
+  const p = r.harvest_part && typeof r.harvest_part === "object" ? (r.harvest_part as Record<string, unknown>) : null;
   return {
     state: fieldOf(r),
-    harvest: h && typeof h.variety === "string" && typeof h.kg === "number" ? { variety: h.variety, kg: h.kg } : null,
+    harvest: h && typeof h.variety === "string" && isNum(h.kg) ? { variety: h.variety, kg: h.kg } : null,
+    harvestPart: p && typeof p.variety === "string" && isNum(p.kg) && isNum(p.parts) && isNum(p.total)
+      ? { variety: p.variety, kg: p.kg, parts: p.parts, total: p.total, done: p.done === true } : null,
+    picking: h && typeof h.upland === "string" && isNum(h.kg) && isNum(h.k) && isNum(h.pickings)
+      ? { upland: h.upland, kg: h.kg, k: h.k, pickings: h.pickings, done: h.done === true } : null,
   };
 }
 
@@ -140,4 +182,14 @@ export async function buyFarmItem(token: string, itemId: string, qty: number): P
 export async function claimFarmGift(token: string): Promise<MineAnswer & { gifted: boolean }> {
   const r = await call("claim_farm_gift", { p_session_token: token });
   return { ...mineAnswer(r), gifted: r.gifted === true };
+}
+
+/** Nạp thuốc (§7): one bottle of the pesticide into the sprayer's tank, 3 sprays. */
+export async function loadSprayer(token: string, itemId: string): Promise<MineAnswer> {
+  return mineAnswer(await call("load_sprayer", { p_session_token: token, p_item_id: itemId }));
+}
+
+/** Sells kg of a hoa-màu crop to cô Út (§9). */
+export async function sellProduce(token: string, upland: string, kg: number): Promise<MineAnswer> {
+  return mineAnswer(await call("sell_produce", { p_session_token: token, p_upland: upland, p_kg: kg }));
 }

@@ -52,6 +52,7 @@ describe("names and texts", () => {
     expect(PEST_NAME.hopper).toBe("Rầy nâu");
     expect(PEST_REMEDY).toEqual({
       snail: null, leaf_folder: "spray_insect", hopper: "spray_hopper", leaf_blast: "spray_fungus", neck_blast: "spray_fungus",
+      weevil: "spray_insect", armyworm: "spray_insect", thrips: "spray_insect", anthracnose: "spray_fungus",
     });
   });
   it("counts down in minutes, hours or days, rounding up", () => {

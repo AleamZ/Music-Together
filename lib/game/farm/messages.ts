@@ -10,11 +10,13 @@ export const PHASE_NAME: Record<Phase, string> = {
 
 export const PEST_NAME: Record<PestKind, string> = {
   snail: "Ốc bươu vàng", leaf_folder: "Sâu cuốn lá", hopper: "Rầy nâu", leaf_blast: "Đạo ôn lá", neck_blast: "Đạo ôn cổ bông",
+  weevil: "Sùng khoai", armyworm: "Sâu keo mùa thu", thrips: "Bọ trĩ", anthracnose: "Thán thư",
 };
 
-/** The spray that treats each pest; snails are picked by hand (§8.5). */
+/** The spray that treats each pest; snails are picked by hand (§8.5). The hoa-màu ones are the config's remedies. */
 export const PEST_REMEDY: Record<PestKind, string | null> = {
   snail: null, leaf_folder: "spray_insect", hopper: "spray_hopper", leaf_blast: "spray_fungus", neck_blast: "spray_fungus",
+  weevil: "spray_insect", armyworm: "spray_insect", thrips: "spray_insect", anthracnose: "spray_fungus",
 };
 
 export const WATER_NAME: readonly string[] = ["Khô", "Ẩm", "Nông", "Sâu"];
