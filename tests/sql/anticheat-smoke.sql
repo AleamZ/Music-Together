@@ -82,8 +82,8 @@ begin
           E'  Never\tGonna' || U&'\00A0\00A0' || 'Give' || U&'\200B\202E\2028' || ' You   Up  ' || repeat('x', 250),
           'https://evil.example/pixel.gif', 0);
   select * into q from public.queue_items where id = v_id;
-  -- C and S characters become spaces and the runs collapse; Z characters stay in the stored title (R26)
-  assert q.title = left('Never Gonna Give' || U&'\200B\202E' || ' You Up ' || repeat('x', 250), 200) and char_length(q.title) = 200,
+  -- C and S characters become spaces and the runs collapse; bidi controls go, other Z characters stay in the stored title (R26)
+  assert q.title = left('Never Gonna Give' || U&'\200B' || ' You Up ' || repeat('x', 250), 200) and char_length(q.title) = 200,
     format('title %s', q.title);
   assert q.thumbnail_url = 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg', 'derived thumbnail';
   assert q.duration_seconds is null, 'duration 0 is unknown';
@@ -99,6 +99,9 @@ begin
                                 null, 100);
   assert (select title = 'Yêu ' || U&'\2764\FE0F' || ' ' || U&'\+01F468\200D\+01F469\200D\+01F467'
             from public.queue_items where id = v_id), 'a heart keeps its U+FE0F, a family its joiners';
+  -- bidi controls cannot reorder what a title shows: they are removed
+  v_id := public.add_queue_item(room, t1, 'aaaaaaaaaa6', 'ab' || U&'\202E' || 'cd' || U&'\2066' || 'e', null, 100);
+  assert (select title = 'abcde' from public.queue_items where id = v_id), 'bidi controls are removed from a title';
   -- a zero-width character no longer splits a banned keyword (R26)
   update public.rooms set banned_keywords = array['remix'] where id = room;
   assert pg_temp.err(format('select public.add_queue_item(%L, %L, %L, %L, null, 100)', room, t1, 'aaaaaaaaaa4',

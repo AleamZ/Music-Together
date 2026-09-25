@@ -138,7 +138,9 @@ describe("AnticheatTab (anti-cheat spec §12.5)", () => {
     ));
     fireEvent.click(within(await card("Minh")).getByRole("button", { name: "Ân xá" }));
     expect(confirm).toHaveBeenLastCalledWith("Ân xá Minh? Tài khoản được mở khoá và xoá vi phạm.");
-    await waitFor(() => expect(calls("admin_anticheat_resolve")).toHaveLength(2));
+    fireEvent.click(within(await card("Khang")).getByRole("button", { name: "Ân xá" }));
+    expect(confirm).toHaveBeenLastCalledWith("Ân xá Khang? Vi phạm được xoá, nhưng tài khoản vẫn bị khoá tay.");
+    await waitFor(() => expect(calls("admin_anticheat_resolve")).toHaveLength(3));
   });
 
   it("explains a refused wipe or pardon", async () => {

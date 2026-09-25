@@ -125,7 +125,9 @@ export default function AnticheatTab({ token }: { token: string }) {
     if (window.confirm(text)) void act(() => adminAnticheatResolve(token, c.account_id, "wipe"));
   };
   const pardon = (c: AnticheatCase) => {
-    const text = `Ân xá ${c.username}? Tài khoản được mở khoá và xoá vi phạm.${c.wiped_at ? " Dữ liệu đã xoá không được khôi phục." : ""}`;
+    const text = c.is_banned && c.ban_state === null
+      ? `Ân xá ${c.username}? Vi phạm được xoá, nhưng tài khoản vẫn bị khoá tay.`
+      : `Ân xá ${c.username}? Tài khoản được mở khoá và xoá vi phạm.${c.wiped_at ? " Dữ liệu đã xoá không được khôi phục." : ""}`;
     if (window.confirm(text)) void act(() => adminAnticheatResolve(token, c.account_id, "pardon"));
   };
   const toggle = (id: string) => {

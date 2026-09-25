@@ -23,12 +23,14 @@ create or replace function public._name_key(t text) returns text
 language sql stable set search_path = public, extensions
 as $$ select regexp_replace(lower(extensions.unaccent(normalize(coalesce(t, ''), NFC))), '[^a-z0-9]+', '', 'g') $$;
 
--- A queue title (R26): C and S characters become spaces, runs of spaces collapse, at most 200 characters. Z characters
--- stay, so an emoji keeps its U+FE0F and its joiners; the banned-keyword check reads _title_key instead.
+-- A queue title (R26): bidi controls are removed (they can reorder what a title shows), C and S characters become
+-- spaces, runs of spaces collapse, at most 200 characters. Other Z characters stay, so an emoji keeps its U+FE0F and
+-- its joiners; the banned-keyword check reads _title_key instead.
 create or replace function public._clean_title(t text) returns text
 language sql immutable set search_path = public, extensions
 as $$
-  select left(btrim(regexp_replace(regexp_replace(coalesce(t, ''),
+  select left(btrim(regexp_replace(regexp_replace(regexp_replace(coalesce(t, ''),
+    '[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]', '', 'g'),
     '[\u0001-\u001f\u007f-\u009f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]', ' ', 'g'),
     ' {2,}', ' ', 'g')), 200)
 $$;
