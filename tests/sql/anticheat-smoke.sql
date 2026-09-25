@@ -82,7 +82,9 @@ begin
           E'  Never\tGonna' || U&'\00A0\00A0' || 'Give' || U&'\200B\202E\2028' || ' You   Up  ' || repeat('x', 250),
           'https://evil.example/pixel.gif', 0);
   select * into q from public.queue_items where id = v_id;
-  assert q.title = left('Never Gonna Give You Up ' || repeat('x', 250), 200) and char_length(q.title) = 200, format('title %s', q.title);
+  -- C and S characters become spaces and the runs collapse; Z characters stay in the stored title (R26)
+  assert q.title = left('Never Gonna Give' || U&'\200B\202E' || ' You Up ' || repeat('x', 250), 200) and char_length(q.title) = 200,
+    format('title %s', q.title);
   assert q.thumbnail_url = 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg', 'derived thumbnail';
   assert q.duration_seconds is null, 'duration 0 is unknown';
   v_id := public.add_queue_item(room, t1, 'aaaaaaaaaa1', U&'\200B\00A0', null, -5);
@@ -92,6 +94,11 @@ begin
   assert (select duration_seconds is null from public.queue_items where id = v_id), '90 000 s is unknown';
   v_id := public.add_queue_item(room, t1, 'aaaaaaaaaa3', 'Ok', null, 86400);
   assert (select duration_seconds = 86400 from public.queue_items where id = v_id), '86 400 s is kept';
+  -- an emoji keeps its variation selector and its joiners: only the keyword check reads the title without them
+  v_id := public.add_queue_item(room, t1, 'aaaaaaaaaa5', 'Yêu ' || U&'\2764\FE0F' || ' ' || U&'\+01F468\200D\+01F469\200D\+01F467',
+                                null, 100);
+  assert (select title = 'Yêu ' || U&'\2764\FE0F' || ' ' || U&'\+01F468\200D\+01F469\200D\+01F467'
+            from public.queue_items where id = v_id), 'a heart keeps its U+FE0F, a family its joiners';
   -- a zero-width character no longer splits a banned keyword (R26)
   update public.rooms set banned_keywords = array['remix'] where id = room;
   assert pg_temp.err(format('select public.add_queue_item(%L, %L, %L, %L, null, 100)', room, t1, 'aaaaaaaaaa4',
@@ -106,7 +113,8 @@ begin
          jsonb_build_object('title', 'no id')));
   assert n = 2, format('batch added %s', n);
   select * into q from public.queue_items where room_id = room and youtube_video_id = 'bbbbbbbbbb1';
-  assert q.title = 'Two lines' and q.thumbnail_url = 'https://i.ytimg.com/vi/bbbbbbbbbb1/mqdefault.jpg' and q.duration_seconds is null,
+  assert q.title = 'Two ' || U&'\2060' || 'lines' and q.thumbnail_url = 'https://i.ytimg.com/vi/bbbbbbbbbb1/mqdefault.jpg'
+     and q.duration_seconds is null,
     format('batch row 1: %s / %s / %s', q.title, q.thumbnail_url, q.duration_seconds);
   select * into q from public.queue_items where room_id = room and youtube_video_id = 'bbbbbbbbbb2';
   assert q.title = 'bbbbbbbbbb2' and q.duration_seconds = 42, 'batch row 2';
@@ -137,7 +145,7 @@ begin
          = 'https://i.ytimg.com/vi/ccccccccccc/mqdefault.jpg'
      and (select thumbnail_url is null from public.play_history where room_id = room and youtube_video_id = 'old!'), 'history rewritten';
   assert not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
-                      and p.proname in ('_name_norm', '_name_key', '_clean_title', '_yt_thumb')
+                      and p.proname in ('_name_norm', '_name_key', '_clean_title', '_title_key', '_yt_thumb')
                       and has_function_privilege('anon', p.oid, 'execute')), 'the name and queue helpers are private';
 end $$;
 

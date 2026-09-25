@@ -23,14 +23,23 @@ create or replace function public._name_key(t text) returns text
 language sql stable set search_path = public, extensions
 as $$ select regexp_replace(lower(extensions.unaccent(normalize(coalesce(t, ''), NFC))), '[^a-z0-9]+', '', 'g') $$;
 
--- A queue title (R26): C and S characters become spaces, Z characters go, runs of spaces collapse, at most 200 characters.
+-- A queue title (R26): C and S characters become spaces, runs of spaces collapse, at most 200 characters. Z characters
+-- stay, so an emoji keeps its U+FE0F and its joiners; the banned-keyword check reads _title_key instead.
 create or replace function public._clean_title(t text) returns text
 language sql immutable set search_path = public, extensions
 as $$
-  select left(btrim(regexp_replace(regexp_replace(regexp_replace(coalesce(t, ''),
+  select left(btrim(regexp_replace(regexp_replace(coalesce(t, ''),
     '[\u0001-\u001f\u007f-\u009f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]', ' ', 'g'),
+    ' {2,}', ' ', 'g')), 200)
+$$;
+
+-- What the banned-keyword check compares (R26): a clean title without its Z characters, so none can split a keyword.
+create or replace function public._title_key(t text) returns text
+language sql immutable set search_path = public, extensions
+as $$
+  select btrim(regexp_replace(regexp_replace(coalesce(t, ''),
     '[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000e0000-\U000e0fff]',
-    '', 'g'), ' {2,}', ' ', 'g')), 200)
+    '', 'g'), ' {2,}', ' ', 'g'))
 $$;
 
 -- The thumbnail of a video (R25): YouTube's 16:9 picture, derived from the id.
@@ -41,6 +50,7 @@ as $$ select 'https://i.ytimg.com/vi/' || p_video_id || '/mqdefault.jpg' $$;
 revoke all on function public._name_norm(text) from public, anon, authenticated;
 revoke all on function public._name_key(text) from public, anon, authenticated;
 revoke all on function public._clean_title(text) from public, anon, authenticated;
+revoke all on function public._title_key(text) from public, anon, authenticated;
 revoke all on function public._yt_thumb(text) from public, anon, authenticated;
 
 -- 2–24 characters, no control, odd-space, invisible or combining character, no reserved name; unique on the
@@ -108,9 +118,9 @@ update public.chat_messages set system = true
  where not system and account_id is null and username = 'Hợp tác xã' and body ~ '^\[land:[0-9]{1,2}\] ';
 
 -- ---------- B. Queue (§6.2) ----------
--- An 11-character YouTube id or 'invalid video'; the title cleaned (else the id); the thumbnail derived from the id
--- (p_thumb is ignored); a duration outside 1–86 400 s is unknown (R24). The room rules, the order limit and the
--- approval status then run on these values.
+-- An 11-character YouTube id or 'invalid video'; the title cleaned (the id when nothing visible is left); the thumbnail
+-- derived from the id (p_thumb is ignored); a duration outside 1–86 400 s is unknown (R24). The room rules (their
+-- keyword check reads _title_key), the order limit and the approval status then run on these values.
 create or replace function public.add_queue_item(
   p_room_id uuid, p_session_token text,
   p_video_id text, p_title text, p_thumb text, p_duration integer
@@ -124,10 +134,13 @@ begin
   if p_video_id is null or p_video_id !~ '^[A-Za-z0-9_-]{11}$' then
     raise exception 'invalid video' using errcode = '22023';
   end if;
-  v_title := coalesce(nullif(public._clean_title(p_title), ''), p_video_id);
+  v_title := public._clean_title(p_title);
+  if public._title_key(v_title) = '' then
+    v_title := p_video_id;
+  end if;
   v_duration := case when p_duration between 1 and 86400 then p_duration end;
   select username into v_name from public.accounts where id = v_account;
-  perform public._check_queue_rules(p_room_id, v_title, v_duration);
+  perform public._check_queue_rules(p_room_id, public._title_key(v_title), v_duration);
   if coalesce(public._orders_remaining(p_room_id, v_member, v_account), 1) <= 0 then
     raise exception 'order limit reached' using errcode = '23514';
   end if;
@@ -165,11 +178,14 @@ begin
   loop
     v_video := v_item->>'video_id';
     if v_video is null or v_video !~ '^[A-Za-z0-9_-]{11}$' then continue; end if;
-    v_title := coalesce(nullif(public._clean_title(v_item->>'title'), ''), v_video);
+    v_title := public._clean_title(v_item->>'title');
+    if public._title_key(v_title) = '' then
+      v_title := v_video;
+    end if;
     v_num := case when jsonb_typeof(v_item->'duration') = 'number' then floor((v_item->>'duration')::numeric) end;
     v_duration := case when v_num between 1 and 86400 then v_num::int end;
     begin
-      perform public._check_queue_rules(p_room_id, v_title, v_duration);
+      perform public._check_queue_rules(p_room_id, public._title_key(v_title), v_duration);
     exception when check_violation then
       continue;   -- skip this element, keep going (does not use a slot)
     end;

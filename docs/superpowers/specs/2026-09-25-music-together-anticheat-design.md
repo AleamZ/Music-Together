@@ -114,7 +114,7 @@ The audit left these details open. Each one is decided here, and the owner confi
 | R20 | Gate hugs are counted per Vietnam day and logged once, at the 20th. | Logging every catch would be noise. |
 | R21 | The daily cast cap is 300 per Vietnam day. `cast_daily_cap` is logged once, when it is reached. | 300 casts is 7.5 h at the hourly cap, so a bot running 24 h is cut to under a third (300 of 960 casts). |
 | R22 | The queue and account checks refuse but never strike. | The layer guards the game economy, and D2's lock would not even block the queue. |
-| R23 | The guard check is deny-by-default. Every SECURITY DEFINER function in `public` that anon may execute and that is not on the allowlist must call `_ac_account` or `_ac_play`. | A new game RPC in a later migration fails the smoke test until it is guarded. |
+| R23 | The guard check is deny-by-default. Every SECURITY DEFINER function in `public` that anon may execute and that is not on the allowlist must call `_ac_account` or `_ac_play`. The allowlist holds signatures, so a new overload of an allowed name is judged on its own. | A new game RPC in a later migration fails the smoke test until it is guarded. |
 
 **Queue, names and chat**
 
@@ -122,7 +122,7 @@ The audit left these details open. Each one is decided here, and the owner confi
 |---|---|---|
 | R24 | Queue durations outside 1–86 400 s become `null` (unknown) instead of raising an error. | Honest clients already send `null` for live streams, and the room rules decide. |
 | R25 | The thumbnail is `https://i.ytimg.com/vi/<id>/mqdefault.jpg`, and `0015` rewrites the existing queue and history rows. | It is 16:9 with no letterbox for the small `object-cover` boxes, exists for every video, and removes any planted URL. |
-| R26 | Titles: control characters and odd spaces become spaces, invisible characters are removed, runs of spaces collapse, and the title is cut to 200 characters. | A zero-width character would otherwise split a banned keyword. |
+| R26 | Titles: control characters and odd spaces become spaces, runs of spaces collapse, and the title is cut to 200 characters. Invisible characters stay in the stored title, but the banned-keyword check compares the title without them. Usernames still refuse them (§6.1). | A zero-width character would otherwise split a banned keyword, and removing them from the stored title broke emoji (the U+FE0F of "❤️", the joiners of a family). |
 | R27 | Usernames are stored NFC-normalized with single spaces. Register (for uniqueness) and login compare the same normalized lower-case form, an exact match first. | Decomposed Vietnamese (Unikey "tổ hợp") can then neither create a look-alike twin nor fail to log in. |
 | R28 | Reserved names are compared on a key with the accents and non-letters removed: `aoca`, `hoptacxa`, `hethong`, `quantri`, `quantrivien`, `admin`, `root`, `system`. | This catches "Ao cá", "AO-CA" and "Hợp  tác  xã". Homoglyphs from other scripts remain possible, but they can no longer post system lines. |
 | R29 | The login text for a banned account is neutral ("đã bị khoá") and does not say "vĩnh viễn". | Manual bans from /admin get the same refusal. |
@@ -259,10 +259,10 @@ update public.chat_messages set system = true
 
 **`add_queue_item(p_room_id uuid, p_session_token text, p_video_id text, p_title text, p_thumb text, p_duration integer)`** keeps its signature:
 - **Video id:** raise `invalid video` (22023) unless `p_video_id ~ '^[A-Za-z0-9_-]{11}$'`. A null id is refused too.
-- **Title:** `coalesce(nullif(_clean_title(p_title), ''), p_video_id)`.
+- **Title:** `_clean_title(p_title)`, or `p_video_id` when nothing visible is left (`_title_key` of it is empty).
 - **Thumbnail:** `_yt_thumb(p_video_id)` = `'https://i.ytimg.com/vi/' || p_video_id || '/mqdefault.jpg'`. `p_thumb` is ignored.
 - **Duration:** `case when p_duration between 1 and 86400 then p_duration end`.
-- The room rules (`_check_queue_rules`), the order limit and the approval status then run on these values, as today.
+- The room rules (`_check_queue_rules`), the order limit and the approval status then run on these values, as today. The rules' banned-keyword check is given `_title_key(title)`.
 
 **`add_queue_items(p_room_id uuid, p_session_token text, p_items jsonb)`:**
 - An element whose `video_id` fails the pattern is skipped, as an empty id is today.
@@ -270,9 +270,12 @@ update public.chat_messages set system = true
 
 **`_clean_title(t text) returns text`**, `immutable`, private:
 1. C and S characters become a space.
-2. Z characters are removed.
-3. Runs of spaces collapse to one.
-4. `btrim`, then `left(…, 200)`.
+2. Runs of spaces collapse to one.
+3. `btrim`, then `left(…, 200)`.
+
+Z characters stay in the stored title: an emoji needs its variation selector (U+FE0F in "❤️") and its joiners (U+200D).
+
+**`_title_key(t text) returns text`**, `immutable`, private: what the banned-keyword check compares. It removes the Z characters of a clean title, then collapses the runs of spaces again and trims, so a zero-width character cannot split a keyword.
 
 **Existing rows** (idempotent):
 - `queue_items.thumbnail_url` and `play_history.thumbnail_url` are rewritten to `_yt_thumb(youtube_video_id)` when the id matches the pattern, and set to `null` otherwise.
@@ -323,7 +326,7 @@ When `v_day = 300`, it logs the soft signal `cast_daily_cap` (§7.4).
 
 - **What `0014` does:** `0014_lyrics_lockdown.sql` and its client patch on `main` close H1. The lyrics RPCs require a session and the DJ role, anon writes are revoked, sizes are capped, and the broadcast becomes a hint.
 - **This spec does not cover it.** `0015` does not depend on `0014`.
-- The guard allowlist names the lyrics RPCs `upsert_video_lyrics` and `update_video_lyric_offset` (§15.1), so both the `0011` and the `0014` versions pass.
+- The guard allowlist holds the lyrics RPCs `upsert_video_lyrics` and `update_video_lyric_offset` in both their `0011` and their `0014` signatures (§15.1), so either version passes.
 
 ## 7. Detection
 
@@ -584,7 +587,7 @@ end $$;
 | Helper | What it does |
 |---|---|
 | `_name_norm`, `_name_key` | §6.1 |
-| `_clean_title`, `_yt_thumb` | §6.2 |
+| `_clean_title`, `_title_key`, `_yt_thumb` | §6.2 |
 
 **`_ac_flag(p_account uuid, p_code text, p_rpc text, p_detail jsonb, p_room uuid default null, p_error text default null, p_hard boolean default true) returns jsonb`** runs these steps:
 
@@ -951,7 +954,7 @@ The sections are in this order, because `language sql` bodies are checked when t
 
 | Section | Contents |
 |---|---|
-| **A** Accounts and chat | `_name_norm`, `_name_key`, `_clean_title`, `_yt_thumb`; `register`, `login`; `chat_messages.system`, `about_account_id`, `idx_chat_about`, the backfill. |
+| **A** Accounts and chat | `_name_norm`, `_name_key`, `_clean_title`, `_title_key`, `_yt_thumb`; `register`, `login`; `chat_messages.system`, `about_account_id`, `idx_chat_about`, the backfill. |
 | **B** Queue | `add_queue_item`, `add_queue_items`; the thumbnail rewrite of `queue_items` and `play_history`. |
 | **C** Tables | `anticheat_config` and its row, `anticheat_status`, `anticheat_events`, `anticheat_wipes` with their indexes, RLS and revokes; `fishing_profiles.day_on` and `day_casts`; the `coin_ledger` reason check with `'wipe'`. |
 | **D** Helpers | `_ac_guard`, `_ac_account`, `_ac_play`, `_ac_flag`, `_ac_hug`, `_ac_lock_state`, `_ac_holdings`, `_ac_wipe`, `_ac_pardon`. Each is `revoke all … from public, anon, authenticated`. |
@@ -981,7 +984,7 @@ Re-running is safe:
    - `_land_sale` and `finish_cast` keep `system` and `about_account_id`.
 4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `critter_sell`.
 5. **Wider honest inputs widen the hard check.** A migration that widens the range of honest inputs widens the matching hard check in the same migration, and ships before its client.
-6. **Every later smoke run ends with `tests/sql/anticheat-guards.sql`.** The dynamic loop in that file gains the new game RPCs.
+6. **Every later smoke run ends with `tests/sql/anticheat-guards.sql`.** The dynamic loop in that file gains the new game RPCs, and a new RPC that is not a game action joins its allowlist by signature.
 7. **Re-running `0013` after `0015` undoes the guards.** `0013` re-creates the game RPCs and the `coin_ledger` reason check without the anti-cheat parts. After any re-run of `0013`, run `0015` again right away. On a database that has already seen a wipe, `0013`'s reason check (without `'wipe'`) fails, so add `'wipe'` to its list first. Later migrations follow the same order: `0013` → `0015` → the rest.
 
 ### 11.4 Pre-deploy checks (owner, in the SQL editor, before running `0015`)
@@ -1290,7 +1293,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
 **`anticheat-smoke.sql` covers:**
 
 1. **Private objects:**
-   - the `_ac_*`, `_name_*`, `_clean_title` and `_yt_thumb` helpers are not executable by anon;
+   - the `_ac_*`, `_name_*`, `_clean_title`, `_title_key` and `_yt_thumb` helpers are not executable by anon;
    - the four tables are not selectable by anon;
    - the admin RPCs refuse a non-root token with `root role required`.
 2. **H5:**
@@ -1306,7 +1309,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
    - the backfill marks well-formed old lines and leaves an author-less `Ao cá` line without the prefix unmarked.
 4. **H4:**
    - a bad id is refused (single add) or skipped (batch);
-   - the title is cleaned and capped at 200;
+   - the title is cleaned and capped at 200, and keeps its invisible characters: a title with "❤️" is stored with U+FE0F, a family emoji with its joiners, while a zero-width character still cannot split a banned keyword;
    - the thumbnail is derived;
    - durations 0, −5 and 90 000 become null;
    - existing queue and history thumbnails are rewritten.
@@ -1361,15 +1364,16 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
 16. **The guard file:** it ends with `\i tests/sql/anticheat-guards.sql`.
 
 **`anticheat-guards.sql`** is self-contained, so later smokes can include it:
-- **Static check (R23):** every function with `pronamespace = 'public'::regnamespace`, `prosecdef` and `has_function_privilege('anon', oid, 'execute')` whose name is not on the allowlist must match `prosrc ~ '_ac_(account|play)\('`. The allowlist is:
+- **Static check (R23):** every function with `pronamespace = 'public'::regnamespace`, `prosecdef` and `has_function_privilege('anon', oid, 'execute')` whose signature (`oid::regprocedure::text`) is not on the allowlist must match `prosrc ~ '_ac_(account|play)\('`. The allowlist holds one signature per function below, as the migrations define it, so a new overload of an allowed name is not allowed by its name:
   - `register`, `login`, `me`, `logout`;
   - `create_room`, `join_room`, `rename_room`, `kick_member`, `assign_dj`, `transfer_admin`, `set_play_mode`, `update_room_settings`, `touch_room`;
   - `add_queue_item`, `add_queue_items`, `advance_queue`, `set_playback`, `seek_playback`, `reorder_item`, `bump_to_top`, `delete_item`, `approve_queue_item`, `approve_all_pending`, `reject_queue_item`;
   - `send_chat_message`, `delete_chat_message`;
   - `submit_feedback`, `list_feedback`, `set_feedback_status`, `delete_feedback`;
   - `admin_list_rooms`, `admin_delete_room`, `admin_list_accounts`, `admin_set_ban`, `admin_delete_account`, `admin_stats`, `admin_anticheat_list`, `admin_anticheat_account`, `admin_anticheat_resolve`, `admin_anticheat_set_mode`;
-  - `save_character`, `upsert_video_lyrics`, `update_video_lyric_offset`;
+  - `save_character`, and `upsert_video_lyrics` and `update_video_lyric_offset` in both their `0011` and their `0014` signatures;
   - `fishing_state`, `fishing_board`, `field_state`.
+- **The check checks itself:** in a transaction that is rolled back, an unguarded overload `login(text, text, integer)` must be reported.
 - **Dynamic loop:**
   1. Register an account, create a room and set `locked_until` to now + 5 min.
   2. Call each of the 35 guarded RPCs with plausible arguments. Each must raise `account locked`.

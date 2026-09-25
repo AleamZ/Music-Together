@@ -62,7 +62,7 @@ run("v2 RPC accounts + session auth", () => {
   it("role is enforced by account/session: guest cannot advance, admin can", async () => {
     const admin = await reg(uniq("dj"));
     const r = await create(admin.token);
-    const guest = await reg(uniq("listener"));
+    const guest = await reg(uniq("listen")); // the name, with the time and a counter, stays under 24 characters (0015)
     await db.rpc("join_room", { p_code: r.code, p_password: "secret", p_session_token: guest.token });
     await db.rpc("add_queue_item", { p_room_id: r.room_id, p_session_token: guest.token, p_video_id: "abcdefghijk", p_title: "A", p_thumb: null, p_duration: 10 });
     const denied = await db.rpc("advance_queue", { p_room_id: r.room_id, p_session_token: guest.token });

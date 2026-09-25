@@ -1,32 +1,54 @@
 -- tests/sql/anticheat-guards.sql — the guard regression (anti-cheat spec §15.1, R23). Self-contained: run it as the
 -- superuser on the throwaway PostgreSQL cluster after 0015 and after every later migration (anticheat-smoke.sql ends
 -- with it). A new game RPC that does not call _ac_account or _ac_play fails the static check until it is guarded or,
--- when it is not a game action, put on the allowlist below; a new guarded RPC joins the dynamic loop.
+-- when it is not a game action, put on the allowlist below by its signature; a new guarded RPC joins the dynamic loop.
 \set ON_ERROR_STOP on
 
 -- 1. Static, deny by default: every SECURITY DEFINER function in public that anon may execute is on the allowlist or
---    calls the lock gate.
+--    calls the lock gate. The allowlist names signatures (oid::regprocedure), so a new overload of an allowed name is
+--    not allowed by that name. The lyrics RPCs are allowed in their 0011 and their 0014 form (0015 does not need 0014).
+create or replace function pg_temp.unguarded() returns text language sql as $$
+  select string_agg(f.sig, ', ' order by f.sig)
+    from (select regexp_replace(p.oid::regprocedure::text, '^public\.', '') as sig
+            from pg_proc p
+           where p.pronamespace = 'public'::regnamespace and p.prosecdef and has_function_privilege('anon', p.oid, 'execute')
+             and p.prosrc !~ '_ac_(account|play)\(') f
+   where f.sig not in (
+     'register(text,text)', 'login(text,text)', 'me(text)', 'logout(text)',
+     'create_room(text,text,text)', 'join_room(text,text,text)', 'rename_room(uuid,text,text)', 'kick_member(uuid,text,uuid)',
+     'assign_dj(uuid,text,uuid)', 'transfer_admin(uuid,text,uuid)', 'set_play_mode(uuid,text,text)',
+     'update_room_settings(uuid,text,integer,boolean,text[],integer,boolean)', 'touch_room(uuid,text)',
+     'add_queue_item(uuid,text,text,text,text,integer)', 'add_queue_items(uuid,text,jsonb)', 'advance_queue(uuid,text)',
+     'set_playback(uuid,text,boolean,timestamp with time zone,integer)', 'seek_playback(uuid,text,integer)',
+     'reorder_item(uuid,text,uuid,double precision)', 'bump_to_top(uuid,text,uuid)', 'delete_item(uuid,text,uuid)',
+     'approve_queue_item(uuid,text,uuid)', 'approve_all_pending(uuid,text)', 'reject_queue_item(uuid,text,uuid)',
+     'send_chat_message(text,uuid,text)', 'delete_chat_message(text,uuid,uuid)',
+     'submit_feedback(text,text,text)', 'list_feedback(text)', 'set_feedback_status(text,uuid,text)', 'delete_feedback(text,uuid)',
+     'admin_list_rooms(text)', 'admin_delete_room(text,uuid)', 'admin_list_accounts(text)', 'admin_set_ban(text,uuid,boolean)',
+     'admin_delete_account(text,uuid)', 'admin_stats(text)',
+     'admin_anticheat_list(text)', 'admin_anticheat_account(text,uuid)', 'admin_anticheat_resolve(text,uuid,text)',
+     'admin_anticheat_set_mode(text,text)',
+     'save_character(text,text,text,text,text,text,text,text,text)',
+     'upsert_video_lyrics(uuid,text,text,text,text,text,text,integer,text)', 'update_video_lyric_offset(uuid,text,text,integer)',
+     'upsert_video_lyrics(text,text,text,text,text,integer,text,text)', 'update_video_lyric_offset(text,integer,text)',
+     'fishing_state(text)', 'fishing_board(uuid,text)', 'field_state(uuid,text)')
+$$;
+
 do $$
-declare bad text;
 begin
-  select string_agg(p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')', ', ' order by p.proname) into bad
-    from pg_proc p
-   where p.pronamespace = 'public'::regnamespace and p.prosecdef and has_function_privilege('anon', p.oid, 'execute')
-     and p.proname not in (
-       'register', 'login', 'me', 'logout',
-       'create_room', 'join_room', 'rename_room', 'kick_member', 'assign_dj', 'transfer_admin', 'set_play_mode',
-       'update_room_settings', 'touch_room',
-       'add_queue_item', 'add_queue_items', 'advance_queue', 'set_playback', 'seek_playback', 'reorder_item', 'bump_to_top',
-       'delete_item', 'approve_queue_item', 'approve_all_pending', 'reject_queue_item',
-       'send_chat_message', 'delete_chat_message',
-       'submit_feedback', 'list_feedback', 'set_feedback_status', 'delete_feedback',
-       'admin_list_rooms', 'admin_delete_room', 'admin_list_accounts', 'admin_set_ban', 'admin_delete_account', 'admin_stats',
-       'admin_anticheat_list', 'admin_anticheat_account', 'admin_anticheat_resolve', 'admin_anticheat_set_mode',
-       'save_character', 'upsert_video_lyrics', 'update_video_lyric_offset',
-       'fishing_state', 'fishing_board', 'field_state')
-     and p.prosrc !~ '_ac_(account|play)\(';
-  assert bad is null, 'unguarded: ' || bad;
+  assert pg_temp.unguarded() is null, 'unguarded: ' || pg_temp.unguarded();
 end $$;
+
+-- The check itself: an unguarded overload of an allowed name is caught (and rolled back).
+begin;
+create function public.login(p_username text, p_password text, p_code integer) returns void
+language plpgsql security definer set search_path = public, extensions as $$ begin end $$;
+grant execute on function public.login(text, text, integer) to anon;
+do $$
+begin
+  assert pg_temp.unguarded() = 'login(text,text,integer)', format('an overload of login: %s', pg_temp.unguarded());
+end $$;
+rollback;
 
 -- 2. Dynamic: a locked account gets 'account locked' (the seconds left, hint 'anticheat') from all 35 game RPCs, and
 --    the four reads still answer.
