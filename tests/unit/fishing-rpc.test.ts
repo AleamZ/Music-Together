@@ -9,10 +9,15 @@ const STATE = {
   coins: 5, loadout: { rod: "rod_wood", bobber: "bobber_feather", bait: "bait_worm" }, owned: [],
   bait: { bait_worm: 1 }, bait_cap: 20, fish: [], fish_cap: 1, casts_left: 39, window_resets_at: null, dig_ready_at: null,
 };
-/** A thenable query chain: .select/.order return itself; awaiting it resolves to { data: rows, error: null }. */
+/** A thenable query chain: .select/.in/.order return itself; awaiting it resolves to { data: rows, error: null }. */
+const filters: unknown[][] = [];
 const chain = (rows: unknown[]) => {
   const c: Record<string, unknown> = {};
   c.select = () => c;
+  c.in = (...args: unknown[]) => {
+    filters.push(args);
+    return c;
+  };
   c.order = () => c;
   c.then = (resolve: (v: unknown) => unknown) => Promise.resolve({ data: rows, error: null }).then(resolve);
   return c;
@@ -21,6 +26,7 @@ const chain = (rows: unknown[]) => {
 const rejecting = (err: unknown) => {
   const c: Record<string, unknown> = {};
   c.select = () => c;
+  c.in = () => c;
   c.order = () => c;
   c.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => Promise.reject(err).then(resolve, reject);
   return c;
@@ -43,6 +49,8 @@ describe("fetchFishingCatalog", () => {
     expect(h.from).toHaveBeenCalledTimes(2);
     expect(a.species[0]).toMatchObject({ id: "ca_ro", pricePerKg: 45 });
     expect(a.items[0]).toMatchObject({ id: "rod_wood", starter: true, zonePct: 25 });
+    // farm items share shop_items since v15: the fishing shop asks for its own kinds only
+    expect(filters).toEqual([["kind", ["rod", "bobber", "bait", "bait_box", "bucket"]]]);
   });
 
   it("does not keep a rejected load: the next call queries again", async () => {

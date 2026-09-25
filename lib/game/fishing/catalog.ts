@@ -13,7 +13,9 @@ export interface FishSpecies {
 }
 
 export type ShopKind = "rod" | "bobber" | "bait" | "bait_box" | "bucket";
-const SHOP_KINDS: readonly string[] = ["rod", "bobber", "bait", "bait_box", "bucket"];
+/** The shop_items kinds the fishing shop sells (the farm items share the table since v15). */
+export const FISHING_KINDS: readonly ShopKind[] = ["rod", "bobber", "bait", "bait_box", "bucket"];
+const SHOP_KINDS: readonly string[] = FISHING_KINDS;
 
 export interface ShopItem {
   id: string;

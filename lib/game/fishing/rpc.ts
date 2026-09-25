@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase";
-import { isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow } from "./catalog";
+import {
+  FISHING_KINDS, isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow,
+} from "./catalog";
 import { parseFishingState, type FishingState, type Loadout } from "./state";
 
 // Supabase calls for the fishing RPCs (spec §8.3). Every answer carries the account's full state.
@@ -12,7 +14,7 @@ export function fetchFishingCatalog(): Promise<FishingCatalog> {
     catalogPromise = (async () => {
       const [sp, it] = await Promise.all([
         supabase.from("fish_species").select("*").order("sort_order"),
-        supabase.from("shop_items").select("*").order("kind").order("sort_order"),
+        supabase.from("shop_items").select("*").in("kind", FISHING_KINDS).order("kind").order("sort_order"),
       ]);
       if (sp.error || it.error) {
         catalogPromise = null;
