@@ -723,4 +723,104 @@ end $$;
 
 select 'anticheat farm smoke ok' as result;
 
+-- ---------- shared functions (§10.4, R10, R11, R30): the fishing state, the board, the song bonus, the sweep ----------
+insert into smoke select 'k' || n, token from generate_series(1, 5) n,
+  lateral public.register('ack' || n || '_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'm' || substr(k, 2), public._auth_account(v)::text from smoke where k in ('k1', 'k2', 'k3', 'k4', 'k5');
+insert into smoke select 'sroom', room_id::text from public.create_room('Ruộng quét', 'pw', (select v from smoke where k = 'k1'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'sroom')::uuid), 'pw', v)
+  from smoke where k in ('k2', 'k3', 'k4', 'k5');
+
+do $$
+declare k2 text := (select v from smoke where k = 'k2'); m2 uuid := (select v from smoke where k = 'm2')::uuid; s jsonb;
+begin
+  -- the fishing state carries the daily cap and the running lock
+  s := public.fishing_state(k2);
+  assert (s->>'casts_today_left')::int = 300 and s->'day_resets_at' = 'null' and s->'lock' = 'null', format('fresh %s', s);
+  insert into public.fishing_profiles (account_id, day_on, day_casts) values (m2, public._vn_today(), 120);
+  assert (public.fishing_state(k2)->>'casts_today_left')::int = 180, '180 left';
+  update public.fishing_profiles set day_casts = 300 where account_id = m2;
+  s := public.fishing_state(k2);
+  assert (s->>'casts_today_left')::int = 0
+     and (s->>'day_resets_at')::timestamptz = (public._vn_today() + 1)::timestamp at time zone 'Asia/Ho_Chi_Minh', 'the day is over';
+  update public.fishing_profiles set day_on = public._vn_today() - 1 where account_id = m2;
+  assert (public.fishing_state(k2)->>'casts_today_left')::int = 300, 'yesterday does not count';
+  insert into public.anticheat_status (account_id, locked_until, last_strike_code) values (m2, now() + interval '4 minutes', 'bad_plot');
+  s := public.fishing_state(k2);
+  assert s->'lock' = jsonb_build_object('until', now() + interval '4 minutes', 'code', 'bad_plot'), format('lock %s', s->'lock');
+  update public.anticheat_status set locked_until = now() - interval '1 second' where account_id = m2;
+  assert public.fishing_state(k2)->'lock' = 'null', 'the lock ended';
+end $$;
+
+do $$
+declare k1 text := (select v from smoke where k = 'k1'); m1 uuid := (select v from smoke where k = 'm1')::uuid;
+        m3 uuid := (select v from smoke where k = 'm3')::uuid; m4 uuid := (select v from smoke where k = 'm4')::uuid;
+        m5 uuid := (select v from smoke where k = 'm5')::uuid; room uuid := (select v from smoke where k = 'sroom')::uuid;
+        aroot uuid := (select v from smoke where k = 'aroot')::uuid; b jsonb; q uuid; t timestamptz := now();
+begin
+  -- m3 cheats later; m4 subleases m3's plot; m5 owns plot 3
+  insert into public.wallets (account_id, coins) values (m1, 100), (m3, 999999), (m4, 500), (m5, 500)
+  on conflict (account_id) do update set coins = excluded.coins;
+  insert into public.personal_bests (account_id, species_id, weight_g) values (m3, 'ca_ho', 39000), (m4, 'ca_ho', 12000);
+  b := public.fishing_board(room, k1);
+  assert b->'records'->0->>'username' = (select username from public.accounts where id = m3)
+     and (b->'richest'->0->>'coins')::int = 999999 and (b->>'my_rank')::int = 4, format('before the ban %s', b);
+
+  -- the ban (strike 2 sets these): the board hides m3 and the song bonus skips it (R30)
+  insert into public.anticheat_status (account_id, strikes, ban_state, banned_at) values (m3, 2, 'pending_wipe', t);
+  update public.accounts set is_banned = true where id = m3;
+  b := public.fishing_board(room, k1);
+  assert b->'records'->0->>'username' = (select username from public.accounts where id = m4)
+     and not (b->'richest' @> jsonb_build_array(jsonb_build_object('coins', 999999))) and (b->>'my_rank')::int = 3,
+    format('after the ban %s', b);
+  insert into public.queue_items (room_id, youtube_video_id, title, duration_seconds, added_by_account_id, added_by_name, position)
+  values (room, 'eeeeeeeeeee', 'Bài của m3', 240, m3, 'm3', 1) returning id into q;
+  update public.rooms set current_item_id = q where id = room;
+  update public.rooms set item_began_at = now() - interval '10 minutes' where id = room;
+  perform public.advance_queue(room, k1);
+  assert not exists (select 1 from public.coin_ledger where account_id = m3 and reason = 'song'), 'no song bonus for a banned account';
+  insert into public.queue_items (room_id, youtube_video_id, title, duration_seconds, added_by_account_id, added_by_name, position)
+  values (room, 'fffffffffff', 'Bài của m4', 240, m4, 'm4', 2) returning id into q;
+  update public.rooms set current_item_id = q where id = room;
+  update public.rooms set item_began_at = now() - interval '10 minutes' where id = room;
+  perform public.advance_queue(room, k1);
+  assert exists (select 1 from public.coin_ledger where account_id = m4 and reason = 'song' and delta = 10), 'others still earn it';
+
+  -- the market freeze at the next sweep (R10): offers gone, listing and sublease price cleared, the plot kept
+  perform public._field_init(room);
+  update public.field_plots set owner_id = m3, owned_at = t - interval '2 days', sale_price = 9000, sublease_price = 300
+   where room_id = room and plot_no = 2;
+  update public.field_plots set owner_id = m5, owned_at = t - interval '2 days' where room_id = room and plot_no = 3;
+  insert into public.land_offers (room_id, plot_no, buyer_id, price, created_at) values (room, 3, m3, 7000, t - interval '1 hour');
+  perform public._field_open(room, t);
+  assert not exists (select 1 from public.land_offers where room_id = room and buyer_id = m3), 'the offer is gone';
+  assert (select owner_id = m3 and sale_price is null and sublease_price is null from public.field_plots
+           where room_id = room and plot_no = 2), 'listing and sublease cleared, the plot kept until the wipe';
+
+  -- what m3 holds when the owner wipes it: plot 2 subleased to m4, village plot 7 with a crop, a batch, an offer
+  insert into public.plot_leases (room_id, plot_no, farmer_id, source, price, starts_at, until) values
+    (room, 2, m4, 'owner', 300, t - interval '1 day', t + interval '3 days'),
+    (room, 7, m3, 'village', 250, t - interval '1 day', t + interval '3 days');
+  insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at) values (room, 7, m3, 'nep', t - interval '1 day');
+  insert into public.drying_slots (room_id, slot, account_id, variety, kg, ready_at) values (room, 1, m3, 'nep', 40, t + interval '1 hour');
+  insert into public.land_offers (room_id, plot_no, buyer_id, price, created_at) values (room, 3, m3, 7500, t - interval '1 minute');
+  perform public._ac_wipe(m3, aroot);
+  -- the next field call releases it all, without refund; m4's sublease runs on (R11)
+  perform public._field_open(room, t);
+  assert (select owner_id is null and owned_at is null from public.field_plots where room_id = room and plot_no = 2), 'plot released';
+  assert not exists (select 1 from public.coin_ledger where account_id = m3 and reason = 'land_refund'), 'no refund';
+  assert exists (select 1 from public.plot_leases where room_id = room and plot_no = 2 and farmer_id = m4), 'the sublease runs on';
+  assert not exists (select 1 from public.plot_leases where room_id = room and farmer_id = m3)
+     and not exists (select 1 from public.crops where room_id = room and farmer_id = m3)
+     and not exists (select 1 from public.drying_slots where room_id = room and account_id = m3)
+     and not exists (select 1 from public.land_offers where room_id = room and buyer_id = m3), 'lease, crop, batch and offer gone';
+  assert not exists (select 1 from public.rice_stock where account_id = m3), 'no dry rice from the batch';
+  assert (select owner_id = m5 from public.field_plots where room_id = room and plot_no = 3), 'innocent land stays';
+  perform public._field_open(room, t + interval '3 days');
+  assert (select owner_id is null from public.field_plots where room_id = room and plot_no = 2)
+     and not exists (select 1 from public.plot_leases where room_id = room and plot_no = 2), 'the village gets it after the lease';
+end $$;
+
+select 'anticheat shared functions smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql

@@ -1299,3 +1299,195 @@ grant execute on function public.dry_collect(uuid, text, integer) to anon, authe
 grant execute on function public.sell_rice(text, text, boolean, integer) to anon, authenticated;
 grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;
 grant execute on function public.claim_farm_gift(text) to anon, authenticated;
+
+-- ---------- F. Shared functions (§10.4) ----------
+-- The fishing state of 0013 plus the daily cap (casts_today_left, day_resets_at) and the running lock (R14).
+create or replace function public._fishing_state(p_account uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, extensions
+as $$
+declare w public.wallets; p public.fishing_profiles; v_resets timestamptz; v_left integer; v_dig timestamptz;
+        v_today date := public._vn_today(); v_day_left integer;
+begin
+  select * into w from public.wallets where account_id = p_account;
+  select * into p from public.fishing_profiles where account_id = p_account;
+  if p.window_start is not null and now() < p.window_start + interval '1 hour' then
+    v_resets := p.window_start + interval '1 hour';
+    v_left := greatest(0, 40 - p.window_casts);
+  else
+    v_resets := null;
+    v_left := 40;
+  end if;
+  if p.last_dig_at is not null and now() < p.last_dig_at + interval '45 seconds' then
+    v_dig := p.last_dig_at + interval '45 seconds';
+  else
+    v_dig := null;
+  end if;
+  v_day_left := case when p.day_on = v_today then greatest(0, 300 - p.day_casts) else 300 end;
+  return jsonb_build_object(
+    'coins', coalesce(w.coins, 0),
+    'daily_claimed', coalesce(w.daily_on = v_today, false),
+    'loadout', jsonb_build_object('rod', coalesce(p.rod, 'rod_wood'), 'bobber', coalesce(p.bobber, 'bobber_feather'),
+                                  'bait', coalesce(p.bait, 'bait_worm')),
+    'owned', coalesce((select jsonb_agg(i.item_id order by s.kind, s.sort_order)
+                         from public.inventory i join public.shop_items s on s.id = i.item_id
+                        where i.account_id = p_account and i.qty >= 1 and s.kind in ('rod','bobber','bait_box','bucket')),
+                      '[]'::jsonb),
+    'bait', (select jsonb_object_agg(s.id, coalesce(i.qty, 0))
+               from public.shop_items s
+               left join public.inventory i on i.item_id = s.id and i.account_id = p_account
+              where s.kind = 'bait'),
+    'bait_cap', public._bait_cap(p_account),
+    'fish', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'species_id', f.species_id, 'weight_g', f.weight_g,
+                                                          'price', f.price, 'caught_at', f.caught_at) order by f.caught_at, f.id)
+                        from public.fish f where f.account_id = p_account), '[]'::jsonb),
+    'fish_cap', 1 + public._bucket_cap(p_account),
+    'casts_left', v_left,
+    'window_resets_at', v_resets,
+    'dig_ready_at', v_dig,
+    'server_now', now(),
+    'casts_today_left', v_day_left,
+    'day_resets_at', case when v_day_left = 0 then (v_today + 1)::timestamp at time zone 'Asia/Ho_Chi_Minh' end,
+    'lock', public._ac_lock_state(p_account)
+  );
+end; $$;
+revoke all on function public._fishing_state(uuid) from public, anon, authenticated;
+
+-- The sweep of 0013 with step 0 first: a banned account leaves the land market (R10), and a wipe releases what the
+-- account held at the time of the wipe, without refund (R11). Step 0 runs before the reclaim (step 3), so a wiped owner
+-- is never refunded, and before the auto-collect (step 7), so a wiped batch never becomes dry rice.
+create or replace function public._field_sweep(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare f public.field_plots; d public.drying_slots;
+begin
+  -- 0a. banned accounts (review pending or wiped) leave the land market
+  delete from public.land_offers lo using public.anticheat_status s
+   where lo.room_id = p_room and s.account_id = lo.buyer_id and s.ban_state is not null;
+  update public.field_plots fp set sale_price = null, sublease_price = null
+    from public.anticheat_status s
+   where fp.room_id = p_room and s.account_id = fp.owner_id and s.ban_state is not null
+     and (fp.sale_price is not null or fp.sublease_price is not null);
+  -- 0b. a wipe releases what the account held at the time of the wipe, without refund
+  delete from public.plot_leases pl using public.anticheat_status s
+   where pl.room_id = p_room and s.account_id = pl.farmer_id and s.wiped_at is not null and pl.starts_at <= s.wiped_at;
+  update public.field_plots fp set owner_id = null, owned_at = null, sale_price = null, sublease_price = null
+    from public.anticheat_status s
+   where fp.room_id = p_room and s.account_id = fp.owner_id and s.wiped_at is not null
+     and (fp.owned_at is null or fp.owned_at <= s.wiped_at);
+  delete from public.land_offers lo using public.anticheat_status s
+   where lo.room_id = p_room and s.account_id = lo.buyer_id and s.wiped_at is not null and lo.created_at <= s.wiped_at;
+  delete from public.drying_slots ds using public.anticheat_status s
+   where ds.room_id = p_room and s.account_id = ds.account_id and s.wiped_at is not null
+     and ds.ready_at <= s.wiped_at + interval '3 hours';
+  -- 0c. offers on a plot that has no owner any more (a release above, or a deleted account)
+  delete from public.land_offers lo using public.field_plots fp
+   where lo.room_id = p_room and fp.room_id = lo.room_id and fp.plot_no = lo.plot_no and fp.owner_id is null;
+  -- 1. leases end (the leaseholder's crop goes in step 4)
+  delete from public.plot_leases where room_id = p_room and until <= p_now;
+  -- 2. offers expire after 24 h
+  delete from public.land_offers where room_id = p_room and created_at <= p_now - interval '24 hours';
+  -- 3. reclaim: the owner left the room or has not visited it for 14 days, and the plot is not leased out (§7.6)
+  for f in select fp.* from public.field_plots fp
+            where fp.room_id = p_room and fp.owner_id is not null
+              and not exists (select 1 from public.members m
+                               where m.room_id = p_room and m.account_id = fp.owner_id
+                                 and coalesce(m.last_seen_at, m.joined_at) > p_now - interval '14 days')
+              and not exists (select 1 from public.plot_leases pl where pl.room_id = p_room and pl.plot_no = fp.plot_no)
+            order by fp.plot_no loop
+    update public.field_plots set owner_id = null, owned_at = null, sale_price = null, sublease_price = null
+     where room_id = p_room and plot_no = f.plot_no;
+    delete from public.land_offers where room_id = p_room and plot_no = f.plot_no;
+    perform public._wallet_lock(f.owner_id);
+    perform public._pay(f.owner_id, 400000, 'land_refund', 'plot ' || f.plot_no);
+  end loop;
+  -- 4. a crop belongs to the plot's farmer: a crop left by an ended lease or a reclaim is lost
+  delete from public.crops cr
+   where cr.room_id = p_room and cr.farmer_id is distinct from public._farmer(p_room, cr.plot_no, p_now);
+  -- 5. sprouted seed not sown 24 h after sprouting (soak + 26 h) rots: the plot goes back to prepared, or to bare
+  delete from public.crops
+   where room_id = p_room and sow_at is null and prepared_at is null and p_now >= soak_at + interval '26 hours';
+  update public.crops set rotted_at = soak_at + interval '26 hours', soak_at = null, variety = null
+   where room_id = p_room and sow_at is null and p_now >= soak_at + interval '26 hours';
+  -- 6. rice left 48 h after its ripe window has all fallen
+  delete from public.crops cr using public.rice_varieties rv
+   where cr.room_id = p_room and rv.id = cr.variety and cr.transplant_at is not null
+     and p_now >= public._plus_h(cr.transplant_at, 48 * rv.scale + 60);
+  -- 7. a drying batch left 24 h after it is ready is collected for its owner
+  for d in delete from public.drying_slots where room_id = p_room and ready_at <= p_now - interval '24 hours' returning * loop
+    perform public._rice_add(d.account_id, d.variety, 0, d.kg);
+  end loop;
+end; $$;
+revoke all on function public._field_sweep(uuid, timestamptz) from public, anon, authenticated;
+
+-- The song bonus of 0012, which never pays a banned account (R30).
+create or replace function public._song_bonus() returns trigger
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare q public.queue_items; w public.wallets; v_today date;
+begin
+  begin
+    select * into q from public.queue_items where id = old.current_item_id;
+    if not found or q.added_by_account_id is null or coalesce(q.duration_seconds, 0) < 60
+       or old.item_began_at is null
+       or extract(epoch from (now() - old.item_began_at)) < 0.75 * q.duration_seconds
+       or exists (select 1 from public.accounts a where a.id = q.added_by_account_id and a.is_banned) then
+      return null;
+    end if;
+    v_today := public._vn_today();
+    w := public._wallet_lock(q.added_by_account_id);
+    if w.bonus_on is distinct from v_today then
+      update public.wallets set bonus_on = v_today, bonus_count = 0 where account_id = q.added_by_account_id;
+      w.bonus_count := 0;
+    end if;
+    if w.bonus_count >= 10 then
+      return null;
+    end if;
+    update public.wallets set bonus_count = bonus_count + 1 where account_id = q.added_by_account_id;
+    perform public._pay(q.added_by_account_id, 10, 'song', left(q.title, 80));
+  exception when others then
+    raise warning 'song bonus skipped: %', sqlerrm;
+  end;
+  return null;
+end; $$;
+revoke all on function public._song_bonus() from public, anon, authenticated;
+
+-- The board of 0013 section H (with the room's fish prices) without banned accounts: no record, no place among the
+-- richest, no rank (R30).
+create or replace function public.fishing_board(p_room_id uuid, p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_coins integer; v_rank integer;
+begin
+  perform public._auth(p_room_id, p_session_token, 'any');
+  v_account := public._auth_account(p_session_token);
+  v_coins := coalesce((select coins from public.wallets where account_id = v_account), 0);
+  select 1 + count(*) into v_rank
+    from public.members m join public.wallets w on w.account_id = m.account_id
+    join public.accounts a on a.id = m.account_id
+   where m.room_id = p_room_id and w.coins > v_coins and not a.is_banned;
+  return jsonb_build_object(
+    'records', coalesce((
+      select jsonb_agg(jsonb_build_object('species_id', r.species_id, 'username', r.username, 'weight_g', r.weight_g)
+                       order by r.species_id)
+        from (select distinct on (pb.species_id) pb.species_id, a.username, pb.weight_g
+                from public.personal_bests pb
+                join public.members m on m.account_id = pb.account_id and m.room_id = p_room_id
+                join public.accounts a on a.id = pb.account_id and not a.is_banned
+               order by pb.species_id, pb.weight_g desc, pb.caught_at asc) r), '[]'::jsonb),
+    'mine', coalesce((
+      select jsonb_agg(jsonb_build_object('species_id', species_id, 'weight_g', weight_g) order by species_id)
+        from public.personal_bests where account_id = v_account), '[]'::jsonb),
+    'richest', coalesce((
+      select jsonb_agg(jsonb_build_object('username', t.username, 'coins', t.coins) order by t.coins desc, t.username)
+        from (select a.username, w.coins
+                from public.members m
+                join public.wallets w on w.account_id = m.account_id
+                join public.accounts a on a.id = m.account_id
+               where m.room_id = p_room_id and w.coins > 0 and not a.is_banned
+               order by w.coins desc, a.username
+               limit 10) t), '[]'::jsonb),
+    'my_rank', v_rank,
+    'my_coins', v_coins,
+    'prices', public._fish_prices(p_room_id, now()));
+end; $$;
+grant execute on function public.fishing_board(uuid, text) to anon, authenticated;
