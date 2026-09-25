@@ -1,5 +1,9 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { MapId } from "@/lib/game/maps/types";
 import { supabase, type Room, type Member, type QueueItem } from "@/lib/supabase";
+import {
+  aggregatePresenceModes, presenceDelay, PRESENCE_BUDGET, type PresenceEntry, type PresenceMeta, type PresenceMode,
+} from "@/lib/presence-modes";
 
 export interface RoomState { room: Room | null; members: Member[]; queue: QueueItem[]; }
 
@@ -42,20 +46,94 @@ export function subscribeRoom(roomId: string, onState: (s: RoomState) => void): 
   return () => { cancelled = true; if (timer) clearTimeout(timer); void supabase.removeChannel(channel); };
 }
 
-/** Realtime Presence: online member ids, keyed by member id. */
+export interface PresenceHandle {
+  unsubscribe: () => void;
+  setMode: (mode: PresenceMode) => void;
+  /** The game map I walk on (v14). Published only while the mode is "game" (classic → map null). */
+  setMap: (map: MapId) => void;
+}
+
+interface Published { mode: PresenceMode; map: MapId | null }
+
+/** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13) and game map (v14).
+ *  track() calls are budgeted (Supabase allows 5 per 30 s): ≤ 4 calls per 30 s for mode and map changes together;
+ *  a re-track after a reconnect may use the 5th. Changes within 1 s are merged, a state the server already
+ *  acknowledged is never re-sent, and failed tracks are retried. */
 export function trackPresence(
-  roomId: string, me: { memberId: string; name: string }, onOnline: (ids: string[]) => void,
-): () => void {
+  roomId: string,
+  me: { memberId: string; name: string; mode: PresenceMode; map?: MapId },
+  onChange: (entries: PresenceEntry[]) => void,
+): PresenceHandle {
   const channel = supabase.channel(`presence:${roomId}`, { config: { presence: { key: me.memberId } } });
-  const emit = () => onOnline(Object.keys(channel.presenceState()));
+  let mode: PresenceMode = me.mode;          // what other members should see…
+  let map: MapId = me.map ?? "hall";
+  let published: Published | null = null;    // …and the last state the server acknowledged with 'ok'
+  const wanted = (): Published => ({ mode, map: mode === "game" ? map : null });
+  const isPublished = () => published !== null && published.mode === wanted().mode && published.map === wanted().map;
+  let subscribed = false;
+  let gen = 0;                               // counts (re)joins: an 'ok' for a call sent in an older join is stale
+  let closed = false;
+  let sending = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let sentAt: number[] = [];                 // times of recent track() calls (pruned to the budget window)
+  const emit = () => onChange(aggregatePresenceModes(channel.presenceState<PresenceMeta>()));
+  const schedule = (minDelay = 0, budget: { max: number; windowMs: number } = PRESENCE_BUDGET) => {
+    if (closed || timer || sending) return;
+    timer = setTimeout(() => { void flush(); }, Math.max(minDelay, presenceDelay(sentAt, Date.now(), budget)));
+  };
+  const flush = async () => {
+    timer = null;
+    if (closed || !subscribed || sending || isPublished()) return;
+    sending = true;
+    const next = wanted();
+    const sentGen = gen;
+    const now = Date.now();
+    sentAt = [...sentAt.filter((t) => now - t < PRESENCE_BUDGET.windowMs), now];
+    // A rejected call counts as failed (retried below) instead of leaving `sending` stuck.
+    const status = await channel.track({ name: me.name, online_at: new Date(now).toISOString(), mode: next.mode, map: next.map })
+      .catch(() => "error" as const);
+    sending = false;
+    if (closed) return;
+    // An 'ok' for a call sent before the latest (re)join proves nothing: the new session starts without our
+    // presence (its own re-track was skipped while this call was in flight) → re-track at once, from the reserve.
+    if (status === "ok" && sentGen !== gen) {
+      schedule(0, { max: PRESENCE_BUDGET.max + 1, windowMs: PRESENCE_BUDGET.windowMs });
+      return;
+    }
+    if (status === "ok") published = next;
+    // The state changed while the call was in flight, or the call failed/timed out → send again (budgeted).
+    if (!isPublished()) schedule(status === "ok" ? 0 : 1000);
+  };
   channel
     .on("presence", { event: "sync" }, emit)
     .on("presence", { event: "join" }, emit)
     .on("presence", { event: "leave" }, emit)
-    .subscribe(async (status) => {
+    .subscribe((status) => {
+      // A (re)join starts with none of our presence on the server → publish the wanted state again;
+      // this re-track may use the call kept in reserve (5th per 30 s) and never waits behind a pending
+      // timer that was computed with the 4-call budget.
       if (status === "SUBSCRIBED") {
-        await channel.track({ name: me.name, online_at: new Date().toISOString() });
-      }
+        subscribed = true; published = null; gen += 1;
+        if (timer) { clearTimeout(timer); timer = null; }
+        schedule(0, { max: PRESENCE_BUDGET.max + 1, windowMs: PRESENCE_BUDGET.windowMs });
+      } else subscribed = false;
     });
-  return () => { void supabase.removeChannel(channel); };
+  return {
+    unsubscribe: () => {
+      closed = true;
+      if (timer) { clearTimeout(timer); timer = null; }
+      void supabase.removeChannel(channel);
+    },
+    setMode: (next) => {
+      if (closed || next === mode) return;
+      mode = next;
+      // The 1 s delay merges rapid toggles; A→B→A inside it sends nothing because the wanted state is published.
+      schedule(1000);
+    },
+    setMap: (next) => {
+      if (closed || next === map) return;
+      map = next;
+      schedule(1000);
+    },
+  };
 }

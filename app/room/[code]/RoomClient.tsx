@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoom } from "@/hooks/useRoom";
 import AuthScreen from "@/components/auth/AuthScreen";
 import JoinGate from "@/components/room/JoinGate";
-import RoomShell from "@/components/room/RoomShell";
+import RoomSession from "@/components/room/RoomSession";
 import BrandSpinner from "@/components/brand/BrandSpinner";
 
 export default function RoomClient({ code }: { code: string }) {
@@ -25,5 +25,5 @@ export default function RoomClient({ code }: { code: string }) {
     </main>
   );
   if (!view.myMemberId) return <JoinGate code={code} token={view.token} onJoined={() => force((n) => n + 1)} />;
-  return <RoomShell view={view} />;
+  return <RoomSession view={view} />;
 }

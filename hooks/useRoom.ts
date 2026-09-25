@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { subscribeRoom, trackPresence, type RoomState } from "@/lib/realtime";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { MapId } from "@/lib/game/maps/types";
+import { subscribeRoom, trackPresence, type PresenceHandle, type RoomState } from "@/lib/realtime";
+import type { PresenceEntry, PresenceMode } from "@/lib/presence-modes";
 import { supabase } from "@/lib/supabase";
 import { deriveRole, type RoleFlags } from "@/lib/roles";
 import { useAuth } from "@/hooks/useAuth";
+import { readStoredMode } from "@/hooks/useViewMode";
 
 export interface RoomView {
   loading: boolean; state: RoomState; onlineIds: string[];
+  presence: PresenceEntry[]; setPresenceMode: (m: PresenceMode) => void;
+  /** The game map I am on (published with the mode; shared presence budget). */
+  setPresenceMap: (m: MapId) => void;
   token: string; accountId: string; username: string; myMemberId: string | null;
   role: RoleFlags; kicked: boolean;
 }
@@ -16,7 +22,18 @@ const EMPTY: RoomState = { room: null, members: [], queue: [] };
 export function useRoom(code: string): RoomView {
   const { account, token, lobby } = useAuth();
   const [state, setState] = useState<RoomState>(EMPTY);
-  const [onlineIds, setOnlineIds] = useState<string[]>([]);
+  const [presence, setPresence] = useState<PresenceEntry[]>([]);
+  const presenceRef = useRef<PresenceHandle | null>(null);
+  const modeRef = useRef<PresenceMode | null>(null);
+  const setPresenceMode = useCallback((m: PresenceMode) => {
+    modeRef.current = m;
+    presenceRef.current?.setMode(m);
+  }, []);
+  const mapRef = useRef<MapId>("hall");
+  const setPresenceMap = useCallback((m: MapId) => {
+    mapRef.current = m;
+    presenceRef.current?.setMap(m);
+  }, []);
   const [loading, setLoading] = useState(true);
   // Latches true once we've ever been a member of THIS room, so a brand-new
   // visitor (not yet a member) is NOT shown the "kicked" screen.
@@ -29,7 +46,7 @@ export function useRoom(code: string): RoomView {
 
   useEffect(() => {
     let unsubRoom: (() => void) | undefined;
-    let unsubPresence: (() => void) | undefined;
+    let presenceHandle: PresenceHandle | undefined;
     let active = true;
     let enteredRoomId: string | null = null;
     (async () => {
@@ -45,12 +62,18 @@ export function useRoom(code: string): RoomView {
         // Latch membership in the (async) subscription callback — never during render.
         if (accountId && s.members.some((m) => m.account_id === accountId)) setWasMember(true);
       });
-      if (account) unsubPresence = trackPresence(roomId, { memberId: account.accountId, name: account.username }, setOnlineIds);
+      if (account) {
+        presenceHandle = trackPresence(roomId, {
+          memberId: account.accountId, name: account.username, mode: modeRef.current ?? readStoredMode(), map: mapRef.current,
+        }, setPresence);
+        presenceRef.current = presenceHandle;
+      }
     })();
     return () => {
       active = false;
       unsubRoom?.();
-      unsubPresence?.();
+      presenceHandle?.unsubscribe();
+      if (presenceRef.current === presenceHandle) presenceRef.current = null;
       // Only clear our lobby presence if this cleanup ran AFTER we actually
       // entered the room. A StrictMode/re-run cleanup that fires before the
       // async fetch resolved must NOT push room_id=null (that would clobber the
@@ -65,5 +88,9 @@ export function useRoom(code: string): RoomView {
   // kicked only if we WERE a member and now aren't (never-joined users fall through to JoinGate).
   const kicked = wasMember && !!state.room && !myMemberId;
 
-  return { loading, state, onlineIds, token: token ?? "", accountId, username: account?.username ?? "", myMemberId, role, kicked };
+  const onlineIds = presence.map((p) => p.accountId);
+  return {
+    loading, state, onlineIds, presence, setPresenceMode, setPresenceMap, token: token ?? "", accountId, username: account?.username ?? "",
+    myMemberId, role, kicked,
+  };
 }

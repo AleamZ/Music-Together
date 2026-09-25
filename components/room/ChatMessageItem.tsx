@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import type { ChatMessage } from "@/lib/chat";
 import { parseChatMessageBody, MENTION_REGEX } from "@/lib/chat-helpers";
+import { parseCatchAnnouncement } from "@/lib/game/fishing/announce";
 import type { Member, Room } from "@/lib/supabase";
 
 interface ChatMessageItemProps {
@@ -35,6 +36,8 @@ export default function ChatMessageItem({
   onMentionUser,
 }: ChatMessageItemProps) {
   const isMe = !!message.account_id && message.account_id === currentAccountId;
+  // A rare catch posted by the server (v14): a system line — no avatar, no reply; the room admin may still delete it.
+  const announcement = useMemo(() => parseCatchAnnouncement(message), [message]);
 
   // Find member info for role badges
   const member = members.find((m) => m.account_id === message.account_id);
@@ -107,6 +110,30 @@ export default function ChatMessageItem({
 
     return parts;
   }, [text, currentUsername, onMentionUser]);
+
+  if (announcement) {
+    return (
+      <div
+        id={`chat-msg-${message.id}`}
+        className={`group relative flex items-center justify-center gap-2 rounded-xl px-2.5 py-1.5 text-center ${
+          isHighlighted ? "bg-gold-200/50 ring-2 ring-gold" : ""
+        }`}
+      >
+        <p className="text-xs italic leading-relaxed text-burgundy font-serif">{announcement.text}</p>
+        {timeFormatted && <span className="text-[10px] text-ink/40 font-mono">{timeFormatted}</span>}
+        {canDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(message.id)}
+            className="rounded p-1 text-xs text-burgundy-accent opacity-0 transition-opacity hover:bg-burgundy/10 group-hover:opacity-100"
+            title="Xóa tin nhắn"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
