@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { varietyFromRow } from "@/lib/game/farm/catalog";
 import {
-  acceptRefusal, buyListedRefusal, buyPlotRefusal, farmingCount, listRefusal, offerRefusal, reasonText, rentRefusal,
+  acceptRefusal, buyListedRefusal, buyPlotRefusal, farmingCount, harvesterRefusal, listRefusal, offerRefusal, reasonText, rentRefusal,
   rentSubleaseRefusal, sellBackRefusal, subleaseRefusal, type LandCtx,
 } from "@/lib/game/farm/land";
 import type { CropView, FieldMine, PlotView } from "@/lib/game/farm/state";
@@ -85,5 +86,45 @@ describe("the owner's land actions", () => {
     expect(acceptRefusal(offer, ctx([mineBare]))).toBeNull();
     expect(acceptRefusal(offer, ctx([{ ...mineBare, crop: CROP }]))).toBe("crop exists");
     expect(acceptRefusal({ ...offer, plot: 2 }, ctx([mineBare]))).toBe("not your plot");
+  });
+});
+
+describe("the co-op's harvester", () => {
+  const H = 3_600_000;
+  const t0 = Date.parse("2026-09-25T00:00:00Z");
+  const at = (h: number) => t0 + h * H;
+  const nep = varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 18, blast_mult: 1, sort_order: 20 });
+  /** My nếp on plot 5, transplanted at 12 h (ripe 60–72 h), drained at 55 h. */
+  const rice = (over: Partial<CropView> = {}, water: Array<[number, number]> = [[0, 3], [55, 1]]): CropView => ({
+    kind: "rice", variety: "nep", upland: null, phase: "ripe", preparedAt: at(0), soakAt: at(0), sowAt: at(3), transplantAt: at(12),
+    plantAt: null, water: 1, waterSetAt: null, pests: [], excessN: false, ripe: true, rottedAt: null, picking: null, pickings: 1, parts: 0,
+    harvester: null,
+    log: {
+      water: water.map(([h, l]) => ({ t: at(h), l })), fert: [], spray: [], picks: [], qTransplant: 1, work: [], harvests: [], harvestedKg: 0,
+    },
+    ...over,
+  });
+  const mineRice = (c: CropView | null, until = at(96)) => plot(5, { farmer: ME, lease: { source: "village", until, price: 250 }, crop: c });
+  const now = at(61);
+
+  it("rents for a ripe, drained rice plot of mine, 500 xu a part left, with 30 s left on the lease", () => {
+    expect(harvesterRefusal(mineRice(rice()), ctx([]), nep, now)).toBeNull();
+    expect(harvesterRefusal(mineRice(rice()), ctx([], 2999), nep, now)).toBe("not enough coins");
+    expect(harvesterRefusal(mineRice(rice({ parts: 2 })), ctx([], 2000), nep, now)).toBeNull();
+    expect(harvesterRefusal(mineRice(rice({ parts: 2 })), ctx([], 1999), nep, now)).toBe("not enough coins");
+    expect(harvesterRefusal(mineRice(rice(), now + 30_000), ctx([]), nep, now)).toBeNull();
+    expect(harvesterRefusal(mineRice(rice(), now + 29_999), ctx([]), nep, now)).toBe("lease ends");
+  });
+  it("refuses in the server's order", () => {
+    expect(harvesterRefusal({ ...mineRice(rice()), farmer: LAN }, ctx([]), nep, now)).toBe("not your plot");
+    expect(harvesterRefusal(mineRice(null), ctx([]), nep, now)).toBe("not prepared");
+    const running = rice({ harvester: { startedAt: now - 5_000, endsAt: now + 25_000 } });
+    expect(harvesterRefusal(mineRice(running), ctx([], 0), nep, now)).toBe("harvester busy");
+    expect(harvesterRefusal(mineRice(rice({ kind: "upland", variety: null, upland: "khoai" })), ctx([]), nep, now)).toBe("wrong crop");
+    expect(harvesterRefusal(mineRice(rice()), ctx([]), nep, at(55))).toBe("wrong phase");
+    expect(harvesterRefusal(mineRice(rice({ parts: 6 })), ctx([]), nep, now)).toBe("wrong phase");
+    expect(harvesterRefusal(mineRice(rice({}, [[0, 3], [55, 2]])), ctx([], 0), nep, now)).toBe("need water");
+    expect(reasonText("harvester busy")).toBe("Máy gặt đang gặt thửa này.");
+    expect(reasonText("lease ends")).toBe("Không kịp gặt xong trước khi hết hạn thuê.");
   });
 });

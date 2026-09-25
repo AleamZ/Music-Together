@@ -104,7 +104,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   const now = Math.max(tick, state?.serverNow ?? 0);
 
   // --- due tasks, and the plots on the canvas with my urgent rings
-  const tasks = useMemo(() => (state && catalog ? dueTasks(state.plots, accountId, catalog.varieties, now) : []), [state, catalog, accountId, now]);
+  const tasks = useMemo(() => (state && catalog ? dueTasks(state.plots, accountId, catalog, state.mine, now) : []), [state, catalog, accountId, now]);
   useEffect(() => {
     if (!active || !state) return;
     const urgentPlots = new Set(tasks.filter((t) => t.urgent).map((t) => t.plot));
@@ -178,6 +178,8 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   // --- the actions
   const act = useCallback(async (a: PlotRun, done?: string): Promise<boolean> => {
     if (a.kind === "work") return startWork(a.plot, a.work);
+    // a harvest round (v15.2 §6.2) has its own overlay and flow (Tasks 13 and 14)
+    if (a.kind === "round") return false;
     setBusy(true);
     try {
       const itemName = "item" in a ? live.current.catalog?.items.find((i) => i.id === a.item)?.name : undefined;

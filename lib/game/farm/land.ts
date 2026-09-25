@@ -1,4 +1,7 @@
-import { FARM_LIMIT, PLOT_PRICE, RENT_PRICE, SALE_MAX, SUBLEASE_MAX } from "./catalog";
+import {
+  FARM_LIMIT, HARVEST_PARTS, HARVESTER_MS, harvesterPrice, PLOT_PRICE, RENT_PRICE, SALE_MAX, SUBLEASE_MAX, type Variety,
+} from "./catalog";
+import { cropModel, cropPhase, waterAt } from "./crop";
 import { farmErrorMessage } from "./messages";
 import type { FieldMine, OfferView, PlotView } from "./state";
 
@@ -98,6 +101,24 @@ export function subleaseRefusal(p: PlotView, ctx: LandCtx, price: number | null)
 export function sellBackRefusal(p: PlotView, ctx: LandCtx): string | null {
   if (!isOwner(p, ctx.me)) return "not your plot";
   if (p.crop && isFarmer(p, ctx.me)) return "crop exists";
+  return null;
+}
+
+/** Renting the co-op's harvester for a rice plot I farm (v15.2 §6.3): the server's checks in their order — the farmer,
+ *  a crop, no running job, rice, ripe or overripe with parts left, drained, 30 s left on a lease, and 500 xu per part
+ *  left. */
+export function harvesterRefusal(p: PlotView, ctx: LandCtx, v: Variety | null, now: number): string | null {
+  if (!isFarmer(p, ctx.me)) return "not your plot";
+  const crop = p.crop;
+  if (!crop) return "not prepared";
+  if (crop.harvester) return "harvester busy";
+  if (crop.kind !== "rice") return "wrong crop";
+  const c = cropModel(crop);
+  const ph = cropPhase(c, v, now);
+  if (crop.parts >= HARVEST_PARTS || (ph !== "ripe" && ph !== "overripe")) return "wrong phase";
+  if ((crop.log ? waterAt(c.water, now) : crop.water) > 1) return "need water";
+  if (p.lease && p.lease.until < now + HARVESTER_MS) return "lease ends";
+  if (ctx.mine.coins < harvesterPrice(crop.parts)) return "not enough coins";
   return null;
 }
 

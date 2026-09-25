@@ -106,7 +106,8 @@ describe("PlotPanel", () => {
     expect(screen.getByText("Bạn đang canh tác 2 thửa rồi.")).toBeInTheDocument();
     cleanup();
     renderPlot(2);
-    expect(screen.getByRole("button", { name: "Làm đất" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Làm ruộng lúa" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Lên luống trồng màu" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Rao bán" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Bán lại cho làng · 400.000 xu" })).toBeEnabled();
     expect(onAct).not.toHaveBeenCalled();

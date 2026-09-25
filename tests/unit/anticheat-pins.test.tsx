@@ -7,7 +7,7 @@ import FarmShopPanel from "@/components/game/farm/FarmShopPanel";
 import RiceDepotPanel from "@/components/game/farm/RiceDepotPanel";
 import ShopPanel from "@/components/game/fishing/ShopPanel";
 import { plotActions } from "@/lib/game/farm/actions";
-import { DRYING_SLOTS, farmItemFromRow, varietyFromRow, type FarmCatalog } from "@/lib/game/farm/catalog";
+import { DRYING_SLOTS, farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow } from "@/lib/game/farm/catalog";
 import { HOUR_MS } from "@/lib/game/farm/crop";
 import { parseFieldState, type CropView, type FarmMine, type FieldState, type PlotView } from "@/lib/game/farm/state";
 import { canHook, type CastInfo } from "@/lib/game/fishing/cast";
@@ -16,6 +16,7 @@ import { createReel, stepReel, zoneHeight, type ReelParams } from "@/lib/game/fi
 import { parseFishingState } from "@/lib/game/fishing/state";
 import { FIELD_PLOTS } from "@/lib/game/maps/field";
 import { getMap } from "@/lib/game/maps/registry";
+import fixtures from "@/tests/fixtures/upland-cases.json";
 
 // One test per hard signal of the anti-cheat layer (spec §7.2, §15.2). Each pins the client code that keeps an honest
 // player from ever sending what the server strikes: if one fails, a player could be struck without cheating.
@@ -251,30 +252,50 @@ describe("bad_plot, bad_water and bad_work", () => {
     expect(getMap("field").interactables.filter((i) => i.kind === "plot").map((i) => i.plot).sort((a, b) => a! - b!)).toEqual(ten);
   });
 
-  it("the plot panel sends its plot's number, pumps or drains one level, and works only at transplanting and harvesting", () => {
-    const mine: FarmMine = {
-      items: { seed_nep: 1, fert_urea: 1, fert_manure: 1, spray_hopper: 1 }, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null,
+  it("the plot panel sends its plot's number, pumps or drains one level, works only at transplanting and harvesting, and tends only with the config's acts", () => {
+    const rows = (fixtures as unknown as { crops: UplandCropRow[] }).crops;
+    const beds: FarmCatalog = {
+      ...FARM,
+      uplands: rows.map(uplandFromRow),
+      items: [...FARM.items, ...rows.map((r) => item(`seed_${r.id}`, "seed", r.name, 800, { upland: r.id }))],
     };
+    const mine: FarmMine = {
+      items: { seed_nep: 1, fert_urea: 1, fert_manure: 1, spray_hopper: 1, tool_sickle: 1, seed_khoai: 1, seed_bap: 1, seed_ot: 1 },
+      rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null,
+    };
+    const upland = (id: string | null, over: Partial<CropView> = {}) =>
+      crop({ kind: "upland", variety: null, upland: id, soakAt: null, plantAt: id === null ? null : at(0), ...over }, [[0, 1], [40, 1], [80, 1]]);
     const plots = [
       plot(1, null),
       plot(5, crop({ sowAt: at(3) }, [[0, 1], [11, 2]])),
       plot(10, crop({ sowAt: at(3), transplantAt: at(12) }, [[0, 3], [55, 1]])),
+      plot(2, upland(null)),
+      plot(3, upland("khoai")),
+      plot(4, upland("bap")),
+      plot(6, upland("ot", { sowAt: at(0), plantAt: null })),
+      plot(7, upland("ot", { sowAt: at(0), plantAt: at(12) })),
     ];
     const deltas = new Set<number>();
     const works = new Set<string>();
+    const rounds = new Set<number>();
+    const acts = new Set<string>();
     for (const p of plots) {
       for (let h = 0; h <= 100; h++) {
-        for (const a of plotActions(p, "me", nep, FARM, mine, at(h))) {
+        for (const a of plotActions(p, "me", nep, beds, mine, at(h))) {
           const run = a.run;
           expect("plot" in run && run.plot).toBe(p.no);
           expect(["transplant", "harvest"]).not.toContain(run.kind);
           if (run.kind === "water") deltas.add(run.delta);
           if (run.kind === "work") works.add(run.work);
+          if (run.kind === "round") rounds.add(run.plot);
+          if (run.kind === "tend") acts.add(run.act);
         }
       }
     }
     expect([...deltas].sort()).toEqual([-1, 1]);
     expect([...works].sort()).toEqual(["harvest", "transplant"]);
+    expect([...rounds]).toEqual([10]);
+    expect([...acts].sort()).toEqual(["lat_day", "vun_goc"]);
   });
 });
 

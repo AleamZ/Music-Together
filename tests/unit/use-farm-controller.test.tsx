@@ -25,10 +25,11 @@ const LAN = { id: "lan", name: "Lan" };
 const nep = varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 18, blast_mult: 1, sort_order: 20 });
 const CATALOG = {
   varieties: [nep],
+  uplands: [],
   items: [farmItemFromRow({ id: "spray_hopper", kind: "pesticide", name: "Thuốc trừ rầy", price: 80, sort_order: 20, variety: null, fert: null, pest_target: "hopper", capacity: null })],
 };
 
-/** Plot 5: my ripe nếp, drained, with brown planthoppers; plot 6: Lan's; plot 1: for sale. */
+/** Plot 5: my ripe nếp, drained, with brown planthoppers (I have a sickle); plot 6: Lan's; plot 1: for sale. */
 const field = (over: { coins?: number; giftClaimed?: boolean } = {}): FieldState => parseFieldState({
   server_now: iso(0),
   plots: [
@@ -47,7 +48,7 @@ const field = (over: { coins?: number; giftClaimed?: boolean } = {}): FieldState
   ],
   drying: [],
   mine: {
-    items: { spray_hopper: 1 }, rice: { nep: { wet: 0, dry: 50 } }, coins: over.coins ?? 1000,
+    items: { spray_hopper: 1, tool_sickle: 1 }, rice: { nep: { wet: 0, dry: 50 } }, coins: over.coins ?? 1000,
     gift_claimed: over.giftClaimed ?? true, owned_plot: null, farming: [5], my_offers: [], incoming_offers: [],
   },
 })!;
@@ -98,7 +99,7 @@ describe("useFarmController", () => {
   it("names my next job in a plot's prompt and leaves other maps' prompts alone", async () => {
     const { result } = setup();
     await flush();
-    expect(result.current.promptText(spot("plot_5"))).toBe("Gặt lúa thửa 5");
+    expect(result.current.promptText(spot("plot_5"))).toBe("Gặt bằng liềm thửa 5");
     expect(result.current.promptText(spot("plot_6"))).toBe("Xem thửa 6 (của Lan)");
     expect(result.current.promptText(spot("coop"))).toBe("Hợp tác xã · chú Tám");
     expect(result.current.promptText(getMap("pond").interactables.find((i) => i.kind === "depot")!)).toBeNull();
