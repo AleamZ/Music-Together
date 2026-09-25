@@ -168,6 +168,32 @@
                      {"slot": 2, "u_time": 0.25, "u_kind": 0.9, "u_hit": 0.2},
                      {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}],
       "expect": {"kg": 71, "mcare": 1, "mseed": 1, "mwater": 0.9975, "mpest": 0.955, "mlate": 1, "pests": [{"kind": "leaf_folder", "since_s": 82800, "treated_s": 93600}]}
+    },
+    {
+      "name": "nep, village, cut in six parts while overripe",
+      "variety": "nep", "land": 1, "q_transplant": 1, "q_harvest": 1,
+      "soak": 0, "sow": 3, "transplant": 12, "harvest": 73,
+      "water": [[0, 3], [2.5, 2], [2.75, 1], [12, 2], [24, 2], [28, 1], [30.25, 2], [30.5, 3], [52, 1]],
+      "fert": [[0.25, "fert_manure"], [0.5, "fert_phosphate"], [17, "fert_urea"], [32, "fert_potash"]],
+      "spray": [], "picks": [],
+      "pest_rolls": [{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 2, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}],
+      "expect": {"kg": 73, "mcare": 1, "mseed": 1, "mwater": 0.9975, "mpest": 1, "mlate": 0.98, "pests": []},
+      "parts": [[73, 12], [75, 12], [77, 11], [79, 10], [81, 10], [83, 10]]
+    },
+    {
+      "name": "nep, private plot, cut in six parts across the overripe stretch",
+      "variety": "nep", "land": 1.1, "q_transplant": 1, "q_harvest": 1,
+      "soak": 0, "sow": 3, "transplant": 12, "harvest": 72,
+      "water": [[0, 3], [2.5, 2], [2.75, 1], [12, 2], [24, 2], [28, 1], [30.25, 2], [30.5, 3], [52, 1]],
+      "fert": [[0.25, "fert_manure"], [0.5, "fert_phosphate"], [17, "fert_urea"], [32, "fert_potash"]],
+      "spray": [], "picks": [],
+      "pest_rolls": [{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 2, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}],
+      "expect": {"kg": 82, "mcare": 1, "mseed": 1, "mwater": 0.9975, "mpest": 1, "mlate": 1, "pests": []},
+      "parts": [[72, 13], [80, 12], [88, 10], [96, 7], [104, 5], [112, 6]]
     }
   ]
 }
