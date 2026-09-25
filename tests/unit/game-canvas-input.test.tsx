@@ -134,7 +134,7 @@ describe("GameCanvas plots across travel", () => {
   it("passes the plots on at once and gives them to the next map's engine", () => {
     const ref = createRef<GameCanvasHandle>();
     const { rerender } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
-    const plots = [{ no: 1, look: null, label: "1 · An", urgent: false }];
+    const plots = [{ no: 1, look: null, label: "1 · An", urgent: false, parts: 0, harvester: null }];
     ref.current!.setPlots(plots);
     expect(engines[0].plots.at(-1)).toBe(plots);
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);

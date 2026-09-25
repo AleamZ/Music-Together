@@ -1,7 +1,10 @@
 import { createActor, setKeyboard, setPath, tickActor, walkFrame, type Actor } from "@/lib/game/actor";
-import { drawPlotShimmer, drawUrgentRing, lookKey, paintPlot, type PlotDraw } from "@/lib/game/art/crops";
+import {
+  drawHarvester, drawPlotShimmer, drawUrgentRing, harvesterSpot, liveLook, lookKey, paintPlot, postLabel, type PlotDraw,
+} from "@/lib/game/art/crops";
 import { drawFarmAnim } from "@/lib/game/art/farm-anim";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
+import { serverNow } from "@/lib/game/farm/clock";
 import { getCharacterFrames } from "@/lib/game/art/raster";
 import { phaseCode, type LocalPhase } from "@/lib/game/fishing/cast";
 import { formatWeight, RARITY_COLOR, type Rarity } from "@/lib/game/fishing/catalog";
@@ -633,23 +636,27 @@ export class GameEngine {
     this.drawOverlays(t, camX, camY);
   }
 
-  /** The crops on the plots (between the background and the props), their glints and my urgent rings. */
+  /** The crops on the plots (between the background and the props), their glints, a running harvester (v15.2 §15)
+   *  and my urgent rings. A harvester's cut and its end are read on the server's clock. */
   private drawPlots(b: CanvasRenderingContext2D, t: number, camX: number, camY: number, reduced: boolean): void {
+    const now = serverNow();
     for (const g of this.map.plots) {
       const d = this.plots.get(g.no);
       if (!d) continue;
       const { w, h } = g.rect;
       const x = g.rect.x - camX, y = g.rect.y - camY;
       if (x > this.vw || y > this.vh || x + w < 0 || y + h < 0) continue;
-      if (d.look) {
-        const key = lookKey(d.look);
+      const look = liveLook(d, now);
+      if (look) {
+        const key = lookKey(look);
         let art = this.plotArt.get(g.no);
         if (!art || art.key !== key) {
-          art = { key, canvas: paintPlot(d.look, w, h) };
+          art = { key, canvas: paintPlot(look, w, h) };
           this.plotArt.set(g.no, art);
         }
         b.drawImage(art.canvas, x, y);
-        drawPlotShimmer(b, x, y, w, h, d.look, t, reduced);
+        drawPlotShimmer(b, x, y, w, h, look, t, reduced);
+        if (d.harvester && now < d.harvester.endsAt) drawHarvester(b, harvesterSpot(x, y, w, h, look.cut), t, reduced);
       }
       if (d.urgent) drawUrgentRing(b, x, y, w, h, t, reduced);
     }
@@ -661,18 +668,21 @@ export class GameEngine {
     c.textAlign = "center";
     c.textBaseline = "middle";
 
-    // the plots' name posts: a label over each post, under the people's tags
+    // the plots' name posts: a label over each post, under the people's tags (a cut plot's parts and a harvester's
+    // seconds are counted every frame)
     c.font = `${Math.round(4 * s)}px ${font}`;
+    const farmNow = serverNow();
     for (const g of this.map.plots) {
       const d = this.plots.get(g.no);
       if (!d) continue;
       const [x, y] = dev(g.post.x, g.post.y - 22);
-      const w = Math.round(c.measureText(d.label).width + 3 * s), h = Math.round(4.8 * s);
+      const label = postLabel(d, farmNow);
+      const w = Math.round(c.measureText(label).width + 3 * s), h = Math.round(4.8 * s);
       if (x + w / 2 < 0 || x - w / 2 > this.canvas.width || y + h < 0 || y - h > this.canvas.height) continue;
       c.fillStyle = "rgba(110, 68, 36, 0.88)";
       c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
       c.fillStyle = "#fbf3dc";
-      c.fillText(d.label, x, y + s * 0.3);
+      c.fillText(label, x, y + s * 0.3);
     }
 
     // name tags under the feet — neighbours at a table would overlap, so later tags move down

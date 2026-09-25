@@ -108,7 +108,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   useEffect(() => {
     if (!active || !state) return;
     const urgentPlots = new Set(tasks.filter((t) => t.urgent).map((t) => t.plot));
-    canvas()?.setPlots(plotDraws(state.plots, catalog?.varieties ?? [], urgentPlots, now));
+    canvas()?.setPlots(plotDraws(state.plots, catalog ?? { varieties: [], uplands: [] }, urgentPlots, now));
   }, [active, state, catalog, tasks, now, canvas]);
 
   // --- the newcomer gift: asked once, on the first visit that shows it unclaimed
