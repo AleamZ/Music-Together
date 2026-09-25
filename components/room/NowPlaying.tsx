@@ -151,6 +151,7 @@ export default function NowPlaying(p: NowPlayingProps) {
     trackId: current?.id,
     youtubeVideoId: current?.youtube_video_id,
     username: p.username,
+    canControl: p.canControl,
   });
 
   const [lastVolume, setLastVolume] = useState(p.volume > 0 ? p.volume : 100);
@@ -334,7 +335,7 @@ export default function NowPlaying(p: NowPlayingProps) {
         targetDurationSeconds={current?.duration_seconds}
         canSyncToRoom={p.canControl}
         onSelectLyric={(data, syncToRoom) => {
-          lyricsHook.applyCustomLyric(data, syncToRoom);
+          lyricsHook.applyCustomLyric(data, syncToRoom && p.canControl);
         }}
       />
     </>
