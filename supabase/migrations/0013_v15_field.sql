@@ -501,3 +501,697 @@ revoke all on function public._crop_pests(public.crops, public.rice_varieties, t
 revoke all on function public._pest_hours(public.crops, jsonb, timestamptz) from public, anon, authenticated;
 revoke all on function public._crop_yield(public.crops, public.rice_varieties, double precision, double precision, timestamptz)
   from public, anon, authenticated;
+
+-- ---------- E. The field: plots, farmers, the sweep and the views (spec §7, §11.5) ----------
+-- The caller's account for a field call. It also records the visit for the 14-day reclaim (§7.5) — at most once an
+-- hour, because members is in the realtime publication and every update there makes the room's clients refetch.
+create or replace function public._farm_auth(p_room_id uuid, p_session_token text) returns uuid
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_member uuid; v_account uuid;
+begin
+  v_member := public._auth(p_room_id, p_session_token, 'any');
+  select account_id into v_account from public.members where id = v_member;
+  update public.members set last_seen_at = now()
+   where id = v_member and (last_seen_at is null or last_seen_at < now() - interval '1 hour');
+  return v_account;
+end; $$;
+
+-- The room's 10 plots, created the first time its field opens: 1–4 private, 5–10 village.
+create or replace function public._field_init(p_room uuid) returns void
+language sql security definer set search_path = public, extensions
+as $$
+  insert into public.field_plots (room_id, plot_no, kind)
+  select p_room, n, case when n <= 4 then 'private' else 'village' end from generate_series(1, 10) n
+  on conflict (room_id, plot_no) do nothing
+$$;
+
+-- The farmer of a plot (§7.1): the holder of an active lease, else the owner of a private plot, else nobody.
+create or replace function public._farmer(p_room uuid, p_plot integer, p_now timestamptz) returns uuid
+language sql stable security definer set search_path = public, extensions
+as $$
+  select coalesce(
+    (select pl.farmer_id from public.plot_leases pl where pl.room_id = p_room and pl.plot_no = p_plot and pl.until > p_now),
+    (select fp.owner_id from public.field_plots fp where fp.room_id = p_room and fp.plot_no = p_plot and fp.kind = 'private'))
+$$;
+
+-- How many plots of the room the account farms (the limit is 2).
+create or replace function public._farm_count(p_room uuid, p_account uuid, p_now timestamptz) returns integer
+language sql stable security definer set search_path = public, extensions
+as $$
+  select count(*)::int from public.field_plots fp
+   where fp.room_id = p_room and public._farmer(p_room, fp.plot_no, p_now) = p_account
+$$;
+
+create or replace function public._plot_row(p_room uuid, p_plot integer) returns public.field_plots
+language plpgsql stable security definer set search_path = public, extensions
+as $$
+declare f public.field_plots;
+begin
+  select * into f from public.field_plots where room_id = p_room and plot_no = p_plot;
+  if not found then
+    raise exception 'invalid plot' using errcode = '22023';
+  end if;
+  return f;
+end; $$;
+
+create or replace function public._leased(p_room uuid, p_plot integer, p_now timestamptz) returns boolean
+language sql stable security definer set search_path = public, extensions
+as $$ select exists (select 1 from public.plot_leases pl where pl.room_id = p_room and pl.plot_no = p_plot and pl.until > p_now) $$;
+
+create or replace function public._has_crop(p_room uuid, p_plot integer) returns boolean
+language sql stable security definer set search_path = public, extensions
+as $$ select exists (select 1 from public.crops cr where cr.room_id = p_room and cr.plot_no = p_plot) $$;
+
+create or replace function public._owns_land(p_room uuid, p_account uuid) returns boolean
+language sql stable security definer set search_path = public, extensions
+as $$ select exists (select 1 from public.field_plots fp where fp.room_id = p_room and fp.owner_id = p_account) $$;
+
+-- Wet and dry kilograms into the account's rice stock.
+create or replace function public._rice_add(p_account uuid, p_variety text, p_wet integer, p_dry integer) returns void
+language sql security definer set search_path = public, extensions
+as $$
+  insert into public.rice_stock (account_id, variety, wet_kg, dry_kg) values (p_account, p_variety, p_wet, p_dry)
+  on conflict (account_id, variety) do update
+    set wet_kg = public.rice_stock.wet_kg + excluded.wet_kg, dry_kg = public.rice_stock.dry_kg + excluded.dry_kg
+$$;
+
+-- The lazy clock of a room's field (§7.7). Idempotent; runs under the plot locks taken by _field_open.
+create or replace function public._field_sweep(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare f public.field_plots; d public.drying_slots;
+begin
+  -- 1. leases end (the leaseholder's crop goes in step 4)
+  delete from public.plot_leases where room_id = p_room and until <= p_now;
+  -- 2. offers expire after 24 h
+  delete from public.land_offers where room_id = p_room and created_at <= p_now - interval '24 hours';
+  -- 3. reclaim: the owner left the room or has not visited it for 14 days, and the plot is not leased out (§7.6)
+  for f in select fp.* from public.field_plots fp
+            where fp.room_id = p_room and fp.owner_id is not null
+              and not exists (select 1 from public.members m
+                               where m.room_id = p_room and m.account_id = fp.owner_id
+                                 and coalesce(m.last_seen_at, m.joined_at) > p_now - interval '14 days')
+              and not exists (select 1 from public.plot_leases pl where pl.room_id = p_room and pl.plot_no = fp.plot_no)
+            order by fp.plot_no loop
+    update public.field_plots set owner_id = null, owned_at = null, sale_price = null, sublease_price = null
+     where room_id = p_room and plot_no = f.plot_no;
+    delete from public.land_offers where room_id = p_room and plot_no = f.plot_no;
+    perform public._wallet_lock(f.owner_id);
+    perform public._pay(f.owner_id, 2000, 'land_refund', 'plot ' || f.plot_no);
+  end loop;
+  -- 4. a crop belongs to the plot's farmer: a crop left by an ended lease or a reclaim is lost
+  delete from public.crops cr
+   where cr.room_id = p_room and cr.farmer_id is distinct from public._farmer(p_room, cr.plot_no, p_now);
+  -- 5. sprouted seed not sown 24 h after sprouting (soak + 26 h) rots: the plot goes back to prepared, or to bare
+  delete from public.crops
+   where room_id = p_room and sow_at is null and prepared_at is null and p_now >= soak_at + interval '26 hours';
+  update public.crops set rotted_at = soak_at + interval '26 hours', soak_at = null, variety = null
+   where room_id = p_room and sow_at is null and p_now >= soak_at + interval '26 hours';
+  -- 6. rice left 48 h after its ripe window has all fallen
+  delete from public.crops cr using public.rice_varieties rv
+   where cr.room_id = p_room and rv.id = cr.variety and cr.transplant_at is not null
+     and p_now >= public._plus_h(cr.transplant_at, 48 * rv.scale + 60);
+  -- 7. a drying batch left 24 h after it is ready is collected for its owner
+  for d in delete from public.drying_slots where room_id = p_room and ready_at <= p_now - interval '24 hours' returning * loop
+    perform public._rice_add(d.account_id, d.variety, 0, d.kg);
+  end loop;
+end; $$;
+
+-- Every field call starts here: create the plots if needed, lock them (one field call per room at a time — before
+-- any wallet lock, so a sale that pays the other party cannot deadlock with that party's own field call), sweep.
+create or replace function public._field_open(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._field_init(p_room);
+  perform 1 from public.field_plots where room_id = p_room order by plot_no for update;
+  perform public._field_sweep(p_room, p_now);
+end; $$;
+
+-- {id, name} of an account, or null.
+create or replace function public._who(p_account uuid) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$ select jsonb_build_object('id', a.id, 'name', a.username) from public.accounts a where a.id = p_account $$;
+
+-- The account's farm belongings (the room-free part of field_state.mine).
+create or replace function public._farm_mine(p_account uuid) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'items', coalesce((select jsonb_object_agg(i.item_id, i.qty order by i.item_id)
+                         from public.inventory i join public.shop_items s on s.id = i.item_id
+                        where i.account_id = p_account and i.qty >= 1
+                          and s.kind in ('seed','fertilizer','pesticide','critter_box')), '{}'::jsonb),
+    'rice', coalesce((select jsonb_object_agg(rs.variety, jsonb_build_object('wet', rs.wet_kg, 'dry', rs.dry_kg) order by rs.variety)
+                        from public.rice_stock rs where rs.account_id = p_account and (rs.wet_kg > 0 or rs.dry_kg > 0)),
+                     '{}'::jsonb),
+    'coins', coalesce((select w.coins from public.wallets w where w.account_id = p_account), 0),
+    'gift_claimed', exists (select 1 from public.farm_profiles pr where pr.account_id = p_account and pr.gift_at is not null))
+$$;
+
+-- One plot as everyone sees it; its farmer also gets the crop's logs (§11.5). The pest rolls never leave the server.
+create or replace function public._plot_view(p_room uuid, p_plot integer, p_viewer uuid, p_now timestamptz) returns jsonb
+language plpgsql stable security definer set search_path = public, extensions
+as $$
+declare f public.field_plots; l public.plot_leases; c public.crops; v public.rice_varieties; v_phase text;
+        v_crop jsonb := null;
+begin
+  select * into f from public.field_plots where room_id = p_room and plot_no = p_plot;
+  select * into l from public.plot_leases where room_id = p_room and plot_no = p_plot and until > p_now;
+  select * into c from public.crops where room_id = p_room and plot_no = p_plot;
+  if found then
+    select * into v from public.rice_varieties where id = c.variety;
+    v_phase := public._crop_phase(c, v, p_now);
+    v_crop := jsonb_build_object(
+      'variety', c.variety, 'phase', v_phase,
+      'prepared_at', c.prepared_at, 'soak_at', c.soak_at, 'sow_at', c.sow_at, 'transplant_at', c.transplant_at,
+      'water', public._water_at(c.water_log, p_now),
+      'water_set_at', (select max((x->>'t')::timestamptz) from jsonb_array_elements(c.water_log) x
+                        where (x->>'t')::timestamptz <= p_now),
+      'pests', (select coalesce(jsonb_agg(jsonb_build_object('kind', x->'kind', 'since', x->'since', 'treated_at', x->'treated_at')
+                                          order by (x->>'slot')::int), '[]'::jsonb)
+                  from jsonb_array_elements(public._crop_pests(c, v, p_now)) x),
+      'excess_n', public._excess_n(c, v, p_now),
+      'ripe', v_phase in ('ripe', 'overripe'),
+      'rotted_at', c.rotted_at);
+    if p_viewer = c.farmer_id then
+      v_crop := v_crop || jsonb_build_object('log', jsonb_build_object(
+        'water', c.water_log, 'fert', c.fert_log, 'spray', c.spray_log, 'picks', c.picks, 'q_transplant', c.q_transplant));
+    end if;
+  end if;
+  return jsonb_build_object(
+    'no', f.plot_no, 'kind', f.kind, 'owner', public._who(f.owner_id),
+    'sale_price', f.sale_price, 'sublease_price', f.sublease_price,
+    'farmer', public._who(public._farmer(p_room, p_plot, p_now)),
+    'lease', case when l.room_id is null then null
+                  else jsonb_build_object('source', l.source, 'until', l.until, 'price', l.price) end,
+    'offers', (select count(*) from public.land_offers lo where lo.room_id = p_room and lo.plot_no = p_plot),
+    'crop', v_crop);
+end; $$;
+
+-- The whole field_state answer (§11.5).
+create or replace function public._field_view(p_room uuid, p_viewer uuid, p_now timestamptz) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'server_now', p_now,
+    'plots', (select jsonb_agg(public._plot_view(p_room, fp.plot_no, p_viewer, p_now) order by fp.plot_no)
+                from public.field_plots fp where fp.room_id = p_room),
+    'drying', coalesce((select jsonb_agg(jsonb_build_object('slot', ds.slot, 'owner', public._who(ds.account_id),
+                                                            'variety', ds.variety, 'kg', ds.kg, 'ready_at', ds.ready_at)
+                                         order by ds.slot)
+                          from public.drying_slots ds where ds.room_id = p_room), '[]'::jsonb),
+    'mine', public._farm_mine(p_viewer) || jsonb_build_object(
+      'owned_plot', (select fp.plot_no from public.field_plots fp where fp.room_id = p_room and fp.owner_id = p_viewer
+                      order by fp.plot_no limit 1),
+      'farming', coalesce((select jsonb_agg(fp.plot_no order by fp.plot_no) from public.field_plots fp
+                            where fp.room_id = p_room and public._farmer(p_room, fp.plot_no, p_now) = p_viewer), '[]'::jsonb),
+      'my_offers', coalesce((select jsonb_agg(jsonb_build_object('id', lo.id, 'plot', lo.plot_no, 'price', lo.price,
+                                                               'expires_at', lo.created_at + interval '24 hours')
+                                              order by lo.created_at, lo.id)
+                              from public.land_offers lo where lo.room_id = p_room and lo.buyer_id = p_viewer), '[]'::jsonb),
+      'incoming_offers', coalesce((select jsonb_agg(jsonb_build_object('id', lo.id, 'plot', lo.plot_no,
+                                                                     'buyer', public._who(lo.buyer_id), 'price', lo.price,
+                                                                     'expires_at', lo.created_at + interval '24 hours')
+                                                    order by lo.plot_no, lo.price desc, lo.id)
+                                    from public.land_offers lo
+                                    join public.field_plots fp on fp.room_id = lo.room_id and fp.plot_no = lo.plot_no
+                                   where lo.room_id = p_room and fp.owner_id = p_viewer), '[]'::jsonb)))
+$$;
+
+revoke all on function public._farm_auth(uuid, text) from public, anon, authenticated;
+revoke all on function public._field_init(uuid) from public, anon, authenticated;
+revoke all on function public._farmer(uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_count(uuid, uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._plot_row(uuid, integer) from public, anon, authenticated;
+revoke all on function public._leased(uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._has_crop(uuid, integer) from public, anon, authenticated;
+revoke all on function public._owns_land(uuid, uuid) from public, anon, authenticated;
+revoke all on function public._rice_add(uuid, text, integer, integer) from public, anon, authenticated;
+revoke all on function public._field_sweep(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._field_open(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._who(uuid) from public, anon, authenticated;
+revoke all on function public._farm_mine(uuid) from public, anon, authenticated;
+revoke all on function public._plot_view(uuid, integer, uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._field_view(uuid, uuid, timestamptz) from public, anon, authenticated;
+
+-- The room page calls this once when it opens (§7.5).
+create or replace function public.touch_room(p_room_id uuid, p_session_token text) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._farm_auth(p_room_id, p_session_token);
+end; $$;
+
+create or replace function public.field_state(p_room_id uuid, p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._farm_auth(p_room_id, p_session_token);
+begin
+  perform public._field_open(p_room_id, now());
+  return public._field_view(p_room_id, v_account, now());
+end; $$;
+
+grant execute on function public.touch_room(uuid, text) to anon, authenticated;
+grant execute on function public.field_state(uuid, text) to anon, authenticated;
+
+-- ---------- F. Land (spec §7). Each _farm_do_* takes p_now; its public RPC below passes now(). ----------
+-- A player-to-player sale (§7.3): pay, hand over, clear the listing and the offers, announce it in the room's chat.
+create or replace function public._land_sale(p_room uuid, p_plot integer, p_buyer uuid, p_price integer, p_now timestamptz)
+returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_seller uuid;
+begin
+  select owner_id into v_seller from public.field_plots where room_id = p_room and plot_no = p_plot;
+  perform public._wallet_lock(p_buyer);
+  perform public._wallet_lock(v_seller);
+  perform public._pay(p_buyer, -p_price, 'land_buy', 'plot ' || p_plot);
+  perform public._pay(v_seller, p_price, 'land_sell', 'plot ' || p_plot);
+  update public.field_plots set owner_id = p_buyer, owned_at = p_now, sale_price = null, sublease_price = null
+   where room_id = p_room and plot_no = p_plot;
+  delete from public.land_offers where room_id = p_room and plot_no = p_plot;
+  insert into public.chat_messages (room_id, account_id, username, body)
+  values (p_room, null, 'Hợp tác xã',
+          format('[land:%s] 🏡 %s đã mua thửa %s của %s với giá %s xu.', p_plot,
+                 (select username from public.accounts where id = p_buyer), p_plot,
+                 (select username from public.accounts where id = v_seller),
+                 replace(to_char(p_price, 'FM9,999,999'), ',', '.')));
+  delete from public.chat_messages
+   where room_id = p_room
+     and id not in (select id from public.chat_messages where room_id = p_room order by created_at desc limit 200);
+end; $$;
+
+-- Rent a free village plot for one season: 250 xu to the village, 96 h (§7.2).
+create or replace function public._farm_do_rent(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare w public.wallets; f public.field_plots;
+begin
+  perform public._field_open(p_room, p_now);
+  w := public._wallet_lock(p_account);
+  f := public._plot_row(p_room, p_plot);
+  if f.kind <> 'village' then
+    raise exception 'invalid plot' using errcode = '22023';
+  end if;
+  if public._leased(p_room, p_plot, p_now) then
+    raise exception 'plot taken' using errcode = '22023';
+  end if;
+  if public._farm_count(p_room, p_account, p_now) >= 2 then
+    raise exception 'farm limit' using errcode = '22023';
+  end if;
+  if w.coins < 250 then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(p_account, -250, 'rent', 'plot ' || p_plot);
+  insert into public.plot_leases (room_id, plot_no, farmer_id, source, price, starts_at, until)
+  values (p_room, p_plot, p_account, 'village', 250, p_now, p_now + interval '96 hours');
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Buy an ownerless private plot from the village for 4 000 xu; one private plot per room (§7.3).
+create or replace function public._farm_do_buy_plot(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare w public.wallets; f public.field_plots;
+begin
+  perform public._field_open(p_room, p_now);
+  w := public._wallet_lock(p_account);
+  f := public._plot_row(p_room, p_plot);
+  if f.kind <> 'private' or f.owner_id is not null then
+    raise exception 'not for sale' using errcode = '22023';
+  end if;
+  if public._leased(p_room, p_plot, p_now) then
+    raise exception 'leased' using errcode = '22023';
+  end if;
+  if public._owns_land(p_room, p_account) then
+    raise exception 'already own land' using errcode = '22023';
+  end if;
+  if public._farm_count(p_room, p_account, p_now) >= 2 then
+    raise exception 'farm limit' using errcode = '22023';
+  end if;
+  if w.coins < 4000 then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(p_account, -4000, 'land_buy', 'plot ' || p_plot);
+  update public.field_plots set owner_id = p_account, owned_at = p_now, sale_price = null, sublease_price = null
+   where room_id = p_room and plot_no = p_plot;
+  delete from public.land_offers where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Sell your plot back to the village for 2 000 xu. A plot on lease goes to the village when the lease ends (§7.3).
+create or replace function public._farm_do_sell_to_village(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare f public.field_plots;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  f := public._plot_row(p_room, p_plot);
+  if f.owner_id is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.crops cr where cr.room_id = p_room and cr.plot_no = p_plot and cr.farmer_id = p_account) then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  update public.field_plots set owner_id = null, owned_at = null, sale_price = null, sublease_price = null
+   where room_id = p_room and plot_no = p_plot;
+  delete from public.land_offers where room_id = p_room and plot_no = p_plot;
+  perform public._pay(p_account, 2000, 'land_sell', 'plot ' || p_plot || ' to the village');
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- List your bare, unleased plot for sale at 1–1 000 000 xu; null withdraws the listing (§7.3).
+create or replace function public._farm_do_list(p_room uuid, p_account uuid, p_plot integer, p_price integer,
+                                                p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare f public.field_plots;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  f := public._plot_row(p_room, p_plot);
+  if f.owner_id is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  if p_price is not null then
+    if p_price < 1 or p_price > 1000000 then
+      raise exception 'invalid price' using errcode = '22023';
+    end if;
+    if public._has_crop(p_room, p_plot) then
+      raise exception 'crop exists' using errcode = '22023';
+    end if;
+    if public._leased(p_room, p_plot, p_now) then
+      raise exception 'leased' using errcode = '22023';
+    end if;
+  end if;
+  update public.field_plots set sale_price = p_price where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Buy a listed plot at exactly its listed price (§7.3).
+create or replace function public._farm_do_buy_listed(p_room uuid, p_account uuid, p_plot integer, p_expected integer,
+                                                      p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare w public.wallets; f public.field_plots;
+begin
+  perform public._field_open(p_room, p_now);
+  w := public._wallet_lock(p_account);
+  f := public._plot_row(p_room, p_plot);
+  if f.owner_id is null or f.sale_price is null then
+    raise exception 'not for sale' using errcode = '22023';
+  end if;
+  if f.owner_id = p_account then
+    raise exception 'invalid plot' using errcode = '22023';
+  end if;
+  if p_expected is distinct from f.sale_price then
+    raise exception 'price changed' using errcode = '22023';
+  end if;
+  if public._has_crop(p_room, p_plot) then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  if public._leased(p_room, p_plot, p_now) then
+    raise exception 'leased' using errcode = '22023';
+  end if;
+  if public._owns_land(p_room, p_account) then
+    raise exception 'already own land' using errcode = '22023';
+  end if;
+  if public._farm_count(p_room, p_account, p_now) >= 2 then
+    raise exception 'farm limit' using errcode = '22023';
+  end if;
+  if w.coins < f.sale_price then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._land_sale(p_room, p_plot, p_account, f.sale_price, p_now);
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Offer to buy someone's plot. One offer per buyer and plot: a new one replaces the old one (with a new id, so the
+-- owner never accepts a price they did not see). Offers expire after 24 h and reserve no xu (§7.3).
+create or replace function public._farm_do_offer(p_room uuid, p_account uuid, p_plot integer, p_price integer,
+                                                 p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare f public.field_plots;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  f := public._plot_row(p_room, p_plot);
+  if f.owner_id is null then
+    raise exception 'not for sale' using errcode = '22023';
+  end if;
+  if f.owner_id = p_account then
+    raise exception 'invalid plot' using errcode = '22023';
+  end if;
+  if p_price is null or p_price < 1 or p_price > 1000000 then
+    raise exception 'invalid price' using errcode = '22023';
+  end if;
+  if public._owns_land(p_room, p_account) then
+    raise exception 'already own land' using errcode = '22023';
+  end if;
+  insert into public.land_offers (room_id, plot_no, buyer_id, price, created_at) values (p_room, p_plot, p_account, p_price, p_now)
+  on conflict (room_id, plot_no, buyer_id) do update
+    set id = gen_random_uuid(), price = excluded.price, created_at = excluded.created_at;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+create or replace function public._farm_do_withdraw_offer(p_room uuid, p_account uuid, p_offer uuid, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  delete from public.land_offers where id = p_offer and room_id = p_room and buyer_id = p_account;
+  if not found then
+    raise exception 'offer not found' using errcode = '22023';
+  end if;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+create or replace function public._farm_do_decline_offer(p_room uuid, p_account uuid, p_offer uuid, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  delete from public.land_offers lo using public.field_plots fp
+   where lo.id = p_offer and lo.room_id = p_room
+     and fp.room_id = lo.room_id and fp.plot_no = lo.plot_no and fp.owner_id = p_account;
+  if not found then
+    raise exception 'offer not found' using errcode = '22023';
+  end if;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- The owner accepts an offer. The buyer's membership, land, farming limit and xu are checked now (§7.3).
+create or replace function public._farm_do_accept_offer(p_room uuid, p_account uuid, p_offer uuid, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare o public.land_offers; f public.field_plots; bw public.wallets;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  select * into o from public.land_offers where id = p_offer and room_id = p_room;
+  if not found then
+    raise exception 'offer expired' using errcode = '22023';
+  end if;
+  f := public._plot_row(p_room, o.plot_no);
+  if f.owner_id is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  if public._has_crop(p_room, o.plot_no) then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  if public._leased(p_room, o.plot_no, p_now) then
+    raise exception 'leased' using errcode = '22023';
+  end if;
+  bw := public._wallet_lock(o.buyer_id);
+  if not exists (select 1 from public.members m where m.room_id = p_room and m.account_id = o.buyer_id)
+     or public._owns_land(p_room, o.buyer_id)
+     or public._farm_count(p_room, o.buyer_id, p_now) >= 2
+     or bw.coins < o.price then
+    raise exception 'buyer cannot buy' using errcode = '22023';
+  end if;
+  perform public._land_sale(p_room, o.plot_no, o.buyer_id, o.price, p_now);
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Offer your bare, unleased plot for one season at 1–5 000 xu; null withdraws it (§7.3).
+create or replace function public._farm_do_set_sublease(p_room uuid, p_account uuid, p_plot integer, p_price integer,
+                                                        p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare f public.field_plots;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  f := public._plot_row(p_room, p_plot);
+  if f.owner_id is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  if p_price is not null then
+    if p_price < 1 or p_price > 5000 then
+      raise exception 'invalid price' using errcode = '22023';
+    end if;
+    if public._has_crop(p_room, p_plot) then
+      raise exception 'crop exists' using errcode = '22023';
+    end if;
+    if public._leased(p_room, p_plot, p_now) then
+      raise exception 'leased' using errcode = '22023';
+    end if;
+  end if;
+  update public.field_plots set sublease_price = p_price where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Rent a subleased plot at exactly its price: the owner is paid, the lease runs 96 h, the offers are withdrawn.
+create or replace function public._farm_do_rent_sublease(p_room uuid, p_account uuid, p_plot integer, p_expected integer,
+                                                         p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare w public.wallets; f public.field_plots;
+begin
+  perform public._field_open(p_room, p_now);
+  w := public._wallet_lock(p_account);
+  f := public._plot_row(p_room, p_plot);
+  if f.owner_id is null or f.sublease_price is null then
+    raise exception 'not for sale' using errcode = '22023';
+  end if;
+  if f.owner_id = p_account then
+    raise exception 'invalid plot' using errcode = '22023';
+  end if;
+  if p_expected is distinct from f.sublease_price then
+    raise exception 'price changed' using errcode = '22023';
+  end if;
+  if public._leased(p_room, p_plot, p_now) then
+    raise exception 'plot taken' using errcode = '22023';
+  end if;
+  if public._has_crop(p_room, p_plot) then
+    raise exception 'crop exists' using errcode = '22023';
+  end if;
+  if public._farm_count(p_room, p_account, p_now) >= 2 then
+    raise exception 'farm limit' using errcode = '22023';
+  end if;
+  if w.coins < f.sublease_price then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._wallet_lock(f.owner_id);
+  perform public._pay(p_account, -f.sublease_price, 'lease_pay', 'plot ' || p_plot);
+  perform public._pay(f.owner_id, f.sublease_price, 'lease_income', 'plot ' || p_plot);
+  insert into public.plot_leases (room_id, plot_no, farmer_id, source, price, starts_at, until)
+  values (p_room, p_plot, p_account, 'owner', f.sublease_price, p_now, p_now + interval '96 hours');
+  update public.field_plots set sublease_price = null, sale_price = null where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- The farmer gives up the crop; the plot is bare again and the lease (if any) goes on (§7.4).
+create or replace function public._farm_do_abandon(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  perform public._plot_row(p_room, p_plot);
+  if public._farmer(p_room, p_plot, p_now) is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  delete from public.crops where room_id = p_room and plot_no = p_plot;
+  if not found then
+    raise exception 'no crop' using errcode = '22023';
+  end if;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+revoke all on function public._land_sale(uuid, integer, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_rent(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_buy_plot(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_sell_to_village(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_list(uuid, uuid, integer, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_buy_listed(uuid, uuid, integer, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_offer(uuid, uuid, integer, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_withdraw_offer(uuid, uuid, uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_decline_offer(uuid, uuid, uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_accept_offer(uuid, uuid, uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_set_sublease(uuid, uuid, integer, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_rent_sublease(uuid, uuid, integer, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_abandon(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+
+create or replace function public.rent_plot(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_rent(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, now()) $$;
+
+create or replace function public.buy_plot(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_buy_plot(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, now()) $$;
+
+create or replace function public.sell_plot_to_village(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_sell_to_village(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, now()) $$;
+
+create or replace function public.list_plot(p_room_id uuid, p_session_token text, p_plot integer, p_price integer)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_list(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_price, now()) $$;
+
+create or replace function public.buy_listed_plot(p_room_id uuid, p_session_token text, p_plot integer,
+                                                  p_expected_price integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$
+  select public._farm_do_buy_listed(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_expected_price, now())
+$$;
+
+create or replace function public.offer_plot(p_room_id uuid, p_session_token text, p_plot integer, p_price integer)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_offer(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_price, now()) $$;
+
+create or replace function public.withdraw_offer(p_room_id uuid, p_session_token text, p_offer_id uuid) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_withdraw_offer(p_room_id, public._farm_auth(p_room_id, p_session_token), p_offer_id, now()) $$;
+
+create or replace function public.decline_offer(p_room_id uuid, p_session_token text, p_offer_id uuid) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_decline_offer(p_room_id, public._farm_auth(p_room_id, p_session_token), p_offer_id, now()) $$;
+
+create or replace function public.accept_offer(p_room_id uuid, p_session_token text, p_offer_id uuid) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_accept_offer(p_room_id, public._farm_auth(p_room_id, p_session_token), p_offer_id, now()) $$;
+
+create or replace function public.set_sublease(p_room_id uuid, p_session_token text, p_plot integer, p_price integer)
+returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_set_sublease(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_price, now()) $$;
+
+create or replace function public.rent_sublease(p_room_id uuid, p_session_token text, p_plot integer,
+                                                p_expected_price integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$
+  select public._farm_do_rent_sublease(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, p_expected_price,
+                                       now())
+$$;
+
+create or replace function public.abandon_crop(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language sql security definer set search_path = public, extensions
+as $$ select public._farm_do_abandon(p_room_id, public._farm_auth(p_room_id, p_session_token), p_plot, now()) $$;
+
+grant execute on function public.rent_plot(uuid, text, integer) to anon, authenticated;
+grant execute on function public.buy_plot(uuid, text, integer) to anon, authenticated;
+grant execute on function public.sell_plot_to_village(uuid, text, integer) to anon, authenticated;
+grant execute on function public.list_plot(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.buy_listed_plot(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.offer_plot(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.withdraw_offer(uuid, text, uuid) to anon, authenticated;
+grant execute on function public.decline_offer(uuid, text, uuid) to anon, authenticated;
+grant execute on function public.accept_offer(uuid, text, uuid) to anon, authenticated;
+grant execute on function public.set_sublease(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.rent_sublease(uuid, text, integer, integer) to anon, authenticated;
+grant execute on function public.abandon_crop(uuid, text, integer) to anon, authenticated;
