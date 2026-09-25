@@ -48,7 +48,7 @@ export default function AuthScreen() {
       <form onSubmit={submit} className="flex flex-col gap-3">
         <input required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Tên đăng nhập (username)" className="rounded-lg border border-gold bg-cream px-3 py-2 text-ink" />
         <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mật khẩu" className="rounded-lg border border-gold bg-cream px-3 py-2 text-ink" />
-        {error && <p className="text-sm text-burgundy-accent">{error}</p>}
+        {error && <p role="alert" className="text-sm text-burgundy-accent">{error}</p>}
         <button type="submit" disabled={busy} className="rounded-lg bg-burgundy px-4 py-2 font-cormorant text-lg font-bold text-cream disabled:opacity-60">
           {busy ? "Đang xử lý…" : mode === "login" ? "Đăng nhập" : "Đăng ký"}
         </button>

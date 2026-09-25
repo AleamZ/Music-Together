@@ -20,7 +20,7 @@ export default function AnticheatModal({ kind, reason, onClose }: {
           <p>{`Lý do: ${reason}`}</p>
           <p>{WARN_LOCK}</p>
           <p>{WARN_REPEAT}</p>
-          <button type="button" className="pch-btn pch-btn-primary self-end" onClick={onClose}>{WARN_OK}</button>
+          <button type="button" className="pch-btn pch-btn-primary self-end" onClick={onClose} autoFocus>{WARN_OK}</button>
         </div>
       </ParchmentModal>
     );
@@ -35,7 +35,7 @@ export default function AnticheatModal({ kind, reason, onClose }: {
         <p>{BAN_BODY}</p>
         <p>{`Lý do: ${reason}`}</p>
         <p>{BAN_WIPE}</p>
-        <button type="button" className="pch-btn pch-btn-primary self-end" onClick={leave}>{BAN_OK}</button>
+        <button type="button" className="pch-btn pch-btn-primary self-end" onClick={leave} autoFocus>{BAN_OK}</button>
       </div>
     </ParchmentModal>
   );

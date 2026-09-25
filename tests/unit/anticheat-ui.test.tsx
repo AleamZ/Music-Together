@@ -77,6 +77,7 @@ describe("AnticheatModal", () => {
     render(<AnticheatModal kind="warn" reason={REEL} onClose={onClose} />);
     expect(screen.getByRole("dialog", { name: "⚠️ Cảnh báo gian lận" })).toBeInTheDocument();
     for (const text of [WARN_BODY, `Lý do: ${REEL}`, WARN_LOCK, WARN_REPEAT]) expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tôi đã hiểu" })).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: "Tôi đã hiểu" }));
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(window, { key: "Escape" });
@@ -89,6 +90,7 @@ describe("AnticheatModal", () => {
     render(<AnticheatModal kind="ban" reason={OTHER} onClose={onClose} />);
     expect(screen.getByRole("dialog", { name: "🚫 Tài khoản bị khoá vĩnh viễn" })).toBeInTheDocument();
     for (const text of [BAN_BODY, `Lý do: ${OTHER}`, BAN_WIPE]) expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Đăng xuất" })).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: "Đăng xuất" }));
     expect(auth.logout).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Đóng" }));

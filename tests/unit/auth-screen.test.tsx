@@ -24,8 +24,9 @@ describe("AuthScreen — anti-cheat refusals (spec §12.3)", () => {
     auth.login.mockRejectedValueOnce({ message: "account banned" });
     render(<AuthScreen />);
     submit("Dat");
-    expect(await screen.findByText("🚫 Tài khoản này đã bị khoá. Nếu bạn nghĩ đây là nhầm lẫn, hãy liên hệ quản trị viên."))
-      .toBeInTheDocument();
+    // an alert, so a screen reader reads it out when it appears
+    expect(await screen.findByRole("alert"))
+      .toHaveTextContent("🚫 Tài khoản này đã bị khoá. Nếu bạn nghĩ đây là nhầm lẫn, hãy liên hệ quản trị viên.");
     expect(auth.login).toHaveBeenCalledWith("Dat", "mat-khau-thu");
   });
 

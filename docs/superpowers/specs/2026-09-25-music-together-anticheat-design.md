@@ -1055,6 +1055,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 
 **The components:**
 - `AnticheatModal` uses `ParchmentModal`.
+  - Its button (`Tôi đã hiểu` or `Đăng xuất`) has the initial focus (`autoFocus`).
   - The warning closes with its button, ✕ or Esc.
   - The ban modal calls `useAuth().logout()` on its button and on any close (R15).
   - While either is open, the canvas takes no input, and Esc belongs to the modal: it does not cancel the farm work.
@@ -1096,6 +1097,8 @@ The numbers are below 1 000, so the `vi-VN` format adds no separator.
 | `invalid username` | `Tên đăng nhập cần 2–24 ký tự, không dùng tên dành riêng (Ao cá, Hợp tác xã, root…) hoặc ký tự ẩn.` |
 | `account banned` | `🚫 Tài khoản này đã bị khoá. Nếu bạn nghĩ đây là nhầm lẫn, hãy liên hệ quản trị viên.` |
 | `username already taken`, `invalid username or password` | unchanged |
+
+The refusal shows in a `role="alert"` line, so a screen reader reads it out.
 
 ### 12.4 Fishing texts (`lib/game/fishing/messages.ts`, `rpc.ts`)
 
@@ -1142,11 +1145,12 @@ The numbers are below 1 000, so the `vi-VN` format adds no separator.
 | line 2 | `Vi phạm {active_strikes}/2 · {hard_events} cứng · {soft_events} mềm · lần cuối {time}` |
 | status: pending wipe | `🚫 Đã cấm — chờ xoá dữ liệu` |
 | status: wiped | `🚫 Đã cấm — đã xoá dữ liệu` |
+| status: banned by hand (`is_banned` without `ban_state`; a pardon does not lift it, §9.7) | `Khoá tay` |
 | status: locked | `🔒 Đang khoá đến {time}` |
 | status: strike 1 in its window | `⚠️ Cảnh cáo (1/2)` |
 | status: pardoned, nothing active | `🕊️ Đã ân xá` |
 | status: otherwise | `Chỉ có ghi nhận` |
-| buttons | `Bằng chứng` / `Ẩn bằng chứng` · `Xoá dữ liệu` (pending wipe only) · `Ân xá` (any active strike, lock or ban) |
+| buttons | `Bằng chứng` / `Ẩn bằng chứng` (with `aria-expanded`) · `Xoá dữ liệu` (pending wipe only) · `Ân xá` (any active strike, lock or ban) |
 | confirm wipe | `Xoá toàn bộ dữ liệu trò chơi của {username}? Xu, đồ, cá, kỷ lục và lúa bị xoá ngay; đất được trả về làng ở lần mở ruộng kế tiếp. Không hoàn tác được.` |
 | confirm pardon | `Ân xá {username}? Tài khoản được mở khoá và xoá vi phạm.` followed, when wiped, by ` Dữ liệu đã xoá không được khôi phục.` |
 
@@ -1168,7 +1172,10 @@ The numbers are below 1 000, so the `vi-VN` format adds no separator.
 |---|---|
 | `not pending` | `Tài khoản này không còn chờ xoá dữ liệu.` |
 | `nothing to pardon` | `Tài khoản này không có gì để ân xá.` |
+| the action went through, but the reload after it failed | `Đã xong — tải lại danh sách không được, thử lại.` |
 | anything else | `Có lỗi, thử lại nhé.` |
+
+After a refused action, its reason stays even when the reload fails too.
 
 **Code labels:**
 

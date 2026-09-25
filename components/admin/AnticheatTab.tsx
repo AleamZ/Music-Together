@@ -46,6 +46,8 @@ const count = (n: number): string => n.toLocaleString("vi-VN");
 function statusText(c: AnticheatCase): string {
   if (c.ban_state === "pending_wipe") return "🚫 Đã cấm — chờ xoá dữ liệu";
   if (c.ban_state === "wiped") return "🚫 Đã cấm — đã xoá dữ liệu";
+  // a ban root set by hand in the Accounts tab: a pardon here does not lift it
+  if (c.is_banned) return "Khoá tay";
   if (c.locked_until) return `🔒 Đang khoá đến ${time(c.locked_until)}`;
   if (c.active_strikes === 1) return "⚠️ Cảnh cáo (1/2)";
   if (c.pardoned_at) return "🕊️ Đã ân xá";
@@ -69,6 +71,8 @@ function errorText(err: unknown): string {
   if (msg === "nothing to pardon") return "Tài khoản này không có gì để ân xá.";
   return "Có lỗi, thử lại nhé.";
 }
+/** The action went through, but the list or the evidence could not be fetched again after it. */
+const RELOAD_FAILED = "Đã xong — tải lại danh sách không được, thử lại.";
 
 const BUTTON = "rounded border border-gold-200 px-2 py-0.5 text-burgundy disabled:opacity-50";
 
@@ -81,28 +85,35 @@ export default function AnticheatTab({ token }: { token: string }) {
   // the account whose evidence is open, for answers that arrive after another one was opened
   const openRef = useRef<string | null>(null);
 
-  const loadList = useCallback(() => adminAnticheatList(token).then(setList, (e: unknown) => setError(errorText(e))), [token]);
+  const loadList = useCallback(() => adminAnticheatList(token).then(setList), [token]);
   const loadAccount = useCallback((id: string) => adminAnticheatAccount(token, id).then((a) => {
     if (openRef.current === id) setAccount(a);
-  }, (e: unknown) => setError(errorText(e))), [token]);
+  }), [token]);
   useEffect(() => {
-    void loadList();
+    void loadList().catch((e: unknown) => setError(errorText(e)));
   }, [loadList]);
 
-  /** An admin action, then the list and the open evidence again. */
+  /** An admin action, then the list and the open evidence again. When only that reload fails, the action went through
+   *  and the message says so; after a refused action, its reason stays. */
   const act = async (job: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
+    let done = false;
     try {
       await job();
+      done = true;
     } catch (e) {
       setError(errorText(e));
     } finally {
       setBusy(false);
     }
-    await loadList();
-    const id = openRef.current;
-    if (id) await loadAccount(id);
+    try {
+      await loadList();
+      const id = openRef.current;
+      if (id) await loadAccount(id);
+    } catch {
+      if (done) setError(RELOAD_FAILED);
+    }
   };
 
   const setMode = (mode: AnticheatMode) => {
@@ -122,7 +133,7 @@ export default function AnticheatTab({ token }: { token: string }) {
     openRef.current = next;
     setOpenId(next);
     setAccount(null);
-    if (next) void loadAccount(next);
+    if (next) void loadAccount(next).catch((e: unknown) => setError(errorText(e)));
   };
 
   return (
@@ -150,7 +161,7 @@ export default function AnticheatTab({ token }: { token: string }) {
                   <p><b className="text-burgundy">{`${c.username}${c.is_root ? " 👑" : ""}`}</b> · <span>{statusText(c)}</span></p>
                   <p>{`Vi phạm ${c.active_strikes}/2 · ${count(c.hard_events)} cứng · ${count(c.soft_events)} mềm · lần cuối ${time(c.last_event_at)}`}</p>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    <button type="button" className={BUTTON} onClick={() => toggle(c.account_id)}>
+                    <button type="button" className={BUTTON} aria-expanded={openId === c.account_id} onClick={() => toggle(c.account_id)}>
                       {openId === c.account_id ? "Ẩn bằng chứng" : "Bằng chứng"}
                     </button>
                     {c.ban_state === "pending_wipe" && (
