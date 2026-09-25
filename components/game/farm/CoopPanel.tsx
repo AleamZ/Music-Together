@@ -161,7 +161,17 @@ function MarketTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: A
   const subleased = others.filter((p) => p.subleasePrice !== null);
   const [target, setTarget] = useState<number | null>(null);
   const [price, setPrice] = useState("");
-  const offerPlot = others.find((p) => p.no === target) ?? others[0] ?? null;
+  const offerPlot = others.find((p) => p.no === target) ?? null;
+  // The chosen plot left the market (sold, reclaimed, or now mine): nothing is chosen, and the typed price goes with it.
+  if (target !== null && !offerPlot) {
+    setTarget(null);
+    setPrice("");
+  }
+  const choose = (no: number) => {
+    if (no === target) return;
+    setTarget(no);
+    setPrice("");
+  };
   const offer = toPrice(price);
   return (
     <>
@@ -178,21 +188,24 @@ function MarketTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: A
           </Line>
         ))}
       </ul>
-      {offerPlot && (
+      {others.length > 0 && (
         <section className="pch flex flex-col gap-1 p-2">
           <h3 className="text-xl text-burgundy">Đề nghị mua</h3>
           <p className="text-base opacity-80">Trả giá đất tư của người khác; chủ đất đồng ý thì mới thành. Đề nghị có hạn 24 giờ.</p>
           <div className="flex flex-wrap gap-1" role="group" aria-label="Thửa muốn mua">
             {others.map((p) => (
-              <button key={p.no} type="button" className="pch-btn text-base" aria-pressed={offerPlot.no === p.no} onClick={() => setTarget(p.no)}>
+              <button key={p.no} type="button" className="pch-btn text-base" aria-pressed={offerPlot?.no === p.no} onClick={() => choose(p.no)}>
                 Thửa {p.no} ({p.owner!.name})
               </button>
             ))}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-1">
             <PriceInput label="Giá" max={SALE_MAX} value={price} onChange={setPrice} />
-            <LandButton refusal={priceRefusal(price, (x) => offerRefusal(offerPlot, ctx, x))} busy={busy} primary
-              onClick={() => onAct({ kind: "offer", plot: offerPlot.no, price: offer }, `Đã gửi đề nghị mua thửa ${offerPlot.no} giá ${formatXu(offer)}.`)}>
+            {/* keyed by the plot and the price: a change drops an open question, so it always names what is sent */}
+            <LandButton key={`${offerPlot?.no ?? ""}:${price}`} busy={busy} primary
+              refusal={offerPlot ? priceRefusal(price, (x) => offerRefusal(offerPlot, ctx, x)) : ""}
+              warn={offerPlot ? `Trả giá thửa ${offerPlot.no} với ${formatXu(offer)}?` : undefined}
+              onClick={() => offerPlot && onAct({ kind: "offer", plot: offerPlot.no, price: offer }, `Đã gửi đề nghị mua thửa ${offerPlot.no} giá ${formatXu(offer)}.`)}>
               Gửi đề nghị
             </LandButton>
           </div>

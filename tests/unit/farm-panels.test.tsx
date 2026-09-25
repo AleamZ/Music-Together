@@ -187,7 +187,62 @@ describe("CoopPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Thửa 4 (Lan)" }));
     fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "6000" } });
     fireEvent.click(screen.getByRole("button", { name: "Gửi đề nghị" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "offer", plot: 4, price: 6000 }, "Đã gửi đề nghị mua thửa 4 giá 6.000 xu.");
+  });
+
+  /** I own no land here, so I may offer for An's plot 3 and Lan's plot 4. */
+  const MARKET = { ...STATE, plots: STATE.plots.map((p) => (p.no === 2 ? { ...p, owner: null, farmer: null } : p)) };
+
+  it("asks before sending an offer, naming the plot and the price", () => {
+    const onAct = renderCoop(MARKET);
+    tab("Chợ đất");
+    fireEvent.click(screen.getByRole("button", { name: "Thửa 3 (An)" }));
+    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "7500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi đề nghị" }));
+    expect(screen.getByText("⚠️ Trả giá thửa 3 với 7.500 xu?")).toBeInTheDocument();
+    expect(onAct).not.toHaveBeenCalled();
+    // a new price drops the open question: the next one names it
+    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "8000" } });
+    expect(screen.queryByText(/Trả giá thửa/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Gửi đề nghị" }));
+    expect(screen.getByText("⚠️ Trả giá thửa 3 với 8.000 xu?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
+    expect(onAct).toHaveBeenCalledWith({ kind: "offer", plot: 3, price: 8000 }, "Đã gửi đề nghị mua thửa 3 giá 8.000 xu.");
+  });
+
+  it("clears the typed price when another plot is chosen", () => {
+    renderCoop(MARKET);
+    tab("Chợ đất");
+    fireEvent.click(screen.getByRole("button", { name: "Thửa 3 (An)" }));
+    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "7500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Thửa 3 (An)" }));
+    expect(screen.getByLabelText("Giá")).toHaveValue(7500);
+    fireEvent.click(screen.getByRole("button", { name: "Thửa 4 (Lan)" }));
+    expect(screen.getByLabelText("Giá")).toHaveValue(null);
+  });
+
+  it("forgets the chosen plot when it leaves the market, without picking another", () => {
+    const onAct = vi.fn();
+    const view = (state: FieldState) => (
+      <CoopPanel state={state} failed={false} me="me" busy={false} now={NOW} onAct={onAct} onReload={noop} onClose={noop} />
+    );
+    const { rerender } = render(view(MARKET));
+    tab("Chợ đất");
+    // nothing is chosen at first
+    expect(screen.getByRole("button", { name: "Thửa 3 (An)" })).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Thửa 4 (Lan)" }));
+    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "6000" } });
+    // Lan sells plot 4 back to the village
+    rerender(view({ ...MARKET, plots: MARKET.plots.map((p) => (p.no === 4 ? { ...p, owner: null, farmer: null } : p)) }));
+    expect(screen.queryByRole("button", { name: "Thửa 4 (Lan)" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Thửa 3 (An)" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByLabelText("Giá")).toHaveValue(null);
+    expect(screen.getByRole("button", { name: "Gửi đề nghị" })).toBeDisabled();
+    // even when a plot of that number comes back to the market, it is not chosen again
+    rerender(view(MARKET));
+    expect(screen.getByRole("button", { name: "Thửa 4 (Lan)" })).toHaveAttribute("aria-pressed", "false");
+    expect(onAct).not.toHaveBeenCalled();
   });
 
   it("manages my plot and the offers", () => {
