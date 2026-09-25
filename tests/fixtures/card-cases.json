@@ -1,0 +1,340 @@
+{
+  "cards": "Cards are written rank + suit: 3 4 5 6 7 8 9 10 J Q K A 2 and S (♠) C (♣) D (♦) H (♥). Tiến lên amounts are in half-stakes (h): 2 h = 1 S.",
+  "tienlen": {
+    "combo": [
+      { "cards": ["7D"], "expect": { "type": "single", "len": 1, "key": "7D" }, "value": 0 },
+      { "cards": ["2H"], "expect": { "type": "single", "len": 1, "key": "2H" }, "value": 2 },
+      { "cards": ["2S"], "expect": { "type": "single", "len": 1, "key": "2S" }, "value": 1 },
+      { "cards": ["9S", "9H"], "expect": { "type": "pair", "len": 2, "key": "9H" }, "value": 0 },
+      { "cards": ["2S", "2D"], "expect": { "type": "pair", "len": 2, "key": "2D" }, "value": 3 },
+      { "cards": ["2C", "2S"], "expect": { "type": "pair", "len": 2, "key": "2C" }, "value": 2 },
+      { "cards": ["2D", "2H"], "expect": { "type": "pair", "len": 2, "key": "2H" }, "value": 4 },
+      { "cards": ["QC", "QD", "QH"], "expect": { "type": "triple", "len": 3, "key": "QH" }, "value": 0 },
+      { "cards": ["2S", "2C", "2D"], "expect": { "type": "triple", "len": 3, "key": "2D" }, "value": 0 },
+      { "cards": ["8S", "8C", "8D", "8H"], "expect": { "type": "quad", "len": 4, "key": "8H" }, "value": 4 },
+      { "cards": ["5S", "6D", "7C"], "expect": { "type": "straight", "len": 3, "key": "7C" }, "value": 0 },
+      { "cards": ["7C", "5S", "6D"], "expect": { "type": "straight", "len": 3, "key": "7C" }, "value": 0 },
+      { "cards": ["6S", "7S", "8S", "9S"], "expect": { "type": "straight", "len": 4, "key": "9S" }, "value": 0 },
+      { "cards": ["QD", "KS", "AH"], "expect": { "type": "straight", "len": 3, "key": "AH" }, "value": 0 },
+      { "cards": ["3S", "4S", "5S", "6S", "7S", "8S", "9S", "10S", "JS", "QS", "KS", "AS"], "expect": { "type": "straight", "len": 12, "key": "AS" }, "value": 0 },
+      { "cards": ["4S", "4D", "5C", "5H", "6S", "6D"], "expect": { "type": "pairs", "len": 3, "key": "6D" }, "value": 3 },
+      { "cards": ["QS", "QD", "KC", "KH", "AS", "AD"], "expect": { "type": "pairs", "len": 3, "key": "AD" }, "value": 3 },
+      { "cards": ["4S", "4D", "5C", "5H", "6S", "6D", "7C", "7H"], "expect": { "type": "pairs", "len": 4, "key": "7H" }, "value": 6 },
+      { "cards": ["3S", "3C", "4D", "4H", "5S", "5C", "6D", "6H", "7S", "7C"], "expect": { "type": "pairs", "len": 5, "key": "7C" }, "value": 6 },
+      { "cards": ["KS", "AH", "2C"], "expect": null },
+      { "cards": ["AH", "2C", "3D"], "expect": null },
+      { "cards": ["10S", "JS", "QS", "KS", "AS", "2S"], "expect": null },
+      { "cards": ["5S", "6D", "8C"], "expect": null },
+      { "cards": ["5S", "5D", "6C"], "expect": null },
+      { "cards": ["9S", "10H"], "expect": null },
+      { "cards": ["3S", "4C"], "expect": null },
+      { "cards": ["KS", "KD", "AC", "AH", "2S", "2D"], "expect": null },
+      { "cards": ["4S", "4D", "4C", "5H", "5S", "6D"], "expect": null },
+      { "cards": ["4S", "4D", "5C", "5H", "7S", "7D"], "expect": null },
+      { "cards": ["4S", "4D", "5C", "5H"], "expect": null },
+      { "cards": ["9S", "9H", "9D", "9C", "10S"], "expect": null },
+      { "cards": ["3S", "3C", "4D", "4H", "5S", "5C", "5D"], "expect": null },
+      { "cards": ["3S", "4S", "5S", "6S", "7S", "8S", "9S", "10S", "JS", "QS", "KS", "AS", "2S"], "expect": null },
+      { "cards": ["7D", "7D"], "expect": null },
+      { "cards": [], "expect": null }
+    ],
+    "beats": [
+      { "top": ["7D"], "x": ["7H"], "expect": true },
+      { "top": ["7H"], "x": ["7D"], "expect": false },
+      { "top": ["8S"], "x": ["7H"], "expect": false },
+      { "top": ["2S"], "x": ["2H"], "expect": true },
+      { "top": ["2H"], "x": ["2D"], "expect": false },
+      { "top": ["AH"], "x": ["2S"], "expect": true },
+      { "top": ["9S", "9H"], "x": ["10S", "10C"], "expect": true },
+      { "top": ["9C", "9H"], "x": ["9S", "9D"], "expect": false },
+      { "top": ["9S", "9D"], "x": ["9C", "9H"], "expect": true },
+      { "top": ["5S", "6D", "7C"], "x": ["6S", "7D", "8H"], "expect": true },
+      { "top": ["6D", "7H", "8C"], "x": ["6S", "7D", "8H"], "expect": true },
+      { "top": ["6S", "7D", "8H"], "x": ["6D", "7H", "8C"], "expect": false },
+      { "top": ["5S", "6D", "7C"], "x": ["6S", "7D", "8H", "9S"], "expect": false },
+      { "top": ["6S", "7S", "8S", "9S"], "x": ["7C", "8C", "9C", "10C"], "expect": true },
+      { "top": ["5S", "6D", "7C"], "x": ["8S", "8H"], "expect": false },
+      { "top": ["3S"], "x": ["4S", "4C"], "expect": false },
+      { "top": ["4S", "4C"], "x": ["5S"], "expect": false },
+      { "top": ["JS", "JC", "JD"], "x": ["QS", "QC", "QD"], "expect": true },
+      { "top": ["2H"], "x": ["4S", "4D", "5C", "5H", "6S", "6D"], "expect": true },
+      { "top": ["2S"], "x": ["4S", "4D", "5C", "5H", "6S", "6D"], "expect": true },
+      { "top": ["2S", "2H"], "x": ["4S", "4D", "5C", "5H", "6S", "6D"], "expect": false },
+      { "top": ["2H"], "x": ["8S", "8C", "8D", "8H"], "expect": true },
+      { "top": ["2S", "2H"], "x": ["8S", "8C", "8D", "8H"], "expect": true },
+      { "top": ["4S", "4D", "5C", "5H", "6S", "6D"], "x": ["3S", "3C", "3D", "3H"], "expect": true },
+      { "top": ["QS", "QD", "KC", "KH", "AS", "AD"], "x": ["3S", "3C", "3D", "3H"], "expect": true },
+      { "top": ["4S", "4D", "5C", "5H", "6S", "6D"], "x": ["4C", "4H", "5S", "5D", "6C", "6H"], "expect": true },
+      { "top": ["4S", "4D", "5C", "5H", "6S", "6D"], "x": ["3S", "3C", "4C", "4H", "5S", "5D"], "expect": false },
+      { "top": ["4S", "4D", "5C", "5H", "6S", "6D"], "x": ["3S", "3C", "4C", "4H", "5S", "5D", "6C", "6H"], "expect": true },
+      { "top": ["8S", "8C", "8D", "8H"], "x": ["3S", "3C", "4C", "4H", "5S", "5D", "6C", "6H"], "expect": true },
+      { "top": ["8S", "8C", "8D", "8H"], "x": ["9S", "9C", "9D", "9H"], "expect": true },
+      { "top": ["9S", "9C", "9D", "9H"], "x": ["8S", "8C", "8D", "8H"], "expect": false },
+      { "top": ["2S", "2H"], "x": ["3S", "3C", "4C", "4H", "5S", "5D", "6C", "6H"], "expect": true },
+      { "top": ["2H"], "x": ["3S", "3C", "4C", "4H", "5S", "5D", "6C", "6H"], "expect": true },
+      { "top": ["AH"], "x": ["4S", "4D", "5C", "5H", "6S", "6D"], "expect": false },
+      { "top": ["AH"], "x": ["8S", "8C", "8D", "8H"], "expect": false },
+      { "top": ["AS", "AH"], "x": ["8S", "8C", "8D", "8H"], "expect": false },
+      { "top": ["2S", "2C", "2D"], "x": ["8S", "8C", "8D", "8H"], "expect": false },
+      { "top": ["2S", "2C", "2D"], "x": ["3S", "3C", "4C", "4H", "5S", "5D", "6C", "6H"], "expect": false },
+      { "top": ["3S", "3C", "4C", "4H", "5S", "5D", "6C", "6H"], "x": ["8S", "8C", "8D", "8H"], "expect": false },
+      { "top": ["3S", "3C", "4C", "4H", "5S", "5D", "6C", "6H"], "x": ["4S", "4D", "5C", "5H", "6S", "6D"], "expect": false },
+      { "top": ["3S", "3C", "4C", "4H", "5S", "5D", "6C", "6H"], "x": ["7S", "7C", "8C", "8H", "9S", "9D", "10C", "10H"], "expect": true },
+      { "top": ["8S", "8C", "8D", "8H"], "x": ["4S", "4D", "5C", "5H", "6S", "6D"], "expect": false }
+    ],
+    "trang": [
+      { "cards": ["3S", "4S", "5D", "6C", "7H", "8S", "9S", "10D", "JC", "QH", "KS", "AS", "2D"], "expect": "sanh_rong" },
+      { "cards": ["3S", "3C", "4S", "4C", "5S", "5C", "6S", "6C", "7S", "7C", "9D", "JD", "KH"], "expect": "nam_doi_thong" },
+      { "cards": ["3S", "3C", "3D", "4S", "4C", "5S", "5C", "6S", "6C", "7S", "7C", "9D", "KH"], "expect": "nam_doi_thong" },
+      { "cards": ["10S", "10C", "JS", "JC", "QS", "QC", "KS", "KC", "AS", "AC", "3D", "5H", "7C"], "expect": "nam_doi_thong" },
+      { "cards": ["JS", "JC", "QS", "QC", "KS", "KC", "AS", "AC", "2S", "2C", "3S", "5D", "7H"], "expect": null },
+      { "cards": ["2S", "2C", "2D", "2H", "3S", "4D", "5C", "7H", "8S", "9D", "JC", "KH", "AS"], "expect": "tu_quy_heo" },
+      { "cards": ["3S", "3C", "5S", "5C", "7S", "7C", "9S", "9C", "JS", "JC", "KS", "KC", "AD"], "expect": "sau_doi" },
+      { "cards": ["3S", "3C", "3D", "3H", "5S", "5C", "7S", "7C", "9S", "9C", "JS", "JC", "AD"], "expect": "sau_doi" },
+      { "cards": ["3S", "3C", "5S", "5C", "7S", "7C", "9S", "9C", "JS", "JC", "KS", "AD", "QH"], "expect": null },
+      { "cards": ["3S", "3C", "3D", "5S", "5C", "7S", "7C", "9S", "9C", "JS", "JC", "KH", "AD"], "expect": null },
+      { "cards": ["3S", "3C", "4S", "4C", "5S", "5C", "6S", "6C", "7S", "7C", "9S", "9C", "KH"], "expect": "nam_doi_thong" },
+      { "cards": ["2S", "2C", "2D", "2H", "3S", "3C", "5S", "5C", "7S", "7C", "9S", "9C", "KH"], "expect": "tu_quy_heo" },
+      { "cards": ["3S", "4S", "5D", "6C", "7H", "8S", "9S", "10D", "JC", "QH", "KS", "2S", "2D"], "expect": null }
+    ],
+    "thoi": [
+      { "cards": [], "expect": 0 },
+      { "cards": ["2S"], "expect": 1 },
+      { "cards": ["2C"], "expect": 1 },
+      { "cards": ["2D"], "expect": 2 },
+      { "cards": ["2H", "2S"], "expect": 3 },
+      { "cards": ["9S", "9C", "9D", "9H"], "expect": 4 },
+      { "cards": ["4S", "4D", "5C", "5H", "6S", "6D"], "expect": 3 },
+      { "cards": ["4S", "4D", "5C", "5H", "6S", "6D", "7C", "7H"], "expect": 6 },
+      { "cards": ["4S", "4D", "4C", "5H", "5S", "6D", "6C"], "expect": 3 },
+      { "cards": ["4S", "4D", "5C", "5H"], "expect": 0 },
+      { "cards": ["4S", "4D", "5C", "5H", "6S", "6D", "6C", "6H"], "expect": 4 },
+      { "cards": ["4S", "4D", "5C", "5H", "6S", "6D", "6C", "6H", "7S", "7D", "8S", "8D", "9S"], "expect": 4 },
+      { "cards": ["2H", "2D", "2S", "9S", "9C", "9D", "9H", "3S", "3C", "4D", "4H", "5S", "5C"], "expect": 12 },
+      { "cards": ["AS", "AC", "KS", "KD", "QS", "QH", "JS", "JH"], "expect": 6 },
+      { "cards": ["KS", "KD", "AS", "AC", "2S", "2C"], "expect": 2 },
+      { "cards": ["3S", "3C", "5S", "5C", "7S", "7C"], "expect": 0 },
+      { "cards": ["2D", "9S", "9C", "9D", "9H", "3S", "5C", "7D", "JH", "KS", "AC", "4D", "6H"], "expect": 6 }
+    ],
+    "settle": [
+      {
+        "name": "plain: bét pays nhất 1 S, ba pays nhì ½ S",
+        "order": [1, 2, 3, 4], "played": [1, 2, 3, 4], "hands": { "4": ["3S"] },
+        "events": [{ "k": "out", "seat": 1 }, { "k": "out", "seat": 2 }, { "k": "out", "seat": 3 }, { "k": "end" }],
+        "expect": {
+          "lines": [[4, 1, 2, 2, "bet"], [3, 2, 1, 1, "ba"]],
+          "places": { "1": 1, "2": 2, "3": 3, "4": 4 }, "out": { "1": "done", "2": "done", "3": "done" },
+          "net": { "1": 2, "2": 1, "3": -1, "4": -2 }
+        }
+      },
+      {
+        "name": "example 1: a cut chain across three players, then thối heo to the player just above",
+        "order": [1, 2, 3, 4], "played": [1, 2, 3, 4], "hands": { "4": ["2S"] },
+        "events": [
+          { "k": "cut", "seat": 2, "top": { "seat": 4, "cards": ["2H"], "done": false } },
+          { "k": "cut", "seat": 3, "top": { "seat": 2, "cards": ["5S", "5C", "6S", "6C", "7S", "7C"], "done": false } },
+          { "k": "close" }, { "k": "out", "seat": 1 }, { "k": "out", "seat": 2 }, { "k": "out", "seat": 3 }, { "k": "end" }
+        ],
+        "expect": {
+          "lines": [[2, 3, 5, 5, "chat"], [4, 1, 2, 2, "bet"], [3, 2, 1, 1, "ba"], [4, 3, 1, 1, "thoi"]],
+          "places": { "1": 1, "2": 2, "3": 3, "4": 4 }, "out": { "1": "done", "2": "done", "3": "done" },
+          "net": { "1": 2, "2": -4, "3": 5, "4": -3 }
+        }
+      },
+      {
+        "name": "a void chain: the victim went out with the cut 2",
+        "order": [1, 2, 3, 4], "played": [1, 2, 3, 4], "hands": { "3": ["4S"] },
+        "events": [
+          { "k": "out", "seat": 4 },
+          { "k": "cut", "seat": 2, "top": { "seat": 4, "cards": ["2H"], "done": true } },
+          { "k": "close" }, { "k": "out", "seat": 1 }, { "k": "out", "seat": 2 }, { "k": "end" }
+        ],
+        "expect": {
+          "lines": [[3, 4, 2, 2, "bet"], [2, 1, 1, 1, "ba"]],
+          "places": { "4": 1, "1": 2, "2": 3, "3": 4 }, "out": { "4": "done", "1": "done", "2": "done" },
+          "net": { "1": 1, "2": -1, "3": -2, "4": 2 }
+        }
+      },
+      {
+        "name": "example 2: cóng pays nhất 2 S plus thối and takes the bottom place",
+        "order": [1, 2, 3, 4], "played": [1, 2, 3],
+        "hands": { "4": ["2D", "9S", "9C", "9D", "9H", "3S", "5C", "7D", "JH", "KS", "AC", "4D", "6H"], "3": ["8S"] },
+        "events": [{ "k": "out", "seat": 1 }, { "k": "out", "seat": 2 }, { "k": "end" }],
+        "expect": {
+          "lines": [[4, 1, 10, 10, "cong"], [3, 2, 1, 1, "ba"]],
+          "places": { "1": 1, "2": 2, "3": 3, "4": 4 }, "out": { "1": "done", "2": "done", "4": "cong" },
+          "net": { "1": 10, "2": 1, "3": -1, "4": -10 }
+        }
+      },
+      {
+        "name": "two cóng players: the farthest from nhất in turn order is bét",
+        "order": [1, 2, 3, 4], "played": [2, 3], "hands": { "4": ["2S"], "1": ["5D"], "2": ["7C"] },
+        "events": [{ "k": "out", "seat": 3 }, { "k": "end" }],
+        "expect": {
+          "lines": [[4, 3, 5, 5, "cong"], [1, 3, 4, 4, "cong"]],
+          "places": { "3": 1, "2": 2, "4": 3, "1": 4 }, "out": { "3": "done", "4": "cong", "1": "cong" },
+          "net": { "1": -4, "2": 0, "3": 9, "4": -5 }
+        }
+      },
+      {
+        "name": "three cóng players take places 2 to 4 in turn order from nhất",
+        "order": [1, 2, 3, 4], "played": [3], "hands": { "4": ["2S"], "1": ["2H"], "2": ["3S"] },
+        "events": [{ "k": "out", "seat": 3 }, { "k": "end" }],
+        "expect": {
+          "lines": [[4, 3, 5, 5, "cong"], [1, 3, 6, 6, "cong"], [2, 3, 4, 4, "cong"]],
+          "places": { "3": 1, "4": 2, "1": 3, "2": 4 }, "out": { "3": "done", "4": "cong", "1": "cong", "2": "cong" },
+          "net": { "1": -6, "2": -4, "3": 15, "4": -5 }
+        }
+      },
+      {
+        "name": "example 4: a forfeit pays 1 S to each active player and its thối to the next of them",
+        "order": [1, 2, 3, 4], "played": [1, 2, 3, 4], "hands": { "4": ["2H", "5S"], "3": ["6S"] },
+        "events": [{ "k": "out", "seat": 1 }, { "k": "forfeit", "seats": [4] }, { "k": "out", "seat": 2 }, { "k": "end" }],
+        "expect": {
+          "lines": [[4, 2, 2, 2, "forfeit"], [4, 3, 2, 2, "forfeit"], [4, 2, 2, 2, "thoi"], [3, 1, 2, 2, "bet"]],
+          "places": { "1": 1, "2": 2, "3": 3 }, "out": { "1": "done", "2": "done", "4": "forfeit" },
+          "net": { "1": 2, "2": 4, "3": 0, "4": -6 }
+        }
+      },
+      {
+        "name": "a forfeit closes the open chain it is the victim of",
+        "order": [1, 2, 3], "played": [1, 2, 3], "hands": { "2": ["9S"], "3": ["8D"] },
+        "events": [
+          { "k": "cut", "seat": 1, "top": { "seat": 2, "cards": ["2S"], "done": false } },
+          { "k": "forfeit", "seats": [2] }, { "k": "out", "seat": 1 }, { "k": "end" }
+        ],
+        "expect": {
+          "lines": [[2, 1, 1, 1, "chat"], [2, 3, 2, 2, "forfeit"], [2, 1, 2, 2, "forfeit"], [3, 1, 2, 2, "bet"]],
+          "places": { "1": 1, "3": 2 }, "out": { "1": "done", "2": "forfeit" },
+          "net": { "1": 5, "2": -5, "3": 0 }
+        }
+      },
+      {
+        "name": "a forfeit drops the open chain it is the cutter of",
+        "order": [1, 2, 3], "played": [1, 2, 3], "hands": { "2": ["2D"], "1": ["4S"] },
+        "events": [
+          { "k": "cut", "seat": 2, "top": { "seat": 1, "cards": ["2H"], "done": false } },
+          { "k": "forfeit", "seats": [2] }, { "k": "out", "seat": 3 }, { "k": "end" }
+        ],
+        "expect": {
+          "lines": [[2, 3, 2, 2, "forfeit"], [2, 1, 2, 2, "forfeit"], [2, 3, 2, 2, "thoi"], [1, 3, 2, 2, "bet"]],
+          "places": { "3": 1, "1": 2 }, "out": { "3": "done", "2": "forfeit" },
+          "net": { "1": 0, "2": -6, "3": 6 }
+        }
+      },
+      {
+        "name": "a player who has played nothing is paid 1 S at a forfeit and becomes cóng only at the first go-out",
+        "order": [1, 2, 3, 4], "played": [1, 2, 4], "hands": { "4": ["5D"], "3": ["2C"], "2": ["6C"] },
+        "events": [{ "k": "forfeit", "seats": [4] }, { "k": "out", "seat": 1 }, { "k": "end" }],
+        "expect": {
+          "lines": [[4, 1, 2, 2, "forfeit"], [4, 2, 2, 2, "forfeit"], [4, 3, 2, 2, "forfeit"], [3, 1, 5, 5, "cong"]],
+          "places": { "1": 1, "2": 2, "3": 3 }, "out": { "1": "done", "3": "cong", "4": "forfeit" },
+          "net": { "1": 7, "2": 2, "3": -3, "4": -6 }
+        }
+      },
+      {
+        "name": "the cap binds part-way through a forfeit's 1 S lines, in turn order",
+        "order": [1, 2, 3, 4], "played": [1, 2, 3, 4], "hands": { "1": ["2H"] },
+        "events": [
+          { "k": "cut", "seat": 2, "top": { "seat": 1, "cards": ["2H", "2D"], "done": false } }, { "k": "close" },
+          { "k": "cut", "seat": 3, "top": { "seat": 1, "cards": ["3S", "3C", "4S", "4C", "5S", "5C", "6S", "6C"], "done": false } },
+          { "k": "close" },
+          { "k": "cut", "seat": 4, "top": { "seat": 1, "cards": ["8S", "8C", "8D", "8H"], "done": false } }, { "k": "close" },
+          { "k": "cut", "seat": 2, "top": { "seat": 1, "cards": ["9S", "9C", "10S", "10C", "JS", "JC"], "done": false } },
+          { "k": "close" },
+          { "k": "forfeit", "seats": [1] }, { "k": "out", "seat": 2 }, { "k": "out", "seat": 3 }, { "k": "end" }
+        ],
+        "expect": {
+          "lines": [
+            [1, 2, 4, 4, "chat"], [1, 3, 6, 6, "chat"], [1, 4, 4, 4, "chat"], [1, 2, 3, 3, "chat"],
+            [1, 2, 2, 2, "forfeit"], [1, 3, 2, 1, "forfeit"], [4, 2, 2, 2, "bet"]
+          ],
+          "places": { "2": 1, "3": 2, "4": 3 }, "out": { "1": "forfeit", "2": "done", "3": "done" },
+          "net": { "1": -20, "2": 11, "3": 7, "4": 2 }
+        }
+      },
+      {
+        "name": "two seats swept together as the last active players: no line is paid",
+        "order": [1, 2, 3], "played": [1, 2, 3], "hands": { "2": ["2H"], "3": ["2D"] },
+        "events": [{ "k": "out", "seat": 1 }, { "k": "forfeit", "seats": [3, 2] }, { "k": "end" }],
+        "expect": {
+          "lines": [], "places": { "1": 1 }, "out": { "1": "done", "2": "forfeit", "3": "forfeit" },
+          "net": { "1": 0, "2": 0, "3": 0 }
+        }
+      },
+      {
+        "name": "the survivor of forfeits is nhất and pays nothing",
+        "order": [1, 2, 3], "played": [1, 2, 3], "hands": { "1": ["2S"], "2": ["5S"], "3": ["2H"] },
+        "events": [{ "k": "forfeit", "seats": [1, 2] }, { "k": "end" }],
+        "expect": {
+          "lines": [[1, 3, 2, 2, "forfeit"], [1, 3, 1, 1, "thoi"], [2, 3, 2, 2, "forfeit"]],
+          "places": { "3": 1 }, "out": { "1": "forfeit", "2": "forfeit" },
+          "net": { "1": -3, "2": -2, "3": 5 }
+        }
+      },
+      {
+        "name": "the cap: nobody loses more than 10 S in one game",
+        "order": [1, 2, 3, 4], "played": [1, 2, 3, 4], "hands": { "4": ["2S", "9S", "9C", "9D", "9H"] },
+        "events": [
+          { "k": "cut", "seat": 2, "top": { "seat": 4, "cards": ["3S", "3C", "4S", "4C", "5S", "5C", "6S", "6C"], "done": false } },
+          { "k": "close" },
+          { "k": "cut", "seat": 3, "top": { "seat": 4, "cards": ["7S", "7C", "8S", "8C", "9S", "9C", "10S", "10C"], "done": false } },
+          { "k": "close" },
+          { "k": "cut", "seat": 1, "top": { "seat": 4, "cards": ["2H", "2D"], "done": false } }, { "k": "close" },
+          { "k": "out", "seat": 1 }, { "k": "out", "seat": 2 }, { "k": "out", "seat": 3 }, { "k": "end" }
+        ],
+        "expect": {
+          "lines": [
+            [4, 2, 6, 6, "chat"], [4, 3, 6, 6, "chat"], [4, 1, 4, 4, "chat"], [4, 1, 2, 2, "bet"], [3, 2, 1, 1, "ba"],
+            [4, 3, 5, 2, "thoi"]
+          ],
+          "places": { "1": 1, "2": 2, "3": 3, "4": 4 }, "out": { "1": "done", "2": "done", "3": "done" },
+          "net": { "1": 6, "2": 7, "3": 7, "4": -20 }
+        }
+      },
+      {
+        "name": "example 3: tới trắng — every other player pays 2 S, no thối",
+        "order": [1, 2, 3, 4], "played": [], "hands": {},
+        "events": [{ "k": "trang", "seat": 3 }],
+        "expect": {
+          "lines": [[4, 3, 4, 4, "trang"], [1, 3, 4, 4, "trang"], [2, 3, 4, 4, "trang"]],
+          "places": {}, "out": {},
+          "net": { "1": -4, "2": -4, "3": 12, "4": -4 }
+        }
+      },
+      {
+        "name": "a seat that left after going out receives nothing more",
+        "order": [1, 2, 3, 4], "played": [1, 2, 3, 4], "hands": { "4": ["2S"] },
+        "events": [
+          { "k": "out", "seat": 1 }, { "k": "leave", "seat": 1 }, { "k": "out", "seat": 2 }, { "k": "out", "seat": 3 },
+          { "k": "end" }
+        ],
+        "expect": {
+          "lines": [[3, 2, 1, 1, "ba"], [4, 3, 1, 1, "thoi"]],
+          "places": { "1": 1, "2": 2, "3": 3, "4": 4 }, "out": { "1": "done", "2": "done", "3": "done" },
+          "net": { "1": 0, "2": 1, "3": 0, "4": -1 }
+        }
+      },
+      {
+        "name": "two players: the loser pays 1 S and its thối",
+        "order": [2, 4], "played": [2, 4], "hands": { "4": ["2D"] },
+        "events": [{ "k": "out", "seat": 2 }, { "k": "end" }],
+        "expect": {
+          "lines": [[4, 2, 2, 2, "bet"], [4, 2, 2, 2, "thoi"]],
+          "places": { "2": 1, "4": 2 }, "out": { "2": "done" },
+          "net": { "2": 4, "4": -4 }
+        }
+      },
+      {
+        "name": "three players: bét pays nhất 1 S",
+        "order": [1, 2, 3], "played": [1, 2, 3], "hands": { "2": ["3S"] },
+        "events": [{ "k": "out", "seat": 3 }, { "k": "out", "seat": 1 }, { "k": "end" }],
+        "expect": {
+          "lines": [[2, 3, 2, 2, "bet"]],
+          "places": { "3": 1, "1": 2, "2": 3 }, "out": { "3": "done", "1": "done" },
+          "net": { "1": 0, "2": -2, "3": 2 }
+        }
+      }
+    ]
+  }
+}
