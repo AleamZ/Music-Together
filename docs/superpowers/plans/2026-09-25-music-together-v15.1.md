@@ -11919,3 +11919,901 @@ git commit -m "fix(v15): v15.1 ignores the farm quality (anti-cheat D1)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+---
+
+### Task 20: The new farm prices (economy spec §3)
+
+Added on 2026-09-25.
+- **The owner set:** rent 10 000, land 800 000, and a profit of at least 50 000 for a well-cared season.
+- **Everything else follows the controller's recommendations:** `docs/superpowers/specs/2026-09-25-music-together-economy-design.md` §2 (E1–E6), §3 and §4.
+- **Scope:** only numbers change. No rule, flow or message changes, except that the three price checks are re-created by name, so running 0013 again on an existing database moves those checks too.
+
+**The values (economy spec §3):**
+
+| What | Old | New |
+|---|---|---|
+| Village rent (96 h, unchanged) | 250 | 10 000 |
+| Private plot | 4 000 | 800 000 |
+| Sell-back to the village, and the reclaim refund | 2 000 | 400 000 (still half) |
+| Sublease price range | 1–5 000 | 1–100 000 |
+| Sale listing and offer price range | 1–1 000 000 | 1–5 000 000 |
+| seed_short / seed_nep / seed_thom | 60 / 90 / 150 | 600 / 900 / 1 500 |
+| fert_manure / fert_phosphate / fert_urea / fert_potash / fert_npk | 40 / 50 / 60 / 60 / 90 | 400 / 500 / 600 / 600 / 900 |
+| spray_insect / spray_hopper / spray_fungus | 70 / 80 / 90 | 700 / 800 / 900 |
+| Dry rice xu/kg, short / nep / thom (wet stays 70 %) | 12 / 18 / 26 | 710 / 950 / 1 350 |
+
+**Files:**
+- Modify: `supabase/migrations/0013_v15_field.sql`:
+  - the seed rows (`rice_varieties` :24–27, `shop_items` :40–51);
+  - the inline price checks (:71, :72, :91), plus the named re-create block below;
+  - the land literals and their comments: rent :786/:804/:807/:809, buy :813/:835/:838, sell-back :845/:864, reclaim refund :601, list :868/:882, offer :951, sublease :1027/:1041.
+- Modify: `lib/game/farm/catalog.ts`: `RENT_PRICE`, `PLOT_PRICE`, `SELL_BACK_PRICE`, `SUBLEASE_MAX`, `SALE_MAX` (:55–60).
+- Modify: `tests/sql/v15-smoke.sql`: the balances and the land and rice amounts; new checks for the caps and the re-created constraints.
+- Modify: these unit tests, only where they assert the real constants or catalog-independent amounts:
+  - `tests/unit/farm-land.test.ts` (:19, :31, :43, :57, :74);
+  - `tests/unit/farm-panels.test.tsx`: the Coop part at :53, :152, :157, :165, :195–201;
+  - `tests/unit/farm-plot-panel.test.tsx` (:104, :110);
+  - `tests/unit/farm-overlays.test.tsx` (:20, :75).
+  
+  Mock catalogs with made-up prices (farm-catalog, farm-handbook, farm-crop, farm-rpc, farm-actions, use-farm-controller, game-crop-art, and the shop/depot parts of farm-panels) stay as they are.
+- Modify: `README.md`: the **Land** bullet (:271).
+- Modify: `docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md`:
+  - the §7 land numbers (:168, :174–175, :179, :185, :195, :225) and :688–689;
+  - the §8.1 table: xu/kg, and "Ripe after ≈", which is corrected to 52 / 58 / 66 h to match `2 + 56·s` and the code;
+  - the §9 price table (:429–439);
+  - the farming part of §10 (:448–466), replaced by a pointer to the economy spec §4 (the crab and snail part stays);
+  - the D1 sentence at :567, which still says "a modified client gains at most +10 %". v15.1 ignores the reported quality, so a modified client gains nothing from it.
+- Modify: `docs/superpowers/specs/2026-09-25-music-together-economy-design.md`: the hours in the §4 table become ≈52 / ≈58 / ≈66 h.
+
+**Interfaces:**
+- Consumes: Tasks 1–19. The land functions and the seeds are in 0013. `catalog.ts` holds the TS mirror. `formatXu` prints `10.000 xu`, `800.000 xu` and `400.000 xu`.
+- Produces:
+  - the constants above, same names and types;
+  - the checks `field_plots_sale_price_check`, `field_plots_sublease_price_check` and `land_offers_price_check`, with the new bounds, on fresh and on upgraded databases.
+  
+  The anti-cheat plan's `bad_price` bounds must use the new caps. The controller refreshes that plan after v15.1.
+
+- [ ] **Step 1: Move the tests to the new prices**
+
+**Unit tests.** Change only what the new constants break:
+- `farm-land.test.ts`:
+  - the refusal just below a price becomes `ctx([free], 9_999)` for rent and `ctx([p2], 799_999)` for the plot;
+  - the out-of-range offer becomes `5_000_001` and the out-of-range sublease `100_001`;
+  - the default balance (:19) becomes `1_000_000`, so the null refusals at :27 and :39 still pay rent and the plot.
+- `farm-panels.test.tsx`, Coop part:
+  - Give the renter enough for 10 000 xu. The rent click at :157 must still rent.
+  - The Coop part expects:
+    - `"Thuê · 10.000 xu"` for rent;
+    - `"Mua · 800.000 xu"` for the plot;
+    - for sell-back: `"Bán lại cho làng · 400.000 xu"`, `"Làng chỉ trả 400.000 xu (một nửa giá) — bán lại thửa 2?"` and `"… nhận 400.000 xu."`.
+  - The invalid sublease is `"100001"` (the button is disabled and shows `"Số không hợp lệ."`).
+  - If the balance at :53 is shared with the shop part, keep the shop assertions exactly as they are ("1000 xu buys 11 sacks of seed" against the mock seed price 90). Give the rent case its own balance instead.
+- `farm-plot-panel.test.tsx`: expects `"Thuê · 10.000 xu"` and `"Bán lại cho làng · 400.000 xu"`.
+- `farm-overlays.test.tsx`: expects a balance that pays 10 000 (:20) and `"Thuê · 10.000 xu"` (:75).
+
+**`tests/sql/v15-smoke.sql`.** Keep every scenario and every check's meaning: the same actor, the same action, the same ledger reason and the same refusal. Change only the amounts:
+- **Starting balances (:159–161).** Scale them so every flow stays affordable at the new prices. For example: a1 = 2 000 000, a2 = 50 000, a3 = 2 000 000. a2 rents four times, and each `set_coins(…, 100)` must still be refused.
+- **Land.** Rent is 10 000 (`delta = -10000`). The plot is 800 000 (`delta = -800000`). Sell-back and the reclaim refund are 400 000, including the comment at :286. Recompute every `pg_temp.coins(…) = …` that follows from these.
+- **Sublease range (:259).** `_farm_do_set_sublease(…, 100001, …)` is `'invalid price'`, and a sublease of 100 000 is accepted.
+- **Add the new caps next to the existing range checks:**
+  - `_farm_do_list(…, 5000001, …)` and `_farm_do_offer(…, 5000001, …)` are `'invalid price'`.
+  - A listing at 5 000 000 is accepted.
+  - The constraints reject what the RPCs would: `pg_temp.err('update public.field_plots set sale_price = 5000001 …')` and `… sublease_price = 100001 …` return a check violation. So does an insert into `land_offers` with price 5 000 001.
+- **Shop (:345–346).** Two manure cost 800 (`delta = -800`). The `set_coins(a2, 10)` refusal for seed_thom holds.
+- **Rice (:482–488).** Short sells dry at 710 xu/kg: 10 kg pays `+ 7100`. Wet pays 70 %: 5 kg pays floor(5 × 710 × 0.7) = `2485`. Update the comment at :482.
+- **Report.** List every number you changed, as `line: old → new`.
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `pnpm vitest run tests/unit/farm-land.test.ts tests/unit/farm-panels.test.tsx tests/unit/farm-plot-panel.test.tsx tests/unit/farm-overlays.test.tsx`
+Expected: failures on the new amounts, for example `"Thuê · 10.000 xu"` not found, and the land pre-checks at the new bounds.
+Then run the SQL as in Task 1 Step 4. Expected: `0013 ok`, `0013 re-run ok`, `v15 crop smoke ok`, then psql stops at the first land check that uses a new amount.
+
+- [ ] **Step 3: The new prices in 0013 and catalog.ts**
+
+**0013, the seeds.** Put the new values in:
+- the `price_per_kg` column of the three `rice_varieties` rows;
+- the `price` column of the eleven farm rows of `shop_items`.
+
+Change no other column.
+
+**0013, the land functions.** Use the new literals everywhere the old ones appear, comments included:
+- `_farm_do_rent`: 10000 in the balance check, `_pay`, and the lease `price`.
+- `_farm_do_buy`: 800000.
+- `_farm_do_sell_to_village`: 400000.
+- The reclaim refund in `_field_open`: 400000.
+- `_farm_do_list` and `_farm_do_offer`: `> 5000000`.
+- `_farm_do_set_sublease`: `> 100000`.
+
+Keep the comments' number style: `10 000 xu`, `800 000 xu`, `400 000 xu`, `1–5 000 000 xu`, `1–100 000 xu`.
+
+**0013, the checks.**
+1. In the `create table` statements, write the new bounds inline: `sale_price … between 1 and 5000000`, `sublease_price … between 1 and 100000`, `land_offers.price … between 1 and 5000000`.
+2. Right after the `create table if not exists public.land_offers (…);` statement, add exactly:
+
+```sql
+-- The price caps (economy spec §3.1), re-created by name so that running this file again moves an existing database too.
+alter table public.field_plots drop constraint if exists field_plots_sale_price_check;
+alter table public.field_plots add constraint field_plots_sale_price_check check (sale_price between 1 and 5000000);
+alter table public.field_plots drop constraint if exists field_plots_sublease_price_check;
+alter table public.field_plots add constraint field_plots_sublease_price_check check (sublease_price between 1 and 100000);
+alter table public.land_offers drop constraint if exists land_offers_price_check;
+alter table public.land_offers add constraint land_offers_price_check check (price between 1 and 5000000);
+```
+
+**lib/game/farm/catalog.ts.** Replace:
+
+```ts
+// The land rules' numbers — the server's constants in 0013 (spec §7).
+export const RENT_PRICE = 250;
+export const PLOT_PRICE = 4000;
+export const SELL_BACK_PRICE = 2000;
+export const LEASE_HOURS = 96;
+export const SUBLEASE_MAX = 5000;
+export const SALE_MAX = 1_000_000;
+```
+
+with:
+
+```ts
+// The land rules' numbers — the server's constants in 0013 (spec §7; the prices are economy spec §3.1).
+export const RENT_PRICE = 10_000;
+export const PLOT_PRICE = 800_000;
+export const SELL_BACK_PRICE = 400_000;
+export const LEASE_HOURS = 96;
+export const SUBLEASE_MAX = 100_000;
+export const SALE_MAX = 5_000_000;
+```
+
+- [ ] **Step 4: Run the tests and the smoke test**
+
+Run: `pnpm vitest run tests/unit/farm-land.test.ts tests/unit/farm-panels.test.tsx tests/unit/farm-plot-panel.test.tsx tests/unit/farm-overlays.test.tsx && pnpm tsc --noEmit`
+Expected: all pass, and tsc prints nothing.
+
+Then run the SQL as in Task 1 Step 4, with one addition. Before the smoke test, run 0013 a third time on a database where the old checks exist:
+
+```bash
+"$PG/psql" -p 5499 -U postgres -v ON_ERROR_STOP=1 -q -c "alter table public.field_plots drop constraint field_plots_sale_price_check; alter table public.field_plots add constraint field_plots_sale_price_check check (sale_price between 1 and 1000000);"
+"$PG/psql" -p 5499 -U postgres -v ON_ERROR_STOP=1 -q -f supabase/migrations/0013_v15_field.sql >/dev/null && echo "0013 upgrade ok"
+```
+
+This proves the re-create block replaces an old check.
+Expected:
+- no `FAILED`;
+- `0013 ok`, `0013 re-run ok` and `0013 upgrade ok`;
+- the smoke test prints `v15 crop smoke ok`, `v15 land smoke ok` and `v15 farm smoke ok`.
+
+- [ ] **Step 5: README and the specs**
+
+**README.md**, the **Land** bullet (:271):
+- "rent a village plot for 10 000 xu a 4-day season";
+- "buy one private plot per room for 800 000 xu";
+- "sell it back to the village for 400 000 xu";
+- "reclaimed with a 400 000 xu refund".
+
+Nothing else in the bullet changes.
+
+**The v15 spec:** make the edits listed under **Files**. Numbers use the spec's style (`10 000 xu`). The §10 farming part becomes one paragraph: "The farm numbers changed on 2026-09-25 (rent 10 000, plot 800 000, inputs ×10, rice 710 / 950 / 1 350 xu/kg). The per-variety profits, the poor-care and lost-crop cases and the time to buy land are in `2026-09-25-music-together-economy-design.md` §4." Keep the §10 heading, its v14 angler reference line, and the crab and snail part.
+
+**The economy spec, §4:** ≈54 h → ≈52 h, ≈60 h → ≈58 h, ≈69 h → ≈66 h.
+
+- [ ] **Step 6: Final checks**
+
+Run: `pnpm vitest run && pnpm tsc --noEmit && pnpm eslint lib/game/farm/catalog.ts tests/unit/farm-land.test.ts tests/unit/farm-panels.test.tsx tests/unit/farm-plot-panel.test.tsx tests/unit/farm-overlays.test.tsx`
+Expected:
+- the full suite passes, with the integration files skipped;
+- tsc prints nothing;
+- eslint exits 0.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add supabase/migrations/0013_v15_field.sql lib/game/farm/catalog.ts tests/sql/v15-smoke.sql tests/unit/farm-land.test.ts tests/unit/farm-panels.test.tsx tests/unit/farm-plot-panel.test.tsx tests/unit/farm-overlays.test.tsx README.md docs/superpowers/specs/2026-09-25-music-together-v15-field-design.md docs/superpowers/specs/2026-09-25-music-together-economy-design.md
+git commit -m "feat(v15): the new farm prices (rent 10 000, land 800 000, rice pays)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 21: The fish price index (economy spec §5)
+
+Added on 2026-09-25. The owner asked that fish prices follow the room: they start at today's prices in a poor room and rise with the room's average wealth, and they change every 3 hours with a random season factor. Spec: `docs/superpowers/specs/2026-09-25-music-together-economy-design.md` §5 (F1–F5). The anti-cheat plan re-creates `finish_cast` after this task, so it must keep the index pricing.
+
+**Files:**
+- Modify: `supabase/migrations/0013_v15_field.sql` (append section H: `fish_price_index`, 6 private helpers, and new versions of `finish_cast` and `fishing_board`)
+- Modify: `tests/sql/v15-smoke.sql` (append the fish price checks)
+- Create: `lib/game/fishing/prices.ts`
+- Create: `tests/unit/fishing-prices.test.ts`
+- Modify: `lib/game/fishing/rpc.ts` (`FishingBoard.prices`)
+- Modify: `components/game/fishing/RecordsPanel.tsx` (the **Giá cá** tab)
+- Modify: `tests/unit/fishing-rpc.test.ts`, `tests/unit/fishing-panels.test.tsx`
+- Modify: `tests/integration/v15.test.ts`
+- Modify: `README.md` (the v15 migration paragraph and the "What's new" list)
+
+**Interfaces:**
+- Consumes:
+  - 0012's `finish_cast(text, uuid, boolean)` and `fishing_board(uuid, text)`; this task re-creates both with the same signatures and grants.
+  - `members.last_seen_at` (0013 section A); `field_plots.owner_id`; `wallets.coins`; `fish_species.price_per_kg`.
+- Produces:
+  - **SQL (private):**
+    - `_fish_period(timestamptz) → bigint`
+    - `_room_wealth(uuid, timestamptz) → bigint`
+    - `_fish_mult(bigint) → numeric`
+    - `_fish_index(uuid, timestamptz) → fish_price_index`
+    - `_fish_factor(uuid, text, bigint) → numeric`
+    - `_fish_prices(uuid, timestamptz) → jsonb`
+  - **SQL (public):** `fishing_board(...)` returns an extra key, `prices`: `{mult, wealth, ends_at, factors: {species_id: factor}}`.
+  - **TS:**
+    - `FishPrices`, `parseFishPrices`, `nowPricePerKg`, `trend`, `formatMult` and `endsAtText` in `lib/game/fishing/prices.ts`;
+    - `FishingBoard.prices: FishPrices | null`.
+
+- [ ] **Step 1: Write the failing unit tests**
+
+Create `tests/unit/fishing-prices.test.ts` with exactly:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { endsAtText, formatMult, nowPricePerKg, parseFishPrices, trend, type FishPrices } from "@/lib/game/fishing/prices";
+
+const P: FishPrices = { mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12, ca_loc: 0.93 } };
+
+describe("fish prices (economy spec §5)", () => {
+  it("prices a species per kg now: base × the room's multiplier × its season factor", () => {
+    expect(nowPricePerKg({ id: "ca_ro", pricePerKg: 45 }, P)).toBe(113); // 45 × 2.24 × 1.12 = 112.896
+    expect(nowPricePerKg({ id: "ca_loc", pricePerKg: 60 }, P)).toBe(125); // 60 × 2.24 × 0.93 = 124.992
+    expect(nowPricePerKg({ id: "ca_ho", pricePerKg: 200 }, P)).toBe(448); // no factor: 1
+  });
+  it("marks the trend and formats the multiplier and the end of the period", () => {
+    expect([trend(1.12), trend(0.93), trend(1)]).toEqual(["▲", "▼", ""]);
+    expect(formatMult(2.24)).toBe("×2,24");
+    expect(formatMult(1)).toBe("×1,00");
+    expect(endsAtText("2026-09-25T08:00:00+00:00")).toBe("15:00");
+    expect(endsAtText("nope")).toBe("—");
+  });
+  it("reads the board's prices defensively", () => {
+    expect(parseFishPrices({ mult: 2.24, wealth: 100000, ends_at: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12, bad: "x" } }))
+      .toEqual({ mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12 } });
+    expect(parseFishPrices(undefined)).toBeNull();
+    expect(parseFishPrices({ mult: 0.5, ends_at: "2026-09-25T08:00:00+00:00" })).toBeNull();
+    expect(parseFishPrices({ mult: 2, ends_at: 5 })).toBeNull();
+    expect(parseFishPrices({ mult: 2, wealth: "?", ends_at: "2026-09-25T08:00:00+00:00" }))
+      .toEqual({ mult: 2, wealth: 0, endsAt: "2026-09-25T08:00:00+00:00", factors: {} });
+  });
+});
+```
+
+**tests/unit/fishing-rpc.test.ts — edit 1 of 1.** Replace:
+
+```ts
+      richest: [{ username: "Dat", coins: 900 }], myRank: 2, myCoins: 30,
+    });
+  });
+```
+
+with:
+
+```ts
+      richest: [{ username: "Dat", coins: 900 }], myRank: 2, myCoins: 30, prices: null,
+    });
+  });
+  it("maps the board's fish prices", async () => {
+    h.rpc.mockResolvedValue({ data: {
+      records: [], mine: [], richest: [], my_rank: 1, my_coins: 0,
+      prices: { mult: 2.24, wealth: 100000, ends_at: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12 } },
+    }, error: null });
+    expect((await fetchFishingBoard("room", "tok")).prices).toEqual(
+      { mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12 } });
+  });
+```
+
+**tests/unit/fishing-panels.test.tsx — edit 1 of 2.** Replace:
+
+```tsx
+    richest: [{ username: "Dat", coins: 900 }, { username: "An", coins: 120 }], myRank: 2, myCoins: 120,
+  };
+```
+
+with:
+
+```tsx
+    richest: [{ username: "Dat", coins: 900 }, { username: "An", coins: 120 }], myRank: 2, myCoins: 120,
+    prices: { mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12, ca_loc: 0.93 } },
+  };
+```
+
+**tests/unit/fishing-panels.test.tsx — edit 2 of 2.** Replace:
+
+```tsx
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+```
+
+with:
+
+```tsx
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+  it("shows the room's fish prices: the multiplier, when they change, and each species now", async () => {
+    render(<RecordsPanel catalog={CATALOG} load={async () => BOARD} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
+    expect(await screen.findByText("Hệ số phòng ×2,24 · tài sản trung bình 100.000 xu · giá đổi lúc 15:00")).toBeInTheDocument();
+    const [, ro, loc] = screen.getAllByRole("row");
+    expect(within(ro).getByText("45 xu/kg")).toBeInTheDocument();
+    expect(within(ro).getByText("113 xu/kg ▲")).toBeInTheDocument();
+    expect(within(loc).getByText("60 xu/kg")).toBeInTheDocument();
+    expect(within(loc).getByText("125 xu/kg ▼")).toBeInTheDocument();
+    expect(screen.getByText("Giá chốt lúc câu được cá; bán sau vẫn giữ giá đó.")).toBeInTheDocument();
+  });
+  it("says so when the server sends no fish prices", async () => {
+    render(<RecordsPanel catalog={CATALOG} load={async () => ({ ...BOARD, prices: null })} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
+    expect(await screen.findByText("Chưa có bảng giá.")).toBeInTheDocument();
+  });
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `pnpm vitest run tests/unit/fishing-prices.test.ts tests/unit/fishing-rpc.test.ts tests/unit/fishing-panels.test.tsx`
+Expected:
+- `fishing-prices.test.ts` fails to import `@/lib/game/fishing/prices`.
+- In `fishing-rpc.test.ts`, "maps the board" fails, because `prices` is missing from the result, and "maps the board's fish prices" fails.
+- In `fishing-panels.test.tsx`, both new tests fail: there is no "Giá cá" tab.
+
+- [ ] **Step 3: The prices module, the board and the tab**
+
+Create `lib/game/fishing/prices.ts` with exactly:
+
+```ts
+import type { FishSpecies } from "./catalog";
+
+/** The room's fish price index from fishing_board (economy spec §5): the multiplier, the average wealth behind it,
+ *  when the 3-hour period ends, and each species' season factor. */
+export interface FishPrices {
+  mult: number;
+  wealth: number;
+  endsAt: string;
+  factors: Record<string, number>;
+}
+
+/** A species' price per kg now: base × the room's multiplier × its season factor (a missing factor counts as 1). */
+export function nowPricePerKg(species: Pick<FishSpecies, "id" | "pricePerKg">, prices: FishPrices): number {
+  return Math.round(species.pricePerKg * prices.mult * (prices.factors[species.id] ?? 1));
+}
+
+/** ▲ when the season factor is above 1, ▼ below 1, nothing at exactly 1. */
+export function trend(factor: number): "▲" | "▼" | "" {
+  return factor > 1 ? "▲" : factor < 1 ? "▼" : "";
+}
+
+/** "×2,24": two decimals with the Vietnamese comma. */
+export function formatMult(m: number): string {
+  return `×${m.toFixed(2).replace(".", ",")}`;
+}
+
+/** "15:00": when the period ends, in Vietnam time; "—" for an unreadable time. */
+export function endsAtText(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Ho_Chi_Minh" }).format(d);
+}
+
+/** fishing_board's `prices`, read defensively: anything malformed gives null (a server without the index). */
+export function parseFishPrices(v: unknown): FishPrices | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const mult = Number(o.mult);
+  if (!Number.isFinite(mult) || mult < 1 || typeof o.ends_at !== "string") return null;
+  const wealth = Number(o.wealth);
+  const factors: Record<string, number> = {};
+  if (o.factors && typeof o.factors === "object") {
+    for (const [id, f] of Object.entries(o.factors as Record<string, unknown>)) {
+      const n = Number(f);
+      if (Number.isFinite(n) && n > 0) factors[id] = n;
+    }
+  }
+  return { mult, wealth: Number.isFinite(wealth) ? wealth : 0, endsAt: o.ends_at, factors };
+}
+```
+
+**lib/game/fishing/rpc.ts — edit 1 of 3.** Replace:
+
+```ts
+import { parseFishingState, type FishingState, type Loadout } from "./state";
+```
+
+with:
+
+```ts
+import { parseFishPrices, type FishPrices } from "./prices";
+import { parseFishingState, type FishingState, type Loadout } from "./state";
+```
+
+**lib/game/fishing/rpc.ts — edit 2 of 3.** Replace:
+
+```ts
+  myRank: number;
+  myCoins: number;
+}
+```
+
+with:
+
+```ts
+  myRank: number;
+  myCoins: number;
+  /** The room's fish price index (economy spec §5); null from a server without it. */
+  prices: FishPrices | null;
+}
+```
+
+**lib/game/fishing/rpc.ts — edit 3 of 3.** Replace:
+
+```ts
+    myCoins: Number(r.my_coins ?? 0),
+  };
+```
+
+with:
+
+```ts
+    myCoins: Number(r.my_coins ?? 0),
+    prices: parseFishPrices(r.prices),
+  };
+```
+
+**components/game/fishing/RecordsPanel.tsx — edit 1 of 4.** Replace:
+
+```tsx
+import type { FishingBoard } from "@/lib/game/fishing/rpc";
+
+type Tab = "records" | "richest";
+
+/** 🏆 Bảng kỷ lục (spec §10.2): the room's record per species next to my best, and the room's richest members. */
+```
+
+with:
+
+```tsx
+import { endsAtText, formatMult, nowPricePerKg, trend } from "@/lib/game/fishing/prices";
+import type { FishingBoard } from "@/lib/game/fishing/rpc";
+
+type Tab = "records" | "richest" | "prices";
+
+/** 🏆 Bảng kỷ lục (spec §10.2): the room's record per species next to my best, the room's richest members, and the
+ *  room's fish prices now (economy spec §5.8). */
+```
+
+**components/game/fishing/RecordsPanel.tsx — edit 2 of 4.** Replace:
+
+```tsx
+  const tabButton = (t: Tab, label: string) => (
+```
+
+with:
+
+```tsx
+  const prices = board?.prices ?? null;
+  const tabButton = (t: Tab, label: string) => (
+```
+
+**components/game/fishing/RecordsPanel.tsx — edit 3 of 4.** Replace:
+
+```tsx
+          {tabButton("richest", "Đại gia")}
+        </div>
+```
+
+with:
+
+```tsx
+          {tabButton("richest", "Đại gia")}
+          {tabButton("prices", "Giá cá")}
+        </div>
+```
+
+**components/game/fishing/RecordsPanel.tsx — edit 4 of 4.** Replace:
+
+```tsx
+            <p className="text-burgundy">Bạn: hạng {board.myRank} · {formatXu(board.myCoins)}</p>
+          </>
+        )}
+```
+
+with:
+
+```tsx
+            <p className="text-burgundy">Bạn: hạng {board.myRank} · {formatXu(board.myCoins)}</p>
+          </>
+        )}
+        {board && tab === "prices" && (
+          prices ? (
+            <>
+              <p>
+                Hệ số phòng {formatMult(prices.mult)} · tài sản trung bình {formatXu(prices.wealth)} · giá đổi lúc{" "}
+                {endsAtText(prices.endsAt)}
+              </p>
+              <table className="w-full text-left">
+                <thead className="text-base opacity-80">
+                  <tr><th>Loài</th><th>Gốc</th><th>Bây giờ</th></tr>
+                </thead>
+                <tbody>
+                  {(catalog?.species ?? []).map((s) => (
+                    <tr key={s.id}>
+                      <td className="flex items-center gap-1.5 py-0.5">
+                        <ItemIcon id={s.id} scale={2} />
+                        <span style={{ color: RARITY_COLOR[s.rarity] }}>{s.name}</span>
+                      </td>
+                      <td>{formatXu(s.pricePerKg)}/kg</td>
+                      <td>{formatXu(nowPricePerKg(s, prices))}/kg {trend(prices.factors[s.id] ?? 1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-base opacity-80">Giá chốt lúc câu được cá; bán sau vẫn giữ giá đó.</p>
+            </>
+          ) : (
+            <p className="opacity-70">Chưa có bảng giá.</p>
+          )
+        )}
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `pnpm vitest run tests/unit/fishing-prices.test.ts tests/unit/fishing-rpc.test.ts tests/unit/fishing-panels.test.tsx && pnpm tsc --noEmit`
+Expected: all three files pass, and tsc prints nothing.
+
+- [ ] **Step 5: Expect the index in the smoke test**
+
+**tests/sql/v15-smoke.sql.** Append at the end of the file, after a blank line:
+
+```sql
+-- ---------- the fish price index (economy spec §5) ----------
+insert into smoke select 'froom', room_id::text from public.create_room('Ao giá', 'pw', (select v from smoke where k = 't2'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'froom')::uuid), 'pw',
+                        (select v from smoke where k = 't1'));
+
+do $$
+declare room uuid := (select v from smoke where k = 'froom')::uuid;
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        p1 bigint; p2 bigint; w bigint; r public.fish_price_index; cid uuid; res jsonb; b jsonb;
+begin
+  -- the law (§5.3) and the 3-hour Vietnam periods (§5.4)
+  assert public._fish_mult(0) = 1 and public._fish_mult(20000) = 1 and public._fish_mult(100000) = 2.24
+     and public._fish_mult(500000) = 5 and public._fish_mult(1000000) = 7.07 and public._fish_mult(2000000) = 10
+     and public._fish_mult(90000000) = 10, 'the multiplier law';
+  assert public._fish_period('2026-01-01 03:00:00+07') = public._fish_period('2026-01-01 00:00:00+07') + 1
+     and public._fish_period('2026-01-01 02:59:59+07') = public._fish_period('2026-01-01 00:00:00+07'), '3-hour periods, VN time';
+  -- the wealth (§5.2): the average of xu + 800 000 per private plot owned, over the members seen in the last 14 days
+  insert into public.wallets (account_id, coins) values (a1, 150000), (a2, 50000)
+  on conflict (account_id) do update set coins = excluded.coins;
+  p1 := (select count(*) from public.field_plots where owner_id = a1);
+  p2 := (select count(*) from public.field_plots where owner_id = a2);
+  w := ((150000 + 800000 * p1) + (50000 + 800000 * p2)) / 2;
+  assert public._room_wealth(room, now()) = w, 'the average assets of the active members';
+  update public.members set last_seen_at = now() - interval '15 days', joined_at = now() - interval '20 days'
+   where room_id = room and account_id = a1;
+  assert public._room_wealth(room, now()) = 50000 + 800000 * p2, 'a member away 14 days does not count';
+  update public.members set last_seen_at = now() where room_id = room and account_id = a1;
+  -- the snapshot (§5.5)
+  r := public._fish_index(room, now());
+  assert r.period = public._fish_period(now()) and r.wealth = w and r.mult = public._fish_mult(w), 'the snapshot';
+  -- the season factors (§5.6): deterministic, in [0.80, 1.39]
+  assert (select min(public._fish_factor(room, s.id, g)) >= 0.80 and max(public._fish_factor(room, s.id, g)) <= 1.39
+            from public.fish_species s, generate_series(0, 200) g), 'factors in range';
+  assert public._fish_factor(room, 'ca_ro', 7) = public._fish_factor(room, 'ca_ro', 7), 'factors are deterministic';
+  -- a catch (§5.7): base × kg × M × S of the room's snapshot, stored with the fish
+  delete from public.fish where account_id = a1;
+  insert into public.casts (account_id, room_id, species_id, weight_g, min_reel_ms, bite_at, expires_at)
+  values (a1, room, 'ca_ro', 200, 2000, now() - interval '10 seconds', now() + interval '60 seconds')
+  on conflict (account_id) do update set id = gen_random_uuid(), room_id = excluded.room_id, species_id = excluded.species_id,
+    weight_g = excluded.weight_g, min_reel_ms = excluded.min_reel_ms, bite_at = excluded.bite_at, expires_at = excluded.expires_at
+  returning id into cid;
+  res := public.finish_cast((select v from smoke where k = 't1'), cid, true);
+  assert res->>'result' = 'caught'
+     and (res->'fish'->>'price')::int
+         = greatest(1, round(45 * 200 / 1000.0 * r.mult * public._fish_factor(room, 'ca_ro', r.period))::int)
+     and (select price from public.fish where id = (res->'fish'->>'id')::uuid) = (res->'fish'->>'price')::int,
+    'the catch is priced by the index';
+  -- the board (§5.7)
+  b := public.fishing_board(room, (select v from smoke where k = 't1'))->'prices';
+  assert (b->>'mult')::numeric = r.mult and (b->>'wealth')::bigint = w
+     and (b->>'ends_at')::timestamptz = to_timestamp((r.period + 1) * 10800 - 25200)
+     and (select count(*) from jsonb_object_keys(b->'factors')) = (select count(*) from public.fish_species)
+     and (b->'factors'->>'ca_ro')::numeric = public._fish_factor(room, 'ca_ro', r.period), 'the board shows the index';
+  -- inside its period the snapshot holds; the next period recomputes it
+  update public.wallets set coins = coins + 100000000 where account_id = a1;
+  assert (public._fish_index(room, now())).mult = r.mult, 'stable inside its period';
+  assert (public._fish_index(room, now() + interval '3 hours')).mult = 10, 'recomputed in the next period';
+  assert not has_table_privilege('anon', 'public.fish_price_index', 'select'), 'the index is private';
+end $$;
+
+select 'v15 fish price smoke ok' as result;
+```
+
+- [ ] **Step 6: Run the smoke test to verify it fails**
+
+Run the same commands as Task 1 Step 4: a fresh throwaway cluster on port 5499, `export PGCLIENTENCODING=UTF8`, run from the repo root.
+Expected:
+- `0013 ok` and `0013 re-run ok`;
+- the smoke test prints `v15 crop smoke ok`, `v15 land smoke ok` and `v15 farm smoke ok`;
+- psql then stops inside the fish price block with an error that `public.fish_price_index` (type) or `public._fish_mult` does not exist.
+
+- [ ] **Step 7: The fish price index in 0013**
+
+**supabase/migrations/0013_v15_field.sql.** Append at the end of the file, after a blank line:
+
+```sql
+-- ---------- H. The fish price index (economy spec §5): the room's wealth sets a 3-hourly multiplier ----------
+create table if not exists public.fish_price_index (                -- one snapshot per room, replaced each 3-hour period
+  room_id uuid primary key references public.rooms(id) on delete cascade,
+  period bigint not null,
+  wealth bigint not null check (wealth >= 0),
+  mult numeric(5,2) not null check (mult between 1 and 10),
+  computed_at timestamptz not null
+);
+alter table public.fish_price_index enable row level security;
+revoke all on public.fish_price_index from public, anon, authenticated;
+
+-- 3-hour periods aligned to Vietnam time: boundaries at 00:00, 03:00, …, 21:00 (UTC+7) (§5.4).
+create or replace function public._fish_period(p_now timestamptz) returns bigint
+language sql immutable set search_path = public, extensions
+as $$ select floor((extract(epoch from p_now) + 25200) / 10800)::bigint $$;
+
+-- The floor of the average assets (xu plus 800 000 per private plot owned, in any room) of the room's members seen
+-- in the last 14 days (§5.2); 0 when there are none.
+create or replace function public._room_wealth(p_room uuid, p_now timestamptz) returns bigint
+language sql stable security definer set search_path = public, extensions
+as $$
+  select coalesce(floor(avg(coalesce(w.coins, 0)
+                            + 800000 * (select count(*) from public.field_plots fp where fp.owner_id = m.account_id))), 0)::bigint
+    from public.members m
+    left join public.wallets w on w.account_id = m.account_id
+   where m.room_id = p_room and coalesce(m.last_seen_at, m.joined_at) > p_now - interval '14 days'
+$$;
+
+-- M = round(least(10, greatest(1, sqrt(W / 20 000))), 2) (§5.3).
+create or replace function public._fish_mult(p_wealth bigint) returns numeric
+language sql immutable set search_path = public, extensions
+as $$ select round(least(10, greatest(1, sqrt(greatest(p_wealth, 0) / 20000.0))), 2) $$;
+
+-- The room's snapshot for the period of p_now (§5.5): stored the first time the period is asked for; concurrent
+-- first callers all end up with the first snapshot written.
+create or replace function public._fish_index(p_room uuid, p_now timestamptz) returns public.fish_price_index
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_period bigint := public._fish_period(p_now); v_wealth bigint; r public.fish_price_index;
+begin
+  select * into r from public.fish_price_index where room_id = p_room;
+  if found and r.period >= v_period then
+    return r;
+  end if;
+  v_wealth := public._room_wealth(p_room, p_now);
+  insert into public.fish_price_index (room_id, period, wealth, mult, computed_at)
+  values (p_room, v_period, v_wealth, public._fish_mult(v_wealth), p_now)
+  on conflict (room_id) do update
+    set period = excluded.period, wealth = excluded.wealth, mult = excluded.mult, computed_at = excluded.computed_at
+    where public.fish_price_index.period < excluded.period;
+  select * into r from public.fish_price_index where room_id = p_room;
+  return r;
+end; $$;
+
+-- S = trunc(0.80 + 0.60 × h, 2), h from the first 32 bits of md5(room:species:period) (§5.6): in [0.80, 1.39].
+create or replace function public._fish_factor(p_room uuid, p_species text, p_period bigint) returns numeric
+language sql immutable set search_path = public, extensions
+as $$
+  select trunc(0.80 + 0.60 * (('x' || left(md5(p_room::text || ':' || p_species || ':' || p_period::text), 8))::bit(32)::bigint
+                              / 4294967296.0), 2)
+$$;
+
+-- What the board shows (§5.7): the multiplier, the wealth behind it, when the period ends and every species' factor.
+create or replace function public._fish_prices(p_room uuid, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare r public.fish_price_index := public._fish_index(p_room, p_now);
+begin
+  return jsonb_build_object(
+    'mult', r.mult, 'wealth', r.wealth, 'ends_at', to_timestamp((r.period + 1) * 10800 - 25200),
+    'factors', coalesce((select jsonb_object_agg(s.id, public._fish_factor(p_room, s.id, r.period)) from public.fish_species s),
+                        '{}'::jsonb));
+end; $$;
+
+-- v14's finish_cast (0012) with one change: the catch is priced with the room's fish price index (§5.7).
+create or replace function public.finish_cast(p_session_token text, p_cast_id uuid, p_success boolean) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; c public.casts; sp public.fish_species; v_fish uuid; v_price integer; v_prev integer;
+        v_record boolean := false; v_name text; v_why text;
+        r public.fish_price_index; v_mult numeric := 1; v_factor numeric := 1;
+begin
+  v_account := public._auth_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  -- single use: the cast is gone whatever happens next (lost outcomes return instead of raising, so the delete stays)
+  delete from public.casts where account_id = v_account and id = p_cast_id returning * into c;
+  if not found then
+    raise exception 'cast not found' using errcode = '22023';
+  end if;
+  if now() > c.expires_at then
+    v_why := 'expired';
+  elsif not coalesce(p_success, false) then
+    v_why := 'gave_up';
+  elsif now() < c.bite_at + make_interval(secs => 0.9 * c.min_reel_ms / 1000.0) then
+    v_why := 'too_early';
+  elsif (select count(*) from public.fish where account_id = v_account) >= 1 + public._bucket_cap(v_account) then
+    v_why := 'full';
+  end if;
+  if v_why is not null then
+    return jsonb_build_object('result', 'lost', 'why', v_why, 'state', public._fishing_state(v_account));
+  end if;
+  select * into sp from public.fish_species where id = c.species_id;
+  -- the room's fish price index at the catch (economy spec §5.7); a cast whose room is gone keeps the base price
+  if c.room_id is not null and exists (select 1 from public.rooms where id = c.room_id) then
+    r := public._fish_index(c.room_id, now());
+    v_mult := r.mult;
+    v_factor := public._fish_factor(c.room_id, sp.id, r.period);
+  end if;
+  v_price := greatest(1, round(sp.price_per_kg * c.weight_g / 1000.0 * v_mult * v_factor)::int);
+  insert into public.fish (account_id, species_id, weight_g, price) values (v_account, sp.id, c.weight_g, v_price)
+  returning id into v_fish;
+  select weight_g into v_prev from public.personal_bests where account_id = v_account and species_id = sp.id;
+  if v_prev is null or c.weight_g > v_prev then
+    v_record := true;
+    insert into public.personal_bests (account_id, species_id, weight_g, caught_at)
+    values (v_account, sp.id, c.weight_g, now())
+    on conflict (account_id, species_id) do update set weight_g = excluded.weight_g, caught_at = excluded.caught_at;
+  end if;
+  -- rare+ catches are announced in the room's chat (spec §8.5)
+  if sp.rarity >= 3 and c.room_id is not null and exists (select 1 from public.rooms where id = c.room_id) then
+    select username into v_name from public.accounts where id = v_account;
+    insert into public.chat_messages (room_id, account_id, username, body)
+    values (c.room_id, null, 'Ao cá',
+            format('[catch:%s|%s|%s] 🎣 %s vừa câu được %s %s (%s)!', v_account, sp.id, c.weight_g, v_name, sp.name,
+                   public._weight_text(c.weight_g), (array['Thường','Khá','Hiếm','Quý','Huyền thoại'])[sp.rarity]));
+    delete from public.chat_messages
+     where room_id = c.room_id
+       and id not in (select id from public.chat_messages where room_id = c.room_id order by created_at desc limit 200);
+  end if;
+  return jsonb_build_object('result', 'caught',
+    'fish', jsonb_build_object('id', v_fish, 'species_id', sp.id, 'weight_g', c.weight_g, 'price', v_price, 'rarity', sp.rarity),
+    'record', v_record,
+    'state', public._fishing_state(v_account));
+end; $$;
+
+-- v14's fishing_board (0012) plus the room's fish prices (§5.7).
+create or replace function public.fishing_board(p_room_id uuid, p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_coins integer; v_rank integer;
+begin
+  perform public._auth(p_room_id, p_session_token, 'any');
+  v_account := public._auth_account(p_session_token);
+  v_coins := coalesce((select coins from public.wallets where account_id = v_account), 0);
+  select 1 + count(*) into v_rank
+    from public.members m join public.wallets w on w.account_id = m.account_id
+   where m.room_id = p_room_id and w.coins > v_coins;
+  return jsonb_build_object(
+    'records', coalesce((
+      select jsonb_agg(jsonb_build_object('species_id', r.species_id, 'username', r.username, 'weight_g', r.weight_g)
+                       order by r.species_id)
+        from (select distinct on (pb.species_id) pb.species_id, a.username, pb.weight_g
+                from public.personal_bests pb
+                join public.members m on m.account_id = pb.account_id and m.room_id = p_room_id
+                join public.accounts a on a.id = pb.account_id
+               order by pb.species_id, pb.weight_g desc, pb.caught_at asc) r), '[]'::jsonb),
+    'mine', coalesce((
+      select jsonb_agg(jsonb_build_object('species_id', species_id, 'weight_g', weight_g) order by species_id)
+        from public.personal_bests where account_id = v_account), '[]'::jsonb),
+    'richest', coalesce((
+      select jsonb_agg(jsonb_build_object('username', t.username, 'coins', t.coins) order by t.coins desc, t.username)
+        from (select a.username, w.coins
+                from public.members m
+                join public.wallets w on w.account_id = m.account_id
+                join public.accounts a on a.id = m.account_id
+               where m.room_id = p_room_id and w.coins > 0
+               order by w.coins desc, a.username
+               limit 10) t), '[]'::jsonb),
+    'my_rank', v_rank,
+    'my_coins', v_coins,
+    'prices', public._fish_prices(p_room_id, now()));
+end; $$;
+
+revoke all on function public._fish_period(timestamptz) from public, anon, authenticated;
+revoke all on function public._room_wealth(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._fish_mult(bigint) from public, anon, authenticated;
+revoke all on function public._fish_index(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._fish_factor(uuid, text, bigint) from public, anon, authenticated;
+revoke all on function public._fish_prices(uuid, timestamptz) from public, anon, authenticated;
+grant execute on function public.finish_cast(text, uuid, boolean) to anon, authenticated;
+grant execute on function public.fishing_board(uuid, text) to anon, authenticated;
+```
+
+Two notes:
+- `finish_cast` and `fishing_board` are 0012's functions, copied byte for byte except for the lines marked §5.7.
+- `create or replace` keeps their grants. The two `grant` lines restate them for readers.
+
+- [ ] **Step 8: Run the smoke test**
+
+Run the same commands as Task 1 Step 4.
+Expected:
+- no `FAILED` line;
+- `0013 ok` and `0013 re-run ok`;
+- the smoke test prints `v15 crop smoke ok`, `v15 land smoke ok`, `v15 farm smoke ok` and `v15 fish price smoke ok`.
+
+`tests/sql/v14-smoke.sql` still runs after 0012 only, as its header says. After 0013 its catch-price check no longer holds, because prices now carry the room's factor.
+
+- [ ] **Step 9: The integration test and the README**
+
+**tests/integration/v15.test.ts — edit 1 of 1.** Replace:
+
+```ts
+    for (const table of ["field_plots", "crops", "rice_stock", "land_offers"]) {
+      expect((await db.from(table).select("*")).error, table).not.toBeNull();
+    }
+  });
+```
+
+with:
+
+```ts
+    for (const table of ["field_plots", "crops", "rice_stock", "land_offers", "fish_price_index"]) {
+      expect((await db.from(table).select("*")).error, table).not.toBeNull();
+    }
+  });
+
+  it("prices fish by the room: a new room pays today's prices, with a season factor per species", async () => {
+    const me = await reg();
+    const r = await room(me.token);
+    const b = await db.rpc("fishing_board", { p_room_id: r.room_id, p_session_token: me.token });
+    expect(b.error).toBeNull();
+    const p = (b.data as { prices: { mult: number; wealth: number; ends_at: string; factors: Record<string, number> } }).prices;
+    expect(p.mult).toBe(1);
+    expect(p.wealth).toBe(0);
+    expect(Date.parse(p.ends_at) - Date.now()).toBeLessThanOrEqual(3 * 3600_000);
+    const { data: species } = await db.from("fish_species").select("id");
+    expect(Object.keys(p.factors).sort()).toEqual((species ?? []).map((s) => s.id).sort());
+    expect(Object.values(p.factors).every((f) => f >= 0.8 && f <= 1.39)).toBe(true);
+  });
+```
+
+**README.md — edit 1 of 2.** Replace:
+
+```markdown
+It also limits `buy_item` to fishing gear and adds `server_now` to the fishing state.
+```
+
+with:
+
+```markdown
+It also limits `buy_item` to fishing gear, adds `server_now` to the fishing state, prices every catch with the room's fish price index (`finish_cast`; the private table `fish_price_index` keeps one snapshot per room and 3-hour period) and adds the index to `fishing_board`.
+```
+
+**README.md — edit 2 of 2.** Replace:
+
+```markdown
+- The fishing prompts now count down on the server's clock.
+```
+
+with:
+
+```markdown
+- The fishing prompts now count down on the server's clock.
+- **Giá cá:** fish prices follow the room. Every 3 hours (00:00, 03:00, … Vietnam time) the room's multiplier is set from the average wealth of the members seen in the last 14 days (xu plus 800 000 per private plot owned): ×1 up to 20 000 xu, then the square root of wealth ÷ 20 000, at most ×10. Each species also gets a season factor from ×0.80 to ×1.39. A fish's price is fixed when it is caught. The records panel's **Giá cá** tab shows the multiplier, when it changes and every species' price now.
+```
+
+- [ ] **Step 10: Final checks**
+
+Run: `pnpm vitest run && pnpm tsc --noEmit && pnpm eslint lib/game/fishing/prices.ts lib/game/fishing/rpc.ts components/game/fishing/RecordsPanel.tsx tests/unit/fishing-prices.test.ts tests/unit/fishing-rpc.test.ts tests/unit/fishing-panels.test.tsx tests/integration/v15.test.ts`
+Expected:
+- the full suite passes, with the integration files skipped;
+- tsc prints nothing;
+- eslint exits 0.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add supabase/migrations/0013_v15_field.sql tests/sql/v15-smoke.sql lib/game/fishing/prices.ts tests/unit/fishing-prices.test.ts lib/game/fishing/rpc.ts components/game/fishing/RecordsPanel.tsx tests/unit/fishing-rpc.test.ts tests/unit/fishing-panels.test.tsx tests/integration/v15.test.ts README.md
+git commit -m "feat(v15): fish prices follow the room's wealth every 3 hours
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
