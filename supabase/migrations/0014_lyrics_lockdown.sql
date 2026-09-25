@@ -46,7 +46,9 @@ end; $$;
 revoke all on function public._lyrics_writer(uuid,text,text) from public, anon, authenticated;
 
 -- ---------- D. upsert_video_lyrics (DJ only) ----------
--- Old semantics kept: null fields keep the stored value, an offset of 0 or null keeps the stored offset, updated_at = now().
+-- The row becomes exactly what the DJ applied: names, both lyrics fields and the timing source are replaced as sent
+-- (null included); the offset is stored whenever it is not null, 0 included (null keeps the stored one; a new row
+-- gets 0). updated_at = now(). The client always sends the full record and its current offset.
 create or replace function public.upsert_video_lyrics(
   p_room_id uuid, p_session_token text, p_video_id text,
   p_track_name text, p_artist_name text, p_synced_lyrics text, p_plain_lyrics text,
@@ -76,15 +78,12 @@ begin
     coalesce(p_offset_ms, 0), p_timing_source, v_name, now()
   )
   on conflict (youtube_video_id) do update set
-    track_name = coalesce(excluded.track_name, video_lyrics.track_name),
-    artist_name = coalesce(excluded.artist_name, video_lyrics.artist_name),
-    synced_lyrics = coalesce(excluded.synced_lyrics, video_lyrics.synced_lyrics),
-    plain_lyrics = coalesce(excluded.plain_lyrics, video_lyrics.plain_lyrics),
-    offset_ms = case
-      when excluded.offset_ms is not null and excluded.offset_ms <> 0 then excluded.offset_ms
-      else video_lyrics.offset_ms
-    end,
-    timing_source = coalesce(excluded.timing_source, video_lyrics.timing_source),
+    track_name = excluded.track_name,
+    artist_name = excluded.artist_name,
+    synced_lyrics = excluded.synced_lyrics,
+    plain_lyrics = excluded.plain_lyrics,
+    offset_ms = coalesce(p_offset_ms, video_lyrics.offset_ms),
+    timing_source = excluded.timing_source,
     updated_by_name = excluded.updated_by_name,
     updated_at = now();
 end;

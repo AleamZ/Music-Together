@@ -156,7 +156,7 @@ begin
   assert not exists (select 1 from public.video_lyrics), 'a refused call must not write';
 end $$;
 
--- ---------- 4. the DJ writes: limits accepted, name from the account, old upsert semantics kept ----------
+-- ---------- 4. the DJ writes: limits accepted, name from the account, the row = what the DJ applied ----------
 do $$
 declare dj text := (select v from smoke where k = 'dj'); room uuid := (select v from smoke where k = 'room')::uuid;
         dj_name text; r public.video_lyrics%rowtype;
@@ -184,26 +184,33 @@ begin
   assert r.track_name = repeat('t', 200) and r.artist_name = repeat('a', 200) and r.synced_lyrics = repeat('ể', 20000)
      and r.plain_lyrics = repeat('p', 20000) and r.offset_ms = 60000 and r.timing_source = 'auto', 'first write stored';
 
-  -- null fields keep the stored value; an offset of 0 keeps the stored offset
+  -- the row becomes exactly what the DJ applied: plain-only lyrics clear the stored synced text, names and the
+  -- timing source are replaced as sent (null included), and an offset of 0 is stored as 0
   update public.video_lyrics set updated_at = now() - interval '1 day', updated_by_name = 'Hacker' where youtube_video_id = 'dQw4w9WgXcQ';
-  perform public.upsert_video_lyrics(room, dj, 'dQw4w9WgXcQ', null, null, '[00:02.00]new', null, 0, null);
+  perform public.upsert_video_lyrics(room, dj, 'dQw4w9WgXcQ', 'Plain song', null, null, 'plain words', 0, 'custom');
   select * into r from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ';
-  assert r.track_name = repeat('t', 200) and r.artist_name = repeat('a', 200) and r.synced_lyrics = '[00:02.00]new'
-     and r.plain_lyrics = repeat('p', 20000) and r.offset_ms = 60000 and r.timing_source = 'auto', 'coalesce of non-null fields';
+  assert r.synced_lyrics is null and r.plain_lyrics = 'plain words',
+         format('plain-only upsert: synced %L, plain %L', left(r.synced_lyrics, 12), left(r.plain_lyrics, 12));
+  assert r.track_name = 'Plain song' and r.artist_name is null and r.timing_source = 'custom',
+         format('names and source replaced as sent: %L, %L, %L', left(r.track_name, 12), left(r.artist_name, 12), r.timing_source);
+  assert r.offset_ms = 0, format('an upsert with offset 0 stores 0, got %s', r.offset_ms);
   assert r.updated_by_name = dj_name and r.updated_at = now(), 'name and time refreshed';
-  -- a null offset keeps it too; a non-zero one replaces it; 'custom' is the other timing source the client sends
-  perform public.upsert_video_lyrics(room, dj, 'dQw4w9WgXcQ', null, null, null, null, null, 'custom');
+  -- synced lyrics replace plain ones the same way; a null timing source is stored as null
+  perform public.upsert_video_lyrics(room, dj, 'dQw4w9WgXcQ', 'Song', 'Artist', '[00:02.00]new', null, -1500, null);
   select * into r from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ';
-  assert r.offset_ms = 60000 and r.timing_source = 'custom', 'null offset kept, custom source stored';
-  perform public.upsert_video_lyrics(room, dj, 'dQw4w9WgXcQ', null, null, null, null, -60000, null);
-  assert (select offset_ms from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ') = -60000, 'offset -60 s replaces';
+  assert r.synced_lyrics = '[00:02.00]new' and r.plain_lyrics is null and r.timing_source is null and r.offset_ms = -1500,
+         'synced-only upsert replaces the plain text';
+  -- a null offset (never sent by the client) keeps the stored one
+  perform public.upsert_video_lyrics(room, dj, 'dQw4w9WgXcQ', 'Song', 'Artist', '[00:02.00]new', null, null, 'custom');
+  select * into r from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ';
+  assert r.offset_ms = -1500 and r.timing_source = 'custom', 'a null offset keeps the stored one';
 
   -- update_video_lyric_offset changes only the offset, the name (from the account) and the time
   update public.video_lyrics set updated_at = now() - interval '1 day', updated_by_name = 'Hacker' where youtube_video_id = 'dQw4w9WgXcQ';
   perform public.update_video_lyric_offset(room, dj, 'dQw4w9WgXcQ', 1500);
   select * into r from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ';
   assert r.offset_ms = 1500 and r.updated_by_name = dj_name and r.updated_at = now(), 'offset, name and time updated';
-  assert r.synced_lyrics = '[00:02.00]new' and r.track_name = repeat('t', 200) and r.timing_source = 'custom', 'lyrics untouched';
+  assert r.synced_lyrics = '[00:02.00]new' and r.track_name = 'Song' and r.timing_source = 'custom', 'lyrics untouched';
   perform public.update_video_lyric_offset(room, dj, 'dQw4w9WgXcQ', null);
   assert (select offset_ms from public.video_lyrics where youtube_video_id = 'dQw4w9WgXcQ') = 1500, 'a null offset keeps it';
 
