@@ -19,6 +19,7 @@ export default function Header({
   myMemberId,
   queue = [],
   current = null,
+  onEnterGame,
 }: {
   room: Room;
   members: Member[];
@@ -29,6 +30,7 @@ export default function Header({
   myMemberId: string | null;
   queue?: QueueItem[];
   current?: QueueItem | null;
+  onEnterGame?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
@@ -41,6 +43,18 @@ export default function Header({
         <ShareButtons code={room.code} title={room.name} />
       </div>
       <div className="flex items-center gap-2">
+        {onEnterGame && (
+          <button
+            type="button"
+            onClick={onEnterGame}
+            className="flex items-center gap-1.5 rounded-lg border border-gold bg-cream px-3 py-1 text-sm font-medium text-burgundy shadow-xs transition hover:bg-gold-200/30 active:scale-95"
+            title="Chuyển sang chế độ game 2D"
+            aria-label="Chế độ game"
+          >
+            <span>🎮</span>
+            <span className="hidden sm:inline">Chế độ game</span>
+          </button>
+        )}
         <ThemeToggle />
         <button
           type="button"

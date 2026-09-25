@@ -211,3 +211,48 @@ How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's sugg
 - Members see a live **`Order: 3/5`** counter next to the add box; at the limit the add box and every search-result **+ Thêm** button refuse with *"Bạn đã đặt đủ 5 bài — chờ bài phát xong rồi đặt tiếp."* The RPCs enforce the same rule (`order limit reached`), so it cannot be bypassed by calling the API directly.
 - **Playlists** add as many songs as still fit, then stop: *"Đã thêm 2/10 bài — đạt giới hạn 5 order."* Songs skipped by the other rules do not use a slot.
 - A slot frees up when the member's song starts playing, is rejected, or is withdrawn.
+
+## v13: Chế độ game — Sảnh phát nhạc
+
+### DB migration
+
+`supabase/migrations/0011_v13_game_mode.sql` is **additive and re-runnable** (`create table if not exists`, `create or replace function`, seeds with `on conflict … do update`): run it in the Supabase SQL Editor (or `supabase db reset` on dev/staging). It adds `item_catalog` (15 starter items), `characters` (one appearance per account, public read like usernames) and the RPC `save_character`.
+
+### What's new in v13
+
+- **🎮 Chế độ game** (room header) shows the room as a 2D pixel riverside café in the Miền Tây style — stage with a DJ booth, hammock, palms, café tables, river and dock. It is a per-browser choice; **🖥️ Giao diện cũ** switches back. Music never stops on a switch (both views share one player). The game has its own parchment look, so the app theme is switched off while you are in it and comes back when you leave.
+- **Your character:** the first visit opens **Tạo nhân vật** — skin, hair style and colour, nón lá / mũ tai bèo, áo bà ba / áo thun, quần, dép, khăn rằn. **👕 Tủ đồ** edits it later; it is saved per account.
+- **Moving:** WASD / arrow keys, or click/tap the ground (the character path-finds around tables and the river). Walk to the stage's **Quầy DJ** and press **E** (or tap the prompt) for the queue panel — order, approve, reorder with exactly the same rules as the classic view. **Bảng tin** opens the rankings; **Bến câu cá** is the entrance to the fishing pond coming in v14.
+- **Together:** everyone in game view walks around live; members still in the classic view sit at the café tables with 🖥️ (the DJ stands behind the mixer). Chat messages pop up as speech bubbles over their author and reactions float up from the sender.
+- **HUD:** now playing with the DJ's ▶/⏸, ⏭ and seek (DJ only), local volume, **🔈 Bật âm thanh**, 📜 Hàng đợi, 🏆 Bảng tin, ⚙️ (Admin/DJ), a chat bar, 💬 full chat and 👥 members. The admin's queue-order toggle (**Thứ tự / Trộn**) and the **💬 Góp ý** feedback button stay in the classic view's header.
+- All art is original and drawn in code — there are no image assets.
+
+### Realtime budget (Supabase free plan)
+
+Movement uses a Broadcast channel `game:{roomId}` with tiny event messages: an idle player sends nothing, a walking player about 1–2 messages/s (a client never sends more than 3/s), and every message is delivered to each other player in the world. Example: 10 players walking a quarter of the time ≈ 30 events/s (limit 100/s) ≈ 110 k/hour, so the free 2 M messages/month cover roughly 18 hours of a 10-person session (about 100 hours with 4 people). Entering the world costs a `hello`, the newcomer's own position and one answer from every other player — and every answer reaches every player, so with N players in the world a join costs about N² deliveries (≈ 100 for 10 players), spread over 1.5 s + 0.15 s per player. A client sends a single answer for all the `hello`s that arrive before it goes out, so when several people join at the same moment there is still one answer per client. Movement, joins and every room's classic realtime traffic (queue, chat, playback) share the project's 100 messages/s, which puts the practical ceiling at roughly 8–10 game-mode players per room on the free plan. Presence carries each member's view mode; switching views re-announces it — toggles within 1 s are merged and re-announcements are budgeted to at most 4 per 30 s, keeping the 5th call for a reconnect (Presence allows 5 calls per client per 30 s).
+
+## v14: Ao câu cá — câu cá, xu và cửa hàng
+
+### DB migration
+
+`supabase/migrations/0012_v14_fishing.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop policy/trigger if exists`, seeds with `on conflict … do update`): run it in the Supabase SQL Editor after `0011`. It adds the catalog tables `fish_species` (12 species) and `shop_items` (12 items), which everyone may read; the private per-account tables `wallets`, `coin_ledger` (append-only), `inventory`, `fishing_profiles`, `casts`, `fish` and `personal_bests`, which only the RPCs touch; the RPCs `fishing_state`, `claim_daily`, `dig_worms`, `buy_item`, `set_loadout`, `start_cast`, `finish_cast`, `sell_fish`, `release_fish` and `fishing_board`; and the column `rooms.item_began_at` with two triggers for the song bonus. `tests/sql/v14-smoke.sql` checks all of it on a throwaway PostgreSQL cluster.
+
+> **Deploy order:** apply `0012` to the hosted database **before** the v14 client goes live. Older clients keep working against the new database, but a v14 client against the old one has no fishing: the HUD shows "—". Pre-v14 and v14 clients don't see each other in game mode until they reload, because their game channel topics differ (`game:{roomId}` → `game:{roomId}:{mapId}`).
+
+### What's new in v14
+
+- **🎣 Ao cá:** walk down the hall's dock to **Bến câu cá** and press **E** — the screen fades to a Miền Tây fishing pond with a plank platform, a worm patch, **Vựa cá** (cô Ba) and **Tiệm đồ câu** (chú Tư). **Bến vào** takes you back to the hall. The chip at the top shows **🎵 Sảnh N · 🎣 Ao cá N**; tap it for the names. Music, chat and reactions stay room-wide on both maps.
+- **Worms:** press **E** at a mound in **Bãi trùn** for 1–3 **Trùn đất**, once every 45 s. The bait box holds 20 baits (60 with **Hộp mồi**).
+- **Fishing:** stand on one of the six spots on the platform and press **E** (or tap the water in front of it). When **❗** shows, hook with **Space**, a click/tap or **❗ Giật cần!** before the bobber's window closes (1.5–2.5 s). Then hold the mouse, a touch or **Space** to keep the fish inside the green zone until the bar fills. **🎣 Thu cần** / **Esc** gives the cast up (the bait is lost). You can cast 40 times per hour.
+- **Fish:** 12 species in 5 rarities (Thường, Khá, Hiếm, Quý, Huyền thoại); the price is set by the weight. You hold one fish in your hand — everyone sees it — and a bucket holds 5 (**Xô nhỏ**) or 15 more (**Xô lớn**). Rare+ catches are announced in the room chat.
+- **Shops:** cô Ba buys fish (**Bán** / **Bán hết**). Chú Tư sells rods (a bigger zone, heavier fish, more rare fish), bobbers (a longer bite window, faster bites, the rarity shown at the bite), bait (more rare fish), the bait box and buckets. **🎒 Giỏ đồ** lists your fish and gear and switches rod, bobber and bait. **Bảng kỷ lục** shows the room's record per species next to your best, and the room's richest members.
+- **Xu:** +20 for the daily check-in (your first game visit of the Vietnam day), +10 when a song of 60 s or more that you queued stays current for at least 75 % of its length (up to 10 a day), and fish sales. With worms and the wooden rod an average cast is worth about 46 xu, so a skilled angler earns about 1 000–1 800 xu an hour: **Cần tre** (300 xu) takes about 20 minutes, **Cần carbon** (1 500 xu) 1–2 hours.
+- Also: the camera scrolls the character above the bottom HUD, the now-playing card folds into a one-line chip on phones, the game falls back to the classic view if its frame loop keeps failing, and chat bubbles never cut an emoji in half.
+
+### Trust model
+
+The server decides the species, weight, rarity and bite delay of every cast; all prices, capacities and balances; the hourly cast cap, the dig cooldown, the reel time gate and single-use casts. Three things are **not** verified: whether the minigame was really won (a modified client can report a win, but no faster than the time gate and no more than 40 fish an hour); where the player stands (selling, buying and digging work from anywhere); and the visuals — the fishing state and catch labels over heads come from the clients. Only the chat announcement comes from the server.
+
+### Realtime budget (v14)
+
+Each map has its own Broadcast channel `game:{roomId}:{mapId}`, so a room split across the hall and the pond costs N_hall² + N_pond² deliveries instead of N². A cast sends at most four `fs` messages (cast, bite, reel, end), and selling or releasing a fish adds one. A normal cast cycle takes about 6 s or more, so an angler averages at most about 0.7 messages/s and typically about 0.1. That average is not a hard bound, because giving up and recasting is faster; the hard limits are 40 casts an hour and the send gate's 3 messages/s. A map switch costs one presence track, taken from the same budget as view-mode changes (at most 4 per 30 s), and a rare+ catch costs one chat insert.

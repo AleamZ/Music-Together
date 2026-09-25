@@ -18,8 +18,17 @@ export interface FloatingEmote {
   x: number;
 }
 
-export function useReactions(roomId: string, currentUsername?: string) {
+export interface UseReactionsOptions {
+  /** Called for every reaction, mine (optimistic) and others' — game mode floats them over characters. */
+  onEvent?: (data: ReactionData) => void;
+}
+
+export function useReactions(roomId: string, currentUsername?: string, options: UseReactionsOptions = {}) {
   const { account } = useAuth();
+  const onEventRef = useRef(options.onEvent);
+  useEffect(() => {
+    onEventRef.current = options.onEvent;
+  });
   const sessionUsername = typeof window !== "undefined" ? loadSession()?.username : undefined;
   const effectiveUsername = (currentUsername || account?.username || sessionUsername || "").trim();
 
@@ -34,6 +43,7 @@ export function useReactions(roomId: string, currentUsername?: string) {
   const seqRef = useRef(0);
 
   const spawn = useCallback((data: ReactionData) => {
+    onEventRef.current?.(data);
     const id = `${Date.now()}_${seqRef.current++}`;
     const x = Math.round(Math.random() * 90) - 45; // -45..45 px horizontal jitter
     setEmotes((prev) =>
@@ -61,11 +71,11 @@ export function useReactions(roomId: string, currentUsername?: string) {
         effectiveUsername ||
         account?.username ||
         (typeof window !== "undefined" ? loadSession()?.username : undefined);
-      const data: ReactionData = { emoji, username: uname?.trim() || undefined };
+      const data: ReactionData = { emoji, username: uname?.trim() || undefined, accountId: account?.accountId || undefined };
       spawn(data); // optimistic local render (self:false → no echo)
       handleRef.current?.send(data); // broadcast to others
     },
-    [spawn, effectiveUsername, account?.username],
+    [spawn, effectiveUsername, account?.username, account?.accountId],
   );
 
   return { emotes, react };

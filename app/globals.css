@@ -1247,3 +1247,45 @@ html[data-theme="miku"] .podium-card-3 .podium-stat {
 
 
 
+/* ---------------------------------------------------------------- v13 game mode */
+/* Parchment palette for everything inside the game (incl. reused room panels), whatever the app theme. */
+.game-ui {
+  --color-parchment: #f3e6c4;
+  --color-parchment-200: #ead9b0;
+  --color-parchment-300: #dfc99a;
+  --color-cream: #fbf3dc;
+  --color-ink: #4a2e17;
+  --color-burgundy: #8b5a2b;
+  --color-burgundy-accent: #a8743f;
+  --color-gold: #b08d57;
+  --color-gold-200: #e3cc9c;
+  --color-green-vintage: #4f8a3a;
+}
+/* `.game-ui .font-vt` beats theme rules such as html[data-theme="cozy"] button */
+.font-vt,
+.game-ui .font-vt { font-family: var(--font-vt323), ui-monospace, monospace; }
+.game-ui .pch {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  border: 3px solid var(--color-burgundy);
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--color-parchment-300), 4px 4px 0 rgb(58 36 24 / 0.35);
+}
+.game-ui .pch-btn {
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  font-size: 1.125rem;
+  line-height: 1;
+  padding: 0.3rem 0.6rem;
+  color: var(--color-ink);
+  background: var(--color-parchment);
+  border: 2px solid var(--color-burgundy);
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 rgb(58 36 24 / 0.35);
+}
+.game-ui .pch-btn:hover { background: var(--color-parchment-200); }
+.game-ui .pch-btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 rgb(58 36 24 / 0.35); }
+.game-ui .pch-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.game-ui .pch-btn[aria-pressed="true"],
+.game-ui .pch-btn-primary { background: var(--color-burgundy); color: var(--color-cream); }
+.game-ui .pch-btn[aria-pressed="true"]:hover,
+.game-ui .pch-btn-primary:hover { background: var(--color-burgundy-accent); }
