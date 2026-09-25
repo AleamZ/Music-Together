@@ -122,3 +122,43 @@ begin
 end $$;
 
 select 'v16 rules smoke ok' as result;
+
+-- ---------- the rules against the shared fixtures (§17): Cào and poker ----------
+do $$
+declare j jsonb := (select j from fx); k jsonb; got jsonb; want jsonb; ek integer[]; c integer;
+begin
+  for k in select x from jsonb_array_elements(j->'cao'->'eval') x loop
+    got := public._cao_eval(pg_temp.cs(k->'cards'));
+    want := k->'expect';
+    assert got->>'kind' = want->>'kind' and (got->>'points')::int = (want->>'points')::int
+           and (got->>'rank')::int is not distinct from (want->>'rank')::int
+           and (got->>'top')::int = public._cao_key(pg_temp.c(want->>'top')), format('cao %s: %s, want %s', k->'cards', got, want);
+  end loop;
+  for k in select x from jsonb_array_elements(j->'cao'->'cmp') x loop
+    c := public._cao_cmp(public._cao_eval(pg_temp.cs(k->'a')), public._cao_eval(pg_temp.cs(k->'b')));
+    assert c = (k->>'expect')::int and -c = public._cao_cmp(public._cao_eval(pg_temp.cs(k->'b')), public._cao_eval(pg_temp.cs(k->'a'))),
+      format('cao %s vs %s: %s, want %s', k->'a', k->'b', c, k->'expect');
+  end loop;
+  for k in select x from jsonb_array_elements(j->'cao'->'settle') x loop
+    got := public._cao_settle(jsonb_build_object('dealer', k->'dealer', 'order', k->'order', 'left', k->'left',
+             'hands', (select jsonb_object_agg(key, to_jsonb(pg_temp.cs(value))) from jsonb_each(k->'hands'))));
+    assert (select jsonb_agg(jsonb_build_array(l->'from', l->'to', l->'why') order by n)
+              from jsonb_array_elements(got->'lines') with ordinality e(l, n)) = k->'expect'->'lines'
+           and got->'net' = k->'expect'->'net', format('%s: %s', k->>'name', got);
+  end loop;
+  for k in select x from jsonb_array_elements(j->'poker'->'eval') x loop
+    ek := public._pk_eval(pg_temp.cs(k->'cards'));
+    assert to_jsonb(ek) = k->'expect', format('poker %s: %s, want %s', k->'cards', ek, k->'expect');
+  end loop;
+  for k in select x from jsonb_array_elements(j->'poker'->'cmp') x loop
+    ek := public._pk_eval(pg_temp.cs(k->'a'));
+    c := case when ek > public._pk_eval(pg_temp.cs(k->'b')) then 1 when ek < public._pk_eval(pg_temp.cs(k->'b')) then -1 else 0 end;
+    assert c = (k->>'expect')::int, format('poker %s vs %s: %s, want %s', k->'a', k->'b', c, k->'expect');
+  end loop;
+  for k in select x from jsonb_array_elements(j->'poker'->'pots') x loop
+    got := public._pk_pots(jsonb_build_object('players', k->'players', 'keys', k->'keys', 'button', k->'button'));
+    assert got = k->'expect', format('%s: %s, want %s', k->>'name', got, k->'expect');
+  end loop;
+end $$;
+
+select 'v16 cao and poker rules smoke ok' as result;

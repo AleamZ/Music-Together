@@ -336,5 +336,155 @@
         }
       }
     ]
+  },
+  "cao": {
+    "eval": [
+      { "cards": ["9S", "8C", "2H"], "expect": { "kind": "nut", "points": 9, "top": "9S" } },
+      { "cards": ["JS", "QH", "KC"], "expect": { "kind": "ba_tay", "points": 0, "top": "KC" } },
+      { "cards": ["4D", "4C", "4S"], "expect": { "kind": "sap", "points": 2, "rank": 4, "top": "4D" } },
+      { "cards": ["7H", "10C", "AD"], "expect": { "kind": "nut", "points": 8, "top": "10C" } },
+      { "cards": ["KD", "5S", "3C"], "expect": { "kind": "nut", "points": 8, "top": "KD" } },
+      { "cards": ["10S", "JD", "QC"], "expect": { "kind": "nut", "points": 0, "top": "QC" } },
+      { "cards": ["KS", "KH", "KD"], "expect": { "kind": "sap", "points": 0, "rank": 13, "top": "KD" } },
+      { "cards": ["AS", "AC", "AD"], "expect": { "kind": "sap", "points": 3, "rank": 1, "top": "AD" } },
+      { "cards": ["2S", "2H", "2D"], "expect": { "kind": "sap", "points": 6, "rank": 2, "top": "2D" } },
+      { "cards": ["JS", "JD", "QH"], "expect": { "kind": "ba_tay", "points": 0, "top": "QH" } },
+      { "cards": ["7S", "8D", "9C"], "expect": { "kind": "nut", "points": 4, "top": "9C" } },
+      { "cards": ["2S", "3S", "4S"], "expect": { "kind": "nut", "points": 9, "top": "4S" } },
+      { "cards": ["5S", "5D", "10H"], "expect": { "kind": "nut", "points": 0, "top": "10H" } },
+      { "cards": ["AH", "9D", "KS"], "expect": { "kind": "nut", "points": 0, "top": "KS" } }
+    ],
+    "cmp": [
+      { "a": ["2S", "2H", "2D"], "b": ["JS", "QH", "KC"], "expect": 1 },
+      { "a": ["JS", "QH", "KC"], "b": ["9S", "8C", "2H"], "expect": 1 },
+      { "a": ["KS", "KH", "KD"], "b": ["AS", "AC", "AD"], "expect": 1 },
+      { "a": ["2S", "2H", "2D"], "b": ["AS", "AC", "AD"], "expect": 1 },
+      { "a": ["AS", "AC", "AD"], "b": ["3S", "3C", "3D"], "expect": -1 },
+      { "a": ["9S", "8C", "2H"], "b": ["KD", "5S", "3C"], "expect": 1 },
+      { "a": ["KD", "5S", "3C"], "b": ["7H", "10C", "AD"], "expect": 1 },
+      { "a": ["KD", "4S", "3C"], "b": ["KH", "4C", "3S"], "expect": 1 },
+      { "a": ["KH", "6S", "AC"], "b": ["KC", "5S", "2D"], "expect": 1 },
+      { "a": ["KC", "5S", "2D"], "b": ["KS", "6C", "AD"], "expect": 1 },
+      { "a": ["JS", "QH", "QD"], "b": ["JC", "QS", "KH"], "expect": -1 },
+      { "a": ["10S", "JD", "QC"], "b": ["AS", "2D", "8H"], "expect": -1 },
+      { "a": ["AS", "2D", "2H"], "b": ["3S", "2C", "KH"], "expect": -1 }
+    ],
+    "settle": [
+      {
+        "name": "§8.3: three players beat dealer B, one loses",
+        "dealer": 2, "order": [1, 2, 3, 4, 5], "left": [],
+        "hands": { "1": ["9S", "8C", "2H"], "2": ["KD", "5S", "3C"], "3": ["JS", "QH", "KC"], "4": ["4D", "4C", "4S"], "5": ["7H", "10C", "AD"] },
+        "expect": { "lines": [[2, 1, "cao"], [2, 3, "cao"], [2, 4, "cao"], [5, 2, "cao"]], "net": { "1": 1, "2": -2, "3": 1, "4": 1, "5": -1 } }
+      },
+      {
+        "name": "a player who left lost 1 S to the dealer",
+        "dealer": 1, "order": [1, 2, 3], "left": [3],
+        "hands": { "1": ["QS", "QC", "2D"], "2": ["5H", "4H", "KS"], "3": ["9S", "9C", "9D"] },
+        "expect": { "lines": [[1, 2, "cao"], [3, 1, "left"]], "net": { "1": 0, "2": 1, "3": -1 } }
+      },
+      {
+        "name": "the dealer beats everyone",
+        "dealer": 3, "order": [2, 3, 6], "left": [],
+        "hands": { "2": ["AS", "AC", "3D"], "3": ["9D", "KC", "QS"], "6": ["JS", "JD", "10H"] },
+        "expect": { "lines": [[2, 3, "cao"], [6, 3, "cao"]], "net": { "2": -1, "3": 2, "6": -1 } }
+      }
+    ]
+  },
+  "poker": {
+    "eval": [
+      { "cards": ["AH", "KH", "QH", "JH", "10H", "2C", "3D"], "expect": [8, 14] },
+      { "cards": ["9H", "10H", "JH", "QH", "KH", "2S", "2D"], "expect": [8, 13] },
+      { "cards": ["AS", "2S", "3S", "4S", "5S", "KH", "QD"], "expect": [8, 5] },
+      { "cards": ["5H", "6H", "7H", "8H", "9H", "9S", "9D"], "expect": [8, 9] },
+      { "cards": ["9S", "9C", "9D", "9H", "KS", "2C", "3D"], "expect": [7, 9, 13] },
+      { "cards": ["9S", "9C", "9D", "9H", "AS"], "expect": [7, 9, 14] },
+      { "cards": ["KS", "KC", "KD", "4S", "4H", "2C", "3D"], "expect": [6, 13, 4] },
+      { "cards": ["KS", "KC", "KD", "4S", "4H", "4D", "2C"], "expect": [6, 13, 4] },
+      { "cards": ["AH", "AD", "AC", "KS", "KD", "KC", "2S"], "expect": [6, 14, 13] },
+      { "cards": ["7S", "7C", "7D", "QS", "QH", "5C", "5D"], "expect": [6, 7, 12] },
+      { "cards": ["QH", "QC", "5S", "5D", "5H"], "expect": [6, 5, 12] },
+      { "cards": ["AH", "JH", "9H", "6H", "3H", "2H", "KS"], "expect": [5, 14, 11, 9, 6, 3] },
+      { "cards": ["AH", "KH", "9H", "7H", "5H", "3H", "2C"], "expect": [5, 14, 13, 9, 7, 5] },
+      { "cards": ["4H", "5H", "6H", "7C", "8D", "9H", "2H"], "expect": [5, 9, 6, 5, 4, 2] },
+      { "cards": ["5S", "6D", "7C", "8H", "9S", "KD", "2C"], "expect": [4, 9] },
+      { "cards": ["AS", "2D", "3C", "4H", "5S", "KD", "QC"], "expect": [4, 5] },
+      { "cards": ["10S", "JD", "QC", "KH", "AS", "2C", "3D"], "expect": [4, 14] },
+      { "cards": ["4S", "5D", "6C", "7H", "8S", "9D", "KC"], "expect": [4, 9] },
+      { "cards": ["2C", "3D", "10S", "JD", "QC", "KH", "AS"], "expect": [4, 14] },
+      { "cards": ["QS", "QC", "QD", "7H", "5S", "3D", "2C"], "expect": [3, 12, 7, 5] },
+      { "cards": ["JS", "JC", "4D", "4H", "AS", "3C", "2D"], "expect": [2, 11, 4, 14] },
+      { "cards": ["KS", "KD", "9C", "9H", "5S", "5D", "2C"], "expect": [2, 13, 9, 5] },
+      { "cards": ["10S", "10C", "AH", "KD", "7S", "4C", "2D"], "expect": [1, 10, 14, 13, 7] },
+      { "cards": ["AH", "QD", "9C", "7S", "5H", "3D", "2C"], "expect": [0, 14, 12, 9, 7, 5] },
+      { "cards": ["AS", "AH"], "expect": [1, 14] },
+      { "cards": ["KS", "7D"], "expect": [0, 13, 7] }
+    ],
+    "cmp": [
+      { "a": ["AS", "AC", "KD", "9H", "7C", "4S", "2D"], "b": ["AD", "AH", "QD", "9S", "7D", "4C", "2H"], "expect": 1 },
+      { "a": ["10S", "JD", "QC", "KH", "AS", "2C", "3D"], "b": ["10H", "JC", "QD", "KS", "AH", "4C", "5D"], "expect": 0 },
+      { "a": ["KS", "KD", "9C", "9H", "AS", "3D", "2C"], "b": ["KC", "KH", "9S", "9D", "QS", "3C", "2D"], "expect": 1 },
+      { "a": ["AS", "2D", "3C", "4H", "5S"], "b": ["2S", "3D", "4C", "5H", "6S"], "expect": -1 },
+      { "a": ["7S", "7C", "7D", "QS", "QH"], "b": ["5S", "5C", "5D", "AS", "AH"], "expect": 1 },
+      { "a": ["AH", "QD", "9C", "7S", "5H", "3D", "2C"], "b": ["AS", "QC", "9D", "7H", "4H", "3C", "2D"], "expect": 1 },
+      { "a": ["AH", "JH", "9H", "6H", "3H"], "b": ["5S", "6D", "7C", "8H", "9S"], "expect": 1 }
+    ],
+    "pots": [
+      {
+        "name": "§9.3: a side pot — B wins the main pot, A beats C for the side pot",
+        "players": { "1": { "put": 18000 }, "2": { "put": 8000, "allin": true }, "3": { "put": 18000 } },
+        "keys": { "1": [3, 5, 14, 13], "2": [5, 14, 11, 9, 6, 3], "3": [1, 12, 14, 13, 7] }, "button": 1,
+        "expect": [
+          { "xu": 24000, "seats": [1, 2, 3], "winners": [2], "shares": { "2": 24000 } },
+          { "xu": 20000, "seats": [1, 3], "winners": [1], "shares": { "1": 20000 } }
+        ]
+      },
+      {
+        "name": "uncontested: the last live seat takes every chip",
+        "players": { "1": { "put": 3000 }, "2": { "put": 1000, "fold": true }, "3": { "put": 500, "fold": true } }, "button": 3,
+        "expect": [{ "xu": 4500, "seats": [1], "winners": [1], "shares": { "1": 4500 } }]
+      },
+      {
+        "name": "§9.3: the odd chip goes to the winner first left of the button",
+        "players": { "2": { "put": 1500 }, "3": { "put": 1500 }, "4": { "put": 1, "fold": true } },
+        "keys": { "2": [1, 13, 9, 7, 4], "3": [1, 13, 9, 7, 4] }, "button": 3,
+        "expect": [{ "xu": 3001, "seats": [2, 3], "winners": [2, 3], "shares": { "2": 1501, "3": 1500 } }]
+      },
+      {
+        "name": "a three-way split: two odd xu, from the left of the button",
+        "players": { "1": { "put": 333 }, "2": { "put": 333 }, "3": { "put": 333 }, "4": { "put": 2, "fold": true } },
+        "keys": { "1": [4, 9], "2": [4, 9], "3": [4, 9] }, "button": 2,
+        "expect": [{ "xu": 1001, "seats": [1, 2, 3], "winners": [1, 2, 3], "shares": { "1": 334, "2": 333, "3": 334 } }]
+      },
+      {
+        "name": "multi-way side pots: each all-in wins only what it covered",
+        "players": { "1": { "put": 1000, "allin": true }, "2": { "put": 3000, "allin": true }, "3": { "put": 5000 }, "4": { "put": 5000 } },
+        "keys": { "1": [6, 14, 13], "2": [5, 14, 13, 9, 7, 5], "3": [2, 13, 9, 5], "4": [1, 14, 13, 12, 11] }, "button": 4,
+        "expect": [
+          { "xu": 4000, "seats": [1, 2, 3, 4], "winners": [1], "shares": { "1": 4000 } },
+          { "xu": 6000, "seats": [2, 3, 4], "winners": [2], "shares": { "2": 6000 } },
+          { "xu": 4000, "seats": [3, 4], "winners": [3], "shares": { "3": 4000 } }
+        ]
+      },
+      {
+        "name": "a short all-in wins the main pot; the other two split the side pot",
+        "players": { "1": { "put": 500, "allin": true }, "2": { "put": 2000 }, "3": { "put": 2000 } },
+        "keys": { "1": [8, 10], "2": [1, 5, 14, 13, 12], "3": [1, 5, 14, 13, 12] }, "button": 3,
+        "expect": [
+          { "xu": 1500, "seats": [1, 2, 3], "winners": [1], "shares": { "1": 1500 } },
+          { "xu": 3000, "seats": [2, 3], "winners": [2, 3], "shares": { "2": 1500, "3": 1500 } }
+        ]
+      },
+      {
+        "name": "chips a folded player put above the highest live total land in the top pot",
+        "players": { "1": { "put": 5000, "fold": true }, "2": { "put": 2000 }, "3": { "put": 2000 } },
+        "keys": { "2": [3, 9, 14, 13], "3": [2, 9, 4, 14] }, "button": 1,
+        "expect": [{ "xu": 9000, "seats": [2, 3], "winners": [2], "shares": { "2": 9000 } }]
+      },
+      {
+        "name": "without keys the pots have no winners yet",
+        "players": { "1": { "put": 1000 }, "2": { "put": 1000 } }, "button": 1,
+        "expect": [{ "xu": 2000, "seats": [1, 2] }]
+      }
+    ]
   }
 }

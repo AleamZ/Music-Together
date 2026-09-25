@@ -421,3 +421,197 @@ revoke all on function public._tl_trang(integer[]) from public, anon, authentica
 revoke all on function public._tl_trang_rank(text) from public, anon, authenticated;
 revoke all on function public._tl_pay(jsonb, integer, integer, integer, text, integer[]) from public, anon, authenticated;
 revoke all on function public._tl_money(jsonb, jsonb, jsonb) from public, anon, authenticated;
+
+-- ---------- B (cont.). Pure helpers: Cào and poker (§8.1, §8.3, §9.1, §9.2) ----------
+-- A card's Cào key (§8.1): cao_rank × 4 + cao_suit, with A = 1, 2–10 their number, J 11, Q 12, K 13 and ♠ 0, ♣ 1, ♥ 2, ♦ 3.
+create or replace function public._cao_key(p_card integer) returns integer
+language sql immutable set search_path = public, extensions
+as $$
+  select (case p_card / 4 when 11 then 1 when 12 then 2 else p_card / 4 + 3 end) * 4
+         + case p_card % 4 when 2 then 3 when 3 then 2 else p_card % 4 end
+$$;
+
+-- A Cào hand (§8.1, R18): {kind: "sap" | "ba_tay" | "nut", points (the nút), rank (a sáp's rank: A 1 … K 13), top (the
+-- highest card's Cào key)}.
+create or replace function public._cao_eval(p_cards integer[]) returns jsonb
+language sql immutable set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'kind', case when count(distinct c / 4) = 1 then 'sap' when bool_and(c / 4 between 8 and 10) then 'ba_tay' else 'nut' end,
+    'points', sum(least(public._cao_key(c) / 4, 10)) % 10,
+    'rank', case when count(distinct c / 4) = 1 then min(public._cao_key(c) / 4) end,
+    'top', max(public._cao_key(c)))
+  from unnest(p_cards) c
+$$;
+
+-- Compare two Cào hands (R18, R19): 1 when a wins, −1 when b wins. Sáp > ba tây > nút; two sáp by rank; ba tây, and equal
+-- nút, by the top card (rank, then ♦ > ♥ > ♣ > ♠). Two hands never share a card, so it is never 0.
+create or replace function public._cao_cmp(a jsonb, b jsonb) returns integer
+language sql immutable set search_path = public, extensions
+as $$
+  with x as (select case a->>'kind' when 'sap' then 2 when 'ba_tay' then 1 else 0 end ca,
+                    case b->>'kind' when 'sap' then 2 when 'ba_tay' then 1 else 0 end cb)
+  select case
+    when ca <> cb then sign(ca - cb)::int
+    when ca = 2 then sign((a->>'rank')::int - (b->>'rank')::int)::int
+    when ca = 0 and (a->>'points')::int <> (b->>'points')::int then sign((a->>'points')::int - (b->>'points')::int)::int
+    else sign((a->>'top')::int - (b->>'top')::int)::int end
+  from x
+$$;
+
+-- A Cào hand's money (§8.3, R17), in units of S: each player still in the hand wins or loses 1 against the dealer, and a
+-- player who left lost 1 to the dealer. p = {dealer, order (the dealt seats), left, hands: {seat: [c…]}}; the answer is
+-- {lines: [{from, to, why: "cao" | "left"}], net: {seat: units}}.
+create or replace function public._cao_settle(p jsonb) returns jsonb
+language plpgsql immutable set search_path = public, extensions
+as $$
+declare d integer := (p->>'dealer')::int; s integer; lines jsonb := '[]'; dh jsonb;
+begin
+  dh := public._cao_eval(public._card_ints(p->'hands'->(d::text)));
+  foreach s in array public._card_ints(p->'order') loop
+    continue when s = d;
+    if s = any(public._card_ints(p->'left')) then
+      lines := lines || jsonb_build_array(jsonb_build_object('from', s, 'to', d, 'why', 'left'));
+    elsif public._cao_cmp(public._cao_eval(public._card_ints(p->'hands'->(s::text))), dh) > 0 then
+      lines := lines || jsonb_build_array(jsonb_build_object('from', d, 'to', s, 'why', 'cao'));
+    else
+      lines := lines || jsonb_build_array(jsonb_build_object('from', s, 'to', d, 'why', 'cao'));
+    end if;
+  end loop;
+  return jsonb_build_object('lines', lines, 'net', (
+    select jsonb_object_agg(q::text, coalesce((select sum(case when (l->>'to')::int = q then 1 else -1 end)
+                                                 from jsonb_array_elements(lines) l
+                                                where q in ((l->>'from')::int, (l->>'to')::int)), 0))
+      from unnest(public._card_ints(p->'order')) q));
+end $$;
+
+-- A card's poker rank: 2 … 14 (A = 14).
+create or replace function public._pk_rank(p_card integer) returns integer
+language sql immutable set search_path = public, extensions
+as $$ select case when p_card / 4 = 12 then 2 else p_card / 4 + 3 end $$;
+
+-- The top of the best straight among poker ranks (the ace also plays low: A-2-3-4-5 tops at 5), or null.
+create or replace function public._pk_straight(p_ranks integer[]) returns integer
+language sql immutable set search_path = public, extensions
+as $$
+  select max(t) from generate_series(5, 14) t
+   where (select count(distinct x) from unnest(p_ranks || case when 14 = any(p_ranks) then array[1] else '{}'::int[] end) x
+           where x between t - 4 and t) = 5
+$$;
+
+-- The best poker hand in up to 7 cards (§9.1), as a key compared lexicographically: [8, top] straight flush ·
+-- [7, quad, kicker] · [6, trips, pair] · [5, the flush suit's top five] · [4, top] straight · [3, trips, k1, k2] ·
+-- [2, high, low, kicker] · [1, pair, k1, k2, k3] · [0, the top five]. Suits never break ties.
+create or replace function public._pk_eval(p_cards integer[]) returns integer[]
+language plpgsql immutable set search_path = public, extensions
+as $$
+declare rs integer[]; fs integer; fr integer[]; t integer; q integer; tr integer[]; pr integer[];
+begin
+  rs := array(select public._pk_rank(c) from unnest(p_cards) c order by 1 desc);
+  select c % 4 into fs from unnest(p_cards) c group by c % 4 having count(*) >= 5;
+  if fs is not null then
+    fr := array(select public._pk_rank(c) from unnest(p_cards) c where c % 4 = fs order by 1 desc);
+    t := public._pk_straight(fr);
+    if t is not null then
+      return array[8, t];
+    end if;
+  end if;
+  q := (select r from unnest(rs) r group by r having count(*) = 4);
+  if q is not null then
+    return array[7, q] || array(select r from unnest(rs) r where r <> q order by r desc limit 1);
+  end if;
+  tr := array(select r from unnest(rs) r group by r having count(*) = 3 order by r desc);
+  pr := array(select r from unnest(rs) r group by r having count(*) = 2 order by r desc);
+  if cardinality(tr) >= 2 then
+    return array[6, tr[1], tr[2]];
+  end if;
+  if cardinality(tr) = 1 and cardinality(pr) >= 1 then
+    return array[6, tr[1], pr[1]];
+  end if;
+  if fs is not null then
+    return array[5] || fr[1:5];
+  end if;
+  t := public._pk_straight(rs);
+  if t is not null then
+    return array[4, t];
+  end if;
+  if cardinality(tr) = 1 then
+    return array[3, tr[1]] || array(select r from unnest(rs) r where r <> tr[1] order by r desc limit 2);
+  end if;
+  if cardinality(pr) >= 2 then
+    return array[2, pr[1], pr[2]] || array(select r from unnest(rs) r where r not in (pr[1], pr[2]) order by r desc limit 1);
+  end if;
+  if cardinality(pr) = 1 then
+    return array[1, pr[1]] || array(select r from unnest(rs) r where r <> pr[1] order by r desc limit 3);
+  end if;
+  return array[0] || rs[1:5];
+end $$;
+
+-- The pots of a hand (§9.2): a level at each live all-in total and at the highest live total; each pot goes to the live
+-- seats that reach its level, and the top pot also takes every folded chip above the highest live total. With the live
+-- hands' keys (or a single eligible seat) each pot gets its winners, and its odd xu go one at a time to the winners in
+-- seat order starting left of the button (TDA 20). p = {players: {seat: {put, fold, allin}}, keys: {seat: key}, button};
+-- the answer is [{xu, seats, winners, shares: {seat: xu}}] (winners and shares only when they are known).
+create or replace function public._pk_pots(p jsonb) returns jsonb
+language plpgsql immutable set search_path = public, extensions
+as $$
+declare pl jsonb := coalesce(p->'players', '{}'); btn integer := (p->>'button')::int; top integer; lv integer[];
+        lvl integer; prev integer := 0; amt integer; el integer[]; pots jsonb := '[]'; res jsonb := '[]'; pot jsonb;
+        w integer[]; best integer[]; q integer; r integer;
+begin
+  top := (select max((v->>'put')::int) from jsonb_each(pl) e(k, v) where not coalesce((v->>'fold')::boolean, false));
+  if top is null or top <= 0 then
+    return '[]';
+  end if;
+  lv := array(select distinct x from (select (v->>'put')::int x from jsonb_each(pl) e(k, v)
+                                       where not coalesce((v->>'fold')::boolean, false)
+                                         and coalesce((v->>'allin')::boolean, false)
+                                      union all select top) u
+               where x > 0 order by x);
+  foreach lvl in array lv loop
+    amt := (select coalesce(sum(least((v->>'put')::int, lvl) - least((v->>'put')::int, prev)), 0) from jsonb_each(pl) e(k, v));
+    el := array(select k::int from jsonb_each(pl) e(k, v)
+                 where not coalesce((v->>'fold')::boolean, false) and (v->>'put')::int >= lvl order by k::int);
+    if amt > 0 then
+      if jsonb_array_length(pots) > 0 and pots->-1->'seats' = to_jsonb(el) then
+        pots := jsonb_set(pots, array[(jsonb_array_length(pots) - 1)::text, 'xu'], to_jsonb((pots->-1->>'xu')::int + amt));
+      else
+        pots := pots || jsonb_build_array(jsonb_build_object('xu', amt, 'seats', to_jsonb(el)));
+      end if;
+    end if;
+    prev := lvl;
+  end loop;
+  amt := (select coalesce(sum(greatest((v->>'put')::int - top, 0)), 0) from jsonb_each(pl) e(k, v));
+  if amt > 0 then
+    pots := jsonb_set(pots, array[(jsonb_array_length(pots) - 1)::text, 'xu'], to_jsonb((pots->-1->>'xu')::int + amt));
+  end if;
+  for pot in select value from jsonb_array_elements(pots) loop
+    el := public._card_ints(pot->'seats');
+    w := null;
+    if cardinality(el) = 1 then
+      w := el;
+    elsif jsonb_typeof(p->'keys') = 'object' then
+      best := (select max(public._card_ints(p->'keys'->(s::text))) from unnest(el) s);
+      w := array(select s from unnest(el) s where public._card_ints(p->'keys'->(s::text)) = best order by s);
+    end if;
+    if w is not null then
+      q := (pot->>'xu')::int / cardinality(w);
+      r := (pot->>'xu')::int % cardinality(w);
+      pot := pot || jsonb_build_object('winners', to_jsonb(w), 'shares', (
+        select jsonb_object_agg(s::text, q + case when n <= r then 1 else 0 end)
+          from (select s, row_number() over (order by case when btn is null then s else (s - btn + 5) % 6 end) n
+                  from unnest(w) s) z));
+    end if;
+    res := res || jsonb_build_array(pot);
+  end loop;
+  return res;
+end $$;
+
+revoke all on function public._cao_key(integer) from public, anon, authenticated;
+revoke all on function public._cao_eval(integer[]) from public, anon, authenticated;
+revoke all on function public._cao_cmp(jsonb, jsonb) from public, anon, authenticated;
+revoke all on function public._cao_settle(jsonb) from public, anon, authenticated;
+revoke all on function public._pk_rank(integer) from public, anon, authenticated;
+revoke all on function public._pk_straight(integer[]) from public, anon, authenticated;
+revoke all on function public._pk_eval(integer[]) from public, anon, authenticated;
+revoke all on function public._pk_pots(jsonb) from public, anon, authenticated;
