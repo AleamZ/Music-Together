@@ -22,6 +22,7 @@ const CATALOG: FarmCatalog = {
     item("seed_nep", "seed", "Giống nếp", { variety: "nep" }),
     item("fert_manure", "fertilizer", "Phân chuồng hoai", { fert: "manure" }),
     item("fert_urea", "fertilizer", "Phân urê", { fert: "urea" }),
+    item("fert_npk", "fertilizer", "Phân NPK", { fert: "npk" }),
     item("spray_hopper", "pesticide", "Thuốc trừ rầy", { pest_target: "hopper" }),
   ],
 };
@@ -59,9 +60,9 @@ const STATE: FieldState = parseFieldState({
   },
 })!;
 
-function renderPlot(no: number) {
+function renderPlot(no: number, state: FieldState = STATE) {
   const onAct = vi.fn(), onOpenHandbook = vi.fn();
-  render(<PlotPanel no={no} state={STATE} catalog={CATALOG} failed={false} me="me" busy={false} now={NOW} onAct={onAct}
+  render(<PlotPanel no={no} state={state} catalog={CATALOG} failed={false} me="me" busy={false} now={NOW} onAct={onAct}
     onOpenHandbook={onOpenHandbook} onReload={() => {}} onClose={() => {}} />);
   return { onAct, onOpenHandbook };
 }
@@ -108,6 +109,13 @@ describe("PlotPanel", () => {
     expect(screen.getByRole("button", { name: "Rao bán" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Bán lại cho làng · 2.000 xu" })).toBeEnabled();
     expect(onAct).not.toHaveBeenCalled();
+  });
+
+  it("keeps an item's capitals in the toast", () => {
+    const { onAct } = renderPlot(5, { ...STATE, mine: { ...STATE.mine, items: { fert_npk: 1 } } });
+    // NPK at 8 h after transplanting is on time: no warning, straight to the toast
+    fireEvent.click(screen.getByRole("button", { name: "Bón phân NPK" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "fertilize", plot: 5, item: "fert_npk" }, "Đã bón phân NPK.");
   });
 });
 

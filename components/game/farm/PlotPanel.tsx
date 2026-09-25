@@ -1,7 +1,7 @@
 "use client";
 
 import { ParchmentModal } from "@/components/game/Parchment";
-import { plotActions, type PlotAction, type PlotRun } from "@/lib/game/farm/actions";
+import { lower, plotActions, type PlotAction, type PlotRun } from "@/lib/game/farm/actions";
 import { PLOT_PRICE, RENT_PRICE, type FarmCatalog } from "@/lib/game/farm/catalog";
 import { cropModel, cropPhase, nextPhaseAt, waterAt, wantedWater, yieldEstimate } from "@/lib/game/farm/crop";
 import { HANDBOOK_TABS, handbookTabFor, type HandbookTab } from "@/lib/game/farm/handbook";
@@ -19,7 +19,7 @@ const DONE: Record<string, string> = {
   pick: "Đã bắt ốc bươu vàng.", abandon: "Đã bỏ vụ.",
 };
 const doneText = (a: PlotAction): string | undefined =>
-  DONE[a.key.split(":")[0]] ?? (a.key.startsWith("fert:") || a.key.startsWith("spray:") ? `Đã ${a.label.toLowerCase()}.` : undefined);
+  DONE[a.key.split(":")[0]] ?? (a.key.startsWith("fert:") || a.key.startsWith("spray:") ? `Đã ${lower(a.label)}.` : undefined);
 
 function Status({ p, me, catalog, now }: { p: PlotView; me: string; catalog: FarmCatalog; now: number }) {
   const crop = p.crop;

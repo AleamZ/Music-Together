@@ -30,7 +30,8 @@ export interface FarmTask { plot: number; text: string; urgent: boolean }
 
 const REMEDY_LABEL: Record<string, string> = { spray_insect: "thuốc trừ sâu", spray_hopper: "thuốc trừ rầy", spray_fungus: "thuốc trừ bệnh" };
 const isN = (item: string) => item === "fert_urea" || item === "fert_npk";
-const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+/** Lower-cases the first letter only, so a name keeps its capitals ("Phân NPK" → "phân NPK"). */
+export const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** Would this fertilizer help now? ok = a good use (the hint), otherwise the warning shown before confirming. */
 export function fertAdvice(c: CropModel, v: Variety | null, item: string, now: number): { ok: boolean; text: string } {
