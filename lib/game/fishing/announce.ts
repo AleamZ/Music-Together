@@ -13,19 +13,20 @@ export type Announcement = ({ kind: "catch" } & CatchAnnouncement) | ({ kind: "l
 const CATCH = /^\[catch:([0-9a-f-]{36})\|([a-z_]{1,32})\|(\d{1,6})\] ([\s\S]+)$/;
 const LAND = /^\[land:(\d{1,2})\] ([\s\S]+)$/;
 
-type Posted = Pick<ChatMessage, "account_id" | "username" | "body">;
+type Posted = Pick<ChatMessage, "account_id" | "username" | "body" | "system">;
 
-/** Only server messages count: no author account and the announcer's name, so a member cannot fake one. */
+/** Only server messages count: the system flag, no author account and the announcer's name, so a member cannot fake
+ *  one (anti-cheat spec §6.1). */
 export function parseCatchAnnouncement(m: Posted): CatchAnnouncement | null {
-  if (m.account_id !== null || m.username !== ANNOUNCER_NAME) return null;
+  if (m.system !== true || m.account_id !== null || m.username !== ANNOUNCER_NAME) return null;
   const x = CATCH.exec(m.body);
   if (!x) return null;
   return { accountId: x[1], speciesId: x[2], weightG: Number(x[3]), text: x[4] };
 }
 
-/** A land sale: no author account, the co-op's name and the `[land:<plot>]` prefix. */
+/** A land sale: the system flag, no author account, the co-op's name and the `[land:<plot>]` prefix. */
 export function parseLandAnnouncement(m: Posted): LandAnnouncement | null {
-  if (m.account_id !== null || m.username !== LAND_ANNOUNCER_NAME) return null;
+  if (m.system !== true || m.account_id !== null || m.username !== LAND_ANNOUNCER_NAME) return null;
   const x = LAND.exec(m.body);
   return x ? { plot: Number(x[1]), text: x[2] } : null;
 }

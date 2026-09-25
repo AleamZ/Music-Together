@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabase";
 export interface ChatMessage {
   id: string; room_id: string; account_id: string | null;
   username: string; body: string; created_at: string;
+  /** Posted by the server (a catch or a land sale; anti-cheat spec §6.1). Members cannot set it. */
+  system: boolean;
 }
 
 export async function sendChatMessage(token: string, roomId: string, body: string): Promise<void> {
@@ -20,7 +22,7 @@ export async function deleteChatMessage(token: string, roomId: string, id: strin
 export async function fetchRecentMessages(roomId: string, limit = 50): Promise<ChatMessage[]> {
   const { data, error } = await supabase
     .from("chat_messages")
-    .select("id, room_id, account_id, username, body, created_at")
+    .select("id, room_id, account_id, username, body, created_at, system")
     .eq("room_id", roomId)
     .order("created_at", { ascending: false })
     .limit(limit);

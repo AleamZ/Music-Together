@@ -4,6 +4,17 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Logo from "@/components/brand/Logo";
 
+/** The Vietnamese text of a login or register refusal (anti-cheat spec §12.3); anything else shows as the server sent it. */
+function authErrorText(msg: string): string {
+  if (msg.includes("already taken")) return "Tên đăng nhập đã tồn tại.";
+  if (msg.includes("invalid username or password")) return "Sai tên đăng nhập hoặc mật khẩu.";
+  if (msg === "invalid username") {
+    return "Tên đăng nhập cần 2–24 ký tự, không dùng tên dành riêng (Ao cá, Hợp tác xã, root…) hoặc ký tự ẩn.";
+  }
+  if (msg.includes("account banned")) return "🚫 Tài khoản này đã bị khoá. Nếu bạn nghĩ đây là nhầm lẫn, hãy liên hệ quản trị viên.";
+  return msg;
+}
+
 export default function AuthScreen() {
   const { login, register } = useAuth();
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -19,9 +30,7 @@ export default function AuthScreen() {
       if (mode === "login") await login(username.trim(), password);
       else await register(username.trim(), password);
     } catch (err) {
-      const msg = (err as { message?: string }).message ?? "Có lỗi xảy ra";
-      setError(msg.includes("already taken") ? "Tên đăng nhập đã tồn tại."
-        : msg.includes("invalid username or password") ? "Sai tên đăng nhập hoặc mật khẩu." : msg);
+      setError(authErrorText((err as { message?: string }).message ?? "Có lỗi xảy ra"));
       setBusy(false);
     }
   }

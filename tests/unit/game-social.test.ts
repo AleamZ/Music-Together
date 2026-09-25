@@ -92,7 +92,7 @@ describe("buildRoster per map", () => {
 describe("freshChatBubbles", () => {
   const now = Date.parse("2026-09-24T10:00:00Z");
   const msg = (id: string, account: string | null, ageMs: number): ChatMessage =>
-    ({ id, room_id: "r", account_id: account, username: "u", body: "hi", created_at: new Date(now - ageMs).toISOString() });
+    ({ id, room_id: "r", account_id: account, username: "u", body: "hi", created_at: new Date(now - ageMs).toISOString(), system: false });
   it("keeps unseen, recent messages written by people", () => {
     const out = freshChatBubbles([msg("1", "a", 5_000), msg("2", "a", 60_000), msg("3", null, 0), msg("4", "b", 0)], new Set(["4"]), now);
     expect(out.map((m) => m.id)).toEqual(["1"]);

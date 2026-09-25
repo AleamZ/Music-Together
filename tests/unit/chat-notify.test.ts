@@ -4,12 +4,12 @@ import type { ChatMessage } from "@/lib/chat";
 import { ANNOUNCER_NAME } from "@/lib/game/fishing/announce";
 
 const msg = (id: string, account_id: string | null): ChatMessage =>
-  ({ id, room_id: "r", account_id, username: "u" + id, body: "b" + id, created_at: id });
+  ({ id, room_id: "r", account_id, username: "u" + id, body: "b" + id, created_at: id, system: false });
 // a server catch announcement (v14): no author, the announcer's name, the catcher's account in the prefix
 const ME = "0b6a4c3e-1d2f-4a5b-8c7d-9e0f1a2b3c4d";
 const OTHER = "9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f";
 const catchMsg = (id: string, catcher: string): ChatMessage =>
-  ({ id, room_id: "r", account_id: null, username: ANNOUNCER_NAME, body: `[catch:${catcher}|ca_tra|3150] 🎣 Dat vừa câu được Cá tra 3,2 kg (Hiếm)!`, created_at: id });
+  ({ id, room_id: "r", account_id: null, username: ANNOUNCER_NAME, body: `[catch:${catcher}|ca_tra|3150] 🎣 Dat vừa câu được Cá tra 3,2 kg (Hiếm)!`, created_at: id, system: true });
 
 describe("newFromOthers", () => {
   it("returns unseen messages from others, in order", () => {
@@ -38,7 +38,7 @@ describe("newFromOthers", () => {
 
 describe("notificationText", () => {
   it("shows the readable part of a land sale", () => {
-    const sale: ChatMessage = { id: "l", room_id: "r", account_id: null, username: "Hợp tác xã", body: "[land:3] 🏡 Lan đã mua thửa 3 của Dat với giá 8.500 xu.", created_at: "l" };
+    const sale: ChatMessage = { id: "l", room_id: "r", account_id: null, username: "Hợp tác xã", body: "[land:3] 🏡 Lan đã mua thửa 3 của Dat với giá 8.500 xu.", created_at: "l", system: true };
     expect(notificationText(sale)).toBe("🏡 Lan đã mua thửa 3 của Dat với giá 8.500 xu.");
     expect(newFromOthers([sale], new Set(), ME).map((m) => m.id)).toEqual(["l"]);
   });

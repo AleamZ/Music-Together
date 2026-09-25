@@ -8,7 +8,8 @@ const ACC = "0b6a4c3e-1d2f-4a5b-8c7d-9e0f1a2b3c4d";
 // the exact text finish_cast builds: format('[catch:%s|%s|%s] 🎣 %s vừa câu được %s %s (%s)!', ...)
 const BODY = `[catch:${ACC}|ca_tra|3150] 🎣 Dat vừa câu được Cá tra 3,2 kg (Hiếm)!`;
 const msg = (over: Partial<ChatMessage>): ChatMessage => ({
-  id: "m1", room_id: "r", account_id: null, username: ANNOUNCER_NAME, body: BODY, created_at: "2026-09-24T10:00:00Z", ...over,
+  id: "m1", room_id: "r", account_id: null, username: ANNOUNCER_NAME, body: BODY, created_at: "2026-09-24T10:00:00Z", system: true,
+  ...over,
 });
 
 describe("parseCatchAnnouncement", () => {
@@ -22,6 +23,10 @@ describe("parseCatchAnnouncement", () => {
     expect(parseCatchAnnouncement(msg({ username: "Dat" }))).toBeNull();
     expect(parseCatchAnnouncement(msg({ body: "hello" }))).toBeNull();
     expect(parseCatchAnnouncement(msg({ body: `[catch:${ACC}|CA TRA|3150] x` }))).toBeNull();
+  });
+  it("ignores a line the server did not post as a system line (anti-cheat §6.1)", () => {
+    expect(parseCatchAnnouncement(msg({ system: false }))).toBeNull();
+    expect(parseAnnouncement(msg({ system: false }))).toBeNull();
   });
 });
 
@@ -51,6 +56,7 @@ describe("parseLandAnnouncement", () => {
     expect(parseLandAnnouncement(msg({ username: LAND_ANNOUNCER_NAME, body: LAND, account_id: ACC }))).toBeNull();
     expect(parseLandAnnouncement(msg({ username: ANNOUNCER_NAME, body: LAND }))).toBeNull();
     expect(parseLandAnnouncement(msg({ username: LAND_ANNOUNCER_NAME, body: "[land:x] hi" }))).toBeNull();
+    expect(parseLandAnnouncement(msg({ username: LAND_ANNOUNCER_NAME, body: LAND, system: false }))).toBeNull();
   });
   it("is one of the announcements, each prefix with its own author", () => {
     expect(parseAnnouncement(msg({ username: LAND_ANNOUNCER_NAME, body: LAND }))).toEqual({ kind: "land", plot: 3, text: LAND_TEXT });
