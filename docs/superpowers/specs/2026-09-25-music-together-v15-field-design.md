@@ -62,7 +62,7 @@ Clarifications made while writing this spec. The owner should confirm them durin
   - RPC-only writes;
   - Vietnamese UI with `vi-VN` numbers;
   - "per day" rules on the `Asia/Ho_Chi_Minh` calendar.
-- **Migrations:** v15.1 is `0013_v15_field.sql` and v15.2 is `0014_v15_gather.sql`. Each is additive and re-runnable: `if not exists`, `create or replace`, `drop … if exists`, and seeds use `on conflict do update`. The owner runs them in the Supabase SQL editor.
+- **Migrations:** v15.1 is `0013_v15_field.sql` and v15.2 is `0016_v15_gather.sql` (`0014` is the lyrics hotfix and `0015` the anti-cheat layer, see the anti-cheat spec, D7). Each is additive and re-runnable: `if not exists`, `create or replace`, `drop … if exists`, and seeds use `on conflict do update`. The owner runs them in the Supabase SQL editor.
 - **The field map is 800 × 480 world px** (cell 8). The v13 camera and view code (`computeView`, `cameraFor`) already scroll any map size. The first map task confirms this at 800 × 480 on desktop and phone view sizes.
 - **Time:** every time rule lives in a private SQL function that takes `p_now`, and the public RPCs pass `now()`. Tests move time by calling the private functions. No client can set the time.
 - **Test baseline** at `cd32174`: `pnpm test` → 70 files passed / 9 skipped, 502 tests passed / 54 skipped. `tsc` is clean. The plan records the lint baseline.
@@ -97,7 +97,7 @@ lib/game/farm/                         pure: catalog, crop (schedule, water, pes
 lib/game/maps/field.ts, field-art.ts   the map (collision, plots, spots, NPCs) and its painter
 lib/game/art/crops.ts, farm-icons.ts   crop stage painters, pest overlays; icons for seeds, fertilizers, pesticides,
                                        rice, containers, crabs, snails
-supabase/migrations/0013_v15_field.sql, 0014_v15_gather.sql
+supabase/migrations/0013_v15_field.sql, 0016_v15_gather.sql
 ```
 
 The data flow is the v14 shape. The client calls an RPC, and every RPC answers with the full state it touched: `field_state` for the room, including "mine". Local visuals update at once. Other players get an `fp` message and refetch.
@@ -744,7 +744,7 @@ Everything is original and drawn in code.
   - the containers, cua đồng, cua gạch, ốc đồng, ốc bươu vàng.
 - **NPC looks:** chú Tám, anh Hai and cô Út use existing clothing layers and palettes, plus a khăn rằn neck item if the catalog has none.
 
-## 15. v15.2 — gathering and minigames (`0014_v15_gather.sql`)
+## 15. v15.2 — gathering and minigames (`0016_v15_gather.sql`)
 
 ### 15.1 Minigames
 
