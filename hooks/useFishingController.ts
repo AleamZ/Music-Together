@@ -129,12 +129,11 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     }, SONG_BONUS_DELAY_MS);
   }, [currentId, currentMine, reload, later]);
 
-  // --- a clock for the prompts while a cooldown, the hourly cap or the daily cap runs
+  // --- a clock for the prompts: every second while a cooldown or the hourly cap counts down
   const [now, setNow] = useState<number | null>(null);
   const digRunning = !!state?.digReadyAt && (now === null || Date.parse(state.digReadyAt) > now);
   const capRunning = !!state && castWaitMin(state, now ?? 0) > 0;
-  const dayRunning = !!state && dayCapped(state, now ?? 0);
-  const ticking = digRunning || capRunning || dayRunning;
+  const ticking = digRunning || capRunning;
   useEffect(() => {
     if (!ticking) return;
     const tick = () => setNow(serverNow());
@@ -145,6 +144,17 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       clearInterval(timer);
     };
   }, [ticking]);
+  // …the daily cap shows no countdown: one tick to show it, then one when the Vietnam day turns (a tick that comes early
+  // waits for the rest)
+  const dayRunning = !!state && dayCapped(state, now ?? 0);
+  const dayEnd = dayRunning && state.dayResetsAt !== null ? Date.parse(state.dayResetsAt) : null;
+  useEffect(() => {
+    if (!dayRunning || ticking) return;
+    const wait = now === null ? 0 : dayEnd !== null && Number.isFinite(dayEnd) ? Math.max(0, dayEnd - serverNow()) : null;
+    if (wait === null) return;
+    const timer = setTimeout(() => setNow(serverNow()), wait);
+    return () => clearTimeout(timer);
+  }, [dayRunning, ticking, dayEnd, now]);
   const promptText = useCallback((it: Interactable) => promptFor(it, state, now), [state, now]);
 
   // --- digging worms: a second of dust, then dig_worms

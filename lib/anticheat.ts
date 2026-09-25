@@ -103,11 +103,12 @@ export function reasonText(code: string): string {
   }
 }
 
-/** What the hub passes on: a strike (1 or 2) from an envelope, or a running lock. The code of a lock is known from
- *  fishing_state's `lock`, and unknown (null) when the lock comes from an `account locked` refusal. */
+/** What the hub passes on: a strike (1 or 2) from an envelope, a running lock, or that no lock runs. The code of a lock
+ *  is known from fishing_state's `lock`, and unknown (null) when the lock comes from an `account locked` refusal. */
 export type AnticheatEvent =
   | { kind: "strike"; info: AnticheatInfo }
-  | { kind: "lock"; until: number; code: string | null };
+  | { kind: "lock"; until: number; code: string | null }
+  | { kind: "unlock" };
 
 const listeners = new Set<(e: AnticheatEvent) => void>();
 
@@ -122,6 +123,11 @@ export function reportAnticheat(info: AnticheatInfo): void {
 /** A lock running until `untilMs` on the server's clock. */
 export function reportLock(untilMs: number, code: string | null): void {
   emit({ kind: "lock", until: untilMs, code });
+}
+
+/** A fishing state without a lock: a pardon or a switch to log mode may have ended it early, so the chip goes. */
+export function reportNoLock(): void {
+  emit({ kind: "unlock" });
 }
 
 export function subscribeAnticheat(fn: (e: AnticheatEvent) => void): () => void {

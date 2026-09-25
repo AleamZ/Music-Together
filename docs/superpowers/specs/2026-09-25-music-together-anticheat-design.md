@@ -1033,7 +1033,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 - `class AnticheatError extends Error { info: AnticheatInfo }`. Its `message` is `info.error ?? "anticheat"`, so the existing `fishingErrorMessage` / `farmErrorMessage` switches map a `strike: 0` refusal as before.
 - `lockSeconds(err: unknown): number | null`: `Number(details)` when `message === "account locked"`.
 - `durationVi(sec)`, `lockText(sec)`, `chipText(sec)`, `chipLabel(sec)`, `reasonText(code)` and the constants in §12.2.
-- `reportAnticheat(info)`, `reportLock(untilMs, code)`, `subscribeAnticheat(fn): () => void`.
+- `reportAnticheat(info)`, `reportLock(untilMs, code)`, `reportNoLock()`, `subscribeAnticheat(fn): () => void`.
 
 **`call()` in `lib/game/fishing/rpc.ts` and `lib/game/farm/rpc.ts`:**
 1. On `error.message === "account locked"`, it reports the lock (`serverNow() + seconds`), then throws as today.
@@ -1046,16 +1046,18 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 **The hooks:**
 - `useFishing.act` and `useField.call` skip the toast when the error is an `AnticheatError` with `strike ≥ 1`, because the modal shows instead. They still reload.
 - `parseFishingState` adds `castsTodayLeft` (default 300), `dayResetsAt` and `lock`.
-- `useFishing` calls `reportLock` when an applied state has `lock`.
+- `useFishing` calls `reportLock` when an applied state has `lock`, and `reportNoLock` when it has none.
 
 **`hooks/useAnticheat.ts`** gives the shell `{ modal: "warn" | "ban" | null, reason, secondsLeft, dismiss }`:
 - the warning shows once per `lockedUntil` per page load;
-- the countdown ticks every second on `serverNow()`.
+- the countdown ticks every second on `serverNow()`;
+- `reportNoLock` ends the countdown at once, so a pardon or a switch to log mode does not leave the chip counting.
 
 **The components:**
 - `AnticheatModal` uses `ParchmentModal`.
   - The warning closes with its button, ✕ or Esc.
   - The ban modal calls `useAuth().logout()` on its button and on any close (R15).
+  - While either is open, the canvas takes no input, and Esc belongs to the modal: it does not cancel the farm work.
 - `AnticheatChip` renders in `GameShell`'s player card under `FishingHud` while `secondsLeft > 0`.
 
 ### 12.2 Warning, lock and ban (verbatim)

@@ -22,6 +22,7 @@ import { freshAnnouncements } from "@/lib/game/fishing/announce";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
+import { overlayLocks } from "@/lib/game/overlays";
 import { badgesFor, buildRoster, freshChatBubbles, isHereOn, roleAccounts } from "@/lib/game/social";
 import type { Look } from "@/lib/game/types";
 import { mapCounts } from "@/lib/presence-modes";
@@ -174,9 +175,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   // --- anti-cheat: the warning or the ban after a strike, and the lock's countdown (anti-cheat spec §12.1)
   const anticheat = useAnticheat();
 
-  // --- input is off while any panel, the farm work, the create editor or an anti-cheat modal is open
-  const blocking = panel !== null || fishing.panel !== null || farm.panel !== null || farm.work !== null || creating
-    || anticheat.modal !== null;
+  // --- input is off while any panel, the farm work, the create editor or an anti-cheat modal is open; an Esc belongs to
+  //     an open overlay outside the field's own, not to the farm work
+  const { blocking, panelOpen } = overlayLocks({
+    panel: panel !== null, fishingPanel: fishing.panel !== null, creating, anticheatModal: anticheat.modal !== null,
+    farmPanel: farm.panel !== null, farmWork: farm.work !== null,
+  });
   useEffect(() => {
     canvasRef.current?.setInputEnabled(!blocking);
   }, [blocking]);
@@ -329,7 +333,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       )}
 
       <FishingOverlays fishing={fishing} />
-      <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panel !== null || fishing.panel !== null || creating} />
+      <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} />
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
         <HudChatBar

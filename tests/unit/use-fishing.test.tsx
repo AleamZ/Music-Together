@@ -123,6 +123,18 @@ describe("useFishing", () => {
     expect(events).toEqual([{ kind: "lock", until: Date.parse("2026-10-02T10:20:00Z"), code: "bad_plot" }]);
   });
 
+  it("reports that no lock runs when a state carries none, so a pardoned lock leaves the chip", async () => {
+    const events: AnticheatEvent[] = [];
+    const off = subscribeAnticheat((e) => events.push(e));
+    rpc.fetchFishingState.mockResolvedValue(state({ lock: { until: "2026-10-02T10:20:00+00:00", code: "bad_plot" } }));
+    const { result } = renderHook(() => useFishing("tok", () => {}));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rpc.fetchFishingState.mockResolvedValue(state({ lock: null }));
+    await act(async () => { await result.current.reload(); });
+    off();
+    expect(events).toEqual([{ kind: "lock", until: Date.parse("2026-10-02T10:20:00Z"), code: "bad_plot" }, { kind: "unlock" }]);
+  });
+
   it("says the fish got away when finish_cast fails on the network", async () => {
     const errors: string[] = [];
     const { result } = renderHook(() => useFishing("tok", (t) => errors.push(t)));
@@ -235,6 +247,26 @@ describe("useFishingController", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(result.current.promptText(spot)).toBe("Hết lượt câu hôm nay");
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(result.current.promptText(spot)).toBe("Quăng cần");
+  });
+
+  it("does not tick every second through a capped day: one tick shows the cap, one more when the day turns", async () => {
+    const capped = state({ casts_today_left: 0, day_resets_at: new Date(serverNow() + 3_600_000).toISOString() });
+    rpc.fetchFishingState.mockResolvedValue(capped);
+    rpc.claimDaily.mockResolvedValue({ claimed: false, amount: 0, state: capped });
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders++;
+      return useFishingController({ token: "tok", roomId: "r", accountId: "me", canvas: () => canvas, current: null, toast: () => {} });
+    });
+    const spot = { id: "fish_1", kind: "fish_spot" as const, label: "x", prompt: "Quăng cần", rect: { x: 0, y: 0, w: 1, h: 1 }, use: { x: 0, y: 0 } };
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.promptText(spot)).toBe("Hết lượt câu hôm nay");
+    const settled = renders;
+    for (let minute = 0; minute < 10; minute++) await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(renders - settled).toBe(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000_000); });
     expect(result.current.promptText(spot)).toBe("Quăng cần");
   });
 

@@ -32,7 +32,9 @@ export function useAnticheat(): AnticheatView {
       warned.add(end);
       setModal((m) => (m?.kind === "ban" ? m : { kind: "warn", code }));
     };
-    if (e.kind === "lock") {
+    if (e.kind === "unlock") {
+      setUntil(null);
+    } else if (e.kind === "lock") {
       setUntil(e.until);
       if (e.code !== null) warn(e.until, e.code);
     } else if (e.info.strike === 2) {

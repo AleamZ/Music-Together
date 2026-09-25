@@ -8,7 +8,7 @@ import AnticheatChip from "@/components/game/AnticheatChip";
 import AnticheatModal from "@/components/game/AnticheatModal";
 import { useAnticheat } from "@/hooks/useAnticheat";
 import {
-  BAN_BODY, BAN_WIPE, reportAnticheat, reportLock, WARN_BODY, WARN_LOCK, WARN_REPEAT, type AnticheatInfo,
+  BAN_BODY, BAN_WIPE, reportAnticheat, reportLock, reportNoLock, WARN_BODY, WARN_LOCK, WARN_REPEAT, type AnticheatInfo,
 } from "@/lib/anticheat";
 import { serverNow, syncClock } from "@/lib/game/farm/clock";
 
@@ -117,6 +117,17 @@ describe("AnticheatChip", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(7000); });
     expect(screen.getByRole("timer")).toHaveTextContent("🔒 4:00");
     await act(async () => { await vi.advanceTimersByTimeAsync(240_000); });
+    expect(screen.queryByRole("timer")).toBeNull();
+  });
+
+  it("goes at once when a fishing state says no lock runs (a pardon, or a switch to log mode)", async () => {
+    render(<Chip />);
+    act(() => reportLock(serverNow() + 247_000, "bad_plot"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByRole("timer")).toHaveTextContent("🔒 4:07");
+    act(() => reportNoLock());
+    expect(screen.queryByRole("timer")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(screen.queryByRole("timer")).toBeNull();
   });
 });

@@ -48,7 +48,8 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
   farm: FarmController;
   me: string;
   onField: boolean;
-  /** A panel or modal outside the field's own is open (the shell's, fishing's or the character editor): Esc is its. */
+  /** A panel or modal outside the field's own is open (the shell's, fishing's, the character editor or the anti-cheat
+   *  modal): Esc is its. */
   panelOpen?: boolean;
 }) {
   const { panel, closePanel, openPanel, busy, now } = farm;
