@@ -12,7 +12,7 @@ import {
   type PlayHistoryItem,
 } from "@/lib/room-stats";
 import { fetchVideoDetails } from "@/lib/youtube/video";
-import { checkQueueRules, ruleMessage, violationFromRpcError } from "@/lib/queue-rules";
+import { checkQueueRules, ruleMessage, violationFromRpcError, isDuplicateInQueue } from "@/lib/queue-rules";
 import RoomChartModal from "./RoomChartModal";
 
 interface RoomLeaderboardProps {
@@ -22,6 +22,7 @@ interface RoomLeaderboardProps {
   roomId: string;
   token: string;
   onOpenModal?: () => void;
+  history?: PlayHistoryItem[];
 }
 
 export default function RoomLeaderboard({
@@ -31,22 +32,29 @@ export default function RoomLeaderboard({
   roomId,
   token,
   onOpenModal,
+  history: propHistory,
 }: RoomLeaderboardProps) {
   const [activeTab, setActiveTab] = useState<"ranking" | "shuffle" | "history">("ranking");
-  const [history, setHistory] = useState<PlayHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [internalHistory, setInternalHistory] = useState<PlayHistoryItem[]>([]);
+  const [loading, setLoading] = useState(!propHistory);
   const [readdingId, setReaddingId] = useState<string | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  const history = propHistory ?? internalHistory;
+
   // Fetch play history on mount or whenever current song changes
   useEffect(() => {
+    if (propHistory) {
+      setLoading(false);
+      return;
+    }
     let active = true;
     fetchPlayHistory(roomId)
       .then((data) => {
         if (active) {
-          setHistory(data);
+          setInternalHistory(data);
           setLoading(false);
         }
       })
@@ -56,7 +64,7 @@ export default function RoomLeaderboard({
     return () => {
       active = false;
     };
-  }, [roomId, current?.id]);
+  }, [roomId, current?.id, propHistory]);
 
   const rankings = useMemo(
     () => computeContributorRanking(history, queue, current),
@@ -66,6 +74,11 @@ export default function RoomLeaderboard({
 
   const handleReadd = async (item: PlayHistoryItem) => {
     if (!token) return;
+    if (isDuplicateInQueue(queue, current?.youtube_video_id, item.youtube_video_id)) {
+      setFeedbackMsg("Bài này đã có trong hàng chờ hoặc đang phát! ⚠️");
+      setTimeout(() => setFeedbackMsg(null), 3000);
+      return;
+    }
     setReaddingId(item.id);
     try {
       // 1. Fetch video duration first (required for rooms with max_duration_seconds limit)

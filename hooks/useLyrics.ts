@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findActiveLyricIndex, parseLrc, type LyricLine } from "@/lib/lyrics/parse-lrc";
 import { joinLyricSync, type LyricSyncHandle } from "@/lib/lyrics/channel";
+import { fetchVideoLyrics, saveVideoLyrics, updateVideoLyricOffset } from "@/lib/lyrics/db";
 
 export interface LyricsData {
   trackName?: string;
@@ -17,10 +18,40 @@ export interface UseLyricsProps {
   elapsedMs: number;
   roomId?: string | null;
   trackId?: string | null;
+  youtubeVideoId?: string | null;
   username?: string | null;
+  canControl?: boolean;
 }
 
 const lyricsCache = new Map<string, { lines: LyricLine[]; meta: LyricsData }>();
+const OFFSET_STORAGE_PREFIX = "music-together:lyric-offset:";
+
+export function getSavedLyricOffset(videoId?: string | null): number {
+  if (typeof window === "undefined" || !videoId) return 0;
+  try {
+    const val = localStorage.getItem(`${OFFSET_STORAGE_PREFIX}${videoId}`);
+    if (val !== null) {
+      const num = Number(val);
+      if (Number.isFinite(num)) return num;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return 0;
+}
+
+export function saveLyricOffset(videoId: string | null | undefined, offsetMs: number) {
+  if (typeof window === "undefined" || !videoId) return;
+  try {
+    if (offsetMs === 0) {
+      localStorage.removeItem(`${OFFSET_STORAGE_PREFIX}${videoId}`);
+    } else {
+      localStorage.setItem(`${OFFSET_STORAGE_PREFIX}${videoId}`, String(offsetMs));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export function useLyrics({
   title,
@@ -28,15 +59,28 @@ export function useLyrics({
   elapsedMs,
   roomId,
   trackId,
+  youtubeVideoId,
   username,
+  canControl = false,
 }: UseLyricsProps) {
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [meta, setMeta] = useState<LyricsData | null>(null);
+  const [offsetMs, setOffsetMsState] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const currentTitleRef = useRef<string | null>(null);
   const lyricSyncHandleRef = useRef<LyricSyncHandle | null>(null);
+  const canControlRef = useRef(canControl);
+  canControlRef.current = canControl;
+  const usernameRef = useRef(username);
+  usernameRef.current = username;
+
+  // Load saved offset from persistent cache when active track changes, or reset to 0
+  useEffect(() => {
+    const saved = getSavedLyricOffset(youtubeVideoId);
+    setOffsetMsState(saved);
+  }, [trackId, youtubeVideoId]);
 
   // Subscribe to real-time lyric change broadcasts across room members
   useEffect(() => {
@@ -45,23 +89,30 @@ export function useLyrics({
     const handle = joinLyricSync(roomId, (payload) => {
       // Validate that this lyric update is meant for the currently active track
       if (trackId && payload.trackId === trackId) {
-        const rawText = payload.syncedLyrics || payload.plainLyrics || "";
-        const parsedLines = parseLrc(rawText);
-        const newMeta: LyricsData = {
-          trackName: payload.trackName,
-          artistName: payload.artistName,
-          syncedLyrics: payload.syncedLyrics,
-          plainLyrics: payload.plainLyrics,
-        };
+        if (typeof payload.offsetMs === "number") {
+          setOffsetMsState(payload.offsetMs);
+          saveLyricOffset(youtubeVideoId, payload.offsetMs);
+        }
 
-        setLines(parsedLines);
-        setMeta(newMeta);
-        setError(null);
-        setLoading(false);
+        if (payload.syncedLyrics !== undefined || payload.plainLyrics !== undefined) {
+          const rawText = payload.syncedLyrics || payload.plainLyrics || "";
+          const parsedLines = parseLrc(rawText);
+          const newMeta: LyricsData = {
+            trackName: payload.trackName,
+            artistName: payload.artistName,
+            syncedLyrics: payload.syncedLyrics,
+            plainLyrics: payload.plainLyrics,
+          };
 
-        if (title) {
-          const cacheKey = `${title.trim().toLowerCase()}_${durationSeconds || 0}`;
-          lyricsCache.set(cacheKey, { lines: parsedLines, meta: newMeta });
+          setLines(parsedLines);
+          setMeta(newMeta);
+          setError(null);
+          setLoading(false);
+
+          if (title) {
+            const cacheKey = `${title.trim().toLowerCase()}_${durationSeconds || 0}`;
+            lyricsCache.set(cacheKey, { lines: parsedLines, meta: newMeta });
+          }
         }
       }
     });
@@ -73,66 +124,112 @@ export function useLyrics({
     };
   }, [roomId, trackId, title, durationSeconds]);
 
-  const fetchLyrics = useCallback(async (searchTitle: string, durationSec = 0) => {
-    if (!searchTitle.trim()) {
-      setLines([]);
-      setMeta(null);
-      setError(null);
-      return;
-    }
-
-    const cacheKey = `${searchTitle.trim().toLowerCase()}_${durationSec}`;
-    if (lyricsCache.has(cacheKey)) {
-      const cached = lyricsCache.get(cacheKey)!;
-      setLines(cached.lines);
-      setMeta(cached.meta);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      let url = `/api/lyrics?title=${encodeURIComponent(searchTitle.trim())}`;
-      if (durationSec > 0) {
-        url += `&duration=${Math.round(durationSec)}`;
-      }
-
-      const res = await fetch(url);
-      if (!res.ok) {
-        if (res.status === 404) {
-          setError("Chưa có lời cho bài hát này.");
-        } else {
-          setError("Không thể tải lời bài hát.");
-        }
+  const fetchLyrics = useCallback(
+    async (searchTitle: string, durationSec = 0, videoId?: string | null) => {
+      if (!searchTitle.trim()) {
         setLines([]);
         setMeta(null);
+        setError(null);
         return;
       }
 
-      const data = (await res.json()) as LyricsData;
-      const rawText = data.syncedLyrics || data.plainLyrics || "";
-      const parsedLines = parseLrc(rawText);
+      const cacheKey = `${searchTitle.trim().toLowerCase()}_${durationSec}`;
+      if (lyricsCache.has(cacheKey)) {
+        const cached = lyricsCache.get(cacheKey)!;
+        setLines(cached.lines);
+        setMeta(cached.meta);
+        setError(null);
+        setLoading(false);
+        return;
+      }
 
-      lyricsCache.set(cacheKey, { lines: parsedLines, meta: data });
-      setLines(parsedLines);
-      setMeta(data);
-    } catch {
-      setError("Lỗi kết nối khi tải lời bài hát.");
-      setLines([]);
-      setMeta(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      setLoading(true);
+      setError(null);
 
-  // Fetch automatically when song title changes
+      // 1. First check Supabase video_lyrics cache for this specific YouTube video
+      if (videoId) {
+        try {
+          const dbRecord = await fetchVideoLyrics(videoId);
+          if (dbRecord && (dbRecord.synced_lyrics || dbRecord.plain_lyrics)) {
+            const rawText = dbRecord.synced_lyrics || dbRecord.plain_lyrics || "";
+            const parsedLines = parseLrc(rawText);
+            const dbMeta: LyricsData = {
+              trackName: dbRecord.track_name || undefined,
+              artistName: dbRecord.artist_name || undefined,
+              syncedLyrics: dbRecord.synced_lyrics || undefined,
+              plainLyrics: dbRecord.plain_lyrics || undefined,
+            };
+            lyricsCache.set(cacheKey, { lines: parsedLines, meta: dbMeta });
+            setLines(parsedLines);
+            setMeta(dbMeta);
+            if (typeof dbRecord.offset_ms === "number" && dbRecord.offset_ms !== 0) {
+              setOffsetMsState(dbRecord.offset_ms);
+              saveLyricOffset(videoId, dbRecord.offset_ms);
+            }
+            setLoading(false);
+            return;
+          }
+        } catch {
+          // Fall back to external API query
+        }
+      }
+
+      // 2. Fetch from external lyrics search API (LRCLIB / Netease)
+      try {
+        let url = `/api/lyrics?title=${encodeURIComponent(searchTitle.trim())}`;
+        if (durationSec > 0) {
+          url += `&duration=${Math.round(durationSec)}`;
+        }
+
+        const res = await fetch(url);
+        if (!res.ok) {
+          if (res.status === 404) {
+            setError("Chưa có lời cho bài hát này.");
+          } else {
+            setError("Không thể tải lời bài hát.");
+          }
+          setLines([]);
+          setMeta(null);
+          return;
+        }
+
+        const data = (await res.json()) as LyricsData;
+        const rawText = data.syncedLyrics || data.plainLyrics || "";
+        const parsedLines = parseLrc(rawText);
+
+        lyricsCache.set(cacheKey, { lines: parsedLines, meta: data });
+        setLines(parsedLines);
+        setMeta(data);
+
+        // 3. Asynchronously cache to database so future plays load instantly
+        // ONLY DJ / Controller writes the new song cache to DB to prevent duplicate writes and overwriting offset
+        if (canControlRef.current && videoId && (data.syncedLyrics || data.plainLyrics)) {
+          void saveVideoLyrics({
+            videoId,
+            trackName: data.trackName,
+            artistName: data.artistName,
+            syncedLyrics: data.syncedLyrics,
+            plainLyrics: data.plainLyrics,
+            offsetMs: 0,
+            timingSource: "auto",
+            updatedByName: usernameRef.current,
+          });
+        }
+      } catch {
+        setError("Lỗi kết nối khi tải lời bài hát.");
+        setLines([]);
+        setMeta(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  // Fetch automatically when song title or YouTube video changes
   useEffect(() => {
     if (!title) {
       currentTitleRef.current = null;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- title changed / reset
       setLines([]);
       setMeta(null);
       setError(null);
@@ -140,26 +237,56 @@ export function useLyrics({
       return;
     }
 
-    if (currentTitleRef.current === title) return;
-    currentTitleRef.current = title;
+    const key = `${title}_${youtubeVideoId ?? ""}`;
+    if (currentTitleRef.current === key) return;
+    currentTitleRef.current = key;
 
-    void fetchLyrics(title, durationSeconds || 0);
-  }, [title, durationSeconds, fetchLyrics]);
+    void fetchLyrics(title, durationSeconds || 0, youtubeVideoId);
+  }, [title, durationSeconds, youtubeVideoId, fetchLyrics]);
+
+  const effectiveElapsedMs = useMemo(() => {
+    return Math.max(0, elapsedMs + offsetMs);
+  }, [elapsedMs, offsetMs]);
 
   const activeLineIndex = useMemo(() => {
-    return findActiveLyricIndex(lines, elapsedMs);
-  }, [lines, elapsedMs]);
+    return findActiveLyricIndex(lines, effectiveElapsedMs);
+  }, [lines, effectiveElapsedMs]);
 
   const hasSynced = useMemo(() => {
     return lines.length > 0 && lines[0].timeMs >= 0;
   }, [lines]);
 
+  const setOffsetMs = useCallback(
+    (newOffset: number | ((prev: number) => number), syncToRoom = false) => {
+      setOffsetMsState((prev) => {
+        const next = typeof newOffset === "function" ? newOffset(prev) : newOffset;
+        saveLyricOffset(youtubeVideoId, next);
+
+        // ONLY DJ / Controller (canControl) with syncToRoom can broadcast and update DB
+        if (canControlRef.current && syncToRoom && trackId) {
+          if (lyricSyncHandleRef.current) {
+            lyricSyncHandleRef.current.send({
+              trackId,
+              offsetMs: next,
+              appliedByName: username || undefined,
+            });
+          }
+          if (youtubeVideoId) {
+            void updateVideoLyricOffset(youtubeVideoId, next, username);
+          }
+        }
+        return next;
+      });
+    },
+    [trackId, youtubeVideoId, username]
+  );
+
   const searchManual = useCallback(
     async (customQuery: string) => {
       if (!customQuery.trim()) return;
-      await fetchLyrics(customQuery.trim(), durationSeconds || 0);
+      await fetchLyrics(customQuery.trim(), durationSeconds || 0, youtubeVideoId);
     },
-    [durationSeconds, fetchLyrics]
+    [durationSeconds, fetchLyrics, youtubeVideoId]
   );
 
   const applyCustomLyric = useCallback(
@@ -176,18 +303,34 @@ export function useLyrics({
         lyricsCache.set(cacheKey, { lines: parsedLines, meta: data });
       }
 
-      if (syncToRoom && lyricSyncHandleRef.current && trackId) {
-        lyricSyncHandleRef.current.send({
-          trackId,
-          syncedLyrics: data.syncedLyrics,
-          plainLyrics: data.plainLyrics,
-          trackName: data.trackName,
-          artistName: data.artistName,
-          appliedByName: username || undefined,
-        });
+      // ONLY DJ / Controller (canControl) with syncToRoom can broadcast and update DB
+      if (canControlRef.current && syncToRoom && trackId) {
+        if (lyricSyncHandleRef.current) {
+          lyricSyncHandleRef.current.send({
+            trackId,
+            syncedLyrics: data.syncedLyrics,
+            plainLyrics: data.plainLyrics,
+            trackName: data.trackName,
+            artistName: data.artistName,
+            offsetMs,
+            appliedByName: username || undefined,
+          });
+        }
+        if (youtubeVideoId) {
+          void saveVideoLyrics({
+            videoId: youtubeVideoId,
+            trackName: data.trackName,
+            artistName: data.artistName,
+            syncedLyrics: data.syncedLyrics,
+            plainLyrics: data.plainLyrics,
+            offsetMs,
+            timingSource: "custom",
+            updatedByName: username,
+          });
+        }
       }
     },
-    [title, durationSeconds, trackId, username]
+    [title, durationSeconds, trackId, username, offsetMs, youtubeVideoId]
   );
 
   return {
@@ -197,6 +340,9 @@ export function useLyrics({
     error,
     hasSynced,
     activeLineIndex,
+    offsetMs,
+    setOffsetMs,
+    effectiveElapsedMs,
     searchManual,
     applyCustomLyric,
   };

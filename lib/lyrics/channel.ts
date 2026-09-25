@@ -7,6 +7,7 @@ export interface LyricBroadcastPayload {
   trackName?: string;
   artistName?: string;
   appliedByName?: string;
+  offsetMs?: number;
   timestamp?: number;
 }
 
@@ -38,6 +39,7 @@ export function joinLyricSync(
         trackName: typeof raw.trackName === "string" ? raw.trackName : undefined,
         artistName: typeof raw.artistName === "string" ? raw.artistName : undefined,
         appliedByName: typeof raw.appliedByName === "string" ? raw.appliedByName : undefined,
+        offsetMs: typeof raw.offsetMs === "number" ? raw.offsetMs : undefined,
         timestamp: typeof raw.timestamp === "number" ? raw.timestamp : Date.now(),
       });
     })

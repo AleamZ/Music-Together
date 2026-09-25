@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { RoomView } from "@/hooks/useRoom";
 import Header from "./Header";
 import MemberList from "./MemberList";
@@ -13,6 +13,10 @@ import AddSong from "./AddSong";
 import Queue from "./Queue";
 import PendingQueue from "./PendingQueue";
 import MyPending from "./MyPending";
+import { usePlayback } from "@/hooks/usePlayback";
+import { useSponsorBlock } from "@/hooks/useSponsorBlock";
+import { countMyOrders } from "@/lib/queue-rules";
+import { fetchPlayHistory, type PlayHistoryItem } from "@/lib/room-stats";
 import type { PlaybackController } from "@/hooks/usePlayback";
 import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
 import type { RoomDerived } from "@/lib/room-derived";
@@ -39,6 +43,21 @@ export default function RoomShell({ view, derived, playback: dj, sponsorBlock, o
   const [leftTab, setLeftTab] = useState<"chat" | "members" | "split">("chat");
   // Drawer state for expanded chat
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+
+  // Recent play history for leaderboard & duplicate prevention
+  const [history, setHistory] = useState<PlayHistoryItem[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchPlayHistory(room.id)
+      .then((data) => {
+        if (active) setHistory(data);
+      })
+      .catch(() => { });
+    return () => {
+      active = false;
+    };
+  }, [room.id, current?.id]);
 
   return (
     <main className="w-full max-w-[1500px] mx-auto px-3 sm:px-5 lg:px-6 py-1 sm:py-1.5 h-screen max-h-screen overflow-x-auto overflow-y-hidden flex flex-col">
@@ -68,33 +87,30 @@ export default function RoomShell({ view, derived, playback: dj, sponsorBlock, o
             <button
               type="button"
               onClick={() => setLeftTab("chat")}
-              className={`flex-1 rounded-md py-1.5 text-center transition-all ${
-                leftTab === "chat"
+              className={`flex-1 rounded-md py-1.5 text-center transition-all ${leftTab === "chat"
                   ? "bg-burgundy text-cream shadow-xs font-semibold"
                   : "text-ink/70 hover:text-burgundy"
-              }`}
+                }`}
             >
               💬 Trò chuyện
             </button>
             <button
               type="button"
               onClick={() => setLeftTab("members")}
-              className={`flex-1 rounded-md py-1.5 text-center transition-all ${
-                leftTab === "members"
+              className={`flex-1 rounded-md py-1.5 text-center transition-all ${leftTab === "members"
                   ? "bg-burgundy text-cream shadow-xs font-semibold"
                   : "text-ink/70 hover:text-burgundy"
-              }`}
+                }`}
             >
               👥 Thành viên ({onlineIds.length})
             </button>
             <button
               type="button"
               onClick={() => setLeftTab("split")}
-              className={`rounded-md px-2.5 py-1.5 text-center transition-all ${
-                leftTab === "split"
+              className={`rounded-md px-2.5 py-1.5 text-center transition-all ${leftTab === "split"
                   ? "bg-burgundy text-cream shadow-xs font-semibold"
                   : "text-ink/70 hover:text-burgundy"
-              }`}
+                }`}
               title="Xem cả hai cùng lúc"
             >
               ☷ Cả hai
@@ -209,6 +225,7 @@ export default function RoomShell({ view, derived, playback: dj, sponsorBlock, o
               onToggleSponsorBlock={sponsorBlock.toggleEnabled}
               lastSkippedToast={sponsorBlock.lastSkippedToast}
               onClearSkippedToast={sponsorBlock.clearSkipToast}
+              username={myUsername}
             >
               <Reactions roomId={room.id} username={myUsername} />
             </NowPlaying>
@@ -221,6 +238,7 @@ export default function RoomShell({ view, derived, playback: dj, sponsorBlock, o
             current={current}
             roomId={room.id}
             token={token}
+            history={history}
           />
         </div>
 
@@ -235,6 +253,9 @@ export default function RoomShell({ view, derived, playback: dj, sponsorBlock, o
               rules={rules}
               willPend={willPend}
               orderLimit={orderLimit}
+              queue={state.queue}
+              currentVideoId={current?.youtube_video_id}
+              history={history}
             />
           </div>
           <div className="flex-1 min-h-0 flex flex-col overflow-y-auto pr-0.5 mt-2">

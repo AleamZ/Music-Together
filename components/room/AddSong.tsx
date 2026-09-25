@@ -8,7 +8,17 @@ import { fetchVideoDetails } from "@/lib/youtube/video";
 import { fetchPlaylistItems } from "@/lib/youtube/playlist";
 import { fetchSuggestions, type Suggestion } from "@/lib/youtube/suggest";
 import { fetchSearchResults, type SearchResult } from "@/lib/youtube/search";
-import { checkQueueRules, orderLimitViolation, ordersRemaining, ruleMessage, violationFromRpcError, type RoomRules } from "@/lib/queue-rules";
+import {
+  checkQueueRules,
+  orderLimitViolation,
+  ordersRemaining,
+  ruleMessage,
+  violationFromRpcError,
+  checkDuplicateTrack,
+  duplicateMessage,
+  deduplicatePlaylistItems,
+  type RoomRules,
+} from "@/lib/queue-rules";
 import SearchResults from "./SearchResults";
 
 const SUGGEST_DEBOUNCE_MS = 250;
@@ -16,8 +26,24 @@ const BLUR_CLOSE_MS = 150;
 
 type Search = { id: number; query: string; results: SearchResult[] };
 
-export default function AddSong({ roomId, token, rules, willPend, orderLimit }: {
-  roomId: string; token: string; rules: RoomRules; willPend: boolean; orderLimit: { mine: number; exempt: boolean };
+export default function AddSong({
+  roomId,
+  token,
+  rules,
+  willPend,
+  orderLimit,
+  queue = [],
+  currentVideoId = null,
+  history = [],
+}: {
+  roomId: string;
+  token: string;
+  rules: RoomRules;
+  willPend: boolean;
+  orderLimit: { mine: number; exempt: boolean };
+  queue?: Array<{ youtube_video_id: string }>;
+  currentVideoId?: string | null;
+  history?: Array<{ youtube_video_id: string }>;
 }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -127,22 +153,68 @@ export default function AddSong({ roomId, token, rules, willPend, orderLimit }: 
       if (!videoId && playlistId) {
         const items = await fetchPlaylistItems(playlistId);
         if (items.length === 0) { setError("Playlist trống hoặc không đọc được."); return; }
-        const added = await addQueueItems(roomId, token,
-          items.map((it) => ({ videoId: it.videoId, title: it.title, thumb: it.thumb, duration: it.durationSeconds })));
+
+        const dedupe = deduplicatePlaylistItems(items, queue, currentVideoId, history, 20);
+        const totalDuplicates = dedupe.internalDuplicates + dedupe.queueDuplicates + dedupe.historyDuplicates;
+
+        if (dedupe.validItems.length === 0) {
+          if (dedupe.queueDuplicates > 0 && dedupe.historyDuplicates === 0) {
+            setError("Tất cả bài trong playlist đều đã có trong hàng chờ hoặc đang phát.");
+          } else if (dedupe.historyDuplicates > 0 && dedupe.queueDuplicates === 0) {
+            setError("Tất cả bài trong playlist đều vừa mới phát gần đây.");
+          } else {
+            setError("Tất cả bài trong playlist đều đã có trong hàng chờ hoặc vừa mới phát.");
+          }
+          return;
+        }
+
+        const validCandidates = dedupe.validItems;
+        const added = await addQueueItems(
+          roomId,
+          token,
+          validCandidates.map((it) => ({
+            videoId: it.videoId,
+            title: it.title,
+            thumb: it.thumb,
+            duration: it.durationSeconds,
+          })),
+        );
         // The RPC skips the same rule violators the client mirror would; inserting FEWER than the rule-valid items
         // means the order limit stopped it (the DB count is fresher than `remaining` — e.g. another tab added meanwhile).
-        const valid = items.filter((it) => !checkQueueRules(rules, { title: it.title, durationSeconds: it.durationSeconds })).length;
-        const hitLimit = remaining !== null && added < valid;
-        const skipped = hitLimit ? items.length - valid : items.length - added;
-        setNotice(
-          (hitLimit
-            ? `Đã thêm ${added}/${items.length} bài — đạt giới hạn ${rules.max_orders_per_member} order.`
-            : `Đã thêm ${added} bài từ playlist.`) +
-          (skipped > 0 ? ` Bỏ qua ${skipped} bài (quá dài / từ khóa cấm).` : "") +
-          (willPend && added > 0 ? " Đã gửi, chờ Admin/DJ duyệt." : ""),
-        );
+        const validAfterRules = validCandidates.filter((it) => !checkQueueRules(rules, { title: it.title, durationSeconds: it.durationSeconds })).length;
+        const hitLimit = remaining !== null && added < validAfterRules;
+        const skippedRules = hitLimit ? validCandidates.length - validAfterRules : validCandidates.length - added;
+
+        const noticeParts: string[] = [];
+        if (hitLimit) {
+          noticeParts.push(`Đã thêm ${added}/${items.length} bài — đạt giới hạn ${rules.max_orders_per_member} order.`);
+        } else {
+          noticeParts.push(`Đã thêm ${added} bài từ playlist.`);
+        }
+
+        const skipReasons: string[] = [];
+        if (totalDuplicates > 0) {
+          skipReasons.push(`${totalDuplicates} bài trùng lặp`);
+        }
+        if (skippedRules > 0) {
+          skipReasons.push(`${skippedRules} bài quá dài/từ khóa cấm`);
+        }
+        if (skipReasons.length > 0) {
+          noticeParts.push(`Bỏ qua ${skipReasons.join(", ")}.`);
+        }
+        if (willPend && added > 0) {
+          noticeParts.push("Đã gửi, chờ Admin/DJ duyệt.");
+        }
+
+        setNotice(noticeParts.join(" "));
         setInput("");
       } else if (videoId) {
+        const dup = checkDuplicateTrack(videoId, queue, currentVideoId, history, 20);
+        if (dup) {
+          setError(duplicateMessage(dup));
+          return;
+        }
+
         // Watch page first (has the duration); oEmbed fallback keeps title/thumb but no duration.
         const details = await fetchVideoDetails(videoId);
         const meta = details ? null : await fetchVideoMeta(videoId);
@@ -207,7 +279,9 @@ export default function AddSong({ roomId, token, rules, willPend, orderLimit }: 
       </form>
       {search && (
         <SearchResults key={search.id} query={search.query} results={search.results}
-          roomId={roomId} token={token} rules={rules} willPend={willPend} orderLimit={orderLimit} onClose={() => setSearch(null)} />
+          roomId={roomId} token={token} rules={rules} willPend={willPend} orderLimit={orderLimit}
+          queue={queue} currentVideoId={currentVideoId} history={history}
+          onClose={() => setSearch(null)} />
       )}
     </div>
   );

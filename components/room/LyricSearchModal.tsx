@@ -33,10 +33,16 @@ export default function LyricSearchModal({
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<LyricSearchItem[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [previewId, setPreviewId] = useState<number | null>(null);
+  const [previewId, setPreviewId] = useState<number | string | null>(null);
 
-  // Sync to whole room preference
-  const [syncToRoom, setSyncToRoom] = useState(true);
+  // Sync to whole room preference (only allowed for DJ/Host)
+  const [syncToRoom, setSyncToRoom] = useState(Boolean(canSyncToRoom));
+
+  useEffect(() => {
+    if (isOpen) {
+      setSyncToRoom(Boolean(canSyncToRoom));
+    }
+  }, [isOpen, canSyncToRoom]);
 
   // Manual paste state
   const [customText, setCustomText] = useState("");
@@ -102,6 +108,7 @@ export default function LyricSearchModal({
   };
 
   const handleApplySearchResult = (item: LyricSearchItem) => {
+    const effectiveSync = Boolean(canSyncToRoom && syncToRoom);
     onSelectLyric(
       {
         trackName: item.trackName,
@@ -109,7 +116,7 @@ export default function LyricSearchModal({
         syncedLyrics: item.syncedLyrics,
         plainLyrics: item.plainLyrics,
       },
-      syncToRoom
+      effectiveSync
     );
     onClose();
   };
@@ -129,6 +136,7 @@ export default function LyricSearchModal({
     if (!customText.trim()) return;
 
     const hasTimestamp = /\[\d{1,2}:\d{2}/.test(customText);
+    const effectiveSync = Boolean(canSyncToRoom && syncToRoom);
     onSelectLyric(
       {
         trackName: customTrack.trim() || undefined,
@@ -136,7 +144,7 @@ export default function LyricSearchModal({
         syncedLyrics: hasTimestamp ? customText.trim() : undefined,
         plainLyrics: !hasTimestamp ? customText.trim() : undefined,
       },
-      syncToRoom
+      effectiveSync
     );
     onClose();
   };
@@ -191,7 +199,7 @@ export default function LyricSearchModal({
           </button>
         </div>
 
-        {/* Tab 1: LRCLIB Search */}
+        {/* Tab 1: Search (LRCLIB + NetEase) */}
         {activeTab === "search" && (
           <div className="flex-1 min-h-0 flex flex-col p-4 sm:p-6 overflow-hidden">
             {/* Search Input Box */}
@@ -235,7 +243,7 @@ export default function LyricSearchModal({
               {loading && (
                 <div className="flex flex-col items-center justify-center py-12 gap-2 text-white/60">
                   <span className="text-2xl animate-spin">⏳</span>
-                  <span className="text-xs">Đang tìm các bản lời phù hợp trên LRCLIB...</span>
+                  <span className="text-xs">Đang tìm các bản lời phù hợp trên LRCLIB & NetEase Cloud Music...</span>
                 </div>
               )}
 
@@ -272,6 +280,15 @@ export default function LyricSearchModal({
                             <span className="font-bold text-sm text-white truncate">
                               {item.trackName}
                             </span>
+                            {item.source === "netease" ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                                NetEase
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                                LRCLIB
+                              </span>
+                            )}
                             {item.hasSynced ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                                 🎤 Lời chạy đồng bộ (LRC)
@@ -405,14 +422,23 @@ export default function LyricSearchModal({
 
         {/* Modal Footer with Sync-to-Room Checkbox */}
         <div className="px-4 sm:px-6 py-3 border-t border-white/10 bg-white/5 flex items-center justify-between shrink-0">
-          <label className="flex items-center gap-2 text-xs text-white/80 cursor-pointer select-none">
+          <label
+            className={`flex items-center gap-2 text-xs select-none ${
+              canSyncToRoom ? "text-white/80 cursor-pointer" : "text-white/40 cursor-not-allowed"
+            }`}
+          >
             <input
               type="checkbox"
-              checked={syncToRoom}
-              onChange={(e) => setSyncToRoom(e.target.checked)}
-              className="accent-gold w-4 h-4 rounded cursor-pointer"
+              checked={Boolean(canSyncToRoom && syncToRoom)}
+              disabled={!canSyncToRoom}
+              onChange={(e) => canSyncToRoom && setSyncToRoom(e.target.checked)}
+              className="accent-gold w-4 h-4 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <span>Đồng bộ ngay cho toàn bộ thành viên trong phòng (Realtime)</span>
+            <span>
+              {canSyncToRoom
+                ? "Đồng bộ ngay cho toàn bộ thành viên trong phòng & lưu vào Database"
+                : "Chỉ áp dụng trên máy bạn (Chỉ DJ mới có quyền đồng bộ phòng & lưu DB)"}
+            </span>
           </label>
 
           <span className="text-[10px] text-white/40 hidden sm:inline">ESC để đóng</span>

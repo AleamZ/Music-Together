@@ -20,6 +20,7 @@ export interface SponsorSegment {
   start: number; // in seconds
   end: number; // in seconds
   duration: number; // in seconds
+  videoDuration?: number; // in seconds
 }
 
 export interface SponsorBlockApiResponse {
@@ -69,3 +70,51 @@ export function findActiveSkipSegment(
 
   return null;
 }
+
+/**
+ * Determines if a sponsor segment extends to or near the end of the track.
+ * If true, playback should advance to the next track instead of seeking within the current track.
+ */
+export function isEndOfTrackSegment(
+  seg: SponsorSegment,
+  totalDurationSec: number,
+  thresholdSec = 3
+): boolean {
+  if (seg.category === "outro") return true;
+  const effectiveTotal =
+    totalDurationSec > 0 ? totalDurationSec : (seg.videoDuration ?? 0);
+  if (effectiveTotal <= 0) return false;
+  return (
+    seg.end >= effectiveTotal - thresholdSec ||
+    seg.start >= effectiveTotal - thresholdSec
+  );
+}
+
+/**
+ * Detects if there is an intro or offtopic dialogue segment at the beginning of the video.
+ * Returns the suggested negative offset in milliseconds if found (e.g. -18500 for an 18.5s intro).
+ */
+export function getIntroOffsetSuggestion(
+  segments?: SponsorSegment[],
+  toleranceStartSec = 3.0,
+  minDurationSec = 2.0
+): number | null {
+  if (!segments || segments.length === 0) return null;
+
+  for (const seg of segments) {
+    if (
+      seg.start <= toleranceStartSec &&
+      (seg.category === "music_offtopic" ||
+        seg.category === "intro" ||
+        seg.category === "sponsor" ||
+        seg.category === "selfpromo") &&
+      seg.end >= minDurationSec
+    ) {
+      return -Math.round(seg.end * 1000);
+    }
+  }
+
+  return null;
+}
+
+
