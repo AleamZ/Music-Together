@@ -310,7 +310,7 @@ The field has its own channel `game:{roomId}:field`. After a land or farm action
 
 > **Before running `0015`**, run the two pre-deploy queries in the spec (`docs/superpowers/specs/2026-09-25-music-together-anticheat-design.md`, §11.4): the names the new rules would refuse (they keep working), and the author-less announcer lines that the backfill marks as system lines.
 >
-> **Deploy order:** `0015` first, then the anti-cheat client — the client reads `chat_messages.system`, so it must never go live before the migration. The v15.1 client against `0015` only shows the raw `invalid username` / `account banned` on the login screen, and "Có lỗi, thử lại nhé." for the daily cast cap and for the calls only a tampered client makes. `0015` starts in **log** mode.
+> **Deploy order:** `0015` first, then the anti-cheat client. A client that goes live first by mistake still loads the chat (it reads it again without `chat_messages.system`), but shows the catch and land announcements as plain lines until `0015` runs. The v15.1 client against `0015` only shows the raw `invalid username` / `account banned` on the login screen, and "Có lỗi, thử lại nhé." for the daily cast cap and for the calls only a tampered client makes. `0015` starts in **log** mode.
 >
 > **Re-running `0013` after `0015`** puts back its unguarded versions of the functions `0015` re-creates (the game RPCs, the sweep, the fishing state and board): run `0015` again right after it. Once an account has been wiped, `0013` cannot be re-run as it is, because its `coin_ledger` reason check lacks `'wipe'`: add `'wipe'` to that list first.
 

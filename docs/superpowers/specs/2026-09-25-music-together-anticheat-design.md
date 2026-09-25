@@ -249,7 +249,7 @@ update public.chat_messages set system = true
 ```
 
 **The client:**
-- `ChatMessage` gains `system: boolean`, and `fetchRecentMessages` selects `system`.
+- `ChatMessage` gains `system: boolean`, and `fetchRecentMessages` selects `system`. Before `0015` that column is missing: the select fails with the Postgres error 42703 (PostgREST passes it on), and `fetchRecentMessages` reads the messages once more without it, each with `system = false`.
 - `parseCatchAnnouncement`, and the v15.1 `parseLandAnnouncement` (hence `parseAnnouncement`), accept a line only when `system === true`, in addition to the null author, the reserved name and the prefix. Their `Posted` pick gains `"system"`.
 - A forged or orphaned line renders as a normal message.
 
@@ -1009,7 +1009,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 2. `0014_lyrics_lockdown.sql` and its client patch on `main`. This step is independent.
 3. `0013` (with D1) and the v15.1 client.
 4. The pre-deploy checks (§11.4), then `0015`. It starts in `log` mode.
-5. The anti-cheat client. It selects `chat_messages.system`, so it must **never** go live before `0015`.
+5. The anti-cheat client, after `0015`. A client that goes live first by mistake still loads the chat, because it reads the messages again without `chat_messages.system` (§6.1), but it shows the catch and land announcements as plain lines until `0015` runs.
 6. After 7 days, the review (§9.8), then `enforce` in /admin.
 7. Later, `0016_v15_gather.sql`, keeping the guards (§11.3).
 
