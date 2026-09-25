@@ -1,4 +1,4 @@
--- tests/sql/v15-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0015, from the repo
+-- tests/sql/v15-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0016, from the repo
 -- root (the crop fixtures are read with \copy, and the last section re-runs 0013 with \i). Every check is an ASSERT; the
 -- first failure stops psql (ON_ERROR_STOP). A refusal the anti-cheat reads as tampering comes back as an envelope
 -- (0015): its `error` is checked instead.
@@ -351,12 +351,13 @@ select public.join_room((select v from smoke where k = 'code2'), 'pw', (select v
 do $$
 declare t2 text := (select v from smoke where k = 't2'); a2 uuid := (select v from smoke where k = 'a2')::uuid; r jsonb;
 begin
-  -- chú Tám's gift, once per account
+  -- chú Tám's gift, once per account (a sickle too, from 0016 on)
   r := public.claim_farm_gift(t2);
-  assert r->'gifted' = 'true' and r->'mine'->'items' = '{"fert_urea": 1, "seed_short": 1}' and r->>'server_now' is not null, 'gift';
+  assert r->'gifted' = 'true' and r->'mine'->'items' = '{"fert_urea": 1, "seed_short": 1, "tool_sickle": 1}'
+     and r->>'server_now' is not null, 'gift';
   r := public.claim_farm_gift(t2);
-  assert r->'gifted' = 'false' and r->'mine'->'items' = '{"fert_urea": 1, "seed_short": 1}' and r->'mine'->'gift_claimed' = 'true',
-    'only once';
+  assert r->'gifted' = 'false' and r->'mine'->'items' = '{"fert_urea": 1, "seed_short": 1, "tool_sickle": 1}'
+     and r->'mine'->'gift_claimed' = 'true', 'only once';
   -- the farm shop at anh Hai
   perform pg_temp.set_coins(a2, 5000);
   r := public.buy_farm_item(t2, 'fert_manure', 2);
@@ -377,7 +378,7 @@ end $$;
 do $$
 declare a2 uuid := (select v from smoke where k = 'a2')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
         room uuid := (select v from smoke where k = 'room2')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
-        tp timestamptz; s jsonb; c public.crops; v_kg integer;
+        tp timestamptz; s jsonb; c public.crops; v_kg integer; i integer;
 begin
   perform public._farm_do_rent(room, a2, 8, t);
   assert pg_temp.err(format('select public._farm_do_prepare(%L, %L, 8, %L)', room, a3, t)) = 'not your plot', 'farmer only';
@@ -451,8 +452,8 @@ begin
   assert pg_temp.err(format('select public._farm_do_spray(%L, %L, 8, %L, %L)', room, a2, 'spray_fungus', tp)) = 'no item', 'none';
   perform public._farm_do_fertilize(room, a2, 8, 'fert_potash', tp + interval '18 hours');
 
-  -- harvest: ripe at T = 43.2 h (short), in a drained plot, with a sickle (v15.2), after a 2 s action; the lease ends with it
-  insert into public.inventory (account_id, item_id, qty) values (a2, 'tool_sickle', 1);
+  -- harvest (v15.2): ripe at T = 43.2 h (short), in a drained plot, with the gift's sickle, in 6 parts of one 8 s round each;
+  -- the sixth ends the lease
   assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'harvest', tp + interval '40 hours'))
     = 'wrong phase', 'not ripe';
   perform public._farm_do_water(room, a2, 8, 1, tp + interval '44 hours');
@@ -460,12 +461,15 @@ begin
   assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'harvest', tp + interval '44 hours'))
     = 'need water', 'drain first';
   perform public._farm_do_water(room, a2, 8, -1, tp + interval '44 hours');
-  perform public._farm_do_begin_work(room, a2, 8, 'harvest', tp + interval '44 hours');
   select * into c from public.crops where room_id = room and plot_no = 8;
-  v_kg := (public._crop_yield(c, public._variety('short'), 1.0, 1.0, tp + interval '44 hours 2 seconds')->>'kg')::int;
-  s := public._farm_do_harvest(room, a2, 8, 5.0, tp + interval '44 hours 2 seconds');
-  assert s->'harvest' = jsonb_build_object('variety', 'short', 'kg', v_kg) and s->'mine'->'rice'->'short'->'wet' = to_jsonb(v_kg),
-    format('harvested %s kg wet, quality ignored (D1)', v_kg);
+  v_kg := (public._crop_yield(c, public._variety('short'), 1.0, 1.0, tp + interval '44 hours 8 seconds')->>'kg')::int;
+  for i in 1 .. 6 loop
+    perform public._farm_do_begin_work(room, a2, 8, 'harvest', tp + interval '44 hours' + (i - 1) * interval '10 seconds');
+    s := public._farm_do_harvest_part(room, a2, 8, true, tp + interval '44 hours 8 seconds' + (i - 1) * interval '10 seconds');
+    assert s->'harvest_part' = jsonb_build_object('variety', 'short', 'kg', public._part_kg(i, v_kg), 'parts', i,
+                                                  'total', (i * v_kg) / 6, 'done', i = 6), format('part %s: %s', i, s->'harvest_part');
+  end loop;
+  assert s->'mine'->'rice'->'short'->'wet' = to_jsonb(v_kg), format('harvested %s kg wet', v_kg);
   assert pg_temp.plot(s, 8)->'crop' = 'null' and pg_temp.plot(s, 8)->'lease' = 'null' and s->'mine'->'farming' = '[]',
     'bare, and the lease ended';
   insert into smoke values ('kg', v_kg::text);

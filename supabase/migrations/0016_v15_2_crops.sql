@@ -691,3 +691,299 @@ revoke all on function public._work_check(public.crops, public.rice_varieties, t
 revoke all on function public._plot_view(uuid, integer, uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public._farm_mine(uuid) from public, anon, authenticated;
 revoke all on function public._field_sweep(uuid, timestamptz) from public, anon, authenticated;
+
+-- ---------- E. Actions and RPCs (§6, §7, §8.9, §11.4). Each _farm_do_* takes p_now; its public RPC passes now(). ----------
+-- Starts a rice round or a 3-second action (R6, R11): it replaces any earlier record, and it needs 10 s left on a lease for
+-- a round and 5 s for a transplant or a picking.
+create or replace function public._farm_do_begin_work(p_room uuid, p_account uuid, p_plot integer, p_work text,
+                                                      p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  perform public._work_check(c, public._variety(c.variety), p_work, p_now);
+  if exists (select 1 from public.plot_leases pl
+              where pl.room_id = p_room and pl.plot_no = p_plot
+                and pl.until < p_now + case when c.kind = 'rice' and p_work = 'harvest' then interval '10 seconds'
+                                            else interval '5 seconds' end) then
+    raise exception 'lease ending' using errcode = '22023';
+  end if;
+  update public.crops set work = p_work, work_started_at = p_now where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- One part of a rice harvest (§6.2, R5–R7, R32). A success 8–120 s after its begin_work pays part i = harvested_parts + 1
+-- of Y(p_now) as wet rice, on the locked row; the sixth part ends the crop and the lease. A failure (false or null) clears
+-- the record and cuts nothing, with no gate.
+create or replace function public._farm_do_harvest_part(p_room uuid, p_account uuid, p_plot integer, p_success boolean,
+                                                        p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; v public.rice_varieties; f public.field_plots; v_y integer; v_i integer; v_kg integer;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.kind <> 'rice' then
+    raise exception 'wrong crop' using errcode = '22023';
+  end if;
+  if not coalesce(p_success, false) then
+    update public.crops set work = null, work_started_at = null where room_id = p_room and plot_no = p_plot;
+    return public._field_view(p_room, p_account, p_now);
+  end if;
+  if c.work is distinct from 'harvest' or c.work_started_at is null or p_now - c.work_started_at < interval '8 seconds' then
+    raise exception 'too fast' using errcode = '22023';
+  end if;
+  if p_now - c.work_started_at > interval '120 seconds' then
+    raise exception 'work expired' using errcode = '22023';
+  end if;
+  v := public._variety(c.variety);
+  perform public._work_check(c, v, 'harvest', p_now);
+  f := public._plot_row(p_room, p_plot);
+  v_y := (public._crop_yield(c, v, case when f.kind = 'private' then 1.1 else 1.0 end, 1.0, p_now)->>'kg')::int;
+  v_i := c.harvested_parts + 1;
+  v_kg := public._part_kg(v_i, v_y);
+  perform public._rice_add(p_account, c.variety, v_kg, 0);
+  if v_i = 6 then
+    delete from public.crops where room_id = p_room and plot_no = p_plot;
+    delete from public.plot_leases where room_id = p_room and plot_no = p_plot;
+  else
+    update public.crops set harvested_parts = v_i, harvested_kg = harvested_kg + v_kg, work = null, work_started_at = null
+     where room_id = p_room and plot_no = p_plot;
+  end if;
+  return public._field_view(p_room, p_account, p_now)
+         || jsonb_build_object('harvest_part', jsonb_build_object('variety', c.variety, 'kg', v_kg, 'parts', v_i,
+                                                                 'total', c.harvested_kg + v_kg, 'done', v_i = 6));
+end; $$;
+
+-- The co-op's harvester (§6.3, R9, R11, R12): 500 xu for each part still uncut, 30 s, paid by the sweep's step J at its
+-- end. It needs no sickle; there is no cancel and no refund. The locked row is re-checked before the charge (R32).
+create or replace function public._farm_do_rent_harvester(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare w public.wallets; c public.crops; v_price integer;
+begin
+  perform public._field_open(p_room, p_now);
+  w := public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.kind <> 'rice' then
+    raise exception 'wrong crop' using errcode = '22023';
+  end if;
+  if c.harvested_parts >= 6 or public._crop_phase(c, public._variety(c.variety), p_now) not in ('ripe', 'overripe') then
+    raise exception 'wrong phase' using errcode = '22023';
+  end if;
+  if public._water_at(c.water_log, p_now) > 1 then
+    raise exception 'need water' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.plot_leases pl
+              where pl.room_id = p_room and pl.plot_no = p_plot and pl.until < p_now + interval '30 seconds') then
+    raise exception 'lease ends' using errcode = '22023';
+  end if;
+  v_price := 500 * (6 - c.harvested_parts);
+  if w.coins < v_price then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(p_account, -v_price, 'harvester', 'plot ' || p_plot);
+  update public.crops
+     set harvester_at = p_now, harvester_until = p_now + interval '30 seconds', work = null, work_started_at = null
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- A hoa-màu picking (§8.9, R16): the next picking after its 2 s action, into the farmer's produce; the last one ends the
+-- crop and a lease. Rice is cut in parts or by the harvester ('wrong crop'). The reported quality is ignored (D1).
+create or replace function public._farm_do_harvest(p_room uuid, p_account uuid, p_plot integer, p_quality double precision,
+                                                   p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; u public.upland_crops; f public.field_plots; v_k integer; v_n integer; v_kg integer;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  if c.kind <> 'upland' then
+    raise exception 'wrong crop' using errcode = '22023';
+  end if;
+  perform public._work_gate(c, 'harvest', p_now);
+  perform public._work_check(c, null, 'harvest', p_now);
+  u := public._upland(c.upland);
+  f := public._plot_row(p_room, p_plot);
+  v_k := public._up_next(c, u, p_now);
+  v_n := jsonb_array_length(u.pickings);
+  v_kg := (public._up_yield(c, u, case when f.kind = 'private' then 1.1 else 1.0 end, v_k, p_now)->>'kg')::int;
+  perform public._produce_add(p_account, c.upland, v_kg);
+  if v_k = v_n then
+    delete from public.crops where room_id = p_room and plot_no = p_plot;
+    delete from public.plot_leases where room_id = p_room and plot_no = p_plot;
+  else
+    update public.crops
+       set harvests = harvests || jsonb_build_array(jsonb_build_object('t', p_now, 'k', v_k, 'kg', v_kg)),
+           work = null, work_started_at = null
+     where room_id = p_room and plot_no = p_plot;
+  end if;
+  return public._field_view(p_room, p_account, p_now)
+         || jsonb_build_object('harvest', jsonb_build_object('upland', c.upland, 'kg', v_kg, 'k', v_k, 'pickings', v_n,
+                                                            'done', v_k = v_n));
+end; $$;
+
+-- Any fertilizer, any time after làm đất; not while the rice is partly cut (R8).
+create or replace function public._farm_do_fertilize(p_room uuid, p_account uuid, p_plot integer, p_item text,
+                                                     p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  if not exists (select 1 from public.shop_items where id = p_item and kind = 'fertilizer') then
+    raise exception 'invalid item' using errcode = '22023';
+  end if;
+  c := public._care_crop(p_room, p_plot, p_account, p_now);
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  perform public._use_item(p_account, p_item);
+  update public.crops set fert_log = fert_log || jsonb_build_array(jsonb_build_object('t', p_now, 'item', p_item))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Bơm / tưới (+1) or tháo (−1) one level (0013's caps: 60 entries a crop, 6 an hour); not while the rice is partly cut.
+create or replace function public._farm_do_water(p_room uuid, p_account uuid, p_plot integer, p_delta integer,
+                                                 p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; v_level integer;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  if p_delta is null or p_delta not in (1, -1) then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  c := public._care_crop(p_room, p_plot, p_account, p_now);
+  if c.prepared_at is null then
+    raise exception 'not prepared' using errcode = '22023';
+  end if;
+  if jsonb_array_length(c.water_log) >= 60
+     or (select count(*) from jsonb_array_elements(c.water_log) x where (x->>'t')::timestamptz > p_now - interval '1 hour') >= 6 then
+    raise exception 'too fast' using errcode = '22023';
+  end if;
+  v_level := greatest(0, least(3, public._water_at(c.water_log, p_now) + p_delta));
+  update public.crops set water_log = water_log || jsonb_build_array(jsonb_build_object('t', p_now, 'l', v_level))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Bắt ốc: anyone may pick the golden apple snails off a rice plot, but not while it is being harvested.
+create or replace function public._farm_do_pick_snails(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  perform public._plot_row(p_room, p_plot);
+  select * into c from public.crops where room_id = p_room and plot_no = p_plot for update;
+  if found and c.harvester_until is not null then
+    raise exception 'harvester busy' using errcode = '22023';
+  end if;
+  if found and c.harvested_parts > 0 then
+    raise exception 'harvesting' using errcode = '22023';
+  end if;
+  if not found or not exists (select 1 from jsonb_array_elements(public._crop_pests(c, public._variety(c.variety), p_now)) x
+                               where x->>'kind' = 'snail' and x->>'treated_at' is null) then
+    raise exception 'no snails' using errcode = '22023';
+  end if;
+  update public.crops set picks = picks || jsonb_build_array(jsonb_build_object('t', p_now))
+   where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- The farmer gives up the crop; the grain already cut stays, the plot is bare and the lease goes on (§6.1). Not while a
+-- harvester runs.
+create or replace function public._farm_do_abandon(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_until timestamptz;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  perform public._plot_row(p_room, p_plot);
+  if public._farmer(p_room, p_plot, p_now) is distinct from p_account then
+    raise exception 'not your plot' using errcode = '22023';
+  end if;
+  select harvester_until into v_until from public.crops where room_id = p_room and plot_no = p_plot for update;
+  if found and v_until is not null then
+    raise exception 'harvester busy' using errcode = '22023';
+  end if;
+  delete from public.crops where room_id = p_room and plot_no = p_plot;
+  if not found then
+    raise exception 'no crop' using errcode = '22023';
+  end if;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+revoke all on function public._farm_do_begin_work(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_harvest_part(uuid, uuid, integer, boolean, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_rent_harvester(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_harvest(uuid, uuid, integer, double precision, timestamptz)
+  from public, anon, authenticated;
+revoke all on function public._farm_do_fertilize(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_water(uuid, uuid, integer, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_pick_snails(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_abandon(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+
+-- The new room RPCs start guarded (anti-cheat §11.3 rules 2 and 6): the lock gate, then bad_plot.
+create or replace function public.harvest_part(p_room_id uuid, p_session_token text, p_plot integer, p_success boolean)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'harvest_part', jsonb_build_object('plot', p_plot), p_room_id, 'invalid plot');
+  end if;
+  return public._farm_do_harvest_part(p_room_id, v_account, p_plot, p_success, now());
+end $$;
+
+create or replace function public.rent_harvester(p_room_id uuid, p_session_token text, p_plot integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_plot is null or p_plot not between 1 and 10 then
+    return public._ac_flag(v_account, 'bad_plot', 'rent_harvester', jsonb_build_object('plot', p_plot), p_room_id,
+                           'invalid plot');
+  end if;
+  return public._farm_do_rent_harvester(p_room_id, v_account, p_plot, now());
+end $$;
+
+-- Chú Tám's gift (0015's claim_farm_gift, guarded): a sickle joins the seed and the urê on a first claim (R4).
+create or replace function public.claim_farm_gift(p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_gifted boolean;
+begin
+  v_account := public._ac_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  insert into public.farm_profiles (account_id) values (v_account) on conflict (account_id) do nothing;
+  update public.farm_profiles set gift_at = now() where account_id = v_account and gift_at is null;
+  v_gifted := found;
+  if v_gifted then
+    insert into public.inventory (account_id, item_id, qty) values (v_account, 'seed_short', 1), (v_account, 'fert_urea', 1)
+    on conflict (account_id, item_id) do update set qty = least(99, public.inventory.qty + 1);
+    insert into public.inventory (account_id, item_id, qty) values (v_account, 'tool_sickle', 1)
+    on conflict (account_id, item_id) do nothing;
+  end if;
+  return jsonb_build_object('gifted', v_gifted, 'server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+grant execute on function public.harvest_part(uuid, text, integer, boolean) to anon, authenticated;
+grant execute on function public.rent_harvester(uuid, text, integer) to anon, authenticated;
+grant execute on function public.claim_farm_gift(text) to anon, authenticated;
