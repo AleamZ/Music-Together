@@ -22,7 +22,7 @@ import { freshAnnouncements } from "@/lib/game/fishing/announce";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
-import { badgesFor, buildRoster, freshChatBubbles, roleAccounts } from "@/lib/game/social";
+import { badgesFor, buildRoster, freshChatBubbles, isHereOn, roleAccounts } from "@/lib/game/social";
 import type { Look } from "@/lib/game/types";
 import { mapCounts } from "@/lib/presence-modes";
 import type { RoomDerived } from "@/lib/room-derived";
@@ -242,6 +242,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         arrive={travel.arrive}
         initial={{ name: myName, badges: myBadges, look: myLook }}
         isMember={(id) => memberIds.has(id)}
+        isHere={(id) => isHereOn(presence, id, travel.mapId)}
         onInteract={onInteract}
         onPromptChange={setPrompt}
         onActorClick={setCard}

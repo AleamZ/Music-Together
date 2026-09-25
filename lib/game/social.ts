@@ -57,6 +57,12 @@ export function buildRoster({ presence, members, room, localId, looks, mapId, se
   });
 }
 
+/** Is this account in the room's presence in game mode on this map? Game messages other than movement are taken only
+ *  from such a member (anti-cheat spec §14). */
+export function isHereOn(presence: readonly PresenceEntry[], accountId: string, mapId: MapId): boolean {
+  return presence.some((p) => p.accountId === accountId && p.mode === "game" && p.map === mapId);
+}
+
 /** Chat messages that should pop up as bubbles: not shown yet, written by a person, at most maxAgeMs old. */
 export function freshChatBubbles(messages: ChatMessage[], shown: ReadonlySet<string>, now: number, maxAgeMs = 30_000): ChatMessage[] {
   return messages.filter((m) => !shown.has(m.id) && m.account_id !== null && now - Date.parse(m.created_at) <= maxAgeMs);

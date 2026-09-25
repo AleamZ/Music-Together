@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { createReactionBudget } from "@/lib/game/net/budget";
 import { loadSession } from "@/lib/session";
 import {
   joinReactions,
@@ -53,7 +54,11 @@ export function useReactions(roomId: string, currentUsername?: string, options: 
   }, []);
 
   useEffect(() => {
-    const handle = joinReactions(roomId, (data) => spawn(data));
+    // a sender over its budget is dropped (anti-cheat spec §14)
+    const budget = createReactionBudget();
+    const handle = joinReactions(roomId, (data) => {
+      if (budget.take(data, Date.now())) spawn(data);
+    });
     handleRef.current = handle;
     return () => {
       handle.unsubscribe();

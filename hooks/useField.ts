@@ -26,12 +26,16 @@ export interface FieldData {
   sellRice: (variety: string, dry: boolean, kg: number) => Promise<MineAnswer | null>;
   buyItem: (itemId: string, qty: number, itemName?: string) => Promise<MineAnswer | null>;
   claimGift: () => Promise<(MineAnswer & { gifted: boolean }) | null>;
-  /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst. */
+  /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
+   *  FP_MIN_GAP_MS apart. */
   plotChanged: () => void;
 }
 
 /** `fp`s arriving this close together are answered by one refetch (spec §12). */
 export const FP_GATHER_MS = 400;
+/** Refetches for `fp` start at least this far apart; an `fp` inside the gap brings one trailing refetch, so a flood costs
+ *  at most one field_state every 2 s (anti-cheat R35). */
+export const FP_MIN_GAP_MS = 2000;
 
 /** Is answer `n` newer than the last one applied? Then it becomes the last one applied. */
 function newest(applied: { current: number }, n: number): boolean {
@@ -110,6 +114,8 @@ export function useField(roomId: string, token: string, active: boolean, onError
   }, [roomId, token, apply, loadCatalog]);
 
   const gather = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** When the last refetch for an `fp` started. */
+  const fpAt = useRef<number | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -126,10 +132,12 @@ export function useField(roomId: string, token: string, active: boolean, onError
 
   const plotChanged = useCallback(() => {
     if (gather.current) return;
+    const gap = fpAt.current === null ? 0 : fpAt.current + FP_MIN_GAP_MS - Date.now();
     gather.current = setTimeout(() => {
       gather.current = null;
+      fpAt.current = Date.now();
       void reload();
-    }, FP_GATHER_MS);
+    }, Math.max(FP_GATHER_MS, gap));
   }, [reload]);
 
   /** Run an RPC and apply its answer. On error: toast, refetch, null. A strike shows no toast: the warning or the ban

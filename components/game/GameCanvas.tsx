@@ -7,9 +7,10 @@ import { phaseCode } from "@/lib/game/fishing/cast";
 import type { Rarity } from "@/lib/game/fishing/catalog";
 import { getMap, paintMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
+import { budgetKind, createBudget, GAME_LIMITS } from "@/lib/game/net/budget";
 import { joinGameChannel } from "@/lib/game/net/channel";
 import type { FarmAnim, FishPhase, GameMessage } from "@/lib/game/net/protocol";
-import { createReplyScheduler, replyWindowMs } from "@/lib/game/net/replies";
+import { createReplyScheduler, replyWindowMs, type ReplyScheduler } from "@/lib/game/net/replies";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 
 export interface GameCanvasHandle {
@@ -57,6 +58,9 @@ export interface GameCanvasProps {
   initial: { name: string; badges: string; look: Look };
   /** Is this account a current room member? Game messages from anyone else are dropped (spec §8.3). */
   isMember: (accountId: string) => boolean;
+  /** Is this member in the room's presence, in game mode, on this map? Only movement is taken from members who are not
+   *  (anti-cheat spec §14). */
+  isHere: (accountId: string) => boolean;
   onInteract: (it: Interactable) => void;
   onPromptChange: (it: Interactable | null) => void;
   onActorClick: (accountId: string) => void;
@@ -87,6 +91,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const insetRef = useRef(0);
   const inputRef = useRef(true);
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
+  // This world's answer to `hello`s, and who of its roster is here (null until its first roster).
+  const repliesRef = useRef<ReplyScheduler | null>(null);
+  const hereRef = useRef<Set<string> | null>(null);
   useEffect(() => {
     propsRef.current = rest;
   });
@@ -99,7 +106,14 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       sendRef.current?.(msg);
     };
     return {
-      setRoster: (entries) => engineRef.current?.setRoster(entries),
+      setRoster: (entries) => {
+        engineRef.current?.setRoster(entries);
+        // a member who appears on this map gets my state, as their `hello` would bring (anti-cheat R34)
+        const here = new Set(entries.map((e) => e.id).filter((id) => propsRef.current.isHere(id)));
+        const known = hereRef.current;
+        if (known && [...here].some((id) => !known.has(id))) repliesRef.current?.onHello();
+        hereRef.current = here;
+      },
       setLocal: (info) => engineRef.current?.setLocal(info),
       showBubble: (id, text) => engineRef.current?.showBubble(id, text),
       showReaction: (id, emoji) => engineRef.current?.showReaction(id, emoji),
@@ -199,6 +213,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       send: () => channel.send(engine.snapshot()),
       windowMs: () => replyWindowMs(engine.walkers() + 1),
     });
+    repliesRef.current = replies;
+    hereRef.current = null;
+    // what one sender may send (anti-cheat spec §14): the rest is dropped
+    const budget = createBudget(GAME_LIMITS);
     const channel = joinGameChannel(roomId, map, {
       onMessage: (msg) => {
         if (msg.id === localId) {
@@ -208,7 +226,11 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
           else if (msg.t === "fp") propsRef.current.onPlotChanged?.(msg.p);
           return;
         }
-        if (!propsRef.current.isMember(msg.id)) return;
+        const p = propsRef.current;
+        if (!p.isMember(msg.id)) return;
+        if (msg.t !== "st" && msg.t !== "mv" && msg.t !== "pa" && !p.isHere(msg.id)) return;
+        const kind = budgetKind(msg.t);
+        if (kind && !budget.take(msg.id, kind, performance.now())) return;
         switch (msg.t) {
           case "hello":
             engine.noteHello(msg.id);
@@ -241,6 +263,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.start();
     return () => {
       replies.dispose();
+      repliesRef.current = null;
       sendRef.current = null;
       engineRef.current = null;
       channel.leave({ t: "bye", id: localId });

@@ -13,7 +13,7 @@ vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...rpc,
 }));
 
-import { FP_GATHER_MS, useField } from "@/hooks/useField";
+import { FP_GATHER_MS, FP_MIN_GAP_MS, useField } from "@/hooks/useField";
 
 const NOW = "2026-09-25T10:00:00+00:00";
 const field = (coins: number, serverNow = NOW): FieldState => parseFieldState({
@@ -188,5 +188,27 @@ describe("useField", () => {
     expect(rpc.fetchFieldState).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(rpc.fetchFieldState).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts fp refetches at least 2 s apart, with one trailing refetch (anti-cheat R35)", async () => {
+    const { result } = renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    rpc.fetchFieldState.mockClear();
+    // 10 fp in a second: one refetch 400 ms after the first, one more 2 s after that
+    for (let i = 0; i < 10; i++) {
+      act(() => result.current.plotChanged());
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    }
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(FP_GATHER_MS + FP_MIN_GAP_MS - 1000 - 1); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(2);
+    // a lone fp later is gathered for 400 ms, as before
+    act(() => result.current.plotChanged());
+    await act(async () => { await vi.advanceTimersByTimeAsync(FP_GATHER_MS); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(3);
   });
 });

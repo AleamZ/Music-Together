@@ -5,18 +5,22 @@ import GameCanvas, { type GameCanvasHandle, type GameCanvasProps } from "@/compo
 import { DEFAULT_LOOK } from "@/lib/game/look";
 
 // One fake engine and channel per world: they record what the canvas tells them (input lock, plots, farm
-// animations, messages) and let a test deliver messages.
-type EngineRec = { mapId: string; input: boolean[]; plots: unknown[]; anims: number[]; applied: unknown[]; destroyed: boolean };
-const { engines, channels } = vi.hoisted(() => ({
+// animations, messages, hellos and byes) and let a test deliver messages.
+type EngineRec = {
+  mapId: string; input: boolean[]; plots: unknown[]; anims: number[]; applied: unknown[]; hellos: string[]; removed: string[];
+  destroyed: boolean;
+};
+const { engines, channels, replies } = vi.hoisted(() => ({
   engines: [] as EngineRec[],
   channels: [] as Array<{ onMessage: (msg: unknown) => void; sent: unknown[] }>,
+  replies: { hellos: 0 },
 }));
 
 vi.mock("@/lib/game/engine", () => ({
   GameEngine: class {
     rec: EngineRec;
     constructor(_canvas: unknown, map: { id: string }) {
-      this.rec = { mapId: map.id, input: [], plots: [], anims: [], applied: [], destroyed: false };
+      this.rec = { mapId: map.id, input: [], plots: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false };
       engines.push(this.rec);
     }
     setInputEnabled(enabled: boolean) {
@@ -31,6 +35,13 @@ vi.mock("@/lib/game/engine", () => ({
     applyMessage(msg: unknown) {
       this.rec.applied.push(msg);
     }
+    noteHello(id: string) {
+      this.rec.hellos.push(id);
+    }
+    removeActor(id: string) {
+      this.rec.removed.push(id);
+    }
+    setRoster() {}
     setLocalHand() {}
     setSpecies() {}
     setBottomInset() {}
@@ -58,7 +69,7 @@ vi.mock("@/lib/game/net/channel", () => ({
   },
 }));
 vi.mock("@/lib/game/net/replies", () => ({
-  createReplyScheduler: () => ({ onHello: () => {}, dispose: () => {} }),
+  createReplyScheduler: () => ({ onHello: () => { replies.hellos++; }, dispose: () => {} }),
   replyWindowMs: () => 0,
 }));
 
@@ -66,6 +77,7 @@ vi.mock("@/lib/game/net/replies", () => ({
 beforeEach(() => {
   engines.length = 0;
   channels.length = 0;
+  replies.hellos = 0;
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query }));
 });
 afterEach(() => {
@@ -81,6 +93,7 @@ const props: Omit<GameCanvasProps, "ref" | "mapId"> = {
   arrive: null,
   initial: { name: "An", badges: "", look: DEFAULT_LOOK },
   isMember: () => true,
+  isHere: () => true,
   onInteract: noop,
   onPromptChange: noop,
   onActorClick: noop,
@@ -147,5 +160,73 @@ describe("GameCanvas farm messages", () => {
     expect(onPlotChanged.mock.calls).toEqual([[7], [0]]);
     channels[0].onMessage({ t: "fa", id: "ann", a: 1 });
     expect(engines[0].applied).toEqual([{ t: "fa", id: "ann", a: 1 }]);
+  });
+});
+
+describe("GameCanvas presence filter and receive budgets (anti-cheat spec §14)", () => {
+  const mv = (id: string) => ({ t: "mv", id, x: 1, y: 1, d: "d", mv: true, vx: 0, vy: 1 });
+  const entry = (id: string) => ({ id, name: id, badges: "", look: DEFAULT_LOOK, spot: null });
+
+  it("takes hello, bye, lk, fs, fa and fp only from members on this map; movement from any member", () => {
+    const onLookChanged = vi.fn();
+    const onPlotChanged = vi.fn();
+    render(<GameCanvas mapId="field" {...props} isMember={(id) => id !== "stranger"} isHere={(id) => id === "ann"}
+      onLookChanged={onLookChanged} onPlotChanged={onPlotChanged} />);
+    const deliver = (msg: unknown) => channels[0].onMessage(msg);
+    for (const id of ["bob", "stranger"]) {
+      for (const msg of [{ t: "hello", id }, { t: "lk", id }, { t: "fp", id, p: 1 }, { t: "fs", id, f: 1, h: null }, { t: "fa", id, a: 1 }, { t: "bye", id }]) {
+        deliver(msg);
+      }
+    }
+    expect(onLookChanged).not.toHaveBeenCalled();
+    expect(onPlotChanged).not.toHaveBeenCalled();
+    expect(engines[0]).toMatchObject({ applied: [], hellos: [], removed: [] });
+    expect(replies.hellos).toBe(0);
+    deliver(mv("bob"));
+    deliver(mv("stranger"));
+    expect(engines[0].applied).toEqual([mv("bob")]);
+    for (const msg of [{ t: "hello", id: "ann" }, { t: "lk", id: "ann" }, { t: "fp", id: "ann", p: 1 }, { t: "fa", id: "ann", a: 1 }, { t: "bye", id: "ann" }]) {
+      deliver(msg);
+    }
+    expect(engines[0]).toMatchObject({ hellos: ["ann"], removed: ["ann"] });
+    expect(replies.hellos).toBe(1);
+    expect(onLookChanged).toHaveBeenCalledWith("ann");
+    expect(onPlotChanged).toHaveBeenCalledWith(1);
+    expect(engines[0].applied).toEqual([mv("bob"), { t: "fa", id: "ann", a: 1 }]);
+  });
+
+  it("drops what a sender sends over its budget", () => {
+    render(<GameCanvas mapId="pond" {...props} />);
+    const deliver = (msg: unknown, times: number) => { for (let i = 0; i < times; i++) channels[0].onMessage(msg); };
+    deliver(mv("ann"), 10);
+    deliver({ t: "fs", id: "ann", f: 1, h: null }, 5);
+    deliver({ t: "fa", id: "ann", a: 2 }, 5);
+    deliver({ t: "hello", id: "ann" }, 5);
+    deliver({ t: "bye", id: "ann" }, 3);
+    deliver(mv("bob"), 1);
+    const applied = engines[0].applied as Array<{ t: string; id: string }>;
+    expect(applied.filter((m) => m.t === "mv" && m.id === "ann")).toHaveLength(5);
+    expect(applied.filter((m) => m.t === "fs")).toHaveLength(3);
+    expect(applied.filter((m) => m.t === "fa")).toHaveLength(3);
+    expect(applied.filter((m) => m.id === "bob")).toHaveLength(1);
+    expect(engines[0]).toMatchObject({ hellos: ["ann"], removed: ["ann"] });
+    expect(replies.hellos).toBe(1);
+  });
+
+  it("answers a member who appears on this map as a hello would, but not the roster a world starts with", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="pond" {...props} isHere={(id) => id !== "cara"} />);
+    ref.current!.setRoster([entry("ann")]);
+    expect(replies.hellos).toBe(0);
+    ref.current!.setRoster([entry("ann"), entry("bob")]);
+    expect(replies.hellos).toBe(1);
+    ref.current!.setRoster([entry("ann"), entry("bob"), entry("cara")]);
+    expect(replies.hellos).toBe(1);
+    ref.current!.setRoster([entry("ann")]);
+    ref.current!.setRoster([entry("ann"), entry("bob")]);
+    expect(replies.hellos).toBe(2);
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} isHere={(id) => id !== "cara"} />);
+    ref.current!.setRoster([entry("dan")]);
+    expect(replies.hellos).toBe(2);
   });
 });
