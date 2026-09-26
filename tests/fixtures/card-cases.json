@@ -263,6 +263,19 @@
         }
       },
       {
+        "name": "a seat that went out cutting the forfeiter, swept with it, settles first: the open chain is not paid to it",
+        "order": [1, 2, 3], "played": [1, 2, 3], "hands": { "2": ["2S", "5D"], "3": ["9C"] },
+        "events": [
+          { "k": "cut", "seat": 1, "top": { "seat": 2, "cards": ["2H"], "done": false } }, { "k": "out", "seat": 1 },
+          { "k": "leave", "seat": 1 }, { "k": "forfeit", "seats": [2] }, { "k": "end" }
+        ],
+        "expect": {
+          "lines": [[2, 3, 2, 2, "forfeit"], [2, 3, 1, 1, "thoi"]],
+          "places": { "1": 1, "3": 2 }, "out": { "1": "done", "2": "forfeit" },
+          "net": { "1": 0, "2": -3, "3": 3 }
+        }
+      },
+      {
         "name": "the survivor of forfeits is nhất and pays nothing",
         "order": [1, 2, 3], "played": [1, 2, 3], "hands": { "1": ["2S"], "2": ["5S"], "3": ["2H"] },
         "events": [{ "k": "forfeit", "seats": [1, 2] }, { "k": "end" }],

@@ -1387,8 +1387,10 @@ begin
 end $$;
 
 -- The leave operation in a live game (§6.3), with the table's wallets locked: seats still holding cards forfeit together
--- (R13) and are paid out at once; seats already out or cóng are paid out and receive nothing more. The rows stay
--- `leaving` until the game ends; the others play on as a smaller game.
+-- (R13) and are paid out at once; seats already out or cóng are paid out and receive nothing more — they settle before
+-- the forfeit, so a forfeiter never pays one of them the chain it cut (seats removed together never pay each other,
+-- and nobody pays a banned account: anti-cheat R10). The rows stay `leaving` until the game ends; the others play on as
+-- a smaller game.
 create or replace function public._tl_leave(p_room uuid, p_seats integer[], p_how text, p_now timestamptz) returns void
 language plpgsql security definer set search_path = public, extensions
 as $$
@@ -1400,6 +1402,9 @@ begin
                    and not coalesce((v_pub->'players'->(x::text)->>'settled')::boolean, true) order by x);
   v_done := array(select x from unnest(p_seats) x where v_pub->'players'->(x::text)->>'out' is not null
                    and not coalesce((v_pub->'players'->(x::text)->>'settled')::boolean, true) order by x);
+  foreach s in array v_done loop
+    v_pub := public._tl_event(p_room, jsonb_build_object('k', 'leave', 'seat', s));
+  end loop;
   if cardinality(v_hold) > 0 then
     -- a first lead's `must` goes with the forfeiter who holds it
     if jsonb_typeof(v_pub->'must') = 'number'
@@ -1409,9 +1414,6 @@ begin
     end if;
     v_pub := public._tl_event(p_room, jsonb_build_object('k', 'forfeit', 'seats', to_jsonb(v_hold)));
   end if;
-  foreach s in array v_done loop
-    v_pub := public._tl_event(p_room, jsonb_build_object('k', 'leave', 'seat', s));
-  end loop;
   perform public._card_lock_wallets(p_room, 'tienlen');
   foreach s in array v_hold || v_done loop
     perform public._card_payout(p_room, 'tienlen', s, 'card_settle');

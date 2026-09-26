@@ -798,6 +798,45 @@ begin
          and pg_temp.coins(a4) = 89000 and pg_temp.coins(a6) = 100000, 'eight games, zero-sum';
 end $$;
 
+-- Game 9: A cuts B's 2♥ with 3 đôi thông, its last cards, and goes out with the chain still open. A and B are banned and
+-- one sweep takes them together: B forfeits, and the chain is not paid to A, who leaves with it (R13, anti-cheat R10).
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; t public.card_tables; r jsonb;
+begin
+  perform public.card_sit(room, c1, 'tienlen', 1, 1000, null);
+  perform public.card_sit(room, c2, 'tienlen', 2, 1000, null);
+  perform public.card_sit(room, c3, 'tienlen', 3, 1000, null);
+  t := pg_temp.deal(pg_temp.deck('3S 4S 5S 6S 7S 8S KS 10C 10D JC JD QC QD', '2H 3C 4C 5C 6C 7C 8C 9S JS QS KC AS AC',
+                                 '4H 5H 6H 7H 8H 9H 10S 3D 3H 9C 9D KD KH'));
+  assert t.hand_no = 9 and t.turn = 1 and (t.pub->>'must')::int = 0, format('A leads: %s', t.pub);
+  perform pg_temp.tl(c1, '3S 4S 5S 6S 7S 8S');
+  perform pg_temp.tl(c2, null);
+  perform pg_temp.tl(c3, '4H 5H 6H 7H 8H 9H');
+  perform pg_temp.tl(c1, null);
+  perform pg_temp.tl(c3, '10S');
+  perform pg_temp.tl(c1, 'KS');
+  perform pg_temp.tl(c2, '2H');
+  perform pg_temp.tl(c3, null);
+  perform pg_temp.tl(c1, '10C 10D JC JD QC QD');
+  t := pg_temp.tt();
+  assert t.turn = 2 and t.pub->'chain' = '{"h": 2, "victim": 2, "cutter": 1, "void": false}'
+         and t.pub->'players'->'1' @> '{"out": "done", "place": 1}', format('A went out cutting B: %s', t.pub);
+  update public.accounts set is_banned = true where id in (a1, a2);
+  r := public.card_tick(room, c3, 'tienlen');
+  update public.accounts set is_banned = false where id in (a1, a2);
+  assert (r->>'changed')::boolean and pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'the sweep';
+  assert pg_temp.result() = '{"places": [1, 3], "out": {"1": "done", "2": "forfeit"}, "net": {"1": 0, "2": -1000, "3": 1000},
+                              "lines": [[2, 3, 1000, 1000, "forfeit"]]}', format('nobody pays A: %s', pg_temp.result());
+  assert pg_temp.coins(a1) = 104500 and pg_temp.coins(a2) = 103500 and pg_temp.coins(a3) = 103000,
+    format('A gets its own escrow back and nothing more: %s %s %s', pg_temp.coins(a1), pg_temp.coins(a2), pg_temp.coins(a3));
+  perform public.card_leave(room, c3, 'tienlen');
+  assert not exists (select 1 from public.card_seats where room_id = room), 'the table is empty';
+end $$;
+
 select 'v16 tienlen smoke ok' as result;
 
 -- ---------- Cào (§8, §17): five players, the dealer rotating; time stands still (each step's deadline is moved back) ----------
