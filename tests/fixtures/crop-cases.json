@@ -195,5 +195,72 @@
       "expect": {"kg": 82, "mcare": 1, "mseed": 1, "mwater": 0.9975, "mpest": 1, "mlate": 1, "pests": []},
       "parts": [[72, 13], [80, 12], [88, 10], [96, 7], [104, 5], [112, 6]]
     }
+  ],
+  "rats": [
+    {
+      "name": "R1, short, one rat for 2 h",
+      "variety": "short", "land": 1, "q_transplant": 1, "q_harvest": 1,
+      "soak": 0, "sow": 3, "transplant": 12, "harvest": 58,
+      "water": [[0, 3], [2.5, 2], [2.75, 1], [12, 2], [24, 2], [27, 1], [28.25, 2], [28.5, 3], [48, 1]],
+      "fert": [[0.25, "fert_manure"], [0.5, "fert_phosphate"], [16, "fert_urea"], [30, "fert_potash"]],
+      "spray": [], "picks": [],
+      "pest_rolls": [{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 2, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}],
+      "rats": [[1, 56, 58]],
+      "expect": {"kg": 86, "mcare": 1, "mseed": 1, "mwater": 1, "mpest": 1, "mlate": 1, "mrat": 0.96, "pests": []}
+    },
+    {
+      "name": "R2, nep, three rats summing exactly 5 h: the 10 % cap",
+      "variety": "nep", "land": 1, "q_transplant": 1, "q_harvest": 1,
+      "soak": 0, "sow": 3.1, "transplant": 12, "harvest": 62,
+      "water": [[0, 3], [3, 1], [12, 2], [24, 2], [29.9, 1], [30.05, 3], [52, 1]],
+      "fert": [[0.25, "fert_manure"], [0.5, "fert_phosphate"], [17, "fert_urea"], [32, "fert_potash"]],
+      "spray": [], "picks": [],
+      "pest_rolls": [{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 2, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}],
+      "rats": [[1, 60, 62], [2, 60, 62], [3, 61, 62]],
+      "expect": {"kg": 68, "mcare": 1, "mseed": 1, "mwater": 1, "mpest": 1, "mlate": 1, "mrat": 0.9, "pests": []}
+    },
+    {
+      "name": "R3, thom, a live rat for 3 h at the cut",
+      "variety": "thom", "land": 1, "q_transplant": 1, "q_harvest": 1,
+      "soak": 0, "sow": 3, "transplant": 13, "harvest": 71.5,
+      "water": [[0, 3], [2.5, 2], [2.75, 1], [13, 2], [25, 2], [33, 1], [33.75, 3], [45, 3], [59, 1]],
+      "fert": [[0.25, "fert_manure"], [0.5, "fert_phosphate"], [18, "fert_urea"], [36, "fert_potash"]],
+      "spray": [], "picks": [],
+      "pest_rolls": [{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 2, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}],
+      "rats": [[1, 68.5, null]],
+      "expect": {"kg": 56, "mcare": 1, "mseed": 1, "mwater": 1, "mpest": 1, "mlate": 1, "mrat": 0.94, "pests": []}
+    },
+    {
+      "name": "R4, nep, cut in six parts while a rat eats",
+      "variety": "nep", "land": 1, "q_transplant": 1, "q_harvest": 1,
+      "soak": 0, "sow": 3.1, "transplant": 12, "harvest": 61,
+      "water": [[0, 3], [3, 1], [12, 2], [24, 2], [29.9, 1], [30.05, 3], [52, 1]],
+      "fert": [[0.25, "fert_manure"], [0.5, "fert_phosphate"], [17, "fert_urea"], [32, "fert_potash"]],
+      "spray": [], "picks": [],
+      "pest_rolls": [{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 2, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                     {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}],
+      "rats": [[1, 60, null]],
+      "expect": {"kg": 74, "mcare": 1, "mseed": 1, "mwater": 1, "mpest": 1, "mlate": 1, "mrat": 0.98, "pests": []},
+      "parts": [[61, 12], [62, 12], [63, 12], [64, 12], [65, 11], [66, 12]]
+    }
+  ],
+  "rat_edges": [
+    {"name": "an entry from t counts nothing", "log": [[1, 10, null]], "t": 10, "hours": 0, "mrat": 1},
+    {"name": "an entry closed at t counts fully", "log": [[1, 8, 10]], "t": 10, "hours": 2, "mrat": 0.96},
+    {"name": "an entry after t counts nothing", "log": [[1, 11, null]], "t": 10, "hours": 0, "mrat": 1},
+    {"name": "an entry closed after t counts up to t", "log": [[1, 8, 12]], "t": 10, "hours": 2, "mrat": 0.96},
+    {"name": "an open entry counts up to t", "log": [[1, 7.5, null]], "t": 10, "hours": 2.5, "mrat": 0.95},
+    {"name": "summed in log order", "log": [[1, 0, 0.1], [2, 0, 0.2], [3, 0, 0.3]], "t": 1, "hours": 0.6000000000000001, "mrat": 0.988},
+    {"name": "summed in log order, reversed", "log": [[3, 0, 0.3], [2, 0, 0.2], [1, 0, 0.1]], "t": 1, "hours": 0.6, "mrat": 0.988},
+    {"name": "exactly 5 h is the cap", "log": [[1, 0, 5]], "t": 5, "hours": 5, "mrat": 0.9},
+    {"name": "beyond the cap", "log": [[1, 0, 3], [2, 1, 4], [3, 2, null]], "t": 5, "hours": 9, "mrat": 0.9},
+    {"name": "no rats", "log": [], "t": 5, "hours": 0, "mrat": 1}
   ]
 }
