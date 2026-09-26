@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { budgetKind, createBudget, createReactionBudget, GAME_LIMITS } from "@/lib/game/net/budget";
+import { budgetKind, CARD_LIMITS, createBudget, createReactionBudget, GAME_LIMITS } from "@/lib/game/net/budget";
 import { isHereOn } from "@/lib/game/social";
 import type { PresenceEntry } from "@/lib/presence-modes";
 
@@ -39,6 +39,14 @@ describe("the game and reaction budgets (anti-cheat spec §14)", () => {
     });
     expect((["st", "mv", "pa", "hello", "bye", "fs", "fa", "lk", "fp"] as const).map(budgetKind))
       .toEqual(["move", "move", "move", "hello", "bye", "fs", "fa", null, null]);
+  });
+
+  it("gives the card tables' hint its own budget: cv 5 a second per sender, burst 5 (v16 spec §12)", () => {
+    expect(CARD_LIMITS).toEqual({ cv: { rate: 5, burst: 5 } });
+    const b = createBudget(CARD_LIMITS);
+    expect(Array.from({ length: 6 }, () => b.take("ann", "cv", 0))).toEqual([true, true, true, true, true, false]);
+    expect(b.take("bob", "cv", 0)).toBe(true);
+    expect(b.take("ann", "cv", 200)).toBe(true);
   });
 
   it("keys reactions by account, else by name, else one shared bucket, with 12 a second in total", () => {

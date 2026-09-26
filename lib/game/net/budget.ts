@@ -73,6 +73,9 @@ export function budgetKind(t: GameEvent): keyof typeof GAME_LIMITS | null {
   }
 }
 
+/** The card tables' channel (v16 spec §12): a `cv` hint 5 a second per sender, burst 5. */
+export const CARD_LIMITS = { cv: { rate: 5, burst: 5 } } as const satisfies Record<string, Bucket>;
+
 /** Reactions: 5 a second per sender, burst 5; at most 12 a second in all. */
 export const REACTION_LIMITS = { sender: { rate: 5, burst: 5 }, total: { rate: 12, burst: 12 } } as const;
 
