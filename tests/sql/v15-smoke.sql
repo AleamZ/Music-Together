@@ -8,6 +8,16 @@
 update public.anticheat_config set mode = 'log';
 
 create temp table smoke (k text primary key, v text);
+
+-- v17 (0019): rats off in this smoke's rooms. Once 0019 is in, no_rats gives the room a far-future rat clock, so its
+-- sweep evaluates no spawn candidate; before 0019 it does nothing.
+create function pg_temp.no_rats(p_key text) returns void language plpgsql as $$
+begin
+  if to_regclass('public.rat_clocks') is not null then
+    execute format('insert into public.rat_clocks (room_id, last_k) select v::uuid, 9000000000000000000 from smoke where k = %L
+                    on conflict (room_id) do update set last_k = excluded.last_k', p_key);
+  end if;
+end $$;
 insert into smoke select 't1', token from public.register('smoke15_a_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 't2', token from public.register('smoke15_b_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 't3', token from public.register('smoke15_c_' || floor(random() * 1e9)::text, 'pw123456');
@@ -15,6 +25,7 @@ insert into smoke select 'a1', public._auth_account((select v from smoke where k
 insert into smoke select 'a2', public._auth_account((select v from smoke where k = 't2'))::text;
 insert into smoke select 'a3', public._auth_account((select v from smoke where k = 't3'))::text;
 insert into smoke select 'room', room_id::text from public.create_room('Đồng test', 'pw', (select v from smoke where k = 't1'));
+select pg_temp.no_rats('room');
 insert into smoke select 'code', code from public.rooms where id = (select v from smoke where k = 'room')::uuid;
 select public.join_room((select v from smoke where k = 'code'), 'pw', (select v from smoke where k = 't2'));
 select public.join_room((select v from smoke where k = 'code'), 'pw', (select v from smoke where k = 't3'));
@@ -345,6 +356,7 @@ select 'v15 land smoke ok' as result;
 
 -- ---------- farming (§8, §9): a whole season with the clock moved by hand, drying, selling, the gift ----------
 insert into smoke select 'room2', room_id::text from public.create_room('Ruộng test', 'pw', (select v from smoke where k = 't2'));
+select pg_temp.no_rats('room2');
 insert into smoke select 'code2', code from public.rooms where id = (select v from smoke where k = 'room2')::uuid;
 select public.join_room((select v from smoke where k = 'code2'), 'pw', (select v from smoke where k = 't3'));
 

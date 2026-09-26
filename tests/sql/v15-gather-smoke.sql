@@ -15,6 +15,16 @@ update public.anticheat_config set mode = 'log';
 
 create temp table smoke (k text primary key, v text);
 
+-- v17 (0019): rats off in this smoke's rooms. Once 0019 is in, no_rats gives the room a far-future rat clock, so its
+-- sweep evaluates no spawn candidate; before 0019 it does nothing.
+create function pg_temp.no_rats(p_key text) returns void language plpgsql as $$
+begin
+  if to_regclass('public.rat_clocks') is not null then
+    execute format('insert into public.rat_clocks (room_id, last_k) select v::uuid, 9000000000000000000 from smoke where k = %L
+                    on conflict (room_id) do update set last_k = excluded.last_k', p_key);
+  end if;
+end $$;
+
 -- The error text of a statement, or null when it succeeds (its effects are rolled back either way on error).
 create function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -107,6 +117,7 @@ insert into smoke select 't2', token from public.register('gather_b_' || floor(r
 insert into smoke select 'a1', public._auth_account((select v from smoke where k = 't1'))::text;
 insert into smoke select 'a2', public._auth_account((select v from smoke where k = 't2'))::text;
 insert into smoke select 'room', room_id::text from public.create_room('Bờ mương', 'pw', (select v from smoke where k = 't1'));
+select pg_temp.no_rats('room');
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room')::uuid), 'pw', v)
   from smoke where k = 't2';
 insert into smoke select 'now', date_trunc('minute', now())::text;
@@ -223,7 +234,9 @@ insert into smoke select 't4', token from public.register('gather_d_' || floor(r
 insert into smoke select 'a3', public._auth_account((select v from smoke where k = 't3'))::text;
 insert into smoke select 'a4', public._auth_account((select v from smoke where k = 't4'))::text;
 insert into smoke select 'room2', room_id::text from public.create_room('Hang cua', 'pw', (select v from smoke where k = 't3'));
+select pg_temp.no_rats('room2');
 insert into smoke select 'room3', room_id::text from public.create_room('Bãi ốc', 'pw', (select v from smoke where k = 't3'));
+select pg_temp.no_rats('room3');
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room2')::uuid), 'pw', v)
   from smoke where k = 't4';
 -- 01:00 in Vietnam today: every visit below falls in one Vietnam day and one 3-hour price period.
@@ -523,9 +536,13 @@ insert into smoke select 't5', token from public.register('gather_e_' || floor(r
 insert into smoke select 'a5', public._auth_account((select v from smoke where k = 't5'))::text;
 -- One room a test: an account farms at most 2 plots in a room.
 insert into smoke select 'room4', room_id::text from public.create_room('Ruộng lúa', 'pw', (select v from smoke where k = 't5'));
+select pg_temp.no_rats('room4');
 insert into smoke select 'room5', room_id::text from public.create_room('Cấy lúa', 'pw', (select v from smoke where k = 't5'));
+select pg_temp.no_rats('room5');
 insert into smoke select 'room6', room_id::text from public.create_room('Cây ớt', 'pw', (select v from smoke where k = 't5'));
+select pg_temp.no_rats('room6');
 insert into smoke select 'room7', room_id::text from public.create_room('Hái hoa màu', 'pw', (select v from smoke where k = 't5'));
+select pg_temp.no_rats('room7');
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room4')::uuid), 'pw', v)
   from smoke where k = 't4';
 create function pg_temp.plot(s jsonb, n integer) returns jsonb language sql as $$ select s->'plots'->(n - 1) $$;

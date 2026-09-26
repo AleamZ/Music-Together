@@ -277,4 +277,313 @@ end $$;
 
 select 'v17 model smoke ok' as result;
 
+-- ---------- the field: spawning, the rats' life, the damage, the catch and the view (§5.3–§5.6, §10.5) ----------
+insert into smoke select 't1', token from public.register('rat_a_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 't2', token from public.register('rat_b_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 't3', token from public.register('rat_c_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'a' || right(k, 1), public._auth_account(v)::text from smoke where k in ('t1', 't2', 't3');
+insert into smoke select 'room', room_id::text from public.create_room('Mùa chuột', 'pw', (select v from smoke where k = 't1'));
+insert into smoke select 'room2', room_id::text from public.create_room('Ruộng khó ăn', 'pw', (select v from smoke where k = 't1'));
+insert into smoke select 'room3', room_id::text from public.create_room('Chuột chạy', 'pw', (select v from smoke where k = 't1'));
+select public.join_room((select code from public.rooms where id = r.v::uuid), 'pw', a.v)
+  from smoke r, smoke a where r.k in ('room', 'room2', 'room3') and a.k in ('t2', 't3');
+insert into smoke select 'now', date_trunc('minute', now())::text;
+
+create function pg_temp.crop(r uuid, n integer) returns public.crops language sql
+as $$ select * from public.crops where room_id = r and plot_no = n $$;
+create function pg_temp.wet(a uuid) returns integer language sql
+as $$ select coalesce((select sum(wet_kg)::int from public.rice_stock where account_id = a), 0) $$;
+-- A rice crop on plot n, farmed by a, transplanted at tp and drained from tp + 40 h (short: ripe from tp + 43.2 h,
+-- overripe from tp + 55.2 h, fallen at tp + 103.2 h).
+create function pg_temp.rice(r uuid, n integer, a uuid, variety text, tp timestamptz) returns void language sql
+as $$ insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, transplant_at, water_log)
+      values (r, n, a, variety, tp - interval '12 hours', tp - interval '12 hours', tp - interval '9 hours', tp,
+              jsonb_build_array(jsonb_build_object('t', tp - interval '12 hours', 'l', 3),
+                                jsonb_build_object('t', tp + interval '40 hours', 'l', 1))) $$;
+-- A hoa-màu crop on plot n, planted at p (khoai: ripe from p + 48 h; bắp: from p + 60 h; ớt: picking 1 from p + 46 h).
+create function pg_temp.upland(r uuid, n integer, a uuid, u text, p timestamptz) returns void language sql
+as $$ insert into public.crops (room_id, plot_no, farmer_id, kind, upland, prepared_at, sow_at, plant_at, water_log)
+      values (r, n, a, 'upland', u, p - interval '12 hours', case when u = 'ot' then p - interval '11 hours' end, p,
+              jsonb_build_array(jsonb_build_object('t', p - interval '12 hours', 'l', 1))) $$;
+-- A live rat on plot n since t, with its entry in the crop's log (for rooms whose clock is off; its k is made up).
+create temp sequence rat_k;
+create function pg_temp.rat(r uuid, n integer, t timestamptz) returns bigint language plpgsql as $$
+declare v_id bigint;
+begin
+  insert into public.field_rats (room_id, plot_no, k, seed, spawned_at) values (r, n, -nextval('rat_k'), 4242, t)
+  returning id into v_id;
+  update public.crops set rat_log = rat_log || jsonb_build_array(jsonb_build_object('r', v_id, 'from', t, 'to', null))
+   where room_id = r and plot_no = n;
+  return v_id;
+end $$;
+create function pg_temp.live(s jsonb) returns bigint[] language sql
+as $$ select coalesce(array_agg((x->>'id')::bigint order by (x->>'id')::bigint), '{}') from jsonb_array_elements(s->'rats'->'live') x $$;
+create function pg_temp.recent(s jsonb, id bigint) returns jsonb language sql
+as $$ select x from jsonb_array_elements(s->'rats'->'recent') x where (x->>'id')::bigint = id $$;
+
+-- Spawning (§5.3): at t(k) once a sweep runs after it; a late sweep looks back 30 minutes and its rats eat from that sweep;
+-- last_k; one rat per (room, k); at most 3 alive.
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; room uuid := (select v from smoke where k = 'room')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz; v_k bigint; tk timestamptz; t3 timestamptz;
+        r public.field_rats; n integer;
+begin
+  perform pg_temp.set_coins(a1, 100000);
+  perform public._farm_do_rent(room, a1, 5, t);
+  assert (select last_k from public.rat_clocks where room_id = room) = public._rat_k(room, t), 'the first sweep sets the clock';
+  assert not exists (select 1 from public.field_rats where room_id = room), 'no crop, no rat';
+  perform pg_temp.rice(room, 5, a1, 'short', t - interval '44 hours');
+  v_k := public._rat_k(room, t) + 1;
+  tk := public._rat_t(room, v_k);
+  perform public._field_open(room, tk - interval '1 second');
+  assert not exists (select 1 from public.field_rats where room_id = room), 'nothing before t(k)';
+  perform public._field_open(room, tk);
+  select * into r from public.field_rats where room_id = room;
+  assert r.k = v_k and r.spawned_at = tk and r.plot_no = 5 and r.ended_at is null and r.how is null and r.caught_by is null
+     and r.seed = floor(public._rat_u(room, v_k, 's') * 2147483647)::int, format('a rat at t(k): %s', to_jsonb(r));
+  assert (pg_temp.crop(room, 5)).rat_log = jsonb_build_array(jsonb_build_object('r', r.id, 'from', tk, 'to', null)),
+    'its entry opens at the sweep';
+  -- 3 h later: only the candidates of the last 30 minutes, spawned at t(k) but eating from this sweep (D3)
+  t3 := tk + interval '3 hours';
+  perform public._field_open(room, t3);
+  n := least(2, public._rat_k(room, t3) - public._rat_k(room, t3 - interval '1800 seconds'));
+  assert (select count(*) from public.field_rats where room_id = room and id <> r.id) = n and n >= 1
+     and not exists (select 1 from public.field_rats where room_id = room and id <> r.id
+                      and (spawned_at <= t3 - interval '1800 seconds' or spawned_at > t3
+                           or spawned_at <> public._rat_t(room, k))), format('the lookback: %s new', n);
+  assert (select count(*) from jsonb_array_elements((pg_temp.crop(room, 5)).rat_log) e
+           where (e->>'r')::bigint <> r.id and (e->>'from')::timestamptz = t3 and e->'to' = 'null') = n, 'found late: from this sweep';
+  assert (select last_k from public.rat_clocks where room_id = room) = public._rat_k(room, t3), 'last_k = k(p_now)';
+  -- last_k stops a second evaluation, and a re-evaluation keeps one rat per (room, k)
+  perform public._field_open(room, t3);
+  update public.rat_clocks set last_k = last_k - 10 where room_id = room;
+  perform public._field_open(room, t3);
+  assert (select count(*) from public.field_rats where room_id = room) = n + 1
+     and jsonb_array_length((pg_temp.crop(room, 5)).rat_log) = n + 1, 'one rat per candidate';
+  assert (select last_k from public.rat_clocks where room_id = room) = public._rat_k(room, t3), 'last_k is back';
+  -- at most 3 alive
+  perform public._field_open(room, t3 + interval '1 hour');
+  assert (select count(*) from public.field_rats where room_id = room and ended_at is null) = 3, 'three alive';
+  perform public._field_open(room, t3 + interval '2 hours');
+  assert (select count(*) from public.field_rats where room_id = room) = 3, 'no fourth while three are alive';
+  insert into smoke values ('t_room', (t3 + interval '2 hours')::text);
+end $$;
+
+-- Where no rat comes (§5.2, D4, D7): a crop with 20 rats in its life, a crop not yet ripe, a started harvester, ớt; a
+-- far-future last_k spawns nothing and stays. Khoai and bắp do get rats.
+do $$
+declare a2 uuid := (select v from smoke where k = 'a2')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        room uuid := (select v from smoke where k = 'room2')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        r public.field_rats;
+begin
+  perform pg_temp.set_coins(a3, 100000);
+  perform public._field_open(room, t);
+  update public.field_plots set owner_id = a2, owned_at = t where room_id = room and plot_no between 1 and 4;
+  perform pg_temp.rice(room, 1, a2, 'short', t - interval '44 hours');
+  update public.crops set rat_log = (select jsonb_agg(jsonb_build_object('r', -g, 'from', t - interval '3 hours', 'to', t - interval '2 hours'))
+                                       from generate_series(1, 20) g)
+   where room_id = room and plot_no = 1;
+  perform pg_temp.rice(room, 2, a2, 'short', t - interval '30 hours');
+  perform pg_temp.rice(room, 3, a2, 'short', t - interval '44 hours');
+  update public.crops set harvester_at = t, harvester_until = t + interval '10 hours' where room_id = room and plot_no = 3;
+  perform pg_temp.upland(room, 4, a2, 'ot', t - interval '47 hours');
+  perform public._field_open(room, t + interval '1 hour');
+  perform public._field_open(room, t + interval '2 hours');
+  assert not exists (select 1 from public.field_rats where room_id = room), 'no rats for these crops';
+  -- khoai: none while the clock is far in the future, which the sweep keeps
+  perform public._farm_do_rent(room, a3, 5, t + interval '2 hours');
+  perform pg_temp.upland(room, 5, a3, 'khoai', t - interval '47 hours');
+  update public.rat_clocks set last_k = 9000000000000000000 where room_id = room;
+  perform public._field_open(room, t + interval '3 hours');
+  assert not exists (select 1 from public.field_rats where room_id = room)
+     and (select last_k from public.rat_clocks where room_id = room) = 9000000000000000000, 'far-future last_k';
+  update public.rat_clocks set last_k = public._rat_k(room, t + interval '3 hours') where room_id = room;
+  perform public._field_open(room, t + interval '4 hours');
+  assert exists (select 1 from public.field_rats where room_id = room)
+     and not exists (select 1 from public.field_rats where room_id = room and plot_no <> 5), 'khoai gets rats';
+  -- bắp, once the khoai is gone
+  perform public._farm_do_abandon(room, a3, 5, t + interval '5 hours');
+  perform public._farm_do_rent(room, a3, 6, t + interval '5 hours');
+  perform pg_temp.upland(room, 6, a3, 'bap', t - interval '56 hours');
+  perform public._field_open(room, t + interval '6 hours');
+  assert exists (select 1 from public.field_rats where room_id = room and plot_no = 6 and ended_at is null)
+     and not exists (select 1 from public.field_rats where room_id = room and plot_no = 5 and ended_at is null), 'bắp gets rats';
+end $$;
+
+-- The rats' life (§5.4, D5): the acting call's answer lists a rat whose crop is gone or no longer food as fled, the next
+-- sweep ends it; a lease end, fallen rice, the harvester; the purge. Room 3's clock is off: its rats are placed by hand.
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room3')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz; s jsonb; x jsonb; y jsonb; v_kg integer; w0 integer;
+        r6 bigint; r7 bigint; r5 bigint; r2 bigint; r5b bigint; r1 bigint;
+begin
+  perform public._field_open(room, t - interval '2 hours');
+  update public.rat_clocks set last_k = 9000000000000000000 where room_id = room;
+  perform pg_temp.set_coins(a1, 100000);
+  perform pg_temp.set_coins(a2, 100000);
+  perform pg_temp.set_coins(a3, 100000);
+  perform pg_temp.give(a2, 'tool_sickle', 1);
+  -- the sixth rice part: the answer lists the rat as fled; part 6 pays partKg(6, Y) with Mrat in Y
+  perform public._farm_do_rent(room, a2, 6, t - interval '1 hour');
+  perform pg_temp.rice(room, 6, a2, 'short', t - interval '44 hours');
+  update public.crops set harvested_parts = 5, harvested_kg = 70 where room_id = room and plot_no = 6;
+  r6 := pg_temp.rat(room, 6, t - interval '30 minutes');
+  perform public._farm_do_begin_work(room, a2, 6, 'harvest', t);
+  y := public._crop_yield(pg_temp.crop(room, 6), public._variety('short'), 1.0, 1.0, t + interval '8 seconds');
+  assert (y->>'mrat')::double precision = public._rat_factor(public._hrs(t - interval '30 minutes', t + interval '8 seconds'))
+     and (y->>'mrat')::double precision < 1, format('the rat counts in Y: %s', y);
+  s := public._farm_do_harvest_part(room, a2, 6, true, t + interval '8 seconds');
+  assert (s->'harvest_part'->>'kg')::int = public._part_kg(6, (y->>'kg')::int) and s->'harvest_part'->'done' = 'true',
+    format('part 6 of Y %s: %s', y->>'kg', s->'harvest_part');
+  x := pg_temp.recent(s, r6);
+  assert x->>'how' = 'fled' and (x->>'ended_at')::timestamptz = t + interval '8 seconds' and x->'by' = 'null' and x->'dog' = 'null'
+     and not (r6 = any(pg_temp.live(s))), format('fled in the answer: %s', x);
+  assert (select ended_at is null from public.field_rats where id = r6), 'the row ends at the next sweep';
+  perform public._field_open(room, t + interval '9 seconds');
+  assert (select ended_at = t + interval '9 seconds' and how = 'fled' and caught_by is null from public.field_rats where id = r6), 'fled';
+  -- a khoai picking
+  perform public._farm_do_rent(room, a3, 7, t - interval '1 hour');
+  perform pg_temp.upland(room, 7, a3, 'khoai', t - interval '49 hours');
+  r7 := pg_temp.rat(room, 7, t - interval '1 hour');
+  perform public._farm_do_begin_work(room, a3, 7, 'harvest', t);
+  v_kg := (public._up_yield(pg_temp.crop(room, 7), public._upland('khoai'), 1.0, 1, t + interval '2 seconds')->>'kg')::int;
+  s := public._farm_do_harvest(room, a3, 7, 1, t + interval '2 seconds');
+  assert (s->'harvest'->>'kg')::int = v_kg and v_kg < (public._up_yield(pg_temp.crop(room, 7), public._upland('khoai'), 1.0, 1, t - interval '1 hour')->>'kg')::int
+     and pg_temp.recent(s, r7)->>'how' = 'fled' and not (r7 = any(pg_temp.live(s))), format('a picking: %s kg', v_kg);
+  -- abandon
+  perform public._farm_do_rent(room, a1, 5, t - interval '1 hour');
+  perform pg_temp.rice(room, 5, a1, 'short', t - interval '44 hours');
+  r5 := pg_temp.rat(room, 5, t - interval '10 minutes');
+  s := public._farm_do_abandon(room, a1, 5, t + interval '10 seconds');
+  assert pg_temp.recent(s, r5)->>'how' = 'fled' and not (r5 = any(pg_temp.live(s))), 'abandoned';
+  perform public._field_open(room, t + interval '20 seconds');
+  assert (select ended_at = t + interval '20 seconds' and how = 'fled' from public.field_rats where id = r5), 'fled at the next sweep';
+  -- the answer lists a rat that ended in the last 10 s, then no more
+  assert pg_temp.recent(public._field_view(room, a1, t + interval '29.999 seconds'), r5) is not null
+     and pg_temp.recent(public._field_view(room, a1, t + interval '30 seconds'), r5) is null, 'recent: 10 s';
+  -- the harvester: the answer lists the rat as fled; a sweep 10 s later ends it and closes its entry while the crop stays;
+  -- step J at harvester_until counts the rat only up to that close
+  update public.field_plots set owner_id = a2, owned_at = t where room_id = room and plot_no = 2;
+  perform pg_temp.rice(room, 2, a2, 'short', t - interval '44 hours');
+  r2 := pg_temp.rat(room, 2, t - interval '1 hour');
+  s := public._farm_do_rent_harvester(room, a2, 2, t + interval '1 minute');
+  assert pg_temp.recent(s, r2)->>'how' = 'fled' and not (r2 = any(pg_temp.live(s))), 'the harvester: fled in the answer';
+  perform public._field_open(room, t + interval '70 seconds');
+  assert (select ended_at = t + interval '70 seconds' from public.field_rats where id = r2)
+     and (pg_temp.crop(room, 2)).rat_log->0->>'to' is not null
+     and ((pg_temp.crop(room, 2)).rat_log->0->>'to')::timestamptz = t + interval '70 seconds', 'closed at that sweep; the crop stays';
+  y := public._crop_yield(pg_temp.crop(room, 2), public._variety('short'), 1.1, 1.0, t + interval '90 seconds');
+  assert (y->>'mrat')::double precision = public._rat_factor(public._hrs(t - interval '1 hour', t + interval '70 seconds')),
+    format('Y counts the rat up to its close: %s', y);
+  w0 := pg_temp.wet(a2);
+  perform public._field_open(room, t + interval '91 seconds');
+  assert pg_temp.wet(a2) = w0 + (y->>'kg')::int and pg_temp.crop(room, 2) is null, 'step J pays that Y';
+  -- the purge: an hour after it ended
+  perform public._field_open(room, t + interval '1 hour 20 seconds');
+  assert exists (select 1 from public.field_rats where id = r5), 'kept for an hour';
+  perform public._field_open(room, t + interval '1 hour 21 seconds');
+  assert not exists (select 1 from public.field_rats where id = r5), 'purged after an hour';
+  -- a lease end (step 1, then step 4) makes R1 flee the rat in the same sweep
+  perform pg_temp.rice(room, 5, a1, 'short', t + interval '50 hours');
+  r5b := pg_temp.rat(room, 5, t + interval '94 hours');
+  perform public._field_open(room, t + interval '94 hours 1 minute');
+  assert (select ended_at is null from public.field_rats where id = r5b), 'eating while the lease runs';
+  perform public._field_open(room, t + interval '95 hours');
+  assert (select ended_at = t + interval '95 hours' and how = 'fled' from public.field_rats where id = r5b)
+     and pg_temp.crop(room, 5) is null, 'the lease ended: the crop is lost and the rat flees';
+  -- fallen rice (step 6) too
+  update public.field_plots set owner_id = a1, owned_at = t where room_id = room and plot_no = 1;
+  perform pg_temp.rice(room, 1, a1, 'short', t);
+  r1 := pg_temp.rat(room, 1, t + interval '100 hours');
+  perform public._field_open(room, t + interval '104 hours');
+  assert (select ended_at = t + interval '104 hours' and how = 'fled' from public.field_rats where id = r1)
+     and pg_temp.crop(room, 1) is null, 'fallen rice: the rat flees';
+end $$;
+
+-- The catch (§5.6): room-bound, first valid catch wins, priced at floor(150 × M) with M from the room's index at the
+-- catch, the entry closes and the bag gets it. The field shows the price a catch would fetch, and never writes the index.
+do $$
+declare a2 uuid := (select v from smoke where k = 'a2')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        room uuid := (select v from smoke where k = 'room')::uuid; room2 uuid := (select v from smoke where k = 'room2')::uuid;
+        t timestamptz := (select v from smoke where k = 't_room')::timestamptz; ids bigint[]; s jsonb; x jsonb; b0 integer;
+begin
+  select array_agg(id order by id) into ids from public.field_rats where room_id = room and ended_at is null;
+  assert cardinality(ids) = 3, 'three live rats';
+  -- a new period: the field shows the preview and writes no index row
+  delete from public.fish_price_index where room_id = room;
+  s := public._field_view(room, a2, t);
+  assert (s->'rats'->>'price')::int = public._critter_price(150, public._fish_mult(public._room_wealth(room, t)))
+     and not exists (select 1 from public.fish_price_index where room_id = room), 'the preview, no write';
+  assert s->'rats'->'next_at' = to_jsonb(public._rat_t(room, public._rat_k(room, t) + 1))
+     and (s->'rats'->>'next_at')::timestamptz > t, 'next_at: the next candidate';
+  assert pg_temp.live(s) = ids and s->'rats'->'recent' = '[]'
+     and s->'rats'->'live'->0 = (select jsonb_build_object('id', id, 'plot', plot_no, 'since', spawned_at, 'seed', seed)
+                                   from public.field_rats where id = ids[1]), format('live %s', s->'rats'->'live');
+  assert s->'rats'->'plots'->'5' = (pg_temp.crop(room, 5)).rat_log and s->'rats'->'plots'->'6' is null, 'the logs by plot';
+  -- the catch writes the period's row: M 2.24 → 336
+  perform pg_temp.set_mult(room, 2.24, t);
+  perform public._wallet_lock(a2);
+  assert public._rat_catch(room, a2, ids[1], 'sling', t) = 336, 'floor(150 × 2.24)';
+  assert (select how = 'sling' and caught_by = a2 and price = 336 and ended_at = t from public.field_rats where id = ids[1])
+     and exists (select 1 from jsonb_array_elements((pg_temp.crop(room, 5)).rat_log) e
+                  where (e->>'r')::bigint = ids[1] and (e->>'to')::timestamptz = t)
+     and exists (select 1 from public.rat_bag where account_id = a2 and price = 336 and caught_at = t and how = 'sling'),
+    'ended, closed, bagged';
+  -- first valid catch wins; bound to its room
+  assert pg_temp.err(format('select public._rat_catch(%L, %L, %s, %L, %L)', room, a3, ids[1], 'dog', t)) = 'rat gone', 'caught already';
+  assert pg_temp.err(format('select public._rat_catch(%L, %L, %s, %L, %L)', room2, a3, ids[2], 'sling', t)) = 'rat gone', 'another room';
+  assert pg_temp.err(format('select public._rat_catch(%L, %L, null, %L, %L)', room, a3, 'sling', t)) = 'rat gone', 'no rat';
+  -- M 1.13 → 169 (a rounding would give 170)
+  update public.fish_price_index set mult = 1.13 where room_id = room;
+  assert public._rat_catch(room, a2, ids[2], 'sling', t + interval '1 second') = 169, 'floor(150 × 1.13)';
+  -- the answer's recent list, and what the bag holds
+  s := public._field_view(room, a2, t + interval '2 seconds');
+  x := pg_temp.recent(s, ids[1]);
+  assert x->>'how' = 'sling' and x->'by' = public._who(a2) and x->'dog' = 'null' and (x->>'ended_at')::timestamptz = t
+     and pg_temp.live(s) = array[ids[3]], format('recent %s', s->'rats'->'recent');
+  assert public._farm_mine(a2)->'rats' = '{"count": 2, "value": 505}', format('the bag %s', public._farm_mine(a2)->'rats');
+  assert public._farm_mine(a3)->'rats' = '{"count": 0, "value": 0}' and public._farm_mine(a3)->'dog' = 'null', 'an empty bag';
+end $$;
+
+-- The caps (§5.6, D13): 6 catches in an hourly window, 24 a Vietnam day; rat_daily_cap, soft, once.
+do $$
+declare a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room3')::uuid;
+        t1 timestamptz := (date_trunc('day', now() at time zone 'Asia/Ho_Chi_Minh') + interval '1 hour') at time zone 'Asia/Ho_Chi_Minh';
+        ids bigint[]; h integer; i integer; n integer := 0; e jsonb; c jsonb;
+begin
+  select array_agg(pg_temp.rat(room, 9, t1)) into ids from generate_series(1, 26);
+  perform public._wallet_lock(a3);
+  c := public._rat_caps_view(a3, t1);
+  assert c = '{"day_left": 24, "hour_left": 6, "hour_resets_at": null}', format('full caps %s', c);
+  for h in 0 .. 3 loop
+    for i in 1 .. 6 loop
+      n := n + 1;
+      perform public._rat_catch(room, a3, ids[n], 'sling', t1 + make_interval(hours => h, secs => i));
+    end loop;
+    if h = 0 then
+      e := pg_temp.errd(format('select public._rat_catch(%L, %L, %s, %L, %L)', room, a3, ids[25], 'sling', t1 + interval '7 seconds'));
+      assert e->>'message' = 'rat limit' and e->>'state' = '53400' and e->>'detail' = '3594', format('the 7th in a window: %s', e);
+      c := public._rat_caps_view(a3, t1 + interval '7 seconds');
+      assert c = jsonb_build_object('day_left', 18, 'hour_left', 0, 'hour_resets_at', t1 + interval '1 hour 1 second'),
+        format('caps after 6: %s', c);
+      assert pg_temp.err(format('select public._rat_caps(%L, %L, false)', a3, t1 + interval '8 seconds')) = 'rat limit', 'a check';
+    end if;
+  end loop;
+  assert (select count(*) from public.anticheat_events where account_id = a3 and code = 'rat_daily_cap') = 1
+     and (select outcome = 'soft' and rpc = 'sling_shoot' and room_id = room
+                 and detail = jsonb_build_object('day', (t1 at time zone 'Asia/Ho_Chi_Minh')::date, 'count', 24)
+            from public.anticheat_events where account_id = a3 and code = 'rat_daily_cap'), 'rat_daily_cap, soft, once';
+  e := pg_temp.errd(format('select public._rat_catch(%L, %L, %s, %L, %L)', room, a3, ids[25], 'dog', t1 + interval '4 hours 1 second'));
+  assert e->>'message' = 'rat daily limit' and e->>'state' = '53400' and e->>'detail' = '68399', format('the 25th of a day: %s', e);
+  assert public._rat_caps_view(a3, t1 + interval '4 hours 1 second') = '{"day_left": 0, "hour_left": 6, "hour_resets_at": null}',
+    'the day is used up';
+  assert (select count(*) from public.rat_bag where account_id = a3) = 24
+     and (select count(*) from public.anticheat_events where account_id = a3 and code = 'rat_daily_cap') = 1, 'nothing more';
+  -- the next Vietnam day
+  assert public._rat_catch(room, a3, ids[25], 'dog', t1 + interval '23 hours') > 0, 'a new day';
+end $$;
+
+select 'v17 field smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql
