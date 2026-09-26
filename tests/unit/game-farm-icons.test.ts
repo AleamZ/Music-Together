@@ -12,6 +12,7 @@ const seeded = (file: string, table: string): string[] => {
 };
 const seededItems = (): string[] => [
   ...seeded("0013_v15_field.sql", "shop_items"), ...seeded("0016_v15_2_crops.sql", "shop_items"), ...seeded("0018_v15_3_gather.sql", "shop_items"),
+  ...seeded("0019_v17_rats.sql", "shop_items"),
 ];
 
 describe("farm icons", () => {
@@ -30,7 +31,21 @@ describe("farm icons", () => {
     const critters = seeded("0018_v15_3_gather.sql", "critter_kinds");
     expect(critters).toEqual(["cua_dong", "cua_gach", "oc_dong", "oc_buou_vang"]);
     expect(seeded("0018_v15_3_gather.sql", "shop_items")).toEqual(["box_bucket", "box_basket"]);
-    expect(Object.keys(FARM_ICONS).sort()).toEqual([...seededItems(), "rice_dry", "rice_wet", ...produce, ...critters].sort());
+    // v17: the three items of 0019, the depot's rat and the dog panel's bowl
+    expect(seeded("0019_v17_rats.sql", "shop_items")).toEqual(["tool_sling", "ammo_pellet", "food_dog"]);
+    expect(Object.keys(FARM_ICONS).sort()).toEqual(
+      [...seededItems(), "rice_dry", "rice_wet", ...produce, ...critters, "rat", "dog_bowl"].sort(),
+    );
+  });
+  it("draw the v17 ná, pellets, dog food, rat and bowl in their colours (§14)", () => {
+    const colours: Record<string, string[]> = {
+      tool_sling: ["#8b5a33", "#6e4424", "#2e2a2a", "#b0643a"],
+      ammo_pellet: ["#a0522d", "#c9784a", "#d9c9a0"],
+      food_dog: ["#d9c27a", "#b8a05a", "#f4efe0"],
+      rat: ["#7a6450", "#5a4636", "#b8a48a", "#c98f86", "#1c1410"],
+      dog_bowl: ["#b0643a", "#8a4a26", "#8b5a33"],
+    };
+    for (const [id, cols] of Object.entries(colours)) expect(iconMatrixFor(id)?.flat(), id).toEqual(expect.arrayContaining(cols));
   });
   it("draw the v15.2 tools in their colours", () => {
     expect(iconMatrixFor("tool_sickle")?.flat()).toEqual(expect.arrayContaining(["#5a5f68", "#e8e8ee", "#6e4424"]));

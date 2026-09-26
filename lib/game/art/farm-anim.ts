@@ -2,9 +2,9 @@ import { handPoint } from "@/lib/game/fishing/geometry";
 import { FARM_ANIM, type FarmAnim } from "@/lib/game/net/protocol";
 import type { Facing, Vec } from "@/lib/game/types";
 
-// The farm animations (v15 spec §12, v15.2 §15), drawn in world pixels over a character while they play: seedlings,
-// the sickle, pumped water, spray mist, fertilizer, a crab, a snail, the hoe, digging tubers and picking into a basket.
-// Browser only (canvas). Original art.
+// The farm animations (v15 spec §12, v15.2 §15, v17 §14), drawn in world pixels over a character while they play:
+// seedlings, the sickle, pumped water, spray mist, fertilizer, a crab, a snail, the hoe, digging tubers, picking into a
+// basket, petting a dog (hearts) and aiming a ná. Browser only (canvas). Original art.
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -15,6 +15,7 @@ const COL = {
   granule: "#f4efe0", crab: "#b8432f", crabLight: "#d9776a", shell: "#8a5a2b", shellLight: "#c9955a", egg: "#f29bb5",
   soil: "#6e5230", tuber: "#b0486e", tuberDark: "#7e2f4e", basket: "#c8a46a", basketDark: "#a8844f", hand: "#e8b890",
   corn: "#f6c945", chili: "#d8342a",
+  heart: "#e0526a", fork: "#8b5a33", band: "#2e2a2a", pellet: "#a0522d",
 };
 
 function px(c: Ctx, col: string, x: number, y: number): void {
@@ -40,6 +41,18 @@ function hoe(c: Ctx, hand: Vec, flip: number, down: boolean): Vec {
   c.fillRect(Math.round(head.x) - 2, Math.round(head.y), 4, 2);
   px(c, COL.edge, head.x - 2 * flip, head.y + 1);
   return head;
+}
+
+/** A straight line of n + 1 pixels from a to b. */
+function line(c: Ctx, col: string, a: Vec, b: Vec, n: number): void {
+  for (let k = 0; k <= n; k++) px(c, col, a.x + ((b.x - a.x) * k) / n, a.y + ((b.y - a.y) * k) / n);
+}
+
+/** A 3 × 3 heart whose top middle is (x, y). */
+function heart(c: Ctx, x: number, y: number): void {
+  px(c, COL.heart, x - 1, y); px(c, COL.heart, x + 1, y);
+  for (let d = -1; d <= 1; d++) px(c, COL.heart, x + d, y + 1);
+  px(c, COL.heart, x, y + 2);
 }
 
 /** Points along an arc from a to b, `n` of them, shifted along it by `shift` (0–1) so they flow. */
@@ -153,6 +166,32 @@ export function drawFarmAnim(c: Ctx, feet: Vec, facing: Facing, a: FarmAnim, t: 
       for (let k = 0; k < 7; k += 2) c.fillRect(bx + k, by + 1, 1, 3);
       const fill = reduced ? 3 : 1 + beat;
       for (let k = 0; k < fill; k++) px(c, k % 2 ? COL.chili : COL.corn, bx + 1 + k * 2, by);
+      break;
+    }
+    case FARM_ANIM.pet: {
+      // v17: the hand lowered in front, over the dog, and three hearts rising in turn
+      c.fillStyle = COL.hand;
+      c.fillRect(Math.round(g.x) - 1, Math.round(g.y) - 3, 3, 2);
+      for (let k = 0; k < 3; k++) {
+        const rise = reduced ? k / 3 : (t / 900 + k / 3) % 1;
+        heart(c, g.x - 4 + k * 4, g.y - 7 - rise * 14);
+      }
+      break;
+    }
+    case FARM_ANIM.aim: {
+      // v17: the ná at arm's length, its band drawn back to the chest with a pellet in the pouch, trembling every
+      // other beat
+      const s = reduced ? 0 : beat % 2;
+      const grip = { x: hand.x + f.x * 6 + s, y: hand.y + f.y * 4 };
+      for (let k = 0; k <= 2; k++) px(c, COL.fork, grip.x, grip.y + k);
+      const l = { x: grip.x - 2, y: grip.y - 3 }, r = { x: grip.x + 2, y: grip.y - 3 };
+      line(c, COL.fork, grip, l, 2);
+      line(c, COL.fork, grip, r, 2);
+      const chest = { x: feet.x + s - f.x * 2, y: feet.y - 24 };
+      line(c, COL.band, l, chest, 6);
+      line(c, COL.band, r, chest, 6);
+      c.fillStyle = COL.pellet;
+      c.fillRect(Math.round(chest.x) - 1, Math.round(chest.y) - 1, 2, 2);
       break;
     }
   }
