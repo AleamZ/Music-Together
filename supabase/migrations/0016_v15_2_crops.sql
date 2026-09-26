@@ -993,6 +993,15 @@ grant execute on function public.harvest_part(uuid, text, integer, boolean) to a
 grant execute on function public.rent_harvester(uuid, text, integer) to anon, authenticated;
 grant execute on function public.claim_farm_gift(text) to anon, authenticated;
 
+-- Those who took the gift before 0016 get its sickle too (R4): one each, never a second, and none for a wiped account. A
+-- re-run gives nothing more.
+insert into public.inventory (account_id, item_id, qty)
+select pr.account_id, 'tool_sickle', 1
+  from public.farm_profiles pr
+ where pr.gift_at is not null
+   and not exists (select 1 from public.anticheat_status s where s.account_id = pr.account_id and s.ban_state = 'wiped')
+on conflict (account_id, item_id) do nothing;
+
 -- Xịt thuốc (§7): a charge from the sprayer's tank when it holds this pesticide, else a bottle from the bag. One statement
 -- uses the charge and clears the item at the last one (R21), and only while the account owns the sprayer.
 create or replace function public._farm_do_spray(p_room uuid, p_account uuid, p_plot integer, p_item text, p_now timestamptz)
