@@ -106,8 +106,9 @@ export const ROUND_FA_MS = 2000;
 export const HARVESTER_REFETCH_MS = 1000;
 const HARVESTER_RETRY_MS = 2000;
 const HARVESTER_TRIES = 3;
-/** How often the clock ticks while on the field. */
+/** How often the clock ticks while on the field, and while a harvester runs there (its countdowns, v15.2 §13.1, §13.3). */
 const TICK_MS = 30_000;
+const MACHINE_TICK_MS = 1000;
 /** The animation each instant action plays (the work actions and the rounds play theirs while they run; v15.2 §12). */
 const ANIM: Partial<Record<FieldAction["kind"], FarmAnim>> = {
   prepare: FARM_ANIM.prepare, prepare_beds: FARM_ANIM.prepare, tend: FARM_ANIM.prepare, water: FARM_ANIM.pump, spray: FARM_ANIM.spray,
@@ -153,19 +154,21 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     live.current = { toast, onCoinsChanged, state, catalog, notOpen, round };
   });
 
-  // --- the clock: an answer carries the server's time, and a tick moves it on while I am on the field
+  // --- the clock: an answer carries the server's time, and a tick moves it on while I am on the field — every second
+  //     while a harvester runs there
   const [tick, setTick] = useState(0);
+  const now = Math.max(tick, state?.serverNow ?? 0);
+  const machine = state?.plots.some((p) => p.crop?.harvester && p.crop.harvester.endsAt > now) ?? false;
   useEffect(() => {
     if (!active) return;
     const beat = () => setTick(serverNow());
     const first = setTimeout(beat, 0);
-    const timer = setInterval(beat, TICK_MS);
+    const timer = setInterval(beat, machine ? MACHINE_TICK_MS : TICK_MS);
     return () => {
       clearTimeout(first);
       clearInterval(timer);
     };
-  }, [active]);
-  const now = Math.max(tick, state?.serverNow ?? 0);
+  }, [active, machine]);
 
   // --- due tasks, and the plots on the canvas with my urgent rings
   const tasks = useMemo(() => (state && catalog ? dueTasks(state.plots, accountId, catalog, state.mine, now) : []), [state, catalog, accountId, now]);

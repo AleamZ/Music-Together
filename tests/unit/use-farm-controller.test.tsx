@@ -351,3 +351,15 @@ describe("useFarmController, v15.2", () => {
     expect(toast).toHaveBeenCalledWith("💰 Bán 180 kg khoai lang được 47.700 xu.");
   });
 });
+
+describe("useFarmController, the clock while a harvester runs", () => {
+  it("ticks every second, so the tasks count the harvester down", async () => {
+    const ends = new Date(Date.parse(iso(0)) + 10_000).toISOString();
+    rpc.fetchFieldState.mockResolvedValue(field({ crop5: { harvester: { started_at: iso(0), ends_at: ends } } }));
+    const { result } = setup();
+    await flush();
+    expect(result.current.tasks.map((t) => t.text)).toContain("Thửa 5 · Máy gặt đang gặt — còn 10 giây");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.tasks.map((t) => t.text)).toContain("Thửa 5 · Máy gặt đang gặt — còn 9 giây");
+  });
+});

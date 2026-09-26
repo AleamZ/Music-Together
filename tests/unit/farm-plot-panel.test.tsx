@@ -3,8 +3,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import FarmTasksPanel, { FarmTasksButton } from "@/components/game/farm/FarmTasks";
 import Handbook from "@/components/game/farm/Handbook";
 import PlotPanel from "@/components/game/farm/PlotPanel";
-import { farmItemFromRow, varietyFromRow, type FarmCatalog } from "@/lib/game/farm/catalog";
+import { farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow } from "@/lib/game/farm/catalog";
 import { parseFieldState, type FieldState } from "@/lib/game/farm/state";
+import fixtures from "@/tests/fixtures/upland-cases.json";
 
 afterEach(cleanup);
 
@@ -155,5 +156,117 @@ describe("FarmTasks", () => {
     cleanup();
     render(<FarmTasksPanel farming={false} tasks={[]} onOpenHandbook={() => {}} onClose={() => {}} />);
     expect(screen.getByText("Bạn chưa có ruộng — ghé chú Tám ở Hợp tác xã thuê một thửa nhé.")).toBeInTheDocument();
+  });
+});
+
+describe("PlotPanel, v15.2", () => {
+  const UPLANDS = (fixtures as unknown as { crops: UplandCropRow[] }).crops.map(uplandFromRow);
+  const BEDS: FarmCatalog = {
+    ...CATALOG, uplands: UPLANDS,
+    items: [
+      ...CATALOG.items, item("seed_khoai", "seed", "Dây khoai giống", { upland: "khoai" }),
+      item("spray_insect", "pesticide", "Thuốc trừ sâu", { pest_target: "insect" }), item("fert_potash", "fertilizer", "Phân kali", { fert: "potash" }),
+    ],
+  };
+  const LOG = { fert: [], spray: [], picks: [], q_transplant: 1, work: [], harvests: [] };
+  /** Plot 5, mine, with `crop`; the rest as STATE has them. */
+  const withCrop = (crop: Record<string, unknown> | null, items: Record<string, number> = {}): FieldState => parseFieldState({
+    server_now: iso(0),
+    plots: [bare(5, "village", { farmer: ME, lease: { source: "village", until: iso(80), price: 250 }, crop })],
+    drying: [],
+    mine: { items, rice: {}, coins: 10_000, gift_claimed: true, owned_plot: null, farming: [5], my_offers: [], incoming_offers: [] },
+  })!;
+  const beds = (over: Record<string, unknown>) => ({
+    kind: "upland", variety: null, upland: null, phase: "prepared", prepared_at: iso(-30), water: 1, water_set_at: iso(-1), pests: [],
+    excess_n: false, ripe: false, rotted_at: null, picking: 0, pickings: 0, log: { ...LOG, water: [{ t: iso(-1), l: 1 }] }, ...over,
+  });
+  function show(state: FieldState, catalog: FarmCatalog = BEDS) {
+    const onAct = vi.fn(), onOpenHandbook = vi.fn();
+    render(<PlotPanel no={5} state={state} catalog={catalog} failed={false} me="me" busy={false} now={NOW} onAct={onAct}
+      onOpenHandbook={onOpenHandbook} onReload={() => {}} onClose={() => {}} />);
+    return { onAct, onOpenHandbook };
+  }
+  const li = (text: string) => screen.getByText((_, el) => el?.tagName === "LI" && el.textContent === text);
+
+  it("offers the two ways to làm đất on a bare plot, with their toasts", () => {
+    const { onAct } = show(withCrop(null));
+    expect(screen.getByText("Cày bừa, cho nước ngập ruộng — để cấy lúa.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Lên luống trồng màu" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "prepare_beds", plot: 5 }, "Đã lên luống — đất Ẩm, sẵn sàng trồng.");
+    fireEvent.click(screen.getByRole("button", { name: "Làm ruộng lúa" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "prepare", plot: 5 }, "Đã làm đất — ruộng ngập nước.");
+  });
+
+  it("shows bare beds and plants a seed I hold", () => {
+    const { onAct } = show(withCrop(beds({}), { seed_khoai: 1 }));
+    expect(li("🌱 Luống đã lên — chưa trồng gì.")).toBeInTheDocument();
+    expect(li("💧 Đất: Ẩm")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Trồng dây khoai" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "plant", plot: 5, item: "seed_khoai" }, "Đã trồng dây khoai.");
+  });
+
+  it("shows khoai's stage, the soil, the rot and the estimate; lật dây is toasted; the handbook opens at Khoai lang", () => {
+    // planted 25 h ago; Đẫm since an hour ago (rot from 22 h)
+    const crop = beds({
+      upland: "khoai", phase: "tuber", plant_at: iso(-25), picking: 1, pickings: 1, water: 2,
+      log: { ...LOG, water: [{ t: iso(-25), l: 1 }, { t: iso(-1), l: 2 }] },
+    });
+    const { onAct, onOpenHandbook } = show(withCrop(crop));
+    expect(li("🌱 Khoai lang · Tượng củ — giai đoạn sau: còn 11 giờ")).toBeInTheDocument();
+    expect(li("💧 Đất: Đẫm · cần Khô–Ẩm")).toBeInTheDocument();
+    expect(li("⚠️ Đất úng — củ đang thối!")).toBeInTheDocument();
+    expect(screen.getByText(/^⚖️ Ước tính: ~\d+ kg \(chưa tính sâu bệnh chưa tới\)$/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Lật dây" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "tend", plot: 5, act: "lat_day" }, "Đã lật dây.");
+    fireEvent.click(screen.getByRole("button", { name: "📖 Sổ tay: Khoai lang" }));
+    expect(onOpenHandbook).toHaveBeenCalledWith("khoai");
+  });
+
+  it("gives ớt's estimate per picking and for the season", () => {
+    const crop = beds({
+      upland: "ot", phase: "ripe", sow_at: iso(-60), plant_at: iso(-48), picking: 1, pickings: 3, log: { ...LOG, water: [{ t: iso(-2), l: 1 }] },
+    });
+    show(withCrop(crop));
+    expect(screen.getByText(/^⚖️ Ước tính: lứa này ~\d+ kg · cả vụ ~\d+ kg \(chưa tính sâu bệnh chưa tới\)$/)).toBeInTheDocument();
+  });
+
+  const RIPE = {
+    variety: "nep", phase: "ripe", prepared_at: iso(-64), soak_at: iso(-63), sow_at: iso(-60), transplant_at: iso(-50), water: 1,
+    water_set_at: iso(-3), pests: [], excess_n: false, ripe: true, rotted_at: null,
+    log: { water: [{ t: iso(-64), l: 3 }, { t: iso(-3), l: 1 }], fert: [], spray: [], picks: [], q_transplant: 1, harvested_kg: 25 },
+  };
+
+  it("points ripe rice to the sickle and the co-op's harvester", () => {
+    const { onAct, onOpenHandbook } = show(withCrop(RIPE, { tool_sickle: 1 }));
+    expect(li("🚜 Hoặc thuê máy gặt ở Hợp tác xã: 30 giây, 500 xu mỗi phần còn lại.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Gặt bằng liềm" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "round", plot: 5 }, undefined);
+    fireEvent.click(screen.getByRole("button", { name: "📖 Sổ tay: Nông cụ" }));
+    expect(onOpenHandbook).toHaveBeenCalledWith("tools");
+  });
+
+  it("shows a partly cut plot with only Gặt tiếp and Bỏ vụ", () => {
+    show(withCrop({ ...RIPE, parts: 2 }, { tool_sickle: 1 }));
+    expect(li("🌾 Đã gặt 2/6 phần (25 kg)")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^(Gặt|Bỏ)/ }).map((b) => b.textContent)).toEqual(["Gặt tiếp (phần 3/6)", "Bỏ vụ"]);
+  });
+
+  it("counts a running harvester down, with no buttons", () => {
+    show(withCrop({ ...RIPE, parts: 2, harvester: { started_at: iso(0), ends_at: new Date(NOW + 25_000).toISOString() } }, { tool_sickle: 1 }));
+    expect(li("🚜 Máy gặt đang gặt — còn 25 giây")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(Gặt|Bỏ vụ|Bơm|Tháo)/ })).toBeNull();
+  });
+});
+
+describe("Handbook, v15.2", () => {
+  it("adds a tab per hoa-màu crop and Nông cụ", () => {
+    const uplands = (fixtures as unknown as { crops: UplandCropRow[] }).crops.map(uplandFromRow);
+    render(<Handbook varieties={[nep]} uplands={uplands} items={CATALOG.items} initial="khoai" onClose={() => {}} />);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(
+      ["Quy trình", "Phân bón", "Sâu bệnh", "Nước", "Giống lúa", "Mẹo", "Khoai lang", "Bắp", "Ớt", "Nông cụ"]);
+    expect(screen.getByRole("tab", { name: "Khoai lang" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/^Cách trồng khoai lang/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Nông cụ" }));
+    expect(screen.getByRole("tab", { name: "Nông cụ" })).toHaveAttribute("aria-selected", "true");
   });
 });

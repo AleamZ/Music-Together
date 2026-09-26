@@ -93,7 +93,10 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
       {panel?.kind === "drying" && (
         <DryingPanel state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act} onReload={onReload} onClose={closePanel} />
       )}
-      {panel?.kind === "handbook" && <Handbook varieties={catalog?.varieties ?? []} initial={panel.tab} onClose={closePanel} />}
+      {panel?.kind === "handbook" && (
+        <Handbook varieties={catalog?.varieties ?? []} uplands={catalog?.uplands ?? []} items={catalog?.items ?? []} initial={panel.tab}
+          onClose={closePanel} />
+      )}
       {panel?.kind === "tasks" && (
         <FarmTasksPanel tasks={farm.tasks} farming={(state?.mine.farming.length ?? 0) > 0}
           onOpenHandbook={() => openPanel({ kind: "handbook", tab: null })} onClose={closePanel} />

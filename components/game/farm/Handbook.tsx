@@ -2,26 +2,33 @@
 
 import { useState } from "react";
 import { ParchmentModal } from "@/components/game/Parchment";
-import type { Variety } from "@/lib/game/farm/catalog";
-import { HANDBOOK_TABS, handbookPage, type HandbookTab } from "@/lib/game/farm/handbook";
+import type { FarmItem, UplandCrop, Variety } from "@/lib/game/farm/catalog";
+import { handbookPage, handbookTabs, type HandbookTab } from "@/lib/game/farm/handbook";
 
-const isTab = (t: string | null): t is HandbookTab => HANDBOOK_TABS.some(([id]) => id === t);
-
-/** 📖 Sổ tay nhà nông (spec §8.9): six tabs; `initial` opens one (e.g. the plot panel's link). */
-export default function Handbook({ varieties, initial, onClose }: { varieties: readonly Variety[]; initial: string | null; onClose: () => void }) {
-  const [tab, setTab] = useState<HandbookTab>(isTab(initial) ? initial : "process");
+/** 📖 Sổ tay nhà nông (spec §8.9, v15.2 §14): the six rice tabs, a tab per hoa-màu crop and Nông cụ; `initial` opens one
+ *  (e.g. the plot panel's link). The crops' tabs are worked out from their config; `items` name the fertilizers and
+ *  pesticides there. */
+export default function Handbook({ varieties, uplands = [], items = [], initial, onClose }: {
+  varieties: readonly Variety[];
+  uplands?: readonly UplandCrop[];
+  items?: readonly FarmItem[];
+  initial: string | null;
+  onClose: () => void;
+}) {
+  const tabs = handbookTabs(uplands);
+  const [tab, setTab] = useState<HandbookTab>(tabs.some(([id]) => id === initial) ? initial! : "process");
   return (
     <ParchmentModal title="📖 Sổ tay nhà nông" onClose={onClose} className="max-w-2xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         <div role="tablist" aria-label="Sổ tay nhà nông" className="flex flex-wrap gap-1">
-          {HANDBOOK_TABS.map(([id, label]) => (
+          {tabs.map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} className={`pch-btn ${tab === id ? "pch-btn-primary" : ""}`} onClick={() => setTab(id)}>
               {label}
             </button>
           ))}
         </div>
         <div role="tabpanel" className="flex flex-col gap-2">
-          {handbookPage(tab, varieties).map((sec) => (
+          {handbookPage(tab, varieties, uplands, items).map((sec) => (
             <section key={sec.title} className="flex flex-col gap-1">
               <h3 className="text-xl text-burgundy">{sec.title}</h3>
               <ul className="flex flex-col gap-1">
