@@ -10,7 +10,7 @@ export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field"];
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
   | "plot" | "coop" | "farm_shop" | "rice_depot" | "drying"
-  | "card_table" | "card_rules";
+  | "card_table" | "card_rules" | "crab_hole" | "snail_bed";
 
 export interface Interactable {
   /** Unique per map: "dock_sign", "fish_3", … */
@@ -24,7 +24,7 @@ export interface Interactable {
   rect: Rect;
   /** Where the character stands to use it. */
   use: Vec;
-  /** fish_spot: the direction of the water. */
+  /** fish_spot, crab_hole, snail_bed: the direction of the water. */
   face?: Facing;
   /** portal: where it leads. */
   to?: { map: MapId; arrive: Spot };
@@ -32,6 +32,8 @@ export interface Interactable {
   plot?: number;
   /** card_table: its game (v16). */
   game?: CardGame;
+  /** crab_hole: its number (1–6); snail_bed: its number (1–4). */
+  spot?: number;
 }
 
 /** A rice plot on the field (v15): its number, its land and where its name post stands. */

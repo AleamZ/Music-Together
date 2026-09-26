@@ -23,7 +23,8 @@ describe("field map", () => {
     expect(field.seating).toBeNull();
     expect(field.spawn).toEqual(FIELD_WEST_ARRIVE);
     expect(field.interactables.map((i) => i.id).sort()).toEqual([
-      "coop", "drying", "farm_shop", "field_to_hall", "field_to_pond",
+      "bed_1", "bed_2", "bed_3", "bed_4", "coop", "crab_1", "crab_2", "crab_3", "crab_4", "crab_5", "crab_6", "drying", "farm_shop",
+      "field_to_hall", "field_to_pond",
       "plot_1", "plot_10", "plot_2", "plot_3", "plot_4", "plot_5", "plot_6", "plot_7", "plot_8", "plot_9", "rice_depot",
     ]);
   });
@@ -36,6 +37,8 @@ describe("field map", () => {
     expect(prompt("rice_depot")).toBe("Vựa lúa · cô Út");
     expect(prompt("drying")).toBe("Sân phơi lúa");
     expect(prompt("plot_3")).toBe("Xem thửa 3");
+    expect(prompt("crab_3")).toBe("Bắt cua hang 3");
+    expect(prompt("bed_2")).toBe("Mò ốc bãi 2");
   });
   it("keeps every use spot walkable and reachable from both entrances", () => {
     for (const from of [FIELD_WEST_ARRIVE, FIELD_EAST_ARRIVE]) {
@@ -73,6 +76,35 @@ describe("field map", () => {
       expect(gap(it.use, p.rect), it.id).toBeLessThanOrEqual(18);
       expect(it.face, it.id).toBe(it.use.y > p.rect.y ? "up" : "down");
       for (const o of ofKind("plot")) if (o !== it) expect(Math.hypot(o.use.x - it.use.x, o.use.y - it.use.y)).toBeGreaterThan(52);
+    }
+  });
+  it("puts 6 crab holes and 4 snail beds on the canal's banks, facing the water (v15.3 §6)", () => {
+    const holes = ofKind("crab_hole"), beds = ofKind("snail_bed");
+    expect(holes.map((h) => [h.id, h.spot, h.label])).toEqual([1, 2, 3, 4, 5, 6].map((n) => [`crab_${n}`, n, `Hang cua ${n}`]));
+    expect(beds.map((b) => [b.id, b.spot, b.label])).toEqual([1, 2, 3, 4].map((n) => [`bed_${n}`, n, `Bãi ốc ${n}`]));
+    const water = { x: CANAL.x, y: CANAL.y, w: CANAL.w, h: CANAL.h };
+    for (const h of holes) {
+      // a burrow in the bank: it touches the water's edge from the north or the south
+      expect(h.rect.y + h.rect.h === CANAL.y || h.rect.y === CANAL.y + CANAL.h, h.id).toBe(true);
+      expect(h.rect.x >= CANAL.x && h.rect.x + h.rect.w <= CANAL.x + CANAL.w, h.id).toBe(true);
+    }
+    for (const b of beds) {
+      // shallow water at the edge: partly in the canal, partly on the bank
+      expect(overlaps(b.rect, water), b.id).toBe(true);
+      expect(b.rect.y < CANAL.y || b.rect.y + b.rect.h > CANAL.y + CANAL.h, b.id).toBe(true);
+    }
+    const spots = [...holes, ...beds];
+    for (const s of spots) {
+      for (const p of FIELD_PLOTS) expect(overlaps(s.rect, p.rect), `${s.id}/plot ${p.no}`).toBe(false);
+      for (const r of [...FIELD_SOLIDS, ...BRIDGES, DRYING_YARD]) expect(overlaps(s.rect, r), s.id).toBe(false);
+      for (const o of spots) if (o !== s) expect(overlaps(s.rect, o.rect), `${s.id}/${o.id}`).toBe(false);
+      expect(s.face, s.id).toBe(s.use.y < CANAL.y ? "down" : "up");
+      for (const o of field.interactables) {
+        if (o !== s) expect(Math.hypot(o.use.x - s.use.x, o.use.y - s.use.y), `${s.id}/${o.id}`).toBeGreaterThanOrEqual(32);
+      }
+    }
+    for (const h of holes) for (const o of holes) {
+      if (o !== h) expect(Math.hypot(o.rect.x - h.rect.x, o.rect.y - h.rect.y), `${h.id}/${o.id}`).toBeGreaterThanOrEqual(40);
     }
   });
   it("blocks the canal but not its bridges, the buildings, and not the drying yard", () => {

@@ -37,6 +37,17 @@ export const FARM_SHOP: Rect = { x: 584, y: 268, w: 92, h: 60 };
 export const RICE_DEPOT: Rect = { x: 696, y: 268, w: 96, h: 60 };
 export const PUMP_HOUSE: Rect = { x: 36, y: 164, w: 32, h: 48 };
 
+/** v15.3 (spec §6): six crab holes, burrows in the canal's banks, and four snail beds, shallow water across its edge.
+ *  Holes 1, 3, 5 and bed 3 are on the north bank, the others on the south bank; their use spots stand on the bank,
+ *  facing the water. */
+const HOLE_BANKS: ReadonlyArray<[number, "north" | "south"]> = [[96, "north"], [250, "south"], [364, "north"], [500, "south"], [700, "north"], [640, "south"]];
+export const CRAB_HOLES: Rect[] = HOLE_BANKS.map(([x, bank]) => ({ x: x - 8, y: bank === "north" ? CANAL.y - 10 : CANAL.y + CANAL.h, w: 16, h: 10 }));
+export const SNAIL_BEDS: Rect[] = [
+  { x: 70, y: 204, w: 20, h: 10 }, { x: 170, y: 204, w: 20, h: 10 }, { x: 630, y: 171, w: 20, h: 10 }, { x: 702, y: 203, w: 20, h: 10 },
+];
+const NORTH_BANK = CANAL.y - 12;
+const SOUTH_BANK = CANAL.y + CANAL.h + 12;
+
 /** Sân phơi: four concrete drying squares (walkable). */
 export const DRYING_YARD: Rect = { x: 564, y: 384, w: 224, h: 72 };
 export const DRYING_SQUARES: Rect[] = [0, 1, 2, 3].map((i) => ({ x: 572 + i * 54, y: 392, w: 46, h: 56 }));
@@ -61,6 +72,15 @@ function plotUse(g: PlotGeom): Interactable {
   };
 }
 
+function gatherUse(kind: "crab_hole" | "snail_bed", rect: Rect, i: number): Interactable {
+  const n = i + 1, north = rect.y < CANAL.y, hole = kind === "crab_hole";
+  return {
+    id: `${hole ? "crab" : "bed"}_${n}`, kind, label: hole ? `Hang cua ${n}` : `Bãi ốc ${n}`,
+    prompt: hole ? `Bắt cua hang ${n}` : `Mò ốc bãi ${n}`, rect, spot: n,
+    use: { x: rect.x + rect.w / 2, y: north ? NORTH_BANK : SOUTH_BANK }, face: north ? "down" : "up",
+  };
+}
+
 export const FIELD_INTERACTABLES: Interactable[] = [
   {
     id: "field_to_hall", kind: "portal", label: "Về sảnh", prompt: "Về sảnh nhạc", rect: { x: 31, y: 78, w: 18, h: 26 },
@@ -75,6 +95,8 @@ export const FIELD_INTERACTABLES: Interactable[] = [
   { id: "rice_depot", kind: "rice_depot", label: "Vựa lúa", prompt: "Vựa lúa · cô Út", rect: { x: 700, y: 288, w: 88, h: 40 }, use: { x: 744, y: 344 } },
   { id: "drying", kind: "drying", label: "Sân phơi", prompt: "Sân phơi lúa", rect: DRYING_YARD, use: { x: 676, y: 372 } },
   ...FIELD_PLOTS.map(plotUse),
+  ...CRAB_HOLES.map((r, i) => gatherUse("crab_hole", r, i)),
+  ...SNAIL_BEDS.map((r, i) => gatherUse("snail_bed", r, i)),
 ];
 
 /** The three keepers stand behind their counters (inside blocked cells), facing the customers. */

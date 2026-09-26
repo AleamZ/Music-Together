@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { farmItemFromRow } from "@/lib/game/farm/catalog";
+import { critterFromRow, farmItemFromRow, type FarmCatalog } from "@/lib/game/farm/catalog";
 import {
-  BED_BAR_MS, BED_COUNT, CRAB_FINISH_WAIT_MS, critterCap, critterCount, critterPrice, GATHER, heldBox, HOLE_COUNT, spotId, spotKey,
-  TRANSPLANT_WAIT_MS,
+  BED_BAR_MS, BED_COUNT, CRAB_FINISH_WAIT_MS, critterCap, critterCount, critterPrice, GATHER, gatherPrompt, heldBox, HOLE_COUNT,
+  minutesLeft, spotId, spotKey, spotState, TRANSPLANT_WAIT_MS,
 } from "@/lib/game/farm/gather";
+import type { FarmMine } from "@/lib/game/farm/state";
+import type { Interactable } from "@/lib/game/maps/types";
 import fixture from "@/tests/fixtures/gather-cases.json";
 
 const F = fixture as unknown as {
@@ -78,5 +80,67 @@ describe("the capacity (R5)", () => {
     expect(heldBox({ box_bucket: 1, box_basket: 1 }, BOXES)?.id).toBe("box_basket");
     expect(critterCount({})).toBe(0);
     expect(critterCount({ cua_dong: { n: 5 }, oc_dong: { n: 2 } })).toBe(7);
+  });
+});
+
+describe("the field prompts (§13.1)", () => {
+  const NOW = Date.parse("2026-09-26T10:00:00Z");
+  const spot = (id: string, kind: "crab_hole" | "snail_bed", n: number): Interactable => ({
+    id, kind, label: "", prompt: "", rect: { x: 0, y: 0, w: 1, h: 1 }, use: { x: 0, y: 0 }, spot: n,
+  });
+  const HOLE = spot("crab_3", "crab_hole", 3);
+  const BED = spot("bed_2", "snail_bed", 2);
+  const named = (id: string, name: string, capacity: number) => farmItemFromRow({
+    id, kind: "critter_box", name, price: 1, sort_order: 0, variety: null, fert: null, pest_target: null, capacity,
+  });
+  const CATALOG: FarmCatalog = {
+    varieties: [], uplands: [], items: [named("box_bucket", "Xô nhựa", 15), named("box_basket", "Giỏ tre", 30)],
+    critters: [critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 })],
+  };
+  const mine = (over: Partial<FarmMine> = {}): FarmMine => ({
+    items: {}, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3,
+    gather: { readyAt: {}, leftToday: 200, dayResetsAt: null }, ...over,
+  });
+  const prompt = (it: Interactable, m: FarmMine, c: FarmCatalog = CATALOG) => gatherPrompt(it, m, c, NOW);
+  const cooling = (key: string, ms: number) => ({ readyAt: { [key]: NOW + ms }, leftToday: 150, dayResetsAt: null });
+  const LIMIT = { readyAt: {}, leftToday: 0, dayResetsAt: NOW + 3_600_000 };
+  const FULL = { critters: { cua_dong: { n: 3, xu: 36 } } };
+
+  it("reads E at a ready spot", () => {
+    expect(prompt(HOLE, mine())).toBe("Bắt cua hang 3");
+    expect(prompt(BED, mine())).toBe("Mò ốc bãi 2");
+    expect(spotState(HOLE, mine(), CATALOG, NOW)).toEqual({ kind: "ready" });
+  });
+  it("counts a cooldown in whole minutes on the server clock, ready at its end", () => {
+    expect(prompt(HOLE, mine({ gather: cooling("crab3", 11.5 * 60_000) }))).toBe("Hang 3 · cua chưa ra (còn 12 phút)");
+    expect(prompt(BED, mine({ gather: cooling("bed2", 7 * 60_000) }))).toBe("Bãi 2 · còn 7 phút");
+    expect(prompt(HOLE, mine({ gather: cooling("crab3", 1_000) }))).toBe("Hang 3 · cua chưa ra (còn 1 phút)");
+    expect(prompt(HOLE, mine({ gather: cooling("crab3", 0) }))).toBe("Bắt cua hang 3");
+    expect(prompt(HOLE, mine({ gather: cooling("crab4", 60_000) }))).toBe("Bắt cua hang 3");
+    expect(spotState(HOLE, mine({ gather: cooling("crab3", 60_000) }), CATALOG, NOW)).toEqual({ kind: "cooling", readyAt: NOW + 60_000 });
+    expect([1, 60_000, 60_001].map(minutesLeft)).toEqual([1, 1, 2]);
+  });
+  it("names the full container, or the hands", () => {
+    expect(prompt(HOLE, mine(FULL))).toBe("Hang 3 · tay đầy — bán ở vựa cô Út");
+    expect(prompt(BED, mine({ items: { box_bucket: 1 }, critterCap: 18, critters: { cua_dong: { n: 18, xu: 216 } } })))
+      .toBe("Bãi 2 · xô nhựa đầy — bán ở vựa cô Út");
+    expect(prompt(HOLE, mine({ items: { box_basket: 1 }, critterCap: 33, critters: { cua_dong: { n: 33, xu: 396 } } })))
+      .toBe("Hang 3 · giỏ tre đầy — bán ở vựa cô Út");
+    expect(spotState(HOLE, mine(FULL), CATALOG, NOW)).toEqual({ kind: "full", box: null });
+    expect(spotState(BED, mine({ items: { box_bucket: 1 }, critterCap: 18, critters: { cua_dong: { n: 18, xu: 216 } } }), CATALOG, NOW))
+      .toMatchObject({ kind: "full", box: { id: "box_bucket", name: "Xô nhựa" } });
+  });
+  it("shows the server's first refusal: the daily limit, then full, then the cooldown", () => {
+    const all = mine({ ...FULL, gather: { ...LIMIT, readyAt: { crab3: NOW + 60_000 } } });
+    expect(prompt(HOLE, all)).toBe("Hết lượt bắt cua, mò ốc hôm nay");
+    expect(prompt(HOLE, mine({ ...FULL, gather: cooling("crab3", 60_000) }))).toBe("Hang 3 · tay đầy — bán ở vựa cô Út");
+    // the Vietnam day turned since the answer: no longer at the limit
+    expect(gatherPrompt(HOLE, mine({ gather: LIMIT }), CATALOG, NOW + 3_600_000)).toBe("Bắt cua hang 3");
+  });
+  it("shows every spot ready before 0018 (no critter kinds)", () => {
+    const before = { ...CATALOG, critters: [] };
+    expect(prompt(HOLE, mine({ ...FULL, gather: LIMIT }), before)).toBe("Bắt cua hang 3");
+    expect(prompt(BED, mine({ gather: cooling("bed2", 60_000) }), before)).toBe("Mò ốc bãi 2");
+    expect(gatherPrompt(HOLE, null, null, NOW)).toBe("Bắt cua hang 3");
   });
 });

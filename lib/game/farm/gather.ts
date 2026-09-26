@@ -1,6 +1,8 @@
 // v15.3 gathering (spec §7, §13.1): 0018's rules (tests/fixtures/gather-cases.json pins them against the SQL), the
-// critter prices, the spot keys and the capacity. Pure.
-import type { FarmItem } from "./catalog";
+// critter prices, the spot keys, the capacity, and each spot's state and prompt. Pure.
+import type { Interactable } from "@/lib/game/maps/types";
+import type { FarmCatalog, FarmItem } from "./catalog";
+import type { FarmMine } from "./state";
 
 /** 0018's rules (R1–R5, R7, R19): the hands, a spot's cooldown, the visits a Vietnam day, the gates and windows, the
  *  odds, and the snails a bed gives. */
@@ -65,4 +67,49 @@ export function critterCap(items: Readonly<Record<string, number>>, all: readonl
 /** How many critters are held, every kind together. */
 export function critterCount(critters: Readonly<Record<string, { n: number }>>): number {
   return Object.values(critters).reduce((s, c) => s + c.n, 0);
+}
+
+/** Where a hole or a bed stands for me (§13.1), in the server's refusal order: the daily limit, a full container (or
+ *  full hands: box null), the spot's cooldown on the server clock, ready. Before 0018 (no critter kinds) every spot is
+ *  ready, and E shows NOT_OPEN_153. */
+export type SpotState =
+  | { kind: "limit" }
+  | { kind: "full"; box: FarmItem | null }
+  | { kind: "cooling"; readyAt: number }
+  | { kind: "ready" };
+
+export function spotState(it: Interactable, mine: FarmMine | null, catalog: FarmCatalog | null, now: number): SpotState {
+  if (!mine || !catalog || catalog.critters.length === 0) return { kind: "ready" };
+  const g = mine.gather;
+  if (g.leftToday <= 0 && (g.dayResetsAt === null || now < g.dayResetsAt)) return { kind: "limit" };
+  if (critterCount(mine.critters) >= mine.critterCap) return { kind: "full", box: heldBox(mine.items, catalog.items) };
+  const key = spotKey(it.id);
+  const readyAt = key === null ? undefined : g.readyAt[key];
+  return readyAt !== undefined && readyAt > now ? { kind: "cooling", readyAt } : { kind: "ready" };
+}
+
+/** Whole minutes left, at least 1. */
+export function minutesLeft(ms: number): number {
+  return Math.max(1, Math.ceil(ms / 60_000));
+}
+
+/** A container's name mid-sentence: "Giỏ tre" → "giỏ tre". */
+export const lowerFirst = (name: string): string => name.charAt(0).toLocaleLowerCase("vi-VN") + name.slice(1);
+
+/** The field prompt of a hole or a bed (§13.1), after the shell's "E · ". */
+export function gatherPrompt(it: Interactable, mine: FarmMine | null, catalog: FarmCatalog | null, now: number): string {
+  const hole = it.kind === "crab_hole", n = it.spot ?? 0;
+  const s = spotState(it, mine, catalog, now);
+  switch (s.kind) {
+    case "limit":
+      return "Hết lượt bắt cua, mò ốc hôm nay";
+    case "full":
+      return `${hole ? "Hang" : "Bãi"} ${n} · ${s.box ? lowerFirst(s.box.name) : "tay"} đầy — bán ở vựa cô Út`;
+    case "cooling": {
+      const m = minutesLeft(s.readyAt - now);
+      return hole ? `Hang ${n} · cua chưa ra (còn ${m} phút)` : `Bãi ${n} · còn ${m} phút`;
+    }
+    case "ready":
+      return hole ? `Bắt cua hang ${n}` : `Mò ốc bãi ${n}`;
+  }
 }
