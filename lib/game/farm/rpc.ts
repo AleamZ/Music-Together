@@ -163,13 +163,15 @@ export interface FieldAnswer {
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-function catchOf(v: unknown): CatchAnswer | null {
-  if (!v || typeof v !== "object") return null;
-  const o = v as Record<string, unknown>;
-  if (!Array.isArray(o.caught) || !isNum(o.escaped)) return null;
-  const caught = o.caught.flatMap((c): CatchAnswer["caught"] => {
+/** A catch (v15.3 §7.2–§7.4): each critter kept, at its price, and how many escaped. Anything malformed, down to a single
+ *  entry of `caught`, throws `bad`: an entry is never dropped. */
+function catchOf(v: unknown, bad: string): CatchAnswer {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  if (!o || !Array.isArray(o.caught) || !isNum(o.escaped)) throw new Error(bad);
+  const caught = o.caught.map((c): CatchAnswer["caught"][number] => {
     const x = c && typeof c === "object" ? (c as Record<string, unknown>) : {};
-    return typeof x.kind === "string" && isNum(x.price) ? [{ kind: x.kind, price: x.price }] : [];
+    if (typeof x.kind !== "string" || !isNum(x.price)) throw new Error(bad);
+    return { kind: x.kind, price: x.price };
   });
   return { caught, escaped: o.escaped };
 }
@@ -186,7 +188,8 @@ export async function fieldAction(roomId: string, token: string, a: FieldAction)
       ? { variety: p.variety, kg: p.kg, parts: p.parts, total: p.total, done: p.done === true } : null,
     picking: h && typeof h.upland === "string" && isNum(h.kg) && isNum(h.k) && isNum(h.pickings)
       ? { upland: h.upland, kg: h.kg, k: h.k, pickings: h.pickings, done: h.done === true } : null,
-    snails: catchOf(r.snails),
+    // pick_snails' answer has no snails before 0018; one that has them must hold them whole
+    snails: r.snails === undefined ? null : catchOf(r.snails, "bad snail answer"),
   };
 }
 
@@ -231,27 +234,28 @@ export async function crabStart(roomId: string, token: string, hole: number): Pr
   return { ...mineAnswer(r), visit: { id: v.id, hole: v.hole, startedAt } };
 }
 
-/** The end of a crab visit (R7): hits 0–3; what was kept and what escaped. */
+/** The end of a crab visit (R7): hits 0–3; what was kept and what escaped. The hits are the server's (§7.2): an answer
+ *  without them is malformed. */
 export async function crabFinish(roomId: string, token: string, visitId: string, hits: number)
   : Promise<MineAnswer & { crab: CatchAnswer & { hits: number } }> {
   const r = await call("crab_finish", { p_room_id: roomId, p_session_token: token, p_visit_id: visitId, p_hits: hits });
-  const c = catchOf(r.crab);
-  if (!c) throw new Error("bad crab answer");
+  const c = catchOf(r.crab, "bad crab answer");
   const o = r.crab as Record<string, unknown>;
-  return { ...mineAnswer(r), crab: { ...c, hits: isNum(o.hits) ? o.hits : hits } };
+  if (!isNum(o.hits)) throw new Error("bad crab answer");
+  return { ...mineAnswer(r), crab: { ...c, hits: o.hits } };
 }
 
 /** Mò ốc (§7.3): 1–3 snails from a bed. */
 export async function pickSnailBed(roomId: string, token: string, bed: number): Promise<MineAnswer & { snails: CatchAnswer }> {
   const r = await call("pick_snail_bed", { p_room_id: roomId, p_session_token: token, p_bed: bed });
-  const s = catchOf(r.snails);
-  if (!s) throw new Error("bad snail answer");
-  return { ...mineAnswer(r), snails: s };
+  return { ...mineAnswer(r), snails: catchOf(r.snails, "bad snail answer") };
 }
 
-/** cô Út buys every critter of a kind (null: all of them) at the prices stored at the catch (R15). */
+/** cô Út buys every critter of a kind (null: all of them) at the prices stored at the catch (R15); `sold` is what she
+ *  paid, so an answer without it whole is malformed. */
 export async function sellCritters(token: string, kind: string | null): Promise<MineAnswer & { sold: { n: number; xu: number } }> {
   const r = await call("sell_critters", { p_session_token: token, p_kind: kind });
   const s = r.sold && typeof r.sold === "object" ? (r.sold as Record<string, unknown>) : {};
-  return { ...mineAnswer(r), sold: { n: isNum(s.n) ? s.n : 0, xu: isNum(s.xu) ? s.xu : 0 } };
+  if (!isNum(s.n) || !isNum(s.xu)) throw new Error("bad sale answer");
+  return { ...mineAnswer(r), sold: { n: s.n, xu: s.xu } };
 }

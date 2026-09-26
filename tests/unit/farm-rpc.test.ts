@@ -201,6 +201,32 @@ describe("v15.3 (§11.4)", () => {
     h.rpc.mockResolvedValueOnce({ data: FIELD, error: null });
     expect((await fieldAction("r", "tok", { kind: "pick_snails", plot: 5 })).snails).toBeNull();
   });
+  it("throws on a malformed catch, down to one entry of it, instead of dropping what it cannot read", async () => {
+    for (const entry of [{ kind: "cua_dong" }, { kind: 3, price: 26 }, { kind: "cua_dong", price: "26" }, null, "cua_dong"]) {
+      const caught = [{ kind: "cua_dong", price: 26 }, entry];
+      h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, crab: { hits: 2, caught, escaped: 0 } }, error: null });
+      await expect(crabFinish("r", "tok", "v1", 2)).rejects.toThrow("bad crab answer");
+      h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, snails: { caught, escaped: 0 } }, error: null });
+      await expect(pickSnailBed("r", "tok", 2)).rejects.toThrow("bad snail answer");
+      h.rpc.mockResolvedValueOnce({ data: { ...FIELD, snails: { caught, escaped: 0 } }, error: null });
+      await expect(fieldAction("r", "tok", { kind: "pick_snails", plot: 5 })).rejects.toThrow("bad snail answer");
+    }
+    // pick_snails' snails: none before 0018, but never a malformed one
+    h.rpc.mockResolvedValueOnce({ data: { ...FIELD, snails: { caught: [], escaped: "1" } }, error: null });
+    await expect(fieldAction("r", "tok", { kind: "pick_snails", plot: 5 })).rejects.toThrow("bad snail answer");
+  });
+  it("takes a crab visit's hits from the server's answer only (§7.2), never the client's own count", async () => {
+    for (const hits of [undefined, null, "2"]) {
+      h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, crab: { hits, caught: [], escaped: 0 } }, error: null });
+      await expect(crabFinish("r", "tok", "v1", 2)).rejects.toThrow("bad crab answer");
+    }
+  });
+  it("throws on a sale answer without what cô Út paid, instead of reading it as 0", async () => {
+    for (const sold of [undefined, null, {}, { n: 2 }, { xu: 52 }, { n: "2", xu: 52 }, { n: 2, xu: null }]) {
+      h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, sold }, error: null });
+      await expect(sellCritters("tok", null)).rejects.toThrow("bad sale answer");
+    }
+  });
 });
 
 describe("the anti-cheat envelope (anti-cheat spec §12.1)", () => {
