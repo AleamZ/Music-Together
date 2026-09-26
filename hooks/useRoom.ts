@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MapId } from "@/lib/game/maps/types";
 import { subscribeRoom, trackPresence, type PresenceHandle, type RoomState } from "@/lib/realtime";
-import type { PresenceEntry, PresenceMode } from "@/lib/presence-modes";
+import type { PresenceDog, PresenceEntry, PresenceMode } from "@/lib/presence-modes";
 import { supabase } from "@/lib/supabase";
 import { deriveRole, type RoleFlags } from "@/lib/roles";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,6 +14,8 @@ export interface RoomView {
   presence: PresenceEntry[]; setPresenceMode: (m: PresenceMode) => void;
   /** The game map I am on (published with the mode; shared presence budget). */
   setPresenceMap: (m: MapId) => void;
+  /** My dog (v17 §7.3; published with the mode and the map, in game mode only; shared presence budget). */
+  setPresenceDog: (d: PresenceDog | null) => void;
   token: string; accountId: string; username: string; myMemberId: string | null;
   role: RoleFlags; kicked: boolean;
 }
@@ -33,6 +35,11 @@ export function useRoom(code: string): RoomView {
   const setPresenceMap = useCallback((m: MapId) => {
     mapRef.current = m;
     presenceRef.current?.setMap(m);
+  }, []);
+  const dogRef = useRef<PresenceDog | null>(null);
+  const setPresenceDog = useCallback((d: PresenceDog | null) => {
+    dogRef.current = d;
+    presenceRef.current?.setDog(d);
   }, []);
   const [loading, setLoading] = useState(true);
   // Latches true once we've ever been a member of THIS room, so a brand-new
@@ -65,6 +72,7 @@ export function useRoom(code: string): RoomView {
       if (account) {
         presenceHandle = trackPresence(roomId, {
           memberId: account.accountId, name: account.username, mode: modeRef.current ?? readStoredMode(), map: mapRef.current,
+          dog: dogRef.current,
         }, setPresence);
         presenceRef.current = presenceHandle;
       }
@@ -90,7 +98,7 @@ export function useRoom(code: string): RoomView {
 
   const onlineIds = presence.map((p) => p.accountId);
   return {
-    loading, state, onlineIds, presence, setPresenceMode, setPresenceMap, token: token ?? "", accountId, username: account?.username ?? "",
-    myMemberId, role, kicked,
+    loading, state, onlineIds, presence, setPresenceMode, setPresenceMap, setPresenceDog, token: token ?? "", accountId,
+    username: account?.username ?? "", myMemberId, role, kicked,
   };
 }

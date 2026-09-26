@@ -102,13 +102,18 @@ function nameKey(v: string): string {
 
 export type DogNameProblem = "length" | "hidden" | "reserved";
 
+/** Whether s has a hidden character: 0015's register classes (controls, odd spaces, invisibles, combining marks). */
+export function hasHidden(s: string): boolean {
+  return [...s].some((ch) => HIDDEN.some(([lo, hi]) => ch.codePointAt(0)! >= lo && ch.codePointAt(0)! <= hi));
+}
+
 /** Why the server would refuse this name ('invalid name'), or null: 2–16 characters (code points), no hidden character,
  *  no reserved name. A hint for the UI; the server decides. */
 export function dogNameRefusal(raw: string): DogNameProblem | null {
   const v = normalizeDogName(raw);
   const chars = [...v];
   if (chars.length < DOG.nameMin || chars.length > DOG.nameMax) return "length";
-  if (chars.some((ch) => HIDDEN.some(([lo, hi]) => ch.codePointAt(0)! >= lo && ch.codePointAt(0)! <= hi))) return "hidden";
+  if (hasHidden(v)) return "hidden";
   if (RESERVED.includes(nameKey(v))) return "reserved";
   return null;
 }
