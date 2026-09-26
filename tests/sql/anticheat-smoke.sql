@@ -701,7 +701,7 @@ begin
   perform public._farm_do_rent(room, h3, 9, t);
   insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, water_log, work, work_started_at)
   values (room, 9, h3, 'short', t - interval '20 hours', t - interval '20 hours', t - interval '18 hours',
-          jsonb_build_array(jsonb_build_object('t', t - interval '1 hour', 'l', 2)), 'transplant', t - interval '3 seconds')
+          jsonb_build_array(jsonb_build_object('t', t - interval '1 hour', 'l', 2)), 'transplant', t - interval '8 seconds')
   on conflict (room_id, plot_no) do nothing;
   r := public.transplant(room, g3, 9, 1);
   assert (select transplant_at = t from public.crops where room_id = room and plot_no = 9), 'transplanted';

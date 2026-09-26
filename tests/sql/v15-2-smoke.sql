@@ -1,13 +1,15 @@
--- tests/sql/v15-2-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0016 (see the plan),
--- from the repo root: it re-runs 0016 with \i, reads tests/fixtures/upland-cases.json and crop-cases.json with \copy,
--- and ends with tests/sql/anticheat-guards.sql. Every check is an ASSERT; the first failure stops psql (ON_ERROR_STOP).
+-- tests/sql/v15-2-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0018 (see the plan),
+-- from the repo root: it re-runs 0016 and 0018 with \i, reads tests/fixtures/upland-cases.json and crop-cases.json with
+-- \copy, and ends with tests/sql/anticheat-guards.sql. Every check is an ASSERT; the first failure stops psql
+-- (ON_ERROR_STOP).
 -- It runs twice on one database: every account and room it makes has a random name.
 \set ON_ERROR_STOP on
 
 -- The v15 smoke re-runs 0013 and the anti-cheat smoke re-runs 0015: both put back their own versions of functions 0016
--- re-creates, so 0016 runs again first.
+-- re-creates, so 0016 runs again first, then 0018 (v15.3), which re-creates some of them after it.
 set client_min_messages = warning;
 \i supabase/migrations/0016_v15_2_crops.sql
+\i supabase/migrations/0018_v15_3_gather.sql
 reset client_min_messages;
 
 -- The tampered calls below are only recorded: log mode locks nobody.
@@ -277,6 +279,7 @@ as $$ select jsonb_object_agg(s.k, coalesce((select i.qty from public.inventory 
         from smoke s where s.k in ('g1', 'g2', 'g3', 'g4', 'g5', 'g6') $$;
 set client_min_messages = warning;
 \i supabase/migrations/0016_v15_2_crops.sql
+\i supabase/migrations/0018_v15_3_gather.sql
 reset client_min_messages;
 do $$
 declare a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := public._auth_account((select v from smoke where k = 't2'));
@@ -291,6 +294,7 @@ end $$;
 -- a second run gives none more
 set client_min_messages = warning;
 \i supabase/migrations/0016_v15_2_crops.sql
+\i supabase/migrations/0018_v15_3_gather.sql
 reset client_min_messages;
 do $$
 begin
@@ -685,8 +689,8 @@ begin
   assert pg_temp.wet(a1) = w0 + y, 'paid once';
 end $$;
 
--- Pickings (§8.9, R16, R26): no rounds and no harvester on beds; a picking or a transplant needs 5 s on the lease; a
--- lease that runs out takes the pickings left, and the stock keeps the ones taken.
+-- Pickings (§8.9, R16, R26): no rounds and no harvester on beds; a picking needs 5 s on the lease and a transplant 25 s
+-- (0018, as a rice round); a lease that runs out takes the pickings left, and the stock keeps the ones taken.
 do $$
 declare a2 uuid := (select v from smoke where k = 'a2')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
         room uuid := (select v from smoke where k = 'room3')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
@@ -716,7 +720,7 @@ begin
     format('dug %s kg, quality ignored: %s', kg, s->'harvest');
   assert pg_temp.plot(s, 8)->'crop' = 'null' and pg_temp.plot(s, 8)->'lease' = 'null', 'the last picking ends the lease';
 
-  -- plot 10 (a3): an ớt nursery, ready since t6 − 1 h; its transplant needs 5 s on the lease
+  -- plot 10 (a3): an ớt nursery, ready since t6 − 1 h; its transplant needs 25 s on the lease
   perform pg_temp.set_coins(a3, 100000);
   perform public._farm_do_rent(room, a3, 10, t6);
   insert into public.crops (room_id, plot_no, farmer_id, kind, upland, prepared_at, sow_at, water_log)
@@ -724,8 +728,8 @@ begin
           jsonb_build_array(jsonb_build_object('t', t6 - interval '12 hours', 'l', 1), jsonb_build_object('t', t6, 'l', 1)));
   update public.plot_leases set until = t6 + interval '1 minute' where room_id = room and plot_no = 10;
   assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 10, %L, %L)', room, a3, 'transplant',
-                            t6 + interval '56 seconds')) = 'lease ending', 'a transplant with 4 s left';
-  perform public._farm_do_begin_work(room, a3, 10, 'transplant', t6 + interval '55 seconds');
+                            t6 + interval '36 seconds')) = 'lease ending', 'a transplant with 24 s left';
+  perform public._farm_do_begin_work(room, a3, 10, 'transplant', t6 + interval '35 seconds');
   perform public._field_open(room, t6 + interval '1 minute');
   assert not exists (select 1 from public.crops where room_id = room and plot_no = 10), 'the nursery went with the lease';
 
@@ -1043,7 +1047,7 @@ begin
   assert pg_temp.plot(s, 5)->'crop' = 'null' and pg_temp.plot(s, 5)->'lease' = 'null', 'dug; the lease ended';
 end $$;
 
--- An ớt season (§8.8): ươm, trồng cây con after the 2 s action, three pickings 12 h apart; the last ends the lease.
+-- An ớt season (§8.8): ươm, trồng cây con 8 s after begin_work, three pickings 12 h apart; the last ends the lease.
 do $$
 declare a1 uuid := (select v from smoke where k = 'a1')::uuid; t1 text := (select v from smoke where k = 't1');
         room uuid := (select v from smoke where k = 'room5')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
@@ -1052,12 +1056,12 @@ begin
   update public.crops set pest_rolls = '[{"slot": 1, "u_time": 0.5, "u_hit": 0.99}, {"slot": 2, "u_time": 0.5, "u_hit": 0.99}]'
    where room_id = room and plot_no = 7;
   -- sown at t + 1 min, ready 10 h later; the bed dried to Khô at t + 12 h, so it is watered back to Ẩm first
-  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 7, %L, %L)', room, a1, 'transplant', p - interval '2 seconds'))
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 7, %L, %L)', room, a1, 'transplant', p - interval '8 seconds'))
          = 'need water', 'Khô';
   perform public._farm_do_water(room, a1, 7, 1, t + interval '12 hours');
-  perform public._farm_do_begin_work(room, a1, 7, 'transplant', p - interval '2 seconds');
+  perform public._farm_do_begin_work(room, a1, 7, 'transplant', p - interval '8 seconds');
   assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 7, 1, %L)', room, a1, p - interval '1 second')) = 'too fast',
-    'the 2 s gate';
+    'the 8 s gate';
   s := public._farm_do_transplant(room, a1, 7, 5.0, p);
   assert pg_temp.plot(s, 7)->'crop'->>'phase' = 'root' and (pg_temp.plot(s, 7)->'crop'->>'plant_at')::timestamptz = p
      and (pg_temp.crop(room, 7)).transplant_at is null and (pg_temp.crop(room, 7)).work is null, 'P is set; quality ignored';

@@ -392,3 +392,142 @@ grant execute on function public.crab_start(uuid, text, integer) to anon, authen
 grant execute on function public.crab_finish(uuid, text, uuid, integer) to anon, authenticated;
 grant execute on function public.pick_snail_bed(uuid, text, integer) to anon, authenticated;
 grant execute on function public.sell_critters(text, text) to anon, authenticated;
+
+-- ---------- E. Farm changes (§7.4, §8.3, §9, R10, R16, R19) ----------
+-- The work gate (0013's body): a transplant is a TransplantGame round, taken 8–120 s after its begin_work (R19); any other
+-- work — a hoa-màu picking — keeps the 2 s gate with no upper bound. harvest_part keeps its own 8–120 s check (0016).
+create or replace function public._work_gate(c public.crops, p_work text, p_now timestamptz) returns void
+language plpgsql stable set search_path = public, extensions
+as $$
+begin
+  if c.work is distinct from p_work or c.work_started_at is null
+     or p_now - c.work_started_at < (case when p_work = 'transplant' then interval '8 seconds' else interval '2 seconds' end) then
+    raise exception 'too fast' using errcode = '22023';
+  end if;
+  if p_work = 'transplant' and p_now - c.work_started_at > interval '120 seconds' then
+    raise exception 'work expired' using errcode = '22023';
+  end if;
+end; $$;
+
+-- Cấy lúa, or trồng cây ớt con (0016's body): after a TransplantGame round (_work_gate); rice gets transplant_at, an ớt
+-- nursery gets P. The reported quality is ignored for good (D1, R20).
+create or replace function public._farm_do_transplant(p_room uuid, p_account uuid, p_plot integer, p_quality double precision,
+                                                      p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  perform public._work_gate(c, 'transplant', p_now);
+  perform public._work_check(c, public._variety(c.variety), 'transplant', p_now);
+  if c.kind = 'upland' then
+    update public.crops set plant_at = p_now, work = null, work_started_at = null
+     where room_id = p_room and plot_no = p_plot;
+  else
+    update public.crops set transplant_at = p_now, q_transplant = 1.0, work = null, work_started_at = null
+     where room_id = p_room and plot_no = p_plot;
+  end if;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Starts a round or a 3-second picking (0016's body, R19): it replaces any earlier record, and it needs 25 s left on a
+-- lease for a round — a rice harvest round or any transplant: the play and its 9 s claim — and 5 s for a picking.
+create or replace function public._farm_do_begin_work(p_room uuid, p_account uuid, p_plot integer, p_work text,
+                                                      p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  c := public._farm_crop(p_room, p_plot, p_account, p_now);
+  perform public._work_check(c, public._variety(c.variety), p_work, p_now);
+  if exists (select 1 from public.plot_leases pl
+              where pl.room_id = p_room and pl.plot_no = p_plot
+                and pl.until < p_now + case when p_work = 'transplant' or (c.kind = 'rice' and p_work = 'harvest')
+                                            then interval '25 seconds' else interval '5 seconds' end) then
+    raise exception 'lease ending' using errcode = '22023';
+  end if;
+  update public.crops set work = p_work, work_started_at = p_now where room_id = p_room and plot_no = p_plot;
+  return public._field_view(p_room, p_account, p_now);
+end; $$;
+
+-- Bắt ốc (0016's body): anyone may pick the golden apple snails off a rice plot, but not while it is being harvested. The
+-- picker also gets 1–3 ốc bươu vàng within free space; the rest go back into the canal (R10). It counts no visit.
+create or replace function public._farm_do_pick_snails(p_room uuid, p_account uuid, p_plot integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare c public.crops; v_snails jsonb;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  perform public._plot_row(p_room, p_plot);
+  select * into c from public.crops where room_id = p_room and plot_no = p_plot for update;
+  if found and c.harvester_until is not null then
+    raise exception 'harvester busy' using errcode = '22023';
+  end if;
+  if found and c.harvested_parts > 0 then
+    raise exception 'harvesting' using errcode = '22023';
+  end if;
+  if not found or not exists (select 1 from jsonb_array_elements(public._crop_pests(c, public._variety(c.variety), p_now)) x
+                               where x->>'kind' = 'snail' and x->>'treated_at' is null) then
+    raise exception 'no snails' using errcode = '22023';
+  end if;
+  update public.crops set picks = picks || jsonb_build_array(jsonb_build_object('t', p_now))
+   where room_id = p_room and plot_no = p_plot;
+  v_snails := public._critter_add(p_account, p_room, array_fill('oc_buou_vang'::text, array[1 + floor(random() * 3)::int]), p_now);
+  return public._field_view(p_room, p_account, p_now) || jsonb_build_object('snails', v_snails);
+end; $$;
+
+-- anh Hai's shop (0016's body, §9, R16): also the containers. A container, like a tool, is bought once and one at a time;
+-- one no larger than the largest held is already owned (v14's bucket rule).
+create or replace function public.buy_farm_item(p_session_token text, p_item_id text, p_qty integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; w public.wallets; it public.shop_items; v_cost integer;
+begin
+  v_account := public._ac_account(p_session_token);
+  w := public._wallet_lock(v_account);
+  select * into it from public.shop_items where id = p_item_id;
+  if not found or it.price is null then
+    raise exception 'item not available' using errcode = '22023';
+  end if;
+  if it.kind not in ('seed', 'fertilizer', 'pesticide', 'tool', 'critter_box') then
+    return public._ac_flag(v_account, 'kind_mismatch', 'buy_farm_item', jsonb_build_object('item', it.id, 'kind', it.kind),
+                           null, 'item not available', false);
+  end if;
+  if p_qty is null or p_qty < 1 or p_qty > 99 then
+    return public._ac_flag(v_account, 'bad_qty', 'buy_farm_item', jsonb_build_object('item', it.id, 'qty', p_qty), null,
+                           'invalid quantity');
+  end if;
+  if it.kind in ('tool', 'critter_box') and p_qty <> 1 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  if it.kind = 'tool' and public._owns(v_account, it.id) then
+    raise exception 'already owned' using errcode = '22023';
+  end if;
+  if it.kind = 'critter_box' and public._critter_cap(v_account) - 3 >= it.capacity then
+    raise exception 'already owned' using errcode = '22023';
+  end if;
+  if coalesce((select qty from public.inventory where account_id = v_account and item_id = it.id), 0) + p_qty > 99 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  v_cost := it.price * p_qty;
+  if w.coins < v_cost then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(v_account, -v_cost, 'farm_buy', it.id || ' x' || p_qty);
+  insert into public.inventory (account_id, item_id, qty) values (v_account, it.id, p_qty)
+  on conflict (account_id, item_id) do update set qty = public.inventory.qty + excluded.qty;
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+revoke all on function public._work_gate(public.crops, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_transplant(uuid, uuid, integer, double precision, timestamptz)
+  from public, anon, authenticated;
+revoke all on function public._farm_do_begin_work(uuid, uuid, integer, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_do_pick_snails(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;

@@ -454,4 +454,212 @@ end $$;
 
 select 'v15.3 gathering smoke ok' as result;
 
+-- ---------- farm changes (§7.4, §8.3, §9, R10, R16, R19): containers, pest snails and the three gates ----------
+insert into smoke select 't5', token from public.register('gather_e_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'a5', public._auth_account((select v from smoke where k = 't5'))::text;
+-- One room a test: an account farms at most 2 plots in a room.
+insert into smoke select 'room4', room_id::text from public.create_room('Ruộng lúa', 'pw', (select v from smoke where k = 't5'));
+insert into smoke select 'room5', room_id::text from public.create_room('Cấy lúa', 'pw', (select v from smoke where k = 't5'));
+insert into smoke select 'room6', room_id::text from public.create_room('Cây ớt', 'pw', (select v from smoke where k = 't5'));
+insert into smoke select 'room7', room_id::text from public.create_room('Hái hoa màu', 'pw', (select v from smoke where k = 't5'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room4')::uuid), 'pw', v)
+  from smoke where k = 't4';
+create function pg_temp.plot(s jsonb, n integer) returns jsonb language sql as $$ select s->'plots'->(n - 1) $$;
+create function pg_temp.crop(r uuid, n integer) returns public.crops language sql
+as $$ select * from public.crops where room_id = r and plot_no = n $$;
+-- A rice crop on plot n, transplanted 4 h before t, whose first pest roll is a golden-snail outbreak (as in the v15 smoke).
+create function pg_temp.snail_rice(r uuid, n integer, a uuid, t timestamptz) returns void language sql
+as $$ insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, transplant_at, water_log,
+                                pest_rolls)
+      values (r, n, a, 'short', t - interval '16 hours', t - interval '16 hours', t - interval '14 hours', t - interval '4 hours',
+              jsonb_build_array(jsonb_build_object('t', t - interval '16 hours', 'l', 2), jsonb_build_object('t', t - interval '4 hours', 'l', 2)),
+              '[{"slot": 1, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.1}, {"slot": 2, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99},
+                {"slot": 3, "u_time": 0.5, "u_kind": 0.5, "u_hit": 0.99}]') $$;
+-- Rice seedlings on plot n, 9 h old at t (short: ready from 7.2 h), in shallow water (Nông).
+create function pg_temp.seedlings(r uuid, n integer, a uuid, t timestamptz) returns void language sql
+as $$ insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, water_log)
+      values (r, n, a, 'short', t - interval '12 hours', t - interval '12 hours', t - interval '9 hours',
+              jsonb_build_array(jsonb_build_object('t', t - interval '12 hours', 'l', 3),
+                                jsonb_build_object('t', t - interval '10 hours', 'l', 1),
+                                jsonb_build_object('t', t - interval '1 hour', 'l', 2))) $$;
+-- An ớt nursery on plot n, sown 11 h before t (ready from 10 h), on an Ẩm bed.
+create function pg_temp.ot_nursery(r uuid, n integer, a uuid, t timestamptz) returns void language sql
+as $$ insert into public.crops (room_id, plot_no, farmer_id, kind, upland, prepared_at, sow_at, water_log)
+      values (r, n, a, 'upland', 'ot', t - interval '12 hours', t - interval '11 hours',
+              jsonb_build_array(jsonb_build_object('t', t - interval '12 hours', 'l', 1), jsonb_build_object('t', t, 'l', 1))) $$;
+-- A khoai bed on plot n, ripe at t (R_1 = P + 48 h).
+create function pg_temp.ripe_khoai(r uuid, n integer, a uuid, t timestamptz) returns void language sql
+as $$ insert into public.crops (room_id, plot_no, farmer_id, kind, upland, prepared_at, plant_at, water_log)
+      values (r, n, a, 'upland', 'khoai', t - interval '49 hours', t - interval '48 hours',
+              jsonb_build_array(jsonb_build_object('t', t - interval '49 hours', 'l', 1))) $$;
+-- A ripe nếp crop on plot n (as in the v15.2 smoke): ripe until t + 10 h.
+create function pg_temp.ripe_nep(r uuid, n integer, a uuid, t timestamptz) returns void language sql
+as $$ insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, transplant_at, water_log)
+      values (r, n, a, 'nep', t - interval '64 hours', t - interval '63 hours', t - interval '60 hours', t - interval '50 hours',
+              jsonb_build_array(jsonb_build_object('t', t - interval '64 hours', 'l', 3),
+                                jsonb_build_object('t', t - interval '5 hours', 'l', 1))) $$;
+
+-- Containers at anh Hai's (§9, R16): one at a time and once; one no larger than the one held is already owned.
+do $$
+declare t5 text := (select v from smoke where k = 't5'); a5 uuid := (select v from smoke where k = 'a5')::uuid; r jsonb;
+begin
+  perform pg_temp.set_coins(a5, 10000);
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 2)', t5, 'box_bucket')) = 'invalid quantity', 'one at a time';
+  assert not exists (select 1 from public.anticheat_events where account_id = a5), 'a plain refusal: no event';
+  r := public.buy_farm_item(t5, 'box_bucket', 0);
+  assert r->'anticheat'->>'code' = 'bad_qty' and r->'anticheat'->>'error' = 'invalid quantity', 'outside 1–99 stays hard';
+  r := public.buy_farm_item(t5, 'box_bucket', 1);
+  assert r->'mine'->'items'->'box_bucket' = '1' and r->'mine'->'critter_cap' = '18' and r->'mine'->'coins' = '8500'
+     and exists (select 1 from public.coin_ledger where account_id = a5 and reason = 'farm_buy' and delta = -1500
+                  and ref = 'box_bucket x1'), format('a bucket %s', r->'mine');
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t5, 'box_bucket')) = 'already owned', 'a second bucket';
+  r := public.buy_farm_item(t5, 'box_basket', 1);
+  assert r->'mine'->'critter_cap' = '33' and r->'mine'->'coins' = '2500', format('then a basket %s', r->'mine');
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t5, 'box_bucket')) = 'already owned', 'a basket holds more';
+  -- the money comes last
+  delete from public.inventory where account_id = a5 and item_id in ('box_bucket', 'box_basket');
+  perform pg_temp.set_coins(a5, 1499);
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t5, 'box_bucket')) = 'not enough coins', 'not enough coins';
+  -- the other kinds keep their rules
+  r := public.buy_farm_item(t5, 'rod_bamboo', 1);
+  assert r->'anticheat'->>'code' = 'kind_mismatch' and r->'anticheat'->>'strike' = '0', 'no fishing gear here';
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 2)', t5, 'tool_sickle')) = 'invalid quantity', 'tools too';
+end $$;
+
+-- Pest snails (§7.4, R10): a neighbour treats the plot and keeps 1–3 ốc bươu vàng; a full container still treats and lets
+-- them go; no visit is counted.
+do $$
+declare a4 uuid := (select v from smoke where k = 'a4')::uuid; a5 uuid := (select v from smoke where k = 'a5')::uuid;
+        room uuid := (select v from smoke where k = 'room4')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        s jsonb; n0 integer;
+begin
+  perform pg_temp.set_coins(a5, 100000);
+  perform public._farm_do_rent(room, a5, 5, t);
+  perform public._farm_do_rent(room, a5, 6, t);
+  perform pg_temp.snail_rice(room, 5, a5, t);
+  perform pg_temp.snail_rice(room, 6, a5, t);
+  assert pg_temp.plot(public._field_view(room, a5, t), 5)->'crop'->'pests'->0->>'kind' = 'snail', 'an outbreak';
+  perform pg_temp.set_mult(room, 1.00, t);
+  delete from public.critters where account_id = a4;
+  n0 := (select gather_count from public.farm_profiles where account_id = a4);
+  s := public._farm_do_pick_snails(room, a4, 5, t);
+  assert pg_temp.plot(s, 5)->'crop'->'pests'->0->'treated_at' <> 'null', 'treated by a neighbour';
+  assert jsonb_array_length(s->'snails'->'caught') between 1 and 3 and s->'snails'->'escaped' = '0'
+     and s->'snails'->'caught'->0 = '{"kind": "oc_buou_vang", "price": 2}'
+     and (select count(*) from public.critters where account_id = a4 and kind = 'oc_buou_vang' and price = 2)
+         = jsonb_array_length(s->'snails'->'caught')
+     and s->'mine'->'critters'->'oc_buou_vang'->'n' = to_jsonb(jsonb_array_length(s->'snails'->'caught')),
+    format('the picker''s snails %s', s->'snails');
+  assert (select gather_count from public.farm_profiles where account_id = a4) = n0, 'no visit counted';
+  -- a full basket: the plot is still saved, and the snails go back into the canal
+  insert into public.critters (account_id, kind, price, caught_at)
+  select a4, 'oc_dong', 8, t from generate_series(1, 33 - (select count(*)::int from public.critters where account_id = a4));
+  s := public._farm_do_pick_snails(room, a4, 6, t);
+  assert pg_temp.plot(s, 6)->'crop'->'pests'->0->'treated_at' <> 'null' and s->'snails'->'caught' = '[]'
+     and (s->'snails'->>'escaped')::int between 1 and 3 and (select count(*) from public.critters where account_id = a4) = 33,
+    format('full %s', s->'snails');
+  assert pg_temp.err(format('select public._farm_do_pick_snails(%L, %L, 6, %L)', room, a4, t)) = 'no snails', 'picked already';
+  delete from public.critters where account_id = a4;
+end $$;
+
+-- The transplant gate (§8.3, R19): 8–120 s after begin_work, rice and ớt; a second begin_work restarts it; the quality
+-- stays 1.0.
+do $$
+declare a5 uuid := (select v from smoke where k = 'a5')::uuid; room uuid := (select v from smoke where k = 'room5')::uuid;
+        room6 uuid := (select v from smoke where k = 'room6')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        s jsonb;
+begin
+  perform pg_temp.set_coins(a5, 100000);
+  perform public._farm_do_rent(room, a5, 5, t);
+  perform public._farm_do_rent(room, a5, 6, t);
+  perform pg_temp.seedlings(room, 5, a5, t);
+  perform pg_temp.seedlings(room, 6, a5, t);
+  -- rice, plot 5: 7.9 s and 121 s are refused and leave the record; a second begin_work restarts the gate
+  perform public._farm_do_begin_work(room, a5, 5, 'transplant', t);
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t + interval '7.9 seconds'))
+         = 'too fast', '7.9 s';
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t + interval '121 seconds'))
+         = 'work expired', '121 s';
+  assert (pg_temp.crop(room, 5)).work = 'transplant' and (pg_temp.crop(room, 5)).work_started_at = t, 'the record stays';
+  perform public._farm_do_begin_work(room, a5, 5, 'transplant', t + interval '3 minutes');
+  perform public._farm_do_begin_work(room, a5, 5, 'transplant', t + interval '3 minutes 5 seconds');
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t + interval '3 minutes 12 seconds'))
+         = 'too fast', '12 s after the first, 7 s after the second';
+  s := public._farm_do_transplant(room, a5, 5, 1, t + interval '3 minutes 13 seconds');
+  assert pg_temp.plot(s, 5)->'crop'->>'phase' = 'tillering'
+     and (pg_temp.crop(room, 5)).transplant_at = t + interval '3 minutes 13 seconds' and (pg_temp.crop(room, 5)).q_transplant = 1.0
+     and (pg_temp.crop(room, 5)).work is null, 'transplanted at 8 s';
+  -- rice, plot 6: accepted at 120 s
+  perform public._farm_do_begin_work(room, a5, 6, 'transplant', t + interval '4 minutes');
+  s := public._farm_do_transplant(room, a5, 6, 1, t + interval '6 minutes');
+  assert (pg_temp.crop(room, 6)).transplant_at = t + interval '6 minutes' and (pg_temp.crop(room, 6)).q_transplant = 1.0,
+    'transplanted at 120 s';
+  -- ớt, room 6 plot 5: the same gate; P is set
+  perform public._farm_do_rent(room6, a5, 5, t);
+  perform pg_temp.ot_nursery(room6, 5, a5, t);
+  perform public._farm_do_begin_work(room6, a5, 5, 'transplant', t + interval '7 minutes');
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room6, a5, t + interval '7 minutes 7.9 seconds'))
+         = 'too fast', 'ớt at 7.9 s';
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room6, a5, t + interval '9 minutes 1 second'))
+         = 'work expired', 'ớt at 121 s';
+  perform public._farm_do_begin_work(room6, a5, 5, 'transplant', t + interval '10 minutes');
+  s := public._farm_do_transplant(room6, a5, 5, 1, t + interval '10 minutes 8 seconds');
+  assert pg_temp.plot(s, 5)->'crop'->>'phase' = 'root' and (pg_temp.crop(room6, 5)).plant_at = t + interval '10 minutes 8 seconds'
+     and (pg_temp.crop(room6, 5)).work is null, 'ớt planted out at 8 s';
+end $$;
+
+-- A transplant needs 25 s on the lease, as a rice round does (R19): 24 s left is lease ending, 25 s is allowed; a claim
+-- after the lease ran out finds no plot.
+do $$
+declare a5 uuid := (select v from smoke where k = 'a5')::uuid; room uuid := (select v from smoke where k = 'room6')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz; l timestamptz := t + interval '1 hour';
+begin
+  perform public._farm_do_rent(room, a5, 6, t);
+  perform pg_temp.seedlings(room, 6, a5, t);
+  update public.plot_leases set until = l where room_id = room and plot_no = 6;
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 6, %L, %L)', room, a5, 'transplant', l - interval '24 seconds'))
+         = 'lease ending', '24 s left';
+  perform public._farm_do_begin_work(room, a5, 6, 'transplant', l - interval '25 seconds');
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 6, 1, %L)', room, a5, l + interval '1 second'))
+         = 'not your plot', 'the lease ran out mid-round';
+  perform public._field_open(room, l + interval '1 second');
+  assert not exists (select 1 from public.crops where room_id = room and plot_no = 6), 'the seedlings went with the lease';
+end $$;
+
+-- The other gates stay (§8.3): a hoa-màu picking 2 s after its begin_work with no upper bound; harvest_part 8–120 s.
+do $$
+declare a5 uuid := (select v from smoke where k = 'a5')::uuid; room uuid := (select v from smoke where k = 'room7')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz; s jsonb;
+begin
+  perform public._farm_do_rent(room, a5, 5, t);
+  perform public._farm_do_rent(room, a5, 6, t);
+  perform pg_temp.ripe_khoai(room, 5, a5, t);
+  perform pg_temp.ripe_khoai(room, 6, a5, t);
+  perform public._farm_do_begin_work(room, a5, 5, 'harvest', t);
+  assert pg_temp.err(format('select public._farm_do_harvest(%L, %L, 5, 1, %L)', room, a5, t + interval '1.9 seconds')) = 'too fast',
+    'a picking at 1.9 s';
+  s := public._farm_do_harvest(room, a5, 5, 1, t + interval '2 seconds');
+  assert s->'harvest'->>'upland' = 'khoai' and s->'harvest'->'done' = 'true', format('a picking at 2 s %s', s->'harvest');
+  perform public._farm_do_begin_work(room, a5, 6, 'harvest', t + interval '1 minute');
+  s := public._farm_do_harvest(room, a5, 6, 1, t + interval '11 minutes');
+  assert s->'harvest'->'done' = 'true', 'a picking 10 minutes after its begin_work';
+  -- harvest_part on plot 7 (both khoai leases ended with their last picking)
+  perform pg_temp.give(a5, 'tool_sickle', 1);
+  perform public._farm_do_rent(room, a5, 7, t + interval '12 minutes');
+  perform pg_temp.ripe_nep(room, 7, a5, t);
+  perform public._farm_do_begin_work(room, a5, 7, 'harvest', t + interval '12 minutes');
+  assert pg_temp.err(format('select public._farm_do_harvest_part(%L, %L, 7, true, %L)', room, a5, t + interval '12 minutes 7.9 seconds'))
+         = 'too fast', 'part at 7.9 s';
+  s := public._farm_do_harvest_part(room, a5, 7, true, t + interval '12 minutes 8 seconds');
+  assert s->'harvest_part'->'parts' = '1', 'part 1 at 8 s';
+  perform public._farm_do_begin_work(room, a5, 7, 'harvest', t + interval '13 minutes');
+  s := public._farm_do_harvest_part(room, a5, 7, true, t + interval '15 minutes');
+  assert s->'harvest_part'->'parts' = '2', 'part 2 at 120 s';
+  perform public._farm_do_begin_work(room, a5, 7, 'harvest', t + interval '16 minutes');
+  assert pg_temp.err(format('select public._farm_do_harvest_part(%L, %L, 7, true, %L)', room, a5, t + interval '18 minutes 1 second'))
+         = 'work expired', 'part at 121 s';
+end $$;
+
+select 'v15.3 farm smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql

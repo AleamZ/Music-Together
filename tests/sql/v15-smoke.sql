@@ -1,4 +1,4 @@
--- tests/sql/v15-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0016, from the repo
+-- tests/sql/v15-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0018, from the repo
 -- root (the crop fixtures are read with \copy, and the last section re-runs 0013 with \i). Every check is an ASSERT; the
 -- first failure stops psql (ON_ERROR_STOP). A refusal the anti-cheat reads as tampering comes back as an envelope
 -- (0015): its `error` is checked instead.
@@ -410,7 +410,7 @@ begin
   assert pg_temp.plot(s, 8)->'crop'->'log' is not null and pg_temp.plot(s, 8)::text not like '%u_hit%', 'rolls stay secret';
   assert pg_temp.plot(public._field_view(room, a3, t + interval '3 hours'), 8)->'crop'->'log' is null, 'logs for the farmer only';
 
-  -- transplant: seedlings ≥ 7.2 h (short) in shallow water, after a 2 s action
+  -- transplant: seedlings ≥ 7.2 h (short) in shallow water, 8 s after begin_work (a TransplantGame round, 0018)
   assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'transplant', t + interval '9 hours'))
     = 'wrong phase', 'too young';
   assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 8, %L, %L)', room, a2, 'transplant', t + interval '10 hours'))
@@ -420,9 +420,9 @@ begin
   assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 8, 1, %L)', room, a2, t + interval '10 hours'))
     = 'too fast', 'begin first';
   perform public._farm_do_begin_work(room, a2, 8, 'transplant', t + interval '10 hours');
-  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 8, 1, %L)', room, a2, t + interval '10 hours 1 second'))
-    = 'too fast', 'the 2 s gate';
-  tp := t + interval '10 hours 3 seconds';
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 8, 1, %L)', room, a2, t + interval '10 hours 7 seconds'))
+    = 'too fast', 'the 8 s gate';
+  tp := t + interval '10 hours 8 seconds';
   s := public._farm_do_transplant(room, a2, 8, 5.0, tp);
   assert pg_temp.plot(s, 8)->'crop'->>'phase' = 'tillering'
      and (select q_transplant from public.crops where room_id = room and plot_no = 8) = 1.0, 'transplanted, quality ignored (D1)';
