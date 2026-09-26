@@ -35,6 +35,7 @@ const controller = (over: Partial<FarmController> = {}): FarmController => ({
   sling: null, slingShot: vi.fn(), slingReaim: vi.fn(), closeSling: vi.fn(),
   act: vi.fn().mockResolvedValue(true), buy: vi.fn().mockResolvedValue(true), sell: vi.fn().mockResolvedValue(true),
   loadSprayer: vi.fn().mockResolvedValue(true), sellProduce: vi.fn().mockResolvedValue(true), sellCritters: vi.fn().mockResolvedValue(true),
+  sellRats: vi.fn().mockResolvedValue(true),
   interact: vi.fn(), promptText: vi.fn(),
   ...over,
 });

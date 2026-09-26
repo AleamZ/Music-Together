@@ -1217,3 +1217,21 @@ describe("useFarmController, v17 the dog's auto-hunt", () => {
     expect(rpc.dogHunt).not.toHaveBeenCalled();
   });
 });
+
+describe("useFarmController, v17 cô Út buys the rats", () => {
+  it("sells the bag and toasts what she paid", async () => {
+    const { result, toast } = setup();
+    await flush();
+    rpc.sellRats.mockResolvedValueOnce({ serverNow: NOW, mine: parseFarmMine({ coins: 1486 })!, sold: { count: 3, xu: 486 } });
+    await act(async () => { expect(await result.current.sellRats()).toBe(true); });
+    expect(toast).toHaveBeenCalledWith("💰 Bán 3 con chuột được 486 xu.");
+  });
+
+  it("lists a rat on my plot among the due tasks", async () => {
+    const f = field();
+    rpc.fetchFieldState.mockResolvedValue({ ...f, rats: { nextAt: NOW + 3_600_000, price: 150, live: [{ id: 1, plot: 5, since: NOW, seed: 1 }], recent: [], plots: {} } });
+    const { result } = setup();
+    await flush();
+    expect(result.current.tasks[0]).toEqual({ plot: 5, text: "Thửa 5 · 🐀 Chuột đang phá (1 con) — bắn ná, dẫn chó tới hoặc thu hoạch cho xong", urgent: true });
+  });
+});

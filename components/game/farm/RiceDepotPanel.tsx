@@ -98,9 +98,34 @@ function CritterSection({ mine, catalog, critters, busy }: { mine: FarmMine; cat
   );
 }
 
-/** 🌾 Vựa lúa · cô Út (spec §8.7, §13.3; v15.2 §13.5; v15.3 §13.4): sell wet or dry rice per variety — dry rice pays the
- *  full price — hoa màu, fresh, and cua & ốc once 0018 has critters. */
-export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, onSellProduce, onReload, onClose, critters = null }: {
+/** cô Út's rats once 0019 is in (v17 §12.4): what a catch fetches now, and the sale of the whole bag. */
+export interface DepotRats { price: number; onSell: () => void }
+
+/** 🐀 Chuột đồng: the bag at the prices fixed at the catch, Bán hết, and today's price. */
+function RatSection({ mine, rats, busy }: { mine: FarmMine; rats: DepotRats; busy: boolean }) {
+  const { count, value } = mine.rats;
+  return (
+    <section className="flex flex-col gap-1">
+      {count > 0 && (
+        <div className="pch flex flex-wrap items-center justify-between gap-2 p-2">
+          <span className="flex items-center gap-2">
+            <ItemIcon id="rat" scale={3} />
+            <span className="flex flex-col leading-none">
+              <span className="text-xl">🐀 Chuột đồng · {count} con</span>
+              <span className="text-base">{formatXu(value)} (giá chốt lúc bắt)</span>
+            </span>
+          </span>
+          <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={rats.onSell}>Bán hết · {formatXu(value)}</button>
+        </div>
+      )}
+      <p className="text-base opacity-80">Giá chuột bây giờ: {rats.price.toLocaleString("vi-VN")} xu một con</p>
+    </section>
+  );
+}
+
+/** 🌾 Vựa lúa · cô Út (spec §8.7, §13.3; v15.2 §13.5; v15.3 §13.4; v17 §12.4): sell wet or dry rice per variety — dry
+ *  rice pays the full price — hoa màu, fresh, cua & ốc once 0018 has critters, and rats once 0019 is in. */
+export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, onSellProduce, onReload, onClose, critters = null, rats = null }: {
   mine: FarmMine | null;
   catalog: FarmCatalog | null;
   failed: boolean;
@@ -110,6 +135,7 @@ export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, on
   onReload: () => void;
   onClose: () => void;
   critters?: DepotCritters | null;
+  rats?: DepotRats | null;
 }) {
   const lines = (catalog?.varieties ?? []).flatMap((v) => {
     const stock = mine?.rice[v.id];
@@ -120,6 +146,7 @@ export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, on
   });
   const produce = (catalog?.uplands ?? []).flatMap((u) => ((mine?.produce[u.id] ?? 0) > 0 ? [{ u, kg: mine!.produce[u.id] }] : []));
   const caught = Object.values(mine?.critters ?? {}).some((s) => s.n > 0);
+  const ratted = rats !== null && (mine?.rats.count ?? 0) > 0;
   return (
     <ParchmentModal title="🌾 Vựa lúa · cô Út" onClose={onClose}>
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
@@ -137,10 +164,15 @@ export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, on
               </>
             ) : !critters ? (
               <p>“Chưa có lúa hay hoa màu hả con? Thu hoạch xong mang qua, cô trả giá cao!”</p>
-            ) : !caught && (
+            ) : caught ? null : ratted ? (
+              <p>“Chuột đồng béo vậy, cô lấy hết — đem nướng lu là ngon số một!”</p>
+            ) : rats ? (
+              <p>“Chưa có lúa, hoa màu, cua ốc hay chuột hả con? Có hàng mang qua, cô trả giá cao!”</p>
+            ) : (
               <p>“Chưa có lúa, hoa màu hay cua ốc hả con? Có hàng mang qua, cô trả giá cao!”</p>
             )}
             {critters && <CritterSection mine={mine} catalog={catalog} critters={critters} busy={busy} />}
+            {rats && <RatSection mine={mine} rats={rats} busy={busy} />}
           </>
         )}
       </div>

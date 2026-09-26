@@ -118,6 +118,7 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false, dog
           onSell={(v, dry, kg) => void farm.sell(v, dry, kg)} onSellProduce={(u, kg) => void farm.sellProduce(u, kg)}
           critters={(catalog?.critters.length ?? 0) > 0
             ? { prices: state?.critterPrices ?? null, onSell: (k) => void farm.sellCritters(k) } : null}
+          rats={state?.rats ? { price: state.rats.price, onSell: () => void farm.sellRats() } : null}
           onReload={onReload} onClose={closePanel} />
       )}
       {panel?.kind === "drying" && (
