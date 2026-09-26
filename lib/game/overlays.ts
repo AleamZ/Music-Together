@@ -16,11 +16,15 @@ export interface OpenOverlays {
   farmWork: boolean;
   /** A harvest round (HarvestGame) is open (v15.2 §6.2): the avatar stays at the plot. */
   farmRound: boolean;
+  /** A card table's panel (v16). */
+  cardPanel: boolean;
+  /** 📜 Sổ luật (v16). */
+  rulesBook: boolean;
 }
 
 /** `blocking`: the canvas takes no input. `panelOpen`: an overlay outside the field's own is open, so an Esc is its own
  *  and does not cancel the farm work (the field minds its own panels). */
 export function overlayLocks(o: OpenOverlays): { blocking: boolean; panelOpen: boolean } {
-  const panelOpen = o.panel || o.fishingPanel || o.creating || o.anticheatModal;
+  const panelOpen = o.panel || o.fishingPanel || o.creating || o.anticheatModal || o.cardPanel || o.rulesBook;
   return { blocking: panelOpen || o.farmPanel || o.farmWork || o.farmRound, panelOpen };
 }

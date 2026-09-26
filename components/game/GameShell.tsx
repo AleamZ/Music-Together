@@ -6,6 +6,7 @@ import MemberList from "@/components/room/MemberList";
 import RoomChartModal from "@/components/room/RoomChartModal";
 import SettingsDialog from "@/components/room/SettingsDialog";
 import { useAnticheat } from "@/hooks/useAnticheat";
+import { useCardsController } from "@/hooks/useCardsController";
 import { useChat } from "@/hooks/useChat";
 import { useFarmController } from "@/hooks/useFarmController";
 import { useFishingController } from "@/hooks/useFishingController";
@@ -30,6 +31,8 @@ import type { RoomDerived } from "@/lib/room-derived";
 import { getCategoryLabel } from "@/lib/sponsorblock";
 import AnticheatChip from "./AnticheatChip";
 import AnticheatModal from "./AnticheatModal";
+import CardOverlays from "./cards/CardOverlays";
+import CardSeatChip from "./cards/CardSeatChip";
 import CharacterEditor from "./CharacterEditor";
 import FarmOverlays from "./farm/FarmOverlays";
 import { FarmTasksButton } from "./farm/FarmTasks";
@@ -172,6 +175,14 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   });
   const { interact: farmInteract, promptText: farmPrompt } = farm;
 
+  // --- the card corner: the hall's labels, the table panels, the rules book, and the table I sit at (v16)
+  const isMember = useCallback((id: string) => memberIds.has(id), [memberIds]);
+  const cards = useCardsController({
+    token, roomId: room.id, accountId, mapId: travel.mapId, canvas: getCanvas, toast: showToast, isMember,
+    onCoinsChanged: () => void fishing.data.reload(),
+  });
+  const { interact: cardsInteract } = cards;
+
   // --- anti-cheat: the warning or the ban after a strike, and the lock's countdown (anti-cheat spec §12.1)
   const anticheat = useAnticheat();
 
@@ -180,6 +191,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const { blocking, panelOpen } = overlayLocks({
     panel: panel !== null, fishingPanel: fishing.panel !== null, creating, anticheatModal: anticheat.modal !== null,
     farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null,
+    cardPanel: cards.panel !== null, rulesBook: cards.rules !== null,
   });
   useEffect(() => {
     canvasRef.current?.setInputEnabled(!blocking);
@@ -211,9 +223,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         travelTo(it.to);
         break;
       default:
-        if (!farmInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
+        if (!farmInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, farmInteract, cancelCast]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast]);
 
   const leaveBroken = useCallback((message: string) => {
     window.alert(message);
@@ -283,6 +295,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               riceLine={map.id === "field" && farm.data.state ? produceSummary(farm.data.state.mine.rice, farm.data.state.mine.produce) : null}
             />
             <AnticheatChip secondsLeft={anticheat.secondsLeft} />
+            {cards.seated && <CardSeatChip table={cards.seatTable} me={accountId} onOpen={() => cards.seated && cards.openPanel(cards.seated)} />}
           </div>
         </div>
         <MapCounts counts={counts} />
@@ -340,6 +353,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           : null}
       />
       <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} />
+      <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} />
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
         <HudChatBar

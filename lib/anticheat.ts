@@ -58,7 +58,7 @@ export function lockSeconds(err: unknown): number | null {
 
 export const WARN_TITLE = "⚠️ Cảnh báo gian lận";
 export const WARN_BODY = "Hệ thống vừa ghi nhận một thao tác mà trò chơi bình thường không thể tạo ra (ví dụ: sửa dữ liệu bằng DevTools).";
-export const WARN_LOCK = "Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, mua bán đất và mua bán ở các tiệm trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.";
+export const WARN_LOCK = "Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.";
 export const WARN_REPEAT = "Nếu tái phạm trong 30 ngày, tài khoản sẽ bị khoá vĩnh viễn và dữ liệu trò chơi có thể bị xoá.";
 export const WARN_OK = "Tôi đã hiểu";
 export const BAN_TITLE = "🚫 Tài khoản bị khoá vĩnh viễn";

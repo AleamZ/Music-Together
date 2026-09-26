@@ -110,7 +110,7 @@ describe("the Vietnamese texts (spec §12.2)", () => {
   it("keeps the modal texts verbatim", () => {
     expect(WARN_TITLE).toBe("⚠️ Cảnh báo gian lận");
     expect(WARN_BODY).toBe("Hệ thống vừa ghi nhận một thao tác mà trò chơi bình thường không thể tạo ra (ví dụ: sửa dữ liệu bằng DevTools).");
-    expect(WARN_LOCK).toBe("Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, mua bán đất và mua bán ở các tiệm trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.");
+    expect(WARN_LOCK).toBe("Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.");
     expect(WARN_REPEAT).toBe("Nếu tái phạm trong 30 ngày, tài khoản sẽ bị khoá vĩnh viễn và dữ liệu trò chơi có thể bị xoá.");
     expect(WARN_OK).toBe("Tôi đã hiểu");
     expect(BAN_TITLE).toBe("🚫 Tài khoản bị khoá vĩnh viễn");

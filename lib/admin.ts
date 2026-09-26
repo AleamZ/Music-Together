@@ -28,6 +28,8 @@ export interface AnticheatHoldings {
   plots: unknown[]; leases: unknown[]; offers: unknown[]; crops: unknown[]; drying: unknown[];
   /** Catch and land lines about the account in the chat. */
   announcements: number;
+  /** v16: the account's seats at the card tables, with their stacks and balances (absent before 0017). */
+  cards?: Array<{ room_id: string; game: string; seat: number; chips: number; escrow: number }>;
 }
 export interface AnticheatEventRow {
   id: number; created_at: string; code: string; outcome: string; rpc: string; room_id: string | null; detail: unknown;

@@ -17,7 +17,7 @@ const MODE_CONFIRM: Record<AnticheatMode, string> = {
 const MODE_HELP = "Chỉ ghi nhận: lưu vi phạm, không khoá ai. Thi hành: vi phạm lần 1 khoá trò chơi 5 phút, lần 2 cấm tài khoản; dữ liệu chỉ bị xoá khi bạn xác nhận.";
 const FOOTNOTE = "Ghi nhận mềm, ghi nhận lúc chỉ ghi nhận, của root hoặc lúc đang khoá được giữ 90 ngày; vi phạm và dữ liệu đã xoá được giữ lâu dài.";
 
-const CODE_LABEL: Record<string, string> = {
+export const CODE_LABEL: Record<string, string> = {
   reel_too_fast: "Kéo cá quá nhanh",
   quality_range: "Điểm cấy/gặt sai",
   bad_plot: "Số thửa sai",
@@ -30,6 +30,12 @@ const CODE_LABEL: Record<string, string> = {
   kind_mismatch: "Sai loại vật phẩm",
   reel_gate_hug: "Kéo cá sát ngưỡng (20 lần/ngày)",
   cast_daily_cap: "Chạm 300 lần câu/ngày",
+  bad_game: "Sai bàn bài",
+  bad_seat: "Số ghế sai",
+  bad_stake: "Mức cược sai",
+  bad_cards: "Lá bài sai",
+  bad_bet: "Tiền cược sai",
+  bad_move: "Nước đi sai",
 };
 const OUTCOME_LABEL: Record<string, string> = {
   soft: "Tín hiệu mềm",
@@ -54,15 +60,18 @@ function statusText(c: AnticheatCase): string {
   return "Chỉ có ghi nhận";
 }
 
-/** What a wipe would remove now; items count every piece. */
-function holdingsLine(h: AnticheatHoldings): string {
+/** What a wipe would remove now; items count every piece. Seats at the card tables (v16) are resolved first: their xu
+ *  come back to the wallet before it is cleared. */
+export function holdingsLine(h: AnticheatHoldings): string {
   const items = h.inventory.reduce((a, i) => a + i.qty, 0);
   const kg = h.rice.reduce((a, r) => a + r.wet_kg + r.dry_kg, 0);
   const produce = (h.produce ?? []).reduce((a, p) => a + p.kg, 0);
+  const seats = h.cards ?? [];
   return [
     formatXu(h.wallet?.coins ?? 0), `${count(items)} món đồ`, `${count(h.fish.length)} con cá`, `${count(h.personal_bests.length)} kỷ lục`,
     `${count(kg)} kg lúa`, `${count(produce)} kg hoa màu`, `${count(h.plots.length)} thửa sở hữu`, `${count(h.leases.length)} thửa đang thuê`,
     `${count(h.offers.length)} đề nghị mua`, `${count(h.drying.length)} ô phơi`, `${count(h.announcements)} tin khoe trong chat`,
+    ...(seats.length > 0 ? [`${count(seats.length)} ghế bàn bài (${formatXu(seats.reduce((a, s) => a + s.chips + s.escrow, 0))})`] : []),
   ].join(" · ");
 }
 

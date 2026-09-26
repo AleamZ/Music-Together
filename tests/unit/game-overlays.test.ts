@@ -3,6 +3,7 @@ import { overlayLocks } from "@/lib/game/overlays";
 
 const none = {
   panel: false, fishingPanel: false, creating: false, anticheatModal: false, farmPanel: false, farmWork: false, farmRound: false,
+  cardPanel: false, rulesBook: false,
 };
 
 describe("overlayLocks (the game shell's blocking and FarmOverlays' panelOpen)", () => {
@@ -15,8 +16,8 @@ describe("overlayLocks (the game shell's blocking and FarmOverlays' panelOpen)",
     expect(overlayLocks({ ...none, anticheatModal: true, farmWork: true })).toEqual({ blocking: true, panelOpen: true });
   });
 
-  it("takes both for a shell panel, a fishing panel or the character editor", () => {
-    for (const open of ["panel", "fishingPanel", "creating"] as const) {
+  it("takes both for a shell panel, a fishing panel, the character editor, a card table or the rules book", () => {
+    for (const open of ["panel", "fishingPanel", "creating", "cardPanel", "rulesBook"] as const) {
       expect(overlayLocks({ ...none, [open]: true })).toEqual({ blocking: true, panelOpen: true });
     }
   });
