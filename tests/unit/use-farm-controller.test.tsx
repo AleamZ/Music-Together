@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
-import { farmItemFromRow, PART_WAIT_MS, uplandFromRow, varietyFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
+import { farmItemFromRow, PART_WAIT_MS, PART_WINDOW_MS, uplandFromRow, varietyFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
 import { GIFT_TEXT, NOT_OPEN } from "@/lib/game/farm/messages";
 import { parseFarmMine, parseFieldState, type FieldState } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
@@ -18,7 +18,9 @@ vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...rpc,
 }));
 
-import { HARVESTER_REFETCH_MS, ROUND_FA_MS, useFarmController, WORK_MS } from "@/hooks/useFarmController";
+import {
+  CLAIM_SLOW_MS, HARVESTER_REFETCH_MS, ROUND_FA_MS, ROUND_LIMIT_MS, useFarmController, WORK_MS,
+} from "@/hooks/useFarmController";
 
 const NOW = Date.parse("2026-09-25T10:00:00Z");
 const iso = (h: number) => new Date(NOW + h * 3_600_000).toISOString();
@@ -280,6 +282,85 @@ describe("useFarmController, v15.2", () => {
     rpc.fieldAction.mockRejectedValueOnce({ message: "not your plot" });
     await act(async () => { await vi.advanceTimersByTimeAsync(PART_WAIT_MS); });
     expect(result.current.round).toMatchObject({ phase: "refused", message: "Hết hạn thuê — phần lúa chưa gặt đã mất." });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("sends Thử lại's begin_work only once the lost round's report has landed", async () => {
+    const { result } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValueOnce(answer(field()));
+    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    let report!: (a: unknown) => void;
+    rpc.fieldAction.mockReturnValueOnce(new Promise((resolve) => { report = resolve; }));
+    act(() => result.current.endRound(false, 2));
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "harvest_part", plot: 5, success: false });
+    // the report clears the server's record: a begin_work that overtook it would lose its own record to it
+    rpc.fieldAction.mockResolvedValueOnce(answer(field()));
+    await act(async () => { result.current.nextRound(); await vi.advanceTimersByTimeAsync(1000); });
+    expect(rpc.fieldAction).toHaveBeenCalledTimes(2);
+    expect(result.current.round).toMatchObject({ phase: "lost" });
+    await act(async () => { report(answer(field())); await vi.advanceTimersByTimeAsync(0); });
+    expect(rpc.fieldAction).toHaveBeenCalledTimes(3);
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "begin_work", plot: 5, work: "harvest" });
+    expect(result.current.round).toMatchObject({ phase: "playing" });
+  });
+
+  it("keeps the round closed when Esc comes while Thử lại's begin_work is on its way", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValue(answer(field()));
+    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    act(() => result.current.endRound(false, 2));
+    await flush();
+    let begun!: (a: unknown) => void;
+    rpc.fieldAction.mockReturnValueOnce(new Promise((resolve) => { begun = resolve; }));
+    act(() => result.current.nextRound());
+    await flush();
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "begin_work", plot: 5, work: "harvest" });
+    act(() => result.current.closeRound());
+    const sent = fa(canvas, FARM_ANIM.harvest);
+    await act(async () => { begun(answer(field())); await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 3); });
+    expect(result.current.round).toBeNull();
+    expect(fa(canvas, FARM_ANIM.harvest)).toBe(sent);
+  });
+
+  it("ends a round left idle before the server's window closes, and stops its fa 2", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValueOnce(answer(field()));
+    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    expect(ROUND_LIMIT_MS).toBeLessThan(PART_WINDOW_MS);
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_LIMIT_MS - 1); });
+    expect(result.current.round).toMatchObject({ phase: "playing" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(result.current.round).toMatchObject({ phase: "refused", message: "Lượt gặt đã quá lâu — bắt đầu lại nhé." });
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+    const sent = fa(canvas, FARM_ANIM.harvest);
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 5); });
+    expect(fa(canvas, FARM_ANIM.harvest)).toBe(sent);
+    expect(rpc.fieldAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a slow claim be left after 15 s; its late answer still lands, silently", async () => {
+    const { result, canvas, toast } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValueOnce(answer(field()));
+    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    act(() => result.current.endRound(true, 6));
+    let claim!: (a: unknown) => void;
+    rpc.fieldAction.mockReturnValueOnce(new Promise((resolve) => { claim = resolve; }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(PART_WAIT_MS); });
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "harvest_part", plot: 5, success: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(CLAIM_SLOW_MS - 1); });
+    expect(result.current.round).toMatchObject({ phase: "waiting", slow: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(result.current.round).toMatchObject({ phase: "waiting", slow: true });
+    act(() => result.current.closeRound());
+    expect(result.current.round).toBeNull();
+    await act(async () => { claim(answer(field({ wet: 12 }), { harvestPart: part(1, 12) })); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.round).toBeNull();
+    expect(result.current.data.state?.mine.rice.nep.wet).toBe(12);
+    expect(canvas.plotChanged).toHaveBeenCalledWith(5);
     expect(toast).not.toHaveBeenCalled();
   });
 

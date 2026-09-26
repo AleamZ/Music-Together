@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const round = (over: Partial<FarmRound> = {}): FarmRound => ({
-  plot: 3, part: 2, seed: 11, begunAt: 1, phase: "playing", score: null, result: null, message: null, ...over,
+  plot: 3, part: 2, seed: 11, begunAt: 1, phase: "playing", score: null, result: null, message: null, slow: false, ...over,
 });
 function show(r: FarmRound, over: { panelOpen?: boolean; busy?: boolean } = {}) {
   const props = { onEnd: vi.fn(), onNext: vi.fn(), onClose: vi.fn() };
@@ -93,6 +93,14 @@ describe("HarvestGame", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("offers Nghỉ tay, and takes Esc, once the claim has been slow on its way", () => {
+    const { onClose } = show(round({ phase: "waiting", score: 5, slow: true }));
+    expect(screen.getByText("Đang bó lúa…")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Nghỉ tay" }));
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
   it("says the part won, with Gặt tiếp and Nghỉ tay", () => {

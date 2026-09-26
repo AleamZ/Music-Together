@@ -91,7 +91,8 @@ function Playing({ round, onEnd }: { round: FarmRound; onEnd: (pass: boolean, sc
 
 /** HarvestGame (v15.2 §13.2): the round, "Đang bó lúa…" while a pass waits out its 9 s, then the part won, a failed
  *  round's score or the server's refusal. Esc or "Huỷ" closes it and sends nothing; an Esc typed into a text field, or
- *  one for another open overlay, is not its own. */
+ *  one for another open overlay, is not its own. While the claim is on its way Esc waits, until the claim is slow: then
+ *  "Nghỉ tay" or Esc closes it too. */
 export default function HarvestGame({ round, busy, panelOpen, varietyName, onEnd, onNext, onClose }: {
   round: FarmRound;
   busy: boolean;
@@ -103,13 +104,13 @@ export default function HarvestGame({ round, busy, panelOpen, varietyName, onEnd
   onClose: () => void;
 }) {
   useEffect(() => {
-    if (panelOpen || round.phase === "waiting") return;
+    if (panelOpen || (round.phase === "waiting" && !round.slow)) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !isTyping(e.target)) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panelOpen, round.phase, onClose]);
+  }, [panelOpen, round.phase, round.slow, onClose]);
 
   const done = round.phase === "won" && round.result?.done === true;
   const button = (label: string, onClick: () => void, primary = false) => (
@@ -126,7 +127,12 @@ export default function HarvestGame({ round, busy, panelOpen, varietyName, onEnd
             {button("Huỷ (Esc)", onClose)}
           </>
         )}
-        {round.phase === "waiting" && <p role="status">Đang bó lúa…</p>}
+        {round.phase === "waiting" && (
+          <>
+            <p role="status">Đang bó lúa…</p>
+            {round.slow && button("Nghỉ tay", onClose)}
+          </>
+        )}
         {round.phase === "won" && (
           <>
             <p role="status">

@@ -49,6 +49,8 @@ export const FIELD_FAILED = "Chưa tải được đồng ruộng — thử lạ
 export const FARM_LIMIT_TEXT = "Bạn đang canh tác 2 thửa rồi.";
 export const NO_SEED = "Chưa có giống — ghé tiệm anh Hai.";
 export const TOO_FAST = "Từ từ thôi…";
+/** A harvest round past the server's window (`work expired`), or one left idle until then (v15.2 R6). */
+export const WORK_EXPIRED = "Lượt gặt đã quá lâu — bắt đầu lại nhé.";
 export const DRYING_LIMIT_TEXT = "Bạn đang phơi 2 mẻ rồi — thu lúa trước nhé.";
 
 /** "45 phút", "3 giờ", "2 ngày 5 giờ" — rounded up, as a countdown reads. */
@@ -153,7 +155,7 @@ export function farmErrorMessage(err: unknown, itemName?: string, action?: strin
     case "no sprayer": return "Chưa có bình phun — mua ở tiệm anh Hai.";
     case "harvesting": return "Đang gặt dở — gặt cho xong đã.";
     case "harvester busy": return "Máy gặt đang gặt thửa này.";
-    case "work expired": return "Lượt gặt đã quá lâu — bắt đầu lại nhé.";
+    case "work expired": return WORK_EXPIRED;
     case "lease ending": return "Sắp hết hạn thuê — không kịp gặt phần này.";
     case "lease ends": return "Không kịp gặt xong trước khi hết hạn thuê.";
     case "wrong crop": return "Việc này không hợp với cây trên thửa.";

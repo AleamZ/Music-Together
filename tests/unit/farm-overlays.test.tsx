@@ -100,7 +100,7 @@ describe("FarmOverlays", () => {
 
 describe("FarmOverlays, a harvest round", () => {
   const round = (over: Partial<FarmRound> = {}): FarmRound => ({
-    plot: 5, part: 2, seed: 7, begunAt: 1, phase: "playing", score: null, result: null, message: null, ...over,
+    plot: 5, part: 2, seed: 7, begunAt: 1, phase: "playing", score: null, result: null, message: null, slow: false, ...over,
   });
 
   it("opens HarvestGame for the round, with the harvest's variety for its last line", () => {
