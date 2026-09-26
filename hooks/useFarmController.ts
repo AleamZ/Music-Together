@@ -12,7 +12,7 @@ import {
   WORK_EXPIRED,
 } from "@/lib/game/farm/messages";
 import type { FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
-import type { PlotView } from "@/lib/game/farm/state";
+import type { FieldState, PlotView } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId } from "@/lib/game/maps/types";
 import { FARM_ANIM, type FarmAnim } from "@/lib/game/net/protocol";
@@ -366,18 +366,13 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     return () => clearTimeout(t);
   }, [active, cancelWork, closeRound]);
 
-  // --- my harvesters (R15): fetched at the end + 1 s, then fp, and a toast with the wet rice they brought
+  // --- my harvesters (R15): fetched at the end + 1 s, and again while the job still shows. The end is seen on the state's
+  //     change, whichever fetch brings it: then fp, and a toast with the wet rice they brought
   const harvesterTries = useRef(new Map<string, number>());
-  const harvesterEnded = useCallback(async (plot: number, variety: string, key: string) => {
+  const harvesterEnded = useCallback(async (key: string) => {
     harvesterTries.current.set(key, (harvesterTries.current.get(key) ?? 0) + 1);
-    const before = live.current.state?.mine.rice[variety]?.wet ?? 0;
-    const s = await reload();
-    if (!s || s.plots.find((p) => p.no === plot)?.crop?.harvester) return;
-    canvas()?.plotChanged(plot);
-    const got = (s.mine.rice[variety]?.wet ?? 0) - before;
-    const name = live.current.catalog?.varieties.find((v) => v.id === variety)?.name ?? variety;
-    if (got > 0) live.current.toast(harvesterDoneText(plot, got, name));
-  }, [reload, canvas]);
+    await reload();
+  }, [reload]);
   useEffect(() => {
     if (!active || !state) return;
     const timers: Array<ReturnType<typeof setTimeout>> = [];
@@ -388,11 +383,25 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       const tries = harvesterTries.current.get(key) ?? 0;
       if (tries >= HARVESTER_TRIES) continue;
       const wait = tries === 0 ? job.endsAt + HARVESTER_REFETCH_MS - serverNow() : HARVESTER_RETRY_MS;
-      const variety = p.crop!.variety ?? "";
-      timers.push(setTimeout(() => void harvesterEnded(p.no, variety, key), Math.max(0, wait)));
+      timers.push(setTimeout(() => void harvesterEnded(key), Math.max(0, wait)));
     }
     return () => timers.forEach(clearTimeout);
   }, [active, state, accountId, harvesterEnded]);
+  // a job of mine in the last state and gone from this one has ended: its rice is the change in my wet stock
+  const lastState = useRef<FieldState | null>(null);
+  useEffect(() => {
+    const prev = lastState.current;
+    lastState.current = state;
+    if (!prev || !state || prev === state) return;
+    for (const p of prev.plots) {
+      if (!p.crop?.harvester || p.farmer?.id !== accountId || state.plots.find((x) => x.no === p.no)?.crop?.harvester) continue;
+      canvas()?.plotChanged(p.no);
+      const variety = p.crop.variety ?? "";
+      const got = (state.mine.rice[variety]?.wet ?? 0) - (prev.mine.rice[variety]?.wet ?? 0);
+      const name = live.current.catalog?.varieties.find((v) => v.id === variety)?.name ?? variety;
+      if (got > 0) live.current.toast(harvesterDoneText(p.no, got, name));
+    }
+  }, [state, accountId, canvas]);
 
   // --- the actions
   const act = useCallback(async (a: PlotRun, done?: string): Promise<boolean> => {

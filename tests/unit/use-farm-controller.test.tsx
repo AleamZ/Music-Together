@@ -21,6 +21,7 @@ vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
 import {
   CLAIM_SLOW_MS, HARVESTER_REFETCH_MS, ROUND_FA_MS, ROUND_LIMIT_MS, useFarmController, WORK_MS,
 } from "@/hooks/useFarmController";
+import { FP_GATHER_MS } from "@/hooks/useField";
 
 const NOW = Date.parse("2026-09-25T10:00:00Z");
 const iso = (h: number) => new Date(NOW + h * 3_600_000).toISOString();
@@ -379,6 +380,25 @@ describe("useFarmController, v15.2", () => {
     expect(toast).toHaveBeenCalledWith("🚜 Máy gặt gặt xong thửa 5: 50 kg nếp (lúa ướt).");
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(rpc.fetchFieldState).toHaveBeenCalledTimes(1);
+  });
+
+  it("toasts a harvester's end from whichever fetch brings it, one landing before its own refetch included", async () => {
+    const ends = new Date(Date.parse(iso(0)) + 10_000).toISOString();
+    rpc.fetchFieldState.mockResolvedValue(field({ crop5: { harvester: { started_at: iso(0), ends_at: ends } } }));
+    const { result, canvas, toast } = setup();
+    await flush();
+    rpc.fetchFieldState.mockClear();
+    rpc.fetchFieldState.mockResolvedValue(field({ crop5: null, wet: 50 }));
+    // someone's fp right at the end: its refetch lands at +10.4 s, before mine at +11 s
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    act(() => result.current.data.plotChanged());
+    await act(async () => { await vi.advanceTimersByTimeAsync(FP_GATHER_MS); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(1);
+    expect(canvas.plotChanged).toHaveBeenCalledWith(5);
+    expect(toast).toHaveBeenCalledWith("🚜 Máy gặt gặt xong thửa 5: 50 kg nếp (lúa ướt).");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledTimes(1);
   });
 
   it("digs khoai with its own animation and line, then toasts the picking", async () => {
