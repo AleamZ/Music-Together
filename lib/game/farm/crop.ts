@@ -1,4 +1,5 @@
 import type { Variety } from "./catalog";
+import { ratFactor, ratHours, type RatLogEntry } from "./rats";
 import type { CropView, ItemEntry, PestView, Phase, WaterEntry } from "./state";
 
 // The crop model (spec §8) on the client: the same arithmetic, in the same order, as 0013 section D, so the plot
@@ -18,13 +19,15 @@ export interface CropModel {
   qTransplant: number;
   water: readonly WaterEntry[];
   fert: readonly ItemEntry[];
+  /** v17: the rats that ate it (the field's rats.plots); none before 0019. */
+  rats?: readonly RatLogEntry[];
 }
 
-/** The model of a crop as field_state shows it (the logs are there for its farmer only). */
-export function cropModel(c: CropView): CropModel {
+/** The model of a crop as field_state shows it (the logs are there for its farmer only), with its plot's rat log. */
+export function cropModel(c: CropView, rats: readonly RatLogEntry[] = []): CropModel {
   return {
     soakAt: c.soakAt, sowAt: c.sowAt, transplantAt: c.transplantAt, qTransplant: c.log?.qTransplant ?? 1,
-    water: c.log?.water ?? [], fert: c.log?.fert ?? [],
+    water: c.log?.water ?? [], fert: c.log?.fert ?? [], rats,
   };
 }
 
@@ -170,7 +173,7 @@ export function pestHours(c: CropModel, p: PestView, until: number): number {
   return wet * 0.25;
 }
 
-export interface YieldFactors { kg: number; mcare: number; mseed: number; mwater: number; mpest: number; mlate: number }
+export interface YieldFactors { kg: number; mcare: number; mseed: number; mwater: number; mpest: number; mlate: number; mrat: number }
 
 /** Rice part i (1..6) of a plot yielding y kg (v15.2 R5): floor(i·y/6) − floor((i − 1)·y/6), so the six parts of a
  *  constant y sum to y, and after n parts the harvester's y − floor(n·y/6) is exactly the rest. */
@@ -180,7 +183,7 @@ export function partKg(i: number, y: number): number {
 
 function factors(
   v: Variety, land: number, qT: number, qH: number, care: Care, lateSow: number, oldSeedlings: number, offHours: number,
-  pestH: readonly number[], lateHarvest: number,
+  pestH: readonly number[], lateHarvest: number, ratH: number,
 ): YieldFactors {
   const mcare = mcareOf(care);
   const mseed = 1 - Math.min(0.3, 0.03 * Math.max(0, lateSow)) - Math.min(0.3, 0.03 * Math.max(0, oldSeedlings));
@@ -188,23 +191,26 @@ function factors(
   let mpest = 1;
   for (const h of pestH) mpest = mpest * (1 - Math.min(0.3, 0.015 * h));
   const mlate = 1 - Math.min(0.6, 0.02 * Math.max(0, lateHarvest));
-  const x = v.baseKg * land * mcare * mseed * mwater * mpest * mlate * qT * qH;
-  return { kg: Math.max(Math.ceil(v.baseKg / 10), Math.floor(x + 0.5)), mcare, mseed, mwater, mpest, mlate };
+  const mrat = ratFactor(ratH);
+  const x = v.baseKg * land * mcare * mseed * mwater * mpest * mlate * qT * qH * mrat;
+  return { kg: Math.max(Math.ceil(v.baseKg / 10), Math.floor(x + 0.5)), mcare, mseed, mwater, mpest, mlate, mrat };
 }
 
-/** The harvest at `now` (§8.6) — what the server pays out. `pests` are the revealed ones, in slot order. */
+/** The harvest at `now` (§8.6) — what the server pays out. `pests` are the revealed ones, in slot order; the rats'
+ *  share (v17 Mrat) is the last factor. */
 export function cropYield(c: CropModel, v: Variety, land: number, qH: number, pests: readonly PestView[], now: number): YieldFactors {
   const s = v.scale;
   const sow = c.sowAt ?? now, transplant = c.transplantAt ?? now;
   return factors(
     v, land, c.qTransplant, qH, cropCare(c, v), hrs(c.soakAt ?? sow, sow) - 8, hrs(sow, transplant) - 14 * s,
     waterOffHours(c, v, now), pests.map((p) => pestHours(c, p, now)), hrs(transplant, now) - (48 * s + 12),
+    ratHours(c.rats ?? [], now),
   );
 }
 
 /** The plot panel's estimate ("ước tính"): the harvest if everything still open is done on time — the base
  *  fertilizers before transplanting, the top-dresses until their windows close, phơi ruộng until T = 18·s — with
- *  the care, water, pests and delays so far. Hidden pests cannot be counted. */
+ *  the care, water, pests, rats and delays so far. Hidden pests and future rats cannot be counted. */
 export function yieldEstimate(c: CropModel, v: Variety, land: number, pests: readonly PestView[], now: number): YieldFactors {
   const s = v.scale;
   const care = cropCare(c, v);
@@ -221,7 +227,7 @@ export function yieldEstimate(c: CropModel, v: Variety, land: number, pests: rea
   const old = c.sowAt === null ? 0 : hrs(c.sowAt, c.transplantAt ?? now) - 14 * s;
   const lateHarvest = c.transplantAt === null ? 0 : hrs(c.transplantAt, now) - (48 * s + 12);
   return factors(v, land, c.qTransplant, 1, hopeful, lateSow, old, waterOffHours(c, v, now),
-    pests.map((p) => pestHours(c, p, now)), lateHarvest);
+    pests.map((p) => pestHours(c, p, now)), lateHarvest, ratHours(c.rats ?? [], now));
 }
 
 // The crop's timetable (§8.2).

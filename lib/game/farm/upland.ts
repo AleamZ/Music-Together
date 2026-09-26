@@ -1,5 +1,6 @@
 import { uplandHours, type UplandCrop, type UplandStage } from "./catalog";
 import { hrs, plusH, SAMPLE_MS, waterAt } from "./crop";
+import { ratFactor, ratHours, type RatLogEntry } from "./rats";
 import type { CropView, HarvestEntry, ItemEntry, PestKind, PestView, WaterEntry, WorkEntry } from "./state";
 
 // The hoa-màu model (v15.2 §8) on the client: the same arithmetic, in the same order, as 0016 section C, so the plot
@@ -15,16 +16,19 @@ export interface UplandModel {
   work: readonly WorkEntry[];
   spray: readonly ItemEntry[];
   harvests: readonly HarvestEntry[];
+  /** v17: the rats that ate it (the field's rats.plots); none before 0019. */
+  rats?: readonly RatLogEntry[];
 }
 
 /** A pest slot's hidden roll (the server keeps them; the fixtures replay them). */
 export interface UplandRoll { slot: number; uTime: number; uHit: number }
 
-/** The model of a crop on beds as field_state shows it (the logs are there for its farmer only). */
-export function uplandModel(c: CropView): UplandModel {
+/** The model of a crop on beds as field_state shows it (the logs are there for its farmer only), with its plot's rat
+ *  log. */
+export function uplandModel(c: CropView, rats: readonly RatLogEntry[] = []): UplandModel {
   return {
     sowAt: c.sowAt, plantAt: c.plantAt, water: c.log?.water ?? [], fert: c.log?.fert ?? [], work: c.log?.work ?? [],
-    spray: c.log?.spray ?? [], harvests: c.log?.harvests ?? [],
+    spray: c.log?.spray ?? [], harvests: c.log?.harvests ?? [], rats,
   };
 }
 
@@ -191,7 +195,7 @@ export function upPests(c: UplandModel, u: UplandCrop, rolls: readonly UplandRol
   return out;
 }
 
-export interface UplandYield { kg: number; mcare: number; mplant: number; mwater: number; mrot: number; mpest: number; mlate: number }
+export interface UplandYield { kg: number; mcare: number; mplant: number; mwater: number; mrot: number; mpest: number; mlate: number; mrat: number }
 
 /** 1 − the care penalties, summed in the SQL's order. */
 export function upMcare(care: UplandCareScore): number {
@@ -210,7 +214,7 @@ function mplantOf(u: UplandCrop, sowAt: number | null, plantAt: number | null): 
 }
 
 function yieldOf(u: UplandCrop, land: number, k: number, mcare: number, mplant: number, offHours: number, rotHours: number,
-  pests: readonly PestView[], late: number, now: number): UplandYield {
+  pests: readonly PestView[], late: number, ratH: number, now: number): UplandYield {
   const mwater = 1 - Math.min(0.2, 0.01 * offHours);
   const mrot = u.rotFromH === null ? 1 : 1 - Math.min(u.rotCap ?? 1, (u.rotRate ?? 0) * rotHours);
   let mpest = 1;
@@ -219,21 +223,23 @@ function yieldOf(u: UplandCrop, land: number, k: number, mcare: number, mplant: 
     mpest = mpest * (1 - Math.min(0.3, 0.015 * (end <= pe.since ? 0 : hrs(pe.since, end))));
   }
   const mlate = 1 - Math.min(0.6, u.overRate * Math.max(0, late));
+  const mrat = ratFactor(ratH);
   const pct = u.pickings[k - 1] ?? 0;
-  const x = ((((((((u.baseKg * land) * mcare) * mplant) * mwater) * mrot) * mpest) * mlate) * pct) / 100;
-  return { kg: Math.max(Math.ceil((u.baseKg * pct) / 1000), Math.floor(x + 0.5)), mcare, mplant, mwater, mrot, mpest, mlate };
+  const x = (((((((((u.baseKg * land) * mcare) * mplant) * mwater) * mrot) * mpest) * mlate) * mrat) * pct) / 100;
+  return { kg: Math.max(Math.ceil((u.baseKg * pct) / 1000), Math.floor(x + 0.5)), mcare, mplant, mwater, mrot, mpest, mlate, mrat };
 }
 
-/** Picking k at `now` (§8.7) — what the server pays out. `pests` are the revealed ones, in slot order. */
+/** Picking k at `now` (§8.7) — what the server pays out. `pests` are the revealed ones, in slot order; the rats'
+ *  share (v17 Mrat) comes right after Mlate. */
 export function upYield(c: UplandModel, u: UplandCrop, land: number, k: number, pests: readonly PestView[], now: number): UplandYield {
   const over = upOverAt(c, u, k);
   return yieldOf(u, land, k, upMcare(upCare(c, u)), mplantOf(u, c.sowAt, c.plantAt), upOffHours(c, u, now), upRotHours(c, u, now),
-    pests, over === null ? 0 : hrs(over, now), now);
+    pests, over === null ? 0 : hrs(over, now), ratHours(c.rats ?? [], now), now);
 }
 
 /** The plot panel's estimate for picking k (§13.1): as if everything still open is done on time — the base fertilizers
  *  until P, each care until its on-time window closes, the ớt transplant now — with the water, rot, pests and delays so
- *  far. Hidden pests cannot be counted. */
+ *  far. Hidden pests and future rats cannot be counted. */
 export function upEstimate(c: UplandModel, u: UplandCrop, land: number, k: number, pests: readonly PestView[], now: number): UplandYield {
   const care = upCare(c, u);
   const T = c.plantAt === null ? null : hrs(c.plantAt, now);
@@ -245,7 +251,7 @@ export function upEstimate(c: UplandModel, u: UplandCrop, land: number, k: numbe
   };
   const over = upOverAt(c, u, k);
   return yieldOf(u, land, k, upMcare(hopeful), mplantOf(u, c.sowAt, c.plantAt ?? now), upOffHours(c, u, now), upRotHours(c, u, now),
-    pests, over === null ? 0 : hrs(over, now), now);
+    pests, over === null ? 0 : hrs(over, now), ratHours(c.rats ?? [], now), now);
 }
 
 /** The whole season's estimate: the kg picked so far plus each picking still to come, estimated as above. */
