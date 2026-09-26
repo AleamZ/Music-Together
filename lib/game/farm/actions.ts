@@ -384,7 +384,9 @@ export function dueTasks(plots: readonly PlotView[], me: string, catalog: FarmCa
         break;
     }
     if (["heading", "ripening", "ripe", "overripe"].includes(ph) && (mine.items[TOOL_SICKLE] ?? 0) < 1) {
-      add("Chưa có liềm — mua ở tiệm anh Hai hoặc thuê máy gặt", ph === "ripe" || ph === "overripe");
+      // before 0016 no shop sells a sickle: say what the round says (C7)
+      const tools = catalog.items.some((i) => i.kind === "tool");
+      add(tools ? "Chưa có liềm — mua ở tiệm anh Hai hoặc thuê máy gặt" : NOT_OPEN_152, ph === "ripe" || ph === "overripe");
     }
     const want = crop.log ? wantedWater(c, v, now) : null;
     if (want && !want.levels.includes(w)) {

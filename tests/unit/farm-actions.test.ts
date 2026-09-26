@@ -151,6 +151,10 @@ describe("plotActions", () => {
     expect(why(ripe([[0, 3], [55, 1]]), 61)).toBe("Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.");
     expect(why(ripe([[0, 3], [50, 1]]), 55)).toBe("Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.");
     expect(plotPrompt(ripe([[0, 3], [55, 1]]), "me", nep, before0016, SICKLE, at(61))).toBe("Xem thửa 5");
+    // the task list says the same, instead of sending the player to buy a sickle no shop sells yet
+    const texts = dueTasks([ripe([[0, 3], [55, 1]])], "me", before0016, ALL, at(61)).map((t) => t.text);
+    expect(texts).toContain("Thửa 5 · Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.");
+    expect(texts.some((t) => t.includes("Chưa có liềm"))).toBe(false);
   });
   it("says which fertilizer and spray help, and warns about the rest", () => {
     const list = plotActions(plot(crop({ sowAt: at(3), transplantAt: at(12) })), "me", nep, CATALOG, ALL, at(17));

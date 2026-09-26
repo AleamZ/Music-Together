@@ -116,6 +116,7 @@ describe("HarvestGame", () => {
     show(round({ phase: "won", score: 6, result: { variety: "nep", kg: 12, parts: 3, total: 37, done: false } }));
     expect(screen.getByText("✅ Xong phần 3/6: 12 kg lúa.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Gặt tiếp phần 4" })).toBeInTheDocument();
+    expect(screen.getByRole("heading").textContent).toContain("phần 3/6");
   });
 
   it("says a failed round's score, printed with a comma, with Thử lại", () => {

@@ -29,7 +29,7 @@ const CATALOG: FarmCatalog = {
     item("tool_sickle", "tool", "Liềm"),
   ],
 };
-const bare =(no: number, kind: "private" | "village", over: Record<string, unknown> = {}) => ({
+const bare = (no: number, kind: "private" | "village", over: Record<string, unknown> = {}) => ({
   no, kind, owner: null, sale_price: null, sublease_price: null, farmer: null, lease: null, offers: 0, crop: null, ...over,
 });
 /** Plot 5: my nếp, transplanted 8 h ago, shallow water, planthoppers; 6: Lan's with snails; 7: free; 2: mine, bare. */

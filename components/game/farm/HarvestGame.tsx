@@ -122,7 +122,7 @@ export default function HarvestGame({ round, busy, panelOpen, varietyName, onEnd
     <div className="fixed inset-0 z-30 flex items-center justify-center p-3" role="dialog" aria-modal="true"
       aria-label={`Gặt thửa ${round.plot}`}>
       <div className="pch flex w-80 max-w-full flex-col items-center gap-2 p-3 text-center font-vt text-lg leading-tight">
-        <h2 className="font-vt text-2xl leading-none text-burgundy">🌾 Gặt thửa {round.plot} · phần {round.part}/{HARVEST_PARTS}</h2>
+        <h2 className="font-vt text-2xl leading-none text-burgundy">🌾 Gặt thửa {round.plot} · phần {cut}/{HARVEST_PARTS}</h2>
         {round.phase === "playing" && (
           <>
             <Playing round={round} onEnd={onEnd} />
