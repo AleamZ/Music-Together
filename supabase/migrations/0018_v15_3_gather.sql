@@ -235,3 +235,160 @@ revoke all on function public._gather_check(uuid, timestamptz) from public, anon
 revoke all on function public._gather_count(uuid, uuid, text, timestamptz) from public, anon, authenticated;
 revoke all on function public._farm_mine(uuid) from public, anon, authenticated;
 revoke all on function public._field_view(uuid, uuid, timestamptz) from public, anon, authenticated;
+
+-- ---------- D. Gathering (§7.2–§7.6, §11.4, §11.5) ----------
+-- A spot's key is 'crab' || hole or 'bed' || bed (lib/game/farm/gather.ts spotKey). Each core takes the wallet lock first,
+-- then checks, then writes; _critter_add reads the fish index last (R12). No plot lock and no fp (R11).
+
+-- A visit to a crab hole (§7.2, R6): the daily limit, a free place, the hole's cooldown for this account in any room
+-- (R1); then the cooldown starts, the visit rides on the hole's row, and the visit counts.
+create or replace function public._gather_do_crab_start(p_room uuid, p_account uuid, p_hole integer, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_spot text := 'crab' || p_hole; g public.gather_cooldowns; v_id uuid := gen_random_uuid();
+begin
+  perform public._wallet_lock(p_account);
+  perform public._gather_check(p_account, p_now);
+  if public._critter_cap(p_account) - (select count(*)::int from public.critters where account_id = p_account) < 1 then
+    raise exception 'critters full' using errcode = '22023';
+  end if;
+  select * into g from public.gather_cooldowns where account_id = p_account and spot = v_spot for update;
+  if found and p_now < g.ready_at then
+    raise exception 'hole empty' using errcode = '22023', detail = ceil(extract(epoch from (g.ready_at - p_now)))::int::text;
+  end if;
+  insert into public.gather_cooldowns (account_id, spot, ready_at, visit_id, visit_at, visit_room)
+  values (p_account, v_spot, p_now + interval '20 minutes', v_id, p_now, p_room)
+  on conflict (account_id, spot) do update
+    set ready_at = excluded.ready_at, visit_id = excluded.visit_id, visit_at = excluded.visit_at, visit_room = excluded.visit_room;
+  perform public._gather_count(p_account, p_room, 'crab_start', p_now);
+  return jsonb_build_object('server_now', p_now, 'mine', public._farm_mine(p_account),
+                            'visit', jsonb_build_object('id', v_id, 'hole', p_hole, 'started_at', p_now));
+end $$;
+
+-- The end of a crab visit (§11.5, R7): single use; hits ≥ 1 need 3 s, and nothing is taken after 120 s. Each hit is a
+-- cua gạch when u < 0.1, else a cua đồng (p_u for the tests, R14); what does not fit escapes.
+create or replace function public._gather_do_crab_finish(p_room uuid, p_account uuid, p_visit uuid, p_hits integer,
+                                                         p_now timestamptz, p_u double precision[] default null)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare g public.gather_cooldowns; v_kinds text[] := '{}'; v_res jsonb; k integer;
+begin
+  perform public._wallet_lock(p_account);
+  select * into g from public.gather_cooldowns
+   where account_id = p_account and visit_id = p_visit and visit_room = p_room for update;
+  if not found then
+    raise exception 'visit not found' using errcode = '22023';
+  end if;
+  if p_hits >= 1 and p_now < g.visit_at + interval '3 seconds' then
+    raise exception 'too fast' using errcode = '22023';
+  end if;
+  if p_now > g.visit_at + interval '120 seconds' then
+    raise exception 'visit expired' using errcode = '22023';
+  end if;
+  update public.gather_cooldowns set visit_id = null, visit_at = null, visit_room = null
+   where account_id = p_account and spot = g.spot;
+  for k in 1 .. p_hits loop
+    v_kinds := v_kinds || case when coalesce(p_u[k], random()) < 0.1 then 'cua_gach' else 'cua_dong' end;
+  end loop;
+  v_res := public._critter_add(p_account, p_room, v_kinds, p_now);
+  return jsonb_build_object('server_now', p_now, 'mine', public._farm_mine(p_account),
+                            'crab', v_res || jsonb_build_object('hits', p_hits));
+end $$;
+
+-- A snail bed (§7.3): the same three refusals as a hole; then the cooldown, the visit, and 1 + floor(u₁ · 3) snails,
+-- each an ốc đồng when uᵢ < 0.7, else an ốc bươu vàng (p_u for the tests, R14).
+create or replace function public._gather_do_bed(p_room uuid, p_account uuid, p_bed integer, p_now timestamptz,
+                                                 p_u double precision[] default null)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_spot text := 'bed' || p_bed; g public.gather_cooldowns; v_n integer; v_kinds text[] := '{}'; v_res jsonb; k integer;
+begin
+  perform public._wallet_lock(p_account);
+  perform public._gather_check(p_account, p_now);
+  if public._critter_cap(p_account) - (select count(*)::int from public.critters where account_id = p_account) < 1 then
+    raise exception 'critters full' using errcode = '22023';
+  end if;
+  select * into g from public.gather_cooldowns where account_id = p_account and spot = v_spot for update;
+  if found and p_now < g.ready_at then
+    raise exception 'bed empty' using errcode = '22023', detail = ceil(extract(epoch from (g.ready_at - p_now)))::int::text;
+  end if;
+  insert into public.gather_cooldowns (account_id, spot, ready_at) values (p_account, v_spot, p_now + interval '20 minutes')
+  on conflict (account_id, spot) do update set ready_at = excluded.ready_at;
+  perform public._gather_count(p_account, p_room, 'pick_snail_bed', p_now);
+  v_n := 1 + floor(coalesce(p_u[1], random()) * 3)::int;
+  for k in 1 .. v_n loop
+    v_kinds := v_kinds || case when coalesce(p_u[k + 1], random()) < 0.7 then 'oc_dong' else 'oc_buou_vang' end;
+  end loop;
+  v_res := public._critter_add(p_account, p_room, v_kinds, p_now);
+  return jsonb_build_object('server_now', p_now, 'mine', public._farm_mine(p_account), 'snails', v_res);
+end $$;
+
+-- The guarded RPCs (§11.4, §11.6): the guard, then the hard checks (bad_spot, bad_qty) before any lock.
+create or replace function public.crab_start(p_room_id uuid, p_session_token text, p_hole integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_hole is null or p_hole not between 1 and 6 then
+    return public._ac_flag(v_account, 'bad_spot', 'crab_start', jsonb_build_object('spot', p_hole), p_room_id, 'invalid spot');
+  end if;
+  return public._gather_do_crab_start(p_room_id, v_account, p_hole, now());
+end $$;
+
+create or replace function public.crab_finish(p_room_id uuid, p_session_token text, p_visit_id uuid, p_hits integer)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_hits is null or p_hits not between 0 and 3 then
+    return public._ac_flag(v_account, 'bad_qty', 'crab_finish', jsonb_build_object('visit', p_visit_id, 'hits', p_hits),
+                           p_room_id, 'invalid quantity');
+  end if;
+  return public._gather_do_crab_finish(p_room_id, v_account, p_visit_id, p_hits, now());
+end $$;
+
+create or replace function public.pick_snail_bed(p_room_id uuid, p_session_token text, p_bed integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_bed is null or p_bed not between 1 and 4 then
+    return public._ac_flag(v_account, 'bad_spot', 'pick_snail_bed', jsonb_build_object('spot', p_bed), p_room_id, 'invalid spot');
+  end if;
+  return public._gather_do_bed(p_room_id, v_account, p_bed, now());
+end $$;
+
+-- cô Út buys the critters (§7.6, R15): every one of a kind (null = all) at its stored price, ledger reason critter_sell.
+create or replace function public.sell_critters(p_session_token text, p_kind text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; v_n integer; v_xu integer;
+begin
+  v_account := public._ac_account(p_session_token);
+  perform public._wallet_lock(v_account);
+  if p_kind is not null and not exists (select 1 from public.critter_kinds where id = p_kind) then
+    raise exception 'invalid kind' using errcode = '22023';
+  end if;
+  with sold as (
+    delete from public.critters where account_id = v_account and (p_kind is null or kind = p_kind) returning price
+  ) select count(*)::int, coalesce(sum(price), 0)::int into v_n, v_xu from sold;
+  if v_n = 0 then
+    raise exception 'no critters' using errcode = '22023';
+  end if;
+  perform public._pay(v_account, v_xu, 'critter_sell', coalesce(p_kind, 'all') || ' x' || v_n);
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account),
+                            'sold', jsonb_build_object('n', v_n, 'xu', v_xu));
+end $$;
+
+revoke all on function public._gather_do_crab_start(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._gather_do_crab_finish(uuid, uuid, uuid, integer, timestamptz, double precision[])
+  from public, anon, authenticated;
+revoke all on function public._gather_do_bed(uuid, uuid, integer, timestamptz, double precision[]) from public, anon, authenticated;
+grant execute on function public.crab_start(uuid, text, integer) to anon, authenticated;
+grant execute on function public.crab_finish(uuid, text, uuid, integer) to anon, authenticated;
+grant execute on function public.pick_snail_bed(uuid, text, integer) to anon, authenticated;
+grant execute on function public.sell_critters(text, text) to anon, authenticated;

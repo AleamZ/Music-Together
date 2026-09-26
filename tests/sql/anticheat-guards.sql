@@ -128,12 +128,17 @@ begin
     format('select public.tl_pass(%L, %L, 0)', room, t),
     format('select public.cao_deal(%L, %L, 0)', room, t),
     format('select public.pk_act(%L, %L, 0, %L, null)', room, t, 'fold'),
-    format('select public.pk_topup(%L, %L, 1000)', room, t)] loop
+    format('select public.pk_topup(%L, %L, 1000)', room, t),
+    -- v15.3 (0018)
+    format('select public.crab_start(%L, %L, 1)', room, t),
+    format('select public.crab_finish(%L, %L, %L, 1)', room, t, o),
+    format('select public.pick_snail_bed(%L, %L, 1)', room, t),
+    format('select public.sell_critters(%L, null)', t)] loop
     n := n + 1;
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 48, format('%s guarded calls', n);
+  assert n = 52, format('%s guarded calls', n);
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);
