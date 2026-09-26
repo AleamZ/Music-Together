@@ -196,6 +196,12 @@ function gatherRefusal(it: Interactable, s: FieldState | null, catalog: FarmCata
   }
 }
 
+/** The container a `critters full` refusal names (v15.3 §11.8): the largest one held, as the capacity counts it (R5);
+ *  undefined for bare hands. The server refuses what the state did not foresee only when that state is stale. */
+function boxHeld(s: FieldState | null, catalog: FarmCatalog | null): string | undefined {
+  return s ? heldBox(s.mine.items, catalog?.items ?? [])?.name : undefined;
+}
+
 /** Planting: cuttings are set like seedlings (1); seed is sown (5) — gieo bắp, ươm ớt. */
 function plantAnim(catalog: FarmCatalog | null, item: string): FarmAnim {
   const upland = catalog?.items.find((i) => i.id === item)?.upland;
@@ -465,7 +471,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     if (it.spot === undefined || workTimer.current || roundOn(live.current.round) || live.current.crab) return false;
     const closed = closes.current;
     setBusy(true);
-    const begun = await crabStart(it.spot);
+    const begun = await crabStart(it.spot, boxHeld(live.current.state, live.current.catalog));
     setBusy(false);
     // the field left meanwhile: the answer is dropped, and the hole keeps its cooldown as after Dừng before a try (R8)
     if (!begun || closes.current !== closed) return false;
@@ -525,7 +531,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     bedTimers.current = [];
     setBed(null);
     canvas()?.farmAnim(FARM_ANIM.stop);
-    const r = await pickSnailBed(n);
+    const r = await pickSnailBed(n, boxHeld(live.current.state, live.current.catalog));
     if (!r) return;
     const cat = live.current.catalog;
     live.current.toast(bedResultText(r.snails, cat?.critters ?? [], heldBox(r.mine.items, cat?.items ?? [])?.name ?? null));

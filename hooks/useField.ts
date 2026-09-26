@@ -33,12 +33,12 @@ export interface FieldData {
   /** Sells kg of a hoa-màu crop to cô Út (v15.2 §9). */
   sellProduce: (upland: string, kg: number) => Promise<MineAnswer | null>;
   /** Bắt cua (v15.3 §7.2): a visit to hole `hole` (R6), then its end with the hits, 0–3 (R7); a refusal's text goes to
-   *  `onError` when given. */
-  crabStart: (hole: number) => Promise<(MineAnswer & { visit: CrabVisit }) | null>;
+   *  `onError` when given. `boxName` is the container held, which a `critters full` refusal names (§11.8). */
+  crabStart: (hole: number, boxName?: string) => Promise<(MineAnswer & { visit: CrabVisit }) | null>;
   crabFinish: (visitId: string, hits: number, onError?: (text: string) => void) =>
     Promise<(MineAnswer & { crab: CatchAnswer & { hits: number } }) | null>;
-  /** Mò ốc (v15.3 §7.3): 1–3 snails from bed `bed`. */
-  pickSnailBed: (bed: number) => Promise<(MineAnswer & { snails: CatchAnswer }) | null>;
+  /** Mò ốc (v15.3 §7.3): 1–3 snails from bed `bed`; `boxName` as for crabStart. */
+  pickSnailBed: (bed: number, boxName?: string) => Promise<(MineAnswer & { snails: CatchAnswer }) | null>;
   /** Sells every critter of a kind to cô Út, or all of them (null), at their stored prices (v15.3 R15). */
   sellCritters: (kind: string | null) => Promise<(MineAnswer & { sold: { n: number; xu: number } }) | null>;
   /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
@@ -196,12 +196,12 @@ export function useField(roomId: string, token: string, active: boolean, onError
       call(() => loadSprayer(token, itemId), applyMine, { rpc: "load_sprayer", itemName }), [call, applyMine, token]),
     sellProduce: useCallback((upland: string, kg: number) =>
       call(() => sellProduce(token, upland, kg), applyMine, { rpc: "sell_produce" }), [call, applyMine, token]),
-    crabStart: useCallback((hole: number) =>
-      call(() => crabStart(roomId, token, hole), applyMine, { rpc: "crab_start" }), [call, applyMine, roomId, token]),
+    crabStart: useCallback((hole: number, boxName?: string) =>
+      call(() => crabStart(roomId, token, hole), applyMine, { rpc: "crab_start", itemName: boxName }), [call, applyMine, roomId, token]),
     crabFinish: useCallback((visitId: string, hits: number, onError?: (text: string) => void) =>
       call(() => crabFinish(roomId, token, visitId, hits), applyMine, { rpc: "crab_finish", onError }), [call, applyMine, roomId, token]),
-    pickSnailBed: useCallback((bed: number) =>
-      call(() => pickSnailBed(roomId, token, bed), applyMine, { rpc: "pick_snail_bed" }), [call, applyMine, roomId, token]),
+    pickSnailBed: useCallback((bed: number, boxName?: string) =>
+      call(() => pickSnailBed(roomId, token, bed), applyMine, { rpc: "pick_snail_bed", itemName: boxName }), [call, applyMine, roomId, token]),
     sellCritters: useCallback((kind: string | null) =>
       call(() => sellCritters(token, kind), applyMine, { rpc: "sell_critters" }), [call, applyMine, token]),
   };

@@ -692,6 +692,29 @@ describe("useFarmController, v15.3 crab holes", () => {
     expect(rpc.crabStart).not.toHaveBeenCalled();
   });
 
+  it("names the container held in a critters-full refusal the state did not foresee: the largest one, as the capacity counts it", async () => {
+    const BASKET = farmItemFromRow({
+      id: "box_basket", kind: "critter_box", name: "Giỏ tre", price: 6000, sort_order: 20, variety: null, fert: null, pest_target: null, capacity: 30,
+    });
+    rpc.fetchFarmCatalog.mockResolvedValue({ ...GATHERING, items: [...GATHERING.items, BASKET] });
+    rpc.fetchFieldState.mockResolvedValue(field({ mine: { items: { box_bucket: 1, box_basket: 1 }, critter_cap: 33 } }));
+    const { result, toast } = setup();
+    await flush();
+    // another tab filled the basket meanwhile: the prompt still says ready, and the server refuses the hole, then a bed
+    rpc.crabStart.mockRejectedValueOnce({ code: "22023", message: "critters full" });
+    await act(async () => {
+      result.current.interact(spot("crab_1"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(toast).toHaveBeenLastCalledWith("Giỏ tre đầy rồi — ra vựa cô Út bán bớt nhé.");
+    expect(result.current.crab).toBeNull();
+    rpc.pickSnailBed.mockRejectedValueOnce({ code: "22023", message: "critters full" });
+    act(() => { result.current.interact(spot("bed_1")); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(BED_BAR_MS); });
+    expect(rpc.pickSnailBed).toHaveBeenCalledWith("r", "tok", 1);
+    expect(toast).toHaveBeenLastCalledWith("Giỏ tre đầy rồi — ra vựa cô Út bán bớt nhé.");
+  });
+
   it("says NOT_OPEN_153 when crab_start is missing, and leaves the field open", async () => {
     const { result, toast } = setup();
     await flush();
