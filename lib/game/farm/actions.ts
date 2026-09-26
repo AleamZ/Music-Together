@@ -1,6 +1,6 @@
 import {
-  HARVEST_PARTS, TEND_MAX, TOOL_SICKLE, WATER_LOG_MAX, WATER_PER_HOUR, type FarmCatalog, type FarmItem, type FarmItemKind, type UplandCare,
-  type UplandCrop, type Variety,
+  HARVEST_PARTS, TEND_ACTS, TEND_MAX, TOOL_SICKLE, WATER_LOG_MAX, WATER_PER_HOUR, type FarmCatalog, type FarmItem, type FarmItemKind,
+  type UplandCare, type UplandCrop, type Variety,
 } from "./catalog";
 import {
   cropCare, cropModel, cropPhase, HOUR_MS, overripeAt, ripeAt, rotAt, seedlingsOldAt, sowLateAt, sproutAt,
@@ -262,7 +262,8 @@ function bedActions(p: PlotView, crop: CropView, catalog: FarmCatalog, mine: Far
     const why = ready !== null && now < ready ? `Cây con chưa đủ tuổi — trồng được sau ${durationText(ready - now)}.` : moist;
     out.push({ key: "set_out", label: u.transplantLabel ?? "Trồng cây con", run: { kind: "work", plot, work: "transplant" }, enabled: !why, why });
   } else {
-    for (const care of u.cares.filter((x) => x.kind === "act")) {
+    // an act tend_crop would refuse as bad_work is never offered, whatever the config says
+    for (const care of u.cares.filter((x) => x.kind === "act" && TEND_ACTS.includes(x.id))) {
       const a = tendAdvice(c, care, now);
       const full = c.work.length >= TEND_MAX;
       out.push({

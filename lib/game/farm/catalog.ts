@@ -201,6 +201,8 @@ export const LEASE_ACTION_MS = 5_000;
 export const TANK_CHARGES = 3;
 /** A hoa-màu crop records at most this many hand jobs (0016 `_farm_do_tend`). */
 export const TEND_MAX = 20;
+/** The hand jobs tend_crop's hard check takes (bad_work, 0016): the plot panel offers a config act only from these. */
+export const TEND_ACTS: readonly string[] = ["lat_day", "vun_goc"];
 
 /** What the harvester costs for a plot with `parts` already cut. */
 export function harvesterPrice(parts: number): number {

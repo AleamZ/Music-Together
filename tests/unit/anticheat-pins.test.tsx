@@ -7,7 +7,9 @@ import FarmShopPanel from "@/components/game/farm/FarmShopPanel";
 import RiceDepotPanel from "@/components/game/farm/RiceDepotPanel";
 import ShopPanel from "@/components/game/fishing/ShopPanel";
 import { plotActions } from "@/lib/game/farm/actions";
-import { DRYING_SLOTS, farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow } from "@/lib/game/farm/catalog";
+import {
+  DRYING_SLOTS, farmItemFromRow, TEND_ACTS, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow,
+} from "@/lib/game/farm/catalog";
 import { HOUR_MS } from "@/lib/game/farm/crop";
 import { parseFieldState, type CropView, type FarmMine, type FieldState, type PlotView } from "@/lib/game/farm/state";
 import { canHook, type CastInfo } from "@/lib/game/fishing/cast";
@@ -322,6 +324,24 @@ describe("bad_plot, bad_water and bad_work", () => {
     expect([...works].sort()).toEqual(["harvest", "transplant"]);
     expect([...rounds]).toEqual([10]);
     expect([...acts].sort()).toEqual(["lat_day", "vun_goc"]);
+  });
+
+  it("tends only with the acts tend_crop takes, whatever the config lists", () => {
+    // tend_crop's bad_work check (0016) takes lat_day and vun_goc; its CHECK on upland_crops.cares keeps the config to them
+    expect(TEND_ACTS).toEqual(["lat_day", "vun_goc"]);
+    const khoai = (fixtures as unknown as { crops: UplandCropRow[] }).crops.find((r) => r.id === "khoai")!;
+    const tia = {
+      id: "tia_la", kind: "act", name: "Tỉa lá", items: [], half_items: [], from_h: 24, to_h: 32, half_from_h: 32, half_to_h: 40,
+      pen_half: 0.05, pen_missing: 0.1,
+    };
+    const beds: FarmCatalog = { ...FARM, uplands: [uplandFromRow({ ...khoai, cares: [...(khoai.cares as object[]), tia] })] };
+    const mine: FarmMine = { items: {}, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null };
+    const p = plot(3, crop({ kind: "upland", variety: null, upland: "khoai", soakAt: null, plantAt: at(0) }, [[0, 1]]));
+    const acts = new Set<string>();
+    for (let h = 0; h <= 60; h++) {
+      for (const a of plotActions(p, "me", null, beds, mine, at(h))) if (a.run.kind === "tend") acts.add(a.run.act);
+    }
+    expect([...acts]).toEqual(["lat_day"]);
   });
 });
 

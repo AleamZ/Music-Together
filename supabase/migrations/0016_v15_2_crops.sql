@@ -41,6 +41,11 @@ alter table public.upland_crops enable row level security;
 drop policy if exists upland_crops_select on public.upland_crops;
 create policy upland_crops_select on public.upland_crops for select to anon using (true);
 grant select on public.upland_crops to anon, authenticated;
+-- An act care is one tend_crop takes (its bad_work check, §11.5): a config edit that adds another fails here until a
+-- migration also widens that check (anti-cheat §11.3 rule 5).
+alter table public.upland_crops drop constraint if exists upland_crops_acts_check;
+alter table public.upland_crops add constraint upland_crops_acts_check
+  check (not jsonb_path_exists(cares, '$[*] ? (@.kind == "act" && @.id != "lat_day" && @.id != "vun_goc")'));
 
 insert into public.upland_crops (id, name, sort_order, method, plant_label, transplant_label, harvest_label, harvest_anim,
                                  base_kg, price_per_kg, nursery_ready_h, nursery_old_h, stages, ripe_water, ripe_window_h,

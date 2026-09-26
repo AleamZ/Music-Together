@@ -221,6 +221,10 @@ begin
                             gen_random_uuid(), a, 'field')) like '%crops_kind_check%', 'rice or upland';
   assert (select pg_get_constraintdef(oid) like '%harvested_parts >= 0%' and pg_get_constraintdef(oid) like '%harvested_parts <= 6%'
             from pg_constraint where conname = 'crops_parts_check'), 'parts 0–6';
+  -- a config act is one tend_crop takes (its bad_work check), until a migration widens both (anti-cheat §11.3 rule 5)
+  assert pg_temp.err(format('update public.upland_crops set cares = cares || %L::jsonb where id = %L',
+                            '[{"id": "tia_la", "kind": "act", "name": "Tỉa lá"}]', 'khoai')) like '%upland_crops_acts_check%',
+    'an act tend_crop refuses';
   -- the ledger reasons keep 'wipe' (anti-cheat §11.3 rule 4) and add the harvester and the hoa-màu sale
   assert (select pg_get_constraintdef(oid) like '%''wipe''%' and pg_get_constraintdef(oid) like '%''harvester''%'
                  and pg_get_constraintdef(oid) like '%''produce_sell''%'
