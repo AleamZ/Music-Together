@@ -1,6 +1,7 @@
 import { paintBed, paintHole } from "@/lib/game/art/gather-art";
 import {
-  BRIDGES, CANAL, COOP, CRAB_HOLES, DRYING_SQUARES, DRYING_YARD, FARM_SHOP, FIELD_H, FIELD_PLOTS, FIELD_W, RICE_DEPOT, SNAIL_BEDS,
+  BRIDGES, CANAL, COOP, CRAB_HOLES, DRYING_SQUARES, DRYING_YARD, FARM_SHOP, FIELD_H, FIELD_PLOTS, FIELD_W, RAT_HOLES, RICE_DEPOT,
+  SNAIL_BEDS,
 } from "./field";
 import { propSprite } from "./props";
 import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt } from "./scene-art";
@@ -127,6 +128,18 @@ function paintDryingYard(c: Ctx): void {
   });
 }
 
+/** A rat hole (v17 §14): a dark 7 × 4 burrow, its lit south rim and three crumbs of dug earth, 11 × 6 px in all around
+ *  (x, y). */
+function paintRatHole(c: Ctx, x: number, y: number): void {
+  rect(c, "#24190f", x - 2, y - 2, 5, 1);
+  rect(c, "#24190f", x - 3, y - 1, 7, 2);
+  rect(c, "#24190f", x - 2, y + 1, 5, 1);
+  rect(c, "#6e5230", x - 2, y + 2, 5, 1);
+  px(c, "#8a6a3f", x - 5, y + 2);
+  px(c, "#8a6a3f", x + 4, y + 3);
+  px(c, "#8a6a3f", x + 5, y + 1);
+}
+
 function paintBuildings(c: Ctx): void {
   // Hợp tác xã: plastered walls with two shuttered windows (the front wall is the coop_front prop)
   rect(c, C.outline, COOP.x, COOP.y + 16, COOP.w, COOP.h - 16);
@@ -161,6 +174,7 @@ export function paintField(map: GameMap): SceneArt {
   paintBridges(g);
   for (const r of CRAB_HOLES) paintHole(g, r);
   for (const r of SNAIL_BEDS) paintBed(g, r);
+  for (const h of RAT_HOLES) paintRatHole(g, h.x, h.y);
   paintDryingYard(g);
   paintBuildings(g);
   paintBamboo(g);

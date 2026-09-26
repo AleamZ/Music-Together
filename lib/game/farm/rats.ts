@@ -1,11 +1,13 @@
 import { nextRandom } from "../fishing/reel";
+import { FIELD_PLOTS, RAT_HOLES } from "../maps/field";
 import type { Rect } from "../maps/types";
 import type { Vec } from "../types";
 
 // v17 "Mùa chuột" (spec §5): the rats on the client. The server spawns them, judges which plots they eat, and prices and
 // counts every catch; the client mirrors the damage (ratHours and ratFactor are 0019's _rat_hours and _rat_factor, the
 // same operations in the same order, pinned by the shared fixtures), draws each rat from its seed the same way on every
-// client (ratPos) and reads the field's rats (parseRats). Pure.
+// client (ratPos, from its plot's hole: ratAt), finds the one nearest a player (nearestRat) and reads the field's rats
+// (parseRats). Pure.
 
 export const RAT = {
   /** Mrat = 1 − min(lossCap, rate · rat-hours) (D6). */
@@ -189,4 +191,30 @@ export function ratFleePos(seed: number, since: number, endedAt: number, hole: V
   if (f >= 1) return null;
   const at = ratPos(seed, since, hole, plot, endedAt) ?? { x: hole.x, y: hole.y };
   return between(at, hole, Math.max(0, f));
+}
+
+/** A plot's hole and rect on the field map; null for a plot the map does not have. */
+export function ratHome(plot: number): { hole: Vec; rect: Rect } | null {
+  const g = FIELD_PLOTS.find((p) => p.no === plot), hole = RAT_HOLES[plot - 1];
+  return g && hole ? { hole, rect: g.rect } : null;
+}
+
+/** Where a live rat is drawn at t; null before it comes out, or off the map. */
+export function ratAt(r: RatLive, t: number): RatPose | null {
+  const home = ratHome(r.plot);
+  return home ? ratPos(r.seed, r.since, home.hole, home.rect, t) : null;
+}
+
+/** The live rat drawn nearest `pos` at t, within `radius` px (the auto-hunt's 96, the prompt's 40); null for none. */
+export function nearestRat(live: readonly RatLive[], pos: Vec, t: number, radius: number): RatLive | null {
+  let best: RatLive | null = null, bestD = Infinity;
+  for (const r of live) {
+    const p = ratAt(r, t);
+    const d = p ? Math.hypot(p.x - pos.x, p.y - pos.y) : Infinity;
+    if (d <= radius && d < bestD) {
+      best = r;
+      bestD = d;
+    }
+  }
+  return best;
 }

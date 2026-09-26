@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { FIELD_EAST_ARRIVE, FIELD_WEST_ARRIVE, HALL_FIELD_ARRIVE, POND_FIELD_ARRIVE } from "@/lib/game/maps/arrivals";
-import { BRIDGES, buildFieldMap, CANAL, DRYING_SQUARES, DRYING_YARD, FIELD_PLOTS, FIELD_SOLIDS } from "@/lib/game/maps/field";
+import { BRIDGES, buildFieldMap, CANAL, DRYING_SQUARES, DRYING_YARD, FIELD_PLOTS, FIELD_SOLIDS, RAT_HOLES } from "@/lib/game/maps/field";
 import { propFrame } from "@/lib/game/maps/props";
 import { overlaps } from "@/lib/game/maps/rect";
 import type { InteractKind, Rect } from "@/lib/game/maps/types";
@@ -106,6 +106,28 @@ describe("field map", () => {
     for (const h of holes) for (const o of holes) {
       if (o !== h) expect(Math.hypot(o.rect.x - h.rect.x, o.rect.y - h.rect.y), `${h.id}/${o.id}`).toBeGreaterThanOrEqual(40);
     }
+  });
+  it("digs a rat hole on the bund by each plot, clear of solids, the canal, use spots and posts (v17 §5.4, §14)", () => {
+    expect(RAT_HOLES).toEqual([
+      { x: 172, y: 46 }, { x: 324, y: 46 }, { x: 476, y: 46 }, { x: 628, y: 46 },
+      { x: 172, y: 310 }, { x: 324, y: 310 }, { x: 476, y: 310 },
+      { x: 172, y: 412 }, { x: 324, y: 412 }, { x: 476, y: 412 },
+    ]);
+    RAT_HOLES.forEach((h, i) => {
+      const no = i + 1, art: Rect = { x: h.x - 5, y: h.y - 2, w: 11, h: 6 };   // the burrow, its rim and its crumbs
+      for (const s of [...FIELD_SOLIDS, CANAL, ...BRIDGES, DRYING_YARD]) expect(overlaps(art, s), `hole ${no}`).toBe(false);
+      for (const p of FIELD_PLOTS) expect(overlaps(art, p.rect), `hole ${no}/plot ${p.no}`).toBe(false);
+      for (const o of field.interactables) {
+        expect(overlaps(art, o.rect), `hole ${no}/${o.id}`).toBe(false);
+        expect(Math.hypot(o.use.x - h.x, o.use.y - h.y), `hole ${no}/${o.id}`).toBeGreaterThanOrEqual(16);
+      }
+      for (const p of FIELD_PLOTS) expect(Math.hypot(p.post.x - h.x, p.post.y - h.y), `hole ${no}/post ${p.no}`).toBeGreaterThanOrEqual(16);
+      expect(isBlockedAt(field, h.x, h.y), `hole ${no}`).toBe(false);
+      // its own plot is the nearest, a few px away
+      const nearest = FIELD_PLOTS.reduce((a, b) => (gap(h, b.rect) < gap(h, a.rect) ? b : a));
+      expect(nearest.no, `hole ${no}`).toBe(no);
+      expect(gap(h, nearest.rect), `hole ${no}`).toBeLessThanOrEqual(8);
+    });
   });
   it("blocks the canal but not its bridges, the buildings, and not the drying yard", () => {
     expect(isBlockedAt(field, 300, 192)).toBe(true);
