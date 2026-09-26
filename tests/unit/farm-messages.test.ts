@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  bedLevelsText, boughtText, durationText, farmErrorMessage, GIFT_TEXT, harvesterDoneText, harvesterStartText, harvestText, isMissingRpc,
-  loadedText, NOT_OPEN_152, partsDoneText, partText, PEST_NAME, PEST_REMEDY, PHASE_NAME, pickingText, produceSaleText, produceSummary,
-  riceSaleText, riceSummary, uplandPhaseName,
+  bedLevelsText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, durationText, farmErrorMessage,
+  GATHER_LIMIT_TEXT, GIFT_TEXT, harvesterDoneText, harvesterStartText, harvestText, isMissingRpc, loadedText, NOT_OPEN_152, NOT_OPEN_153,
+  partsDoneText, partText, PEST_NAME, PEST_REMEDY, pestSnailText, PHASE_NAME, pickingText, produceSaleText, produceSummary, riceSaleText,
+  riceSummary, uplandPhaseName,
 } from "@/lib/game/farm/messages";
-import { uplandFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
+import { critterFromRow, uplandFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
 import fixtures from "@/tests/fixtures/upland-cases.json";
 import { AnticheatError } from "@/lib/anticheat";
 
@@ -124,5 +125,72 @@ describe("v15.2 texts (§9, §13)", () => {
     expect(produceSummary({ nep: { wet: 0, dry: 70 } }, {})).toBe("🌾 70 kg khô · 0 kg ướt");
     expect(produceSummary({ nep: { wet: 0, dry: 70 } }, { khoai: 180 })).toBe("🌾 70 kg khô · 0 kg ướt · 🧺 180 kg màu");
     expect(produceSummary({}, { ot: 22, bap: 8 })).toBe("🌾 Chưa có lúa · 🧺 30 kg màu");
+  });
+});
+
+describe("v15.3 texts (§11.8, §13.2, §13.4)", () => {
+  const KINDS = [
+    critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 }),
+    critterFromRow({ id: "cua_gach", name: "Cua gạch", grp: "crab", base_price: 45, sort_order: 20 }),
+    critterFromRow({ id: "oc_dong", name: "Ốc đồng", grp: "snail", base_price: 8, sort_order: 30 }),
+    critterFromRow({ id: "oc_buou_vang", name: "Ốc bươu vàng", grp: "snail", base_price: 2, sort_order: 40 }),
+  ];
+  const c = (kind: string, price = 1) => ({ kind, price });
+  it("maps the gathering refusals, with the minutes from the details", () => {
+    const m = (message: string, extra: Record<string, unknown> = {}, item?: string) => farmErrorMessage({ message, ...extra }, item);
+    expect(m("hole empty", { details: "720" })).toBe("Cua chưa ra — quay lại sau 12 phút.");
+    expect(m("hole empty", { details: "690" })).toBe("Cua chưa ra — quay lại sau 12 phút.");
+    expect(m("bed empty", { details: "420" })).toBe("Bãi này vừa mò rồi — quay lại sau 7 phút.");
+    expect(m("hole empty")).toBe("Cua chưa ra — quay lại sau ít phút.");
+    expect(m("critters full", {}, "Giỏ tre")).toBe("Giỏ tre đầy rồi — ra vựa cô Út bán bớt nhé.");
+    expect(m("critters full")).toBe("Tay đầy rồi — ra vựa cô Út bán hoặc sắm xô ở tiệm anh Hai.");
+    expect(m("gather daily limit", { details: "3600" })).toBe("Hôm nay bạn bắt cua, mò ốc đủ 200 lượt rồi — mai quay lại nhé!");
+    expect(m("visit not found")).toBe("Lượt bắt cua này đã xong.");
+    expect(m("visit expired")).toBe("Lâu quá, cua chui mất rồi — lát nữa quay lại nhé.");
+    expect(m("no critters")).toBe("Không có cua ốc để bán.");
+    expect([m("invalid spot"), m("invalid kind")]).toEqual(["Có lỗi, thử lại nhé.", "Có lỗi, thử lại nhé."]);
+    expect([crittersFullText("Xô nhựa"), GATHER_LIMIT_TEXT]).toEqual([
+      "Xô nhựa đầy rồi — ra vựa cô Út bán bớt nhé.", "Hôm nay bạn bắt cua, mò ốc đủ 200 lượt rồi — mai quay lại nhé!",
+    ]);
+    expect(NOT_OPEN_153).toBe("Bắt cua, mò ốc chưa mở — chủ phòng cần chạy migration 0018.");
+  });
+  it("reads a crab finish's and a transplant's refusals in their context, and keeps the others", () => {
+    const m = (message: string, action?: string) => farmErrorMessage({ message }, undefined, action);
+    expect(m("too fast", "crab_finish")).toBe("Chưa bắt xong — thử lại sau vài giây.");
+    expect(m("too fast", "transplant")).toBe("Chưa cấy xong hàng mạ — thử lại sau vài giây.");
+    expect(m("work expired", "transplant")).toBe("Lượt cấy đã quá lâu — bắt đầu lại nhé.");
+    expect(m("lease ending", "transplant")).toBe("Sắp hết hạn thuê — không kịp cấy.");
+    expect(m("not your plot", "transplant")).toBe("Hết hạn thuê — mạ trên thửa đã mất.");
+    expect([m("too fast"), m("work expired"), m("lease ending"), m("not your plot")]).toEqual([
+      "Từ từ thôi…", "Lượt gặt đã quá lâu — bắt đầu lại nhé.", "Sắp hết hạn thuê — không kịp gặt phần này.", "Thửa này không phải của bạn.",
+    ]);
+  });
+  it("tells a crab visit's result (§13.2)", () => {
+    expect(crabResultText({ hits: 2, caught: [c("cua_dong"), c("cua_gach")], escaped: 0 }, KINDS, null))
+      .toBe("🦀 Bắt được 2 con: 1 cua đồng, 1 cua gạch!");
+    expect(crabResultText({ hits: 3, caught: [c("cua_dong"), c("cua_dong")], escaped: 1 }, KINDS, "Xô nhựa"))
+      .toBe("🦀 Bắt được 2 con: 2 cua đồng! 1 con chạy mất vì xô nhựa đầy.");
+    expect(crabResultText({ hits: 2, caught: [], escaped: 2 }, KINDS, null)).toBe("🦀 2 con chạy mất vì tay đầy.");
+    expect(crabResultText({ hits: 0, caught: [], escaped: 0 }, KINDS, null)).toBe("🦀 Cua chui hết vào hang rồi — 20 phút nữa quay lại nhé.");
+    expect(CRAB_GAVE_UP).toBe("Đã rút tay — hang này 20 phút nữa mới có cua lại.");
+  });
+  it("tells a bed, a pest-snail pick and a sale (§13.4)", () => {
+    expect(bedResultText({ caught: [c("oc_dong"), c("oc_buou_vang"), c("oc_dong")], escaped: 0 }, KINDS, null))
+      .toBe("🐌 Mò được 3 con ốc: 2 ốc đồng, 1 ốc bươu vàng.");
+    expect(bedResultText({ caught: [c("oc_dong")], escaped: 1 }, KINDS, "Xô nhựa")).toBe("🐌 Mò được 1 con ốc: 1 ốc đồng. Thả lại 1 con vì xô nhựa đầy.");
+    expect(pestSnailText(5, { caught: [c("oc_buou_vang"), c("oc_buou_vang")], escaped: 0 }, null))
+      .toBe("🐌 Bắt ốc thửa 5: được 2 con ốc bươu vàng.");
+    expect(pestSnailText(5, { caught: [c("oc_buou_vang")], escaped: 1 }, "Xô nhựa"))
+      .toBe("🐌 Bắt ốc thửa 5: được 1 con, thả 1 con xuống mương vì xô nhựa đầy.");
+    expect(pestSnailText(5, { caught: [], escaped: 2 }, "Xô nhựa")).toBe("🐌 Bắt ốc thửa 5 — xô nhựa đầy, thả 2 con xuống mương.");
+    expect(pestSnailText(5, { caught: [], escaped: 2 }, null)).toBe("🐌 Bắt ốc thửa 5 — tay đầy, thả 2 con xuống mương.");
+    expect(pestSnailText(5, null, null)).toBe("Đã bắt ốc bươu vàng.");
+    expect(critterSaleText(6, 230)).toBe("💰 Bán 6 con cua ốc được 230 xu.");
+    expect(critterSaleText(40, 1250)).toBe("💰 Bán 40 con cua ốc được 1.250 xu.");
+  });
+  it("adds the critters held to the HUD's line", () => {
+    expect(produceSummary({ nep: { wet: 0, dry: 70 } }, { khoai: 180 }, 12)).toBe("🌾 70 kg khô · 0 kg ướt · 🧺 180 kg màu · 🦀 12");
+    expect(produceSummary({}, {}, 3)).toBe("🌾 Chưa có lúa · 🦀 3");
+    expect(produceSummary({}, {}, 0)).toBe("🌾 Chưa có lúa");
   });
 });

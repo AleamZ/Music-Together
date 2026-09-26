@@ -1,12 +1,14 @@
-import { ripeAfterHours, uplandHours, type FarmItem, type UplandCrop, type Variety } from "./catalog";
+import { ripeAfterHours, uplandHours, type CritterKind, type FarmItem, type UplandCrop, type Variety } from "./catalog";
 import { cropModel, cropPhase } from "./crop";
+import { BED_BAR_MS, BED_COUNT, GATHER, HOLE_COUNT } from "./gather";
 import { bedLevelsText } from "./messages";
 import type { CropView } from "./state";
 
-// Sổ tay nhà nông (spec §8.9, v15.2 §14): the six rice tabs, one tab per hoa-màu crop worked out from its config, and
-// "Nông cụ"; the rice timings are worked out per variety from the catalog. Pure.
+// Sổ tay nhà nông (spec §8.9, v15.2 §14, v15.3 §14): the six rice tabs, one tab per hoa-màu crop worked out from its
+// config, "Nông cụ", and "Cua & ốc" once 0018 has critters; the rice timings are worked out per variety from the
+// catalog. Pure.
 
-/** A rice tab, "tools", or a hoa-màu crop's id. */
+/** A rice tab, "tools", "critters", or a hoa-màu crop's id. */
 export type HandbookTab = string;
 
 /** The rice tabs. */
@@ -14,9 +16,12 @@ export const HANDBOOK_TABS: ReadonlyArray<[HandbookTab, string]> = [
   ["process", "Quy trình"], ["fertilizer", "Phân bón"], ["pests", "Sâu bệnh"], ["water", "Nước"], ["varieties", "Giống lúa"], ["tips", "Mẹo"],
 ];
 
-/** Every tab (§14): the rice ones, a tab per hoa-màu crop, then Nông cụ. */
-export function handbookTabs(uplands: readonly UplandCrop[]): ReadonlyArray<[HandbookTab, string]> {
-  return [...HANDBOOK_TABS, ...uplands.map((u): [HandbookTab, string] => [u.id, u.name]), ["tools", "Nông cụ"]];
+/** Every tab (§14): the rice ones, a tab per hoa-màu crop, Nông cụ, then Cua & ốc when there are critters (0018). */
+export function handbookTabs(uplands: readonly UplandCrop[], critters: readonly CritterKind[] = []): ReadonlyArray<[HandbookTab, string]> {
+  return [
+    ...HANDBOOK_TABS, ...uplands.map((u): [HandbookTab, string] => [u.id, u.name]), ["tools", "Nông cụ"],
+    ...(critters.length > 0 ? [["critters", "Cua & ốc"] as [HandbookTab, string]] : []),
+  ];
 }
 
 export interface HandbookSection { title: string; lines: string[] }
@@ -44,7 +49,8 @@ export function uplandHandbook(u: UplandCrop, items: readonly FarmItem[]): Handb
   const how = u.method === "cutting" ? `3. ${u.plantLabel} khi đất Ẩm.`
     : u.method === "direct" ? `3. ${u.plantLabel} thẳng xuống luống khi đất Ẩm — không cần ươm.`
     : `3. ${u.plantLabel} ở góc luống khi đất Ẩm, giữ Ẩm. ${u.transplantLabel ?? ""} khi cây ${start(u.nurseryReadyH ?? 0)}–`
-      + `${end(u.nurseryOldH ?? 0)} giờ tuổi, đất Ẩm; cây già quá mất 3% mỗi giờ (tối đa 30%).`;
+      + `${end(u.nurseryOldH ?? 0)} giờ tuổi, đất Ẩm — mỗi lượt trồng 12 cây, được từ 6 điểm là xong. Cây già quá mất 3% mỗi giờ `
+      + "(tối đa 30%).";
   const cares = u.cares.map((c, i) => `${4 + i}. ${c.name}: ` + (c.kind === "fert"
     ? `${c.items.map(itemName).join(" hoặc ")}, ${start(c.fromH)}–${end(c.toH)} giờ sau trồng. Sai lúc hoặc sai loại được nửa công `
       + `(mất ${pct(c.penHalf)}%); bỏ trống mất ${pct(c.penMissing)}%.`
@@ -121,6 +127,59 @@ const TOOLS_PAGE: HandbookSection[] = [
   { title: "Hoa màu", lines: ["Khoai, bắp, ớt không cần liềm: đào, bẻ, hái bằng tay trong 3 giây."] },
 ];
 
+/** The Cua & ốc tab (v15.3 §14), verbatim, with the prices and the containers from the config and the rules from
+ *  gather.ts. */
+export function critterHandbook(kinds: readonly CritterKind[], boxes: readonly FarmItem[]): HandbookSection[] {
+  const cool = GATHER.cooldownMs / 60_000;
+  const price = (id: string) => kinds.find((k) => k.id === id)?.basePrice ?? 0;
+  const xu = (n: number | null) => (n ?? 0).toLocaleString("vi-VN");
+  const [small, large] = boxes.filter((b) => b.kind === "critter_box").sort((a, b) => (a.capacity ?? 0) - (b.capacity ?? 0));
+  const containers = small && large
+    ? `${small.name} (${xu(small.price)} xu) đựng thêm ${small.capacity ?? 0} con, ${lc(large.name)} (${xu(large.price)} xu) thêm `
+      + `${large.capacity ?? 0} — mua ở tiệm anh Hai; có giỏ thì khỏi cần xô.`
+    : "Mua xô, giỏ ở tiệm anh Hai.";
+  const [lo, hi] = GATHER.bedSnails;
+  return [
+    {
+      title: "Bắt cua ở hang",
+      lines: [
+        `Dọc bờ mương có ${HOLE_COUNT} hang cua. Đứng trên bờ, bấm E để thò tay vào hang.`,
+        "Cua giơ càng mở ra khép vào, lần sau nhanh hơn lần trước. Chộp lúc càng khép là bắt được; chộp lúc càng mở là bị kẹp, con đó "
+          + "chạy mất. Mỗi hang thử 3 lần.",
+        `Thò tay vào rồi thì hang phải ${cool} phút sau mới có cua lại — tính riêng cho bạn, ở phòng nào cũng vậy.`,
+        `Chừng mười con có một con cua gạch, giá gần gấp ${Math.round(price("cua_gach") / Math.max(1, price("cua_dong")))} cua đồng.`,
+      ],
+    },
+    {
+      title: "Mò ốc ở bãi",
+      lines: [
+        `${BED_COUNT} bãi ốc nằm chỗ nước cạn ven mương. Mò ${BED_BAR_MS / 1000} giây được ${lo}–${hi} con, phần nhiều là ốc đồng.`,
+        `Mỗi bãi mò xong ${cool} phút sau mới có ốc lại.`,
+      ],
+    },
+    {
+      title: "Ốc bươu vàng trên ruộng — khác bãi ốc",
+      lines: [
+        "Ốc bươu vàng trên ruộng là sâu hại: thấy trứng hồng ở thửa nào thì bắt giúp, ruộng ai cũng được.",
+        `Bắt ốc là cứu lúa, còn được thêm ${lo}–${hi} con ốc bươu vàng bỏ xô. Xô đầy vẫn bắt được — ốc thả xuống mương.`,
+        "Bắt ốc trên ruộng không phải chờ và không tính vào lượt mò ốc.",
+      ],
+    },
+    {
+      title: "Đồ đựng",
+      lines: [`Tay cầm được ${GATHER.hand} con. ${containers}`, "Cua và ốc đựng chung. Đầy rồi thì phải bán bớt mới bắt, mò tiếp được."],
+    },
+    {
+      title: "Giá và bán",
+      lines: [
+        `Bán cho cô Út ở vựa lúa. Giá gốc một con: ${kinds.map((k) => `${lc(k.name)} ${xu(k.basePrice)}`).join(", ")} xu.`,
+        "Giá nhân hệ số phòng như giá cá, chốt lúc bắt được — bán sau vẫn giữ giá đó.",
+        `Mỗi ngày bắt cua, mò ốc tối đa ${GATHER.dailyVisits} lượt.`,
+      ],
+    },
+  ];
+}
+
 /** The hour marks of a season for one variety (hours after transplanting unless said). */
 function timings(v: Variety): string {
   const s = v.scale;
@@ -130,7 +189,7 @@ function timings(v: Variety): string {
 }
 
 export function handbookPage(tab: HandbookTab, varieties: readonly Variety[], uplands: readonly UplandCrop[] = [],
-  items: readonly FarmItem[] = []): HandbookSection[] {
+  items: readonly FarmItem[] = [], critters: readonly CritterKind[] = []): HandbookSection[] {
   switch (tab) {
     case "process":
       return [
@@ -142,7 +201,8 @@ export function handbookPage(tab: HandbookTab, varieties: readonly Variety[], up
             "3. Ngâm ủ giống: 2 giờ là hạt nứt nanh.",
             "4. Gieo mạ: trong 6 giờ sau khi nứt nanh, ruộng phải Ẩm. Trễ mất 3% mỗi giờ; để quá 24 giờ hạt thối.",
             "5. Chăm mạ: giữ nước Ẩm cho tới khi mạ đủ tuổi.",
-            "6. Cấy lúa: mạ đủ tuổi, nước Nông. Mạ già quá mất 3% mỗi giờ.",
+            "6. Cấy lúa: mạ đủ tuổi, nước Nông. Mỗi lượt cắm 12 khóm — thẳng hàng được từ 6 điểm là cấy xong; hụt thì cấy lại, không "
+              + "mất gì. Mạ già quá mất 3% mỗi giờ.",
             "7. Bón thúc đẻ nhánh: urê hoặc NPK, đúng lúc thì được trọn công.",
             "8. Phơi ruộng: tháo cạn nước mấy giờ cuối đẻ nhánh cho rễ ăn sâu.",
             "9. Bón đón đòng: kali hoặc NPK khi lúa làm đòng; giữ nước Nông–Sâu tới khi trổ bông.",
@@ -238,10 +298,15 @@ export function handbookPage(tab: HandbookTab, varieties: readonly Variety[], up
           "Gặt xong là trả ruộng thuê; muốn làm vụ nữa thì thuê lại.",
           "Làm đất có hai cách: làm ruộng lúa hoặc lên luống trồng màu — xen vụ lúa với vụ màu cho đỡ nhàm.",
           "Nạp thuốc trừ sâu vào bình phun là lợi nhất: nó trị sâu cuốn lá, sùng khoai, sâu keo và bọ trĩ.",
+          ...(critters.length > 0
+            ? [`Trong lúc chờ lúa, cứ ${GATHER.cooldownMs / 60_000} phút ghé bờ mương bắt cua, mò ốc — thêm tiền mà không tốn giống, phân.`]
+            : []),
         ],
       }];
     case "tools":
       return TOOLS_PAGE;
+    case "critters":
+      return critters.length > 0 ? critterHandbook(critters, items) : [];
     default: {
       const u = uplands.find((x) => x.id === tab);
       return u ? uplandHandbook(u, items) : [];

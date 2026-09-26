@@ -1,9 +1,11 @@
 import { lockSeconds, lockText } from "@/lib/anticheat";
-import type { UplandCrop } from "./catalog";
+import type { CritterKind, UplandCrop } from "./catalog";
+import { GATHER, lowerFirst } from "./gather";
+import type { CatchAnswer } from "./rpc";
 import type { PestKind, Phase } from "./state";
 
-// The farm's Vietnamese texts (spec §8, §11.7, §13; v15.2 §11.7, §13): names, durations, toasts and the RPC errors.
-// Pure.
+// The farm's Vietnamese texts (spec §8, §11.7, §13; v15.2 §11.7, §13; v15.3 §11.8, §13): names, durations, toasts and
+// the RPC errors. Pure.
 
 export const PHASE_NAME: Record<Phase, string> = {
   prepared: "Đã làm đất", soaking: "Đang ngâm ủ", sprouted: "Hạt nứt nanh", seedling: "Mạ non", tillering: "Đẻ nhánh",
@@ -44,6 +46,8 @@ export const GIFT_TEXT = "🌾 Chú Tám tặng bạn 1 bao giống lúa ngắn 
 export const NOT_OPEN = "Đồng ruộng chưa mở — chủ phòng cần chạy migration 0013.";
 /** A v15.2 action against a database without 0016 (R28). */
 export const NOT_OPEN_152 = "Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.";
+/** A v15.3 gathering action against a database without 0018 (R23). */
+export const NOT_OPEN_153 = "Bắt cua, mò ốc chưa mở — chủ phòng cần chạy migration 0018.";
 export const FIELD_LOADING = "Đang tải đồng ruộng…";
 export const FIELD_FAILED = "Chưa tải được đồng ruộng — thử lại nhé.";
 export const FARM_LIMIT_TEXT = "Bạn đang canh tác 2 thửa rồi.";
@@ -53,6 +57,9 @@ export const TOO_FAST = "Từ từ thôi…";
 export const WORK_EXPIRED = "Lượt gặt đã quá lâu — bắt đầu lại nhé.";
 /** Too little left on the lease for a harvest round (`lease ending`, v15.2 R11). */
 export const LEASE_ENDING = "Sắp hết hạn thuê — không kịp gặt phần này.";
+/** The same two for a transplant round (v15.3 §11.8): one past the window or left idle, and too little lease left. */
+export const WORK_EXPIRED_TP = "Lượt cấy đã quá lâu — bắt đầu lại nhé.";
+export const LEASE_ENDING_TP = "Sắp hết hạn thuê — không kịp cấy.";
 export const DRYING_LIMIT_TEXT = "Bạn đang phơi 2 mẻ rồi — thu lúa trước nhé.";
 
 /** "45 phút", "3 giờ", "2 ngày 5 giờ" — rounded up, as a countdown reads. */
@@ -106,10 +113,66 @@ export function riceSummary(rice: Record<string, { wet: number; dry: number }>):
   return dry + wet === 0 ? "🌾 Chưa có lúa" : `🌾 ${dry} kg khô · ${wet} kg ướt`;
 }
 
-/** The HUD's line (§13.6): the rice, then the hoa màu when there is any. */
-export function produceSummary(rice: Record<string, { wet: number; dry: number }>, produce: Record<string, number>): string {
+/** The HUD's line (§13.6; v15.3 §13.4): the rice, then the hoa màu and the critters held when there are any. */
+export function produceSummary(rice: Record<string, { wet: number; dry: number }>, produce: Record<string, number>, critters = 0): string {
   const kg = Object.values(produce).reduce((a, x) => a + x, 0);
-  return kg > 0 ? `${riceSummary(rice)} · 🧺 ${kg} kg màu` : riceSummary(rice);
+  return `${riceSummary(rice)}${kg > 0 ? ` · 🧺 ${kg} kg màu` : ""}${critters > 0 ? ` · 🦀 ${critters}` : ""}`;
+}
+
+const COOL_MIN = GATHER.cooldownMs / 60_000;
+/** A container mid-sentence, or the hands: "xô nhựa", "tay". */
+const boxWord = (boxName: string | null): string => (boxName ? lowerFirst(boxName) : "tay");
+/** The critters of a catch by kind, in the catalog's order: "2 cua đồng, 1 cua gạch". */
+function kindsText(caught: CatchAnswer["caught"], kinds: readonly CritterKind[]): string {
+  const counts = new Map<string, number>();
+  for (const c of caught) counts.set(c.kind, (counts.get(c.kind) ?? 0) + 1);
+  const order = (k: string) => kinds.findIndex((x) => x.id === k);
+  return [...counts].sort(([a], [b]) => order(a) - order(b))
+    .map(([k, n]) => `${n} ${lowerFirst(kinds.find((x) => x.id === k)?.name ?? k)}`).join(", ");
+}
+
+/** The v15.3 refusals (§11.8). */
+export const GATHER_LIMIT_TEXT = `Hôm nay bạn bắt cua, mò ốc đủ ${GATHER.dailyVisits} lượt rồi — mai quay lại nhé!`;
+export function crittersFullText(boxName: string | null): string {
+  return boxName ? `${boxName} đầy rồi — ra vựa cô Út bán bớt nhé.` : "Tay đầy rồi — ra vựa cô Út bán hoặc sắm xô ở tiệm anh Hai.";
+}
+/** A cooling hole or bed: the minutes left, or "ít phút" when the answer has none. */
+export function holeEmptyText(ms: number | null): string {
+  return `Cua chưa ra — quay lại sau ${ms === null ? "ít phút" : durationText(ms)}.`;
+}
+export function bedEmptyText(ms: number | null): string {
+  return `Bãi này vừa mò rồi — quay lại sau ${ms === null ? "ít phút" : durationText(ms)}.`;
+}
+
+/** Dừng before the first try ends (R8): nothing is sent, and the hole keeps its cooldown. */
+export const CRAB_GAVE_UP = `Đã rút tay — hang này ${COOL_MIN} phút nữa mới có cua lại.`;
+
+/** CrabGame's result (§13.2). */
+export function crabResultText(crab: CatchAnswer & { hits: number }, kinds: readonly CritterKind[], boxName: string | null): string {
+  const n = crab.caught.length, lost = crab.escaped > 0 ? `${crab.escaped} con chạy mất vì ${boxWord(boxName)} đầy.` : "";
+  if (n > 0) return `🦀 Bắt được ${n} con: ${kindsText(crab.caught, kinds)}!${lost ? ` ${lost}` : ""}`;
+  return lost ? `🦀 ${lost}` : `🦀 Cua chui hết vào hang rồi — ${COOL_MIN} phút nữa quay lại nhé.`;
+}
+
+/** A snail bed's toast (§13.4). */
+export function bedResultText(snails: CatchAnswer, kinds: readonly CritterKind[], boxName: string | null): string {
+  const n = snails.caught.length, back = snails.escaped > 0 ? `Thả lại ${snails.escaped} con vì ${boxWord(boxName)} đầy.` : "";
+  if (n === 0) return `🐌 ${back}`;
+  return `🐌 Mò được ${n} con ốc: ${kindsText(snails.caught, kinds)}.${back ? ` ${back}` : ""}`;
+}
+
+/** pick_snails' toast (§13.4): the picker's ốc bươu vàng; an answer without snails (before 0018) keeps v15.2's text. */
+export function pestSnailText(plot: number, snails: CatchAnswer | null, boxName: string | null): string {
+  if (!snails) return "Đã bắt ốc bươu vàng.";
+  const n = snails.caught.length, e = snails.escaped;
+  if (e === 0) return `🐌 Bắt ốc thửa ${plot}: được ${n} con ốc bươu vàng.`;
+  if (n > 0) return `🐌 Bắt ốc thửa ${plot}: được ${n} con, thả ${e} con xuống mương vì ${boxWord(boxName)} đầy.`;
+  return `🐌 Bắt ốc thửa ${plot} — ${boxWord(boxName)} đầy, thả ${e} con xuống mương.`;
+}
+
+/** cô Út's toast for sell_critters (§13.4), from its `sold`. */
+export function critterSaleText(n: number, xu: number): string {
+  return `💰 Bán ${n} con cua ốc được ${xu.toLocaleString("vi-VN")} xu.`;
 }
 
 export function boughtText(itemName: string, qty: number): string {
@@ -120,14 +183,22 @@ export function riceSaleText(kg: number, varietyName: string, dry: boolean, earn
   return `💰 Bán ${kg} kg ${varietyName.toLowerCase()} ${dry ? "khô" : "ướt"} được ${earned.toLocaleString("vi-VN")} xu.`;
 }
 
-/** Vietnamese toast text for a farm RPC error (spec §11.7, v15.2 §11.7). `itemName` names the item a "no item" error is
- *  about; `action` = "harvest_part" reads a harvest round's refusals (the HarvestGame overlay). */
+/** The seconds an error's details carry (hole empty, bed empty), as ms; null without them. */
+function detailMs(err: unknown): number | null {
+  const d = (err && typeof err === "object" ? err : {}) as { details?: unknown };
+  return typeof d.details === "string" && /^\d+$/.test(d.details) ? Number(d.details) * 1000 : null;
+}
+
+/** Vietnamese toast text for a farm RPC error (spec §11.7, v15.2 §11.7, v15.3 §11.8). `itemName` names the item a
+ *  "no item" error is about, or the container a "critters full" one is; `action` reads a round's refusals in its
+ *  context: "harvest_part" (HarvestGame), "crab_finish" (CrabGame) or "transplant" (TransplantGame). */
 export function farmErrorMessage(err: unknown, itemName?: string, action?: string): string {
   const e = (err && typeof err === "object" ? err : {}) as { message?: unknown };
   const msg = typeof e.message === "string" ? e.message : "";
-  const round = action === "harvest_part";
+  const round = action === "harvest_part", crab = action === "crab_finish", tp = action === "transplant";
   switch (msg) {
-    case "not your plot": return round ? "Hết hạn thuê — phần lúa chưa gặt đã mất." : "Thửa này không phải của bạn.";
+    case "not your plot":
+      return round ? "Hết hạn thuê — phần lúa chưa gặt đã mất." : tp ? "Hết hạn thuê — mạ trên thửa đã mất." : "Thửa này không phải của bạn.";
     case "plot taken": return "Thửa này đã có người canh tác.";
     case "farm limit": return FARM_LIMIT_TEXT;
     case "already own land": return "Bạn đã có đất tư trong phòng này.";
@@ -152,17 +223,26 @@ export function farmErrorMessage(err: unknown, itemName?: string, action?: strin
     case "item not available": return "Món này không mua được.";
     case "invalid quantity":
     case "invalid price": return "Số không hợp lệ.";
-    case "too fast": return round ? "Chưa xong bó lúa — thử lại sau vài giây." : TOO_FAST;
+    case "too fast":
+      return round ? "Chưa xong bó lúa — thử lại sau vài giây." : crab ? "Chưa bắt xong — thử lại sau vài giây."
+        : tp ? "Chưa cấy xong hàng mạ — thử lại sau vài giây." : TOO_FAST;
     case "no sickle": return "Chưa có liềm — mua ở tiệm anh Hai (hoặc thuê máy gặt ở Hợp tác xã).";
     case "no sprayer": return "Chưa có bình phun — mua ở tiệm anh Hai.";
     case "harvesting": return "Đang gặt dở — gặt cho xong đã.";
     case "harvester busy": return "Máy gặt đang gặt thửa này.";
-    case "work expired": return WORK_EXPIRED;
-    case "lease ending": return LEASE_ENDING;
+    case "work expired": return tp ? WORK_EXPIRED_TP : WORK_EXPIRED;
+    case "lease ending": return tp ? LEASE_ENDING_TP : LEASE_ENDING;
     case "lease ends": return "Không kịp gặt xong trước khi hết hạn thuê.";
     case "wrong crop": return "Việc này không hợp với cây trên thửa.";
     case "already owned": return "Bạn đã có món này rồi.";
     case "not enough crop": return "Không đủ hàng để bán.";
+    case "hole empty": return holeEmptyText(detailMs(err));
+    case "bed empty": return bedEmptyText(detailMs(err));
+    case "critters full": return crittersFullText(itemName ?? null);
+    case "gather daily limit": return GATHER_LIMIT_TEXT;
+    case "visit not found": return "Lượt bắt cua này đã xong.";
+    case "visit expired": return "Lâu quá, cua chui mất rồi — lát nữa quay lại nhé.";
+    case "no critters": return "Không có cua ốc để bán.";
     case "account locked": return lockText(lockSeconds(err) ?? 300);
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";

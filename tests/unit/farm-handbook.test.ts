@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { farmItemFromRow, uplandFromRow, varietyFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
+import { critterFromRow, farmItemFromRow, uplandFromRow, varietyFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
 import { HOUR_MS } from "@/lib/game/farm/crop";
-import { HANDBOOK_TABS, handbookPage, handbookTabFor, handbookTabs, uplandHandbook } from "@/lib/game/farm/handbook";
+import { critterHandbook, HANDBOOK_TABS, handbookPage, handbookTabFor, handbookTabs, uplandHandbook } from "@/lib/game/farm/handbook";
 import type { CropView } from "@/lib/game/farm/state";
 import fixtures from "@/tests/fixtures/upland-cases.json";
 
@@ -87,7 +87,7 @@ describe("v15.2 tabs (§14)", () => {
     expect(how.lines).toEqual([
       "1. Lên luống: đắp luống cao cho ráo nước; đất sẵn Ẩm.",
       "2. Bón lót: phân chuồng hoai và phân lân trước khi trồng. Thiếu mỗi loại mất 5%.",
-      "3. Ươm hạt ớt ở góc luống khi đất Ẩm, giữ Ẩm. Trồng cây ớt con khi cây 10–18 giờ tuổi, đất Ẩm; cây già quá mất 3% mỗi giờ (tối đa 30%).",
+      "3. Ươm hạt ớt ở góc luống khi đất Ẩm, giữ Ẩm. Trồng cây ớt con khi cây 10–18 giờ tuổi, đất Ẩm — mỗi lượt trồng 12 cây, được từ 6 điểm là xong. Cây già quá mất 3% mỗi giờ (tối đa 30%).",
       "4. Bón thúc bén rễ: phân urê hoặc phân NPK, 4–12 giờ sau trồng. Sai lúc hoặc sai loại được nửa công (mất 8%); bỏ trống mất 15%.",
       "5. Bón thúc ra hoa: phân NPK hoặc phân kali, 22–30 giờ sau trồng. Sai lúc hoặc sai loại được nửa công (mất 8%); bỏ trống mất 15%.",
       "6. Bón nuôi trái: phân NPK hoặc phân kali, 46–56 giờ sau trồng. Sai lúc hoặc sai loại được nửa công (mất 8%); bỏ trống mất 15%.",
@@ -116,5 +116,65 @@ describe("v15.2 tabs (§14)", () => {
         expect(from >= c.fromH && to <= c.toH && from <= to, `${u.id} ${c.id}`).toBe(true);
       });
     }
+  });
+});
+
+describe("v15.3: the Cua & ốc tab (§14)", () => {
+  const UPLANDS = (fixtures as unknown as { crops: UplandCropRow[] }).crops.map(uplandFromRow);
+  const KINDS = [
+    critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 }),
+    critterFromRow({ id: "cua_gach", name: "Cua gạch", grp: "crab", base_price: 45, sort_order: 20 }),
+    critterFromRow({ id: "oc_dong", name: "Ốc đồng", grp: "snail", base_price: 8, sort_order: 30 }),
+    critterFromRow({ id: "oc_buou_vang", name: "Ốc bươu vàng", grp: "snail", base_price: 2, sort_order: 40 }),
+  ];
+  const BOXES = [["box_basket", "Giỏ tre", 6000, 30], ["box_bucket", "Xô nhựa", 1500, 15]].map(([id, name, price, capacity]) => farmItemFromRow({
+    id: id as string, kind: "critter_box", name: name as string, price: price as number, sort_order: 0, variety: null, fert: null,
+    pest_target: null, capacity: capacity as number,
+  }));
+  it("comes last, once 0018 has critters", () => {
+    expect(handbookTabs(UPLANDS, KINDS).map(([, label]) => label)).toEqual([
+      "Quy trình", "Phân bón", "Sâu bệnh", "Nước", "Giống lúa", "Mẹo", "Khoai lang", "Bắp", "Ớt", "Nông cụ", "Cua & ốc",
+    ]);
+    expect(handbookTabs(UPLANDS, []).map(([tab]) => tab)).not.toContain("critters");
+    expect(handbookTabs(UPLANDS).map(([tab]) => tab)).not.toContain("critters");
+  });
+  it("reads the spec's lines, the prices and the containers from the config", () => {
+    const page = critterHandbook(KINDS, BOXES);
+    expect(page.map((s) => s.title)).toEqual(["Bắt cua ở hang", "Mò ốc ở bãi", "Ốc bươu vàng trên ruộng — khác bãi ốc", "Đồ đựng", "Giá và bán"]);
+    expect(page.map((s) => s.lines)).toEqual([
+      [
+        "Dọc bờ mương có 6 hang cua. Đứng trên bờ, bấm E để thò tay vào hang.",
+        "Cua giơ càng mở ra khép vào, lần sau nhanh hơn lần trước. Chộp lúc càng khép là bắt được; chộp lúc càng mở là bị kẹp, con đó chạy mất. Mỗi hang thử 3 lần.",
+        "Thò tay vào rồi thì hang phải 20 phút sau mới có cua lại — tính riêng cho bạn, ở phòng nào cũng vậy.",
+        "Chừng mười con có một con cua gạch, giá gần gấp 4 cua đồng.",
+      ],
+      [
+        "4 bãi ốc nằm chỗ nước cạn ven mương. Mò 3 giây được 1–3 con, phần nhiều là ốc đồng.",
+        "Mỗi bãi mò xong 20 phút sau mới có ốc lại.",
+      ],
+      [
+        "Ốc bươu vàng trên ruộng là sâu hại: thấy trứng hồng ở thửa nào thì bắt giúp, ruộng ai cũng được.",
+        "Bắt ốc là cứu lúa, còn được thêm 1–3 con ốc bươu vàng bỏ xô. Xô đầy vẫn bắt được — ốc thả xuống mương.",
+        "Bắt ốc trên ruộng không phải chờ và không tính vào lượt mò ốc.",
+      ],
+      [
+        "Tay cầm được 3 con. Xô nhựa (1.500 xu) đựng thêm 15 con, giỏ tre (6.000 xu) thêm 30 — mua ở tiệm anh Hai; có giỏ thì khỏi cần xô.",
+        "Cua và ốc đựng chung. Đầy rồi thì phải bán bớt mới bắt, mò tiếp được.",
+      ],
+      [
+        "Bán cho cô Út ở vựa lúa. Giá gốc một con: cua đồng 12, cua gạch 45, ốc đồng 8, ốc bươu vàng 2 xu.",
+        "Giá nhân hệ số phòng như giá cá, chốt lúc bắt được — bán sau vẫn giữ giá đó.",
+        "Mỗi ngày bắt cua, mò ốc tối đa 200 lượt.",
+      ],
+    ]);
+    expect(handbookPage("critters", [nep], UPLANDS, BOXES, KINDS)).toEqual(page);
+    expect(handbookPage("critters", [nep], UPLANDS, BOXES, [])).toEqual([]);
+  });
+  it("edits step 6 and the tips (§14)", () => {
+    expect(handbookPage("process", [nep])[0].lines[5]).toBe(
+      "6. Cấy lúa: mạ đủ tuổi, nước Nông. Mỗi lượt cắm 12 khóm — thẳng hàng được từ 6 điểm là cấy xong; hụt thì cấy lại, không mất gì. Mạ già quá mất 3% mỗi giờ.");
+    const tip = "Trong lúc chờ lúa, cứ 20 phút ghé bờ mương bắt cua, mò ốc — thêm tiền mà không tốn giống, phân.";
+    expect(handbookPage("tips", [nep], [], [], KINDS)[0].lines.at(-1)).toBe(tip);
+    expect(handbookPage("tips", [nep])[0].lines).not.toContain(tip);
   });
 });
