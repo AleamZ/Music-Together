@@ -3,13 +3,45 @@
 import { useState } from "react";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
-import { describeFarmItem, ITEM_CAP, type FarmCatalog, type FarmItem, type FarmItemKind } from "@/lib/game/farm/catalog";
+import { describeFarmItem, ITEM_CAP, type FarmCatalog, type FarmItem } from "@/lib/game/farm/catalog";
 import { itemCount, type FarmMine } from "@/lib/game/farm/state";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import FieldStatus from "./FieldStatus";
 import Stepper from "./Stepper";
 
-const SECTIONS: ReadonlyArray<[FarmItemKind, string]> = [["seed", "🌱 Giống lúa"], ["fertilizer", "🧺 Phân bón"], ["pesticide", "🧴 Thuốc"]];
+/** The shelves (v15.2 §13.5): rice seed, hoa-màu seed, fertilizers, pesticides and the tools. */
+const SECTIONS: ReadonlyArray<[string, string, (i: FarmItem) => boolean]> = [
+  ["rice", "🌾 Giống lúa", (i) => i.kind === "seed" && i.upland === null],
+  ["upland", "🥔 Giống hoa màu", (i) => i.kind === "seed" && i.upland !== null],
+  ["fertilizer", "🧺 Phân bón", (i) => i.kind === "fertilizer"],
+  ["pesticide", "🧴 Thuốc", (i) => i.kind === "pesticide"],
+  ["tool", "🛠️ Nông cụ", (i) => i.kind === "tool"],
+];
+
+/** A tool: bought once, no stepper (R18). */
+function ToolRow({ item, mine, busy, onBuy }: { item: FarmItem; mine: FarmMine; busy: boolean; onBuy: (itemId: string, qty: number) => void }) {
+  const price = item.price ?? 0;
+  const owned = itemCount(mine, item.id) > 0;
+  return (
+    <li className="pch flex flex-col gap-1 p-2">
+      <div className="flex items-center gap-2">
+        <ItemIcon id={item.id} scale={3} />
+        <div className="flex min-w-0 flex-1 flex-col leading-none">
+          <span className="truncate text-xl">{item.name}</span>
+          <span className="text-base">{formatXu(price)}</span>
+        </div>
+      </div>
+      <p className="text-base leading-tight opacity-80">{describeFarmItem(item, [])}</p>
+      {owned ? (
+        <button type="button" className="pch-btn" disabled>✓ Đã có</button>
+      ) : mine.coins < price ? (
+        <button type="button" className="pch-btn" disabled>Không đủ xu</button>
+      ) : (
+        <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => onBuy(item.id, 1)}>Mua · {formatXu(price)}</button>
+      )}
+    </li>
+  );
+}
 
 /** One row: icon, name, price, its use in one line, what I hold, the quantity and the buy button. */
 function Row({ item, mine, catalog, busy, onBuy }: {
@@ -33,7 +65,7 @@ function Row({ item, mine, catalog, busy, onBuy }: {
           <span className="text-base">{formatXu(price)} · có {held}</span>
         </div>
       </div>
-      <p className="text-base leading-tight opacity-80">{describeFarmItem(item, catalog.varieties)}</p>
+      <p className="text-base leading-tight opacity-80">{describeFarmItem(item, catalog.varieties, catalog.uplands)}</p>
       {max < 1 ? (
         <button type="button" className="pch-btn" disabled>{held >= ITEM_CAP ? `Đã đủ ${ITEM_CAP}` : "Không đủ xu"}</button>
       ) : (
@@ -48,7 +80,8 @@ function Row({ item, mine, catalog, busy, onBuy }: {
   );
 }
 
-/** 🧺 Tiệm vật tư · anh Hai (spec §9, §13.3): seeds, fertilizers and pesticides, bought by the quantity. */
+/** 🧺 Tiệm vật tư · anh Hai (spec §9, §13.3; v15.2 §13.5): seeds, fertilizers and pesticides by the quantity, and the
+ *  tools once. */
 export default function FarmShopPanel({ mine, catalog, failed, busy, onBuy, onReload, onClose }: {
   mine: FarmMine | null;
   catalog: FarmCatalog | null;
@@ -66,14 +99,16 @@ export default function FarmShopPanel({ mine, catalog, failed, busy, onBuy, onRe
         ) : (
           <>
             <p>Bạn có <b>{formatXu(mine.coins)}</b>. “Cần gì cứ lấy, anh chỉ cách dùng luôn!”</p>
-            {SECTIONS.map(([kind, title]) => {
-              const items = catalog.items.filter((i) => i.kind === kind && i.price !== null).sort((a, b) => a.sortOrder - b.sortOrder);
+            {SECTIONS.map(([id, title, shelf]) => {
+              const items = catalog.items.filter((i) => shelf(i) && i.price !== null).sort((a, b) => a.sortOrder - b.sortOrder);
               if (items.length === 0) return null;
               return (
-                <section key={kind} className="flex flex-col gap-1">
+                <section key={id} className="flex flex-col gap-1">
                   <h3 className="text-xl text-burgundy">{title}</h3>
                   <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {items.map((i) => <Row key={i.id} item={i} mine={mine} catalog={catalog} busy={busy} onBuy={onBuy} />)}
+                    {items.map((i) => (i.kind === "tool"
+                      ? <ToolRow key={i.id} item={i} mine={mine} busy={busy} onBuy={onBuy} />
+                      : <Row key={i.id} item={i} mine={mine} catalog={catalog} busy={busy} onBuy={onBuy} />))}
                   </ul>
                 </section>
               );

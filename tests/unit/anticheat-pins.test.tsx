@@ -179,7 +179,8 @@ describe("bad_qty", () => {
     const onSell = vi.fn();
     const onAct = vi.fn();
     const mine = { ...STATE.mine, rice: { nep: { wet: 1, dry: 3 } } };
-    render(<RiceDepotPanel mine={mine} catalog={FARM} failed={false} busy={false} onSell={onSell} onReload={noop} onClose={noop} />);
+    render(<RiceDepotPanel mine={mine} catalog={FARM} failed={false} busy={false} onSell={onSell} onSellProduce={noop} onReload={noop}
+      onClose={noop} />);
     for (const line of screen.getAllByRole("listitem")) {
       for (let i = 0; i < 5; i++) fireEvent.click(within(line).getByRole("button", { name: "Bớt" }));
       for (const b of within(line).getAllByRole("button", { name: /^Bán/ })) fireEvent.click(b);
@@ -191,6 +192,31 @@ describe("bad_qty", () => {
     for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole("button", { name: "Bớt" }));
     fireEvent.click(screen.getByRole("button", { name: "Phơi lúa" }));
     expect(onAct.mock.calls.map(([a]) => a)).toEqual([{ kind: "dry_start", variety: "nep", kg: 1 }]);
+  });
+});
+
+describe("bad_qty, v15.2", () => {
+  it("the farm shop sends 1 for a tool (R18)", () => {
+    const onBuy = vi.fn();
+    const tools = { ...FARM, items: [...FARM.items, item("tool_sickle", "tool", "Liềm", 1500)] };
+    render(<FarmShopPanel mine={{ ...STATE.mine, coins: 1_000_000, items: {} }} catalog={tools} failed={false} busy={false}
+      onBuy={onBuy} onReload={noop} onClose={noop} />);
+    fireEvent.click(within(screen.getByText("Liềm").closest("li")!).getByRole("button", { name: /^Mua/ }));
+    expect(onBuy.mock.calls).toEqual([["tool_sickle", 1]]);
+  });
+
+  it("cô Út's hoa-màu rows send whole kg from 1 to the stock", () => {
+    const onSellProduce = vi.fn();
+    const crops = { ...FARM, uplands: (fixtures as unknown as { crops: UplandCropRow[] }).crops.map(uplandFromRow) };
+    render(<RiceDepotPanel mine={{ ...STATE.mine, rice: {}, produce: { khoai: 3, ot: 1 } }} catalog={crops} failed={false} busy={false}
+      onSell={noop} onSellProduce={onSellProduce} onReload={noop} onClose={noop} />);
+    for (const line of screen.getAllByRole("listitem")) {
+      for (let i = 0; i < 5; i++) fireEvent.click(within(line).getByRole("button", { name: "Bớt" }));
+      for (const b of within(line).getAllByRole("button", { name: /^Bán/ })) fireEvent.click(b);
+      fireEvent.click(within(line).getByRole("button", { name: "Tối đa" }));
+      fireEvent.click(within(line).getByRole("button", { name: /^Bán ·/ }));
+    }
+    expect(onSellProduce.mock.calls).toEqual([["khoai", 1], ["khoai", 3], ["khoai", 3], ["ot", 1], ["ot", 1], ["ot", 1]]);
   });
 });
 

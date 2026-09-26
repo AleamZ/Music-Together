@@ -4,8 +4,9 @@ import CoopPanel from "@/components/game/farm/CoopPanel";
 import DryingPanel from "@/components/game/farm/DryingPanel";
 import FarmShopPanel from "@/components/game/farm/FarmShopPanel";
 import RiceDepotPanel from "@/components/game/farm/RiceDepotPanel";
-import { farmItemFromRow, varietyFromRow, type FarmCatalog } from "@/lib/game/farm/catalog";
+import { farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow } from "@/lib/game/farm/catalog";
 import { parseFieldState, type FieldState } from "@/lib/game/farm/state";
+import fixtures from "@/tests/fixtures/upland-cases.json";
 
 afterEach(cleanup);
 
@@ -62,7 +63,7 @@ describe("FarmShopPanel", () => {
   it("sells by the quantity, within my coins and the 99 cap", () => {
     const onBuy = vi.fn();
     render(<FarmShopPanel mine={STATE.mine} catalog={CATALOG} failed={false} busy={false} onBuy={onBuy} onReload={noop} onClose={noop} />);
-    expect(screen.getByText("🌱 Giống lúa")).toBeInTheDocument();
+    expect(screen.getByText("🌾 Giống lúa")).toBeInTheDocument();
     const seed = screen.getByText("Giống nếp").closest("li")!;
     expect(within(seed).getByText("Chín sau ~58 giờ · 75 kg/thửa · 18 xu/kg lúa khô")).toBeInTheDocument();
     fireEvent.click(within(seed).getByRole("button", { name: "Thêm" }));
@@ -92,7 +93,8 @@ describe("FarmShopPanel", () => {
 describe("RiceDepotPanel", () => {
   it("sells dry rice at the full price and wet rice at 70 %, some or all", () => {
     const onSell = vi.fn();
-    render(<RiceDepotPanel mine={STATE.mine} catalog={CATALOG} failed={false} busy={false} onSell={onSell} onReload={noop} onClose={noop} />);
+    render(<RiceDepotPanel mine={STATE.mine} catalog={CATALOG} failed={false} busy={false} onSell={onSell} onSellProduce={noop} onReload={noop}
+      onClose={noop} />);
     const dry = screen.getByText("Nếp khô · 50 kg").closest("li")!;
     fireEvent.click(within(dry).getByRole("button", { name: "Bán · 180 xu" }));
     expect(onSell).toHaveBeenLastCalledWith("nep", true, 10);
@@ -103,9 +105,11 @@ describe("RiceDepotPanel", () => {
     expect(onSell).toHaveBeenLastCalledWith("nep", false, 30);
     expect(screen.queryByText(/Lúa ngắn ngày/)).toBeNull();
   });
-  it("has nothing to buy without rice", () => {
-    render(<RiceDepotPanel mine={{ ...STATE.mine, rice: {} }} catalog={CATALOG} failed={false} busy={false} onSell={noop} onReload={noop} onClose={noop} />);
+  it("has nothing to buy without rice or hoa màu", () => {
+    render(<RiceDepotPanel mine={{ ...STATE.mine, rice: {} }} catalog={CATALOG} failed={false} busy={false} onSell={noop} onSellProduce={noop}
+      onReload={noop} onClose={noop} />);
     expect(screen.queryByRole("button", { name: /Bán/ })).toBeNull();
+    expect(screen.getByText("“Chưa có lúa hay hoa màu hả con? Thu hoạch xong mang qua, cô trả giá cao!”")).toBeInTheDocument();
   });
 });
 
@@ -270,5 +274,100 @@ describe("CoopPanel", () => {
     expect(onAct).toHaveBeenLastCalledWith({ kind: "accept_offer", offer: "o2" }, "Đã bán thửa 2 — nhận 9.000 xu.");
     fireEvent.click(within(line("Thửa 4 giá 5.000 xu — còn 20 giờ")).getByRole("button", { name: "Rút" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "withdraw_offer", offer: "o1" }, "Đã rút đề nghị.");
+  });
+});
+
+describe("v15.2: the shop's tools, cô Út's hoa màu and chú Tám's harvester", () => {
+  const khoai = uplandFromRow((fixtures as unknown as { crops: UplandCropRow[] }).crops.find((r) => r.id === "khoai")!);
+  const BEDS: FarmCatalog = {
+    ...CATALOG, uplands: [khoai],
+    items: [
+      ...CATALOG.items, item("seed_khoai", "seed", "Dây khoai giống", 800, { upland: "khoai" }), item("tool_sickle", "tool", "Liềm", 1500),
+      item("tool_sprayer", "tool", "Bình phun", 5000),
+    ],
+  };
+
+  it("sorts the shop into five sections, and sells a tool once, without a stepper", () => {
+    const onBuy = vi.fn();
+    render(<FarmShopPanel mine={{ ...STATE.mine, coins: 3000, items: { tool_sprayer: 1 } }} catalog={BEDS} failed={false} busy={false}
+      onBuy={onBuy} onReload={noop} onClose={noop} />);
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(
+      ["🌾 Giống lúa", "🥔 Giống hoa màu", "🧺 Phân bón", "🧴 Thuốc", "🛠️ Nông cụ"]);
+    expect(within(screen.getByText("Dây khoai giống").closest("li")!).getByText("Trồng dây · chín ~48 giờ · 200 kg/thửa · 265 xu/kg")).toBeInTheDocument();
+    const sickle = screen.getByText("Liềm").closest("li")!;
+    expect(within(sickle).queryByRole("group")).toBeNull();
+    expect(within(sickle).getByText("Gặt lúa tay, 6 phần — mua một lần")).toBeInTheDocument();
+    fireEvent.click(within(sickle).getByRole("button", { name: "Mua · 1.500 xu" }));
+    expect(onBuy).toHaveBeenCalledWith("tool_sickle", 1);
+    expect(within(screen.getByText("Bình phun").closest("li")!).getByRole("button", { name: "✓ Đã có" })).toBeDisabled();
+    cleanup();
+    render(<FarmShopPanel mine={{ ...STATE.mine, coins: 1000, items: {} }} catalog={BEDS} failed={false} busy={false} onBuy={onBuy}
+      onReload={noop} onClose={noop} />);
+    expect(within(screen.getByText("Liềm").closest("li")!).getByRole("button", { name: "Không đủ xu" })).toBeDisabled();
+  });
+
+  it("buys hoa màu fresh, some or all", () => {
+    const onSellProduce = vi.fn();
+    render(<RiceDepotPanel mine={{ ...STATE.mine, rice: {}, produce: { khoai: 180 } }} catalog={BEDS} failed={false} busy={false} onSell={noop}
+      onSellProduce={onSellProduce} onReload={noop} onClose={noop} />);
+    expect(screen.getByText("“Hoa màu bán tươi, khỏi phơi — cô lấy hết!”")).toBeInTheDocument();
+    const row = screen.getByText("Khoai lang · 180 kg").closest("li")!;
+    expect(within(row).getByText("265 xu/kg · bán tươi")).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "Bán · 2.650 xu" }));
+    expect(onSellProduce).toHaveBeenLastCalledWith("khoai", 10);
+    fireEvent.click(within(row).getByRole("button", { name: "Bán hết · 47.700 xu" }));
+    expect(onSellProduce).toHaveBeenLastCalledWith("khoai", 180);
+  });
+
+  /** Plot 6, rented by me, with `crop`; plot 7 free. */
+  const riceState = (crop: Record<string, unknown> | null, coins = 10_000): FieldState => parseFieldState({
+    server_now: iso(0),
+    plots: [bare(6, "village", { farmer: ME, lease: lease(5), crop }), bare(7, "village")],
+    drying: [],
+    mine: { items: {}, rice: {}, coins, gift_claimed: true, owned_plot: null, farming: [6], my_offers: [], incoming_offers: [] },
+  })!;
+  /** Nếp transplanted 62 h ago: overripe for 2 h; drained; 2 parts cut. */
+  const OVERRIPE = {
+    variety: "nep", phase: "overripe", prepared_at: iso(-80), soak_at: iso(-79), sow_at: iso(-76), transplant_at: iso(-62), water: 1,
+    water_set_at: iso(-3), pests: [], excess_n: false, ripe: true, rotted_at: null, parts: 2,
+    log: { water: [{ t: iso(-80), l: 3 }, { t: iso(-3), l: 1 }], fert: [], spray: [], picks: [], q_transplant: 1, harvested_kg: 25 },
+  };
+  const coop = (state: FieldState) => {
+    const onAct = vi.fn();
+    render(<CoopPanel state={state} catalog={CATALOG} failed={false} me="me" busy={false} now={NOW} onAct={onAct} onReload={noop} onClose={noop} />);
+    return onAct;
+  };
+
+  it("opens on Máy gặt when my rice is ripe, and rents the harvester after asking", () => {
+    const onAct = coop(riceState(OVERRIPE));
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Đất làng", "Đất tư", "Chợ đất", "Máy gặt", "Của tôi"]);
+    expect(screen.getByRole("tab", { name: "Máy gặt" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("“Máy gặt của hợp tác xã: 500 xu mỗi phần, cả thửa 3.000 xu, 30 giây là xong, khỏi cầm liềm. Nhớ rút nước trước nghen!”"))
+      .toBeInTheDocument();
+    const row = screen.getByText("Thửa 6 · Nếp · Chín quá 2 giờ · đã gặt 2/6 phần").closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Thuê máy gặt · 4 phần · 2.000 xu" }));
+    expect(screen.getByText("⚠️ Thuê máy gặt cho thửa 6, 4 phần còn lại, giá 2.000 xu? Không huỷ được.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
+    expect(onAct).toHaveBeenCalledWith({ kind: "rent_harvester", plot: 6 }, "🚜 Máy gặt đang vào thửa 6 — 30 giây nữa xong.");
+  });
+
+  it("says why the harvester cannot come, and counts a running one down", () => {
+    coop(riceState(OVERRIPE, 1000));
+    expect(within(screen.getByText(/^Thửa 6 · Nếp/).closest("li")!).getByRole("button", { name: /^Thuê máy gặt/ })).toBeDisabled();
+    expect(screen.getByText("Không đủ xu.")).toBeInTheDocument();
+    cleanup();
+    coop(riceState({ ...OVERRIPE, water: 2, log: { ...OVERRIPE.log, water: [{ t: iso(-80), l: 3 }, { t: iso(-1), l: 2 }] } }));
+    expect(screen.getByText("Mực nước chưa đúng — xem Sổ tay.")).toBeInTheDocument();
+    cleanup();
+    coop(riceState({ ...OVERRIPE, harvester: { started_at: iso(0), ends_at: new Date(NOW + 25_000).toISOString() } }));
+    expect(screen.getByText("🚜 Máy gặt đang gặt — còn 25 giây")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Thuê máy gặt/ })).toBeNull();
+  });
+
+  it("opens on Đất làng otherwise, and says so when I farm no rice here", () => {
+    coop(riceState(null));
+    expect(screen.getByRole("tab", { name: "Đất làng" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: "Máy gặt" }));
+    expect(screen.getByText("Bạn chưa làm ruộng lúa nào trong phòng này.")).toBeInTheDocument();
   });
 });
