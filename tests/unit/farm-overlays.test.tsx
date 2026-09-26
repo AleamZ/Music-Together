@@ -24,11 +24,12 @@ const STATE = parseFieldState({
 const controller = (over: Partial<FarmController> = {}): FarmController => ({
   data: {
     state: STATE, catalog: CATALOG, failed: false, notOpen: false, reload: vi.fn(), run: vi.fn(), sellRice: vi.fn(), buyItem: vi.fn(),
-    claimGift: vi.fn(), plotChanged: vi.fn(),
+    claimGift: vi.fn(), plotChanged: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(),
   },
   now: NOW, tasks: [], urgent: 0, panel: null, openPanel: vi.fn(), closePanel: vi.fn(), busy: false, work: null, cancelWork: vi.fn(),
-  act: vi.fn().mockResolvedValue(true), buy: vi.fn().mockResolvedValue(true), sell: vi.fn().mockResolvedValue(true), interact: vi.fn(),
-  promptText: vi.fn(),
+  round: null, endRound: vi.fn(), nextRound: vi.fn(), closeRound: vi.fn(),
+  act: vi.fn().mockResolvedValue(true), buy: vi.fn().mockResolvedValue(true), sell: vi.fn().mockResolvedValue(true),
+  loadSprayer: vi.fn().mockResolvedValue(true), sellProduce: vi.fn().mockResolvedValue(true), interact: vi.fn(), promptText: vi.fn(),
   ...over,
 });
 
@@ -42,23 +43,23 @@ describe("FarmOverlays", () => {
   });
 
   it("shows the work progress, cancelled by its button or Esc", () => {
-    const farm = controller({ work: { plot: 5, work: "harvest", startedAt: 1 } });
+    const farm = controller({ work: { plot: 5, work: "harvest", startedAt: 1, text: "🧺 Đang hái ớt thửa 5…" } });
     render(<FarmOverlays farm={farm} me="me" onField />);
-    expect(screen.getByText("🌾 Đang gặt thửa 5…")).toBeInTheDocument();
+    expect(screen.getByText("🧺 Đang hái ớt thửa 5…")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Huỷ/ }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(farm.cancelWork).toHaveBeenCalledTimes(2);
   });
 
   it("keeps working on an Esc typed into a text field", () => {
-    const farm = controller({ work: { plot: 5, work: "transplant", startedAt: 1 } });
+    const farm = controller({ work: { plot: 5, work: "transplant", startedAt: 1, text: "🌱 Đang cấy thửa 5…" } });
     render(<><input aria-label="Chat" /><FarmOverlays farm={farm} me="me" onField /></>);
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Chat" }), { key: "Escape" });
     expect(farm.cancelWork).not.toHaveBeenCalled();
   });
 
   it("keeps working on an Esc that closes another panel", () => {
-    const farm = controller({ work: { plot: 5, work: "harvest", startedAt: 1 } });
+    const farm = controller({ work: { plot: 5, work: "harvest", startedAt: 1, text: "🧺 Đang hái ớt thửa 5…" } });
     const { rerender } = render(<FarmOverlays farm={farm} me="me" onField panelOpen />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(farm.cancelWork).not.toHaveBeenCalled();

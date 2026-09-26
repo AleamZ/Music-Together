@@ -12,8 +12,9 @@ import Handbook from "./Handbook";
 import PlotPanel from "./PlotPanel";
 import RiceDepotPanel from "./RiceDepotPanel";
 
-/** Transplanting or harvesting: a bar that fills in WORK_MS, and "Huỷ" (or Esc) before it is sent. An Esc typed into a
- *  text field, or one that closes an open panel, is not for the work (v13/v14 input rules). */
+/** A 3-second job (transplanting, setting out the ớt, a picking): its line, a bar that fills in WORK_MS, and "Huỷ" (or
+ *  Esc) before it is sent. An Esc typed into a text field, or one that closes an open panel, is not for the work (v13/v14
+ *  input rules). */
 function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen: boolean; onCancel: () => void }) {
   const [full, setFull] = useState(false);
   useEffect(() => {
@@ -30,7 +31,7 @@ function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen
   }, [panelOpen, onCancel]);
   return (
     <div className="pch absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5 p-2 font-vt text-xl" role="status">
-      <span>{work.work === "transplant" ? `🌱 Đang cấy thửa ${work.plot}…` : `🌾 Đang gặt thửa ${work.plot}…`}</span>
+      <span>{work.text}</span>
       <div className="h-3 w-48 overflow-hidden rounded-sm bg-ink/20">
         <div
           className="h-full bg-burgundy motion-reduce:transition-none"

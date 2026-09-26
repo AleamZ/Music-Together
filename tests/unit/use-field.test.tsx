@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { AnticheatError, type AnticheatInfo } from "@/lib/anticheat";
 import { clockOffset } from "@/lib/game/farm/clock";
+import { NOT_OPEN_152 } from "@/lib/game/farm/messages";
 import { parseFarmMine, parseFieldState, type FieldState } from "@/lib/game/farm/state";
 
 const rpc = vi.hoisted(() => ({
   fetchFieldState: vi.fn(), fetchFarmCatalog: vi.fn(), fieldAction: vi.fn(), sellRice: vi.fn(), buyFarmItem: vi.fn(),
-  claimFarmGift: vi.fn(),
+  claimFarmGift: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(),
 }));
 vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/farm/rpc")>()),
@@ -210,5 +211,52 @@ describe("useField", () => {
     act(() => result.current.plotChanged());
     await act(async () => { await vi.advanceTimersByTimeAsync(FP_GATHER_MS); });
     expect(rpc.fetchFieldState).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("useField, v15.2", () => {
+  it("loads the sprayer and sells hoa màu into the field's account part", async () => {
+    const { result } = renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    rpc.loadSprayer.mockResolvedValueOnce({ serverNow: NOW, mine: parseFarmMine({ coins: 100, tank: { item: "spray_insect", charges: 3 } })! });
+    await act(async () => { await result.current.loadSprayer("spray_insect", "Thuốc trừ sâu"); });
+    expect(rpc.loadSprayer).toHaveBeenCalledWith("tok", "spray_insect");
+    expect(result.current.state?.mine.tank).toEqual({ item: "spray_insect", charges: 3 });
+    rpc.sellProduce.mockResolvedValueOnce({ serverNow: NOW, mine: parseFarmMine({ coins: 47_800, produce: {} })! });
+    await act(async () => { await result.current.sellProduce("khoai", 180); });
+    expect(rpc.sellProduce).toHaveBeenCalledWith("tok", "khoai", 180);
+    expect(result.current.state?.mine.coins).toBe(47_800);
+  });
+
+  it("reads a harvest round's refusals in its own words, and hands them to the round instead of the toast", async () => {
+    const onError = vi.fn(), onRound = vi.fn();
+    const { result } = renderHook(() => useField("r", "tok", true, onError));
+    await flush();
+    rpc.fieldAction.mockRejectedValueOnce({ message: "too fast" });
+    await act(async () => { await result.current.run({ kind: "harvest_part", plot: 5, success: true }, undefined, onRound); });
+    rpc.fieldAction.mockRejectedValueOnce({ message: "not your plot" });
+    await act(async () => { await result.current.run({ kind: "harvest_part", plot: 5, success: true }, undefined, onRound); });
+    expect(onRound.mock.calls).toEqual([["Chưa xong bó lúa — thử lại sau vài giây."], ["Hết hạn thuê — phần lúa chưa gặt đã mất."]]);
+    expect(onError).not.toHaveBeenCalled();
+    rpc.fieldAction.mockRejectedValueOnce({ message: "too fast" });
+    await act(async () => { await result.current.run({ kind: "water", plot: 5, delta: 1 }); });
+    expect(onError).toHaveBeenCalledWith("Từ từ thôi…");
+  });
+
+  it("says a v15.2 call waits for 0016 and leaves the field open; a missing v15 call still closes it", async () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() => useField("r", "tok", true, onError));
+    await flush();
+    rpc.fetchFieldState.mockReturnValue(new Promise(() => {})); // the refetches after the errors never answer
+    const missing = (fn: string) => ({ code: "PGRST202", message: `Could not find the function public.${fn}` });
+    rpc.fieldAction.mockRejectedValueOnce(missing("prepare_beds"));
+    await act(async () => { await result.current.run({ kind: "prepare_beds", plot: 5 }); });
+    rpc.sellProduce.mockRejectedValueOnce(missing("sell_produce"));
+    await act(async () => { await result.current.sellProduce("khoai", 1); });
+    expect(onError.mock.calls).toEqual([[NOT_OPEN_152], [NOT_OPEN_152]]);
+    expect(result.current.notOpen).toBe(false);
+    rpc.fieldAction.mockRejectedValueOnce(missing("prepare_plot"));
+    await act(async () => { await result.current.run({ kind: "prepare", plot: 5 }); });
+    expect(result.current.notOpen).toBe(true);
   });
 });

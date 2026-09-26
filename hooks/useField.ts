@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnticheatError } from "@/lib/anticheat";
 import type { FarmCatalog } from "@/lib/game/farm/catalog";
 import { syncClock } from "@/lib/game/farm/clock";
-import { farmErrorMessage, isMissingRpc } from "@/lib/game/farm/messages";
+import { farmErrorMessage, isMissingRpc, NOT_OPEN_152 } from "@/lib/game/farm/messages";
 import {
-  buyFarmItem, claimFarmGift, fetchFarmCatalog, fetchFieldState, fieldAction, sellRice,
+  actionCall, buyFarmItem, claimFarmGift, fetchFarmCatalog, fetchFieldState, fieldAction, loadSprayer, RPCS_152, sellProduce, sellRice,
   type FieldAction, type FieldAnswer, type MineAnswer,
 } from "@/lib/game/farm/rpc";
 import { withMine, type FarmMine, type FieldState } from "@/lib/game/farm/state";
@@ -21,11 +21,16 @@ export interface FieldData {
   notOpen: boolean;
   /** Fetches the field again, and the catalog too while it has not loaded. */
   reload: () => Promise<FieldState | null>;
-  /** A land, farming or drying action; its answer replaces the state. On error: toast, refetch, null. */
-  run: (a: FieldAction, itemName?: string) => Promise<FieldAnswer | null>;
+  /** A land, farming or drying action; its answer replaces the state. On error: the refusal's text goes to `onError`
+   *  (the harvest round shows it) or to the toast; then a refetch, and null. */
+  run: (a: FieldAction, itemName?: string, onError?: (text: string) => void) => Promise<FieldAnswer | null>;
   sellRice: (variety: string, dry: boolean, kg: number) => Promise<MineAnswer | null>;
   buyItem: (itemId: string, qty: number, itemName?: string) => Promise<MineAnswer | null>;
   claimGift: () => Promise<(MineAnswer & { gifted: boolean }) | null>;
+  /** Nạp thuốc: one bottle of the pesticide into the sprayer (v15.2 §7). */
+  loadSprayer: (itemId: string, itemName?: string) => Promise<MineAnswer | null>;
+  /** Sells kg of a hoa-màu crop to cô Út (v15.2 §9). */
+  sellProduce: (upland: string, kg: number) => Promise<MineAnswer | null>;
   /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
    *  FP_MIN_GAP_MS apart. */
   plotChanged: () => void;
@@ -140,17 +145,23 @@ export function useField(roomId: string, token: string, active: boolean, onError
     }, Math.max(FP_GATHER_MS, gap));
   }, [reload]);
 
-  /** Run an RPC and apply its answer. On error: toast, refetch, null. A strike shows no toast: the warning or the ban
-   *  modal shows instead (anti-cheat §12.1). */
-  const call = useCallback(async <T,>(job: () => Promise<T>, keep: (n: number, r: T) => void, itemName?: string): Promise<T | null> => {
+  /** Run RPC `rpc` and apply its answer. On error: the Vietnamese text, read in the RPC's context (a harvest round's
+   *  refusals read their own way), to `onError` or the toast; then a refetch, and null. A strike shows no text: the
+   *  warning or the ban modal shows instead (anti-cheat §12.1). Before 0016 its RPCs are missing while the field is open:
+   *  they say NOT_OPEN_152 and leave the field open (v15.2 R28). */
+  const call = useCallback(async <T,>(job: () => Promise<T>, keep: (n: number, r: T) => void,
+    opts: { rpc: string; itemName?: string; onError?: (text: string) => void }): Promise<T | null> => {
     const n = ++seq.current;
     try {
       const r = await job();
       keep(n, r);
       return r;
     } catch (err) {
-      if (isMissingRpc(err)) setNotOpen(true);
-      if (!(err instanceof AnticheatError && err.info.strike >= 1)) onErrorRef.current(farmErrorMessage(err, itemName));
+      const missing = isMissingRpc(err), v152 = RPCS_152.has(opts.rpc);
+      if (missing && !v152) setNotOpen(true);
+      if (!(err instanceof AnticheatError && err.info.strike >= 1)) {
+        (opts.onError ?? onErrorRef.current)(missing && v152 ? NOT_OPEN_152 : farmErrorMessage(err, opts.itemName, opts.rpc));
+      }
       void reload();
       return null;
     }
@@ -158,12 +169,17 @@ export function useField(roomId: string, token: string, active: boolean, onError
 
   return {
     state, catalog, failed: fieldFailed || catalogFailed, notOpen, reload, plotChanged,
-    run: useCallback((a: FieldAction, itemName?: string) =>
-      call(() => fieldAction(roomId, token, a), (n, r) => apply(n, r.state), itemName), [call, apply, roomId, token]),
+    run: useCallback((a: FieldAction, itemName?: string, onError?: (text: string) => void) =>
+      call(() => fieldAction(roomId, token, a), (n, r) => apply(n, r.state), { rpc: actionCall(a)[0], itemName, onError }),
+    [call, apply, roomId, token]),
     sellRice: useCallback((variety: string, dry: boolean, kg: number) =>
-      call(() => sellRice(token, variety, dry, kg), applyMine), [call, applyMine, token]),
+      call(() => sellRice(token, variety, dry, kg), applyMine, { rpc: "sell_rice" }), [call, applyMine, token]),
     buyItem: useCallback((itemId: string, qty: number, itemName?: string) =>
-      call(() => buyFarmItem(token, itemId, qty), applyMine, itemName), [call, applyMine, token]),
-    claimGift: useCallback(() => call(() => claimFarmGift(token), applyMine), [call, applyMine, token]),
+      call(() => buyFarmItem(token, itemId, qty), applyMine, { rpc: "buy_farm_item", itemName }), [call, applyMine, token]),
+    claimGift: useCallback(() => call(() => claimFarmGift(token), applyMine, { rpc: "claim_farm_gift" }), [call, applyMine, token]),
+    loadSprayer: useCallback((itemId: string, itemName?: string) =>
+      call(() => loadSprayer(token, itemId), applyMine, { rpc: "load_sprayer", itemName }), [call, applyMine, token]),
+    sellProduce: useCallback((upland: string, kg: number) =>
+      call(() => sellProduce(token, upland, kg), applyMine, { rpc: "sell_produce" }), [call, applyMine, token]),
   };
 }

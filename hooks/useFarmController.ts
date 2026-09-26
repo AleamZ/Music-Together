@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { useField, type FieldData } from "@/hooks/useField";
 import { plotDraws } from "@/lib/game/art/crops";
-import { dueTasks, plotPrompt, type FarmTask, type PlotRun } from "@/lib/game/farm/actions";
-import { ricePrice } from "@/lib/game/farm/catalog";
+import { dueTasks, lower, plotPrompt, type FarmTask, type PlotRun } from "@/lib/game/farm/actions";
+import { PART_WAIT_MS, producePrice, ricePrice, type FarmCatalog } from "@/lib/game/farm/catalog";
 import { serverNow } from "@/lib/game/farm/clock";
-import { boughtText, GIFT_TEXT, harvestText, NOT_OPEN, riceSaleText } from "@/lib/game/farm/messages";
-import type { FieldAction } from "@/lib/game/farm/rpc";
+import {
+  boughtText, GIFT_TEXT, harvestText, harvesterDoneText, loadedText, NOT_OPEN, pickingText, produceSaleText, riceSaleText,
+} from "@/lib/game/farm/messages";
+import type { FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
+import type { PlotView } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId } from "@/lib/game/maps/types";
 import { FARM_ANIM, type FarmAnim } from "@/lib/game/net/protocol";
@@ -23,8 +26,28 @@ export type FarmPanel =
   | { kind: "handbook"; tab: string | null }
   | { kind: "tasks" };
 
-/** Transplanting or harvesting in progress: movement is locked until it is sent or cancelled (spec §16). */
-export interface FarmWork { plot: number; work: "transplant" | "harvest"; startedAt: number }
+/** A 3-second job in progress (transplanting, setting out the ớt, a hoa-màu picking): movement is locked until it is
+ *  sent or cancelled (spec §16). `text` is the bar's line. */
+export interface FarmWork { plot: number; work: "transplant" | "harvest"; startedAt: number; text: string }
+
+/** A rice harvest round (v15.2 §6.2): HarvestGame plays it, the controller talks to the server. */
+export interface FarmRound {
+  plot: number;
+  /** The part this round cuts, 1–6. */
+  part: number;
+  /** Seeds the round's sweet bands. */
+  seed: number;
+  /** When the begin_work answer arrived (client ms): a won round is claimed PART_WAIT_MS after it. */
+  begunAt: number;
+  /** playing → waiting (the 9 s, "Đang bó lúa…") → won; or lost; or refused by the server. */
+  phase: "playing" | "waiting" | "won" | "lost" | "refused";
+  /** The round's score once it is over. */
+  score: number | null;
+  /** The part won. */
+  result: PartAnswer | null;
+  /** A refusal's text (read in the round's context). */
+  message: string | null;
+}
 
 export interface FarmController {
   data: FieldData;
@@ -40,10 +63,21 @@ export interface FarmController {
   busy: boolean;
   work: FarmWork | null;
   cancelWork: () => void;
-  /** A land, farming or drying action (a work action starts the progress); `done` is toasted when it succeeds. */
+  /** A harvest round, open in its overlay. */
+  round: FarmRound | null;
+  /** The overlay's round ended: a pass is claimed at 9 s, a fail is reported at once. */
+  endRound: (pass: boolean, score: number) => void;
+  /** "Gặt tiếp" or "Thử lại": a new round on the same plot (a new begin_work). */
+  nextRound: () => void;
+  /** "Nghỉ tay", "Đóng" or Esc: the overlay closes and nothing is sent. */
+  closeRound: () => void;
+  /** A land, farming or drying action (a work action starts the progress, a round opens HarvestGame); `done` is toasted
+   *  when it succeeds. */
   act: (a: PlotRun, done?: string) => Promise<boolean>;
   buy: (itemId: string, qty: number) => Promise<boolean>;
   sell: (variety: string, dry: boolean, kg: number) => Promise<boolean>;
+  loadSprayer: (itemId: string) => Promise<boolean>;
+  sellProduce: (upland: string, kg: number) => Promise<boolean>;
   /** Handles the field's interactables; false for anything else. */
   interact: (it: Interactable) => boolean;
   /** A plot's prompt names my next job there; the field's other interactables keep theirs; null = not the field's. */
@@ -65,28 +99,58 @@ export interface FarmControllerOptions {
 
 /** Transplanting and harvesting take this long on screen (the server's gate is 2 s; spec §4, §11.4). */
 export const WORK_MS = 3000;
+/** A harvest round re-sends `fa 2` this often while it runs (an `fa` lasts 2.5 s; v15.2 R14). */
+export const ROUND_FA_MS = 2000;
+/** A harvester of mine is fetched this long after its end, on the server's clock (R15), and again after
+ *  HARVESTER_RETRY_MS while it still shows, at most HARVESTER_TRIES times. */
+export const HARVESTER_REFETCH_MS = 1000;
+const HARVESTER_RETRY_MS = 2000;
+const HARVESTER_TRIES = 3;
 /** How often the clock ticks while on the field. */
 const TICK_MS = 30_000;
-/** The animation each instant action plays (the work actions play theirs while they run). */
+/** The animation each instant action plays (the work actions and the rounds play theirs while they run; v15.2 §12). */
 const ANIM: Partial<Record<FieldAction["kind"], FarmAnim>> = {
-  prepare: FARM_ANIM.prepare, water: FARM_ANIM.pump, spray: FARM_ANIM.spray, fertilize: FARM_ANIM.fertilize,
-  pick_snails: FARM_ANIM.snails,
+  prepare: FARM_ANIM.prepare, prepare_beds: FARM_ANIM.prepare, tend: FARM_ANIM.prepare, water: FARM_ANIM.pump, spray: FARM_ANIM.spray,
+  fertilize: FARM_ANIM.fertilize, pick_snails: FARM_ANIM.snails,
 };
 const FIELD_KINDS: ReadonlySet<string> = new Set(["plot", "coop", "farm_shop", "rice_depot", "drying"]);
 
-/** Everything farming for the game shell (spec §7–§8, §12–§13): the field, the clock, the prompts, the panels, the
- *  due tasks and the plots on the canvas, the newcomer gift, the actions with their animations (`fa`) and the others'
- *  refetch (`fp`), and the transplant / harvest progress. */
+/** A round is being played or waits for its claim: no other job or round starts. */
+const roundOn = (r: FarmRound | null): boolean => r !== null && (r.phase === "playing" || r.phase === "waiting");
+/** The round showing is still `r` (not closed or replaced meanwhile). */
+const sameRound = (showing: FarmRound | null, r: FarmRound): boolean => showing?.plot === r.plot && showing.begunAt === r.begunAt;
+
+/** Planting: cuttings are set like seedlings (1); seed is sown (5) — gieo bắp, ươm ớt. */
+function plantAnim(catalog: FarmCatalog | null, item: string): FarmAnim {
+  const upland = catalog?.items.find((i) => i.id === item)?.upland;
+  return catalog?.uplands.find((u) => u.id === upland)?.method === "cutting" ? FARM_ANIM.transplant : FARM_ANIM.fertilize;
+}
+
+/** A 3-second job's animation and bar line: rice is transplanted; on beds the ớt is set out and the crops are dug or
+ *  picked by their config. */
+function workLook(p: PlotView | undefined, catalog: FarmCatalog | null, w: FarmWork["work"], plot: number): { anim: FarmAnim; text: string } {
+  const u = p?.crop?.kind === "upland" ? catalog?.uplands.find((x) => x.id === p.crop!.upland) : undefined;
+  if (u && w === "harvest") return { anim: u.harvestAnim === "dig" ? FARM_ANIM.dig : FARM_ANIM.pick, text: `🧺 Đang ${lower(u.harvestLabel)} thửa ${plot}…` };
+  if (u) return { anim: FARM_ANIM.transplant, text: `🌱 Đang ${lower(u.transplantLabel ?? "Trồng cây con")} thửa ${plot}…` };
+  return w === "transplant"
+    ? { anim: FARM_ANIM.transplant, text: `🌱 Đang cấy thửa ${plot}…` }
+    : { anim: FARM_ANIM.harvest, text: `🌾 Đang gặt thửa ${plot}…` };
+}
+
+/** Everything farming for the game shell (spec §7–§8, §12–§13; v15.2 §6, §12–§13): the field, the clock, the prompts,
+ *  the panels, the due tasks and the plots on the canvas, the newcomer gift, the actions with their animations (`fa`)
+ *  and the others' refetch (`fp`), the 3-second jobs, the harvest rounds and the end of my harvesters. */
 export function useFarmController({ token, roomId, accountId, mapId, canvas, toast, onCoinsChanged }: FarmControllerOptions): FarmController {
   const active = mapId === "field";
   const data = useField(roomId, token, active, toast);
-  const { state, catalog, notOpen, run, claimGift, buyItem, sellRice } = data;
+  const { state, catalog, notOpen, run, claimGift, buyItem, sellRice, reload } = data;
   const [panel, setPanel] = useState<FarmPanel | null>(null);
   const [busy, setBusy] = useState(false);
   const [work, setWork] = useState<FarmWork | null>(null);
-  const live = useRef({ toast, onCoinsChanged, state, catalog, notOpen });
+  const [round, setRound] = useState<FarmRound | null>(null);
+  const live = useRef({ toast, onCoinsChanged, state, catalog, notOpen, round });
   useEffect(() => {
-    live.current = { toast, onCoinsChanged, state, catalog, notOpen };
+    live.current = { toast, onCoinsChanged, state, catalog, notOpen, round };
   });
 
   // --- the clock: an answer carries the server's time, and a tick moves it on while I am on the field
@@ -131,23 +195,30 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     lastCoins.current = coins;
   }, [coins]);
 
-  // --- transplanting and harvesting: begin_work, the progress (movement locked), then the action with q = 1.0
+  // --- 3-second jobs: begin_work, the progress (movement locked), then the action with q = 1.0
   const workTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (workTimer.current) clearTimeout(workTimer.current);
   }, []);
-  const finishWork = useCallback(async (plot: number, w: FarmWork["work"]) => {
+  const finishWork = useCallback(async (plot: number, w: FarmWork["work"], done?: string) => {
     const r = await run({ kind: w, plot, quality: 1 });
     setWork(null);
     if (!r) return;
     canvas()?.plotChanged(plot);
-    if (r.harvest) {
-      const name = live.current.catalog?.varieties.find((v) => v.id === r.harvest!.variety)?.name ?? r.harvest.variety;
+    const cat = live.current.catalog;
+    if (r.picking) {
+      const u = cat?.uplands.find((x) => x.id === r.picking!.upland);
+      live.current.toast(pickingText(r.picking.kg, u?.name ?? r.picking.upland, r.picking.k, r.picking.pickings));
+    } else if (r.harvest) {
+      // a whole rice harvest: a database without 0016
+      const name = cat?.varieties.find((v) => v.id === r.harvest!.variety)?.name ?? r.harvest.variety;
       live.current.toast(harvestText(r.harvest.kg, name));
+    } else if (done) {
+      live.current.toast(done);
     }
   }, [run, canvas]);
-  const startWork = useCallback(async (plot: number, w: FarmWork["work"]): Promise<boolean> => {
-    if (workTimer.current) return false;
+  const startWork = useCallback(async (plot: number, w: FarmWork["work"], done?: string): Promise<boolean> => {
+    if (workTimer.current || roundOn(live.current.round)) return false;
     setBusy(true);
     const begun = await run({ kind: "begin_work", plot, work: w });
     setBusy(false);
@@ -155,12 +226,13 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     const c = canvas();
     const spot = getMap("field").interactables.find((i) => i.plot === plot);
     if (spot) c?.plant(spot.use, spot.face ?? "up");
-    c?.farmAnim(w === "transplant" ? FARM_ANIM.transplant : FARM_ANIM.harvest);
+    const look = workLook(begun.state.plots.find((p) => p.no === plot), live.current.catalog, w, plot);
+    c?.farmAnim(look.anim);
     setPanel(null);
-    setWork({ plot, work: w, startedAt: Date.now() });
+    setWork({ plot, work: w, startedAt: Date.now(), text: look.text });
     workTimer.current = setTimeout(() => {
       workTimer.current = null;
-      void finishWork(plot, w);
+      void finishWork(plot, w, done);
     }, WORK_MS);
     return true;
   }, [run, canvas, finishWork]);
@@ -171,22 +243,127 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     setWork(null);
     canvas()?.farmAnim(FARM_ANIM.stop);
   }, [canvas]);
+
+  // --- harvest rounds (v15.2 §6.2): begin_work, the game with fa 2 every 2 s, then harvest_part — a pass 9 s after the
+  // begin_work answer, a fail at once. Esc sends nothing: the server's record expires or the next begin_work replaces it.
+  const roundAnim = useRef<ReturnType<typeof setInterval> | null>(null);
+  const roundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopRoundAnim = useCallback(() => {
+    if (!roundAnim.current) return;
+    clearInterval(roundAnim.current);
+    roundAnim.current = null;
+    canvas()?.farmAnim(FARM_ANIM.stop);
+  }, [canvas]);
+  useEffect(() => () => {
+    if (roundAnim.current) clearInterval(roundAnim.current);
+    if (roundTimer.current) clearTimeout(roundTimer.current);
+  }, []);
+  const startRound = useCallback(async (plot: number): Promise<boolean> => {
+    if (workTimer.current || roundOn(live.current.round)) return false;
+    setBusy(true);
+    const begun = await run({ kind: "begin_work", plot, work: "harvest" });
+    setBusy(false);
+    if (!begun) return false;
+    const c = canvas();
+    const spot = getMap("field").interactables.find((i) => i.plot === plot);
+    if (spot) c?.plant(spot.use, spot.face ?? "up");
+    c?.farmAnim(FARM_ANIM.harvest);
+    if (roundAnim.current) clearInterval(roundAnim.current);
+    roundAnim.current = setInterval(() => canvas()?.farmAnim(FARM_ANIM.harvest), ROUND_FA_MS);
+    setPanel(null);
+    const parts = begun.state.plots.find((p) => p.no === plot)?.crop?.parts ?? 0;
+    setRound({
+      plot, part: parts + 1, seed: Math.floor(Math.random() * 0x7fffffff), begunAt: Date.now(), phase: "playing", score: null,
+      result: null, message: null,
+    });
+    return true;
+  }, [run, canvas]);
+  const claimPart = useCallback(async (r: FarmRound) => {
+    let refusal: string | null = null;
+    const ans = await run({ kind: "harvest_part", plot: r.plot, success: true }, undefined, (text) => { refusal = text; });
+    if (!sameRound(live.current.round, r)) return;
+    if (!ans) {
+      // a strike shows its modal instead of a text
+      setRound(refusal === null ? null : { ...r, phase: "refused", message: refusal });
+      return;
+    }
+    canvas()?.plotChanged(r.plot);
+    setRound({ ...r, phase: "won", result: ans.harvestPart });
+  }, [run, canvas]);
+  const endRound = useCallback((pass: boolean, score: number) => {
+    const r = live.current.round;
+    if (!r || r.phase !== "playing") return;
+    stopRoundAnim();
+    if (!pass) {
+      setRound({ ...r, phase: "lost", score });
+      // reported at once, with no gate: it clears the server's record and cuts nothing (R7)
+      void run({ kind: "harvest_part", plot: r.plot, success: false }, undefined, () => {});
+      return;
+    }
+    const waiting: FarmRound = { ...r, phase: "waiting", score };
+    setRound(waiting);
+    roundTimer.current = setTimeout(() => {
+      roundTimer.current = null;
+      void claimPart(waiting);
+    }, Math.max(0, r.begunAt + PART_WAIT_MS - Date.now()));
+  }, [run, stopRoundAnim, claimPart]);
+  const nextRound = useCallback(() => {
+    const r = live.current.round;
+    if (r && !roundOn(r)) void startRound(r.plot);
+  }, [startRound]);
+  const closeRound = useCallback(() => {
+    if (roundTimer.current) clearTimeout(roundTimer.current);
+    roundTimer.current = null;
+    stopRoundAnim();
+    setRound(null);
+  }, [stopRoundAnim]);
   useEffect(() => {
-    if (!active) cancelWork();
-  }, [active, cancelWork]);
+    if (active) return;
+    cancelWork();
+    // leaving the field ends a round too (in a task, as the change of map has rendered)
+    const t = setTimeout(closeRound, 0);
+    return () => clearTimeout(t);
+  }, [active, cancelWork, closeRound]);
+
+  // --- my harvesters (R15): fetched at the end + 1 s, then fp, and a toast with the wet rice they brought
+  const harvesterTries = useRef(new Map<string, number>());
+  const harvesterEnded = useCallback(async (plot: number, variety: string, key: string) => {
+    harvesterTries.current.set(key, (harvesterTries.current.get(key) ?? 0) + 1);
+    const before = live.current.state?.mine.rice[variety]?.wet ?? 0;
+    const s = await reload();
+    if (!s || s.plots.find((p) => p.no === plot)?.crop?.harvester) return;
+    canvas()?.plotChanged(plot);
+    const got = (s.mine.rice[variety]?.wet ?? 0) - before;
+    const name = live.current.catalog?.varieties.find((v) => v.id === variety)?.name ?? variety;
+    if (got > 0) live.current.toast(harvesterDoneText(plot, got, name));
+  }, [reload, canvas]);
+  useEffect(() => {
+    if (!active || !state) return;
+    const timers: Array<ReturnType<typeof setTimeout>> = [];
+    for (const p of state.plots) {
+      const job = p.crop?.harvester;
+      if (!job || p.farmer?.id !== accountId) continue;
+      const key = `${p.no}:${job.endsAt}`;
+      const tries = harvesterTries.current.get(key) ?? 0;
+      if (tries >= HARVESTER_TRIES) continue;
+      const wait = tries === 0 ? job.endsAt + HARVESTER_REFETCH_MS - serverNow() : HARVESTER_RETRY_MS;
+      const variety = p.crop!.variety ?? "";
+      timers.push(setTimeout(() => void harvesterEnded(p.no, variety, key), Math.max(0, wait)));
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [active, state, accountId, harvesterEnded]);
 
   // --- the actions
   const act = useCallback(async (a: PlotRun, done?: string): Promise<boolean> => {
-    if (a.kind === "work") return startWork(a.plot, a.work);
-    // a harvest round (v15.2 §6.2) has its own overlay and flow (Tasks 13 and 14)
-    if (a.kind === "round") return false;
+    if (a.kind === "work") return startWork(a.plot, a.work, done);
+    if (a.kind === "round") return startRound(a.plot);
     setBusy(true);
     try {
       const itemName = "item" in a ? live.current.catalog?.items.find((i) => i.id === a.item)?.name : undefined;
       const r = await run(a, itemName);
       if (!r) return false;
       const c = canvas();
-      const anim = ANIM[a.kind];
+      const anim = a.kind === "plant" ? plantAnim(live.current.catalog, a.item) : ANIM[a.kind];
       if (anim) c?.farmAnim(anim);
       c?.plotChanged("plot" in a ? a.plot : 0);
       if (done) live.current.toast(done);
@@ -194,7 +371,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     } finally {
       setBusy(false);
     }
-  }, [run, canvas, startWork]);
+  }, [run, canvas, startWork, startRound]);
   const buy = useCallback(async (itemId: string, qty: number): Promise<boolean> => {
     setBusy(true);
     try {
@@ -221,6 +398,30 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       setBusy(false);
     }
   }, [sellRice]);
+  const { loadSprayer: loadTank, sellProduce: sellCrop } = data;
+  const loadSprayer = useCallback(async (itemId: string): Promise<boolean> => {
+    setBusy(true);
+    try {
+      const name = live.current.catalog?.items.find((i) => i.id === itemId)?.name ?? itemId;
+      const r = await loadTank(itemId, name);
+      if (r) live.current.toast(loadedText(name));
+      return r !== null;
+    } finally {
+      setBusy(false);
+    }
+  }, [loadTank]);
+  const sellProduce = useCallback(async (upland: string, kg: number): Promise<boolean> => {
+    setBusy(true);
+    try {
+      const before = live.current.state?.mine.coins ?? 0;
+      const u = live.current.catalog?.uplands.find((x) => x.id === upland);
+      const r = await sellCrop(upland, kg);
+      if (r) live.current.toast(produceSaleText(kg, u?.name ?? upland, u ? producePrice(kg, u) : r.mine.coins - before));
+      return r !== null;
+    } finally {
+      setBusy(false);
+    }
+  }, [sellCrop]);
 
   // --- the field's interactables and prompts
   const interact = useCallback((it: Interactable): boolean => {
@@ -266,9 +467,15 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     busy,
     work,
     cancelWork,
+    round,
+    endRound,
+    nextRound,
+    closeRound,
     act,
     buy,
     sell,
+    loadSprayer,
+    sellProduce,
     interact,
     promptText,
   };
