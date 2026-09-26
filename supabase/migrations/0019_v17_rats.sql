@@ -538,3 +538,308 @@ revoke all on function public._rats_view(uuid, timestamptz) from public, anon, a
 revoke all on function public._field_open(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public._farm_mine(uuid) from public, anon, authenticated;
 revoke all on function public._field_view(uuid, uuid, timestamptz) from public, anon, authenticated;
+
+-- ---------- E. RPCs (§6.1, §7.1, §7.2, §10.4, §10.7) ----------
+-- Each public RPC runs its guard (_ac_play for the room RPCs, _ac_account for the account RPCs), then its private twin
+-- with now(). A twin takes p_now: a room twin opens the field (the plot locks and both sweeps), then takes the wallet; an
+-- account twin takes the wallet. Every refusal raises, so a refused call changes nothing, pellet included (D15).
+
+-- The slingshot's aim (§6.1, D14): a ná, a pellet, a live rat of this room, room under the caps (checked, not counted);
+-- one aim per account, replaced by a new one.
+create or replace function public._rat_do_sling_start(p_room uuid, p_account uuid, p_rat bigint, p_now timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  if not public._owns(p_account, 'tool_sling') then
+    raise exception 'no sling' using errcode = '22023';
+  end if;
+  if not public._owns(p_account, 'ammo_pellet') then
+    raise exception 'no pellets' using errcode = '22023';
+  end if;
+  if not exists (select 1 from public.field_rats where id = p_rat and room_id = p_room and ended_at is null) then
+    raise exception 'rat gone' using errcode = '22023';
+  end if;
+  perform public._rat_caps(p_account, p_now, false);
+  insert into public.sling_aims (account_id, room_id, rat_id, started_at, last_shot_at, shots)
+  values (p_account, p_room, p_rat, p_now, null, 0)
+  on conflict (account_id) do update
+    set room_id = excluded.room_id, rat_id = excluded.rat_id, started_at = excluded.started_at, last_shot_at = null, shots = 0;
+  return public._field_view(p_room, p_account, p_now)
+         || jsonb_build_object('aim', jsonb_build_object('rat', p_rat, 'started_at', p_now));
+end $$;
+
+-- A shot (§6.1, D14, D15): the aim at this room and rat, a live rat, 2–60 s after the aim or the previous shot, a pellet.
+-- The pellet is used; a hit (null is a miss) catches the rat and ends the aim.
+create or replace function public._rat_do_sling_shoot(p_room uuid, p_account uuid, p_rat bigint, p_hit boolean,
+                                                      p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare a public.sling_aims; v_prev timestamptz; v_price integer;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  select * into a from public.sling_aims where account_id = p_account for update;
+  if not found or a.room_id is distinct from p_room or a.rat_id is distinct from p_rat then
+    raise exception 'no aim' using errcode = '22023';
+  end if;
+  if not exists (select 1 from public.field_rats where id = p_rat and room_id = p_room and ended_at is null) then
+    raise exception 'rat gone' using errcode = '22023';
+  end if;
+  v_prev := coalesce(a.last_shot_at, a.started_at);
+  if p_now < v_prev + interval '2 seconds' then
+    raise exception 'too fast' using errcode = '22023';
+  end if;
+  if p_now > v_prev + interval '60 seconds' then
+    raise exception 'aim expired' using errcode = '22023';
+  end if;
+  if not public._owns(p_account, 'ammo_pellet') then
+    raise exception 'no pellets' using errcode = '22023';
+  end if;
+  perform public._use_item(p_account, 'ammo_pellet');
+  update public.sling_aims set last_shot_at = p_now, shots = shots + 1 where account_id = p_account;
+  if coalesce(p_hit, false) then
+    v_price := public._rat_catch(p_room, p_account, p_rat, 'sling', p_now);
+    delete from public.sling_aims where account_id = p_account;
+  end if;
+  return public._field_view(p_room, p_account, p_now)
+         || jsonb_build_object('shot', jsonb_build_object(
+              'hit', coalesce(p_hit, false), 'price', v_price,
+              'pellets', coalesce((select qty from public.inventory where account_id = p_account and item_id = 'ammo_pellet'), 0)));
+end $$;
+
+-- The dog's pounce (§7.2, D17, D18): a dog, fed, rested; then the catch, and 5 minutes' rest.
+create or replace function public._dog_do_hunt(p_room uuid, p_account uuid, p_rat bigint, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare d public.dogs; v_price integer;
+begin
+  perform public._field_open(p_room, p_now);
+  perform public._wallet_lock(p_account);
+  select * into d from public.dogs where account_id = p_account for update;
+  if not found then
+    raise exception 'no dog' using errcode = '22023';
+  end if;
+  if d.fed_until is null or d.fed_until <= p_now then
+    raise exception 'dog hungry' using errcode = '22023';
+  end if;
+  if d.next_hunt_at > p_now then
+    raise exception 'dog resting' using errcode = '22023', detail = ceil(extract(epoch from (d.next_hunt_at - p_now)))::int::text;
+  end if;
+  v_price := public._rat_catch(p_room, p_account, p_rat, 'dog', p_now);
+  update public.dogs set next_hunt_at = p_now + interval '5 minutes', catches = catches + 1 where account_id = p_account;
+  return public._field_view(p_room, p_account, p_now) || jsonb_build_object('dog_hunt', jsonb_build_object('price', v_price));
+end $$;
+
+-- What the dog calls answer (§10.4): the dog, the food_dog count and the wallet.
+create or replace function public._dog_answer(p_account uuid, p_now timestamptz) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object('server_now', p_now, 'dog', public._dog_view(p_account),
+    'food', coalesce((select i.qty from public.inventory i where i.account_id = p_account and i.item_id = 'food_dog'), 0),
+    'coins', coalesce((select w.coins from public.wallets w where w.account_id = p_account), 0))
+$$;
+
+-- Adoption at chú Tám's (§7.1, D19–D21, D29): a valid name and coat, one dog an account, 20 000 xu; it comes fed for 24 h.
+create or replace function public._dog_do_adopt(p_account uuid, p_name text, p_coat text, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare w public.wallets; v_name text;
+begin
+  w := public._wallet_lock(p_account);
+  v_name := public._pet_name(p_name);
+  if p_coat is null or p_coat not in ('vang', 'muc', 'ven', 'dom') then
+    raise exception 'invalid coat' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.dogs where account_id = p_account) then
+    raise exception 'already own dog' using errcode = '22023';
+  end if;
+  if w.coins < 20000 then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(p_account, -20000, 'dog_adopt', 'dog ' || p_coat);
+  insert into public.dogs (account_id, name, coat, adopted_at, fed_until)
+  values (p_account, v_name, p_coat, p_now, p_now + interval '24 hours');
+  return public._dog_answer(p_account, p_now);
+end $$;
+
+-- A new name, free, any time (§7.1).
+create or replace function public._dog_do_rename(p_account uuid, p_name text, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_name text;
+begin
+  perform public._wallet_lock(p_account);
+  v_name := public._pet_name(p_name);
+  update public.dogs set name = v_name where account_id = p_account;
+  if not found then
+    raise exception 'no dog' using errcode = '22023';
+  end if;
+  return public._dog_answer(p_account, p_now);
+end $$;
+
+-- A meal (§7.1, D19): refused while more than 12 h of food remain; 1 bịch feeds 24 h from max(now, fed_until).
+create or replace function public._dog_do_feed(p_account uuid, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare d public.dogs;
+begin
+  perform public._wallet_lock(p_account);
+  select * into d from public.dogs where account_id = p_account for update;
+  if not found then
+    raise exception 'no dog' using errcode = '22023';
+  end if;
+  if d.fed_until > p_now + interval '12 hours' then
+    raise exception 'dog full' using errcode = '22023';
+  end if;
+  perform public._use_item(p_account, 'food_dog');
+  update public.dogs set fed_until = greatest(d.fed_until, p_now) + interval '24 hours' where account_id = p_account;
+  return public._dog_answer(p_account, p_now);
+end $$;
+
+-- cô Út buys every rat in the bag at its stored price (§5.6, D12): ledger reason rat_sell.
+create or replace function public._rat_do_sell(p_account uuid, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_n integer; v_xu integer;
+begin
+  perform public._wallet_lock(p_account);
+  with sold as (delete from public.rat_bag where account_id = p_account returning price)
+  select count(*)::int, coalesce(sum(price), 0)::int into v_n, v_xu from sold;
+  if v_n = 0 then
+    raise exception 'nothing to sell' using errcode = '22023';
+  end if;
+  perform public._pay(p_account, v_xu, 'rat_sell', v_n || ' con');
+  return jsonb_build_object('server_now', p_now, 'mine', public._farm_mine(p_account),
+                            'sold', jsonb_build_object('count', v_n, 'xu', v_xu));
+end $$;
+
+-- The guarded RPCs (§10.7): no hard check after the guard — rat ids come from the state, names are typed.
+create or replace function public.sling_start(p_room_id uuid, p_session_token text, p_rat_id bigint) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  return public._rat_do_sling_start(p_room_id, v_account, p_rat_id, now());
+end $$;
+
+create or replace function public.sling_shoot(p_room_id uuid, p_session_token text, p_rat_id bigint, p_hit boolean)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  return public._rat_do_sling_shoot(p_room_id, v_account, p_rat_id, p_hit, now());
+end $$;
+
+create or replace function public.dog_hunt(p_room_id uuid, p_session_token text, p_rat_id bigint) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  return public._dog_do_hunt(p_room_id, v_account, p_rat_id, now());
+end $$;
+
+create or replace function public.adopt_dog(p_session_token text, p_name text, p_coat text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_account(p_session_token);
+begin
+  return public._dog_do_adopt(v_account, p_name, p_coat, now());
+end $$;
+
+create or replace function public.rename_dog(p_session_token text, p_name text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_account(p_session_token);
+begin
+  return public._dog_do_rename(v_account, p_name, now());
+end $$;
+
+create or replace function public.feed_dog(p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_account(p_session_token);
+begin
+  return public._dog_do_feed(v_account, now());
+end $$;
+
+create or replace function public.sell_rats(p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_account(p_session_token);
+begin
+  return public._rat_do_sell(v_account, now());
+end $$;
+
+-- The dog on entering the game (§7.3): a read, on the guard file's allowlist (D26).
+create or replace function public.dog_state(p_session_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._auth_account(p_session_token);
+begin
+  return public._dog_answer(v_account, now());
+end $$;
+
+-- anh Hai's shop (0018's body, §8): v17 sells the pellets and the dog food too — the soft kind_mismatch allows the kinds
+-- ammo and pet_food; the ná is a tool, bought once.
+create or replace function public.buy_farm_item(p_session_token text, p_item_id text, p_qty integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid; w public.wallets; it public.shop_items; v_cost integer;
+begin
+  v_account := public._ac_account(p_session_token);
+  w := public._wallet_lock(v_account);
+  select * into it from public.shop_items where id = p_item_id;
+  if not found or it.price is null then
+    raise exception 'item not available' using errcode = '22023';
+  end if;
+  if it.kind not in ('seed', 'fertilizer', 'pesticide', 'tool', 'critter_box', 'ammo', 'pet_food') then   -- v17: ammo, pet_food
+    return public._ac_flag(v_account, 'kind_mismatch', 'buy_farm_item', jsonb_build_object('item', it.id, 'kind', it.kind),
+                           null, 'item not available', false);
+  end if;
+  if p_qty is null or p_qty < 1 or p_qty > 99 then
+    return public._ac_flag(v_account, 'bad_qty', 'buy_farm_item', jsonb_build_object('item', it.id, 'qty', p_qty), null,
+                           'invalid quantity');
+  end if;
+  if it.kind in ('tool', 'critter_box') and p_qty <> 1 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  if it.kind = 'tool' and public._owns(v_account, it.id) then
+    raise exception 'already owned' using errcode = '22023';
+  end if;
+  if it.kind = 'critter_box' and public._critter_cap(v_account) - 3 >= it.capacity then
+    raise exception 'already owned' using errcode = '22023';
+  end if;
+  if coalesce((select qty from public.inventory where account_id = v_account and item_id = it.id), 0) + p_qty > 99 then
+    raise exception 'invalid quantity' using errcode = '22023';
+  end if;
+  v_cost := it.price * p_qty;
+  if w.coins < v_cost then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  perform public._pay(v_account, -v_cost, 'farm_buy', it.id || ' x' || p_qty);
+  insert into public.inventory (account_id, item_id, qty) values (v_account, it.id, p_qty)
+  on conflict (account_id, item_id) do update set qty = public.inventory.qty + excluded.qty;
+  return jsonb_build_object('server_now', now(), 'mine', public._farm_mine(v_account));
+end; $$;
+
+revoke all on function public._rat_do_sling_start(uuid, uuid, bigint, timestamptz) from public, anon, authenticated;
+revoke all on function public._rat_do_sling_shoot(uuid, uuid, bigint, boolean, timestamptz) from public, anon, authenticated;
+revoke all on function public._dog_do_hunt(uuid, uuid, bigint, timestamptz) from public, anon, authenticated;
+revoke all on function public._dog_answer(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._dog_do_adopt(uuid, text, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._dog_do_rename(uuid, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._dog_do_feed(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._rat_do_sell(uuid, timestamptz) from public, anon, authenticated;
+grant execute on function public.sling_start(uuid, text, bigint) to anon, authenticated;
+grant execute on function public.sling_shoot(uuid, text, bigint, boolean) to anon, authenticated;
+grant execute on function public.dog_hunt(uuid, text, bigint) to anon, authenticated;
+grant execute on function public.adopt_dog(text, text, text) to anon, authenticated;
+grant execute on function public.rename_dog(text, text) to anon, authenticated;
+grant execute on function public.feed_dog(text) to anon, authenticated;
+grant execute on function public.sell_rats(text) to anon, authenticated;
+grant execute on function public.dog_state(text) to anon, authenticated;
+grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;

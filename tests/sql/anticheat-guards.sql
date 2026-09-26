@@ -33,7 +33,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'upsert_video_lyrics(text,text,text,text,text,integer,text,text)', 'update_video_lyric_offset(text,integer,text)',
      'fishing_state(text)', 'fishing_board(uuid,text)', 'field_state(uuid,text)',
      'card_lobby(uuid,text)', 'card_state(uuid,text,text)', 'card_hand(uuid,text,text)', 'card_tick(uuid,text,text)',
-     'card_leave(uuid,text,text)')
+     'card_leave(uuid,text,text)', 'dog_state(text)')
 $$;
 
 do $$
@@ -133,12 +133,20 @@ begin
     format('select public.crab_start(%L, %L, 1)', room, t),
     format('select public.crab_finish(%L, %L, %L, 1)', room, t, o),
     format('select public.pick_snail_bed(%L, %L, 1)', room, t),
-    format('select public.sell_critters(%L, null)', t)] loop
+    format('select public.sell_critters(%L, null)', t),
+    -- v17 (0019)
+    format('select public.sling_start(%L, %L, 1)', room, t),
+    format('select public.sling_shoot(%L, %L, 1, true)', room, t),
+    format('select public.dog_hunt(%L, %L, 1)', room, t),
+    format('select public.adopt_dog(%L, %L, %L)', t, 'Ki', 'vang'),
+    format('select public.rename_dog(%L, %L)', t, 'Ki'),
+    format('select public.feed_dog(%L)', t),
+    format('select public.sell_rats(%L)', t)] loop
     n := n + 1;
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 52, format('%s guarded calls', n);
+  assert n = 59, format('%s guarded calls', n);
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);
@@ -147,6 +155,7 @@ begin
   perform public.card_state(room, t, 'tienlen');
   perform public.card_hand(room, t, 'tienlen');
   perform public.card_tick(room, t, 'tienlen');
+  perform public.dog_state(t);
 end $$;
 
 select 'anticheat guards ok' as result;
