@@ -2,7 +2,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { MapId } from "@/lib/game/maps/types";
 import { supabase, type Room, type Member, type QueueItem } from "@/lib/supabase";
 import {
-  aggregatePresenceModes, presenceDelay, PRESENCE_BUDGET, type PresenceEntry, type PresenceMeta, type PresenceMode,
+  aggregatePresenceModes, presenceDelay, PRESENCE_BUDGET, type PresenceDog, type PresenceEntry, type PresenceMeta, type PresenceMode,
 } from "@/lib/presence-modes";
 
 export interface RoomState { room: Room | null; members: Member[]; queue: QueueItem[]; }
@@ -51,25 +51,33 @@ export interface PresenceHandle {
   setMode: (mode: PresenceMode) => void;
   /** The game map I walk on (v14). Published only while the mode is "game" (classic → map null). */
   setMap: (map: MapId) => void;
+  /** My dog (v17 §7.3), or null. Published only while the mode is "game" (classic → dog null). */
+  setDog: (dog: PresenceDog | null) => void;
 }
 
-interface Published { mode: PresenceMode; map: MapId | null }
+interface Published { mode: PresenceMode; map: MapId | null; dog: PresenceDog | null }
 
-/** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13) and game map (v14).
- *  track() calls are budgeted (Supabase allows 5 per 30 s): ≤ 4 calls per 30 s for mode and map changes together;
- *  a re-track after a reconnect may use the 5th. Changes within 1 s are merged, a state the server already
- *  acknowledged is never re-sent, and failed tracks are retried. */
+const sameDog = (a: PresenceDog | null, b: PresenceDog | null) => a === b || (!!a && !!b && a.name === b.name && a.coat === b.coat);
+
+/** Realtime Presence keyed by account id. The payload also carries the member's view mode (v13), game map (v14) and
+ *  dog (v17, `{n, c}`). track() calls are budgeted (Supabase allows 5 per 30 s): ≤ 4 calls per 30 s for mode, map and
+ *  dog changes together; a re-track after a reconnect may use the 5th. Changes within 1 s are merged, a state the
+ *  server already acknowledged is never re-sent, and failed tracks are retried. */
 export function trackPresence(
   roomId: string,
-  me: { memberId: string; name: string; mode: PresenceMode; map?: MapId },
+  me: { memberId: string; name: string; mode: PresenceMode; map?: MapId; dog?: PresenceDog | null },
   onChange: (entries: PresenceEntry[]) => void,
 ): PresenceHandle {
   const channel = supabase.channel(`presence:${roomId}`, { config: { presence: { key: me.memberId } } });
   let mode: PresenceMode = me.mode;          // what other members should see…
   let map: MapId = me.map ?? "hall";
+  let dog: PresenceDog | null = me.dog ?? null;
   let published: Published | null = null;    // …and the last state the server acknowledged with 'ok'
-  const wanted = (): Published => ({ mode, map: mode === "game" ? map : null });
-  const isPublished = () => published !== null && published.mode === wanted().mode && published.map === wanted().map;
+  const wanted = (): Published => ({ mode, map: mode === "game" ? map : null, dog: mode === "game" ? dog : null });
+  const isPublished = () => {
+    const w = wanted();
+    return published !== null && published.mode === w.mode && published.map === w.map && sameDog(published.dog, w.dog);
+  };
   let subscribed = false;
   let gen = 0;                               // counts (re)joins: an 'ok' for a call sent in an older join is stale
   let closed = false;
@@ -90,8 +98,10 @@ export function trackPresence(
     const now = Date.now();
     sentAt = [...sentAt.filter((t) => now - t < PRESENCE_BUDGET.windowMs), now];
     // A rejected call counts as failed (retried below) instead of leaving `sending` stuck.
-    const status = await channel.track({ name: me.name, online_at: new Date(now).toISOString(), mode: next.mode, map: next.map })
-      .catch(() => "error" as const);
+    const status = await channel.track({
+      name: me.name, online_at: new Date(now).toISOString(), mode: next.mode, map: next.map,
+      dog: next.dog ? { n: next.dog.name, c: next.dog.coat } : null,
+    }).catch(() => "error" as const);
     sending = false;
     if (closed) return;
     // An 'ok' for a call sent before the latest (re)join proves nothing: the new session starts without our
@@ -133,6 +143,11 @@ export function trackPresence(
     setMap: (next) => {
       if (closed || next === map) return;
       map = next;
+      schedule(1000);
+    },
+    setDog: (next) => {
+      if (closed || sameDog(next, dog)) return;
+      dog = next;
       schedule(1000);
     },
   };

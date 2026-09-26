@@ -71,6 +71,23 @@ describe("buildRoster", () => {
   });
 });
 
+describe("buildRoster's dogs (v17 §7.3)", () => {
+  it("walks a walking member's dog with them, and seats no dog", () => {
+    const muc = { name: "Mực", coat: "muc" as const };
+    const presence: PresenceEntry[] = [
+      { accountId: "g1", name: "Giang", mode: "game", map: "field", dog: muc },
+      { accountId: "c2", name: "Chi", mode: "game", map: "field" },
+      { accountId: "c1", name: "Cúc", mode: "classic", map: null, dog: muc },
+    ];
+    const byId = (mapId: MapId) => new Map(buildRoster({
+      presence, members, room, localId: "me", looks: new Map(), mapId, seating: mapId === "hall" ? seating : null,
+    }).map((e) => [e.id, e]));
+    expect(byId("field").get("g1")?.dog).toEqual(muc);
+    expect(byId("field").get("c2")?.dog).toBeNull();
+    expect(byId("hall").get("c1")?.dog).toBeNull();
+  });
+});
+
 describe("buildRoster per map", () => {
   const presence: PresenceEntry[] = [
     { accountId: "c1", name: "Cúc", mode: "classic", map: null },

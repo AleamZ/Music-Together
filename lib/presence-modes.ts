@@ -1,10 +1,24 @@
+import { hasHidden, isCoat, type DogCoat } from "@/lib/game/dog";
 import type { MapId } from "@/lib/game/maps/types";
 import type { ViewMode } from "@/lib/view-mode";
 
 export type PresenceMode = ViewMode;
-export interface PresenceMeta { name?: unknown; online_at?: unknown; mode?: unknown; map?: unknown }
-/** `map`: the game map the member walks on (v14); null in the classic view. */
-export interface PresenceEntry { accountId: string; name: string; mode: PresenceMode; map: MapId | null }
+export interface PresenceMeta { name?: unknown; online_at?: unknown; mode?: unknown; map?: unknown; dog?: unknown }
+/** A member's dog as presence carries it (v17 §7.3): `{n, c}` on the wire. */
+export interface PresenceDog { name: string; coat: DogCoat }
+/** `map`: the game map the member walks on (v14); null in the classic view. `dog` (v17): the dog walking with them,
+ *  from the same tab as `map`; null in the classic view or without one (absent in hand-made entries). */
+export interface PresenceEntry { accountId: string; name: string; mode: PresenceMode; map: MapId | null; dog?: PresenceDog | null }
+
+/** A presence `dog` value: `n` a name of 1–16 characters with no hidden character (the names the server stores), and
+ *  `c` a known coat; anything else is no dog. */
+export function presenceDog(v: unknown): PresenceDog | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.n !== "string" || !isCoat(o.c)) return null;
+  const len = [...o.n].length;
+  return len >= 1 && len <= 16 && !hasHidden(o.n) ? { name: o.n, coat: o.c } : null;
+}
 
 const onlineAt = (m: PresenceMeta): number => (typeof m.online_at === "string" ? Date.parse(m.online_at) || 0 : 0);
 
@@ -17,8 +31,8 @@ export function presenceMap(v: unknown): MapId {
 }
 
 /** Presence state (key = account id, one meta per open tab) → one entry per account.
- *  An account counts as "game" when ANY of its tabs is in game mode; its map comes from the game tab that tracked
- *  last (an old client without a map, or with one it does not know, is in the hall). Sorted by account id. */
+ *  An account counts as "game" when ANY of its tabs is in game mode; its map and its dog come from the game tab that
+ *  tracked last (an old client without a map, or with one it does not know, is in the hall). Sorted by account id. */
 export function aggregatePresenceModes(state: Record<string, PresenceMeta[] | undefined>): PresenceEntry[] {
   const out: PresenceEntry[] = [];
   for (const [accountId, metas] of Object.entries(state)) {
@@ -26,11 +40,11 @@ export function aggregatePresenceModes(state: Record<string, PresenceMeta[] | un
     const name = metas.map((m) => m.name).find((n): n is string => typeof n === "string" && n.length > 0) ?? "";
     const games = metas.filter((m) => m.mode === "game");
     if (games.length === 0) {
-      out.push({ accountId, name, mode: "classic", map: null });
+      out.push({ accountId, name, mode: "classic", map: null, dog: null });
       continue;
     }
     const latest = games.reduce((a, b) => (onlineAt(b) > onlineAt(a) ? b : a));
-    out.push({ accountId, name, mode: "game", map: presenceMap(latest.map) });
+    out.push({ accountId, name, mode: "game", map: presenceMap(latest.map), dog: presenceDog(latest.dog) });
   }
   return out.sort((a, b) => (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
 }

@@ -35,7 +35,7 @@ export interface RosterInput {
 /**
  * Everyone online in the room and on my map, except me (non-members are ignored). Classic-view members are in
  * the hall with a fixed spot — the DJ behind the mixer, the others on café seats in account-id order — so every
- * client shows the same arrangement. Game-view members on this map walk (spot null).
+ * client shows the same arrangement. Game-view members on this map walk (spot null), with their dog (v17).
  */
 export function buildRoster({ presence, members, room, localId, looks, mapId, seating }: RosterInput): RosterEntry[] {
   const byAccount = new Map(members.map((m) => [m.account_id, m] as const));
@@ -53,6 +53,7 @@ export function buildRoster({ presence, members, room, localId, looks, mapId, se
       badges: badgesFor(p.accountId, roles, classic),
       look: looks.get(p.accountId) ?? DEFAULT_LOOK,
       spot,
+      dog: classic ? null : p.dog ?? null,
     };
   });
 }

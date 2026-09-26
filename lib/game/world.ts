@@ -2,9 +2,11 @@ import { applyPathMsg, applyStateMsg, createActor, tickActor, type Actor } from 
 import type { GameMap, Spot } from "@/lib/game/maps/types";
 import { codeToFacing, type FarmAnim, type FishPhase, type GameMessage } from "@/lib/game/net/protocol";
 import type { Look } from "@/lib/game/types";
+import type { PresenceDog } from "@/lib/presence-modes";
 
-/** One other online member. `spot` = fixed place for classic-mode members; null = walking (game mode). */
-export interface RosterEntry { id: string; name: string; badges: string; look: Look; spot: Spot | null }
+/** One other online member. `spot` = fixed place for classic-mode members; null = walking (game mode). `dog` (v17):
+ *  the dog walking with them; seated members show none. */
+export interface RosterEntry { id: string; name: string; badges: string; look: Look; spot: Spot | null; dog?: PresenceDog | null }
 
 /** What the others see of a member's fishing (v14 spec §9.3). */
 export interface RemoteFishing {
