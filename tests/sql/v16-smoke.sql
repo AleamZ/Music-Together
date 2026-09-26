@@ -980,3 +980,272 @@ begin
 end $$;
 
 select 'v16 cao smoke ok' as result;
+
+-- ---------- Poker (§9, §17): four accounts, blinds 500/1 000; time stands still (each step's deadline is moved back) ----------
+create function pg_temp.pt() returns public.card_tables language sql as $$
+  select * from public.card_tables where room_id = (select v from smoke where k = 'room')::uuid and game = 'poker'
+$$;
+create function pg_temp.pp(p_seat integer) returns jsonb language sql as $$
+  select (pg_temp.pt()).pub->'players'->(p_seat::text)
+$$;
+create function pg_temp.chips() returns jsonb language sql as $$
+  select coalesce(jsonb_object_agg(seat::text, chips), '{}') from public.card_seats
+   where room_id = (select v from smoke where k = 'room')::uuid and game = 'poker'
+$$;
+create function pg_temp.presult() returns jsonb language sql as $$
+  select jsonb_build_object('uncontested', t.last->'uncontested', 'net', t.last->'net',
+    'pots', (select coalesce(jsonb_agg(jsonb_build_array(x->'xu', x->'seats', x->'winners') order by n), '[]')
+               from jsonb_array_elements(t.last->'pots') with ordinality e(x, n)))
+    from pg_temp.pt() t
+$$;
+-- What is due at the poker table: its deadline moved to the past, then a tick with this deck.
+create function pg_temp.pk_due(p_deck integer[]) returns public.card_tables language plpgsql as $$
+declare room uuid := (select v from smoke where k = 'room')::uuid; r jsonb;
+begin
+  update public.card_tables set deadline = now() - interval '1 second' where room_id = room and game = 'poker';
+  r := public._card_tick(room, (select v from smoke where k = 'a1')::uuid, 'poker', now(), p_deck);
+  assert (r->>'changed')::boolean, format('the tick: %s', r);
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the tick';
+  return pg_temp.pt();
+end $$;
+-- An act with the table's seq: an action answer, and the money in place.
+create function pg_temp.pk(p_token text, p_action text, p_amount integer) returns jsonb language plpgsql as $$
+declare q integer := (pg_temp.pt()).seq; r jsonb;
+begin
+  r := public.pk_act((select v from smoke where k = 'room')::uuid, p_token, q, p_action, p_amount);
+  assert r ? 'state' and (r->'state'->>'seq')::int > q, format('%s %s: %s', p_action, p_amount, r);
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, format('zero-sum after %s', p_action);
+  return r;
+end $$;
+-- An act the state refuses: a soft bad_move with this error, and nothing changes.
+create function pg_temp.pk_bad(p_token text, p_action text, p_amount integer, p_error text) returns void language plpgsql as $$
+declare q integer := (pg_temp.pt()).seq; r jsonb;
+begin
+  r := public.pk_act((select v from smoke where k = 'room')::uuid, p_token, q, p_action, p_amount);
+  assert pg_temp.env(r, 'bad_move', p_error), format('%s %s: %s, want %s', p_action, p_amount, r, p_error);
+  assert (pg_temp.pt()).seq = q, format('%s changed the table', p_action);
+end $$;
+
+-- Hands 1–3: heads-up blinds and order, a check and a fold timeout, an uncontested win; the side pot and the short
+-- all-in of §9.3.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        t public.card_tables; r jsonb; q integer;
+begin
+  perform pg_temp.set_coins(a, 500000) from unnest(array[a1, a2, a3, a4]) a;
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  perform public.card_sit(room, c1, 'poker', 1, 1000, 100000);
+  r := public.card_sit(room, c2, 'poker', 2, 1000, 100000);
+  assert r->'state'->>'phase' = 'countdown' and (r->'state'->>'deadline')::timestamptz = now() + interval '5 seconds',
+    'the 5 s countdown';
+  update public.card_tables set pos = 2 where room_id = room and game = 'poker';
+  -- hand 1, heads-up (§9.1): the button posts the SB and acts first preflop
+  t := pg_temp.pk_due(pg_temp.deck('2C 7D', '3C 8D', '4H 9S JC QD KH'));
+  assert t.phase = 'playing' and t.hand_no = 1 and t.pos = 1 and t.turn = 1 and t.deadline = now() + interval '30 seconds'
+         and t.pub->'button' = '1' and t.pub->'sb' = '1' and t.pub->'bb' = '2' and t.pub->>'street' = 'preflop'
+         and t.pub->'cur' = '1000' and t.pub->'raise' = '1000' and t.pub->'pot' = '1500' and t.pub->'board' = '[]',
+    format('heads-up: %s', t.pub);
+  assert pg_temp.chips() = '{"1": 99500, "2": 99000}' and pg_temp.pp(1) @> '{"bet": 500, "put": 500, "last": "sb", "pending": true}'
+         and pg_temp.pp(2) @> '{"bet": 1000, "put": 1000, "last": "bb", "pending": true}', 'the blinds';
+  assert not exists (select 1 from jsonb_each(t.pub->'players') p where p.value ? 'cards'), 'no hole cards in the state';
+  -- the hard signals of pk_act (§11.5), in log mode
+  q := t.seq;
+  assert pg_temp.env(public.pk_act(room, c1, q, 'shove', null), 'bad_bet', 'invalid bet'), 'an unknown action';
+  assert pg_temp.env(public.pk_act(room, c1, q, null, null), 'bad_bet', 'invalid bet'), 'no action';
+  assert pg_temp.env(public.pk_act(room, c1, q, 'raise', null), 'bad_bet', 'invalid bet'), 'a raise with no amount';
+  assert pg_temp.env(public.pk_act(room, c1, q, 'bet', -1), 'bad_bet', 'invalid bet'), 'a negative bet';
+  assert pg_temp.env(public.pk_act(room, c1, q, 'raise', 2000000001), 'bad_bet', 'invalid bet'), 'above 2·10⁹';
+  assert (select count(*) from public.anticheat_events where account_id = a1 and code = 'bad_bet' and outcome = 'log_only'
+            and rpc = 'pk_act') = 5, 'five hard signals logged';
+  assert pg_temp.err(format('select public.pk_act(%L, %L, %s, %L, null)', room, c1, q + 1, 'call')) = 'stale', 'stale';
+  -- refused acts are soft (R30)
+  perform pg_temp.pk_bad(c2, 'check', null, 'not your turn');
+  perform pg_temp.pk_bad(c1, 'check', null, 'invalid bet');
+  perform pg_temp.pk_bad(c1, 'bet', 3000, 'invalid bet');
+  perform pg_temp.pk_bad(c1, 'raise', 1500, 'invalid bet');
+  perform pg_temp.pk_bad(c1, 'raise', 100001, 'invalid bet');
+  perform pg_temp.pk(c1, 'call', null);
+  assert (pg_temp.pt()).turn = 2 and pg_temp.chips() = '{"1": 99000, "2": 99000}', 'A completes; the BB''s option';
+  -- the BB's turn runs out with nothing to call: a check (§10); the flop, where the BB acts first
+  t := pg_temp.pk_due(null);
+  assert t.pub->>'street' = 'flop' and t.turn = 2 and t.pub->'board' = to_jsonb(pg_temp.hand('4H 9S JC')) and t.pub->'cur' = '0'
+         and pg_temp.pp(2) @> '{"last": "check", "bet": 0}'
+         and (select missed from public.card_seats where room_id = room and game = 'poker' and seat = 2) = 1,
+    format('the check timeout: %s', t.pub);
+  perform pg_temp.pk(c2, 'check', null);
+  assert (select missed from public.card_seats where room_id = room and game = 'poker' and seat = 2) = 0, 'a real act resets';
+  perform pg_temp.pk_bad(c1, 'bet', 999, 'invalid bet');
+  perform pg_temp.pk(c1, 'bet', 2000);
+  -- facing a bet the turn runs out: a fold, and A wins uncontested, no card shown, 3 s
+  t := pg_temp.pk_due(null);
+  assert t.phase = 'result' and t.deadline = now() + interval '3 seconds'
+         and pg_temp.presult() = '{"pots": [[4000, [1], [1]]], "net": {"1": 1000, "2": -1000}, "uncontested": true}'
+         and t.last->'shown' = '{}' and t.last->'board' = to_jsonb(pg_temp.hand('4H 9S JC'))
+         and pg_temp.chips() = '{"1": 101000, "2": 99000}', format('uncontested: %s', t.last);
+  perform pg_temp.pk_bad(c1, 'check', null, 'wrong phase');
+  -- hand 2 (§9.3, the side pot): A (button) 60 000, B (SB) 8 000, C (BB) 40 000
+  perform public.card_sit(room, c3, 'poker', 3, 1000, 50000);
+  update public.card_seats set chips = case seat when 1 then 60000 when 2 then 8000 else 40000 end
+   where room_id = room and game = 'poker';
+  update public.card_tables set pos = 3 where room_id = room and game = 'poker';
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  t := pg_temp.pk_due(pg_temp.deck('KH KD', 'AS AH', 'QC 3D', '2S 7D 9C JH 4C'));
+  assert t.pub->'button' = '1' and t.pub->'sb' = '2' and t.pub->'bb' = '3' and t.turn = 1, 'left of the BB acts first';
+  perform pg_temp.pk(c1, 'raise', 3000);
+  perform pg_temp.pk(c2, 'allin', null);
+  t := pg_temp.pt();
+  assert t.pub->'cur' = '8000' and t.pub->'raise' = '5000' and pg_temp.pp(2) @> '{"allin": true, "put": 8000}' and t.turn = 3,
+    format('an all-in full raise: %s', t.pub);
+  perform pg_temp.pk(c3, 'call', null);
+  perform pg_temp.pk(c1, 'call', null);
+  t := pg_temp.pt();
+  assert t.pub->>'street' = 'flop' and t.turn = 3 and t.pub->'pot' = '24000', format('the flop: %s', t.pub);
+  perform pg_temp.pk(c3, 'bet', 10000);
+  perform pg_temp.pk(c1, 'call', null);
+  perform pg_temp.pk(c3, 'check', null);
+  perform pg_temp.pk(c1, 'check', null);
+  perform pg_temp.pk(c3, 'check', null);
+  perform pg_temp.pk(c1, 'check', null);
+  t := pg_temp.pt();
+  assert pg_temp.presult() = '{"pots": [[24000, [1, 2, 3], [2]], [20000, [1, 3], [1]]], "net": {"1": 2000, "2": 16000, "3": -18000},
+                              "uncontested": false}', format('the side pot: %s', t.last);
+  assert t.last->'pots'->0->'hand' = '[1, 14, 11, 9, 7]' and t.last->'pots'->1->'hand' = '[1, 13, 11, 9, 7]'
+         and t.last->'shown' = jsonb_build_object('1', pg_temp.sorted('KH KD'), '2', pg_temp.sorted('AS AH'), '3', pg_temp.sorted('QC 3D'))
+         and t.last->'board' = to_jsonb(pg_temp.hand('2S 7D 9C JH 4C')) and t.deadline = now() + interval '6 seconds'
+         and pg_temp.chips() = '{"1": 62000, "2": 24000, "3": 22000}', format('every live hand shown: %s', t.last);
+  -- hand 3 (§9.3, the short all-in): A bets 4 000, B all-in for 5 000, C calls; A may call or fold, not raise (TDA 47)
+  update public.card_seats set chips = case seat when 2 then 6000 else 50000 end where room_id = room and game = 'poker';
+  update public.card_tables set pos = 2 where room_id = room and game = 'poker';
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  t := pg_temp.pk_due(pg_temp.deck('AC AD', 'QD JD', 'KC KS', '2H 5S 8C 9D 3C'));
+  assert t.pub->'button' = '3' and t.pub->'sb' = '1' and t.pub->'bb' = '2' and t.turn = 3, 'C is the button';
+  perform pg_temp.pk(c3, 'call', null);
+  perform pg_temp.pk(c1, 'call', null);
+  perform pg_temp.pk(c2, 'check', null);
+  assert (pg_temp.pt()).pub->>'street' = 'flop' and (pg_temp.pt()).turn = 1, 'left of the button acts first after the flop';
+  perform pg_temp.pk(c1, 'bet', 4000);
+  perform pg_temp.pk(c2, 'allin', null);
+  t := pg_temp.pt();
+  assert t.pub->'cur' = '5000' and t.pub->'raise' = '4000' and t.turn = 3, format('a short all-in: %s', t.pub);
+  perform pg_temp.pk(c3, 'call', null);
+  perform pg_temp.pk_bad(c1, 'raise', 9000, 'cannot raise');
+  perform pg_temp.pk_bad(c1, 'allin', null, 'cannot raise');
+  perform pg_temp.pk(c1, 'call', null);
+  perform pg_temp.pk(c1, 'check', null);
+  perform pg_temp.pk(c3, 'check', null);
+  perform pg_temp.pk(c1, 'check', null);
+  perform pg_temp.pk(c3, 'check', null);
+  assert pg_temp.presult() = '{"pots": [[18000, [1, 2, 3], [1]]], "net": {"1": 12000, "2": -6000, "3": -6000}, "uncontested": false}'
+         and pg_temp.chips() = '{"1": 62000, "2": 0, "3": 44000}', format('the short all-in: %s', pg_temp.presult());
+end $$;
+
+-- Top-ups (R23); hand 4: the 0-chip seat stands up at the deal, and C's second timeout in a row leaves the hand (§6.3).
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        a2 uuid := (select v from smoke where k = 'a2')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        t public.card_tables;
+begin
+  assert pg_temp.env(public.pk_topup(room, c2, 0), 'bad_qty', 'invalid quantity'), 'a zero top-up';
+  assert pg_temp.env(public.pk_topup(room, c2, -5), 'bad_qty', 'invalid quantity'), 'a negative top-up';
+  assert pg_temp.env(public.pk_topup(room, c2, null), 'bad_qty', 'invalid quantity'), 'no amount';
+  assert pg_temp.env(public.pk_topup(room, c2, 2000001), 'bad_qty', 'invalid quantity'), 'more than any table allows';
+  assert pg_temp.err(format('select public.pk_topup(%L, %L, 200001)', room, c2)) = 'too many chips', '200 BB at most';
+  assert pg_temp.err(format('select public.pk_topup(%L, %L, 1000)', room, c4)) = 'not seated', 'D has no seat';
+  perform public.card_sit(room, c4, 'poker', 4, 1000, 50000);
+  t := pg_temp.pk_due(pg_temp.deck('AH AS', 'QS QH', '2D 7C', '3S 8H 9D JC 4D'));
+  assert t.hand_no = 4 and t.pub->'order' = '[1, 3, 4]' and t.pub->'button' = '4' and t.pub->'sb' = '1' and t.pub->'bb' = '3'
+         and t.turn = 4 and not exists (select 1 from public.card_seats where room_id = room and account_id = a2)
+         and (select count(*) from public.card_log where room_id = room and game = 'poker' and account_id = a2 and action = 'leave'
+                and detail->>'how' = 'idle') = 1, format('B had no chips and stood up: %s', t.pub);
+  perform pg_temp.pk(c4, 'call', null);
+  perform pg_temp.pk(c1, 'call', null);
+  t := pg_temp.pk_due(null);
+  assert t.pub->>'street' = 'flop' and t.turn = 1
+         and (select missed from public.card_seats where room_id = room and game = 'poker' and seat = 3) = 1, 'C checked by timeout';
+  perform pg_temp.pk(c1, 'check', null);
+  t := pg_temp.pk_due(null);
+  assert t.turn = 4 and pg_temp.pp(3) @> '{"fold": true, "last": "timeout", "put": 1000}'
+         and (select leaving and chips = 0 and missed = 2 from public.card_seats where room_id = room and game = 'poker' and seat = 3)
+         and pg_temp.coins(a3) = 493000, format('the second miss: C folds and its stack goes home: %s', t.pub);
+  assert pg_temp.err(format('select public.card_sit(%L, %L, %L, 1, 1000, null)', room, c3, 'cao')) = 'still leaving', 'still leaving';
+  perform pg_temp.pk(c4, 'check', null);
+  perform pg_temp.pk(c1, 'check', null);
+  perform pg_temp.pk(c4, 'check', null);
+  perform pg_temp.pk(c1, 'check', null);
+  perform pg_temp.pk(c4, 'check', null);
+  t := pg_temp.pt();
+  assert pg_temp.presult() = '{"pots": [[3000, [1, 4], [1]]], "net": {"1": 2000, "3": -1000, "4": -1000}, "uncontested": false}'
+         and t.last->'shown' = jsonb_build_object('1', pg_temp.sorted('AH AS'), '4', pg_temp.sorted('2D 7C'))
+         and not exists (select 1 from public.card_seats where room_id = room and account_id = a3),
+    format('C''s chips stay in the pot; its row goes with the hand: %s', t.last);
+end $$;
+
+-- Hand 5: a 3-way all-in — B's uncalled 14 000 comes back, two side pots, and the odd xu (TDA 20). Hand 6: B stands up
+-- holding the top bet — its uncalled part is dead money in the top pot; top-ups during a hand.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        a2 uuid := (select v from smoke where k = 'a2')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        t public.card_tables; r jsonb;
+begin
+  perform public.card_sit(room, c2, 'poker', 2, 1000, 50000);
+  update public.card_seats set chips = case seat when 1 then 3001 when 2 then 20000 else 6000 end
+   where room_id = room and game = 'poker';
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  t := pg_temp.pk_due(pg_temp.deck('QC 3D', 'JS 5D', 'QD 4C', 'KS KD 7C 7H 2S'));
+  assert t.pub->'button' = '1' and t.pub->'sb' = '2' and t.pub->'bb' = '4' and t.turn = 1, 'A is the button';
+  perform pg_temp.pk(c1, 'allin', null);
+  perform pg_temp.pk(c2, 'allin', null);
+  perform pg_temp.pk(c4, 'allin', null);
+  t := pg_temp.pt();
+  assert t.phase = 'result' and t.last->'board' = to_jsonb(pg_temp.hand('KS KD 7C 7H 2S'))
+         and pg_temp.presult() = '{"pots": [[9003, [1, 2, 4], [1, 4]], [5998, [2, 4], [4]]], "net": {"1": 1500, "2": -6000, "4": 4500},
+                                   "uncontested": false}', format('a 3-way all-in: %s', t.last);
+  assert pg_temp.chips() = '{"1": 4501, "2": 14000, "4": 10500}', format('the odd xu to D, first left of the button: %s', pg_temp.chips());
+  -- hand 6: the button B raises to 10 000 and stands up while D is to act
+  update public.card_seats set chips = case seat when 1 then 3000 when 4 then 6000 else chips end
+   where room_id = room and game = 'poker';
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  t := pg_temp.pk_due(pg_temp.deck('AS AD', '2H 7S', 'KS KD', '2C 6H 9D JC 4S'));
+  assert t.pub->'button' = '2' and t.pub->'sb' = '4' and t.pub->'bb' = '1' and t.turn = 2, 'B is the button';
+  perform pg_temp.pk(c2, 'raise', 10000);
+  r := public.card_leave(room, c2, 'poker');
+  t := pg_temp.pt();
+  assert t.turn = 4 and pg_temp.pp(2) @> '{"fold": true, "last": "left", "put": 10000}'
+         and (select leaving and chips = 0 and missed = 0 from public.card_seats where room_id = room and game = 'poker' and seat = 2)
+         and (r->>'coins')::int = 354000 and pg_temp.coins(a2) = 354000 and pg_temp.total() = (select v from smoke where k = 'm')::bigint,
+    format('B stood up mid-hand: %s', t.pub);
+  -- the caller in the live hand cannot top up; a seat that is not in it can (R23)
+  assert pg_temp.err(format('select public.pk_topup(%L, %L, 1000)', room, c1)) = 'hand running', 'hand running';
+  perform public.card_sit(room, c3, 'poker', 3, 1000, 50000);
+  r := public.pk_topup(room, c3, 10000);
+  assert (r->>'coins')::int = 433000 and pg_temp.coins(a3) = 433000
+         and (select chips from public.card_seats where room_id = room and game = 'poker' and seat = 3) = 60000
+         and (select reason = 'card_buyin' and delta = -10000 and ref = 'pk#6' from public.coin_ledger
+               where account_id = a3 order by id desc limit 1), format('a top-up: %s', r);
+  assert pg_temp.err(format('select public.pk_topup(%L, %L, 140001)', room, c3)) = 'too many chips', 'too many chips';
+  perform pg_temp.pk(c4, 'allin', null);
+  perform pg_temp.pk(c1, 'allin', null);
+  assert pg_temp.presult() = '{"pots": [[9000, [1, 4], [1]], [10000, [4], [4]]], "net": {"1": 6000, "2": -10000, "4": 4000},
+                              "uncontested": false}', format('dead money in the top pot: %s', pg_temp.presult());
+  assert pg_temp.chips() = '{"1": 9000, "3": 60000, "4": 10000}'
+         and not exists (select 1 from public.card_seats where room_id = room and account_id = a2), 'B''s row goes with the hand';
+  -- standing up between hands cashes the stack out, and the empty table resets
+  perform public.card_leave(room, c1, 'poker');
+  perform public.card_leave(room, c3, 'poker');
+  r := public.card_leave(room, c4, 'poker');
+  assert r->'state'->'seats' = '[]' and r->'state'->'stake' = 'null' and pg_temp.total() = (select v from smoke where k = 'm')::bigint
+         and not exists (select 1 from public.card_seats where room_id = room)
+         and (select count(*) from public.coin_ledger where reason = 'card_cashout' and ref = 'pk#6') >= 3, 'all cashed out';
+  assert not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like '\_pk\_%'
+                      and has_function_privilege('anon', p.oid, 'execute')), 'the poker helpers are private';
+end $$;
+
+select 'v16 poker smoke ok' as result;

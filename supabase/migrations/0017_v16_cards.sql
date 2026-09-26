@@ -798,6 +798,8 @@ begin
     perform public._tl_leave(p_room, p_seats, p_how, p_now);
   elsif p_game = 'cao' then
     perform public._cao_leave(p_room, p_seats, p_how, p_now);
+  elsif p_game = 'poker' then
+    perform public._pk_leave(p_room, p_seats, p_how, p_now);
   end if;
 end $$;
 
@@ -810,6 +812,8 @@ begin
     return public._tl_due(p_room, p_now, p_deck);
   elsif p_game = 'cao' then
     return public._cao_due(p_room, p_now, p_deck);
+  elsif p_game = 'poker' then
+    return public._pk_due(p_room, p_now, p_deck);
   end if;
   return false;
 end $$;
@@ -1018,6 +1022,8 @@ begin
     v_err := public._tl_do_pass(p_room, v_seat, p_now);
   elsif p_kind = 'cao_deal' then
     v_err := public._cao_do_deal(p_room, v_seat, p_now, p_deck);
+  elsif p_kind = 'pk_act' then
+    v_err := public._pk_do_act(p_room, v_seat, p_args->>'action', (p_args->>'amount')::int, p_now);
   end if;
   if v_err is not null then
     return public._ac_flag(p_account, 'bad_move', p_kind,
@@ -1712,6 +1718,434 @@ revoke all on function public._cao_leave(uuid, integer[], text, timestamptz) fro
 revoke all on function public._cao_showdown(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public._cao_due(uuid, timestamptz, integer[]) from public, anon, authenticated;
 
+-- Poker (§9). The next seat to act after p_from (§9.1): the first pending seat in turn order, p_from itself last.
+create or replace function public._pk_next(p_pub jsonb, p_from integer) returns integer
+language sql immutable set search_path = public, extensions
+as $$
+  select s from unnest(public._card_after(public._card_ints(p_pub->'order'), p_from) || p_from) with ordinality u(s, n)
+   where coalesce((p_pub->'players'->(s::text)->>'pending')::boolean, false) order by n limit 1
+$$;
+
+-- The total in the pot (§11.4): every seat's `put`, folded seats included.
+create or replace function public._pk_pot(p_pub jsonb) returns integer
+language sql immutable set search_path = public, extensions
+as $$ select coalesce(sum((value->>'put')::int), 0)::int from jsonb_each(coalesce(p_pub->'players', '{}'::jsonb)) $$;
+
+-- The deal (§9.2): the table's wallets locked; the unseen (R28) and the seats with no chips (R23) stand up, their stacks
+-- cashed out; fewer than two → idle. The button moves to the next player (a random one when the table has none), the
+-- blinds are posted (a short stack posts what it has; the call stays a full BB), 2 cards each in seat order, and the
+-- board is kept secret until its street.
+create or replace function public._pk_deal(p_room uuid, p_now timestamptz, p_deck integer[]) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; r record; v_players integer[]; n integer; v_btn integer; v_sb integer; v_bb integer;
+        v_deck integer[]; v_hand integer; i integer; v_cards integer[]; v_pub jsonb; v_chips integer; v_amt integer;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  perform public._card_lock_wallets(p_room, 'poker');
+  for r in select seat from public.card_seats
+            where room_id = p_room and game = 'poker' and not leaving and (seen_at < p_now - interval '60 seconds' or chips = 0)
+            order by seat loop
+    perform public._card_leave_seat(p_room, 'poker', r.seat, 'idle', p_now);
+  end loop;
+  v_players := array(select seat from public.card_seats where room_id = p_room and game = 'poker' and not leaving order by seat);
+  n := cardinality(v_players);
+  if n < 2 then
+    update public.card_tables set phase = 'idle', turn = null, deadline = null, pub = '{}'::jsonb
+     where room_id = p_room and game = 'poker';
+    return true;
+  end if;
+  v_btn := case when t.pos is null then v_players[1 + public._card_rand(n)] else (public._card_after(v_players, t.pos))[1] end;
+  v_sb := case when n = 2 then v_btn else (public._card_after(v_players, v_btn))[1] end;
+  v_bb := (public._card_after(v_players, v_sb))[1];
+  v_deck := coalesce(p_deck, public._card_shuffle());
+  v_hand := t.hand_no + 1;
+  delete from public.card_hands where room_id = p_room and game = 'poker';
+  delete from public.card_secrets where room_id = p_room and game = 'poker';
+  for i in 1..n loop
+    v_cards := array(select c from unnest(v_deck[2 * i - 1 : 2 * i]) c order by c);
+    insert into public.card_hands (room_id, game, hand_no, seat, account_id, dealt, cards)
+    select p_room, 'poker', v_hand, v_players[i], account_id, v_cards, v_cards
+      from public.card_seats where room_id = p_room and game = 'poker' and seat = v_players[i];
+  end loop;
+  insert into public.card_secrets (room_id, game, hand_no, board) values (p_room, 'poker', v_hand, v_deck[2 * n + 1 : 2 * n + 5]);
+  v_pub := jsonb_build_object('button', v_btn, 'sb', v_sb, 'bb', v_bb, 'street', 'preflop', 'board', '[]'::jsonb,
+             'cur', t.stake, 'raise', t.stake, 'pot', 0, 'order', to_jsonb(v_players),
+             'players', (select jsonb_object_agg(cs.seat::text, jsonb_build_object('id', cs.account_id, 'bet', 0, 'put', 0,
+                                  'fold', false, 'allin', false, 'acted', null, 'pending', true, 'last', null))
+                           from public.card_seats cs where cs.room_id = p_room and cs.game = 'poker' and cs.seat = any(v_players)));
+  for r in select * from (values (v_sb, t.stake / 2, 'sb'), (v_bb, t.stake, 'bb')) b(seat, blind, what) loop
+    select chips into v_chips from public.card_seats where room_id = p_room and game = 'poker' and seat = r.seat;
+    v_amt := least(v_chips, r.blind);
+    update public.card_seats set chips = chips - v_amt where room_id = p_room and game = 'poker' and seat = r.seat;
+    v_pub := jsonb_set(v_pub, array['players', r.seat::text], v_pub->'players'->(r.seat::text)
+               || jsonb_build_object('bet', v_amt, 'put', v_amt, 'allin', v_chips = v_amt, 'pending', v_chips > v_amt, 'last', r.what));
+  end loop;
+  v_pub := jsonb_set(v_pub, '{pot}', to_jsonb(public._pk_pot(v_pub)));
+  update public.card_tables
+     set hand_no = v_hand, pos = v_btn, phase = 'playing', turn = null, deadline = p_now + interval '30 seconds', pub = v_pub
+   where room_id = p_room and game = 'poker';
+  perform public._card_log(p_room, 'poker', v_hand, null, v_btn, 'deal',
+    jsonb_build_object('hands', (select jsonb_object_agg(seat::text, to_jsonb(dealt)) from public.card_hands
+                                  where room_id = p_room and game = 'poker'), 'board', to_jsonb(v_deck[2 * n + 1 : 2 * n + 5])), p_now);
+  delete from public.card_log where id in (select id from public.card_log where at < p_now - interval '14 days' order by at limit 500);
+  -- preflop starts left of the BB (heads-up: the button)
+  perform public._pk_after(p_room, v_bb, p_now, true);
+  return true;
+end $$;
+
+-- The checks after an act (§9.2): nobody left in the hand → refund; one player left → the pots to them (uncontested);
+-- nobody to act → the street ends; else the next pending seat (only when the turn moves: a player who leaves out of
+-- turn does not move it).
+create or replace function public._pk_after(p_room uuid, p_from integer, p_now timestamptz, p_move boolean) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_pub jsonb; v_live integer;
+begin
+  select pub into v_pub from public.card_tables where room_id = p_room and game = 'poker';
+  v_live := (select count(*) from jsonb_each(v_pub->'players') where not (value->>'fold')::boolean);
+  if v_live = 0 then
+    perform public._pk_refund(p_room, p_now);
+  elsif v_live = 1 then
+    perform public._pk_award(p_room, p_now);
+  elsif not exists (select 1 from jsonb_each(v_pub->'players') where (value->>'pending')::boolean) then
+    perform public._pk_street_end(p_room, p_now);
+  elsif p_move then
+    update public.card_tables set turn = public._pk_next(v_pub, p_from), deadline = p_now + interval '30 seconds'
+     where room_id = p_room and game = 'poker';
+  end if;
+end $$;
+
+-- An act (§9.1): the refusal of a move that is not legal (a bad_move, §11.5), else null. `raise` is the size of the last
+-- full bet or raise this street; a player may raise when it has not acted this street or when cur − acted ≥ raise, so a
+-- short all-in does not re-open raising (TDA 47).
+create or replace function public._pk_do_act(p_room uuid, p_seat integer, p_action text, p_amount integer, p_now timestamptz)
+returns text
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_pub jsonb; p jsonb; s text := p_seat::text; v_chips integer; v_bet integer; v_cur integer;
+        v_raise integer; v_to integer; v_amt integer; v_may boolean; v_full boolean; q text;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  if t.phase <> 'playing' then
+    return 'wrong phase';
+  end if;
+  v_pub := t.pub;
+  p := v_pub->'players'->s;
+  select chips into v_chips from public.card_seats
+   where room_id = p_room and game = 'poker' and seat = p_seat and account_id = (p->>'id')::uuid and not leaving;
+  if t.turn is distinct from p_seat or p is null or v_chips is null or (p->>'fold')::boolean or (p->>'allin')::boolean then
+    return 'not your turn';
+  end if;
+  v_bet := (p->>'bet')::int;
+  v_cur := (v_pub->>'cur')::int;
+  v_raise := (v_pub->>'raise')::int;
+  v_may := jsonb_typeof(p->'acted') is distinct from 'number' or v_cur - (p->>'acted')::int >= v_raise;
+  if p_action is null or p_action not in ('fold', 'check', 'call', 'bet', 'raise', 'allin')
+     or (p_action in ('bet', 'raise') and p_amount is null) then
+    return 'invalid bet';
+  elsif p_action = 'check' then
+    if v_cur > v_bet then
+      return 'invalid bet';
+    end if;
+    v_to := v_bet;
+  elsif p_action = 'call' then
+    if v_cur <= v_bet then
+      return 'invalid bet';
+    end if;
+    v_to := least(v_cur, v_bet + v_chips);
+  elsif p_action = 'bet' then
+    if v_cur > 0 or p_amount > v_bet + v_chips or p_amount <= 0 or (p_amount < t.stake and p_amount <> v_bet + v_chips) then
+      return 'invalid bet';
+    end if;
+    v_to := p_amount;
+  elsif p_action = 'raise' then
+    if v_cur = 0 or p_amount <= v_cur or p_amount > v_bet + v_chips then
+      return 'invalid bet';
+    end if;
+    if not v_may then
+      return 'cannot raise';
+    end if;
+    if p_amount < v_cur + v_raise and p_amount <> v_bet + v_chips then
+      return 'invalid bet';
+    end if;
+    v_to := p_amount;
+  elsif p_action = 'allin' then
+    v_to := v_bet + v_chips;
+    if v_to > v_cur and not v_may then
+      return 'cannot raise';
+    end if;
+  end if;
+  if p_action = 'fold' then
+    p := p || jsonb_build_object('fold', true, 'pending', false, 'last', 'fold');
+  else
+    v_amt := v_to - v_bet;
+    update public.card_seats set chips = chips - v_amt where room_id = p_room and game = 'poker' and seat = p_seat;
+    p := p || jsonb_build_object('bet', v_to, 'put', (p->>'put')::int + v_amt, 'allin', v_amt = v_chips, 'pending', false,
+                                 'last', p_action);
+    if v_to > v_cur then
+      v_full := v_to - v_cur >= v_raise or (v_cur = 0 and v_to >= t.stake);
+      if v_full then
+        v_raise := v_to - v_cur;
+      end if;
+      -- a full bet or raise re-opens the street for every other live player; a short all-in only for those below it
+      for q in select key from jsonb_each(v_pub->'players')
+                where key <> s and not (value->>'fold')::boolean and not (value->>'allin')::boolean
+                  and (v_full or (value->>'bet')::int < v_to) loop
+        v_pub := jsonb_set(v_pub, array['players', q, 'pending'], 'true');
+      end loop;
+      v_cur := v_to;
+    end if;
+    p := p || jsonb_build_object('acted', v_cur);
+  end if;
+  v_pub := jsonb_set(v_pub, array['players', s], p) || jsonb_build_object('cur', v_cur, 'raise', v_raise);
+  v_pub := jsonb_set(v_pub, '{pot}', to_jsonb(public._pk_pot(v_pub)));
+  update public.card_tables set pub = v_pub where room_id = p_room and game = 'poker';
+  perform public._card_log(p_room, 'poker', t.hand_no, (p->>'id')::uuid, p_seat, 'act',
+                           jsonb_build_object('action', p_action, 'to', v_to), p_now);
+  perform public._pk_after(p_room, p_seat, p_now, true);
+  return null;
+end $$;
+
+-- The end of a street (§9.2): the uncalled part of the top bet goes back to its owner if still live (a folded owner's
+-- stays as dead money); with at most one live player able to act, or after the river, the board is revealed and the
+-- hands shown; else the next street.
+create or replace function public._pk_street_end(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_pub jsonb; v_seat text; v_top integer; v_back integer; v_board integer[]; v_street text;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  v_pub := t.pub;
+  select key, (value->>'bet')::int into v_seat, v_top from jsonb_each(v_pub->'players')
+   order by (value->>'bet')::int desc, key limit 1;
+  v_back := v_top - coalesce((select max((value->>'bet')::int) from jsonb_each(v_pub->'players') where key <> v_seat), 0);
+  if v_back > 0 and not (v_pub->'players'->v_seat->>'fold')::boolean then
+    update public.card_seats set chips = chips + v_back
+     where room_id = p_room and game = 'poker' and seat = v_seat::int and account_id = (v_pub->'players'->v_seat->>'id')::uuid;
+    v_pub := jsonb_set(v_pub, array['players', v_seat], v_pub->'players'->v_seat || jsonb_build_object(
+               'bet', v_top - v_back, 'put', (v_pub->'players'->v_seat->>'put')::int - v_back, 'allin', false));
+    v_pub := jsonb_set(v_pub, '{pot}', to_jsonb(public._pk_pot(v_pub)));
+  end if;
+  v_board := (select board from public.card_secrets where room_id = p_room and game = 'poker' and hand_no = t.hand_no);
+  if v_pub->>'street' = 'river'
+     or (select count(*) from jsonb_each(v_pub->'players')
+          where not (value->>'fold')::boolean and not (value->>'allin')::boolean) <= 1 then
+    update public.card_tables set pub = v_pub || jsonb_build_object('board', to_jsonb(v_board))
+     where room_id = p_room and game = 'poker';
+    perform public._pk_showdown(p_room, p_now);
+    return;
+  end if;
+  v_street := case v_pub->>'street' when 'preflop' then 'flop' when 'flop' then 'turn' else 'river' end;
+  v_pub := v_pub || jsonb_build_object('street', v_street, 'cur', 0, 'raise', t.stake,
+             'board', to_jsonb(v_board[1 : case v_street when 'flop' then 3 when 'turn' then 4 else 5 end]),
+             'players', (select jsonb_object_agg(key, value || jsonb_build_object('bet', 0, 'acted', null,
+                                  'pending', not (value->>'fold')::boolean and not (value->>'allin')::boolean))
+                           from jsonb_each(v_pub->'players')));
+  update public.card_tables
+     set pub = v_pub, turn = public._pk_next(v_pub, (v_pub->>'button')::int), deadline = p_now + interval '30 seconds'
+   where room_id = p_room and game = 'poker';
+end $$;
+
+-- A hand's end (§9.1, §9.2): the pots' shares go to the winners' stacks; `last` holds the board, the hands shown (none
+-- when uncontested), the pots with their winners and hand, and every seat's net; the result lasts 6 s (3 s uncontested);
+-- the leaving rows go.
+create or replace function public._pk_end(p_room uuid, p_now timestamptz, p_pots jsonb, p_keys jsonb, p_uncontested boolean)
+returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; pot jsonb; sh record; v_won jsonb := '{}'::jsonb;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  for pot in select value from jsonb_array_elements(p_pots) loop
+    for sh in select key, value::int as xu from jsonb_each_text(coalesce(pot->'shares', '{}'::jsonb)) loop
+      update public.card_seats set chips = chips + sh.xu
+       where room_id = p_room and game = 'poker' and seat = sh.key::int
+         and account_id = (t.pub->'players'->sh.key->>'id')::uuid;
+      v_won := v_won || jsonb_build_object(sh.key, coalesce((v_won->>sh.key)::int, 0) + sh.xu);
+    end loop;
+  end loop;
+  update public.card_tables
+     set last = jsonb_build_object('hand_no', t.hand_no, 'board', t.pub->'board', 'uncontested', p_uncontested,
+           'shown', case when p_keys is null then '{}'::jsonb
+                    else (select coalesce(jsonb_object_agg(h.seat::text, to_jsonb(h.cards)), '{}'::jsonb) from public.card_hands h
+                           where h.room_id = p_room and h.game = 'poker' and h.hand_no = t.hand_no and p_keys ? h.seat::text) end,
+           'pots', (select coalesce(jsonb_agg(jsonb_build_object('xu', x->'xu', 'seats', x->'seats', 'winners', x->'winners',
+                                                                 'hand', p_keys->(x->'winners'->>0)) order by n), '[]'::jsonb)
+                      from jsonb_array_elements(p_pots) with ordinality e(x, n)),
+           'net', (select jsonb_object_agg(key, coalesce((v_won->>key)::int, 0) - (value->>'put')::int)
+                     from jsonb_each(t.pub->'players'))),
+         phase = 'result', turn = null,
+         deadline = p_now + case when p_uncontested then interval '3 seconds' else interval '6 seconds' end
+   where room_id = p_room and game = 'poker';
+  delete from public.card_seats where room_id = p_room and game = 'poker' and leaving;
+  perform public._card_log(p_room, 'poker', t.hand_no, null, null, 'end',
+                           (select jsonb_build_object('net', last->'net') from public.card_tables
+                             where room_id = p_room and game = 'poker'), p_now);
+  perform public._card_reset_if_empty(p_room, 'poker');
+end $$;
+
+-- The showdown (§9.1, R21): every live hand is shown, and the pots are split among the best hands.
+create or replace function public._pk_showdown(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_board integer[]; v_keys jsonb;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  v_board := public._card_ints(t.pub->'board');
+  v_keys := (select jsonb_object_agg(h.seat::text, to_jsonb(public._pk_eval(h.cards || v_board)))
+               from public.card_hands h
+              where h.room_id = p_room and h.game = 'poker' and h.hand_no = t.hand_no
+                and not coalesce((t.pub->'players'->(h.seat::text)->>'fold')::boolean, true));
+  perform public._pk_end(p_room, p_now,
+    public._pk_pots(jsonb_build_object('players', t.pub->'players', 'keys', v_keys, 'button', t.pub->'button')), v_keys, false);
+end $$;
+
+-- One player left (§9.2): every pot goes to them, and no card is shown.
+create or replace function public._pk_award(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  perform public._pk_end(p_room, p_now,
+    public._pk_pots(jsonb_build_object('players', t.pub->'players', 'button', t.pub->'button')), null, true);
+end $$;
+
+-- Nobody left in the hand (every live player removed by one sweep): each contribution goes back to its contributor — to
+-- the stack while the seat is still theirs, else to the wallet (card_refund) — and the hand ends without a winner.
+create or replace function public._pk_refund(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; r record;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  for r in select key::int as seat, (value->>'id')::uuid as id, (value->>'put')::int as put from jsonb_each(t.pub->'players')
+            where (value->>'put')::int > 0 order by (value->>'id') loop
+    update public.card_seats set chips = chips + r.put
+     where room_id = p_room and game = 'poker' and seat = r.seat and account_id = r.id and not leaving;
+    if not found then
+      perform public._wallet_lock(r.id);
+      perform public._pay(r.id, r.put, 'card_refund', public._card_ref('poker', t.hand_no));
+    end if;
+  end loop;
+  update public.card_tables
+     set last = jsonb_build_object('hand_no', t.hand_no, 'board', t.pub->'board', 'uncontested', false, 'cancelled', true,
+                                   'shown', '{}'::jsonb, 'pots', '[]'::jsonb,
+                                   'net', (select jsonb_object_agg(key, 0) from jsonb_each(t.pub->'players'))),
+         phase = 'result', turn = null, deadline = p_now + interval '6 seconds'
+   where room_id = p_room and game = 'poker';
+  delete from public.card_seats where room_id = p_room and game = 'poker' and leaving;
+  perform public._card_log(p_room, 'poker', t.hand_no, null, null, 'refund', '{}'::jsonb, p_now);
+  perform public._card_reset_if_empty(p_room, 'poker');
+end $$;
+
+-- A turn that ran out (§10): check when nothing is to call, else fold; the second miss in a row leaves the hand as
+-- card_leave would (§6.3).
+create or replace function public._pk_timeout(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_missed integer; v_acc uuid;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  update public.card_seats set missed = missed + 1 where room_id = p_room and game = 'poker' and seat = t.turn
+  returning missed, account_id into v_missed, v_acc;
+  perform public._card_log(p_room, 'poker', t.hand_no, v_acc, t.turn, 'timeout', jsonb_build_object('missed', v_missed), p_now);
+  if v_missed >= 2 then
+    perform public._card_leave_seat(p_room, 'poker', t.turn, 'timeout', p_now);
+  else
+    perform public._pk_do_act(p_room, t.turn,
+      case when (t.pub->>'cur')::int > (t.pub->'players'->(t.turn::text)->>'bet')::int then 'fold' else 'check' end, null, p_now);
+  end if;
+end $$;
+
+-- The leave operation in a live hand (§6.3), with the table's wallets locked: the seats fold, even out of turn; their
+-- stacks go back to their wallets at once (card_cashout) and what they put stays in the pot; the rows stay `leaving`
+-- (chips 0) until the hand ends. Then the checks after an act; the turn moves on only if it was theirs.
+create or replace function public._pk_leave(p_room uuid, p_seats integer[], p_how text, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_pub jsonb; s integer;
+begin
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  v_pub := t.pub;
+  foreach s in array p_seats loop
+    v_pub := jsonb_set(v_pub, array['players', s::text], v_pub->'players'->(s::text) || jsonb_build_object(
+               'fold', true, 'pending', false, 'last', case when p_how = 'timeout' then 'timeout' else 'left' end));
+  end loop;
+  update public.card_tables set pub = v_pub where room_id = p_room and game = 'poker';
+  foreach s in array p_seats loop
+    perform public._card_payout(p_room, 'poker', s, 'card_cashout');
+    update public.card_seats set leaving = true where room_id = p_room and game = 'poker' and seat = s;
+    perform public._card_log(p_room, 'poker', t.hand_no, (v_pub->'players'->(s::text)->>'id')::uuid, s, 'leave',
+                             jsonb_build_object('how', p_how), p_now);
+  end loop;
+  perform public._pk_after(p_room, t.turn, p_now, t.turn = any(p_seats));
+end $$;
+
+-- What is due at a poker table (§10): the deal after the countdown or the result, or the turn's timeout.
+create or replace function public._pk_due(p_room uuid, p_now timestamptz, p_deck integer[]) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_phase text;
+begin
+  select phase into v_phase from public.card_tables where room_id = p_room and game = 'poker';
+  if v_phase in ('countdown', 'result') then
+    return public._pk_deal(p_room, p_now, p_deck);
+  elsif v_phase = 'playing' then
+    perform public._pk_timeout(p_room, p_now);
+    return true;
+  end if;
+  return false;
+end $$;
+
+-- A top-up (§6.2, R23): between the caller's hands, up to 200 BB on the table.
+create or replace function public._pk_topup(p_room uuid, p_account uuid, p_amount integer, p_now timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare t public.card_tables; v_seat integer; v_chips integer; w public.wallets;
+begin
+  perform public._card_open(p_room, 'poker');
+  perform public._card_touch(p_room, p_account, p_now);
+  perform public._card_sweep(p_room, 'poker', p_now);
+  select * into t from public.card_tables where room_id = p_room and game = 'poker';
+  select seat, chips into v_seat, v_chips from public.card_seats
+   where room_id = p_room and game = 'poker' and account_id = p_account and not leaving;
+  if v_seat is null then
+    raise exception 'not seated' using errcode = '22023';
+  end if;
+  if public._card_live(p_room, 'poker', v_seat) then
+    raise exception 'hand running' using errcode = '22023';
+  end if;
+  if v_chips + p_amount > 200 * t.stake then
+    raise exception 'too many chips' using errcode = '22023';
+  end if;
+  w := public._wallet_lock(p_account);
+  if w.coins < p_amount then
+    raise exception 'not enough coins' using errcode = '22023';
+  end if;
+  update public.card_seats set chips = chips + p_amount where room_id = p_room and game = 'poker' and seat = v_seat;
+  perform public._pay(p_account, -p_amount, 'card_buyin', public._card_ref('poker', t.hand_no));
+  perform public._card_log(p_room, 'poker', t.hand_no, p_account, v_seat, 'topup', jsonb_build_object('amount', p_amount), p_now);
+  perform public._card_bump(p_room, 'poker', false);
+  return public._card_answer(p_room, 'poker', p_account, p_now);
+end $$;
+
+revoke all on function public._pk_next(jsonb, integer) from public, anon, authenticated;
+revoke all on function public._pk_pot(jsonb) from public, anon, authenticated;
+revoke all on function public._pk_deal(uuid, timestamptz, integer[]) from public, anon, authenticated;
+revoke all on function public._pk_after(uuid, integer, timestamptz, boolean) from public, anon, authenticated;
+revoke all on function public._pk_do_act(uuid, integer, text, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public._pk_street_end(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._pk_end(uuid, timestamptz, jsonb, jsonb, boolean) from public, anon, authenticated;
+revoke all on function public._pk_showdown(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._pk_award(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._pk_refund(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._pk_timeout(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._pk_leave(uuid, integer[], text, timestamptz) from public, anon, authenticated;
+revoke all on function public._pk_due(uuid, timestamptz, integer[]) from public, anon, authenticated;
+revoke all on function public._pk_topup(uuid, uuid, integer, timestamptz) from public, anon, authenticated;
+
 -- ---------- E. Public RPCs (§11.3): membership first (R38); reads are snapshots (R37); ticks and writes lock and sweep ----------
 -- The hall's table labels (R27): every table's stake, phase and seats; no touch, no lock.
 create or replace function public.card_lobby(p_room_id uuid, p_session_token text) returns jsonb
@@ -1832,6 +2266,34 @@ begin
   return public._card_action(p_room_id, v_account, 'cao', 'cao_deal', p_seq, '{}'::jsonb, now());
 end $$;
 
+-- Act (§9.1): fold, check, call, bet, raise or all-in. Guarded; bad_bet (§11.5) comes before any lock.
+create or replace function public.pk_act(p_room_id uuid, p_session_token text, p_seq integer, p_action text, p_amount integer)
+returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_action is null or p_action not in ('fold', 'check', 'call', 'bet', 'raise', 'allin')
+     or (p_action in ('bet', 'raise') and (p_amount is null or p_amount < 0 or p_amount > 2000000000)) then
+    return public._ac_flag(v_account, 'bad_bet', 'pk_act', jsonb_build_object('seq', p_seq, 'action', p_action, 'amount', p_amount),
+                           p_room_id, 'invalid bet');
+  end if;
+  return public._card_action(p_room_id, v_account, 'poker', 'pk_act', p_seq,
+                             jsonb_build_object('action', p_action, 'amount', p_amount), now());
+end $$;
+
+-- Top up the stack (R23). Guarded; bad_qty (§11.5) comes before any lock: null, < 1 or above 200 BB at the top stake.
+create or replace function public.pk_topup(p_room_id uuid, p_session_token text, p_amount integer) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_account uuid := public._ac_play(p_room_id, p_session_token);
+begin
+  if p_amount is null or p_amount < 1 or p_amount > 2000000 then
+    return public._ac_flag(v_account, 'bad_qty', 'pk_topup', jsonb_build_object('amount', p_amount), p_room_id, 'invalid quantity');
+  end if;
+  return public._pk_topup(p_room_id, v_account, p_amount, now());
+end $$;
+
 grant execute on function public.card_lobby(uuid, text) to anon, authenticated;
 grant execute on function public.card_state(uuid, text, text) to anon, authenticated;
 grant execute on function public.card_hand(uuid, text, text) to anon, authenticated;
@@ -1841,3 +2303,5 @@ grant execute on function public.card_sit(uuid, text, text, integer, integer, in
 grant execute on function public.tl_play(uuid, text, integer, integer[]) to anon, authenticated;
 grant execute on function public.tl_pass(uuid, text, integer) to anon, authenticated;
 grant execute on function public.cao_deal(uuid, text, integer) to anon, authenticated;
+grant execute on function public.pk_act(uuid, text, integer, text, integer) to anon, authenticated;
+grant execute on function public.pk_topup(uuid, text, integer) to anon, authenticated;
