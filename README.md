@@ -296,7 +296,7 @@ What it closes — until now anyone holding the public key, even logged out, cou
 
 ### Trust model (v15)
 
-The server decides every time and phase, the water levels, the pests (rolled at sowing and hidden until they fire), the yield, all prices, and land ownership, leases and reclaims. A client still sends a transplant and harvest quality, but v15.1 ignores it and uses 1.0 (anti-cheat decision D1) until the v15.2 minigames; transplanting and harvesting stay behind the 2 s work gate. As in v14, where a player stands is not verified, and the plots' look and the farm animations come from each client's own copy of the field state. Like the rest of the members table, the new `members.last_seen_at` is readable with the anon key, so anyone who has the key can see when each member last visited a room, to the hour (it is written at most once an hour, for the 14-day reclaim).
+The server decides every time and phase, the water levels, the pests (rolled at sowing and hidden until they fire), the yield, all prices, and land ownership, leases and reclaims. A client still sends a transplant and harvest quality, but v15.1 ignores it and uses 1.0 (anti-cheat decision D1) until the v15.3 transplant minigame (v15.2's harvest minigame only gates the rice parts); transplanting and harvesting stay behind the 2 s work gate. As in v14, where a player stands is not verified, and the plots' look and the farm animations come from each client's own copy of the field state. Like the rest of the members table, the new `members.last_seen_at` is readable with the anon key, so anyone who has the key can see when each member last visited a room, to the hour (it is written at most once an hour, for the 14-day reclaim).
 
 ### Realtime budget (v15)
 
@@ -340,8 +340,34 @@ The field has its own channel `game:{roomId}:field`. After a land or farm action
 ### Trust model (updated)
 
 - **v14:** as above, plus the daily cap: a script that reels at the gate lands at most 300 fish a day instead of 960, and a reel reported faster than the gate is a strike.
-- **v15:** v15.1 ignores the transplant and harvest quality and uses 1.0 until the v15.2 minigames; a quality outside [0.9, 1.1] is a strike.
+- **v15:** v15.1 ignores the transplant and harvest quality and uses 1.0 until v15.3 (v15.2's harvest minigame gates the rice parts and sets no quality); a quality outside [0.9, 1.1] is a strike.
 
 ### Realtime hardening
 
 The server never sees Broadcast, so each client filters what it receives. `bye`, `lk`, `fs` and `fa` count only from a member who is in this map's presence in game mode; movement, `hello` and `fp` count from any member, because presence arrives at least a second late. Each sender has a budget — movement 5/s, `hello` and `bye` 1 per 10 s, `fs` and `fa` 3/s (5 at once), reactions 5/s (12/s in all) — and the rest is dropped; `fp` refetches start at least 2 s apart, and a look is fetched again at most once per 30 s. A member who appears in this map's presence gets everyone's state once more, in case their `hello` was dropped. Not stopped: a spoofer using a member's id (of a member on the map, for `bye`, `lk`, `fs` and `fa`), fake presence, and floods against the project's Realtime quota (spec §14).
+
+## v15.2: Nông cụ & hoa màu — liềm, máy gặt, bình phun, khoai, bắp, ớt
+
+### DB migration
+
+`supabase/migrations/0016_v15_2_crops.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop constraint if exists` + `add constraint`, seeds with `on conflict … do update`): run it in the Supabase SQL Editor after `0015`, so the production order is `0012` → `0014` → `0013` → `0015` → `0016`. It requires `0013` and `0015`, because it re-creates their farm RPCs, the field sweep and the anti-cheat helpers and keeps their parts; it does not need `0014`. It adds `upland_crops` (one config row each for khoai lang, bắp and ớt, public read); the column `shop_items.upland`, the kind `tool` and 5 items (the three hoa-màu seeds, `tool_sickle` for 1 500 xu and `tool_sprayer` for 5 000 xu); on `crops` the crop's kind, the hoa-màu crop and its logs, the cut parts and the harvester job; the sprayer's tank on `farm_profiles`; the private table `produce_stock`; the `coin_ledger` reasons `harvester` and `produce_sell` (the list keeps `wipe`); and 7 guarded RPCs: `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`. It re-creates the farm actions it changes (`harvest` now serves hoa màu only and answers `wrong crop` on rice), the sweep (a finished harvester is paid first), `buy_farm_item` (tools, once each), `claim_farm_gift` (a sickle joins the gift), the field state, and `_ac_holdings` and `_ac_wipe` (the hoa màu and the tank). `tests/sql/v15-2-smoke.sql` checks it on a throwaway PostgreSQL cluster after the v15 and anti-cheat smokes (from the repo root: it re-runs `0016`, reads `tests/fixtures/upland-cases.json` and `crop-cases.json`, and ends with `tests/sql/anticheat-guards.sql`, whose loop now calls 42 guarded RPCs). Run every file with plain `psql -f`, never under `psql -1`: the guard file rolls back its own self-test.
+
+> **Deploy order:** `0016` first, then the v15.2 client right after, ideally at a quiet hour. Until they reload, cached v15.1 clients cannot harvest rice: they have no sickle round, and `harvest` on rice answers `wrong crop`. A v15.2 client against a database without `0016` shows no hoa-màu seeds or tools, and the new actions, cutting rice included (a round's part goes through `harvest_part`), say "Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016."
+>
+> **Re-running earlier migrations:** `0013` and `0015` put back their own versions of the functions `0016` re-creates, and their checks lack its values, so neither can be re-run as it is after `0016`: `0013`'s `shop_items` kind check lacks `tool` (the tools always exist) and its `coin_ledger` reasons lack `wipe`, `harvester` and `produce_sell`; `0015`'s reasons lack `harvester` and `produce_sell` (a problem once a harvester has been rented or hoa màu sold). Add the missing values to those lists first, then run them in order, `0013`, `0015`, and `0016` last (anti-cheat §11.3 rule 7).
+
+### What's new in v15.2
+
+- **Liềm and the harvest minigame:** rice is cut with a sickle in 6 parts. Each part is one round: hold Space, the mouse button or a finger to raise the sickle's power and let go inside the band, 8 bundles; 4 points pass (chuẩn 1, được 0,5). A failed round cuts nothing and can be retried at once. Each part pays a sixth of the plot's yield at that moment as wet rice, and the sixth part ends the season and a lease. Newcomers get a sickle with chú Tám's gift; anh Hai sells it for 1 500 xu.
+- **Máy gặt:** chú Tám's co-op has a new tab that rents a harvester for 500 xu per part still uncut. It cuts the rest of the plot in 30 seconds, even a half-cut one, with no cancel and no refund.
+- **Bình phun:** a 5 000 xu sprayer. **Nạp** in the bag (🎒 Giỏ đồ → 🌾 Nông cụ) turns one bottle into 3 sprays of that pesticide.
+- **Hoa màu:** at làm đất, choose **Làm ruộng lúa** or **Lên luống**. Raised beds grow **khoai lang** (cuttings, about 48 h; a soaked bed rots the tubers), **bắp** (sown directly, about 60 h, two waves of armyworms) or **ớt** (a 10 h nursery, then transplanting and 3 pickings 12 h apart). Each has its own care, pests, handbook tab and seed at anh Hai's (800–1 500 xu); cô Út buys them fresh by the kg, with no drying.
+- The plot panel, the task list, the shop (a **🛠️ Nông cụ** shelf), the depot and the handbook (a tab per crop and **Nông cụ**) cover all of it, and the HUD's rice line adds the hoa màu.
+
+### Trust model (v15.2)
+
+The server still decides every time, water level, pest, yield and price. A client now declares one more thing: that a harvest round succeeded (`harvest_part`). The server accepts a part only 8 to 120 s after its `begin_work`, so a script gains only time, one part per 8 s (a plot in 48 s instead of 1–3 minutes by hand), and never kg: the minigame multiplies nothing, and each part pays its share of the yield at the cut.
+
+### Realtime budget (v15.2)
+
+No new channel. A round sends `fa` every 2 s while it runs and `fp` after each part, about 36 `fa` and 6 `fp` for a whole plot by hand; the farmer's client refetches once when a harvester's 30 s are up. Older clients drop the new `fa` codes 9 (dig) and 10 (pick).

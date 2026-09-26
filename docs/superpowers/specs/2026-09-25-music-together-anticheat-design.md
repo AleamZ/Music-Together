@@ -3,7 +3,7 @@
 **Date:** 2026-09-25
 **Builds on:** `feat/v15-field` once v15.1 is finished, including `0013_v15_field.sql` with decision D1 applied. The stack is unchanged: Next.js 16.2.9, React 19, TS 5, Tailwind v4, Supabase (Postgres + Realtime), custom account/session auth and SECURITY DEFINER RPCs.
 **Source:** the tamper-surface audit of 2026-09-25. Its hole numbers H1–H5 are kept here. The owner's answers to its open questions are §2 (D1–D8).
-**Order:** `0014_lyrics_lockdown.sql` (hotfix on `main`) and v15.1 (`0013`) → **anti-cheat (`0015_anticheat.sql`, this doc)** → v15.2 (`0016_v15_gather.sql`) → v16.
+**Order:** `0014_lyrics_lockdown.sql` (hotfix on `main`) and v15.1 (`0013`) → **anti-cheat (`0015_anticheat.sql`, this doc)** → v15.2 (`0016_v15_2_crops.sql`) → v16 (`0017_v16_cards.sql`) → v15.3 (`0018_v15_3_gather.sql`).
 
 ## 1. Goal and threat model
 
@@ -64,18 +64,19 @@ Only (1) reaches Postgres in a form the server can judge. A call from the consol
 - **A banned user can register again.** There is no device or IP binding, so the wipe is the real penalty.
 - **Paid-out xu stays paid.** Xu a cheater already paid to other players (land sales, subleases) is not taken back.
 - **Queue title and duration are still declared by the client** until server-signed metadata comes (D8, §16).
+- **A rice part's success is declared by the client** (v15.2 `harvest_part`), like the reel. A script can cut one part per 8 s, a whole plot in 48 s against about 1–3 min by hand. It gains only time, never kg: there is no quality factor, and each part pays its share of the yield at the cut (v15.2 §11.5).
 
 ## 2. Decisions (owner, 2026-09-25)
 
 | # | Question | Ruling |
 |---|---|---|
-| D1 | Farm quality in v15.1 | Ignored (always 1.0) until the v15.2 minigames. A separate v15.1 task does this inside `0013`; this spec relies on it (§6.4). |
+| D1 | Farm quality in v15.1 | Ignored (always 1.0) until the v15.3 transplant minigame (v15.2's harvest minigame gates the rice parts and sets no quality). A separate v15.1 task does this inside `0013`; this spec relies on it (§6.4). |
 | D2 | What the 5-minute lock blocks | Game actions only: fishing, farming, land, and the fishing and farm shops. The daily check-in and the farm gift count as fishing and farming. Chat, the music queue and all reads stay open (§9.3). |
 | D3 | Strike 2 | Ban at once: sessions are deleted and login is refused. The data is wiped only after the owner confirms it in /admin, where the owner can also pardon. |
 | D4 | Expiry of a first strike | 30 days. |
 | D5 | Rollout | The first 7 days run in log-only mode: strikes are recorded, nothing is locked or banned. Then the owner switches to enforce. |
 | D6 | Chat on a wipe | Chat messages are kept. Only that user's catch and land announcements are deleted. |
-| D7 | Migration order | `0014_lyrics_lockdown.sql` is a separate hotfix on `main`. The anti-cheat is `0015_anticheat.sql`, which requires `0012` and `0013`. The v15.2 gather migration moves from `0014` to `0016`. |
+| D7 | Migration order | `0014_lyrics_lockdown.sql` is a separate hotfix on `main`. The anti-cheat is `0015_anticheat.sql`, which requires `0012` and `0013`. The gather migration, first planned as `0014`, is v15.3's `0018_v15_3_gather.sql`; v15.2 is `0016_v15_2_crops.sql` and v16 is `0017`. |
 | D8 | Queue song metadata | Format and length checks now. Server-signed metadata comes later and is out of scope. |
 | — | When | Implemented right after v15.1 is finished. Specified and planned now. |
 
@@ -320,7 +321,7 @@ When `v_day = 300`, it logs the soft signal `cast_daily_cap` (§7.4).
 ### 6.4 H3 — farm quality (D1)
 
 - **In `0013`:** the v15.1 task makes `_farm_do_transplant` and `_farm_do_harvest` use 1.0 whatever `p_quality` is. The v15 smoke's "quality clamped" assertion becomes "quality ignored = 1".
-- **In `0015`:** the public wrappers `transplant` and `harvest` gain the `quality_range` hard check (§7.2). It stays when v15.2 brings a real quality back.
+- **In `0015`:** the public wrappers `transplant` and `harvest` gain the `quality_range` hard check (§7.2). It stays when v15.3 brings a real quality back.
 
 ### 6.5 H1 — lyrics (`0014`)
 
@@ -348,15 +349,17 @@ When `v_day = 300`, it logs the soft signal `cast_daily_cap` (§7.4).
 | Code | RPC | Strike when | Error | Why an honest client never sends it |
 |---|---|---|---|---|
 | `reel_too_fast` | `finish_cast` | `p_success = true`, the cast has not expired, and `now() < bite_at + 0.9·min_reel_ms`. This is the existing `too_early` branch. | none: the answer stays `{"result":"lost","why":"too_early"}` plus the envelope | See the timing argument below the table. |
-| `quality_range` | `transplant`, `harvest` | `p_quality` is null, NaN or ±∞, or outside [0.9 − 1e-9, 1.1 + 1e-9]. NaN is larger than every number in PostgreSQL, so the range test catches it. | `invalid quality` | v15.1 sends exactly 1 (`useFarmController` `finishWork`). v15.2's `0.9 + 0.2·score/12` stays in range; the 1e-9 tolerance absorbs floating-point error. |
-| `bad_plot` | the 19 plot RPCs (§10.3) | `p_plot` is null or outside 1–10 | `invalid plot` | Plot numbers come from `field_state` (`PlotView.no`) and from the map's plot interactables. `MAX_PLOT = 10`. |
+| `quality_range` | `transplant`, `harvest` | `p_quality` is null, NaN or ±∞, or outside [0.9 − 1e-9, 1.1 + 1e-9]. NaN is larger than every number in PostgreSQL, so the range test catches it. | `invalid quality` | v15.1 sends exactly 1 (`useFarmController` `finishWork`). v15.3's `0.9 + 0.2·score/12` stays in range; the 1e-9 tolerance absorbs floating-point error. |
+| `bad_plot` | the 24 plot RPCs (§10.3) | `p_plot` is null or outside 1–10 | `invalid plot` | Plot numbers come from `field_state` (`PlotView.no`) and from the map's plot interactables. `MAX_PLOT = 10`. |
 | `bad_slot` | `dry_collect` | `p_slot` is null or outside 1–4 | `invalid slot` | `DryingPanel` loops over `1..DRYING_SLOTS` (4). |
 | `bad_water` | `water` | `p_delta` is null or not ±1 | `invalid quantity` | `plotActions` sends `delta: 1` or `delta: -1` only (`lib/game/farm/actions.ts`). |
 | `bad_work` | `begin_work` | `p_work` is null or not `transplant`/`harvest` | `invalid work` | `PlotRun.work` is `"transplant" \| "harvest"`. |
+| `bad_work` | `tend_crop` (`0016`) | `p_act` is null or not `lat_day`/`vun_goc` | `invalid act` | `plotActions` emits acts only from the crop's config, whose act ids the v15.2 smoke pins to {`lat_day`, `vun_goc`}. |
 | `bad_qty` | `buy_item`, **after** the kind check | bait `p_qty` null or outside 1–99; gear `p_qty` ≠ 1 | `invalid quantity` | `ShopPanel` sends bait `n` ∈ [1, `maxBuyQty` ≤ 99] and gear 1. Checking the kind first spares the old v14 client, which offers farm items as bait with quantities up to 99 (§7.3). |
 | `bad_qty` | `buy_farm_item`, after the kind check | `p_qty` null or outside 1–99 | `invalid quantity` | `FarmShopPanel` `n` ∈ [1, min(`ITEM_CAP` − held, affordable)] through `Stepper`. |
 | `bad_qty` | `sell_rice` | `p_kg` null or < 1, or `p_dry` null | `invalid quantity` | `RiceDepotPanel` `n` ∈ [1, stock] and "Bán hết" sends the stock (≥ 1). `dry` is a boolean. |
 | `bad_qty` | `dry_start` | `p_kg` null or < 1 | `invalid quantity` | `DryingPanel` `n` ∈ [1, wet stock]; it only lists varieties with wet stock > 0. |
+| `bad_qty` | `sell_produce` (`0016`), after `_wallet_lock` | `p_kg` null or < 1 | `invalid quantity` | `RiceDepotPanel`'s produce rows send kg ∈ [1, stock], and "Bán hết" sends the stock (≥ 1). |
 | `bad_price` | `list_plot`, `set_sublease` | a non-null price outside 1–5 000 000 / 1–100 000 (the economy spec's caps) | `invalid price` | `CoopPanel` sends only prices that pass `toPrice` → `priceRefusal` → `priceOk`. `LandButton` stays disabled unless the refusal is null, including "" and "0". |
 | `bad_price` | `offer_plot` | the price is null, or outside 1–5 000 000 | `invalid price` | as above; an offer always carries a price |
 | `foreign_offer` | `withdraw_offer` | the id is an offer **of this room** whose buyer is someone else | `offer not found` | The panel offers "Rút" only for `mine.my_offers`. A replaced offer gets a new id (`0013` `_farm_do_offer`), so an old id never points at someone else's offer. |
@@ -387,6 +390,8 @@ So an honest client always has `now() − bite_at ≥ min_reel_ms`. The margin o
 | `drying full`, `invalid slot` (slot 1–4), `not ready` | `dry_*` | another member took the last slot; **the slot was collected twice** (the sweep auto-collected it, or another tab did, and it may now hold someone else's batch); clock drift |
 | `price changed`, `offer expired`, `offer not found` (row gone or another room), `buyer cannot buy`, `not for sale`, `plot taken`, `leased`, `farm limit`, `already own land`, `not your plot` (own plot, or ownership changed), `invalid plot` (plot 1–10 of the wrong kind, or your own plot) | land | concurrent market actions; a lease ended; a reclaim; a sale in another tab; a room switch without a remount |
 | `no snails` | `pick_snails` | someone picked them first |
+| `too fast` (the part gate), `work expired`, `harvesting`, `harvester busy`, `lease ending`, `lease ends` | `harvest_part`, `begin_work`, `rent_harvester`, farm care (`0016`) | two tabs; a stale state; a disconnect; a lease or a harvester running out |
+| `no sickle`, `no sprayer`, `already owned`, `wrong crop`, `invalid crop`, `not enough crop`, `invalid quantity` (a tool with a quantity other than 1) | farm, `load_sprayer`, `buy_farm_item`, `sell_produce` (`0016`) | stale state; two tabs; **the cached v15.1 client**, whose shop shows a stepper on tool rows and whose rice harvest gets `wrong crop` |
 | `invalid video`, `video too long`, `duration unknown`, `banned keyword`, `order limit reached` | queue | the rules changed while the UI was stale; two tabs. The queue never strikes (R22). |
 | `invalid username`, `username already taken`, `invalid username or password` | account | typing |
 | `too many messages, slow down` | chat | fast typing |
@@ -401,11 +406,11 @@ So an honest client always has `now() − bite_at ≥ min_reel_ms`. The margin o
 | `reel_gate_hug` | `finish_cast` (a catch) | the 20th catch of the Vietnam day with (`now − bite_at`)/`min_reel_ms` < 1.05. `anticheat_status.hug_on` and `hug_count` count them. | A skilled player on hard fish can get close. A bot that waits for the gate lands there every time. |
 | `cast_daily_cap` | `start_cast` | the cast that brings the day's count to 300 | A long honest session can reach it. |
 | `kind_mismatch` | `buy_item` | an existing priced item of a non-fishing kind | the old v14 client lists farm items as bait |
-| `kind_mismatch` | `buy_farm_item` | an existing priced item that is not a seed, fertilizer or pesticide | catalogs change; v15.2 adds `critter_box` |
-| `kind_mismatch` | `apply_fertilizer`, `soak_seed`, `spray` | an existing item of the wrong kind | as above |
+| `kind_mismatch` | `buy_farm_item` | an existing priced item that is not a seed, fertilizer, pesticide or (from `0016`) tool | catalogs change; v15.3 adds `critter_box` |
+| `kind_mismatch` | `apply_fertilizer`, `soak_seed`, `spray`, and from `0016` `plant_crop` and `load_sprayer` | an existing item of the wrong kind | as above |
 
 - **Not logged:** every refusal in §7.3.
-- **Later, v15.2 (`0016`):** a soft counter for "the quality is always 1.1".
+- **Later, v15.3 (`0018`):** a soft counter for "the quality is always 1.1".
 
 ## 8. Data model
 
@@ -537,7 +542,7 @@ A flagged call returns HTTP 200, so PostgREST commits it:
 
 | Message | SQLSTATE | `details` | `hint` | Raised by |
 |---|---|---|---|---|
-| `account locked` | 42501 | whole seconds left | `anticheat` | `_ac_guard`, in the 35 game RPCs |
+| `account locked` | 42501 | whole seconds left | `anticheat` | `_ac_guard`, in the 42 game RPCs (35 in `0015`, 7 more in `0016`) |
 | `account banned` | 42501 | — | — | `login` (new); `_auth_account` (existing) |
 | `invalid username` | 22023 | — | — | `register` |
 | `invalid video` | 22023 | — | — | `add_queue_item` |
@@ -621,7 +626,7 @@ end $$;
 - **Farm and land (27):**
   - the 24 room actions: `rent_plot`, `buy_plot`, `sell_plot_to_village`, `list_plot`, `buy_listed_plot`, `offer_plot`, `withdraw_offer`, `decline_offer`, `accept_offer`, `set_sublease`, `rent_sublease`, `abandon_crop`, `prepare_plot`, `apply_fertilizer`, `soak_seed`, `sow_seed`, `begin_work`, `transplant`, `water`, `spray`, `pick_snails`, `harvest`, `dry_start`, `dry_collect`;
   - plus `sell_rice`, `buy_farm_item` and `claim_farm_gift`.
-- **v15.2:** the gather RPCs in `0016` (§11.3).
+- **v15.2 (7, `0016`):** `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`, 42 in all. The gather RPCs come with v15.3's `0018` (§11.3).
 
 **Still open:**
 - the reads: `fishing_state`, `fishing_board`, `field_state`, `touch_room`;
@@ -677,14 +682,16 @@ end $$;
 | Data | What happens |
 |---|---|
 | `wallets` | One last `coin_ledger` row (`delta = −coins`, `balance = 0`, `reason = 'wipe'`, `ref = 'wipe #<id>'`), then the wallet row is deleted. This clears xu and the daily and bonus counters. |
-| `inventory` | All rows deleted: gear, bait, seeds, fertilizers, pesticides. |
+| `inventory` | All rows deleted: gear, bait, seeds, fertilizers, pesticides and (from `0016`) tools. |
 | `fishing_profiles`, `casts`, `fish` | Deleted. |
 | `personal_bests` | Deleted, so the records leave Bảng kỷ lục. |
 | `rice_stock` | Deleted. |
+| `produce_stock` (`0016`) | Deleted: the hoa màu. |
+| The sprayer's tank (`0016`) | Emptied: `farm_profiles.tank_item` null and `tank_charges` 0. The profile stays, so the gift stays claimed. |
 | Catch and land announcements (D6) | `delete from chat_messages where system and about_account_id = <account>`. Realtime DELETE events remove them from open chats. |
 | `field_plots` owned | Released **lazily** by sweep step 0b at the next field call in that room: `owner_id`, `owned_at`, `sale_price` and `sublease_price` become null, and the plot's offers are deleted. There is **no refund**. A sublease held by another player keeps running; the plot is the village's once it ends. |
 | `plot_leases` held | Deleted by step 0b. A village plot is free again; an owner's plot goes back to its owner, who keeps the rent. |
-| `crops` farmed | Removed by the existing sweep step 4 once the plot has no farmer. |
+| `crops` farmed | Removed by the existing sweep step 4 once the plot has no farmer. A running harvester job is never paid (v15.2 R10). |
 | `land_offers` made | Deleted by steps 0a and 0b. |
 | `drying_slots` | Deleted by step 0b. The rice is lost. |
 
@@ -842,7 +849,7 @@ Every one of these swaps `_auth_account` for `_ac_account`. The bodies are other
 2. the checks below, in order;
 3. `return public._farm_do_…(p_room_id, v_account, …, now());`
 
-**The 19 plot RPCs** are the ones that check `bad_plot`: `rent_plot`, `buy_plot`, `sell_plot_to_village`, `list_plot`, `buy_listed_plot`, `offer_plot`, `set_sublease`, `rent_sublease`, `abandon_crop`, `prepare_plot`, `apply_fertilizer`, `soak_seed`, `sow_seed`, `begin_work`, `transplant`, `water`, `spray`, `pick_snails`, `harvest`.
+**The 24 plot RPCs** are the ones that check `bad_plot`: `rent_plot`, `buy_plot`, `sell_plot_to_village`, `list_plot`, `buy_listed_plot`, `offer_plot`, `set_sublease`, `rent_sublease`, `abandon_crop`, `prepare_plot`, `apply_fertilizer`, `soak_seed`, `sow_seed`, `begin_work`, `transplant`, `water`, `spray`, `pick_snails`, `harvest`, and from `0016` `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop` and `tend_crop`.
 
 | RPC | Checks after the guard, in order |
 |---|---|
@@ -855,6 +862,9 @@ Every one of these swaps `_auth_account` for `_ac_account`. The bodies are other
 | `begin_work` | `bad_plot`, then `bad_work` |
 | `transplant`, `harvest` | `bad_plot`, then `quality_range` |
 | `water` | `bad_plot`, then `bad_water` |
+| `prepare_beds`, `harvest_part`, `rent_harvester` (`0016`) | `bad_plot` |
+| `plant_crop` (`0016`) | `bad_plot`, then `kind_mismatch` (soft, error `invalid item`) when the item exists with another kind than `seed` |
+| `tend_crop` (`0016`) | `bad_plot`, then `bad_work` (error `invalid act`) |
 | `dry_start` | `bad_qty` (kg) |
 | `dry_collect` | `bad_slot` |
 
@@ -863,8 +873,10 @@ Every one of these swaps `_auth_account` for `_ac_account`. The bodies are other
 | RPC | Checks |
 |---|---|
 | `sell_rice(text, text, boolean, integer)` | After `_wallet_lock`: `bad_qty` (kg, dry), then the existing variety check. |
-| `buy_farm_item(text, text, integer)` | After reading the item: `kind_mismatch` (soft, error `item not available`), then `bad_qty`. More than 99 held still raises `invalid quantity` unlogged (§7.3). |
+| `buy_farm_item(text, text, integer)` | After reading the item: `kind_mismatch` (soft, error `item not available`), then `bad_qty`. More than 99 held still raises `invalid quantity` unlogged (§7.3). From `0016` a `tool` is a farm kind too, and a tool with a quantity other than 1 raises `invalid quantity` unlogged (v15.2 R18). |
 | `claim_farm_gift(text)` | — |
+| `load_sprayer(text, text)` (`0016`) | `kind_mismatch` (soft, error `invalid item`) when the item exists with another kind than `pesticide`. |
+| `sell_produce(text, text, integer)` (`0016`) | After `_wallet_lock`: `bad_qty` (kg). |
 
 `touch_room(uuid, text)` and `field_state(uuid, text)` are unchanged, and not guarded.
 
@@ -974,7 +986,7 @@ Re-running is safe:
 ### 11.3 Rules for later migrations
 
 1. **A re-created game RPC keeps its guard.** Any `create or replace` of a guarded RPC keeps its `_ac_account`/`_ac_play` call, its hard checks and its explicit grant.
-2. **New game RPCs start guarded** (deny by default, R23). For `0016`: `crab_start`, `crab_finish`, `pick_snail_bed` and `sell_critters`.
+2. **New game RPCs start guarded** (deny by default, R23). For `0016` (v15.2): `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`. The gather RPCs `crab_start`, `crab_finish`, `pick_snail_bed` and `sell_critters` come with `0018` (v15.3).
    - `crab_finish` with `hits` outside 0–3 is a hard `bad_qty`.
    - A `crab_finish` faster than its 3 s gate never counts, for the same retry and double-start reasons as `too fast`.
 3. **Re-created shared functions keep this spec's parts:**
@@ -982,7 +994,7 @@ Re-running is safe:
    - `_fishing_state` keeps `lock`, `casts_today_left` and `day_resets_at`;
    - `_song_bonus` and `_room_wealth` keep the banned check;
    - `_land_sale` and `finish_cast` keep `system` and `about_account_id`.
-4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `critter_sell`.
+4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `harvester` and `produce_sell`, then v15.3's `critter_sell`.
 5. **Wider honest inputs widen the hard check.** A migration that widens the range of honest inputs widens the matching hard check in the same migration, and ships before its client.
 6. **Every later smoke run ends with `tests/sql/anticheat-guards.sql`.** The dynamic loop in that file gains the new game RPCs, and a new RPC that is not a game action joins its allowlist by signature.
 7. **Re-running `0013` after `0015` undoes the guards.** `0013` re-creates the game RPCs and the `coin_ledger` reason check without the anti-cheat parts. After any re-run of `0013`, run `0015` again right away. On a database that has already seen a wipe, `0013`'s reason check (without `'wipe'`) fails, so add `'wipe'` to its list first. Later migrations follow the same order: `0013` → `0015` → the rest.
@@ -1014,7 +1026,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 4. The pre-deploy checks (§11.4), then `0015`. It starts in `log` mode.
 5. The anti-cheat client, after `0015`. A client that goes live first by mistake still loads the chat, because it reads the messages again without `chat_messages.system` (§6.1), but it shows the catch and land announcements as plain lines until `0015` runs.
 6. After 7 days, the review (§9.8), then `enforce` in /admin.
-7. Later, `0016_v15_gather.sql`, keeping the guards (§11.3).
+7. Later, `0016_v15_2_crops.sql` (v15.2), then `0017_v16_cards.sql` (v16) and `0018_v15_3_gather.sql` (v15.3), keeping the guards (§11.3).
 
 **`0015` before the anti-cheat client is safe.** The v15.1 client against `0015` sees these differences only:
 - the raw English texts `invalid username` and `account banned` on the auth screen;
@@ -1024,7 +1036,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 **The README** gains an "Anti-cheat" section:
 - what is detected and what is not;
 - the modes, how to review, and the deploy order;
-- the updated trust models (v14: the daily cap; v15: quality ignored until v15.2).
+- the updated trust models (v14: the daily cap; v15: quality ignored until v15.3).
 
 ## 12. Client and Vietnamese UI
 
@@ -1162,7 +1174,7 @@ The refusal shows in a `role="alert"` line, so a screen reader reads it out.
 | Element | Text |
 |---|---|
 | holdings heading | `Dữ liệu hiện có` |
-| holdings line | `{formatXu(coins)} · {n} món đồ · {n} con cá · {n} kỷ lục · {kg} kg lúa · {n} thửa sở hữu · {n} thửa đang thuê · {n} đề nghị mua · {n} ô phơi · {n} tin khoe trong chat` |
+| holdings line | `{formatXu(coins)} · {n} món đồ · {n} con cá · {n} kỷ lục · {kg} kg lúa · {kg} kg hoa màu · {n} thửa sở hữu · {n} thửa đang thuê · {n} đề nghị mua · {n} ô phơi · {n} tin khoe trong chat` |
 | events heading | `Ghi nhận ({n})` |
 | event line | `{time} · {code label} · {outcome label} · {rpc}`, then `detail` in a `<pre>` |
 | event footer | `Client: {client \| —} · Trình duyệt: {user_agent \| —}` |
@@ -1324,7 +1336,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
    - state is unchanged (for example, `water` with delta 5 leaves `water_log` as it was).
 7. **Enforce mode:**
    - every hard signal gives `strike: 1`, committed: a `strike_1` row and `locked_until` ≈ now + 5 min;
-   - each of the 35 guarded RPCs then raises `account locked` for that account, with a numeric detail and the hint `anticheat` (the call list is the one in `anticheat-guards.sql`);
+   - each of the guarded RPCs (35 in `0015`, 42 from `0016`) then raises `account locked` for that account, with a numeric detail and the hint `anticheat` (the call list is the one in `anticheat-guards.sql`);
    - `fishing_state` has `lock`, and `field_state`, `fishing_board`, `touch_room`, chat and the queue still work;
    - `_ac_flag` called during the lock gives `in_lock`;
    - with `locked_until` moved into the past, the next hard signal gives strike 2: `is_banned`, sessions gone, `login` → `account banned`, `ban_state = 'pending_wipe'`;
@@ -1376,7 +1388,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
 - **The check checks itself:** in a transaction that is rolled back, an unguarded overload `login(text, text, integer)` must be reported.
 - **Dynamic loop:**
   1. Register an account, create a room and set `locked_until` to now + 5 min.
-  2. Call each of the 35 guarded RPCs with plausible arguments. Each must raise `account locked`.
+  2. Call each of the guarded RPCs (35 in `0015`, 42 from `0016`) with plausible arguments. Each must raise `account locked`.
   3. Then call the four reads; each must succeed.
 
 ### 15.2 Unit and RTL tests (Vitest)
@@ -1460,5 +1472,6 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
   - public `members.last_seen_at`.
 - **Colluding accounts** moving xu through land sales at any price (by design).
 - **Cosmetic Realtime spoofing:** lobby spoofing, reaction and presence names, and the `[reply:…]` prefix (§14).
-- **The v15.2 soft signal** "quality always 1.1", which comes with `0016`.
+- **The v15.3 soft signal** "quality always 1.1", which comes with `0018`.
+- **A soft counter for rice parts claimed under 9 s** after their `begin_work` (v15.2 §11.5).
 - **The lyrics hole (H1) and its broadcast budget**, which `0014` covers.

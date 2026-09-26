@@ -86,6 +86,7 @@ A rented plot, full care (4 fertilizers, 1–2 sprays), one season per 96 h leas
 - A private plot saves the rent and adds 10 % yield, about 17 000 per season. Subleasing can earn up to 100 000 per season.
 - A newcomer still needs about 6–10 hours of fishing at the room's multiplier for the first rent. After one season they can pay for everything.
 - One season's profit equals 30–60 hours of fishing at multiplier 1. The fish price index (§5) narrows that gap as rooms get richer.
+- **v15.2** (`2026-09-25-music-together-v15.2-design.md` §10) restates this table: a hand harvest adds no per-season cost (the sickle is a one-time tool), the harvester adds 3 000, and it adds the hoa-màu seasons (khoai lang, bắp, ớt).
 
 ## 5. Fish price index (Task 21)
 

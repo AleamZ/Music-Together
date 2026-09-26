@@ -22,6 +22,9 @@ export interface AnticheatHoldings {
   inventory: Array<{ item_id: string; qty: number }>;
   fish: unknown[]; personal_bests: unknown[];
   rice: Array<{ variety: string; wet_kg: number; dry_kg: number }>;
+  /** v15.2 (`0016`): the hoa màu and the sprayer's tank; older answers lack them. */
+  produce?: Array<{ upland: string; kg: number }>;
+  tank?: { item: string | null; charges: number } | null;
   plots: unknown[]; leases: unknown[]; offers: unknown[]; crops: unknown[]; drying: unknown[];
   /** Catch and land lines about the account in the chat. */
   announcements: number;

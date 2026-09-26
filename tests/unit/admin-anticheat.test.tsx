@@ -29,6 +29,8 @@ const HOLDINGS = {
   fish: [{ species_id: "ca_ro", weight_g: 120, price: 5, caught_at: T }],
   personal_bests: [{ species_id: "ca_ro", weight_g: 120, caught_at: T }, { species_id: "ca_loc", weight_g: 900, caught_at: T }],
   rice: [{ variety: "nep", wet_kg: 1200, dry_kg: 300 }],
+  produce: [{ upland: "khoai", kg: 40 }, { upland: "ot", kg: 5 }],
+  tank: { item: "spray_insect", charges: 2 },
   plots: [{ room_id: "r", plot_no: 1, kind: "private", owned_at: T, sale_price: null, sublease_price: null }],
   leases: [],
   offers: [{ room_id: "r", plot_no: 2, price: 5000, created_at: T }],
@@ -200,7 +202,7 @@ describe("AnticheatTab (anti-cheat spec §12.5)", () => {
     expect(lan.getByRole("button", { name: "Ẩn bằng chứng" })).toHaveAttribute("aria-expanded", "true");
     expect(h.rpc).toHaveBeenCalledWith("admin_anticheat_account", { p_session_token: "tok", p_account_id: "a1" });
     expect(lan.getByText(
-      "1.230 xu · 4 món đồ · 1 con cá · 2 kỷ lục · 1.500 kg lúa · 1 thửa sở hữu · 0 thửa đang thuê · 1 đề nghị mua · 1 ô phơi · 2 tin khoe trong chat",
+      "1.230 xu · 4 món đồ · 1 con cá · 2 kỷ lục · 1.500 kg lúa · 45 kg hoa màu · 1 thửa sở hữu · 0 thửa đang thuê · 1 đề nghị mua · 1 ô phơi · 2 tin khoe trong chat",
     )).toBeInTheDocument();
     expect(lan.getByText("Ghi nhận (2)")).toBeInTheDocument();
     expect(lan.getByText(`${at(T)} · Số lượng sai · Vi phạm 2 → cấm · buy_item`)).toBeInTheDocument();

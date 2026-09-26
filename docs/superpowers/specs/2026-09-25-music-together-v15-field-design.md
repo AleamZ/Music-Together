@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 **Builds on:** `main` @ `cd32174`. That commit has v13 (game mode), v14 (fishing pond, xu economy) and the lyrics/karaoke line from PR #10. v15 is developed on `feat/v15-field`. The stack is unchanged: Next.js 16.2.9, React 19, TS 5, Tailwind v4, Supabase (Postgres + Realtime), custom account/session auth and SECURITY DEFINER RPCs.
-**Roadmap:** v13 = game mode + hall → v14 = fishing pond + xu economy → **v15 = rice paddies, land, crabs and snails (this doc)** → v16 = the harvest-season rat hunt, the dog pet (chó cỏ) and the slingshot (ná).
+**Roadmap:** v13 = game mode + hall → v14 = fishing pond + xu economy → **v15 (this doc) = rice paddies and land (15.1), tools and hoa màu (15.2), crabs and snails (15.3)** → v16 = the harvest-season rat hunt, the dog pet (chó cỏ) and the slingshot (ná).
 
 ## 1. Goal
 
@@ -22,9 +22,9 @@ v15 adds a third map, **Đồng ruộng**, to the room world. On it players:
    - sell it to another player at a negotiated price, or back to the village.
 
    The village reclaims land from owners who stopped coming.
-3. **Gather crabs and snails** in the canal by hand and carry more in a bucket or a basket. This comes in the second phase (§4).
+3. **Gather crabs and snails** in the canal by hand and carry more in a bucket or a basket. This comes in v15.3 (§4).
 
-It also includes three minigames: transplanting, harvesting and crab-grabbing (second phase). The server stays authoritative, as in v14: every timer, roll, price, balance and ownership change happens in SECURITY DEFINER RPCs.
+It also includes three minigames: the harvest minigame gates the rice parts (v15.2); transplanting and crab-grabbing come in v15.3. The server stays authoritative, as in v14: every timer, roll, price, balance and ownership change happens in SECURITY DEFINER RPCs.
 
 ## 2. Decisions (brainstorm 2026-09-25)
 
@@ -36,7 +36,7 @@ It also includes three minigames: transplanting, harvesting and crab-grabbing (s
 | 4 | Cycle length | About 3 real days per season. Each plot runs its own clock, rice grows while you are offline, care windows are hours wide, and a missed window costs yield, never the whole crop (B) |
 | 5 | Realism | Full: soaking, a seedbed, transplanting, base fertilizer, two top-dressings with the right fertilizer types, water level per stage, several varieties, drying, and four pests each with its own remedy (C) |
 | 6 | Crab/snail containers | Their own containers (hands 3, bucket 15, basket 30), separate from the v14 fish bucket. Sold at the rice depot (A) |
-| 7 | Farm actions | Actions with an animation and a progress bar, plus three minigames: transplanting, harvesting and crab-grabbing (B) |
+| 7 | Farm actions | Actions with an animation and a progress bar, plus the harvest minigame (v15.2) and two more, transplanting and crab-grabbing (v15.3) (B) |
 | 8 | Absent owners | Absent 14 days in a row (no visit to the room) → the village reclaims the plot and refunds 50 % of the list price. A plot on lease is reclaimed when the lease ends. The owner may sell back to the village for 50 % at any time, and may sell to another player at a negotiated price |
 | 9 | Timing architecture | Lazy server evaluation: plots store timestamps and logs, pests are pre-rolled and hidden at sowing, and state is computed on read. No cron (A) |
 
@@ -47,7 +47,7 @@ Clarifications made while writing this spec. The owner should confirm them durin
 - **c) Pests.** Each crop has three pest *chances* (§8.5), so 0–3 outbreaks happen, about 1.2 on average.
 - **d) When you can harvest.** Only once the rice is ripe (§8.2). Harvesting during ripening is refused.
 - **e) Water scoring.** The water penalty is sampled every 15 minutes of crop time.
-- **f) Minigame trust.** The 2-second work gate exists from `0013` on. v15.1 ignores the reported quality and uses 1.0 (anti-cheat decision D1); v15.2 decides how a minigame quality comes back, which needs an SQL change.
+- **f) Minigame trust.** The 2-second work gate exists from `0013` on. v15.1 ignores the reported quality and uses 1.0 (anti-cheat decision D1); the harvest minigame (v15.2) only gates the rice parts, and how a transplant quality comes back is v15.3's question, which needs an SQL change.
 - **g) Drying keeps the weight.** Drying changes the price, not the kilograms.
 - **h) Farming limit.** An account farms at most **2 plots at once per room**. An unleased private plot of your own counts; a plot you have leased out does not.
 - **i) Newcomer gift.** Given once per account, not once per room.
@@ -62,14 +62,14 @@ Clarifications made while writing this spec. The owner should confirm them durin
   - RPC-only writes;
   - Vietnamese UI with `vi-VN` numbers;
   - "per day" rules on the `Asia/Ho_Chi_Minh` calendar.
-- **Migrations:** v15.1 is `0013_v15_field.sql` and v15.2 is `0016_v15_gather.sql` (`0014` is the lyrics hotfix and `0015` the anti-cheat layer, see the anti-cheat spec, D7). Each is additive and re-runnable: `if not exists`, `create or replace`, `drop … if exists`, and seeds use `on conflict do update`. The owner runs them in the Supabase SQL editor.
+- **Migrations:** v15.1 is `0013_v15_field.sql`, v15.2 is `0016_v15_2_crops.sql` and v15.3 is `0018_v15_3_gather.sql` (`0014` is the lyrics hotfix, `0015` the anti-cheat layer, see the anti-cheat spec, D7, and `0017` the v16 card corner). Each is additive and re-runnable: `if not exists`, `create or replace`, `drop … if exists`, and seeds use `on conflict do update`. The owner runs them in the Supabase SQL editor.
 - **The field map is 800 × 480 world px** (cell 8). The v13 camera and view code (`computeView`, `cameraFor`) already scroll any map size. The first map task confirms this at 800 × 480 on desktop and phone view sizes.
 - **Time:** every time rule lives in a private SQL function that takes `p_now`, and the public RPCs pass `now()`. Tests move time by calling the private functions. No client can set the time.
 - **Test baseline** at `cd32174`: `pnpm test` → 70 files passed / 9 skipped, 502 tests passed / 54 skipped. `tsc` is clean. The plan records the lint baseline.
 
 ## 4. Phases
 
-One spec, two plans, and the owner ships after each phase.
+One spec, three phases (v15.2 and v15.3 have their own specs), and the owner ships after each phase.
 
 **v15.1 "Ruộng lúa"**
 - The field map, the portals from the hall and the pond, and presence `field`.
@@ -78,10 +78,13 @@ One spec, two plans, and the owner ships after each phase.
 - Farm shop, rice depot, drying yard, handbook, HUD task list, newcomer gift.
 - The fishing clock fix (v14 M-3, §11.6).
 
-**v15.2 "Đồng vui"**
-- The three minigames. Transplanting and harvesting then send a real quality score.
-- Crab holes and snail beds, the critter containers, and selling crabs and snails.
+**v15.2 "Nông cụ & hoa màu"** (`0016_v15_2_crops.sql`): see `2026-09-25-music-together-v15.2-design.md`. The sickle and the harvest minigame (a rice plot is cut in 6 parts), the harvester, the sprayer, and khoai lang, bắp and ớt on raised beds.
+
+**v15.3 "Đồng vui"** (`0018_v15_3_gather.sql`)
+- Crab holes and snail beds, the critter containers (`box_bucket`, `box_basket`), and selling crabs and snails.
 - Pest snails picked from plots now land in your container.
+- The transplant minigame (transplanting stays behind the 2 s gate until then) and the crab minigame.
+- How a transplant quality comes back (D1), with its soft signal.
 
 ## 5. Architecture
 
@@ -91,13 +94,13 @@ components/game/GameShell.tsx          + useFarmController; field panels; HUD "�
  ├─ hooks/useField.ts                  field_state for this room, actions, refetch on `fp`, server clock
  ├─ hooks/useFarmController.ts         prompts, panels, due tasks, gift, animations (`fa`)
  └─ components/game/farm/*             CoopPanel, FarmShopPanel, RiceDepotPanel, PlotPanel, DryingPanel,
-                                       Handbook, FarmTasks; v15.2: TransplantGame, HarvestGame, CrabGame
+                                       Handbook, FarmTasks; v15.2: HarvestGame; v15.3: TransplantGame, CrabGame
 lib/game/farm/                         pure: catalog, crop (schedule, water, pests-visible, yield preview, due tasks),
                                        land (rules), state (parse field_state), messages (Vietnamese), rpc, clock
 lib/game/maps/field.ts, field-art.ts   the map (collision, plots, spots, NPCs) and its painter
 lib/game/art/crops.ts, farm-icons.ts   crop stage painters, pest overlays; icons for seeds, fertilizers, pesticides,
                                        rice, containers, crabs, snails
-supabase/migrations/0013_v15_field.sql, 0016_v15_gather.sql
+supabase/migrations/0013_v15_field.sql, 0016_v15_2_crops.sql, 0018_v15_3_gather.sql
 ```
 
 The data flow is the v14 shape. The client calls an RPC, and every RPC answers with the full state it touched: `field_state` for the room, including "mine". Local visuals update at once. Other players get an `fp` message and refetch.
@@ -134,7 +137,7 @@ The layout is approximate. The map tests pin the invariants (§17), and the plan
   The three new looks go in `lib/game/look.ts`.
 - **Sân phơi** (drying yard): south-east, with 4 marked drying slots.
 - **Where you stand to act:** every plot has a use spot on an adjacent dike, facing the plot. Each NPC, the drying yard and each portal has one use spot.
-- **v15.2 gathering spots:** 6 crab holes along the canal banks, at least 40 px apart and each with a use spot on the bank, and 4 snail beds at the canal's shallow edges.
+- **v15.3 gathering spots:** 6 crab holes along the canal banks, at least 40 px apart and each with a use spot on the bank, and 4 snail beds at the canal's shallow edges.
 - **Walkability:** dikes, bridges, roads and yards are walkable. Plot interiors are **walkable**, so you can step into your paddy, and the collision grid does not block them. Water in the canal is blocked.
 
 ### 6.3 New portals on the existing maps
@@ -271,7 +274,7 @@ A crop row starts when the farmer **prepares** the plot (làm đất). Times bel
 | `panicle` | 18·s | 30·s | top-dress 2 on time at T ∈ [18·s, 24·s] |
 | `heading` | 30·s | 40·s | — |
 | `ripening` | 40·s | 48·s | drain |
-| `ripe` | 48·s | 48·s + 12 h | harvest, no penalty |
+| `ripe` | 48·s | 48·s + 12 h | harvest by sickle in 6 parts or by the harvester (v15.2 §6), no penalty |
 | overripe | 48·s + 12 h | +48 h after ripe → lost | harvest at −2 %/h, cap −60 % |
 
 - Soaking may begin before or after preparing, but **sowing needs a prepared plot**.
@@ -367,7 +370,7 @@ At sowing the server stores three hidden rolls, `pest_rolls: [{slot, u_time, u_k
 ### 8.6 Yield
 
 ```
-kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mpest · Mlate · qT · qH))
+kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mpest · Mlate · qT))
 ```
 
 | Factor | Value |
@@ -378,7 +381,7 @@ kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mp
 | `Mwater` | 1 − min(0.2, 0.01 · off-target hours) |
 | `Mpest` | Π over pests of (1 − min(0.3, 0.015 · active hours)) |
 | `Mlate` | 1 − min(0.6, 0.02 · hours after the ripe window) |
-| `qT`, `qH` | transplant and harvest quality; always 1.0 in v15.1 (the server ignores the reported value, D1) |
+| `qT` | transplant quality; always 1.0 until v15.3 (the server ignores the reported value, D1). The harvest quality `qH` is gone: the harvest minigame (v15.2) gates the 6 parts and multiplies nothing |
 
 **Two implementations of one formula:**
 - The server computes the yield at harvest (`_crop_yield(crop, variety, land, q_harvest, p_now)`).
@@ -387,9 +390,8 @@ kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mp
 
 ### 8.7 Harvest, drying and selling
 
-- **Harvest:**
-  - `harvest(room, plot, quality)` needs `ripe` or later, plus the work gate (§11.4).
-  - It adds the yield as **wet** rice of the variety to the farmer's `rice_stock`, deletes the crop, leaves the plot bare, and ends a lease.
+- **Harvest** (v15.2 §6): by sickle in 6 parts (`begin_work` + `harvest_part`, one harvest-minigame round each) or by the harvester (`rent_harvester`, 30 s), from `ripe` on. `harvest` now serves hoa màu only.
+  - Each part adds its share of the yield at the cut as **wet** rice of the variety to the farmer's `rice_stock`. The sixth part (or the harvester's end) deletes the crop, leaves the plot bare, and ends a lease.
 - **Drying:**
   - `dry_start(room, variety, kg)` moves wet rice to a free drying slot. There is one batch per slot, of any positive kg up to the wet stock.
   - An account dries at most 2 batches at a time in a room (`drying limit`), so one player cannot hold the whole yard. A full yard is checked first (`drying full`).
@@ -439,13 +441,14 @@ The plot panel links to the relevant tab.
 | `spray_insect` | pesticide | Thuốc trừ sâu | 700 |
 | `spray_hopper` | pesticide | Thuốc trừ rầy | 800 |
 | `spray_fungus` | pesticide | Thuốc trừ bệnh | 900 |
-| `box_bucket` (v15.2) | critter_box | Xô nhựa | 150, capacity 15 |
-| `box_basket` (v15.2) | critter_box | Giỏ tre | 600, capacity 30 |
+| `box_bucket` (v15.3) | critter_box | Xô nhựa | 150, capacity 15 |
+| `box_basket` (v15.3) | critter_box | Giỏ tre | 600, capacity 30 |
 
 **Buying:**
 - Farm items are bought with `buy_farm_item(item, qty)` at anh Hai: consumables take qty 1–99; containers are bought once, like v14 gear.
 - v14's `buy_item` is redefined to refuse every non-fishing kind with `item not available`.
 - v14's `_fishing_state.owned` is filtered to fishing kinds, so farm items never show in the fishing bag.
+- **v15.2** (its spec §9) adds the hoa-màu seeds (kind `seed`, with `shop_items.upland`) and the tools (a new kind `tool`: the sickle and the sprayer, bought once each).
 
 ## 10. Economy check
 
@@ -453,7 +456,7 @@ Reference point: in v14 a skilled angler earns about 1 000–1 800 xu per active
 
 The farm numbers changed on 2026-09-25 (rent 10 000, plot 800 000, inputs ×10, rice 710 / 950 / 1 350 xu/kg). The per-variety profits, the poor-care and lost-crop cases and the time to buy land are in `2026-09-25-music-together-economy-design.md` §4.
 
-**Crabs and snails (v15.2):**
+**Crabs and snails (v15.3):**
 
 | Item | Price |
 |---|---|
@@ -484,7 +487,7 @@ All new tables have RLS on and no policies, except the config tables, which get 
 | `rice_stock` | `account_id`, `variety` PK; `wet_kg`; `dry_kg` (≥ 0) |
 | `farm_profiles` | `account_id` PK; `gift_at` |
 | `members` (altered) | `add column if not exists last_seen_at timestamptz` |
-| `coin_ledger` (altered) | the `reason` check is replaced to add `rent`, `land_buy`, `land_sell`, `land_refund`, `lease_pay`, `lease_income`, `farm_buy`, `rice_sell` (v15.2 adds `critter_sell`) |
+| `coin_ledger` (altered) | the `reason` check is replaced to add `rent`, `land_buy`, `land_sell`, `land_refund`, `lease_pay`, `lease_income`, `farm_buy`, `rice_sell` (v15.2 adds `harvester` and `produce_sell`; v15.3 adds `critter_sell`) |
 
 ### 11.2 Private helpers (all revoked from `public`, `anon`, `authenticated`)
 
@@ -554,6 +557,7 @@ All are SECURITY DEFINER with `grant execute … to anon, authenticated`. `field
 1. `begin_work(plot, w)` records `work = w` and `work_started_at = now()` on the crop.
 2. `transplant(…, q)` and `harvest(…, q)` require `work = w` and `now() − work_started_at ≥ 2 s`.
 3. They use `q` = 1.0 whatever the client sends (v15.1, D1) and clear `work`.
+4. From v15.2 (its spec §6.2) the 2 s gate covers transplanting and the hoa-màu pickings (`harvest`). Rice is cut in parts with `harvest_part`, each accepted 8–120 s after its own `begin_work`.
 
 v15.1 ignores the reported quality (D1), so a modified client gains nothing from it and can never work faster than the gate.
 
@@ -632,7 +636,7 @@ After an error the client refetches `field_state`, as in v14.
 - pest rolls, which stay hidden until they fire;
 - prices, yields, land ownership, leases and reclaims.
 
-**Clients only report two things:** the transplant and harvest quality, which v15.1 ignores (always 1.0, D1) behind a 2 s gate, and (v15.2) crab hits, bounded to 3 per hole visit.
+**Clients only report a few things:** the transplant and harvest quality, which v15.1 ignores (always 1.0, D1) behind a 2 s gate; from v15.2 a harvest round's success, which gates one rice part behind an 8 s gate and has no effect on the yield; and (v15.3) crab hits, bounded to 3 per hole visit.
 
 ## 12. Networking
 
@@ -642,7 +646,7 @@ After an error the client refetches `field_state`, as in v14.
   - Receivers gather it: the first `fp` of a burst starts a 400 ms timer, then one refetch of `field_state` follows. Later `fp`s in that window add nothing.
   - Rendered state always comes from the server.
 - **`fa` {t, id, a}:** a farm animation code, played for 2.5 s. `a = 0` stops it.
-  - Codes: 1 transplant, 2 harvest, 3 pump, 4 spray, 5 fertilize, 6 grab a crab, 7 pick snails, 8 prepare.
+  - Codes: 1 transplant, 2 harvest, 3 pump, 4 spray, 5 fertilize, 6 grab a crab, 7 pick snails, 8 prepare; v15.2 adds 9 dig and 10 pick.
   - It is a control message (FIFO), and an action sends at most one.
 - **Budget:**
   - Farm actions are minutes apart, and each sends ≤ 2 messages.
@@ -676,13 +680,13 @@ A plot's prompt names its next action ("E · Gieo mạ thửa 3", "E · Xem th�
 
 All panels are parchment modals, and game input is off while one is open (v14).
 
-- **CoopPanel (chú Tám)**, with four tabs:
+- **CoopPanel (chú Tám)**, with four tabs (v15.2 adds a fifth, **Máy gặt**, to rent the harvester):
   - **Đất làng**: free plots, rent 10 000 xu.
   - **Đất tư**: plots for sale by the village, 800 000 xu.
   - **Chợ đất**: player listings, subleases, and the "Đề nghị mua" form.
   - **Của tôi**: my plot, my offers, incoming offers with Đồng ý / Từ chối, sell back.
-- **FarmShopPanel (anh Hai):** seeds, fertilizers, pesticides with quantity steppers; containers in v15.2. Each row shows its use in one line ("Bón thúc đẻ nhánh").
-- **RiceDepotPanel (cô Út):** rice per variety, wet and dry, with "Bán" / "Bán hết" and the price; crabs and snails in v15.2.
+- **FarmShopPanel (anh Hai):** seeds, fertilizers, pesticides with quantity steppers; tools and hoa-màu seeds in v15.2, containers in v15.3. Each row shows its use in one line ("Bón thúc đẻ nhánh").
+- **RiceDepotPanel (cô Út):** rice per variety, wet and dry, with "Bán" / "Bán hết" and the price; hoa màu in v15.2, crabs and snails in v15.3.
 - **DryingPanel:** the 4 slots, "Phơi lúa" (variety + kg), "Lấy lúa".
 - **Handbook** (§8.9).
 
@@ -736,26 +740,23 @@ Everything is original and drawn in code.
   - the containers, cua đồng, cua gạch, ốc đồng, ốc bươu vàng.
 - **NPC looks:** chú Tám, anh Hai and cô Út use existing clothing layers and palettes, plus a khăn rằn neck item if the catalog has none.
 
-## 15. v15.2 — gathering and minigames (`0016_v15_gather.sql`)
+## 15. v15.3 — gathering and minigames (`0018_v15_3_gather.sql`)
 
 ### 15.1 Minigames
 
-Each returns a quality `q` in [0.9, 1.1]; how the server accepts it after D1 is decided in the v15.2 plan.
+Each returns a quality `q` in [0.9, 1.1]; how the server accepts it after D1 is decided in v15.3.
 
 - **Transplanting (`TransplantGame`):** a marker sweeps across a row.
   - 12 beats; tap or press Space when the marker is inside the green band.
   - Each beat scores *chuẩn* 1, *được* 0.5 or *lệch* 0.
   - `q = 0.9 + 0.2 · score / 12`.
   - About 12–15 s.
-- **Harvesting (`HarvestGame`):** hold to raise the sickle's power bar and release inside the sweet band to cut a bundle.
-  - Releasing early leaves grain; releasing late shatters it.
-  - 8 bundles, scored the same way.
-  - About 10–14 s.
+- **Harvesting (`HarvestGame`):** moved to v15.2 §6.2, where one round (8 bundles) gates one of a rice plot's 6 parts and sets no quality.
 - **Crab grabbing (`CrabGame`):** a hand hovers over the hole while the crab's claws open and close on a rhythm that speeds up with each grab.
   - Grab while the claws are closed; grabbing while they are open means "Á! Bị cua kẹp", and that crab is lost.
   - Three tries per hole, and the result is `hits` ∈ 0..3.
 
-All three are pure state machines in `lib/game/farm/minigames.ts`, with seeded tests, plus thin overlay components. They follow the v14 input rules: typing guard, pointer, touch, Space.
+Both are pure state machines in `lib/game/farm/minigames.ts` (beside v15.2's HarvestGame), with seeded tests, plus thin overlay components. They follow the v14 input rules: typing guard, pointer, touch, Space.
 
 ### 15.2 Crabs and snails
 
@@ -787,7 +788,7 @@ All three are pure state machines in `lib/game/farm/minigames.ts`, with seeded t
   - `crop.ts`: phases for all varieties, the water-at-time function, accepted levels, off-target sampling, top-dress scoring, excess N, pest visibility from revealed data, the yield formula, due tasks, plot actions.
   - `land.ts`: the farmer and limit rules, and which land actions are allowed.
   - `clock.ts`, `state.ts` (parsers), `messages.ts`, `rpc.ts` (mocked Supabase).
-  - v15.2: the minigame state machines with seeded inputs.
+  - the minigame state machines with seeded inputs: HarvestGame in v15.2, the others in v15.3.
 - **Shared fixtures:** `tests/fixtures/crop-cases.json`, about 12 crop timelines (actions with times) with their expected yields. The TS tests assert them, and the SQL smoke replays the same cases through the private functions and asserts the same kilograms.
 - **SQL smoke** (`tests/sql/v15-smoke.sql`, on the throwaway PostgreSQL 18 cluster):
   - a full season with simulated time;
@@ -799,7 +800,7 @@ All three are pure state machines in `lib/game/farm/minigames.ts`, with seeded t
   - the `_fishing_state` owned filter and `server_now`;
   - re-running `0013` twice.
 
-  v15.2 adds its own smoke (`v15-gather-smoke.sql`).
+  v15.2 adds its own smoke (`v15-2-smoke.sql`), and v15.3 adds `v15-gather-smoke.sql`.
 - **Maps:**
   - field collision and reachability of every use spot from both arrivals;
   - plots do not overlap each other or any solid;

@@ -58,9 +58,10 @@ function statusText(c: AnticheatCase): string {
 function holdingsLine(h: AnticheatHoldings): string {
   const items = h.inventory.reduce((a, i) => a + i.qty, 0);
   const kg = h.rice.reduce((a, r) => a + r.wet_kg + r.dry_kg, 0);
+  const produce = (h.produce ?? []).reduce((a, p) => a + p.kg, 0);
   return [
     formatXu(h.wallet?.coins ?? 0), `${count(items)} món đồ`, `${count(h.fish.length)} con cá`, `${count(h.personal_bests.length)} kỷ lục`,
-    `${count(kg)} kg lúa`, `${count(h.plots.length)} thửa sở hữu`, `${count(h.leases.length)} thửa đang thuê`,
+    `${count(kg)} kg lúa`, `${count(produce)} kg hoa màu`, `${count(h.plots.length)} thửa sở hữu`, `${count(h.leases.length)} thửa đang thuê`,
     `${count(h.offers.length)} đề nghị mua`, `${count(h.drying.length)} ô phơi`, `${count(h.announcements)} tin khoe trong chat`,
   ].join(" · ");
 }

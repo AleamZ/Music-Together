@@ -89,8 +89,9 @@ run("v15 field and land", () => {
   it("lets anyone read the varieties and farm items but nobody read the fields directly", async () => {
     const { data: varieties } = await db.from("rice_varieties").select("id");
     expect((varieties ?? []).map((v) => v.id).sort()).toEqual(["nep", "short", "thom"]);
+    // v15.2 adds the three hoa-màu seeds (kind seed): 11 + 3
     const { data: items } = await db.from("shop_items").select("id").in("kind", ["seed", "fertilizer", "pesticide", "critter_box"]);
-    expect(items ?? []).toHaveLength(11);
+    expect(items ?? []).toHaveLength(14);
     for (const table of ["field_plots", "crops", "rice_stock", "land_offers", "fish_price_index"]) {
       expect((await db.from(table).select("*")).error, table).not.toBeNull();
     }
