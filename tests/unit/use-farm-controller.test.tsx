@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { farmItemFromRow, PART_WAIT_MS, PART_WINDOW_MS, uplandFromRow, varietyFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
+import { TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
 import { GIFT_TEXT, NOT_OPEN } from "@/lib/game/farm/messages";
 import { parseFarmMine, parseFieldState, type FieldState } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
@@ -176,7 +177,7 @@ describe("useFarmController", () => {
     const { result, canvas } = setup();
     await flush();
     rpc.fieldAction.mockResolvedValue({ state: field(), harvest: null });
-    await act(async () => { await result.current.act({ kind: "work", plot: 5, work: "transplant" }); });
+    await act(async () => { await result.current.act({ kind: "work", plot: 5, work: "harvest" }); });
     act(() => result.current.cancelWork());
     expect(canvas.farmAnim).toHaveBeenLastCalledWith(0);
     await act(async () => { await vi.advanceTimersByTimeAsync(WORK_MS); });
@@ -234,11 +235,11 @@ describe("useFarmController, v15.2", () => {
     const { result, canvas } = setup();
     await flush();
     rpc.fieldAction.mockResolvedValueOnce(answer(field()));
-    await act(async () => { expect(await result.current.act({ kind: "round", plot: 5 })).toBe(true); });
+    await act(async () => { expect(await result.current.act({ kind: "round", plot: 5, game: "harvest" })).toBe(true); });
     expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "begin_work", plot: 5, work: "harvest" });
     const use = spot("plot_5");
     expect(canvas.plant).toHaveBeenCalledWith(use.use, use.face);
-    expect(result.current.round).toMatchObject({ plot: 5, part: 1, phase: "playing", score: null });
+    expect(result.current.round).toMatchObject({ game: "harvest", plot: 5, part: 1, phase: "playing", score: null });
     expect(fa(canvas, FARM_ANIM.harvest)).toBe(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 2); });
     expect(fa(canvas, FARM_ANIM.harvest)).toBe(3);
@@ -261,7 +262,7 @@ describe("useFarmController, v15.2", () => {
     const { result } = setup();
     await flush();
     rpc.fieldAction.mockResolvedValue(answer(field()));
-    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
     act(() => result.current.endRound(false, 3.5));
     expect(result.current.round).toMatchObject({ phase: "lost", score: 3.5 });
     await flush();
@@ -275,14 +276,14 @@ describe("useFarmController, v15.2", () => {
     const { result, canvas, toast } = setup();
     await flush();
     rpc.fieldAction.mockResolvedValue(answer(field()));
-    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
     act(() => result.current.closeRound());
     expect(result.current.round).toBeNull();
     expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
     expect(rpc.fieldAction).toHaveBeenCalledTimes(1);
     // the lease ran out mid-round: the claim finds the plot gone
-    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
     act(() => result.current.endRound(true, 5));
     rpc.fieldAction.mockRejectedValueOnce({ message: "not your plot" });
     await act(async () => { await vi.advanceTimersByTimeAsync(PART_WAIT_MS); });
@@ -294,7 +295,7 @@ describe("useFarmController, v15.2", () => {
     const { result } = setup();
     await flush();
     rpc.fieldAction.mockResolvedValueOnce(answer(field()));
-    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
     let report!: (a: unknown) => void;
     rpc.fieldAction.mockReturnValueOnce(new Promise((resolve) => { report = resolve; }));
     act(() => result.current.endRound(false, 2));
@@ -314,7 +315,7 @@ describe("useFarmController, v15.2", () => {
     const { result, canvas } = setup();
     await flush();
     rpc.fieldAction.mockResolvedValue(answer(field()));
-    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
     act(() => result.current.endRound(false, 2));
     await flush();
     let begun!: (a: unknown) => void;
@@ -333,7 +334,7 @@ describe("useFarmController, v15.2", () => {
     const { result, canvas } = setup();
     await flush();
     rpc.fieldAction.mockResolvedValueOnce(answer(field()));
-    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
     expect(ROUND_LIMIT_MS).toBeLessThan(PART_WINDOW_MS);
     await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_LIMIT_MS - 1); });
     expect(result.current.round).toMatchObject({ phase: "playing" });
@@ -350,7 +351,7 @@ describe("useFarmController, v15.2", () => {
     const { result, canvas, toast } = setup();
     await flush();
     rpc.fieldAction.mockResolvedValueOnce(answer(field()));
-    await act(async () => { await result.current.act({ kind: "round", plot: 5 }); });
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
     act(() => result.current.endRound(true, 6));
     let claim!: (a: unknown) => void;
     rpc.fieldAction.mockReturnValueOnce(new Promise((resolve) => { claim = resolve; }));
@@ -454,6 +455,99 @@ describe("useFarmController, v15.2", () => {
     await act(async () => { expect(await result.current.sellProduce("khoai", 180)).toBe(true); });
     expect(rpc.sellProduce).toHaveBeenCalledWith("tok", "khoai", 180);
     expect(toast).toHaveBeenCalledWith("💰 Bán 180 kg khoai lang được 47.700 xu.");
+  });
+});
+
+describe("useFarmController, v15.3 transplant rounds", () => {
+  const answer = (s: FieldState) => ({ state: s, harvest: null, harvestPart: null, picking: null });
+  const fa = (canvas: ReturnType<typeof handle>, a: number) => canvas.farmAnim.mock.calls.filter(([x]) => x === a).length;
+  /** Plot 5 as an ớt nursery, sown 12 h ago. */
+  const OT5 = {
+    kind: "upland", upland: "ot", variety: null, phase: "nursery", soak_at: null, sow_at: iso(-12), transplant_at: null, plant_at: null,
+    pests: [], picking: null, pickings: 3,
+    log: { water: [{ t: iso(-12), l: 1 }], fert: [], spray: [], picks: [], q_transplant: 1, work: [], harvests: [] },
+  };
+
+  it("plays a transplant round: begin_work, fa 1 every 2 s, and transplant with quality 1 no earlier than 9 s after the answer", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValueOnce(answer(field()));
+    await act(async () => { expect(await result.current.act({ kind: "round", plot: 5, game: "transplant" })).toBe(true); });
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "begin_work", plot: 5, work: "transplant" });
+    const use = spot("plot_5");
+    expect(canvas.plant).toHaveBeenCalledWith(use.use, use.face);
+    expect(result.current.round).toMatchObject({ game: "transplant", plot: 5, ot: false, phase: "playing", score: null });
+    expect(fa(canvas, FARM_ANIM.transplant)).toBe(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 2); });
+    expect(fa(canvas, FARM_ANIM.transplant)).toBe(3);
+    // passed at 5 s: fa 0, then "Đang cắm nốt hàng mạ…" until 9 s after the begin_work answer
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    act(() => result.current.endRound(true, 8.5));
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+    expect(result.current.round).toMatchObject({ phase: "waiting", score: 8.5 });
+    rpc.fieldAction.mockResolvedValueOnce(answer(field()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(TRANSPLANT_WAIT_MS - 5000 - 1); });
+    expect(rpc.fieldAction).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "transplant", plot: 5, quality: 1 });
+    expect(result.current.round).toMatchObject({ phase: "won", result: null });
+    expect(canvas.plotChanged).toHaveBeenCalledWith(5);
+    expect(fa(canvas, FARM_ANIM.transplant)).toBe(3);
+  });
+
+  it("sends nothing for a failed round, and Thử lại begins a new one", async () => {
+    const { result } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValue(answer(field()));
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "transplant" }); });
+    act(() => result.current.endRound(false, 5.5));
+    expect(result.current.round).toMatchObject({ phase: "lost", score: 5.5 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(rpc.fieldAction).toHaveBeenCalledTimes(1);
+    await act(async () => { result.current.nextRound(); await vi.advanceTimersByTimeAsync(0); });
+    expect(rpc.fieldAction).toHaveBeenCalledTimes(2);
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "begin_work", plot: 5, work: "transplant" });
+    expect(result.current.round).toMatchObject({ game: "transplant", phase: "playing", score: null });
+  });
+
+  it("ends a transplant round left idle before the server's window closes, in its own words", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValueOnce(answer(field()));
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "transplant" }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_LIMIT_MS); });
+    expect(result.current.round).toMatchObject({ game: "transplant", phase: "refused", message: "Lượt cấy đã quá lâu — bắt đầu lại nhé." });
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+    const sent = fa(canvas, FARM_ANIM.transplant);
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 5); });
+    expect(fa(canvas, FARM_ANIM.transplant)).toBe(sent);
+    expect(rpc.fieldAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("knows an ớt round, and shows a refused transplant in its own words", async () => {
+    rpc.fetchFieldState.mockResolvedValue(field({ crop5: OT5 }));
+    const { result, toast } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValueOnce(answer(field({ crop5: OT5 })));
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "transplant" }); });
+    expect(result.current.round).toMatchObject({ game: "transplant", plot: 5, ot: true, phase: "playing" });
+    act(() => result.current.endRound(true, 7));
+    rpc.fieldAction.mockRejectedValueOnce({ message: "work expired" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(TRANSPLANT_WAIT_MS); });
+    expect(result.current.round).toMatchObject({ phase: "refused", message: "Lượt cấy đã quá lâu — bắt đầu lại nhé." });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("reads a begin_work refusal for a transplant in the transplant's words", async () => {
+    const { result, toast } = setup();
+    await flush();
+    rpc.fieldAction.mockRejectedValueOnce({ message: "lease ending" });
+    await act(async () => { expect(await result.current.act({ kind: "round", plot: 5, game: "transplant" })).toBe(false); });
+    expect(toast).toHaveBeenCalledWith("Sắp hết hạn thuê — không kịp cấy.");
+    expect(result.current.round).toBeNull();
+    rpc.fieldAction.mockRejectedValueOnce({ message: "lease ending" });
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
+    expect(toast).toHaveBeenLastCalledWith("Sắp hết hạn thuê — không kịp gặt phần này.");
   });
 });
 

@@ -7,8 +7,10 @@ import {
   transplantReadyAt, waterAt, wantedWater, type CropModel,
 } from "./crop";
 import {
-  BED_WATER_NAME, bedLevelsText, durationText, LEASE_ENDING, NO_SEED, NOT_OPEN_152, PEST_NAME, PEST_REMEDY, TOO_FAST, WATER_NAME,
+  BED_WATER_NAME, bedLevelsText, durationText, LEASE_ENDING, LEASE_ENDING_TP, NO_SEED, NOT_OPEN_152, PEST_NAME, PEST_REMEDY,
+  TOO_FAST, WATER_NAME,
 } from "./messages";
+import { TRANSPLANT } from "./minigames";
 import type { FieldAction } from "./rpc";
 import type { CropView, FarmMine, PlotView } from "./state";
 import {
@@ -18,9 +20,12 @@ import {
 // What can be done on a plot right now (the plot panel's buttons) and what is due on my plots (the HUD task list,
 // spec §13.1–13.2; v15.2 §13.1, §13.3). Pure.
 
-/** A button's job: an RPC, a 3-second action behind the 2 s gate (begin_work, then transplant / harvest), or a rice
- *  harvest round (HarvestGame, v15.2 §6.2). */
-export type PlotRun = FieldAction | { kind: "work"; plot: number; work: "transplant" | "harvest" } | { kind: "round"; plot: number };
+/** A button's job: an RPC, a 3-second hoa-màu picking behind the 2 s gate (begin_work, then harvest), or a round: a rice
+ *  part (HarvestGame, v15.2 §6.2) or a transplant, rice or ớt (TransplantGame, v15.3 §8). */
+export type PlotRun =
+  | FieldAction
+  | { kind: "work"; plot: number; work: "harvest" }
+  | { kind: "round"; plot: number; game: "harvest" | "transplant" };
 
 export interface PlotAction {
   key: string;
@@ -161,6 +166,13 @@ function sprayButtons(p: PlotView, crop: CropView, catalog: FarmCatalog, mine: F
     });
 }
 
+/** A transplant round's hint (v15.3 §13.4): rice hills are khóm, ớt seedlings cây. */
+const transplantHint = (ot: boolean): string =>
+  `Mỗi lượt cắm ${TRANSPLANT.hills} ${ot ? "cây" : "khóm"} — được từ ${TRANSPLANT.pass} điểm là xong; hụt thì làm lại, không mất gì.`;
+
+/** Too little left on the plot's lease for a round (v15.2 R11, v15.3 R19): begin_work would answer `lease ending`. */
+const leaseEnding = (p: PlotView, now: number): boolean => p.lease !== null && p.lease.until - now < LEASE_ROUND_MS;
+
 /** The rice seeds I hold (a hoa-màu seed is planted on beds, not soaked). */
 const riceSeeds = (catalog: FarmCatalog, mine: FarmMine): FarmItem[] =>
   catalog.items.filter((i) => i.kind === "seed" && i.upland === null && (mine.items[i.id] ?? 0) > 0);
@@ -206,8 +218,11 @@ export function plotActions(p: PlotView, me: string, v: Variety | null, catalog:
       : ph === "ripening" && v ? `Lúa chưa chín — gặt được sau ${durationText(ripeAt(c, v)! - now)}.`
       : w > 1 ? `Rút nước trước khi gặt (đang ${WATER_NAME[w]}).`
       : (mine.items[TOOL_SICKLE] ?? 0) < 1 ? "Chưa có liềm — mua ở tiệm anh Hai."
-      : p.lease && p.lease.until - now < LEASE_ROUND_MS ? LEASE_ENDING : undefined;
-    return { key: "round", label, run: { kind: "round", plot }, enabled: !why, why, ...(why ? {} : { hint: "Mỗi phần là một lượt 8 bó — đạt 4 điểm là xong phần." }) };
+      : leaseEnding(p, now) ? LEASE_ENDING : undefined;
+    return {
+      key: "round", label, run: { kind: "round", plot, game: "harvest" }, enabled: !why, why,
+      ...(why ? {} : { hint: "Mỗi phần là một lượt 8 bó — đạt 4 điểm là xong phần." }),
+    };
   };
   if (cut) {
     return [...out, round(), {
@@ -223,8 +238,13 @@ export function plotActions(p: PlotView, me: string, v: Variety | null, catalog:
     out.push({ key: "sow", label: "Gieo mạ", run: { kind: "sow", plot }, enabled: !why, why });
   } else if (ph === "seedling" && v) {
     const ready = transplantReadyAt(c, v)!;
-    const why = now < ready ? `Mạ chưa đủ tuổi — cấy được sau ${durationText(ready - now)}.` : w !== 2 ? `Cần mực nước Nông (đang ${WATER_NAME[w]}).` : undefined;
-    out.push({ key: "transplant", label: "Cấy lúa", run: { kind: "work", plot, work: "transplant" }, enabled: !why, why });
+    const why = now < ready ? `Mạ chưa đủ tuổi — cấy được sau ${durationText(ready - now)}.`
+      : w !== 2 ? `Cần mực nước Nông (đang ${WATER_NAME[w]}).`
+      : leaseEnding(p, now) ? LEASE_ENDING_TP : undefined;
+    out.push({
+      key: "transplant", label: "Cấy lúa", run: { kind: "round", plot, game: "transplant" }, enabled: !why, why,
+      ...(why ? {} : { hint: transplantHint(false) }),
+    });
   } else if ((ph === "ripening" && v) || ph === "ripe" || ph === "overripe") {
     out.push(round());
   }
@@ -260,8 +280,12 @@ function bedActions(p: PlotView, crop: CropView, catalog: FarmCatalog, mine: Far
     }
   } else if (c.plantAt === null) {
     const ready = nurseryReadyAt(c, u);
-    const why = ready !== null && now < ready ? `Cây con chưa đủ tuổi — trồng được sau ${durationText(ready - now)}.` : moist;
-    out.push({ key: "set_out", label: u.transplantLabel ?? "Trồng cây con", run: { kind: "work", plot, work: "transplant" }, enabled: !why, why });
+    const why = ready !== null && now < ready ? `Cây con chưa đủ tuổi — trồng được sau ${durationText(ready - now)}.`
+      : moist ?? (leaseEnding(p, now) ? LEASE_ENDING_TP : undefined);
+    out.push({
+      key: "set_out", label: u.transplantLabel ?? "Trồng cây con", run: { kind: "round", plot, game: "transplant" }, enabled: !why, why,
+      ...(why ? {} : { hint: transplantHint(true) }),
+    });
   } else {
     // an act tend_crop would refuse as bad_work is never offered, whatever the config says
     for (const care of u.cares.filter((x) => x.kind === "act" && TEND_ACTS.includes(x.id))) {

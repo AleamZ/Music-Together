@@ -106,14 +106,23 @@ describe("plotActions", () => {
     expect(find(moist, "sow")).toMatchObject({ enabled: true, run: { kind: "sow", plot: 5 } });
     expect(find(plotActions(plot(crop()), "me", nep, CATALOG, ALL, at(1)), "sow")?.why).toBe("Hạt đang ngâm — nứt nanh sau 1 giờ.");
   });
-  it("transplants seedlings old enough in shallow water, as a work action", () => {
-    const seedlings = (water: Array<[number, number]>) => plot(crop({ sowAt: at(3) }, water));
+  it("transplants seedlings old enough in shallow water, in a TransplantGame round (v15.3 §8)", () => {
+    const seedlings = (water: Array<[number, number]>, over: Partial<PlotView> = {}) => plot(crop({ sowAt: at(3) }, water), over);
     expect(find(plotActions(seedlings([[0, 1]]), "me", nep, CATALOG, ALL, at(6)), "transplant")?.why)
       .toBe("Mạ chưa đủ tuổi — cấy được sau 5 giờ.");
     expect(find(plotActions(seedlings([[0, 1]]), "me", nep, CATALOG, ALL, at(11)), "transplant")?.why)
       .toBe("Cần mực nước Nông (đang Ẩm).");
-    expect(find(plotActions(seedlings([[0, 1], [11, 2]]), "me", nep, CATALOG, ALL, at(11)), "transplant"))
-      .toMatchObject({ enabled: true, run: { kind: "work", plot: 5, work: "transplant" } });
+    expect(find(plotActions(seedlings([[0, 1], [11, 2]]), "me", nep, CATALOG, ALL, at(11)), "transplant")).toMatchObject({
+      label: "Cấy lúa", enabled: true, run: { kind: "round", plot: 5, game: "transplant" },
+      hint: "Mỗi lượt cắm 12 khóm — được từ 6 điểm là xong; hụt thì làm lại, không mất gì.",
+    });
+    // a round needs 25 s left on the lease, as a rice round does (R19, v15.2 R11)
+    const lease = (ms: number) => ({ lease: { source: "village" as const, until: at(11) + ms, price: 250 } });
+    const ending = find(plotActions(seedlings([[0, 1], [11, 2]], lease(24_999)), "me", nep, CATALOG, ALL, at(11)), "transplant");
+    expect(ending).toMatchObject({ enabled: false, why: "Sắp hết hạn thuê — không kịp cấy." });
+    expect(ending?.hint).toBeUndefined();
+    expect(find(plotActions(seedlings([[0, 1], [11, 2]], lease(25_000)), "me", nep, CATALOG, ALL, at(11)), "transplant")?.enabled)
+      .toBe(true);
   });
   it("cuts ripe rice in a drained plot with a sickle, a round at a time", () => {
     const ripe = (water: Array<[number, number]>, over: Partial<CropView> = {}) => plot(crop({ sowAt: at(3), transplantAt: at(12), ...over }, water));
@@ -121,7 +130,7 @@ describe("plotActions", () => {
     expect(find(plotActions(ripe([[0, 3], [55, 3]]), "me", nep, CATALOG, SICKLE, at(61)), "round")?.why).toBe("Rút nước trước khi gặt (đang Sâu).");
     expect(find(plotActions(ripe([[0, 3], [55, 1]]), "me", nep, CATALOG, ALL, at(61)), "round")?.why).toBe("Chưa có liềm — mua ở tiệm anh Hai.");
     expect(find(plotActions(ripe([[0, 3], [55, 1]]), "me", nep, CATALOG, SICKLE, at(61)), "round")).toMatchObject({
-      label: "Gặt bằng liềm", run: { kind: "round", plot: 5 }, enabled: true, hint: "Mỗi phần là một lượt 8 bó — đạt 4 điểm là xong phần.",
+      label: "Gặt bằng liềm", run: { kind: "round", plot: 5, game: "harvest" }, enabled: true, hint: "Mỗi phần là một lượt 8 bó — đạt 4 điểm là xong phần.",
     });
     // a partly cut plot takes only the next round and Bỏ vụ; nobody picks its snails (R8)
     const snail: PestView = { kind: "snail", since: at(20), treatedAt: null };
@@ -298,15 +307,19 @@ describe("plotActions on beds", () => {
       label: "Trồng hoa màu", enabled: false, why: "Chưa có giống hoa màu — ghé tiệm anh Hai.",
     });
   });
-  it("sets out the ớt seedlings once old enough, on moist beds", () => {
-    const nursery = (water: Array<[number, number]>) => plot(bed("ot", { sowAt: at(0), plantAt: null }, water));
+  it("sets out the ớt seedlings once old enough, on moist beds, in a TransplantGame round (v15.3 §8)", () => {
+    const nursery = (water: Array<[number, number]>, over: Partial<PlotView> = {}) => plot(bed("ot", { sowAt: at(0), plantAt: null }, water), over);
     expect(find(plotActions(nursery([[0, 1]]), "me", null, BEDS, BEDMINE, at(6)), "set_out")).toMatchObject({
       label: "Trồng cây ớt con", enabled: false, why: "Cây con chưa đủ tuổi — trồng được sau 4 giờ.",
     });
     expect(find(plotActions(nursery([[0, 1], [10, 2]]), "me", null, BEDS, BEDMINE, at(11)), "set_out")?.why).toBe("Cần đất Ẩm (đang Đẫm).");
     expect(find(plotActions(nursery([[0, 1]]), "me", null, BEDS, BEDMINE, at(11)), "set_out")).toMatchObject({
-      enabled: true, run: { kind: "work", plot: 5, work: "transplant" },
+      enabled: true, run: { kind: "round", plot: 5, game: "transplant" },
+      hint: "Mỗi lượt cắm 12 cây — được từ 6 điểm là xong; hụt thì làm lại, không mất gì.",
     });
+    const ending = { lease: { source: "village" as const, until: at(11) + 5_000, price: 250 } };
+    expect(find(plotActions(nursery([[0, 1]], ending), "me", null, BEDS, BEDMINE, at(11)), "set_out"))
+      .toMatchObject({ enabled: false, why: "Sắp hết hạn thuê — không kịp cấy." });
   });
   it("advises the hand jobs by their windows, and stops at 20 of them", () => {
     const khoai = (work: Array<[number, string]> = []) => plot(bed("khoai", {}, [[0, 1]], [], work));

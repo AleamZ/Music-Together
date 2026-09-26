@@ -33,6 +33,7 @@ vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
 }));
 
 import { useFarmController, WORK_MS } from "@/hooks/useFarmController";
+import { TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
 
 afterEach(cleanup);
 
@@ -281,7 +282,7 @@ describe("bad_plot, bad_water and bad_work", () => {
     expect(getMap("field").interactables.filter((i) => i.kind === "plot").map((i) => i.plot).sort((a, b) => a! - b!)).toEqual(ten);
   });
 
-  it("the plot panel sends its plot's number, pumps or drains one level, works only at transplanting and harvesting, and tends only with the config's acts", () => {
+  it("the plot panel sends its plot's number, pumps or drains one level, works only at pickings, plays rounds only at transplanting and cutting rice, and tends only with the config's acts", () => {
     const rows = (fixtures as unknown as { crops: UplandCropRow[] }).crops;
     const beds: FarmCatalog = {
       ...FARM,
@@ -306,7 +307,7 @@ describe("bad_plot, bad_water and bad_work", () => {
     ];
     const deltas = new Set<number>();
     const works = new Set<string>();
-    const rounds = new Set<number>();
+    const rounds = new Set<string>();
     const acts = new Set<string>();
     for (const p of plots) {
       for (let h = 0; h <= 100; h++) {
@@ -316,14 +317,15 @@ describe("bad_plot, bad_water and bad_work", () => {
           expect(["transplant", "harvest"]).not.toContain(run.kind);
           if (run.kind === "water") deltas.add(run.delta);
           if (run.kind === "work") works.add(run.work);
-          if (run.kind === "round") rounds.add(run.plot);
+          if (run.kind === "round") rounds.add(`${run.plot}:${run.game}`);
           if (run.kind === "tend") acts.add(run.act);
         }
       }
     }
     expect([...deltas].sort()).toEqual([-1, 1]);
-    expect([...works].sort()).toEqual(["harvest", "transplant"]);
-    expect([...rounds]).toEqual([10]);
+    expect([...works].sort()).toEqual(["harvest"]);
+    // begin_work's two works (bad_work): the rice seedlings' and the ớt nursery's transplant rounds, and ripe rice's round
+    expect([...rounds].sort()).toEqual(["10:harvest", "10:transplant", "5:transplant", "6:transplant"]);
     expect([...acts].sort()).toEqual(["lat_day", "vun_goc"]);
   });
 
@@ -392,16 +394,18 @@ describe("quality_range", () => {
     vi.useRealTimers();
   });
 
-  it("transplants and harvests with quality 1", async () => {
+  it("transplants after a TransplantGame round, and picks, with quality 1", async () => {
     const canvas = { setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn() } as unknown as GameCanvasHandle;
     const { result } = renderHook(() => useFarmController({
       token: "tok", roomId: "r", accountId: "me", mapId: "field", canvas: () => canvas, toast: noop, onCoinsChanged: noop,
     }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    for (const work of ["transplant", "harvest"] as const) {
-      await act(async () => { await result.current.act({ kind: "work", plot: 6, work }); });
-      await act(async () => { await vi.advanceTimersByTimeAsync(WORK_MS); });
-      expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: work, plot: 6, quality: 1 });
-    }
+    await act(async () => { await result.current.act({ kind: "round", plot: 6, game: "transplant" }); });
+    act(() => result.current.endRound(true, 12));
+    await act(async () => { await vi.advanceTimersByTimeAsync(TRANSPLANT_WAIT_MS); });
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "transplant", plot: 6, quality: 1 });
+    await act(async () => { await result.current.act({ kind: "work", plot: 6, work: "harvest" }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(WORK_MS); });
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "harvest", plot: 6, quality: 1 });
   });
 });

@@ -84,6 +84,11 @@ export function partsDoneText(plot: number, total: number, varietyName: string):
   return `🌾 Gặt xong thửa ${plot}: tổng ${total} kg ${varietyName.toLowerCase()} (lúa ướt) — đem phơi rồi bán cho cô Út nhé!`;
 }
 
+/** A won transplant round (v15.3 §13.3): the rice transplanted, or the ớt seedlings set out. */
+export function transplantDoneText(plot: number, ot: boolean): string {
+  return ot ? `✅ Trồng xong cây ớt con thửa ${plot}.` : `✅ Cấy xong thửa ${plot} — giữ nước Nông, bón thúc đúng lúc nhé!`;
+}
+
 /** The harvester's toasts (§13.4): at the rent, and at its end with the wet stock it brought (R15). */
 export function harvesterStartText(plot: number): string {
   return `🚜 Máy gặt đang vào thửa ${plot} — 30 giây nữa xong.`;

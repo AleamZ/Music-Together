@@ -209,8 +209,8 @@ export const PART_GATE_MS = 8_000;
 export const PART_WINDOW_MS = 120_000;
 /** The client claims a won round this long after the begin_work answer (§6.2). */
 export const PART_WAIT_MS = 9_000;
-/** begin_work needs this much left on a lease: a rice round (its play and its 9 s claim), and a transplant or a picking
- *  (R11). */
+/** begin_work needs this much left on a lease: a round — a rice part or a transplant (v15.3 R19) — for its play and its
+ *  9 s claim, and a picking (R11). */
 export const LEASE_ROUND_MS = 25_000;
 export const LEASE_ACTION_MS = 5_000;
 /** One bottle loads the sprayer's tank with this many sprays (§7). */

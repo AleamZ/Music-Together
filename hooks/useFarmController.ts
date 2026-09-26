@@ -7,9 +7,10 @@ import { plotDraws } from "@/lib/game/art/crops";
 import { dueTasks, lower, plotPrompt, type FarmTask, type PlotRun } from "@/lib/game/farm/actions";
 import { PART_WAIT_MS, PART_WINDOW_MS, producePrice, ricePrice, type FarmCatalog } from "@/lib/game/farm/catalog";
 import { serverNow } from "@/lib/game/farm/clock";
+import { TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
 import {
   boughtText, GIFT_TEXT, harvestText, harvesterDoneText, loadedText, NOT_OPEN, pickingText, produceSaleText, riceSaleText,
-  WORK_EXPIRED,
+  WORK_EXPIRED, WORK_EXPIRED_TP,
 } from "@/lib/game/farm/messages";
 import type { FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
 import type { FieldState, PlotView } from "@/lib/game/farm/state";
@@ -27,24 +28,29 @@ export type FarmPanel =
   | { kind: "handbook"; tab: string | null }
   | { kind: "tasks" };
 
-/** A 3-second job in progress (transplanting, setting out the ớt, a hoa-màu picking): movement is locked until it is
- *  sent or cancelled (spec §16). `text` is the bar's line. */
-export interface FarmWork { plot: number; work: "transplant" | "harvest"; startedAt: number; text: string }
+/** A 3-second hoa-màu picking in progress: movement is locked until it is sent or cancelled (spec §16). `text` is the
+ *  bar's line. */
+export interface FarmWork { plot: number; work: "harvest"; startedAt: number; text: string }
 
-/** A rice harvest round (v15.2 §6.2): HarvestGame plays it, the controller talks to the server. */
+/** A round: a rice part (HarvestGame, v15.2 §6.2) or a transplant (TransplantGame, v15.3 §8). The overlay plays it,
+ *  the controller talks to the server. */
 export interface FarmRound {
+  game: "harvest" | "transplant";
   plot: number;
-  /** The part this round cuts, 1–6. */
+  /** The part a harvest round cuts, 1–6 (0 in a transplant round). */
   part: number;
-  /** Seeds the round's sweet bands. */
+  /** A transplant round on beds: the ớt seedlings, "cây" in its texts. */
+  ot: boolean;
+  /** Seeds the round's bands. */
   seed: number;
-  /** When the begin_work answer arrived (client ms): a won round is claimed PART_WAIT_MS after it. */
+  /** When the begin_work answer arrived (client ms): a won round is claimed 9 s after it. */
   begunAt: number;
-  /** playing → waiting (the 9 s, "Đang bó lúa…") → won; or lost; or refused (by the server, or left idle too long). */
+  /** playing → waiting (the 9 s: "Đang bó lúa…", "Đang cắm nốt hàng mạ…") → won; or lost; or refused (by the server, or
+   *  left idle too long). */
   phase: "playing" | "waiting" | "won" | "lost" | "refused";
   /** The round's score once it is over. */
   score: number | null;
-  /** The part won. */
+  /** The part won (a harvest round). */
   result: PartAnswer | null;
   /** A refusal's text (read in the round's context). */
   message: string | null;
@@ -66,16 +72,18 @@ export interface FarmController {
   busy: boolean;
   work: FarmWork | null;
   cancelWork: () => void;
-  /** A harvest round, open in its overlay. */
+  /** A round, open in its overlay. */
   round: FarmRound | null;
-  /** The overlay's round ended: a pass is claimed at 9 s, a fail is reported at once. */
+  /** The overlay's round ended: a pass is claimed at 9 s; a harvest round's fail is reported at once, a transplant
+   *  round's sends nothing. */
   endRound: (pass: boolean, score: number) => void;
-  /** "Gặt tiếp" or "Thử lại": a new round on the same plot (a new begin_work, once a lost round's report has landed). */
+  /** "Gặt tiếp" or "Thử lại": a new round of the same game on the same plot (a new begin_work, once a lost harvest
+   *  round's report has landed). */
   nextRound: () => void;
   /** "Nghỉ tay", "Đóng" or Esc: the overlay closes and nothing is sent; a begin_work answer still to come is dropped. */
   closeRound: () => void;
-  /** A land, farming or drying action (a work action starts the progress, a round opens HarvestGame); `done` is toasted
-   *  when it succeeds. */
+  /** A land, farming or drying action (a picking starts the progress, a round opens its game); `done` is toasted when it
+   *  succeeds. */
   act: (a: PlotRun, done?: string) => Promise<boolean>;
   buy: (itemId: string, qty: number) => Promise<boolean>;
   sell: (variety: string, dry: boolean, kg: number) => Promise<boolean>;
@@ -100,15 +108,19 @@ export interface FarmControllerOptions {
   onCoinsChanged: () => void;
 }
 
-/** Transplanting and harvesting take this long on screen (the server's gate is 2 s; spec §4, §11.4). */
+/** A hoa-màu picking takes this long on screen (the server's gate is 2 s; spec §4, §11.4). */
 export const WORK_MS = 3000;
-/** A harvest round re-sends `fa 2` this often while it runs (an `fa` lasts 2.5 s; v15.2 R14). */
+/** A round re-sends its `fa` this often while it runs (an `fa` lasts 2.5 s; v15.2 R14, v15.3 §12). */
 export const ROUND_FA_MS = 2000;
-/** A round still played this long after its begin_work answer ends as too long, 10 s before the server's window (R6)
- *  would refuse its claim: an idle round would otherwise re-send `fa 2` for ever. */
+/** A round still played this long after its begin_work answer ends as too long, 10 s before the server's window (R6; a
+ *  transplant's is the same, v15.3 §8.3) would refuse its claim: an idle round would otherwise re-send its `fa` for
+ *  ever. */
 export const ROUND_LIMIT_MS = PART_WINDOW_MS - 10_000;
 /** A claim this long on its way lets the overlay close ("Nghỉ tay", Esc); its answer still lands in the state. */
 export const CLAIM_SLOW_MS = 15_000;
+/** Each round's animation, and how long after its begin_work answer a won round is claimed (the gate is 8 s). */
+const ROUND_ANIM: Record<FarmRound["game"], FarmAnim> = { harvest: FARM_ANIM.harvest, transplant: FARM_ANIM.transplant };
+const ROUND_WAIT_MS: Record<FarmRound["game"], number> = { harvest: PART_WAIT_MS, transplant: TRANSPLANT_WAIT_MS };
 /** A harvester of mine is fetched this long after its end, on the server's clock (R15), and again after
  *  HARVESTER_RETRY_MS while it still shows, at most HARVESTER_TRIES times. */
 export const HARVESTER_REFETCH_MS = 1000;
@@ -135,20 +147,17 @@ function plantAnim(catalog: FarmCatalog | null, item: string): FarmAnim {
   return catalog?.uplands.find((u) => u.id === upland)?.method === "cutting" ? FARM_ANIM.transplant : FARM_ANIM.fertilize;
 }
 
-/** A 3-second job's animation and bar line: rice is transplanted; on beds the ớt is set out and the crops are dug or
- *  picked by their config. */
-function workLook(p: PlotView | undefined, catalog: FarmCatalog | null, w: FarmWork["work"], plot: number): { anim: FarmAnim; text: string } {
+/** A picking's animation and bar line: the crop's config digs or picks; rice (a database without 0016) is cut. */
+function workLook(p: PlotView | undefined, catalog: FarmCatalog | null, plot: number): { anim: FarmAnim; text: string } {
   const u = p?.crop?.kind === "upland" ? catalog?.uplands.find((x) => x.id === p.crop!.upland) : undefined;
-  if (u && w === "harvest") return { anim: u.harvestAnim === "dig" ? FARM_ANIM.dig : FARM_ANIM.pick, text: `🧺 Đang ${lower(u.harvestLabel)} thửa ${plot}…` };
-  if (u) return { anim: FARM_ANIM.transplant, text: `🌱 Đang ${lower(u.transplantLabel ?? "Trồng cây con")} thửa ${plot}…` };
-  return w === "transplant"
-    ? { anim: FARM_ANIM.transplant, text: `🌱 Đang cấy thửa ${plot}…` }
-    : { anim: FARM_ANIM.harvest, text: `🌾 Đang gặt thửa ${plot}…` };
+  if (u) return { anim: u.harvestAnim === "dig" ? FARM_ANIM.dig : FARM_ANIM.pick, text: `🧺 Đang ${lower(u.harvestLabel)} thửa ${plot}…` };
+  return { anim: FARM_ANIM.harvest, text: `🌾 Đang gặt thửa ${plot}…` };
 }
 
-/** Everything farming for the game shell (spec §7–§8, §12–§13; v15.2 §6, §12–§13): the field, the clock, the prompts,
- *  the panels, the due tasks and the plots on the canvas, the newcomer gift, the actions with their animations (`fa`)
- *  and the others' refetch (`fp`), the 3-second jobs, the harvest rounds and the end of my harvesters. */
+/** Everything farming for the game shell (spec §7–§8, §12–§13; v15.2 §6, §12–§13; v15.3 §8): the field, the clock, the
+ *  prompts, the panels, the due tasks and the plots on the canvas, the newcomer gift, the actions with their animations
+ *  (`fa`) and the others' refetch (`fp`), the 3-second pickings, the harvest and transplant rounds and the end of my
+ *  harvesters. */
 export function useFarmController({ token, roomId, accountId, mapId, canvas, toast, onCoinsChanged }: FarmControllerOptions): FarmController {
   const active = mapId === "field";
   const data = useField(roomId, token, active, toast);
@@ -206,7 +215,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     lastCoins.current = coins;
   }, [coins]);
 
-  // --- 3-second jobs: begin_work, the progress (movement locked), then the action with q = 1.0
+  // --- 3-second pickings: begin_work, the progress (movement locked), then harvest with q = 1.0
   const workTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (workTimer.current) clearTimeout(workTimer.current);
@@ -237,7 +246,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     const c = canvas();
     const spot = getMap("field").interactables.find((i) => i.plot === plot);
     if (spot) c?.plant(spot.use, spot.face ?? "up");
-    const look = workLook(begun.state.plots.find((p) => p.no === plot), live.current.catalog, w, plot);
+    const look = workLook(begun.state.plots.find((p) => p.no === plot), live.current.catalog, plot);
     c?.farmAnim(look.anim);
     setPanel(null);
     setWork({ plot, work: w, startedAt: Date.now(), text: look.text });
@@ -255,12 +264,14 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     canvas()?.farmAnim(FARM_ANIM.stop);
   }, [canvas]);
 
-  // --- harvest rounds (v15.2 §6.2): begin_work, the game with fa 2 every 2 s, then harvest_part — a pass 9 s after the
-  // begin_work answer, a fail at once. Esc sends nothing: the server's record expires or the next begin_work replaces it.
+  // --- rounds (v15.2 §6.2, v15.3 §8): begin_work, the game with its fa re-sent every 2 s (2 cuts rice, 1 transplants),
+  // then the claim of a pass 9 s after the begin_work answer, harvest_part or transplant. A lost harvest round is
+  // reported at once; a lost transplant round sends nothing. Esc sends nothing: the server's record expires or the next
+  // begin_work replaces it.
   const roundAnim = useRef<ReturnType<typeof setInterval> | null>(null);
   /** The round's one pending timer: its idle limit while it is played, then the claim's 9 s, then the slow claim's way out. */
   const roundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** A lost round's report: it clears the server's record, so the next begin_work waits until it has landed. */
+  /** A lost harvest round's report: it clears the server's record, so the next begin_work waits until it has landed. */
   const lostReport = useRef<Promise<unknown> | null>(null);
   /** Counts the overlay's closes: a begin_work answer that comes back after one is dropped. */
   const closes = useRef(0);
@@ -274,40 +285,42 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     if (roundAnim.current) clearInterval(roundAnim.current);
     if (roundTimer.current) clearTimeout(roundTimer.current);
   }, []);
-  const startRound = useCallback(async (plot: number): Promise<boolean> => {
+  const startRound = useCallback(async (plot: number, game: FarmRound["game"]): Promise<boolean> => {
     if (workTimer.current || roundOn(live.current.round)) return false;
     const closed = closes.current;
     setBusy(true);
     // a lost round's report goes first: landing after this begin_work, it would clear the new record
     await lostReport.current;
-    const begun = closes.current === closed ? await run({ kind: "begin_work", plot, work: "harvest" }) : null;
+    const begun = closes.current === closed ? await run({ kind: "begin_work", plot, work: game }) : null;
     setBusy(false);
     // closed meanwhile (Esc, Nghỉ tay, the field left): the answer is dropped and the round stays closed
     if (!begun || closes.current !== closed) return false;
     const c = canvas();
     const spot = getMap("field").interactables.find((i) => i.plot === plot);
     if (spot) c?.plant(spot.use, spot.face ?? "up");
-    c?.farmAnim(FARM_ANIM.harvest);
+    const anim = ROUND_ANIM[game];
+    c?.farmAnim(anim);
     if (roundAnim.current) clearInterval(roundAnim.current);
-    roundAnim.current = setInterval(() => canvas()?.farmAnim(FARM_ANIM.harvest), ROUND_FA_MS);
+    roundAnim.current = setInterval(() => canvas()?.farmAnim(anim), ROUND_FA_MS);
     setPanel(null);
-    const parts = begun.state.plots.find((p) => p.no === plot)?.crop?.parts ?? 0;
+    const crop = begun.state.plots.find((p) => p.no === plot)?.crop;
     const r: FarmRound = {
-      plot, part: parts + 1, seed: Math.floor(Math.random() * 0x7fffffff), begunAt: Date.now(), phase: "playing", score: null,
-      result: null, message: null, slow: false,
+      game, plot, part: game === "harvest" ? (crop?.parts ?? 0) + 1 : 0, ot: crop?.kind === "upland",
+      seed: Math.floor(Math.random() * 0x7fffffff), begunAt: Date.now(), phase: "playing", score: null, result: null, message: null,
+      slow: false,
     };
     setRound(r);
-    // a round left idle ends before the server's window would refuse its claim, and its fa 2 with it
+    // a round left idle ends before the server's window would refuse its claim, and its fa with it
     if (roundTimer.current) clearTimeout(roundTimer.current);
     roundTimer.current = setTimeout(() => {
       roundTimer.current = null;
       if (!sameRound(live.current.round, r) || live.current.round?.phase !== "playing") return;
       stopRoundAnim();
-      setRound({ ...r, phase: "refused", message: WORK_EXPIRED });
+      setRound({ ...r, phase: "refused", message: game === "harvest" ? WORK_EXPIRED : WORK_EXPIRED_TP });
     }, ROUND_LIMIT_MS);
     return true;
   }, [run, canvas, stopRoundAnim]);
-  const claimPart = useCallback(async (r: FarmRound) => {
+  const claimRound = useCallback(async (r: FarmRound) => {
     // a claim slow on its way lets the overlay close; its answer still lands in the state
     const slow = setTimeout(() => {
       if (roundTimer.current === slow) roundTimer.current = null;
@@ -315,10 +328,14 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     }, CLAIM_SLOW_MS);
     roundTimer.current = slow;
     let refusal: string | null = null;
-    const ans = await run({ kind: "harvest_part", plot: r.plot, success: true }, undefined, (text) => { refusal = text; });
+    const refused = (text: string) => { refusal = text; };
+    // the transplant's quality is ignored for good, and always 1 (v15.3 R20)
+    const ans = r.game === "harvest"
+      ? await run({ kind: "harvest_part", plot: r.plot, success: true }, undefined, refused)
+      : await run({ kind: "transplant", plot: r.plot, quality: 1 }, undefined, refused);
     clearTimeout(slow);
     if (roundTimer.current === slow) roundTimer.current = null;
-    // the part changed the plot for everyone, even when the overlay was closed meanwhile
+    // the claim changed the plot for everyone, even when the overlay was closed meanwhile
     if (ans) canvas()?.plotChanged(r.plot);
     if (!sameRound(live.current.round, r)) return;
     if (!ans) {
@@ -336,20 +353,23 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     roundTimer.current = null;
     if (!pass) {
       setRound({ ...r, phase: "lost", score });
-      // reported at once, with no gate: it clears the server's record and cuts nothing (R7)
-      lostReport.current = run({ kind: "harvest_part", plot: r.plot, success: false }, undefined, () => {});
+      // a harvest round's fail is reported at once, with no gate: it clears the server's record and cuts nothing (v15.2
+      // R7); a transplant round's sends nothing (v15.3 R19)
+      if (r.game === "harvest") {
+        lostReport.current = run({ kind: "harvest_part", plot: r.plot, success: false }, undefined, () => {});
+      }
       return;
     }
     const waiting: FarmRound = { ...r, phase: "waiting", score };
     setRound(waiting);
     roundTimer.current = setTimeout(() => {
       roundTimer.current = null;
-      void claimPart(waiting);
-    }, Math.max(0, r.begunAt + PART_WAIT_MS - Date.now()));
-  }, [run, stopRoundAnim, claimPart]);
+      void claimRound(waiting);
+    }, Math.max(0, r.begunAt + ROUND_WAIT_MS[r.game] - Date.now()));
+  }, [run, stopRoundAnim, claimRound]);
   const nextRound = useCallback(() => {
     const r = live.current.round;
-    if (r && !roundOn(r)) void startRound(r.plot);
+    if (r && !roundOn(r)) void startRound(r.plot, r.game);
   }, [startRound]);
   const closeRound = useCallback(() => {
     closes.current += 1;
@@ -406,7 +426,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   // --- the actions
   const act = useCallback(async (a: PlotRun, done?: string): Promise<boolean> => {
     if (a.kind === "work") return startWork(a.plot, a.work, done);
-    if (a.kind === "round") return startRound(a.plot);
+    if (a.kind === "round") return startRound(a.plot, a.game);
     setBusy(true);
     try {
       const itemName = "item" in a ? live.current.catalog?.items.find((i) => i.id === a.item)?.name : undefined;

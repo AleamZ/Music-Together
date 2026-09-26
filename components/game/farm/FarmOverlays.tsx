@@ -12,10 +12,10 @@ import Handbook from "./Handbook";
 import HarvestGame from "./HarvestGame";
 import PlotPanel from "./PlotPanel";
 import RiceDepotPanel from "./RiceDepotPanel";
+import TransplantGame from "./TransplantGame";
 
-/** A 3-second job (transplanting, setting out the ớt, a picking): its line, a bar that fills in WORK_MS, and "Huỷ" (or
- *  Esc) before it is sent. An Esc typed into a text field, or one that closes an open panel, is not for the work (v13/v14
- *  input rules). */
+/** A 3-second picking: its line, a bar that fills in WORK_MS, and "Huỷ" (or Esc) before it is sent. An Esc typed into a
+ *  text field, or one that closes an open panel, is not for the work (v13/v14 input rules). */
 function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen: boolean; onCancel: () => void }) {
   const [full, setFull] = useState(false);
   useEffect(() => {
@@ -44,8 +44,8 @@ function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen
   );
 }
 
-/** The field on top of the world (spec §13): the banner before the migration, the work progress, a harvest round
- *  (v15.2 §13.2) and the field's panels. */
+/** The field on top of the world (spec §13): the banner before the migration, the work progress, a round (HarvestGame,
+ *  v15.2 §13.2; TransplantGame, v15.3 §13.3) and the field's panels. */
 export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
   farm: FarmController;
   me: string;
@@ -70,9 +70,13 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
         // the field's own tasks panel and handbook can open from the HUD while the work runs
         <WorkProgress key={farm.work.startedAt} work={farm.work} panelOpen={panelOpen || panel !== null} onCancel={farm.cancelWork} />
       )}
-      {round && (
+      {round?.game === "harvest" && (
         // a new round (Gặt tiếp, Thử lại) starts a new game
         <HarvestGame key={round.begunAt} round={round} busy={busy} panelOpen={panelOpen || panel !== null} varietyName={varietyName}
+          onEnd={farm.endRound} onNext={farm.nextRound} onClose={farm.closeRound} />
+      )}
+      {round?.game === "transplant" && (
+        <TransplantGame key={round.begunAt} round={round} busy={busy} panelOpen={panelOpen || panel !== null}
           onEnd={farm.endRound} onNext={farm.nextRound} onClose={farm.closeRound} />
       )}
       {panel?.kind === "plot" && (

@@ -250,7 +250,7 @@ describe("PlotPanel, v15.2", () => {
     const { onAct, onOpenHandbook } = show(withCrop(RIPE, { tool_sickle: 1 }));
     expect(li("🚜 Hoặc thuê máy gặt ở Hợp tác xã: 30 giây, 500 xu mỗi phần còn lại.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Gặt bằng liềm" }));
-    expect(onAct).toHaveBeenLastCalledWith({ kind: "round", plot: 5 }, undefined);
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "round", plot: 5, game: "harvest" }, undefined);
     fireEvent.click(screen.getByRole("button", { name: "📖 Sổ tay: Nông cụ" }));
     expect(onOpenHandbook).toHaveBeenCalledWith("tools");
   });

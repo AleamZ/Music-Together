@@ -145,12 +145,12 @@ export function useField(roomId: string, token: string, active: boolean, onError
     }, Math.max(FP_GATHER_MS, gap));
   }, [reload]);
 
-  /** Run RPC `rpc` and apply its answer. On error: the Vietnamese text, read in the RPC's context (a harvest round's
-   *  refusals read their own way), to `onError` or the toast; then a refetch, and null. A strike shows no text: the
-   *  warning or the ban modal shows instead (anti-cheat §12.1). Before 0016 its RPCs are missing while the field is open:
-   *  they say NOT_OPEN_152 and leave the field open (v15.2 R28). */
+  /** Run RPC `rpc` and apply its answer. On error: the Vietnamese text, read in its context (the RPC's, unless `context`
+   *  names another: a round's refusals read their own way), to `onError` or the toast; then a refetch, and null. A strike
+   *  shows no text: the warning or the ban modal shows instead (anti-cheat §12.1). Before 0016 its RPCs are missing while
+   *  the field is open: they say NOT_OPEN_152 and leave the field open (v15.2 R28). */
   const call = useCallback(async <T,>(job: () => Promise<T>, keep: (n: number, r: T) => void,
-    opts: { rpc: string; itemName?: string; onError?: (text: string) => void }): Promise<T | null> => {
+    opts: { rpc: string; context?: string; itemName?: string; onError?: (text: string) => void }): Promise<T | null> => {
     const n = ++seq.current;
     try {
       const r = await job();
@@ -160,7 +160,7 @@ export function useField(roomId: string, token: string, active: boolean, onError
       const missing = isMissingRpc(err), v152 = RPCS_152.has(opts.rpc);
       if (missing && !v152) setNotOpen(true);
       if (!(err instanceof AnticheatError && err.info.strike >= 1)) {
-        (opts.onError ?? onErrorRef.current)(missing && v152 ? NOT_OPEN_152 : farmErrorMessage(err, opts.itemName, opts.rpc));
+        (opts.onError ?? onErrorRef.current)(missing && v152 ? NOT_OPEN_152 : farmErrorMessage(err, opts.itemName, opts.context ?? opts.rpc));
       }
       void reload();
       return null;
@@ -170,7 +170,10 @@ export function useField(roomId: string, token: string, active: boolean, onError
   return {
     state, catalog, failed: fieldFailed || catalogFailed, notOpen, reload, plotChanged,
     run: useCallback((a: FieldAction, itemName?: string, onError?: (text: string) => void) =>
-      call(() => fieldAction(roomId, token, a), (n, r) => apply(n, r.state), { rpc: actionCall(a)[0], itemName, onError }),
+      call(() => fieldAction(roomId, token, a), (n, r) => apply(n, r.state), {
+        // a transplant round's begin_work (lease ending) reads as the transplant does (v15.3 §11.8)
+        rpc: actionCall(a)[0], context: a.kind === "begin_work" && a.work === "transplant" ? "transplant" : undefined, itemName, onError,
+      }),
     [call, apply, roomId, token]),
     sellRice: useCallback((variety: string, dry: boolean, kg: number) =>
       call(() => sellRice(token, variety, dry, kg), applyMine, { rpc: "sell_rice" }), [call, applyMine, token]),

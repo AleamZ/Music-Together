@@ -23,8 +23,9 @@ const DONE: Record<string, string> = {
   prepare: "Đã làm đất — ruộng ngập nước.", prepare_beds: "Đã lên luống — đất Ẩm, sẵn sàng trồng.",
   soak: "Đang ngâm giống — 2 giờ nữa là nứt nanh.", sow: "Đã gieo mạ.", pick: "Đã bắt ốc bươu vàng.", abandon: "Đã bỏ vụ.",
 };
-/** The actions toasted by their own button: "Đã bón phân urê.", "Đã trồng dây khoai.", "Đã lật dây." (v15.2 §13.6). */
-const BY_LABEL: ReadonlySet<string> = new Set(["fert", "spray", "plant", "tend", "set_out"]);
+/** The actions toasted by their own button: "Đã bón phân urê.", "Đã trồng dây khoai.", "Đã lật dây." (v15.2 §13.6). A
+ *  round's game says its own end. */
+const BY_LABEL: ReadonlySet<string> = new Set(["fert", "spray", "plant", "tend"]);
 const doneText = (a: PlotAction): string | undefined => {
   const key = a.key.split(":")[0];
   return DONE[key] ?? (BY_LABEL.has(key) ? `Đã ${lower(a.label)}.` : undefined);

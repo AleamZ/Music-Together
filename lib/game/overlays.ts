@@ -12,9 +12,9 @@ export interface OpenOverlays {
   anticheatModal: boolean;
   /** One of the field's own panels. */
   farmPanel: boolean;
-  /** A 3-second job (transplanting, a picking) is under way. */
+  /** A 3-second picking is under way. */
   farmWork: boolean;
-  /** A harvest round (HarvestGame) is open (v15.2 §6.2): the avatar stays at the plot. */
+  /** A round is open, HarvestGame (v15.2 §6.2) or TransplantGame (v15.3 §8): the avatar stays at the plot. */
   farmRound: boolean;
   /** A card table's panel (v16). */
   cardPanel: boolean;

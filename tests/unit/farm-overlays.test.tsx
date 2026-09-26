@@ -53,7 +53,7 @@ describe("FarmOverlays", () => {
   });
 
   it("keeps working on an Esc typed into a text field", () => {
-    const farm = controller({ work: { plot: 5, work: "transplant", startedAt: 1, text: "🌱 Đang cấy thửa 5…" } });
+    const farm = controller({ work: { plot: 5, work: "harvest", startedAt: 1, text: "🧺 Đang đào khoai thửa 5…" } });
     render(<><input aria-label="Chat" /><FarmOverlays farm={farm} me="me" onField /></>);
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Chat" }), { key: "Escape" });
     expect(farm.cancelWork).not.toHaveBeenCalled();
@@ -99,9 +99,10 @@ describe("FarmOverlays", () => {
   });
 });
 
-describe("FarmOverlays, a harvest round", () => {
+describe("FarmOverlays, a round", () => {
   const round = (over: Partial<FarmRound> = {}): FarmRound => ({
-    plot: 5, part: 2, seed: 7, begunAt: 1, phase: "playing", score: null, result: null, message: null, slow: false, ...over,
+    game: "harvest", plot: 5, part: 2, ot: false, seed: 7, begunAt: 1, phase: "playing", score: null, result: null, message: null,
+    slow: false, ...over,
   });
 
   it("opens HarvestGame for the round, with the harvest's variety for its last line", () => {
@@ -109,6 +110,15 @@ describe("FarmOverlays, a harvest round", () => {
     render(<FarmOverlays farm={farm} me="me" onField />);
     expect(screen.getByRole("dialog", { name: "Gặt thửa 5" })).toBeInTheDocument();
     expect(screen.getByText("🌾 Gặt xong thửa 5: tổng 75 kg nếp (lúa ướt) — đem phơi rồi bán cho cô Út nhé!")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Đóng" }));
+    expect(farm.closeRound).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens TransplantGame for a transplant round (v15.3 §13.3)", () => {
+    const farm = controller({ round: round({ game: "transplant", part: 0, phase: "won", score: 8 }) });
+    render(<FarmOverlays farm={farm} me="me" onField />);
+    expect(screen.getByRole("dialog", { name: "Cấy lúa thửa 5" })).toBeInTheDocument();
+    expect(screen.getByText("✅ Cấy xong thửa 5 — giữ nước Nông, bón thúc đúng lúc nhé!")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Đóng" }));
     expect(farm.closeRound).toHaveBeenCalledTimes(1);
   });
