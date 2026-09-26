@@ -6,6 +6,16 @@
 
 create temp table smoke (k text primary key, v text);
 
+-- v17 (0019): rats off in this smoke's rooms. Once 0019 is in, no_rats gives the room a far-future rat clock, so its
+-- sweep evaluates no spawn candidate; before 0019 it does nothing.
+create function pg_temp.no_rats(p_key text) returns void language plpgsql as $$
+begin
+  if to_regclass('public.rat_clocks') is not null then
+    execute format('insert into public.rat_clocks (room_id, last_k) select v::uuid, 9000000000000000000 from smoke where k = %L
+                    on conflict (room_id) do update set last_k = excluded.last_k', p_key);
+  end if;
+end $$;
+
 -- The error text of a statement, or null when it succeeds (its effects are rolled back either way on error).
 create or replace function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -51,6 +61,7 @@ end $$;
 insert into smoke select 't1', token from public.register('ac1_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 'a1', public._auth_account((select v from smoke where k = 't1'))::text;
 insert into smoke select 'room', room_id::text from public.create_room('Chống gian lận', 'pw', (select v from smoke where k = 't1'));
+select pg_temp.no_rats('room');
 
 do $$
 declare t1 text := (select v from smoke where k = 't1'); room uuid := (select v from smoke where k = 'room')::uuid;
@@ -532,6 +543,7 @@ insert into smoke select 'g' || n, token from generate_series(1, 5) n,
   lateral public.register('acg' || n || '_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 'h' || substr(k, 2), public._auth_account(v)::text from smoke where k in ('g1', 'g2', 'g3', 'g4', 'g5');
 insert into smoke select 'froom', room_id::text from public.create_room('Đồng gian lận', 'pw', (select v from smoke where k = 'g1'));
+select pg_temp.no_rats('froom');
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'froom')::uuid), 'pw', v)
   from smoke where k in ('g2', 'g3', 'g4', 'g5');
 create or replace function pg_temp.set_coins(a uuid, n integer) returns void language sql
@@ -753,6 +765,7 @@ insert into smoke select 'k' || n, token from generate_series(1, 5) n,
   lateral public.register('ack' || n || '_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 'm' || substr(k, 2), public._auth_account(v)::text from smoke where k in ('k1', 'k2', 'k3', 'k4', 'k5');
 insert into smoke select 'sroom', room_id::text from public.create_room('Ruộng quét', 'pw', (select v from smoke where k = 'k1'));
+select pg_temp.no_rats('sroom');
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'sroom')::uuid), 'pw', v)
   from smoke where k in ('k2', 'k3', 'k4', 'k5');
 
@@ -863,7 +876,9 @@ insert into smoke select 'n' || n, token from generate_series(1, 6) n,
   lateral public.register('acn' || n || '_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 'p' || substr(k, 2), public._auth_account(v)::text from smoke where k in ('n1', 'n2', 'n3', 'n4', 'n5', 'n6');
 insert into smoke select 'aroom', room_id::text from public.create_room('Phòng xử', 'pw', (select v from smoke where k = 'n1'));
+select pg_temp.no_rats('aroom');
 insert into smoke select 'aroom2', room_id::text from public.create_room('Phòng xử 2', 'pw', (select v from smoke where k = 'n1'));
+select pg_temp.no_rats('aroom2');
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = r)::uuid), 'pw', v)
   from smoke, unnest(array['aroom', 'aroom2']) r where k in ('n2', 'n3', 'n4', 'n5', 'n6');
 

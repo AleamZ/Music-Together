@@ -271,3 +271,270 @@ revoke all on function public._crop_yield(public.crops, public.rice_varieties, d
   from public, anon, authenticated;
 revoke all on function public._up_yield(public.crops, public.upland_crops, double precision, integer, timestamptz)
   from public, anon, authenticated;
+
+-- ---------- D. The field (§5.3, §5.6, §10.3, §10.5) ----------
+-- The rats' lazy clock (§5.3), run by _field_open after _field_sweep, under the room's plot locks. It locks rat and crop
+-- rows only, never the fish price index (v15.3 R12). R1: a live rat whose crop no longer carries its entry, or is no
+-- longer rat food, flees, and its entry closes. R2: rats ended more than an hour ago go. R3: each candidate k after the
+-- room's last_k and inside the last 30 minutes spawns a rat on a food plot while fewer than 3 are alive; a rat found late
+-- keeps spawned_at = t(k) (its path) but eats only from this sweep (D3). A far-future last_k switches the room's rats off.
+create or replace function public._rat_sweep(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare r public.field_rats; c public.crops; v_found boolean; v_last bigint; v_hi bigint; v_k bigint; v_t timestamptz;
+        v_plots integer[]; v_plot integer; v_id bigint;
+begin
+  -- R1. flee
+  for r in select fr.* from public.field_rats fr where fr.room_id = p_room and fr.ended_at is null order by fr.id for update loop
+    select * into c from public.crops cr
+     where cr.room_id = p_room and cr.plot_no = r.plot_no and cr.rat_log @> jsonb_build_array(jsonb_build_object('r', r.id))
+       for update;
+    v_found := found;
+    if not v_found or not public._rat_food(c, p_now) then
+      update public.field_rats set ended_at = p_now, how = 'fled' where id = r.id;
+      if v_found then
+        update public.crops set rat_log = public._rat_close(rat_log, r.id, p_now) where room_id = p_room and plot_no = r.plot_no;
+      end if;
+    end if;
+  end loop;
+  -- R2. purge
+  delete from public.field_rats where room_id = p_room and ended_at < p_now - interval '1 hour';
+  -- R3. spawn: k(p_now − 1 800 s) < k ≤ k(p_now), and k > last_k
+  select last_k into v_last from public.rat_clocks where room_id = p_room for update;
+  v_hi := public._rat_k(p_room, p_now);
+  v_k := greatest(public._rat_k(p_room, p_now - interval '1800 seconds'), coalesce(v_last, -1)) + 1;
+  while v_k <= v_hi loop
+    v_t := public._rat_t(p_room, v_k);
+    if (select count(*) from public.field_rats fr
+         where fr.room_id = p_room and fr.spawned_at <= v_t and (fr.ended_at is null or fr.ended_at > v_t)) < 3 then
+      select array_agg(cr.plot_no::integer order by cr.plot_no) into v_plots from public.crops cr
+       where cr.room_id = p_room and public._rat_food(cr, v_t) and jsonb_array_length(cr.rat_log) < 20;
+      if v_plots is not null then
+        v_plot := v_plots[1 + floor(public._rat_u(p_room, v_k, 'p') * cardinality(v_plots))::integer];
+        insert into public.field_rats (room_id, plot_no, k, seed, spawned_at)
+        values (p_room, v_plot, v_k, floor(public._rat_u(p_room, v_k, 's') * 2147483647)::integer, v_t)
+        on conflict (room_id, k) do nothing
+        returning id into v_id;
+        if v_id is not null then
+          update public.crops
+             set rat_log = rat_log || jsonb_build_array(jsonb_build_object('r', v_id, 'from', p_now, 'to', null))
+           where room_id = p_room and plot_no = v_plot;
+        end if;
+      end if;
+    end if;
+    v_k := v_k + 1;
+  end loop;
+  insert into public.rat_clocks (room_id, last_k) values (p_room, v_hi)
+  on conflict (room_id) do update set last_k = greatest(public.rat_clocks.last_k, excluded.last_k);
+end $$;
+
+-- The catch caps (§5.6, D13), on the account's farm profile (created if missing, locked): 6 catches in an hourly window
+-- (it starts at the first catch after the last one ended) and 24 a Vietnam day. At the cap it raises 'rat limit' or 'rat
+-- daily limit' (53400, details = the seconds until the window or the day ends); with p_take it counts the catch, and the
+-- catch that makes the day's 24 logs the soft rat_daily_cap once.
+create or replace function public._rat_caps(p_account uuid, p_now timestamptz, p_take boolean, p_how text default null,
+                                            p_room uuid default null) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare pr public.farm_profiles; v_day date := (p_now at time zone 'Asia/Ho_Chi_Minh')::date; v_open boolean;
+        v_win integer; v_n integer;
+begin
+  insert into public.farm_profiles (account_id) values (p_account) on conflict (account_id) do nothing;
+  select * into pr from public.farm_profiles where account_id = p_account for update;
+  v_open := pr.rat_win_start is not null and p_now < pr.rat_win_start + interval '1 hour';
+  v_win := case when v_open then pr.rat_win_count else 0 end;
+  v_n := case when pr.rat_day_on = v_day then pr.rat_day_count else 0 end;
+  if v_win >= 6 then
+    raise exception 'rat limit' using errcode = '53400',
+      detail = ceil(extract(epoch from (pr.rat_win_start + interval '1 hour' - p_now)))::int::text;
+  end if;
+  if v_n >= 24 then
+    raise exception 'rat daily limit' using errcode = '53400',
+      detail = ceil(extract(epoch from ((v_day + 1)::timestamp at time zone 'Asia/Ho_Chi_Minh' - p_now)))::int::text;
+  end if;
+  if p_take then
+    update public.farm_profiles
+       set rat_win_start = case when v_open then rat_win_start else p_now end, rat_win_count = v_win + 1,
+           rat_day_on = v_day, rat_day_count = v_n + 1
+     where account_id = p_account;
+    if v_n + 1 = 24 then
+      perform public._ac_flag(p_account, 'rat_daily_cap', case when p_how = 'dog' then 'dog_hunt' else 'sling_shoot' end,
+                              jsonb_build_object('day', v_day, 'count', 24), p_room, null, false);
+    end if;
+  end if;
+end $$;
+
+-- What the caps leave at p_now (§10.5 mine.rat_caps): a read, no lock.
+create or replace function public._rat_caps_view(p_account uuid, p_now timestamptz) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'hour_left', case when x.open then greatest(0, 6 - x.win) else 6 end,
+    'hour_resets_at', case when x.open then x.win_start + interval '1 hour' end,
+    'day_left', case when x.day_on = (p_now at time zone 'Asia/Ho_Chi_Minh')::date then greatest(0, 24 - x.day_n) else 24 end)
+    from (select coalesce(pr.rat_win_start is not null and p_now < pr.rat_win_start + interval '1 hour', false) as open,
+                 pr.rat_win_count as win, pr.rat_win_start as win_start, pr.rat_day_on as day_on, pr.rat_day_count as day_n
+            from (select 1) one left join public.farm_profiles pr on pr.account_id = p_account) x
+$$;
+
+-- A catch (§5.6), after the caller's wallet lock: the rat (bound to the room; missing or ended is 'rat gone'), the crop
+-- that carries its entry, the caps (counted), then the price floor(150 × M) with M from the room's index at the catch —
+-- that row is the last lock taken — and the rat ends, its entry closes and the bag gets it. Returns the price.
+create or replace function public._rat_catch(p_room uuid, p_account uuid, p_rat bigint, p_how text, p_now timestamptz)
+returns integer
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare r public.field_rats; v_price integer;
+begin
+  select * into r from public.field_rats where id = p_rat and room_id = p_room for update;
+  if not found or r.ended_at is not null then
+    raise exception 'rat gone' using errcode = '22023';
+  end if;
+  perform 1 from public.crops
+   where room_id = p_room and plot_no = r.plot_no and rat_log @> jsonb_build_array(jsonb_build_object('r', r.id)) for update;
+  perform public._rat_caps(p_account, p_now, true, p_how, p_room);
+  v_price := public._critter_price(150, (public._fish_index(p_room, p_now)).mult);
+  update public.field_rats set ended_at = p_now, how = p_how, caught_by = p_account, price = v_price where id = r.id;
+  update public.crops set rat_log = public._rat_close(rat_log, r.id, p_now)
+   where room_id = p_room and plot_no = r.plot_no and rat_log @> jsonb_build_array(jsonb_build_object('r', r.id));
+  insert into public.rat_bag (account_id, price, caught_at, how) values (p_account, v_price, p_now, p_how);
+  return v_price;
+end $$;
+
+-- The account's dog (§10.3), or null.
+create or replace function public._dog_view(p_account uuid) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object('name', d.name, 'coat', d.coat, 'adopted_at', d.adopted_at, 'fed_until', d.fed_until,
+                            'next_hunt_at', d.next_hunt_at, 'catches', d.catches)
+    from public.dogs d where d.account_id = p_account
+$$;
+
+-- The field's rats (§10.5), a read that never writes: when the next candidate is due, the price a catch would fetch now
+-- (_critter_prices: the period's snapshot or its preview), the live rats, the rats that ended in the last 10 s, and the
+-- non-empty rat logs by plot. It judges each live rat itself: one whose crop entry is gone, or whose crop is no longer
+-- food at p_now, is listed as fled even before a sweep ends it.
+create or replace function public._rats_view(p_room uuid, p_now timestamptz) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  with r as (
+    select fr.id, fr.plot_no, fr.seed, fr.spawned_at, fr.ended_at, fr.how, fr.caught_by,
+           fr.ended_at is null and not exists (select 1 from public.crops cr
+                                                where cr.room_id = p_room and cr.plot_no = fr.plot_no
+                                                  and cr.rat_log @> jsonb_build_array(jsonb_build_object('r', fr.id))
+                                                  and public._rat_food(cr, p_now)) as gone
+      from public.field_rats fr
+     where fr.room_id = p_room and (fr.ended_at is null or fr.ended_at > p_now - interval '10 seconds')
+  )
+  select jsonb_build_object(
+    'next_at', public._rat_t(p_room, public._rat_k(p_room, p_now) + 1),
+    'price', public._critter_price(150, (public._critter_prices(p_room, p_now)->>'mult')::numeric),
+    'live', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'plot', r.plot_no, 'since', r.spawned_at, 'seed', r.seed)
+                                       order by r.id)
+                        from r where r.ended_at is null and not r.gone), '[]'::jsonb),
+    'recent', coalesce((select jsonb_agg(jsonb_build_object(
+                                 'id', r.id, 'plot', r.plot_no, 'since', r.spawned_at, 'seed', r.seed,
+                                 'ended_at', coalesce(r.ended_at, p_now), 'how', coalesce(r.how, 'fled'),
+                                 'by', public._who(r.caught_by),
+                                 'dog', case when r.how = 'dog' then (select d.name from public.dogs d where d.account_id = r.caught_by) end)
+                               order by coalesce(r.ended_at, p_now), r.id)
+                          from r where r.ended_at is not null or r.gone), '[]'::jsonb),
+    'plots', coalesce((select jsonb_object_agg(cr.plot_no::text, cr.rat_log order by cr.plot_no) from public.crops cr
+                        where cr.room_id = p_room and jsonb_array_length(cr.rat_log) > 0), '{}'::jsonb))
+$$;
+
+-- Every field call starts here (0013's body): create the plots if needed, lock them (one field call per room at a time
+-- — before any wallet lock, so a sale that pays the other party cannot deadlock with that party's own field call),
+-- sweep; v17: then the rats' sweep (D28).
+create or replace function public._field_open(p_room uuid, p_now timestamptz) returns void
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  perform public._field_init(p_room);
+  perform 1 from public.field_plots where room_id = p_room order by plot_no for update;
+  perform public._field_sweep(p_room, p_now);
+  perform public._rat_sweep(p_room, p_now);                                         -- v17
+end; $$;
+-- The account's farm belongings (0018's body): v17 adds the kinds ammo and pet_food to the items, the rats in the bag
+-- (count and what cô Út pays), what the catch caps leave and the dog (§10.5). Like the gathering part, the caps are read
+-- on now().
+create or replace function public._farm_mine(p_account uuid) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'items', coalesce((select jsonb_object_agg(i.item_id, i.qty order by i.item_id)
+                         from public.inventory i join public.shop_items s on s.id = i.item_id
+                        where i.account_id = p_account and i.qty >= 1
+                          and s.kind in ('seed','fertilizer','pesticide','critter_box','tool','ammo','pet_food')), '{}'::jsonb),
+    'rice', coalesce((select jsonb_object_agg(rs.variety, jsonb_build_object('wet', rs.wet_kg, 'dry', rs.dry_kg) order by rs.variety)
+                        from public.rice_stock rs where rs.account_id = p_account and (rs.wet_kg > 0 or rs.dry_kg > 0)),
+                     '{}'::jsonb),
+    'coins', coalesce((select w.coins from public.wallets w where w.account_id = p_account), 0),
+    'gift_claimed', exists (select 1 from public.farm_profiles pr where pr.account_id = p_account and pr.gift_at is not null),
+    'produce', coalesce((select jsonb_object_agg(ps.upland, ps.kg order by ps.upland)
+                           from public.produce_stock ps where ps.account_id = p_account and ps.kg > 0), '{}'::jsonb),
+    'tank', case when public._owns(p_account, 'tool_sprayer')
+                 then coalesce((select jsonb_build_object('item', pr.tank_item, 'charges', pr.tank_charges)
+                                  from public.farm_profiles pr where pr.account_id = p_account),
+                               jsonb_build_object('item', null, 'charges', 0)) end,
+    'critters', coalesce((select jsonb_object_agg(k.kind, jsonb_build_object('n', k.n, 'xu', k.xu) order by k.kind)
+                            from (select cr.kind, count(*)::int as n, sum(cr.price)::int as xu
+                                    from public.critters cr where cr.account_id = p_account group by cr.kind) k), '{}'::jsonb),
+    'critter_cap', public._critter_cap(p_account),
+    'gather', (select jsonb_build_object(
+                 'ready_at', coalesce((select jsonb_object_agg(g.spot, g.ready_at order by g.spot) from public.gather_cooldowns g
+                                        where g.account_id = p_account and g.ready_at > now()), '{}'::jsonb),
+                 'left_today', d.left_today,
+                 'day_resets_at', case when d.left_today = 0
+                                       then (public._vn_today() + 1)::timestamp at time zone 'Asia/Ho_Chi_Minh' end)
+                 from (select coalesce((select case when pr.gather_on = public._vn_today() then greatest(0, 200 - pr.gather_count)
+                                                    else 200 end
+                                          from public.farm_profiles pr where pr.account_id = p_account), 200) as left_today) d),
+    -- v17: the rats in the bag, the caps and the dog
+    'rats', (select jsonb_build_object('count', count(*)::int, 'value', coalesce(sum(b.price), 0)::int)
+               from public.rat_bag b where b.account_id = p_account),
+    'rat_caps', public._rat_caps_view(p_account, now()),
+    'dog', public._dog_view(p_account))
+$$;
+
+-- The whole field_state answer (0018's body); v17: plus the field's rats (§10.5, D28).
+create or replace function public._field_view(p_room uuid, p_viewer uuid, p_now timestamptz) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'server_now', p_now,
+    'plots', (select jsonb_agg(public._plot_view(p_room, fp.plot_no, p_viewer, p_now) order by fp.plot_no)
+                from public.field_plots fp where fp.room_id = p_room),
+    'drying', coalesce((select jsonb_agg(jsonb_build_object('slot', ds.slot, 'owner', public._who(ds.account_id),
+                                                            'variety', ds.variety, 'kg', ds.kg, 'ready_at', ds.ready_at)
+                                         order by ds.slot)
+                          from public.drying_slots ds where ds.room_id = p_room), '[]'::jsonb),
+    'mine', public._farm_mine(p_viewer) || jsonb_build_object(
+      'owned_plot', (select fp.plot_no from public.field_plots fp where fp.room_id = p_room and fp.owner_id = p_viewer
+                      order by fp.plot_no limit 1),
+      'farming', coalesce((select jsonb_agg(fp.plot_no order by fp.plot_no) from public.field_plots fp
+                            where fp.room_id = p_room and public._farmer(p_room, fp.plot_no, p_now) = p_viewer), '[]'::jsonb),
+      'my_offers', coalesce((select jsonb_agg(jsonb_build_object('id', lo.id, 'plot', lo.plot_no, 'price', lo.price,
+                                                               'expires_at', lo.created_at + interval '24 hours')
+                                              order by lo.created_at, lo.id)
+                              from public.land_offers lo where lo.room_id = p_room and lo.buyer_id = p_viewer), '[]'::jsonb),
+      'incoming_offers', coalesce((select jsonb_agg(jsonb_build_object('id', lo.id, 'plot', lo.plot_no,
+                                                                     'buyer', public._who(lo.buyer_id), 'price', lo.price,
+                                                                     'expires_at', lo.created_at + interval '24 hours')
+                                                    order by lo.plot_no, lo.price desc, lo.id)
+                                    from public.land_offers lo
+                                    join public.field_plots fp on fp.room_id = lo.room_id and fp.plot_no = lo.plot_no
+                                   where lo.room_id = p_room and fp.owner_id = p_viewer), '[]'::jsonb)),
+    'critter_prices', public._critter_prices(p_room, p_now),
+    'rats', public._rats_view(p_room, p_now))                                        -- v17
+$$;
+
+revoke all on function public._rat_sweep(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._rat_caps(uuid, timestamptz, boolean, text, uuid) from public, anon, authenticated;
+revoke all on function public._rat_caps_view(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._rat_catch(uuid, uuid, bigint, text, timestamptz) from public, anon, authenticated;
+revoke all on function public._dog_view(uuid) from public, anon, authenticated;
+revoke all on function public._rats_view(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._field_open(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._farm_mine(uuid) from public, anon, authenticated;
+revoke all on function public._field_view(uuid, uuid, timestamptz) from public, anon, authenticated;

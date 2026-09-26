@@ -17,6 +17,16 @@ update public.anticheat_config set mode = 'log';
 
 create temp table smoke (k text primary key, v text);
 
+-- v17 (0019): rats off in this smoke's rooms. Once 0019 is in, no_rats gives the room a far-future rat clock, so its
+-- sweep evaluates no spawn candidate; before 0019 it does nothing.
+create function pg_temp.no_rats(p_key text) returns void language plpgsql as $$
+begin
+  if to_regclass('public.rat_clocks') is not null then
+    execute format('insert into public.rat_clocks (room_id, last_k) select v::uuid, 9000000000000000000 from smoke where k = %L
+                    on conflict (room_id) do update set last_k = excluded.last_k', p_key);
+  end if;
+end $$;
+
 -- The error text of a statement, or null when it succeeds (its effects are rolled back either way on error).
 create function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -310,6 +320,7 @@ insert into smoke select 'a2', public._auth_account((select v from smoke where k
 insert into smoke select 'a3', public._auth_account((select v from smoke where k = 't3'))::text;
 insert into smoke select 'a4', public._auth_account((select v from smoke where k = 't4'))::text;
 insert into smoke select 'room', room_id::text from public.create_room('Nông cụ', 'pw', (select v from smoke where k = 't1'));
+select pg_temp.no_rats('room');
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room')::uuid), 'pw', v)
   from smoke where k in ('t2', 't3', 't4');
 insert into smoke select 'now', date_trunc('minute', now())::text;
@@ -501,6 +512,7 @@ select 'v15.2 field smoke ok' as result;
 
 -- ---------- the rice harvest (§6.1–§6.5) and the hoa-màu pickings (§8.9), in room 'Gặt lúa' ----------
 insert into smoke select 'room3', room_id::text from public.create_room('Gặt lúa', 'pw', (select v from smoke where k = 't1'));
+select pg_temp.no_rats('room3');
 select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room3')::uuid), 'pw', v)
   from smoke where k in ('t2', 't3');
 -- The hoa màu of an account.
