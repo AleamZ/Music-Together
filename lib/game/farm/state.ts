@@ -1,4 +1,5 @@
-// The field_state JSON (spec §11.5; v15.2 §11.6), camelCased, with times as ms since the epoch. Pure.
+// The field_state JSON (spec §11.5; v15.2 §11.6; v15.3 §11.7), camelCased, with times as ms since the epoch. Pure.
+import { GATHER } from "./gather";
 
 export type Phase = "prepared" | "soaking" | "sprouted" | "seedling" | "tillering" | "panicle" | "heading" | "ripening" | "ripe" | "overripe";
 /** Rice pests, then the hoa-màu ones (v15.2 §8.8). */
@@ -89,8 +90,18 @@ export interface OfferView { id: string; plot: number; price: number; expiresAt:
 /** The sprayer's tank (§7): empty is { item: null, charges: 0 }. */
 export interface Tank { item: string | null; charges: number }
 
-/** The account part of the answer — sell_rice, buy_farm_item, claim_farm_gift, load_sprayer and sell_produce return
- *  only this. */
+/** Critters of one kind held (v15.3 §11.7): how many, and what cô Út pays for them together. */
+export interface CritterStock { n: number; xu: number }
+
+/** The gathering (v15.3 §11.7): the spots still cooling for me in any room (server key → ms), the visits left today,
+ *  and, at 0 left, when the Vietnam day resets. */
+export interface GatherMine { readyAt: Record<string, number>; leftToday: number; dayResetsAt: number | null }
+
+/** The multiplier the field prices critters at (R12): the room's fish price index, or a preview of the next one. */
+export interface CritterPrices { mult: number; endsAt: number | null }
+
+/** The account part of the answer — sell_rice, buy_farm_item, claim_farm_gift, load_sprayer, sell_produce and the
+ *  gathering RPCs return only this. */
 export interface FarmMine {
   items: Record<string, number>;
   rice: Record<string, { wet: number; dry: number }>;
@@ -100,6 +111,11 @@ export interface FarmMine {
   produce: Record<string, number>;
   /** null without a sprayer. */
   tank: Tank | null;
+  /** v15.3: the critters held, per kind. */
+  critters: Record<string, CritterStock>;
+  /** 3 by hand plus the largest container. */
+  critterCap: number;
+  gather: GatherMine;
 }
 
 export interface FieldMine extends FarmMine {
@@ -109,7 +125,14 @@ export interface FieldMine extends FarmMine {
   incomingOffers: OfferView[];
 }
 
-export interface FieldState { serverNow: number; plots: PlotView[]; drying: DryingView[]; mine: FieldMine }
+export interface FieldState {
+  serverNow: number;
+  plots: PlotView[];
+  drying: DryingView[];
+  mine: FieldMine;
+  /** null before 0018. */
+  critterPrices: CritterPrices | null;
+}
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -206,6 +229,23 @@ function parseOffer(v: unknown): OfferView | null {
   return { id: o.id, plot: num(o.plot), price: num(o.price), expiresAt, buyer: who(o.buyer) };
 }
 
+/** The gathering part of the account; before 0018: no critters, hands only, every spot ready, 200 visits left. */
+function parseGather(m: Record<string, unknown>): Pick<FarmMine, "critters" | "critterCap" | "gather"> {
+  const critters: Record<string, CritterStock> = {};
+  for (const [k, v] of Object.entries(obj(m.critters))) if (num(obj(v).n) > 0) critters[k] = { n: num(obj(v).n), xu: num(obj(v).xu) };
+  const g = obj(m.gather);
+  const readyAt: Record<string, number> = {};
+  for (const [k, v] of Object.entries(obj(g.ready_at))) {
+    const t = time(v);
+    if (t !== null) readyAt[k] = t;
+  }
+  return {
+    critters,
+    critterCap: num(m.critter_cap, GATHER.hand),
+    gather: { readyAt, leftToday: num(g.left_today, GATHER.dailyVisits), dayResetsAt: time(g.day_resets_at) },
+  };
+}
+
 /** The account part of any farm answer; null when it is not an object. */
 export function parseFarmMine(json: unknown): FarmMine | null {
   if (!json || typeof json !== "object") return null;
@@ -218,7 +258,7 @@ export function parseFarmMine(json: unknown): FarmMine | null {
   for (const [k, v] of Object.entries(obj(m.produce))) if (num(v) > 0) produce[k] = num(v);
   const t = m.tank && typeof m.tank === "object" ? (m.tank as Record<string, unknown>) : null;
   const tank = t ? { item: typeof t.item === "string" ? t.item : null, charges: num(t.charges) } : null;
-  return { items, rice, coins: num(m.coins), giftClaimed: m.gift_claimed === true, produce, tank };
+  return { items, rice, coins: num(m.coins), giftClaimed: m.gift_claimed === true, produce, tank, ...parseGather(m) };
 }
 
 /** A field_state answer; null when it is not one. */
@@ -230,6 +270,7 @@ export function parseFieldState(json: unknown): FieldState | null {
   if (serverNow === null || !base || !Array.isArray(j.plots)) return null;
   const m = obj(j.mine);
   const offers = (v: unknown) => arr(v).map(parseOffer).filter((o): o is OfferView => o !== null);
+  const cp = obj(j.critter_prices);
   return {
     serverNow,
     plots: j.plots.map(parsePlot).filter((p): p is PlotView => p !== null).sort((a, b) => a.no - b.no),
@@ -244,6 +285,7 @@ export function parseFieldState(json: unknown): FieldState | null {
       myOffers: offers(m.my_offers),
       incomingOffers: offers(m.incoming_offers),
     },
+    critterPrices: numOrNull(cp.mult) === null ? null : { mult: num(cp.mult), endsAt: time(cp.ends_at) },
   };
 }
 

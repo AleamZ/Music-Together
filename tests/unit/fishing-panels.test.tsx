@@ -148,7 +148,9 @@ describe("BagPanel, Nông cụ (v15.2 R29)", () => {
     farmItem("spray_insect", "pesticide", "Thuốc trừ sâu", 700, { pest_target: "insect" }),
     farmItem("spray_fungus", "pesticide", "Thuốc trừ bệnh", 900, { pest_target: "fungus" }),
   ];
-  const mine = (items: Record<string, number>, tank: Tank | null): FarmMine => ({ items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank });
+  const mine = (items: Record<string, number>, tank: Tank | null): FarmMine => ({
+    items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+  });
   const bag = (m: FarmMine) => {
     const onLoad = vi.fn();
     render(<BagPanel state={STATE} catalog={CATALOG} busy={false} onEquip={() => {}} onRelease={() => {}} onClose={() => {}}

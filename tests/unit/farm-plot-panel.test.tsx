@@ -19,6 +19,7 @@ const item = (id: string, kind: string, name: string, over: Record<string, unkno
 const nep = varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 18, blast_mult: 1, sort_order: 20 });
 const CATALOG: FarmCatalog = {
   uplands: [],
+  critters: [],
   varieties: [nep],
   items: [
     item("seed_nep", "seed", "Giống nếp", { variety: "nep" }),

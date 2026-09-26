@@ -15,7 +15,8 @@ const plot = (no: number, over: Partial<PlotView> = {}): PlotView => ({
 const CROP = { phase: "prepared" } as CropView;
 const LEASE = { source: "village" as const, until: 1e15, price: 250 };
 const mine = (coins: number): FieldMine => ({
-  items: {}, rice: {}, coins, giftClaimed: true, produce: {}, tank: null, ownedPlot: null, farming: [], myOffers: [], incomingOffers: [],
+  items: {}, rice: {}, coins, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+  ownedPlot: null, farming: [], myOffers: [], incomingOffers: [],
 });
 const ctx = (plots: PlotView[], coins = 1_000_000): LandCtx => ({ me: "me", plots, mine: mine(coins) });
 

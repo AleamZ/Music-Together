@@ -71,6 +71,7 @@ describe("parseFieldState", () => {
     expect(s.drying).toEqual([{ slot: 2, owner: LAN, variety: "nep", kg: 70, readyAt: ms("2026-09-25T11:00:00Z") }]);
     expect(s.mine).toEqual({
       items: { seed_nep: 2 }, rice: { nep: { wet: 0, dry: 70 } }, coins: 1230, giftClaimed: true, produce: {}, tank: null,
+      critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
       ownedPlot: 3, farming: [7],
       myOffers: [{ id: "o1", plot: 2, price: 8000, expiresAt: ms("2026-09-26T10:00:00Z"), buyer: null }],
       incomingOffers: [{ id: "o2", plot: 3, price: 8500, expiresAt: ms("2026-09-26T09:00:00Z"), buyer: LAN }],
@@ -142,5 +143,39 @@ describe("the account part", () => {
     expect(itemCount(next.mine, "fert_npk")).toBe(3);
     expect(itemCount(next.mine, "seed_nep")).toBe(0);
     expect(parseFarmMine("x")).toBeNull();
+  });
+});
+
+describe("v15.3 (§11.7)", () => {
+  const MINE = {
+    ...ANSWER.mine,
+    critters: { cua_dong: { n: 5, xu: 130 }, cua_gach: { n: 1, xu: 100 }, oc_dong: { n: 0, xu: 0 } },
+    critter_cap: 33,
+    gather: { ready_at: { crab3: "2026-09-25T10:12:00+00:00", bed1: "2026-09-25T10:07:00+00:00", bed2: "soon" }, left_today: 187,
+              day_resets_at: null },
+  };
+  it("reads the critters held, the capacity and the gathering", () => {
+    const m = parseFieldState({ ...ANSWER, mine: MINE })!.mine;
+    expect(m.critters).toEqual({ cua_dong: { n: 5, xu: 130 }, cua_gach: { n: 1, xu: 100 } });
+    expect(m.critterCap).toBe(33);
+    expect(m.gather).toEqual({
+      readyAt: { crab3: ms("2026-09-25T10:12:00Z"), bed1: ms("2026-09-25T10:07:00Z") }, leftToday: 187, dayResetsAt: null,
+    });
+    const done = parseFarmMine({ ...MINE, gather: { ready_at: {}, left_today: 0, day_resets_at: "2026-09-25T17:00:00+00:00" } })!;
+    expect(done.gather).toEqual({ readyAt: {}, leftToday: 0, dayResetsAt: ms("2026-09-25T17:00:00Z") });
+  });
+  it("reads the prices the field shows", () => {
+    const s = parseFieldState({ ...ANSWER, critter_prices: { mult: 2.24, ends_at: "2026-09-25T11:00:00+00:00" } })!;
+    expect(s.critterPrices).toEqual({ mult: 2.24, endsAt: ms("2026-09-25T11:00:00Z") });
+  });
+  it("reads a database before 0018 as: no prices, no critters, cap 3, every spot ready, 200 left", () => {
+    const s = parseFieldState(ANSWER)!;
+    expect(s.critterPrices).toBeNull();
+    expect(s.mine).toMatchObject({ critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null } });
+    expect(parseFarmMine({ items: {}, rice: {}, coins: 0, gift_claimed: true })).toMatchObject({ critters: {}, critterCap: 3 });
+  });
+  it("keeps the newer account part's critters when it merges", () => {
+    const next = withMine(parseFieldState(ANSWER)!, parseFarmMine(MINE)!);
+    expect(next.mine).toMatchObject({ critterCap: 33, gather: { leftToday: 187 }, ownedPlot: 3 });
   });
 });

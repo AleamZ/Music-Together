@@ -19,6 +19,7 @@ const item = (id: string, kind: string, name: string, over: Record<string, unkno
 const CATALOG: FarmCatalog = {
   varieties: [nep],
   uplands: [],
+  critters: [],
   items: [
     item("seed_nep", "seed", "Giống nếp", { variety: "nep" }),
     item("fert_manure", "fertilizer", "Phân chuồng hoai", { fert: "manure" }),
@@ -28,7 +29,9 @@ const CATALOG: FarmCatalog = {
   ],
 };
 const ME = { id: "me", name: "Me" };
-const mine = (items: Record<string, number>): FarmMine => ({ items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null });
+const mine = (items: Record<string, number>): FarmMine => ({
+  items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+});
 const ALL = mine({ seed_nep: 1, fert_manure: 1, fert_urea: 2, spray_hopper: 1 });
 const SICKLE = mine({ ...ALL.items, tool_sickle: 1 });
 
@@ -56,6 +59,7 @@ const U = Object.fromEntries(ROWS.map((r) => [r.id, uplandFromRow(r)]));
 const BEDS: FarmCatalog = {
   varieties: [nep],
   uplands: ROWS.map(uplandFromRow),
+  critters: [],
   items: [
     ...CATALOG.items,
     item("seed_khoai", "seed", "Dây khoai giống", { upland: "khoai" }),

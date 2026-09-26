@@ -1,5 +1,6 @@
-// Client side of the farm config (spec §7, §8.1, §9; v15.2 §8.2, §9): varieties, hoa-màu crops, farm items, the land
-// prices and number formats. Pure.
+// Client side of the farm config (spec §7, §8.1, §9; v15.2 §8.2, §9; v15.3 §7.1, §9): varieties, hoa-màu crops, farm
+// items, critters, the land prices and number formats. Pure.
+import { GATHER, heldBox } from "./gather";
 
 export type FarmItemKind = "seed" | "fertilizer" | "pesticide" | "critter_box" | "tool";
 export type FertKind = "manure" | "phosphate" | "urea" | "potash" | "npk";
@@ -24,9 +25,12 @@ export interface FarmItem {
   upland: string | null;
   fert: FertKind | null;
   pestTarget: PestTarget | null;
-  /** critter_box (v15.2). */
+  /** critter_box: the critters it holds on top of the 3 in hand (v15.3 §9). */
   capacity: number | null;
 }
+
+/** A crab or a snail (v15.3 §7.1), one critter_kinds row: its price at M = 1. */
+export interface CritterKind { id: string; name: string; group: "crab" | "snail"; basePrice: number; sortOrder: number }
 
 export type UplandMethod = "cutting" | "direct" | "nursery";
 
@@ -90,7 +94,13 @@ export interface UplandCrop {
   pests: UplandPest[];
 }
 
-export interface FarmCatalog { varieties: Variety[]; uplands: UplandCrop[]; items: FarmItem[] }
+export interface FarmCatalog {
+  varieties: Variety[];
+  uplands: UplandCrop[];
+  items: FarmItem[];
+  /** None before 0018: the gathering is not open yet. */
+  critters: CritterKind[];
+}
 
 /** Rows as PostgREST returns them. */
 export interface VarietyRow { id: string; name: string; scale: number; base_kg: number; price_per_kg: number; blast_mult: number; sort_order: number }
@@ -100,6 +110,7 @@ export interface FarmItemRow {
   /** From 0016 on. */
   upland?: string | null;
 }
+export interface CritterKindRow { id: string; name: string; grp: string; base_price: number; sort_order: number }
 export interface UplandCropRow {
   id: string; name: string; sort_order: number; method: string; plant_label: string; transplant_label: string | null;
   harvest_label: string; harvest_anim: string; base_kg: number; price_per_kg: number; nursery_ready_h: number | null;
@@ -123,6 +134,10 @@ export function farmItemFromRow(r: FarmItemRow): FarmItem {
     pestTarget: r.pest_target !== null && TARGETS.includes(r.pest_target) ? (r.pest_target as PestTarget) : null,
     capacity: r.capacity ?? null,
   };
+}
+
+export function critterFromRow(r: CritterKindRow): CritterKind {
+  return { id: r.id, name: r.name, group: r.grp === "snail" ? "snail" : "crab", basePrice: r.base_price, sortOrder: r.sort_order };
 }
 
 const rows = (v: unknown): Record<string, unknown>[] =>
@@ -259,8 +274,17 @@ export function describeFarmItem(it: FarmItem, varieties: readonly Variety[], up
         default: return "Thuốc bảo vệ thực vật";
       }
     case "critter_box":
-      return `Đựng ${it.capacity ?? 0} con cua, ốc`;
+      return `Đựng thêm ${it.capacity ?? 0} con cua, ốc (tay cầm được ${GATHER.hand} con)`;
     case "tool":
       return it.id === TOOL_SPRAYER ? "Nạp 1 chai thuốc được 3 lần xịt — mua một lần" : "Gặt lúa tay, 6 phần — mua một lần";
   }
+}
+
+/** anh Hai's row for a container (R16): buy it, "✓ Đã có" when held, or "Đã có {giỏ tre} lớn hơn" when a larger one is. */
+export type BoxRow = { state: "buy" } | { state: "owned" } | { state: "bigger"; name: string };
+
+export function boxRow(it: FarmItem, items: Readonly<Record<string, number>>, all: readonly FarmItem[]): BoxRow {
+  if ((items[it.id] ?? 0) > 0) return { state: "owned" };
+  const held = heldBox(items, all);
+  return held && (held.capacity ?? 0) >= (it.capacity ?? 0) ? { state: "bigger", name: held.name } : { state: "buy" };
 }

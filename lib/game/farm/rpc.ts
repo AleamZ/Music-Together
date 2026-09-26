@@ -1,39 +1,47 @@
 import { AnticheatError, screenAnswer } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
 import {
-  FARM_KINDS, farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type FarmItemRow, type UplandCropRow, type VarietyRow,
+  critterFromRow, FARM_KINDS, farmItemFromRow, uplandFromRow, varietyFromRow, type CritterKindRow, type FarmCatalog, type FarmItemRow,
+  type UplandCropRow, type VarietyRow,
 } from "./catalog";
 import { parseFarmMine, parseFieldState, type FarmMine, type FieldState } from "./state";
 
-// Supabase calls for the field (spec §11.3; v15.2 §11.4). Every room answer is the whole field_state; the account-only
-// ones (sell_rice, buy_farm_item, claim_farm_gift, load_sprayer, sell_produce) answer with the account part.
+// Supabase calls for the field (spec §11.3; v15.2 §11.4; v15.3 §11.4). Every farm answer in a room is the whole
+// field_state; the account-only ones (sell_rice, buy_farm_item, claim_farm_gift, load_sprayer, sell_produce,
+// sell_critters) and the gathering ones (crab_start, crab_finish, pick_snail_bed) answer with the account part.
 
 /** The RPCs 0016 adds: before it runs, PostgREST cannot find them (v15.2 R28). */
 export const RPCS_152: ReadonlySet<string> = new Set([
   "prepare_beds", "plant_crop", "tend_crop", "harvest_part", "rent_harvester", "load_sprayer", "sell_produce",
 ]);
 
-/** No such table: upland_crops before 0016 (PostgREST's PGRST205, Postgres' 42P01). */
+/** The RPCs 0018 adds: before it runs, PostgREST cannot find them (v15.3 R23). */
+export const RPCS_153: ReadonlySet<string> = new Set(["crab_start", "crab_finish", "pick_snail_bed", "sell_critters"]);
+
+/** No such table: upland_crops before 0016, critter_kinds before 0018 (PostgREST's PGRST205, Postgres' 42P01). */
 const isMissingTable = (e: { code?: unknown } | null): boolean => e?.code === "PGRST205" || e?.code === "42P01";
 
 let catalogPromise: Promise<FarmCatalog> | null = null;
 
-/** Varieties, hoa-màu crops and farm items, cached per page load (a failed fetch is retried on the next call). Before
- *  0016 there are no hoa-màu crops. */
+/** Varieties, hoa-màu crops, farm items and critters, cached per page load (a failed fetch is retried on the next
+ *  call). Before 0016 there are no hoa-màu crops, and before 0018 no critters. */
 export function fetchFarmCatalog(): Promise<FarmCatalog> {
   if (!catalogPromise) {
     catalogPromise = (async () => {
-      const [va, up, it] = await Promise.all([
+      const [va, up, it, cr] = await Promise.all([
         supabase.from("rice_varieties").select("*").order("sort_order"),
         supabase.from("upland_crops").select("*").order("sort_order"),
         supabase.from("shop_items").select("*").in("kind", FARM_KINDS).order("kind").order("sort_order"),
+        supabase.from("critter_kinds").select("*").order("sort_order"),
       ]);
       const upErr = isMissingTable(up.error) ? null : up.error;
-      if (va.error || upErr || it.error) throw va.error ?? upErr ?? it.error;
+      const crErr = isMissingTable(cr.error) ? null : cr.error;
+      if (va.error || upErr || it.error || crErr) throw va.error ?? upErr ?? it.error ?? crErr;
       return {
         varieties: ((va.data ?? []) as VarietyRow[]).map(varietyFromRow),
         uplands: (up.error ? [] : ((up.data ?? []) as UplandCropRow[])).map(uplandFromRow),
         items: ((it.data ?? []) as FarmItemRow[]).map(farmItemFromRow),
+        critters: (cr.error ? [] : ((cr.data ?? []) as CritterKindRow[])).map(critterFromRow),
       };
     })().catch((e) => {
       catalogPromise = null;
@@ -140,15 +148,31 @@ export interface PartAnswer { variety: string; kg: number; parts: number; total:
 /** A hoa-màu picking (§8.9): picking k of n gave kg; `done` = it was the last. */
 export interface PickingAnswer { upland: string; kg: number; k: number; pickings: number; done: boolean }
 
+/** Critters caught (v15.3 §7.2–§7.4): each kept one at its price, and how many got away for want of room (R5). */
+export interface CatchAnswer { caught: { kind: string; price: number }[]; escaped: number }
+
 export interface FieldAnswer {
   state: FieldState;
   /** A whole rice harvest (a database without 0016). */
   harvest: { variety: string; kg: number } | null;
   harvestPart: PartAnswer | null;
   picking: PickingAnswer | null;
+  /** pick_snails' ốc bươu vàng for the picker (null before 0018). */
+  snails: CatchAnswer | null;
 }
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+function catchOf(v: unknown): CatchAnswer | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (!Array.isArray(o.caught) || !isNum(o.escaped)) return null;
+  const caught = o.caught.flatMap((c): CatchAnswer["caught"] => {
+    const x = c && typeof c === "object" ? (c as Record<string, unknown>) : {};
+    return typeof x.kind === "string" && isNum(x.price) ? [{ kind: x.kind, price: x.price }] : [];
+  });
+  return { caught, escaped: o.escaped };
+}
 
 export async function fieldAction(roomId: string, token: string, a: FieldAction): Promise<FieldAnswer> {
   const [fn, args] = actionCall(a);
@@ -162,6 +186,7 @@ export async function fieldAction(roomId: string, token: string, a: FieldAction)
       ? { variety: p.variety, kg: p.kg, parts: p.parts, total: p.total, done: p.done === true } : null,
     picking: h && typeof h.upland === "string" && isNum(h.kg) && isNum(h.k) && isNum(h.pickings)
       ? { upland: h.upland, kg: h.kg, k: h.k, pickings: h.pickings, done: h.done === true } : null,
+    snails: catchOf(r.snails),
   };
 }
 
@@ -192,4 +217,41 @@ export async function loadSprayer(token: string, itemId: string): Promise<MineAn
 /** Sells kg of a hoa-màu crop to cô Út (§9). */
 export async function sellProduce(token: string, upland: string, kg: number): Promise<MineAnswer> {
   return mineAnswer(await call("sell_produce", { p_session_token: token, p_upland: upland, p_kg: kg }));
+}
+
+/** A crab visit (v15.3 §7.2): its id, the hole, and when the server started it. */
+export interface CrabVisit { id: string; hole: number; startedAt: number }
+
+/** Bắt cua (R6): the visit starts the hole's cooldown. */
+export async function crabStart(roomId: string, token: string, hole: number): Promise<MineAnswer & { visit: CrabVisit }> {
+  const r = await call("crab_start", { p_room_id: roomId, p_session_token: token, p_hole: hole });
+  const v = r.visit && typeof r.visit === "object" ? (r.visit as Record<string, unknown>) : {};
+  const startedAt = typeof v.started_at === "string" ? Date.parse(v.started_at) : NaN;
+  if (typeof v.id !== "string" || !isNum(v.hole) || !Number.isFinite(startedAt)) throw new Error("bad crab visit");
+  return { ...mineAnswer(r), visit: { id: v.id, hole: v.hole, startedAt } };
+}
+
+/** The end of a crab visit (R7): hits 0–3; what was kept and what escaped. */
+export async function crabFinish(roomId: string, token: string, visitId: string, hits: number)
+  : Promise<MineAnswer & { crab: CatchAnswer & { hits: number } }> {
+  const r = await call("crab_finish", { p_room_id: roomId, p_session_token: token, p_visit_id: visitId, p_hits: hits });
+  const c = catchOf(r.crab);
+  if (!c) throw new Error("bad crab answer");
+  const o = r.crab as Record<string, unknown>;
+  return { ...mineAnswer(r), crab: { ...c, hits: isNum(o.hits) ? o.hits : hits } };
+}
+
+/** Mò ốc (§7.3): 1–3 snails from a bed. */
+export async function pickSnailBed(roomId: string, token: string, bed: number): Promise<MineAnswer & { snails: CatchAnswer }> {
+  const r = await call("pick_snail_bed", { p_room_id: roomId, p_session_token: token, p_bed: bed });
+  const s = catchOf(r.snails);
+  if (!s) throw new Error("bad snail answer");
+  return { ...mineAnswer(r), snails: s };
+}
+
+/** cô Út buys every critter of a kind (null: all of them) at the prices stored at the catch (R15). */
+export async function sellCritters(token: string, kind: string | null): Promise<MineAnswer & { sold: { n: number; xu: number } }> {
+  const r = await call("sell_critters", { p_session_token: token, p_kind: kind });
+  const s = r.sold && typeof r.sold === "object" ? (r.sold as Record<string, unknown>) : {};
+  return { ...mineAnswer(r), sold: { n: isNum(s.n) ? s.n : 0, xu: isNum(s.xu) ? s.xu : 0 } };
 }

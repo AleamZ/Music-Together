@@ -67,6 +67,7 @@ const nep = varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, pr
 const FARM: FarmCatalog = {
   varieties: [nep],
   uplands: [],
+  critters: [],
   items: [
     item("seed_nep", "seed", "Giống nếp", 90, { variety: "nep" }),
     item("fert_urea", "fertilizer", "Phân urê", 60, { fert: "urea" }),
@@ -289,7 +290,7 @@ describe("bad_plot, bad_water and bad_work", () => {
     };
     const mine: FarmMine = {
       items: { seed_nep: 1, fert_urea: 1, fert_manure: 1, spray_hopper: 1, tool_sickle: 1, seed_khoai: 1, seed_bap: 1, seed_ot: 1 },
-      rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null,
+      rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
     };
     const upland = (id: string | null, over: Partial<CropView> = {}) =>
       crop({ kind: "upland", variety: null, upland: id, soakAt: null, plantAt: id === null ? null : at(0), ...over }, [[0, 1], [40, 1], [80, 1]]);
@@ -335,7 +336,10 @@ describe("bad_plot, bad_water and bad_work", () => {
       pen_half: 0.05, pen_missing: 0.1,
     };
     const beds: FarmCatalog = { ...FARM, uplands: [uplandFromRow({ ...khoai, cares: [...(khoai.cares as object[]), tia] })] };
-    const mine: FarmMine = { items: {}, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null };
+    const mine: FarmMine = {
+      items: {}, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3,
+      gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+    };
     const p = plot(3, crop({ kind: "upland", variety: null, upland: "khoai", soakAt: null, plantAt: at(0) }, [[0, 1]]));
     const acts = new Set<string>();
     for (let h = 0; h <= 60; h++) {

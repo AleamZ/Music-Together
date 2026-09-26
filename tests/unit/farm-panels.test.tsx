@@ -20,6 +20,7 @@ const item = (id: string, kind: string, name: string, price: number, over: Recor
 });
 const CATALOG: FarmCatalog = {
   uplands: [],
+  critters: [],
   varieties: [
     varietyFromRow({ id: "short", name: "Lúa ngắn ngày", scale: 0.9, base_kg: 90, price_per_kg: 12, blast_mult: 1, sort_order: 10 }),
     varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, price_per_kg: 18, blast_mult: 1, sort_order: 20 }),

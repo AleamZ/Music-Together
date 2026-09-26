@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  describeFarmItem, farmItemFromRow, harvesterPrice, producePrice, ricePrice, ripeAfterHours, uplandFromRow, uplandHours, varietyFromRow,
-  type FarmItemRow, type UplandCropRow, type VarietyRow,
+  boxRow, critterFromRow, describeFarmItem, farmItemFromRow, harvesterPrice, producePrice, ricePrice, ripeAfterHours, uplandFromRow,
+  uplandHours, varietyFromRow, type FarmItemRow, type UplandCropRow, type VarietyRow,
 } from "@/lib/game/farm/catalog";
 import fixtures from "@/tests/fixtures/upland-cases.json";
 
@@ -57,7 +57,7 @@ describe("describeFarmItem", () => {
     expect(d({ kind: "pesticide", pest_target: "insect" })).toBe("Trị sâu cuốn lá, sùng khoai, sâu keo, bọ trĩ");
     expect(d({ kind: "pesticide", pest_target: "hopper" })).toBe("Trị rầy nâu");
     expect(d({ kind: "pesticide", pest_target: "fungus" })).toBe("Trị đạo ôn lá, đạo ôn cổ bông, thán thư");
-    expect(d({ kind: "critter_box", capacity: 15 })).toBe("Đựng 15 con cua, ốc");
+    expect(d({ kind: "critter_box", capacity: 15 })).toBe("Đựng thêm 15 con cua, ốc (tay cầm được 3 con)");
   });
   it("keeps the thousands separator in the price per kg", () => {
     const dear = [varietyFromRow({ ...VARIETY_ROWS[2], price_per_kg: 1350 })];
@@ -102,5 +102,28 @@ describe("hoa-màu crops and tools (v15.2 §8.2, §9)", () => {
   it("prices the harvester per part left, and hoa màu by the kg", () => {
     expect([0, 2, 5].map(harvesterPrice)).toEqual([3000, 2000, 500]);
     expect(producePrice(180, khoai)).toBe(47_700);
+  });
+});
+
+describe("critters and containers (v15.3 §7.1, §9)", () => {
+  it("reads the critter_kinds rows", () => {
+    expect(critterFromRow({ id: "cua_gach", name: "Cua gạch", grp: "crab", base_price: 45, sort_order: 20 }))
+      .toEqual({ id: "cua_gach", name: "Cua gạch", group: "crab", basePrice: 45, sortOrder: 20 });
+    expect(critterFromRow({ id: "oc_dong", name: "Ốc đồng", grp: "snail", base_price: 8, sort_order: 30 }).group).toBe("snail");
+  });
+  it("describes the two containers", () => {
+    const d = (capacity: number) => describeFarmItem(farmItemFromRow(item({ kind: "critter_box", capacity })), VARIETIES);
+    expect(d(15)).toBe("Đựng thêm 15 con cua, ốc (tay cầm được 3 con)");
+    expect(d(30)).toBe("Đựng thêm 30 con cua, ốc (tay cầm được 3 con)");
+  });
+  it("sells a container once, and not one no larger than the one held (R16)", () => {
+    const bucket = farmItemFromRow(item({ id: "box_bucket", kind: "critter_box", name: "Xô nhựa", capacity: 15 }));
+    const basket = farmItemFromRow(item({ id: "box_basket", kind: "critter_box", name: "Giỏ tre", capacity: 30 }));
+    const all = [bucket, basket];
+    expect([boxRow(bucket, {}, all), boxRow(basket, {}, all)]).toEqual([{ state: "buy" }, { state: "buy" }]);
+    expect([boxRow(bucket, { box_bucket: 1 }, all), boxRow(basket, { box_bucket: 1 }, all)]).toEqual([{ state: "owned" }, { state: "buy" }]);
+    expect([boxRow(bucket, { box_basket: 1 }, all), boxRow(basket, { box_basket: 1 }, all)])
+      .toEqual([{ state: "bigger", name: "Giỏ tre" }, { state: "owned" }]);
+    expect(boxRow(bucket, { box_bucket: 1, box_basket: 1 }, all)).toEqual({ state: "owned" });
   });
 });
