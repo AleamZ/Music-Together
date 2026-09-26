@@ -364,6 +364,12 @@ When `v_day = 300`, it logs the soft signal `cast_daily_cap` (§7.4).
 | `bad_price` | `offer_plot` | the price is null, or outside 1–5 000 000 | `invalid price` | as above; an offer always carries a price |
 | `foreign_offer` | `withdraw_offer` | the id is an offer **of this room** whose buyer is someone else | `offer not found` | The panel offers "Rút" only for `mine.my_offers`. A replaced offer gets a new id (`0013` `_farm_do_offer`), so an old id never points at someone else's offer. |
 | `foreign_offer` | `decline_offer`, `accept_offer` | the id is an offer **of this room** on a plot the caller does not own | decline `offer not found`, accept `not your plot` | The panel offers these only for `mine.incoming_offers`. Every change of owner deletes the plot's offers in the same transaction: `_land_sale`, `_farm_do_buy_plot`, `_farm_do_sell_to_village`, the reclaim in the sweep and the release in §9.6. The check runs before the sweep, and a pending sweep still shows the old owner. |
+| `bad_game` | `card_sit` (`0017`) | `p_game` is not `tienlen`, `cao` or `poker` | `invalid game` | The game comes from the table's interactable (v16 §11.5). |
+| `bad_seat` | `card_sit` (`0017`) | `p_seat` is null or outside 1 to the table's seats (4 or 6) | `invalid seat` | The panel sits only on the seats it draws. |
+| `bad_stake` | `card_sit` (`0017`) | `p_stake` is not 100, 1 000 or 10 000 | `invalid stake` | `SitDialog` offers the three stakes, or the table's. |
+| `bad_qty` | `card_sit`, `pk_topup` (`0017`) | a poker buy-in null or outside 50–200 big blinds; a buy-in at another table; a top-up null, < 1 or above 2 000 000 | `invalid quantity` | The sliders are bounded by `pkBuyInRange` and `pkTopUpRange`. |
+| `bad_cards` | `tl_play` (`0017`) | null, empty, not one-dimensional, more than 13 cards, a card outside 0–51, or a duplicate | `invalid cards` | `CardHand` sends a set of the cards it shows. |
+| `bad_bet` | `pk_act` (`0017`) | the action is not one of the six; a bet or raise whose amount is null, < 0 or above 2·10⁹ | `invalid bet` | The poker buttons send their enum and the slider's value. |
 
 **Why an honest client never sends `reel_too_fast`:**
 1. **The hook comes after `bite_at`.** The hook is allowed only once `performance.now() − answeredAt ≥ bite_ms` (`canHook`, `hooks/useCastSession.ts`). The answer arrives after the transaction that set `bite_at = now() + bite_ms`.
@@ -395,6 +401,7 @@ So an honest client always has `now() − bite_at ≥ min_reel_ms`. The margin o
 | `invalid video`, `video too long`, `duration unknown`, `banned keyword`, `order limit reached` | queue | the rules changed while the UI was stale; two tabs. The queue never strikes (R22). |
 | `invalid username`, `username already taken`, `invalid username or password` | account | typing |
 | `too many messages, slow down` | chat | fast typing |
+| `stale`, `not seated`, `already seated`, `still leaving`, `table full`, `seat taken`, `stake changed`, `not enough coins`, `hand running`, `too many chips`, `dealer busy` | the card RPCs (`0017`) | a double click; a late request; another player acted first (v16 §11.5) |
 | `invalid session`, `account is not a member of this room`, `account banned`, `account locked` | any | logged out elsewhere; kicked; calls already in flight when the lock landed |
 
 **Also never counted:** double clicks, reconnects, clock skew (every timing check uses the server's `now()` at both ends), slow networks (they only make things later), and a cached client just after a deploy.
@@ -408,6 +415,7 @@ So an honest client always has `now() − bite_at ≥ min_reel_ms`. The margin o
 | `kind_mismatch` | `buy_item` | an existing priced item of a non-fishing kind | the old v14 client lists farm items as bait |
 | `kind_mismatch` | `buy_farm_item` | an existing priced item that is not a seed, fertilizer, pesticide or (from `0016`) tool | catalogs change; v15.3 adds `critter_box` |
 | `kind_mismatch` | `apply_fertilizer`, `soak_seed`, `spray`, and from `0016` `plant_crop` and `load_sprayer` | an existing item of the wrong kind | as above |
+| `bad_move` | `tl_play`, `tl_pass`, `cao_deal`, `pk_act` (`0017`) | a well-formed move the table refuses while `p_seq` matched: `invalid play`, `cannot beat`, `not your turn`, `must include`, `must play`, `invalid bet`, `cannot raise`, `not dealer`, `wrong phase` (v16 §11.5) | A bug in a client mirror must never strike an honest player (v16 R30). |
 
 - **Not logged:** every refusal in §7.3.
 - **Later, v15.3 (`0018`):** a soft counter for "the quality is always 1.1".
@@ -486,6 +494,9 @@ What goes in `detail`, per code:
 | `kind_mismatch` | `item`, `kind` |
 | `reel_gate_hug` | `day`, `count`, `ratio` |
 | `cast_daily_cap` | `day`, `casts` |
+| `bad_game`, `bad_seat`, `bad_stake`, `bad_qty` (`0017`) | `game`, and `seat`, `stake` or `stake` and `buyin` (`card_sit`); `amount` (`pk_topup`) |
+| `bad_cards`, `bad_bet` (`0017`) | `seq`, and `cards` or `action` and `amount` |
+| `bad_move` (`0017`) | `game`, `seat`, `seq` and the move (`cards`, or `action` and `amount`) |
 
 A client's text is cut before it is stored: `work` and `variety` keep at most 32 characters. `_ac_flag` also caps the whole detail: one whose text is longer than 2 000 characters is stored as `{"truncated": true, "head": <its first 2 000 characters>}`. An evidence row thus stays small, however large the tampered input.
 
@@ -542,7 +553,7 @@ A flagged call returns HTTP 200, so PostgREST commits it:
 
 | Message | SQLSTATE | `details` | `hint` | Raised by |
 |---|---|---|---|---|
-| `account locked` | 42501 | whole seconds left | `anticheat` | `_ac_guard`, in the 42 game RPCs (35 in `0015`, 7 more in `0016`) |
+| `account locked` | 42501 | whole seconds left | `anticheat` | `_ac_guard`, in the 48 game RPCs (35 in `0015`, 7 more in `0016`, 6 more in `0017`) |
 | `account banned` | 42501 | — | — | `login` (new); `_auth_account` (existing) |
 | `invalid username` | 22023 | — | — | `register` |
 | `invalid video` | 22023 | — | — | `add_queue_item` |
@@ -627,9 +638,11 @@ end $$;
   - the 24 room actions: `rent_plot`, `buy_plot`, `sell_plot_to_village`, `list_plot`, `buy_listed_plot`, `offer_plot`, `withdraw_offer`, `decline_offer`, `accept_offer`, `set_sublease`, `rent_sublease`, `abandon_crop`, `prepare_plot`, `apply_fertilizer`, `soak_seed`, `sow_seed`, `begin_work`, `transplant`, `water`, `spray`, `pick_snails`, `harvest`, `dry_start`, `dry_collect`;
   - plus `sell_rice`, `buy_farm_item` and `claim_farm_gift`.
 - **v15.2 (7, `0016`):** `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`, 42 in all. The gather RPCs come with v15.3's `0018` (§11.3).
+- **v16 (6, `0017`):** `card_sit`, `pk_topup`, `tl_play`, `tl_pass`, `cao_deal` and `pk_act`, 48 in all.
 
 **Still open:**
-- the reads: `fishing_state`, `fishing_board`, `field_state`, `touch_room`;
+- the reads: `fishing_state`, `fishing_board`, `field_state`, `touch_room`, and from `0017` `card_lobby`, `card_state` and `card_hand`;
+- `card_tick` and `card_leave` (`0017`): a tick applies only what is due, and standing up never helps a cheater (v16 R31);
 - the account RPCs: `register`, `login`, `me`, `logout`;
 - chat, the queue and playback, and room administration;
 - `save_character`, feedback, the lyrics RPCs and every `admin_*` RPC.
@@ -688,6 +701,7 @@ end $$;
 | `rice_stock` | Deleted. |
 | `produce_stock` (`0016`) | Deleted: the hoa màu. |
 | The sprayer's tank (`0016`) | Emptied: `farm_profiles.tank_item` null and `tank_charges` 0. The profile stays, so the gift stays claimed. |
+| Card seats (`0017`) | Resolved first, by `_card_forfeit_all` (v16 §6.3), as if the account stood up at each table: a live hand is forfeited by the leave rules, the rest of its escrow or stack comes back to the wallet, and the wipe then takes the whole balance. Nobody else's stake or pot changes, and the snapshot lists no seat. |
 | Catch and land announcements (D6) | `delete from chat_messages where system and about_account_id = <account>`. Realtime DELETE events remove them from open chats. |
 | `field_plots` owned | Released **lazily** by sweep step 0b at the next field call in that room: `owner_id`, `owned_at`, `sale_price` and `sublease_price` become null, and the plot's offers are deleted. There is **no refund**. A sublease held by another player keeps running; the plot is the village's once it ends. |
 | `plot_leases` held | Deleted by step 0b. A village plot is free again; an owner's plot goes back to its owner, who keeps the rent. |
@@ -994,10 +1008,10 @@ Re-running is safe:
    - `_fishing_state` keeps `lock`, `casts_today_left` and `day_resets_at`;
    - `_song_bonus` and `_room_wealth` keep the banned check;
    - `_land_sale` and `finish_cast` keep `system` and `about_account_id`.
-4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `harvester` and `produce_sell`, then v15.3's `critter_sell`.
+4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `harvester` and `produce_sell`, v16's `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`, then v15.3's `critter_sell`.
 5. **Wider honest inputs widen the hard check.** A migration that widens the range of honest inputs widens the matching hard check in the same migration, and ships before its client.
 6. **Every later smoke run ends with `tests/sql/anticheat-guards.sql`.** The dynamic loop in that file gains the new game RPCs, and a new RPC that is not a game action joins its allowlist by signature.
-7. **Re-running `0013` after `0015` undoes the guards.** `0013` re-creates the game RPCs and the `coin_ledger` reason check without the anti-cheat parts. After any re-run of `0013`, run `0015` again right away. On a database that has already seen a wipe, `0013`'s reason check (without `'wipe'`) fails, so add `'wipe'` to its list first. Later migrations follow the same order: `0013` → `0015` → the rest. Once `0016` has run, re-running `0013` or `0015` also needs the checks they re-create to accept what later migrations wrote: `0013`'s `shop_items` kind check lacks `tool`, and the `coin_ledger` checks lack `harvester` and `produce_sell` (and `0013`'s also lacks `wipe`). Add those values to the file first, then run the whole chain in order with the latest migration last.
+7. **Re-running `0013` after `0015` undoes the guards.** `0013` re-creates the game RPCs and the `coin_ledger` reason check without the anti-cheat parts. After any re-run of `0013`, run `0015` again right away. On a database that has already seen a wipe, `0013`'s reason check (without `'wipe'`) fails, so add `'wipe'` to its list first. Later migrations follow the same order: `0013` → `0015` → the rest. Once `0016` has run, re-running `0013` or `0015` also needs the checks they re-create to accept what later migrations wrote: `0013`'s `shop_items` kind check lacks `tool`, and the `coin_ledger` checks lack `harvester` and `produce_sell` (and `0013`'s also lacks `wipe`). Once `0017` has run, the `coin_ledger` checks of `0013`, `0015` and `0016` also lack its five card reasons, and `0015` and `0016` put back `_ac_holdings` and `_ac_wipe` without the card seats. Add those values to the file first, then run the whole chain in order with the latest migration last.
 
 ### 11.4 Pre-deploy checks (owner, in the SQL editor, before running `0015`)
 
@@ -1083,7 +1097,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 | `WARN_TITLE` | `⚠️ Cảnh báo gian lận` |
 | `WARN_BODY` | `Hệ thống vừa ghi nhận một thao tác mà trò chơi bình thường không thể tạo ra (ví dụ: sửa dữ liệu bằng DevTools).` |
 | reason line | `Lý do: {reasonText(code)}` |
-| `WARN_LOCK` | `Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, mua bán đất và mua bán ở các tiệm trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.` |
+| `WARN_LOCK` | `Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.` (v16 adds "đánh bài") |
 | `WARN_REPEAT` | `Nếu tái phạm trong 30 ngày, tài khoản sẽ bị khoá vĩnh viễn và dữ liệu trò chơi có thể bị xoá.` |
 | `WARN_OK` | `Tôi đã hiểu` |
 | `BAN_TITLE` | `🚫 Tài khoản bị khoá vĩnh viễn` |
@@ -1174,7 +1188,7 @@ The refusal shows in a `role="alert"` line, so a screen reader reads it out.
 | Element | Text |
 |---|---|
 | holdings heading | `Dữ liệu hiện có` |
-| holdings line | `{formatXu(coins)} · {n} món đồ · {n} con cá · {n} kỷ lục · {kg} kg lúa · {kg} kg hoa màu · {n} thửa sở hữu · {n} thửa đang thuê · {n} đề nghị mua · {n} ô phơi · {n} tin khoe trong chat` |
+| holdings line | `{formatXu(coins)} · {n} món đồ · {n} con cá · {n} kỷ lục · {kg} kg lúa · {kg} kg hoa màu · {n} thửa sở hữu · {n} thửa đang thuê · {n} đề nghị mua · {n} ô phơi · {n} tin khoe trong chat`, then `· {n} ghế bàn bài ({formatXu(chips + escrow)})` when the account sits at card tables (`0017`) |
 | events heading | `Ghi nhận ({n})` |
 | event line | `{time} · {code label} · {outcome label} · {rpc}`, then `detail` in a `<pre>` |
 | event footer | `Client: {client \| —} · Trình duyệt: {user_agent \| —}` |
@@ -1208,6 +1222,12 @@ After a refused action, its reason stays even when the reload fails too.
 | `kind_mismatch` | `Sai loại vật phẩm` |
 | `reel_gate_hug` | `Kéo cá sát ngưỡng (20 lần/ngày)` |
 | `cast_daily_cap` | `Chạm 300 lần câu/ngày` |
+| `bad_game` (`0017`) | `Sai bàn bài` |
+| `bad_seat` (`0017`) | `Số ghế sai` |
+| `bad_stake` (`0017`) | `Mức cược sai` |
+| `bad_cards` (`0017`) | `Lá bài sai` |
+| `bad_bet` (`0017`) | `Tiền cược sai` |
+| `bad_move` (`0017`) | `Nước đi sai` |
 
 **Outcome labels:**
 
@@ -1384,12 +1404,13 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
   - `submit_feedback`, `list_feedback`, `set_feedback_status`, `delete_feedback`;
   - `admin_list_rooms`, `admin_delete_room`, `admin_list_accounts`, `admin_set_ban`, `admin_delete_account`, `admin_stats`, `admin_anticheat_list`, `admin_anticheat_account`, `admin_anticheat_resolve`, `admin_anticheat_set_mode`;
   - `save_character`, and `upsert_video_lyrics` and `update_video_lyric_offset` in both their `0011` and their `0014` signatures;
-  - `fishing_state`, `fishing_board`, `field_state`.
+  - `fishing_state`, `fishing_board`, `field_state`;
+  - from `0017`: `card_lobby`, `card_state`, `card_hand`, `card_tick` and `card_leave`.
 - **The check checks itself:** in a transaction that is rolled back, an unguarded overload `login(text, text, integer)` must be reported.
 - **Dynamic loop:**
   1. Register an account, create a room and set `locked_until` to now + 5 min.
-  2. Call each of the guarded RPCs (35 in `0015`, 42 from `0016`) with plausible arguments. Each must raise `account locked`.
-  3. Then call the four reads; each must succeed.
+  2. Call each of the guarded RPCs (35 in `0015`, 42 from `0016`, 48 from `0017`) with plausible arguments. Each must raise `account locked`.
+  3. Then call the four reads (from `0017` also `card_lobby`, `card_state`, `card_hand` and `card_tick`); each must succeed.
 
 ### 15.2 Unit and RTL tests (Vitest)
 

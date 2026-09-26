@@ -371,3 +371,34 @@ The server still decides every time, water level, pest, yield and price. A clien
 ### Realtime budget (v15.2)
 
 No new channel. A round sends `fa` every 2 s while it runs and `fp` after each part, about 36 `fa` and 6 `fp` for a whole plot by hand; the farmer's client refetches once when a harvester's 30 s are up. Older clients drop the new `fa` codes 9 (dig) and 10 (pick).
+
+## v16: Góc đánh bài — Tiến lên, Cào và Poker
+
+### DB migration
+
+`supabase/migrations/0017_v16_cards.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop trigger if exists` + `create trigger`, `drop constraint if exists` + `add constraint`): run it in the Supabase SQL Editor after `0016` (v15.2). The production order is `0012` → `0014` → `0013` → `0015` → `0016` → `0017`. It requires `0015` and `0016`: it re-creates `0016`'s `_ac_holdings` and `_ac_wipe` and keeps `0016`'s `coin_ledger` reasons. It adds the private tables `card_tables` (three per room, made the first time anyone ticks or sits), `card_seats`, `card_hands`, `card_secrets` and `card_log` (14 days), which only the RPCs touch; the `coin_ledger` reasons `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`; the reads `card_lobby`, `card_state` and `card_hand`, `card_tick` and `card_leave` (all five on the anti-cheat allowlist), and the six guarded writes `card_sit`, `tl_play`, `tl_pass`, `cao_deal`, `pk_act` and `pk_topup`; the BEFORE DELETE triggers on `rooms` and `accounts` that settle every seat before a room or an account goes; and `_ac_holdings` / `_ac_wipe` re-created so a wipe resolves the account's seats first. `tests/sql/v16-smoke.sql` checks all of it on a throwaway PostgreSQL cluster (from the repo root, after the migrations in production order: it reads `tests/fixtures/card-cases.json` and ends with `tests/sql/anticheat-guards.sql`).
+
+> **Deploy order:** `0017` first, then the v16 client. A v16 client against a database without it shows "Góc đánh bài chưa mở — chủ phòng cần chạy migration 0017." at the tables; the rest of the game keeps working. Older clients draw the hall without the corner and never call the card RPCs.
+>
+> **Re-running earlier migrations after `0017`:** `0013`, `0015` and `0016` put back their own `coin_ledger` reason checks, and `0015` and `0016` their `_ac_holdings` and `_ac_wipe` without the card seats. Once a hand has been played, their reason lists also lack `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`: add those (and the values the v15.2 note above names) first, then run them in order with `0017` last (anti-cheat §11.3 rule 7).
+
+### What's new in v16
+
+- **Góc đánh bài:** a plank deck in the hall's south-west, between the two palms, with three tables — **Bàn Tiến lên** (2–4 players), **Chiếu Cào** (ba cây, cào cái, 2–6) and **Bàn Poker** (Texas Hold'em no-limit, 2–6) — and a **📜 Sổ luật** sign. Walk to a table and press E: the panel shows the seats, the cards on the table and the timers; other members can watch (👀 Đang xem) and see only what is public.
+- **Stakes:** the first to sit picks 100, 1 000 or 10 000 xu. Tiến lên holds 10 stakes per game and Cào one stake (the dealer one per player) while a hand runs, and gives back the rest at its end; poker takes a buy-in of 50–200 big blinds (blinds ½ and 1 stake) that goes back to the wallet on standing up, with top-ups between hands.
+- **One variant per game:** Tiến lên miền Nam with nhất-nhì-ba-bét, chặt heo and chặt chồng, thối, cóng and tới trắng; Cào with sáp, ba tây and nút, a rotating dealer and "nặn bài"; poker by the TDA rules (min-raise, short all-ins, side pots, the odd chip). Every rule, with card examples and the money of each game at the table's stake, is in **📜 Sổ luật**.
+- **Timers:** 20 s a turn in Tiến lên, 15 s to deal and to peek in Cào, 30 s a turn in poker; a missed turn plays the default move, two in a row stand the player up (a Tiến lên player "xử thua": 1 stake to each player still in the game plus the thối of their hand). A seat whose owner made no card call for a minute is not dealt in.
+- **Sitting while walking around:** close the panel and the chip under the player card shows the table and the turn ("🃏 Tiến lên · Đến lượt bạn! 14s"); a toast calls you back once per turn.
+- **The hall's labels** over each table show its players and stake, refreshed every 20 s.
+
+### Play money (legal & product)
+
+Xu is play money: it is earned only in the game (fishing, farming, check-in, songs), never sold and never cashed out, and the tables take no cut — the winners get exactly what the losers pay. Vietnam fines gambling for money or property (Decree 144/2021/NĐ-CP, art. 28, names "tiến lên 13 lá" and "3 cây"), so while the corner exists no feature may sell xu or let xu buy anything of monetary value, and trading xu or accounts for money is forbidden (the owner may ban for it). The sit dialog and the rules book say so. Colluding players can move xu between accounts, as land sales already allow; there is no detection beyond the owner's review of `card_log`. This note is not legal advice.
+
+### Trust model (v16)
+
+The server decides the shuffle (Fisher–Yates over `gen_random_bytes`, no seed kept), the deal, every legal move, the timers and every xu that moves, and keeps each hand private: `card_state` is the same for every viewer and a player's cards come only from `card_hand` and their own answers. A client only chooses its own moves. Malformed inputs are strikes (a wrong game, seat, stake, amount, card list or bet); a well-formed move the table refuses is only logged. Every action carries the table's `seq`, so a double click or a late request is refused as `stale`. A room deletion or an account deletion settles the seats first, and a wipe resolves the account's seats before the wallet is cleared: no other player's xu is ever lost.
+
+### Realtime budget (v16)
+
+Each table has its own channel `cards:{roomId}:{game}` carrying only a hint `cv {id, v}` from the client whose call changed the table; the others fetch `card_state` 150 ms later, at most every 500 ms, and poll every 15 s while nothing arrives. A spoofed hint can only cause refetches at that rate, and each sender has a budget of 5 hints a second. With all three tables full that is about 11 600 messages an hour (≈ 3 a second, peaks near 10), far below the free plan's 100 a second; 2 M messages a month cover about 170 hours of full tables. The hall's labels come from `card_lobby` every 20 s, with no realtime cost.
