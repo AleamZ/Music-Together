@@ -6,17 +6,19 @@ import { useField, type FieldData } from "@/hooks/useField";
 import { plotDraws } from "@/lib/game/art/crops";
 import { dueTasks, lower, plotPrompt, type FarmTask, type PlotRun } from "@/lib/game/farm/actions";
 import { PART_WAIT_MS, PART_WINDOW_MS, producePrice, ricePrice, type FarmCatalog } from "@/lib/game/farm/catalog";
+import { DOG, dogStatus } from "@/lib/game/dog";
 import { serverNow } from "@/lib/game/farm/clock";
 import {
   BED_BAR_MS, CRAB_FINISH_WAIT_MS, gatherPrompt, heldBox, spotKey, spotState, TRANSPLANT_WAIT_MS,
 } from "@/lib/game/farm/gather";
 import {
-  bedEmptyText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, farmErrorMessage,
+  bedEmptyText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, dogCatchText, farmErrorMessage,
   FIELD_LOADING, GATHER_LIMIT_TEXT, GIFT_TEXT, harvestText, harvesterDoneText, holeEmptyText, loadedText, NO_PELLETS, NOT_OPEN,
   NOT_OPEN_153, NOT_OPEN_17, pestSnailText, pickingText, produceSaleText, RAT_GONE, ratPrompt, ratSpawnText, riceSaleText,
   slingGear, slingHitText, WORK_EXPIRED, WORK_EXPIRED_TP,
 } from "@/lib/game/farm/messages";
 import type { CrabVisit, FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
+import { nearestRat } from "@/lib/game/farm/rats";
 import type { FieldState, PlotView } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId } from "@/lib/game/maps/types";
@@ -205,6 +207,8 @@ const ANIM: Partial<Record<FieldAction["kind"], FarmAnim>> = {
 const FIELD_KINDS: ReadonlySet<string> = new Set(["plot", "coop", "farm_shop", "rice_depot", "drying", "crab_hole", "snail_bed", "rat"]);
 /** A SlingGame re-sends its `fa 12` this often while it is open (§6.2, §11). */
 export const SLING_FA_MS = 2000;
+/** The auto-hunt looks for a rat this often (§7.2). */
+export const DOG_HUNT_EVERY_MS = 1000;
 
 /** A round is being played or waits for its claim: no other job or round starts. */
 const roundOn = (r: FarmRound | null): boolean => r !== null && (r.phase === "playing" || r.phase === "waiting");
@@ -255,7 +259,7 @@ function workLook(p: PlotView | undefined, catalog: FarmCatalog | null, plot: nu
 export function useFarmController({ token, roomId, accountId, mapId, canvas, toast, onCoinsChanged }: FarmControllerOptions): FarmController {
   const active = mapId === "field";
   const data = useField(roomId, token, active, toast);
-  const { state, catalog, notOpen, run, claimGift, buyItem, sellRice, reload, crabStart, crabFinish, pickSnailBed, slingStart, slingShoot } = data;
+  const { state, catalog, notOpen, run, claimGift, buyItem, sellRice, reload, crabStart, crabFinish, pickSnailBed, slingStart, slingShoot, dogHunt } = data;
   const [panel, setPanel] = useState<FarmPanel | null>(null);
   const [busy, setBusy] = useState(false);
   const [work, setWork] = useState<FarmWork | null>(null);
@@ -680,6 +684,49 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     stopSlingAnim();
     setSling(null);
   }, [stopSlingAnim]);
+
+  // --- my dog's auto-hunt (v17 §7.2, D17, D30): every second, dog_hunt at the nearest rat within 96 px when the dog is
+  // fed and rested, my caps have room, I pressed a key or the pointer in the last 3 minutes, no job or SlingGame is open
+  // and no refusal came in the last 10 s. The dog runs at the call; a refusal calls it back, and says nothing.
+  const hunting = useRef(false);
+  const huntRefusedAt = useRef(-Infinity);
+  const huntOn = active && state !== null && state.rats !== null && state.mine.dog !== null;
+  useEffect(() => {
+    if (!huntOn) return;
+    const timer = setInterval(() => {
+      const { state: s, round: r, crab: c, sling: sl } = live.current;
+      const cv = canvas();
+      const at = Date.now(), t = serverNow();
+      const dog = s?.mine.dog;
+      if (!s?.rats || !dog || !cv || hunting.current) return;
+      if (dogStatus(dog, t).hunt !== "ready") return;
+      const caps = s.mine.ratCaps;
+      const hourOpen = caps.hourLeft > 0 || (caps.hourResetsAt !== null && caps.hourResetsAt <= t);
+      if (!hourOpen || caps.dayLeft < 1) return;
+      if (cv.lastInputAt() < at - DOG.activeMs || at - huntRefusedAt.current < DOG.refusalPauseMs) return;
+      if (sl || workTimer.current || roundOn(r) || c || bedTimers.current.length > 0) return;
+      const pos = cv.localPos();
+      const rat = pos ? nearestRat(s.rats.live, pos, t, DOG.huntRadius) : null;
+      if (!rat) return;
+      void (async () => {
+        hunting.current = true;
+        const closed = closes.current;
+        cv.dogPounce(rat.id);
+        const got = await dogHunt(rat.id, () => {});
+        hunting.current = false;
+        if (got) {
+          // the catch changed the plot for everyone
+          canvas()?.plotChanged(rat.plot);
+          live.current.toast(dogCatchText(dog.name));
+          return;
+        }
+        huntRefusedAt.current = Date.now();
+        const now = canvas();
+        if (closes.current === closed && now?.mapId() === "field") now.dogRecall();
+      })();
+    }, DOG_HUNT_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [huntOn, canvas, dogHunt]);
 
   // leaving the field drops a begin_work or crab_start answer still on its way from the commit that leaves it, before the
   // canvas switches worlds (only a ref here: the overlays close in the task below)

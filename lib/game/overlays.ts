@@ -24,11 +24,13 @@ export interface OpenOverlays {
   cardPanel: boolean;
   /** 📜 Sổ luật (v16). */
   rulesBook: boolean;
+  /** DogPanel (v17 §12.3). */
+  dogPanel: boolean;
 }
 
 /** `blocking`: the canvas takes no input. `panelOpen`: an overlay outside the field's own is open, so an Esc is its own
  *  and does not cancel the farm work (the field minds its own panels). */
 export function overlayLocks(o: OpenOverlays): { blocking: boolean; panelOpen: boolean } {
-  const panelOpen = o.panel || o.fishingPanel || o.creating || o.anticheatModal || o.cardPanel || o.rulesBook;
+  const panelOpen = o.panel || o.fishingPanel || o.creating || o.anticheatModal || o.cardPanel || o.rulesBook || o.dogPanel;
   return { blocking: panelOpen || o.farmPanel || o.farmWork || o.farmRound || o.farmCrab || o.slingGame, panelOpen };
 }

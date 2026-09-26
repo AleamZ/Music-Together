@@ -1,4 +1,5 @@
 import { durationVi, lockSeconds, lockText } from "@/lib/anticheat";
+import { COAT_NAME, type DogCoat, type DogNameProblem, type DogStatus } from "../dog";
 import { AMMO_PELLET, TOOL_SLING, type CritterKind, type UplandCrop } from "./catalog";
 import { GATHER, lowerFirst } from "./gather";
 import { RAT, type RatRecent } from "./rats";
@@ -257,6 +258,65 @@ export function ratGoneText(r: RatRecent | null): string {
   if (r?.how === "sling" && r.by) return `Chuột bị ${r.by.name} bắt mất rồi!`;
   if (r?.how === "dog" && r.by) return `Chuột bị ${r.dog ?? "chó"} của ${r.by.name} vồ mất rồi!`;
   return "Chuột chạy về hang rồi.";
+}
+
+// The dog (§12.3): the HUD, DogPanel and the CoopPanel's tab.
+
+/** The HUD's button: the name, with "!" while hungry. */
+export function dogHudText(name: string, hungry: boolean): string {
+  return `🐕 ${name}${hungry ? " !" : ""}`;
+}
+/** DogPanel's lines: the coat and the adoption day (Vietnam time), food, hunting and catches. */
+export function dogCoatLine(coat: DogCoat, adoptedAt: number): string {
+  const d = new Date(adoptedAt + 7 * 3_600_000);
+  return `Chó cỏ lông ${COAT_NAME[coat].toLowerCase()} · nuôi từ ${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+}
+export function dogFoodLine(s: DogStatus): string {
+  if (!s.fed) return "🍖 Đói — cho ăn để nó đi săn";
+  const h = Math.floor(s.foodLeftMs / 3_600_000);
+  return `🍖 No — còn ${h >= 1 ? `${h} giờ` : durationVi(Math.ceil(s.foodLeftMs / 1000))}`;
+}
+export function dogHuntLine(s: DogStatus): string {
+  if (s.hunt === "hungry") return "🐀 Đói nên không săn";
+  if (s.hunt === "ready") return "🐀 Sẵn sàng — ra đồng, đứng gần chuột là nó vồ";
+  const sec = Math.ceil(s.restLeftMs / 1000);
+  return `🐀 Nghỉ — vồ tiếp sau ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+export function dogCatchesLine(n: number): string {
+  return `🏅 Đã bắt ${n} con chuột`;
+}
+export function dogFeedButton(food: number): string {
+  return `🦴 Cho ăn (${food} bịch)`;
+}
+/** Why "Cho ăn" is disabled (feedRefusal). */
+export const DOG_FEED_REFUSAL: Record<"full" | "no_food", string> = {
+  full: "Còn no hơn 12 giờ — chưa ăn thêm được.",
+  no_food: "Hết thức ăn chó — mua ở tiệm anh Hai.",
+};
+/** The name field's hint: the rule, or what dogNameRefusal finds. */
+export const DOG_NAME_HINT = "2–16 ký tự";
+export const DOG_NAME_PROBLEM: Record<DogNameProblem, string> = {
+  length: "Tên cần 2–16 ký tự.",
+  hidden: "Tên có ký tự ẩn — gõ lại nhé.",
+  reserved: "Tên này dành riêng — chọn tên khác nhé.",
+};
+export function dogFedText(name: string): string {
+  return `🦴 ${name} ăn ngon lành — no 24 giờ.`;
+}
+export function dogRenamedText(name: string): string {
+  return `\u270f\ufe0f Đã đổi tên thành ${name}.`;
+}
+export const ADOPT_INTRO =
+  "“Chó cỏ nhà chú mới đẻ một bầy, con nào cũng khôn. 20.000 xu con mang về nuôi — nhớ cho ăn mỗi ngày, mùa lúa chín nó bắt chuột giỏi lắm!”";
+export const ADOPT_BUTTON = "Nhận nuôi · 20.000 xu";
+export function adoptConfirmText(name: string, coat: DogCoat): string {
+  return `Nhận nuôi ${name} (lông ${COAT_NAME[coat].toLowerCase()}) với giá 20.000 xu? Mỗi người chỉ nuôi một con.`;
+}
+export function dogOwnedText(name: string): string {
+  return `Bạn đã nuôi ${name} rồi — mỗi người một con thôi.`;
+}
+export function dogWelcomeText(name: string): string {
+  return `🐕 Chào mừng ${name} về nhà! Nó sẽ theo bạn khắp nơi.`;
 }
 
 /** The seconds an error's details carry (hole empty, bed empty, rat limit, dog resting), as ms; null without them. */
