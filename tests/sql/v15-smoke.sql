@@ -693,9 +693,10 @@ begin
   assert exists (select 1 from public.field_plots where owner_id = a1) and exists (select 1 from public.rice_stock)
      and exists (select 1 from public.farm_profiles), 'the old build''s state is there';
 end $$;
--- 0016 (v15.2) sells tools, a kind 0013's item check does not know: take them out first (the v15.2 smoke runs 0016 again).
-delete from public.inventory i using public.shop_items s where s.id = i.item_id and s.kind = 'tool';
-delete from public.shop_items where kind = 'tool';
+-- 0016 (v15.2) sells tools and 0019 (v17) pellets and dog food, kinds 0013's item check does not know: take them out first
+-- (the v15.2 smoke runs 0016 again, and the SQL check runs 0019 again before the v17 smoke).
+delete from public.inventory i using public.shop_items s where s.id = i.item_id and s.kind in ('tool', 'ammo', 'pet_food');
+delete from public.shop_items where kind in ('tool', 'ammo', 'pet_food');
 -- Supabase's default privileges give the API roles every right on a new table (TRUNCATE ignores RLS); this cluster has
 -- none, so grant them here: the re-run must take the writes on the config tables back.
 grant insert, update, delete, truncate on public.rice_varieties, public.shop_items, public.fish_species to anon, authenticated;
