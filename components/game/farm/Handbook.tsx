@@ -18,7 +18,8 @@ export default function Handbook({ varieties, uplands = [], items = [], initial,
   const tabs = handbookTabs(uplands);
   const [tab, setTab] = useState<HandbookTab>(tabs.some(([id]) => id === initial) ? initial! : "process");
   return (
-    <ParchmentModal title="📖 Sổ tay nhà nông" onClose={onClose} className="max-w-2xl">
+    // sm:, because ParchmentModal's own max-w-lg comes later in Tailwind's output than a plain max-w-2xl
+    <ParchmentModal title="📖 Sổ tay nhà nông" onClose={onClose} className="sm:max-w-2xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         <div role="tablist" aria-label="Sổ tay nhà nông" className="flex flex-wrap gap-1">
           {tabs.map(([id, label]) => (
