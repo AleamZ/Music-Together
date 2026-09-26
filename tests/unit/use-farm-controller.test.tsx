@@ -193,6 +193,25 @@ describe("useFarmController", () => {
     expect(result.current.work).toBeNull();
   });
 
+  it("drops a picking's begin_work answer that lands once the canvas shows another map", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    let answer: (v: unknown) => void = () => {};
+    rpc.fieldAction.mockImplementationOnce(() => new Promise((res) => { answer = res; }));
+    let started: Promise<unknown> = Promise.resolve();
+    act(() => { started = result.current.act({ kind: "work", plot: 5, work: "harvest" }); });
+    // the world has switched maps before the answer lands
+    canvas.mapId.mockReturnValue("pond");
+    await act(async () => {
+      answer({ state: field(), harvest: null });
+      await started;
+    });
+    expect(canvas.plant).not.toHaveBeenCalled();
+    expect(result.current.work).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(WORK_MS); });
+    expect(rpc.fieldAction).toHaveBeenCalledTimes(1);
+  });
+
   it("toasts a rice sale with what it earned and has the wallet fetched again", async () => {
     const onCoinsChanged = vi.fn();
     const { result, toast } = setup({ onCoinsChanged });

@@ -289,6 +289,10 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     lastCoins.current = coins;
   }, [coins]);
 
+  /** Counts the round overlay's closes (leaving the field is one, counted in the commit that leaves it): a begin_work or
+   *  crab_start answer that comes back after one is dropped, and so is a picking's begin_work. */
+  const closes = useRef(0);
+
   // --- 3-second pickings: begin_work, the progress (movement locked), then harvest with q = 1.0
   const workTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -313,11 +317,13 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   }, [run, canvas]);
   const startWork = useCallback(async (plot: number, w: FarmWork["work"], done?: string): Promise<boolean> => {
     if (workTimer.current || roundOn(live.current.round) || live.current.crab) return false;
+    const closed = closes.current;
     setBusy(true);
     const begun = await run({ kind: "begin_work", plot, work: w });
     setBusy(false);
-    if (!begun) return false;
+    // the field left meanwhile: the answer is dropped, as a round's is (the server's record just expires)
     const c = canvas();
+    if (!begun || closes.current !== closed || c?.mapId() !== "field") return false;
     const spot = getMap("field").interactables.find((i) => i.plot === plot);
     if (spot) c?.plant(spot.use, spot.face ?? "up");
     const look = workLook(begun.state.plots.find((p) => p.no === plot), live.current.catalog, plot);
@@ -347,9 +353,6 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   const roundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** A lost harvest round's report: it clears the server's record, so the next begin_work waits until it has landed. */
   const lostReport = useRef<Promise<unknown> | null>(null);
-  /** Counts the round overlay's closes (leaving the field is one, counted in the commit that leaves it): a begin_work or
-   *  crab_start answer that comes back after one is dropped. */
-  const closes = useRef(0);
   const stopRoundAnim = useCallback(() => {
     if (!roundAnim.current) return;
     clearInterval(roundAnim.current);
