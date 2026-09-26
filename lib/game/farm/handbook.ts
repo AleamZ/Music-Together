@@ -1,14 +1,14 @@
-import { ripeAfterHours, uplandHours, type CritterKind, type FarmItem, type UplandCrop, type Variety } from "./catalog";
+import { ripeAfterHours, TOOL_SLING, uplandHours, type CritterKind, type FarmItem, type UplandCrop, type Variety } from "./catalog";
 import { cropModel, cropPhase } from "./crop";
 import { BED_BAR_MS, BED_COUNT, GATHER, HOLE_COUNT } from "./gather";
 import { bedLevelsText } from "./messages";
 import type { CropView } from "./state";
 
-// Sổ tay nhà nông (spec §8.9, v15.2 §14, v15.3 §14): the six rice tabs, one tab per hoa-màu crop worked out from its
-// config, "Nông cụ", and "Cua & ốc" once 0018 has critters; the rice timings are worked out per variety from the
-// catalog. Pure.
+// Sổ tay nhà nông (spec §8.9, v15.2 §14, v15.3 §14, v17 §13): the six rice tabs, one tab per hoa-màu crop worked out
+// from its config, "Nông cụ", "Cua & ốc" once 0018 has critters, and "Chuột, chó & ná" once 0019 sells the ná; the
+// rice timings are worked out per variety from the catalog. Pure.
 
-/** A rice tab, "tools", "critters", or a hoa-màu crop's id. */
+/** A rice tab, "tools", "critters", "rats", or a hoa-màu crop's id. */
 export type HandbookTab = string;
 
 /** The rice tabs. */
@@ -16,11 +16,17 @@ export const HANDBOOK_TABS: ReadonlyArray<[HandbookTab, string]> = [
   ["process", "Quy trình"], ["fertilizer", "Phân bón"], ["pests", "Sâu bệnh"], ["water", "Nước"], ["varieties", "Giống lúa"], ["tips", "Mẹo"],
 ];
 
-/** Every tab (§14): the rice ones, a tab per hoa-màu crop, Nông cụ, then Cua & ốc when there are critters (0018). */
-export function handbookTabs(uplands: readonly UplandCrop[], critters: readonly CritterKind[] = []): ReadonlyArray<[HandbookTab, string]> {
+/** 0019 is in: anh Hai sells the ná. */
+const ratsOpen = (items: readonly FarmItem[]): boolean => items.some((i) => i.id === TOOL_SLING);
+
+/** Every tab (§14): the rice ones, a tab per hoa-màu crop, Nông cụ, then Cua & ốc when there are critters (0018), and
+ *  Chuột, chó & ná when the shop has the ná (0019). */
+export function handbookTabs(uplands: readonly UplandCrop[], critters: readonly CritterKind[] = [],
+  items: readonly FarmItem[] = []): ReadonlyArray<[HandbookTab, string]> {
   return [
     ...HANDBOOK_TABS, ...uplands.map((u): [HandbookTab, string] => [u.id, u.name]), ["tools", "Nông cụ"],
     ...(critters.length > 0 ? [["critters", "Cua & ốc"] as [HandbookTab, string]] : []),
+    ...(ratsOpen(items) ? [["rats", "Chuột, chó & ná"] as [HandbookTab, string]] : []),
   ];
 }
 
@@ -180,6 +186,41 @@ export function critterHandbook(kinds: readonly CritterKind[], boxes: readonly F
   ];
 }
 
+/** The Chuột, chó & ná tab (v17 §13), verbatim. */
+const RATS_PAGE: HandbookSection[] = [
+  {
+    title: "Mùa chuột",
+    lines: [
+      "Lúa, khoai lang, bắp chín là mùa chuột đồng. Chuột đào hang dưới bờ ruộng, cứ 10–20 phút lại có một con mò ra ăn một thửa đang chín; cả đồng cùng lúc tối đa 3 con. Ớt cay, chuột chê.",
+      "Mỗi con chuột ngồi trên thửa ăn mất 2% sản lượng mỗi giờ; cộng lại chuột lấy tối đa 10% một vụ. Bắt được trong 15 phút thì gần như không mất gì.",
+      "Chuột chỉ chịu đi khi bị bắt, hoặc khi thửa đó gặt xong cả 6 phần (hay đào, bẻ xong), thuê máy gặt, bỏ vụ hoặc bị mất. Gặt dở chừng thì chuột vẫn ăn phần còn lại.",
+      "Chuột là của chung cả đồng: ai bắt trước thì được, kể cả chuột trên ruộng người khác. Mỗi người bắt tối đa 6 con mỗi giờ, 24 con mỗi ngày.",
+      "Chuột bắt được bán cho cô Út: 150 xu × hệ số phòng (như giá cá), chốt giá lúc bắt.",
+    ],
+  },
+  {
+    title: "Ná",
+    lines: [
+      "Ná 3.000 xu, mua một lần ở tiệm anh Hai. Đạn đất 10 xu một viên — 10 viên 100 xu.",
+      "Lại gần con chuột, bấm E (hoặc chạm vào nó) để giương ná. Rê chuột hoặc bấm ←/→ để ngắm; giữ Space (hoặc giữ chuột, giữ ngón tay) cho dây căng tới vùng xanh rồi thả.",
+      "Căng chưa tới vùng xanh là đạn rơi trước, căng quá là đạn bay qua. Đạn bay mất một chút: chuột đang chạy thì ngắm đón đầu, hoặc chờ nó dừng lại gặm lúa.",
+      "Mỗi phát tốn 1 viên, trúng là bắt được. Bắn xong phải nạp đạn 2 giây.",
+    ],
+  },
+  {
+    title: "Chó cỏ",
+    lines: [
+      "Nhận nuôi ở Hợp tác xã (chú Tám): 20.000 xu, mỗi người một con. Chọn màu lông vàng, mực, vện hay đốm, rồi đặt tên.",
+      "Chó theo bạn khắp nơi: sảnh, ao cá, đồng ruộng. Ai trong phòng cũng thấy nó.",
+      "Mỗi ngày cho ăn 1 bịch thức ăn chó (150 xu, tiệm anh Hai): no 24 giờ; còn no hơn 12 giờ thì chưa ăn thêm. Chú Tám cho ăn bữa đầu.",
+      "Chó no, bạn ở ngoài đồng và đứng gần con chuột (cỡ một thửa ruộng) là nó tự vồ — 5 phút một lần, vồ là trúng. Chó đói chỉ đi theo; bạn ngồi im quá 3 phút thì nó cũng thôi săn.",
+      "Vuốt ve cho vui — không tốn gì.",
+    ],
+  },
+];
+/** The tip v17 adds to Mẹo (§13). */
+const RAT_TIP = "Lúa chín là mùa chuột — thu hoạch cho xong sớm (hoặc thuê máy gặt), hay rủ hàng xóm ra bắn chuột giùm.";
+
 /** The hour marks of a season for one variety (hours after transplanting unless said). */
 function timings(v: Variety): string {
   const s = v.scale;
@@ -301,12 +342,15 @@ export function handbookPage(tab: HandbookTab, varieties: readonly Variety[], up
           ...(critters.length > 0
             ? [`Trong lúc chờ lúa, cứ ${GATHER.cooldownMs / 60_000} phút ghé bờ mương bắt cua, mò ốc — thêm tiền mà không tốn giống, phân.`]
             : []),
+          ...(ratsOpen(items) ? [RAT_TIP] : []),
         ],
       }];
     case "tools":
       return TOOLS_PAGE;
     case "critters":
       return critters.length > 0 ? critterHandbook(critters, items) : [];
+    case "rats":
+      return ratsOpen(items) ? RATS_PAGE : [];
     default: {
       const u = uplands.find((x) => x.id === tab);
       return u ? uplandHandbook(u, items) : [];
@@ -314,10 +358,11 @@ export function handbookPage(tab: HandbookTab, varieties: readonly Variety[], up
   }
 }
 
-/** The tab the plot panel links to: what matters on this crop now — the crop's tab for beds, Nông cụ for ripe or partly
- *  cut rice (§13.1). */
-export function handbookTabFor(crop: CropView | null, v: Variety | null, now: number): HandbookTab {
+/** The tab the plot panel links to: what matters on this crop now — Chuột, chó & ná on a plot with a rat log (v17
+ *  §12.1), the crop's tab for beds, Nông cụ for ripe or partly cut rice (§13.1). */
+export function handbookTabFor(crop: CropView | null, v: Variety | null, now: number, ratted = false): HandbookTab {
   if (!crop) return "process";
+  if (ratted) return "rats";
   if (crop.kind === "upland") return crop.upland ?? "process";
   // a partly cut plot takes no spray (R8): what matters is finishing the cut, whatever pests it has
   if (crop.parts > 0) return "tools";

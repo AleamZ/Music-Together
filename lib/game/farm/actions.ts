@@ -6,12 +6,14 @@ import {
   cropCare, cropModel, cropPhase, HOUR_MS, overripeAt, ripeAt, rotAt, seedlingsOldAt, sowLateAt, sproutAt,
   transplantReadyAt, waterAt, wantedWater, type CropModel,
 } from "./crop";
+import { dogStatus } from "../dog";
 import { critterCount, heldBox } from "./gather";
 import {
   BED_WATER_NAME, bedLevelsText, durationText, LEASE_ENDING, LEASE_ENDING_TP, NO_SEED, NOT_OPEN_152, PEST_NAME, PEST_REMEDY,
   TOO_FAST, WATER_NAME,
 } from "./messages";
 import { TRANSPLANT } from "./minigames";
+import type { RatLive } from "./rats";
 import type { FieldAction } from "./rpc";
 import type { CropView, FarmMine, PlotView } from "./state";
 import {
@@ -355,13 +357,18 @@ export function plotPrompt(p: PlotView, me: string, v: Variety | null, catalog: 
   return `Xem thửa ${p.no} (${who ? `của ${who.name}` : p.kind === "private" ? "đất bán" : "đất trống"})`;
 }
 
-/** What is due on the plots I farm (spec §13.1, v15.2 §13.3): urgent tasks first, then by plot. */
-export function dueTasks(plots: readonly PlotView[], me: string, catalog: FarmCatalog, mine: FarmMine, now: number): FarmTask[] {
+/** What is due on the plots I farm (spec §13.1, v15.2 §13.3; v17 §12.1: the rats eating them, and my hungry dog on a
+ *  line of its own, plot 0): urgent tasks first, then by plot. `rats` are the field's live rats. */
+export function dueTasks(plots: readonly PlotView[], me: string, catalog: FarmCatalog, mine: FarmMine, now: number,
+  rats: readonly RatLive[] = []): FarmTask[] {
   const out: FarmTask[] = [];
+  if (mine.dog && !dogStatus(mine.dog, now).fed) out.push({ plot: 0, text: `🐕 ${mine.dog.name} đói — cho ăn để nó săn chuột`, urgent: false });
   for (const p of plots) {
     if (p.farmer?.id !== me) continue;
     const add = (text: string, urgent: boolean) => out.push({ plot: p.no, text: `Thửa ${p.no} · ${text}`, urgent });
     if (p.lease && p.lease.until - now <= 12 * HOUR_MS) add(`Hết hạn thuê sau ${durationText(p.lease.until - now)}`, p.lease.until - now <= 3 * HOUR_MS);
+    const eating = rats.filter((r) => r.plot === p.no).length;
+    if (eating > 0) add(`🐀 Chuột đang phá (${eating} con) — bắn ná, dẫn chó tới hoặc thu hoạch cho xong`, true);
     const crop = p.crop;
     if (!crop) {
       add("Làm đất (ruộng lúa hoặc lên luống)", false);
