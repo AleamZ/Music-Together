@@ -10,7 +10,9 @@ export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field"];
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
   | "plot" | "coop" | "farm_shop" | "rice_depot" | "drying"
-  | "card_table" | "card_rules" | "crab_hole" | "snail_bed";
+  | "card_table" | "card_rules" | "crab_hole" | "snail_bed"
+  // v17: a live rat, offered by the engine when no map interactable is in range (never in a map's list)
+  | "rat";
 
 export interface Interactable {
   /** Unique per map: "dock_sign", "fish_3", … */
@@ -34,6 +36,8 @@ export interface Interactable {
   game?: CardGame;
   /** crab_hole: its number (1–6); snail_bed: its number (1–4). */
   spot?: number;
+  /** rat (v17): the live rat's id. */
+  rat?: number;
 }
 
 /** A rice plot on the field (v15): its number, its land and where its name post stands. */

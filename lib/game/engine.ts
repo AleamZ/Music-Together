@@ -3,26 +3,34 @@ import {
   drawHarvester, drawPlotShimmer, drawUrgentRing, harvesterSpot, liveLook, lookKey, paintPlot, postLabel, type PlotDraw,
 } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
+import { dogFrame, drawDog } from "@/lib/game/art/dog";
 import { drawFarmAnim } from "@/lib/game/art/farm-anim";
+import { drawRat, ratFrame } from "@/lib/game/art/rats";
 import { drawBedCue, drawHoleCue } from "@/lib/game/art/gather-art";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { serverNow } from "@/lib/game/farm/clock";
+import { promptTarget, RAT_PROMPT_RANGE, ratAt, ratInteractable, type FieldRats } from "@/lib/game/farm/rats";
 import { getCharacterFrames } from "@/lib/game/art/raster";
 import { phaseCode, type LocalPhase } from "@/lib/game/fishing/cast";
 import { formatWeight, RARITY_COLOR, type Rarity } from "@/lib/game/fishing/catalog";
 import { SWING_MS } from "@/lib/game/fishing/geometry";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap, Interactable, Spot } from "@/lib/game/maps/types";
-import { inputDir, type KeyState } from "@/lib/game/movement";
-import { facingToCode, MAX_PATH_POINTS, type FacingCode, type FarmAnim, type GameMessage, type Unit } from "@/lib/game/net/protocol";
+import { inputDir, isBlockedAt, type KeyState } from "@/lib/game/movement";
+import { FARM_ANIM, facingToCode, MAX_PATH_POINTS, type FacingCode, type FarmAnim, type GameMessage, type Unit } from "@/lib/game/net/protocol";
+import { Pack, type DogWalker } from "@/lib/game/pack";
 import { unseenGraceMs } from "@/lib/game/net/replies";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
-import { cameraFor, computeView, hitsCharacter, interactableAt, inUseRange, nearestInteractable, stackBoxes, type Box } from "@/lib/game/scene";
+import { cameraFor, computeView, hitsCharacter, interactableAt, inUseRange, stackBoxes, type Box } from "@/lib/game/scene";
 import { wrapBubble } from "@/lib/game/text";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 import { CATCH_LABEL_MS, FARM_ANIM_MS, RemoteWorld, type RosterEntry } from "@/lib/game/world";
+import type { PresenceDog } from "@/lib/presence-modes";
 
 export type { RosterEntry } from "@/lib/game/world";
+
+/** Me as the engine draws me; `dog` (v17) walks with me, drooping while `dogHungry`. */
+export interface LocalInfo { name: string; badges: string; look: Look; dog?: PresenceDog | null; dogHungry?: boolean }
 
 export interface LocalMoveMsg { x: number; y: number; d: FacingCode; mv: boolean; vx: Unit; vy: Unit; h: string | null }
 
@@ -40,6 +48,8 @@ export interface EngineCallbacks {
   onFirstFrame?: () => void;
   /** Three frames in a row threw: the loop has stopped. */
   onFatal?: (err: unknown) => void;
+  /** I pressed a key or touched the canvas (the dog's auto-hunt wants input in the last 3 minutes, v17 §7.2). */
+  onInput?: () => void;
 }
 
 export interface EngineOptions {
@@ -93,7 +103,9 @@ export class GameEngine {
   private readonly world: RemoteWorld;
   private readonly bubbles = new Map<string, { lines: string[]; until: number }>();
   private reactions: Array<{ id: string | null; emoji: string; born: number; dx: number }> = [];
-  private localInfo: { name: string; badges: string; look: Look };
+  private localInfo: LocalInfo;
+  /** The dogs and the field's rats (v17). */
+  private readonly pack: Pack;
   private keys: KeyState = { ...NO_KEYS };
   private scale = 3;
   private vw = 320;
@@ -143,6 +155,7 @@ export class GameEngine {
     const start = opts.start ?? map.spawn;
     this.local = createActor(opts.localId, { x: start.x, y: start.y }, start.dir, performance.now());
     this.world = new RemoteWorld(map, opts.localId);
+    this.pack = new Pack((x, y) => isBlockedAt(map, x, y), opts.localId);
     this.localInfo = { name: opts.name, badges: opts.badges, look: opts.look };
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
@@ -172,8 +185,33 @@ export class GameEngine {
 
   // ------------------------------------------------------------ data in
 
-  setLocal(info: { name: string; badges: string; look: Look }): void {
+  setLocal(info: LocalInfo): void {
     this.localInfo = info;
+  }
+
+  /** The field's rats (v17 §5.4): each walks its seeded path; a `recent` ending plays once (a sling catch with a puff). */
+  setRats(rats: FieldRats | null): void {
+    for (const p of this.pack.setRats(rats, performance.now())) this.puff(p);
+  }
+
+  /** My dog runs for live rat `ratId` (the dog_hunt call); false without my dog or the rat. */
+  dogPounce(ratId: number): boolean {
+    return this.pack.pounce(ratId, performance.now(), serverNow());
+  }
+
+  /** A refused hunt: my dog comes back. */
+  dogRecall(): void {
+    this.pack.recall();
+  }
+
+  /** My dog comes to my front for 2.5 s (the caller shows `fa 11`). */
+  petDog(): void {
+    this.pack.pet(performance.now());
+  }
+
+  /** Where I stand (world px). */
+  localPos(): Vec {
+    return { x: this.local.pos.x, y: this.local.pos.y };
   }
 
   /** Everyone online on this map except me. Walking members get an actor (placed with their last known state). */
@@ -371,6 +409,7 @@ export class GameEngine {
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (!this.inputEnabled || e.ctrlKey || e.metaKey || e.altKey || this.isTyping(e.target)) return;
+    this.cb.onInput?.();
     if (this.rodOut) {
       // while fishing: Space hooks (and holds while reeling — the reel overlay listens too), Esc reels in
       if (e.code === "Space") {
@@ -419,6 +458,7 @@ export class GameEngine {
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (!this.inputEnabled || e.button !== 0) return;
+    this.cb.onInput?.();
     if (this.rodOut) {
       this.cb.onFishingInput?.("tap");
       return;
@@ -439,6 +479,16 @@ export class GameEngine {
       this.walkTo(it.use);
       return;
     }
+    // v17: a tap on a rat shoots it within 40 px, else walks toward it (§12.1)
+    const rat = this.ratUnder(w);
+    if (rat) {
+      if (Math.hypot(rat.use.x - this.local.pos.x, rat.use.y - this.local.pos.y) <= RAT_PROMPT_RANGE) this.trigger(rat);
+      else {
+        this.pendingInteract = null;
+        this.walkTo(rat.use);
+      }
+      return;
+    }
     const hit = this.actorAt(w);
     if (hit) {
       this.cb.onActorClick(hit);
@@ -447,6 +497,17 @@ export class GameEngine {
     this.pendingInteract = null;
     this.walkTo(w);
   };
+
+  /** The live rat drawn under world point p (a finger-sized box around it), as its interactable; field only. */
+  private ratUnder(p: Vec): Interactable | null {
+    if (this.map.id !== "field") return null;
+    const t = serverNow();
+    for (const r of this.pack.liveRats) {
+      const at = ratAt(r, t);
+      if (at && Math.abs(p.x - at.x) <= 8 && p.y >= at.y - 10 && p.y <= at.y + 4) return ratInteractable(r, at);
+    }
+    return null;
+  }
 
   /** Front-most other member under world point p. */
   private actorAt(p: Vec): string | null {
@@ -528,18 +589,45 @@ export class GameEngine {
       if (inUseRange(it, this.local.pos)) this.cb.onInteract(it);
     }
     this.announceMove(now);
-    const near = this.rodOut ? null : nearestInteractable(this.map, this.local.pos);
-    if (near !== this.prompt) {
+    // a map interactable in range always wins E; else, on the field, a rat within 40 px (v17 §12.1). The same rat keeps
+    // its prompt object while it runs.
+    const near = this.rodOut ? null : promptTarget(this.map, this.local.pos, this.pack.liveRats, serverNow());
+    if (near?.kind === "rat" && this.prompt?.kind === "rat" && near.rat === this.prompt.rat) {
+      this.prompt.use = near.use;
+      this.prompt.rect = near.rect;
+    } else if (near !== this.prompt) {
       this.prompt = near;
       this.cb.onPromptChange(near);
     }
     this.world.tick(dt, now);
+    this.pack.step(this.dogWalkers(now), now);
     const inset = Math.ceil((this.insetCss * this.dpr) / this.scale);
     this.cam = cameraFor(this.local.display, this.vw, this.vh, this.map.width, this.map.height, inset);
     for (const [id, b] of this.bubbles) if (b.until < now) this.bubbles.delete(id);
     this.reactions = this.reactions.filter((r) => now - r.born < REACTION_MS);
     if (this.landed && this.landed.until < now) this.landed = null;
     if (this.puffs.length > 0) this.puffs = this.puffs.filter((p) => now - p.born < PUFF_MS);
+  }
+
+  /** Everyone drawn walking with a dog this frame: me, and the visible walkers whose presence has one (v17 §7.3). */
+  private dogWalkers(now: number): DogWalker[] {
+    const out: DogWalker[] = [];
+    const me = this.localInfo;
+    if (me.dog) {
+      out.push({
+        id: this.opts.localId, x: this.local.display.x, y: this.local.display.y, facing: this.local.facing, dog: me.dog,
+        hungry: me.dogHungry ?? false, petAt: null,
+      });
+    }
+    for (const e of this.world.roster.values()) {
+      const a = e.dog && !e.spot ? this.world.actors.get(e.id) : undefined;
+      if (!e.dog || !a || !this.visible(e.id, now)) continue;
+      out.push({
+        id: e.id, x: a.display.x, y: a.display.y, facing: a.facing, dog: e.dog, hungry: false,
+        petAt: this.world.farmAnim(e.id, now) === FARM_ANIM.pet ? this.world.farmAnimAt(e.id, now) : null,
+      });
+    }
+    return out;
   }
 
   /** Keyboard walking started, stopped or turned → `mv` (plus a keep-alive every 3 s while walking). A path is
@@ -617,6 +705,17 @@ export class GameEngine {
     }
     for (const n of this.map.npcs) {
       if (onScreen(n.spot)) items.push({ y: n.spot.y, draw: () => drawActor(n.look, n.spot, n.spot.dir, 0) });
+    }
+    // v17: the dogs, and the field's rats, sorted with props and people (one frame held under reduced motion)
+    const ft = reduced ? 0 : t;
+    for (const d of this.pack.drawnDogs(t)) {
+      if (onScreen(d)) items.push({ y: d.y, draw: () => drawDog(b, d.coat, d.facing, dogFrame(d.pose, ft), Math.round(d.x) - camX, Math.round(d.y) - camY) });
+    }
+    if (this.map.id === "field") {
+      for (const r of this.pack.drawnRats(t, serverNow())) {
+        if (!onScreen(r)) continue;
+        items.push({ y: r.y, draw: () => drawRat(b, r.fallen ? "fall" : ratFrame(r.moving, ft), r.dir, Math.round(r.x) - camX, Math.round(r.y) - camY) });
+      }
     }
     const me = this.local;
     const fishing = this.fishing;
