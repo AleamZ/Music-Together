@@ -99,7 +99,7 @@ describe("the field prompts (§13.1)", () => {
   };
   const mine = (over: Partial<FarmMine> = {}): FarmMine => ({
     items: {}, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3,
-    gather: { readyAt: {}, leftToday: 200, dayResetsAt: null }, ...over,
+    gather: { readyAt: {}, leftToday: 200, dayResetsAt: null }, rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null, ...over,
   });
   const prompt = (it: Interactable, m: FarmMine, c: FarmCatalog = CATALOG) => gatherPrompt(it, m, c, NOW);
   const cooling = (key: string, ms: number) => ({ readyAt: { [key]: NOW + ms }, leftToday: 150, dayResetsAt: null });

@@ -31,6 +31,7 @@ const CATALOG: FarmCatalog = {
 const ME = { id: "me", name: "Me" };
 const mine = (items: Record<string, number>): FarmMine => ({
   items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+  rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
 });
 const ALL = mine({ seed_nep: 1, fert_manure: 1, fert_urea: 2, spray_hopper: 1 });
 const SICKLE = mine({ ...ALL.items, tool_sickle: 1 });

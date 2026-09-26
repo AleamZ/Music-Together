@@ -16,6 +16,7 @@ const CROP = { phase: "prepared" } as CropView;
 const LEASE = { source: "village" as const, until: 1e15, price: 250 };
 const mine = (coins: number): FieldMine => ({
   items: {}, rice: {}, coins, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+  rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
   ownedPlot: null, farming: [], myOffers: [], incomingOffers: [],
 });
 const ctx = (plots: PlotView[], coins = 1_000_000): LandCtx => ({ me: "me", plots, mine: mine(coins) });

@@ -1,13 +1,13 @@
-// Client side of the farm config (spec §7, §8.1, §9; v15.2 §8.2, §9; v15.3 §7.1, §9): varieties, hoa-màu crops, farm
-// items, critters, the land prices and number formats. Pure.
+// Client side of the farm config (spec §7, §8.1, §9; v15.2 §8.2, §9; v15.3 §7.1, §9; v17 §8): varieties, hoa-màu crops,
+// farm items, critters, the land prices and number formats. Pure.
 import { GATHER, heldBox } from "./gather";
 
-export type FarmItemKind = "seed" | "fertilizer" | "pesticide" | "critter_box" | "tool";
+export type FarmItemKind = "seed" | "fertilizer" | "pesticide" | "critter_box" | "tool" | "ammo" | "pet_food";
 export type FertKind = "manure" | "phosphate" | "urea" | "potash" | "npk";
 export type PestTarget = "insect" | "hopper" | "fungus";
 
 /** The shop_items kinds the farm shop sells (the fishing shop sells the others). */
-export const FARM_KINDS: readonly FarmItemKind[] = ["seed", "fertilizer", "pesticide", "critter_box", "tool"];
+export const FARM_KINDS: readonly FarmItemKind[] = ["seed", "fertilizer", "pesticide", "critter_box", "tool", "ammo", "pet_food"];
 const FERTS: readonly string[] = ["manure", "phosphate", "urea", "potash", "npk"];
 const TARGETS: readonly string[] = ["insect", "hopper", "fungus"];
 
@@ -92,6 +92,8 @@ export interface UplandCrop {
   rotCap: number | null;
   cares: UplandCare[];
   pests: UplandPest[];
+  /** v17 (D4): rats eat it while it is ripe or overripe (khoai, bắp); false before 0019. */
+  ratFood: boolean;
 }
 
 export interface FarmCatalog {
@@ -117,6 +119,8 @@ export interface UplandCropRow {
   nursery_old_h: number | null; stages: unknown; ripe_water: unknown; ripe_window_h: number; over_rate: number;
   lost_after_h: number; pickings: unknown; pick_gap_h: number | null; rot_from_h: number | null; rot_rate: number | null;
   rot_cap: number | null; cares: unknown; pests: unknown;
+  /** From 0019 on. */
+  rat_food?: boolean;
 }
 
 export function varietyFromRow(r: VarietyRow): Variety {
@@ -169,6 +173,7 @@ export function uplandFromRow(r: UplandCropRow): UplandCrop {
       slot: numOr(x.slot, 0), kind: text(x.kind), name: text(x.name), fromH: numOr(x.from_h, 0), toH: numOr(x.to_h, 0),
       chance: numOr(x.chance, 0), dryMult: numOr(x.dry_mult, 1), wetMult: numOr(x.wet_mult, 1), remedy: text(x.remedy),
     })),
+    ratFood: r.rat_food === true,
   };
 }
 
@@ -219,6 +224,13 @@ export const TANK_CHARGES = 3;
 export const TEND_MAX = 20;
 /** The hand jobs tend_crop's hard check takes (bad_work, 0016): the plot panel offers a config act only from these. */
 export const TEND_ACTS: readonly string[] = ["lat_day", "vun_goc"];
+
+// v17 (§8, D29): anh Hai's slingshot, its clay pellets and the dog food.
+export const TOOL_SLING = "tool_sling";
+export const AMMO_PELLET = "ammo_pellet";
+export const FOOD_DOG = "food_dog";
+/** The shop sells pellets in steps of this many. */
+export const PELLET_STEP = 10;
 
 /** What the harvester costs for a plot with `parts` already cut. */
 export function harvesterPrice(parts: number): number {
@@ -276,7 +288,12 @@ export function describeFarmItem(it: FarmItem, varieties: readonly Variety[], up
     case "critter_box":
       return `Đựng thêm ${it.capacity ?? 0} con cua, ốc (tay cầm được ${GATHER.hand} con)`;
     case "tool":
+      if (it.id === TOOL_SLING) return "Bắn chuột đồng — mua một lần";
       return it.id === TOOL_SPRAYER ? "Nạp 1 chai thuốc được 3 lần xịt — mua một lần" : "Gặt lúa tay, 6 phần — mua một lần";
+    case "ammo":
+      return `Đạn cho ná · ${PELLET_STEP} viên ${(PELLET_STEP * (it.price ?? 0)).toLocaleString("vi-VN")} xu`;
+    case "pet_food":
+      return "Cho chó ăn · no 24 giờ";
   }
 }
 
