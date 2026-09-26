@@ -266,6 +266,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         onLookChanged={refresh}
         onFishingInput={onFishingInput}
         onPlotChanged={farm.data.plotChanged}
+        onLocalMove={farm.moved}
         onFirstFrame={onFirstFrame}
         onUnsupported={onUnsupported}
         onFatal={onFatal}

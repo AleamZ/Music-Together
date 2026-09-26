@@ -9,6 +9,7 @@ import { DEFAULT_LOOK } from "@/lib/game/look";
 type EngineRec = {
   mapId: string; input: boolean[]; plots: unknown[]; cards: unknown[]; spots: unknown[]; anims: number[]; applied: unknown[];
   hellos: string[]; removed: string[]; destroyed: boolean;
+  cb: { onLocalMove: (m: unknown) => void; onLocalPath: (m: unknown) => void };
 };
 const { engines, channels, replies } = vi.hoisted(() => ({
   engines: [] as EngineRec[],
@@ -19,9 +20,10 @@ const { engines, channels, replies } = vi.hoisted(() => ({
 vi.mock("@/lib/game/engine", () => ({
   GameEngine: class {
     rec: EngineRec;
-    constructor(_canvas: unknown, map: { id: string }) {
+    constructor(_canvas: unknown, map: { id: string }, _art: unknown, cb: EngineRec["cb"]) {
       this.rec = {
         mapId: map.id, input: [], plots: [], cards: [], spots: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false,
+        cb,
       };
       engines.push(this.rec);
     }
@@ -174,6 +176,20 @@ describe("GameCanvas gathering cues across travel (v15.3 §13.1)", () => {
     rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
     rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
     expect(engines[2].spots.at(-1)).toBe(spots);
+  });
+});
+
+describe("GameCanvas, my moves (v15.3 §7.3)", () => {
+  it("tells the shell when I start walking or set off on a path, and sends them on; a stop or a jump is not a move", () => {
+    const onLocalMove = vi.fn();
+    render(<GameCanvas mapId="field" {...props} onLocalMove={onLocalMove} />);
+    const { cb } = engines[0];
+    cb.onLocalMove({ mv: false, x: 1, y: 2, vx: 0, vy: 0, f: 0 });
+    expect(onLocalMove).not.toHaveBeenCalled();
+    cb.onLocalMove({ mv: true, x: 1, y: 2, vx: 1, vy: 0, f: 3 });
+    cb.onLocalPath({ x: 1, y: 2, p: [[3, 4]] });
+    expect(onLocalMove).toHaveBeenCalledTimes(2);
+    expect(channels[0].sent.map((m) => (m as { t: string }).t)).toEqual(["mv", "mv", "pa"]);
   });
 });
 

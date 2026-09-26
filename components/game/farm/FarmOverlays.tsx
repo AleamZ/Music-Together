@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { WORK_MS, type FarmController, type FarmWork } from "@/hooks/useFarmController";
+import { WORK_MS, type FarmController } from "@/hooks/useFarmController";
+import { BED_BAR_MS } from "@/lib/game/farm/gather";
 import { NOT_OPEN } from "@/lib/game/farm/messages";
 import { isTyping } from "@/lib/game/keys";
 import CoopPanel from "./CoopPanel";
@@ -15,9 +16,9 @@ import PlotPanel from "./PlotPanel";
 import RiceDepotPanel from "./RiceDepotPanel";
 import TransplantGame from "./TransplantGame";
 
-/** A 3-second picking: its line, a bar that fills in WORK_MS, and "Huỷ" (or Esc) before it is sent. An Esc typed into a
- *  text field, or one that closes an open panel, is not for the work (v13/v14 input rules). */
-function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen: boolean; onCancel: () => void }) {
+/** A 3-second job, a picking or a snail bed (v15.3 §7.3): its line, a bar that fills in `ms`, and "Huỷ" (or Esc) before
+ *  it is sent. An Esc typed into a text field, or one that closes an open panel, is not for the job (v13/v14 input rules). */
+function Progress({ text, ms, panelOpen, onCancel }: { text: string; ms: number; panelOpen: boolean; onCancel: () => void }) {
   const [full, setFull] = useState(false);
   useEffect(() => {
     const raf = requestAnimationFrame(() => setFull(true));
@@ -33,11 +34,11 @@ function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen
   }, [panelOpen, onCancel]);
   return (
     <div className="pch absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5 p-2 font-vt text-xl" role="status">
-      <span>{work.text}</span>
+      <span>{text}</span>
       <div className="h-3 w-48 overflow-hidden rounded-sm bg-ink/20">
         <div
           className="h-full bg-burgundy motion-reduce:transition-none"
-          style={{ width: full ? "100%" : "0%", transition: `width ${WORK_MS}ms linear` }}
+          style={{ width: full ? "100%" : "0%", transition: `width ${ms}ms linear` }}
         />
       </div>
       <button type="button" className="pch-btn" onClick={onCancel}>Huỷ <span className="pointer-coarse:hidden">(Esc)</span></button>
@@ -45,8 +46,9 @@ function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen
   );
 }
 
-/** The field on top of the world (spec §13): the banner before the migration, the work progress, a round (HarvestGame,
- *  v15.2 §13.2; TransplantGame, v15.3 §13.3), a crab visit (CrabGame, v15.3 §13.2) and the field's panels. */
+/** The field on top of the world (spec §13): the banner before the migration, the progress of a picking or a snail bed, a
+ *  round (HarvestGame, v15.2 §13.2; TransplantGame, v15.3 §13.3), a crab visit (CrabGame, v15.3 §13.2) and the field's
+ *  panels. */
 export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
   farm: FarmController;
   me: string;
@@ -69,7 +71,12 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
       )}
       {farm.work && (
         // the field's own tasks panel and handbook can open from the HUD while the work runs
-        <WorkProgress key={farm.work.startedAt} work={farm.work} panelOpen={panelOpen || panel !== null} onCancel={farm.cancelWork} />
+        <Progress key={farm.work.startedAt} text={farm.work.text} ms={WORK_MS} panelOpen={panelOpen || panel !== null}
+          onCancel={farm.cancelWork} />
+      )}
+      {farm.bed && (
+        <Progress key={farm.bed.startedAt} text={farm.bed.text} ms={BED_BAR_MS} panelOpen={panelOpen || panel !== null}
+          onCancel={farm.cancelBed} />
       )}
       {round?.game === "harvest" && (
         // a new round (Gặt tiếp, Thử lại) starts a new game
@@ -105,8 +112,8 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
         <DryingPanel state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act} onReload={onReload} onClose={closePanel} />
       )}
       {panel?.kind === "handbook" && (
-        <Handbook varieties={catalog?.varieties ?? []} uplands={catalog?.uplands ?? []} items={catalog?.items ?? []} initial={panel.tab}
-          onClose={closePanel} />
+        <Handbook varieties={catalog?.varieties ?? []} uplands={catalog?.uplands ?? []} items={catalog?.items ?? []}
+          critters={catalog?.critters ?? []} initial={panel.tab} onClose={closePanel} />
       )}
       {panel?.kind === "tasks" && (
         <FarmTasksPanel tasks={farm.tasks} farming={(state?.mine.farming.length ?? 0) > 0}

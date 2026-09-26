@@ -3,7 +3,7 @@ import {
   dueTasks, fertAdvice, harvesterOn, lower, plotActions, plotPrompt, tendAdvice, upFertAdvice, uplandOf, type PlotAction,
 } from "@/lib/game/farm/actions";
 import {
-  farmItemFromRow, LEASE_ROUND_MS, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow,
+  critterFromRow, farmItemFromRow, LEASE_ROUND_MS, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow,
 } from "@/lib/game/farm/catalog";
 import { HOUR_MS, type CropModel } from "@/lib/game/farm/crop";
 import type { CropView, FarmMine, PestView, PlotView } from "@/lib/game/farm/state";
@@ -98,6 +98,25 @@ describe("plotActions", () => {
     expect(plotActions(p, "me", nep, CATALOG, ALL, at(20))).toEqual([
       { key: "pick", label: "Bắt ốc bươu vàng", run: { kind: "pick_snails", plot: 5 }, enabled: true },
     ]);
+  });
+  it("hints what a pest-snail pick gives the picker, or where the snails go when full; none before 0018 (v15.3 §13.4)", () => {
+    const snail: PestView = { kind: "snail", since: at(16), treatedAt: null };
+    const p = plot(crop({ transplantAt: at(12), sowAt: at(3), pests: [snail], log: null }), { farmer: { id: "lan", name: "Lan" } });
+    const GATHERING: FarmCatalog = {
+      ...CATALOG,
+      critters: [critterFromRow({ id: "oc_buou_vang", name: "Ốc bươu vàng", grp: "snail", base_price: 2, sort_order: 40 })],
+      items: [...CATALOG.items, item("box_basket", "critter_box", "Giỏ tre", { capacity: 30 })],
+    };
+    expect(find(plotActions(p, "me", nep, GATHERING, ALL, at(20)), "pick")).toEqual({
+      key: "pick", label: "Bắt ốc bươu vàng", run: { kind: "pick_snails", plot: 5 }, enabled: true,
+      hint: "Bắt ốc cứu lúa — được thêm 1–3 con ốc bươu vàng bỏ xô.", handbook: "critters",
+    });
+    const basket: FarmMine = { ...ALL, items: { ...ALL.items, box_basket: 1 }, critters: { oc_dong: { n: 33, xu: 264 } }, critterCap: 33 };
+    expect(find(plotActions(p, "me", nep, GATHERING, basket, at(20)), "pick")).toMatchObject({
+      enabled: true, hint: "Giỏ tre đầy — ốc bắt được thả xuống mương, lúa vẫn được cứu.", handbook: "critters",
+    });
+    const hands: FarmMine = { ...ALL, critters: { oc_dong: { n: 3, xu: 24 } }, critterCap: 3 };
+    expect(find(plotActions(p, "me", nep, GATHERING, hands, at(20)), "pick")?.hint).toBe("Tay đầy — ốc bắt được thả xuống mương, lúa vẫn được cứu.");
   });
   it("sows sprouted seed on a moist bed only", () => {
     const flooded = plotActions(plot(crop()), "me", nep, CATALOG, ALL, at(3));

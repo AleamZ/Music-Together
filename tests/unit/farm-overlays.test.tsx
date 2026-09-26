@@ -26,9 +26,11 @@ const controller = (over: Partial<FarmController> = {}): FarmController => ({
   data: {
     state: STATE, catalog: CATALOG, failed: false, notOpen: false, reload: vi.fn(), run: vi.fn(), sellRice: vi.fn(), buyItem: vi.fn(),
     claimGift: vi.fn(), plotChanged: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(),
+    pickSnailBed: vi.fn(),
   },
   now: NOW, tasks: [], urgent: 0, panel: null, openPanel: vi.fn(), closePanel: vi.fn(), busy: false, work: null, cancelWork: vi.fn(),
   round: null, endRound: vi.fn(), nextRound: vi.fn(), closeRound: vi.fn(), crab: null, endCrab: vi.fn(), closeCrab: vi.fn(),
+  bed: null, cancelBed: vi.fn(), moved: vi.fn(),
   act: vi.fn().mockResolvedValue(true), buy: vi.fn().mockResolvedValue(true), sell: vi.fn().mockResolvedValue(true),
   loadSprayer: vi.fn().mockResolvedValue(true), sellProduce: vi.fn().mockResolvedValue(true), interact: vi.fn(), promptText: vi.fn(),
   ...over,
@@ -50,6 +52,15 @@ describe("FarmOverlays", () => {
     fireEvent.click(screen.getByRole("button", { name: /Huỷ/ }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(farm.cancelWork).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a snail bed's bar, cancelled by its button or Esc (v15.3 §7.3)", () => {
+    const farm = controller({ bed: { bed: 2, startedAt: 1, text: "🐌 Đang mò ốc bãi 2…" } });
+    render(<FarmOverlays farm={farm} me="me" onField />);
+    expect(screen.getByText("🐌 Đang mò ốc bãi 2…")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Huỷ/ }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(farm.cancelBed).toHaveBeenCalledTimes(2);
   });
 
   it("keeps working on an Esc typed into a text field", () => {

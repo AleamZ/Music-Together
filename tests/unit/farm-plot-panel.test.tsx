@@ -3,7 +3,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import FarmTasksPanel, { FarmTasksButton } from "@/components/game/farm/FarmTasks";
 import Handbook from "@/components/game/farm/Handbook";
 import PlotPanel from "@/components/game/farm/PlotPanel";
-import { farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow } from "@/lib/game/farm/catalog";
+import {
+  critterFromRow, farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow,
+} from "@/lib/game/farm/catalog";
 import { parseFieldState, type FieldState } from "@/lib/game/farm/state";
 import fixtures from "@/tests/fixtures/upland-cases.json";
 
@@ -64,12 +66,22 @@ const STATE: FieldState = parseFieldState({
   },
 })!;
 
-function renderPlot(no: number, state: FieldState = STATE) {
+function renderPlot(no: number, state: FieldState = STATE, catalog: FarmCatalog = CATALOG) {
   const onAct = vi.fn(), onOpenHandbook = vi.fn();
-  render(<PlotPanel no={no} state={state} catalog={CATALOG} failed={false} me="me" busy={false} now={NOW} onAct={onAct}
+  render(<PlotPanel no={no} state={state} catalog={catalog} failed={false} me="me" busy={false} now={NOW} onAct={onAct}
     onOpenHandbook={onOpenHandbook} onReload={() => {}} onClose={() => {}} />);
   return { onAct, onOpenHandbook };
 }
+/** 0018's critters and containers. */
+const CRITTERS = [
+  critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 }),
+  critterFromRow({ id: "cua_gach", name: "Cua gạch", grp: "crab", base_price: 45, sort_order: 20 }),
+  critterFromRow({ id: "oc_dong", name: "Ốc đồng", grp: "snail", base_price: 8, sort_order: 30 }),
+  critterFromRow({ id: "oc_buou_vang", name: "Ốc bươu vàng", grp: "snail", base_price: 2, sort_order: 40 }),
+];
+const BOXES = [
+  item("box_bucket", "critter_box", "Xô nhựa", { price: 1500, capacity: 15 }), item("box_basket", "critter_box", "Giỏ tre", { price: 6000, capacity: 30 }),
+];
 
 describe("PlotPanel", () => {
   it("shows my crop's status and estimate, and the jobs with their hints", () => {
@@ -100,6 +112,15 @@ describe("PlotPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Bắt ốc bươu vàng" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "pick_snails", plot: 6 }, "Đã bắt ốc bươu vàng.");
     expect(screen.queryByRole("button", { name: /Bơm nước/ })).toBeNull();
+  });
+
+  it("links the pest-snail hint to the handbook's Cua & ốc (v15.3 §13.4, §14)", () => {
+    const { onAct, onOpenHandbook } = renderPlot(6, STATE, { ...CATALOG, critters: CRITTERS, items: [...CATALOG.items, ...BOXES] });
+    expect(screen.getByText("Bắt ốc cứu lúa — được thêm 1–3 con ốc bươu vàng bỏ xô.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "📖 Cua & ốc" }));
+    expect(onOpenHandbook).toHaveBeenCalledWith("critters");
+    fireEvent.click(screen.getByRole("button", { name: "Bắt ốc bươu vàng" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "pick_snails", plot: 6 }, "Đã bắt ốc bươu vàng.");
   });
 
   it("offers a free plot's land and my own plot's land actions", () => {
@@ -133,6 +154,17 @@ describe("Handbook", () => {
     expect(screen.getByText(/^Nếp: cấy khi mạ 8–14 giờ tuổi/)).toBeInTheDocument();
     cleanup();
     render(<Handbook varieties={[nep]} initial="nope" onClose={() => {}} />);
+    expect(screen.getByRole("tab", { name: "Quy trình" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("has Cua & ốc once 0018 has critters (v15.3 §14)", () => {
+    render(<Handbook varieties={[nep]} items={BOXES} critters={CRITTERS} initial="critters" onClose={() => {}} />);
+    expect(screen.getByRole("tab", { name: "Cua & ốc" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "Bắt cua ở hang" })).toBeInTheDocument();
+    expect(screen.getByText("Dọc bờ mương có 6 hang cua. Đứng trên bờ, bấm E để thò tay vào hang.")).toBeInTheDocument();
+    cleanup();
+    render(<Handbook varieties={[nep]} initial="critters" onClose={() => {}} />);
+    expect(screen.queryByRole("tab", { name: "Cua & ốc" })).toBeNull();
     expect(screen.getByRole("tab", { name: "Quy trình" })).toHaveAttribute("aria-selected", "true");
   });
 });

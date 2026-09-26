@@ -7,11 +7,13 @@ import { plotDraws } from "@/lib/game/art/crops";
 import { dueTasks, lower, plotPrompt, type FarmTask, type PlotRun } from "@/lib/game/farm/actions";
 import { PART_WAIT_MS, PART_WINDOW_MS, producePrice, ricePrice, type FarmCatalog } from "@/lib/game/farm/catalog";
 import { serverNow } from "@/lib/game/farm/clock";
-import { CRAB_FINISH_WAIT_MS, heldBox, spotState, TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
 import {
-  bedEmptyText, boughtText, CRAB_GAVE_UP, crabResultText, crittersFullText, FIELD_LOADING, GATHER_LIMIT_TEXT, GIFT_TEXT, harvestText,
-  harvesterDoneText, holeEmptyText, loadedText, NOT_OPEN, NOT_OPEN_153, pickingText, produceSaleText, riceSaleText, WORK_EXPIRED,
-  WORK_EXPIRED_TP,
+  BED_BAR_MS, CRAB_FINISH_WAIT_MS, gatherPrompt, heldBox, spotKey, spotState, TRANSPLANT_WAIT_MS,
+} from "@/lib/game/farm/gather";
+import {
+  bedEmptyText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, crittersFullText, FIELD_LOADING, GATHER_LIMIT_TEXT, GIFT_TEXT,
+  harvestText, harvesterDoneText, holeEmptyText, loadedText, NOT_OPEN, NOT_OPEN_153, pestSnailText, pickingText, produceSaleText,
+  riceSaleText, WORK_EXPIRED, WORK_EXPIRED_TP,
 } from "@/lib/game/farm/messages";
 import type { CrabVisit, FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
 import type { FieldState, PlotView } from "@/lib/game/farm/state";
@@ -76,6 +78,9 @@ export interface FarmCrab {
   message: string | null;
 }
 
+/** A snail bed's 3-second bar (v15.3 §7.3): movement stays free, and moving cancels it. `text` is the bar's line. */
+export interface FarmBed { bed: number; startedAt: number; text: string }
+
 export interface FarmController {
   data: FieldData;
   /** Now on the server's clock (refreshed every 30 s and by every answer); 0 before the first tick. */
@@ -107,6 +112,12 @@ export interface FarmController {
   endCrab: (hits: number) => void;
   /** Dừng, Esc or Đóng (R8): before a try ends nothing is sent; a catch waiting out its 4 s is still sent, and toasted. */
   closeCrab: () => void;
+  /** A snail bed's bar, running. */
+  bed: FarmBed | null;
+  /** "Huỷ" or Esc: the bar stops before anything is sent. */
+  cancelBed: () => void;
+  /** I moved (the canvas): a snail bed's bar stops before anything is sent (§7.3). */
+  moved: () => void;
   /** A land, farming or drying action (a picking starts the progress, a round opens its game); `done` is toasted when it
    *  succeeds. */
   act: (a: PlotRun, done?: string) => Promise<boolean>;
@@ -116,7 +127,8 @@ export interface FarmController {
   sellProduce: (upland: string, kg: number) => Promise<boolean>;
   /** Handles the field's interactables; false for anything else. */
   interact: (it: Interactable) => boolean;
-  /** A plot's prompt names my next job there; the field's other interactables keep theirs; null = not the field's. */
+  /** A plot's prompt names my next job there, a hole's or a bed's its state for me (v15.3 §13.1); the field's other
+   *  interactables keep theirs; null = not the field's. */
   promptText: (it: Interactable) => string | null;
 }
 
@@ -159,7 +171,7 @@ const ANIM: Partial<Record<FieldAction["kind"], FarmAnim>> = {
   prepare: FARM_ANIM.prepare, prepare_beds: FARM_ANIM.prepare, tend: FARM_ANIM.prepare, water: FARM_ANIM.pump, spray: FARM_ANIM.spray,
   fertilize: FARM_ANIM.fertilize, pick_snails: FARM_ANIM.snails,
 };
-const FIELD_KINDS: ReadonlySet<string> = new Set(["plot", "coop", "farm_shop", "rice_depot", "drying", "crab_hole"]);
+const FIELD_KINDS: ReadonlySet<string> = new Set(["plot", "coop", "farm_shop", "rice_depot", "drying", "crab_hole", "snail_bed"]);
 
 /** A round is being played or waits for its claim: no other job or round starts. */
 const roundOn = (r: FarmRound | null): boolean => r !== null && (r.phase === "playing" || r.phase === "waiting");
@@ -202,12 +214,13 @@ function workLook(p: PlotView | undefined, catalog: FarmCatalog | null, plot: nu
 export function useFarmController({ token, roomId, accountId, mapId, canvas, toast, onCoinsChanged }: FarmControllerOptions): FarmController {
   const active = mapId === "field";
   const data = useField(roomId, token, active, toast);
-  const { state, catalog, notOpen, run, claimGift, buyItem, sellRice, reload, crabStart, crabFinish } = data;
+  const { state, catalog, notOpen, run, claimGift, buyItem, sellRice, reload, crabStart, crabFinish, pickSnailBed } = data;
   const [panel, setPanel] = useState<FarmPanel | null>(null);
   const [busy, setBusy] = useState(false);
   const [work, setWork] = useState<FarmWork | null>(null);
   const [round, setRound] = useState<FarmRound | null>(null);
   const [crab, setCrab] = useState<FarmCrab | null>(null);
+  const [bed, setBed] = useState<FarmBed | null>(null);
   const live = useRef({ toast, onCoinsChanged, state, catalog, notOpen, round, crab });
   useEffect(() => {
     live.current = { toast, onCoinsChanged, state, catalog, notOpen, round, crab };
@@ -236,6 +249,17 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     const urgentPlots = new Set(tasks.filter((t) => t.urgent).map((t) => t.plot));
     canvas()?.setPlots(plotDraws(state.plots, catalog ?? { varieties: [], uplands: [] }, urgentPlots, now));
   }, [active, state, catalog, tasks, now, canvas]);
+
+  // --- the ready cue on each hole and bed (v15.3 §13.1): open (0018 has critters) and not cooling for me; it follows every
+  //     answer and the clock's tick
+  useEffect(() => {
+    if (!active) return;
+    const open = state !== null && (catalog?.critters.length ?? 0) > 0;
+    const readyAt = state?.mine.gather.readyAt ?? {};
+    canvas()?.setGatherSpots(getMap("field").interactables
+      .filter((i) => i.kind === "crab_hole" || i.kind === "snail_bed")
+      .map((i) => ({ id: i.id, ready: open && !((readyAt[spotKey(i.id) ?? ""] ?? 0) > now) })));
+  }, [active, state, catalog, now, canvas]);
 
   // --- the newcomer gift: asked once, on the first visit that shows it unclaimed
   const giftAsked = useRef(false);
@@ -491,16 +515,50 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   }, [stopCrabAnim]);
   const closeCrab = useCallback(() => shutCrab(true), [shutCrab]);
 
+  // --- snail beds (v15.3 §7.3): a 3 s bar with fa 7 at its start and at 2 s, then pick_snail_bed (no server gate, R9).
+  // Movement stays free: moving, Huỷ or Esc stops the bar before anything is sent.
+  const bedTimers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  useEffect(() => () => bedTimers.current.forEach(clearTimeout), []);
+  const finishBed = useCallback(async (n: number) => {
+    bedTimers.current = [];
+    setBed(null);
+    canvas()?.farmAnim(FARM_ANIM.stop);
+    const r = await pickSnailBed(n);
+    if (!r) return;
+    const cat = live.current.catalog;
+    live.current.toast(bedResultText(r.snails, cat?.critters ?? [], heldBox(r.mine.items, cat?.items ?? [])?.name ?? null));
+  }, [pickSnailBed, canvas]);
+  const startBed = useCallback((it: Interactable) => {
+    if (it.spot === undefined || workTimer.current || roundOn(live.current.round) || live.current.crab || bedTimers.current.length > 0) return;
+    const n = it.spot;
+    const c = canvas();
+    c?.plant(it.use, it.face ?? "down");
+    c?.farmAnim(FARM_ANIM.snails);
+    setBed({ bed: n, startedAt: Date.now(), text: `🐌 Đang mò ốc bãi ${n}…` });
+    bedTimers.current = [
+      setTimeout(() => canvas()?.farmAnim(FARM_ANIM.snails), ROUND_FA_MS),
+      setTimeout(() => void finishBed(n), BED_BAR_MS),
+    ];
+  }, [canvas, finishBed]);
+  const cancelBed = useCallback(() => {
+    if (bedTimers.current.length === 0) return;
+    bedTimers.current.forEach(clearTimeout);
+    bedTimers.current = [];
+    setBed(null);
+    canvas()?.farmAnim(FARM_ANIM.stop);
+  }, [canvas]);
+
   useEffect(() => {
     if (active) return;
     cancelWork();
+    cancelBed();
     // leaving the field ends a round and a crab visit too (in a task, as the change of map has rendered)
     const t = setTimeout(() => {
       closeRound();
       shutCrab(false);
     }, 0);
     return () => clearTimeout(t);
-  }, [active, cancelWork, closeRound, shutCrab]);
+  }, [active, cancelWork, cancelBed, closeRound, shutCrab]);
 
   // --- my harvesters (R15): fetched at the end + 1 s, and again while the job still shows. The end is seen on the state's
   //     change, whichever fetch brings it: then fp, and a toast with the wet rice they brought
@@ -552,7 +610,11 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       const anim = a.kind === "plant" ? plantAnim(live.current.catalog, a.item) : ANIM[a.kind];
       if (anim) c?.farmAnim(anim);
       c?.plotChanged("plot" in a ? a.plot : 0);
-      if (done) live.current.toast(done);
+      // a pest-snail pick says what the picker kept (v15.3 R10); before 0018 its answer has no snails
+      const said = a.kind === "pick_snails"
+        ? pestSnailText(a.plot, r.snails, heldBox(r.state.mine.items, live.current.catalog?.items ?? [])?.name ?? null)
+        : done;
+      if (said) live.current.toast(said);
       return true;
     } finally {
       setBusy(false);
@@ -632,17 +694,20 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       case "drying":
         setPanel({ kind: "drying" });
         break;
-      case "crab_hole": {
+      case "crab_hole":
+      case "snail_bed": {
         const why = gatherRefusal(it, live.current.state, live.current.catalog, serverNow());
         if (why !== null) live.current.toast(why);
-        else void startCrab(it);
+        else if (it.kind === "crab_hole") void startCrab(it);
+        else startBed(it);
         break;
       }
     }
     return true;
-  }, [startCrab]);
+  }, [startCrab, startBed]);
   const promptText = useCallback((it: Interactable): string | null => {
     if (!FIELD_KINDS.has(it.kind)) return null;
+    if (it.kind === "crab_hole" || it.kind === "snail_bed") return gatherPrompt(it, state?.mine ?? null, catalog, now);
     const p = it.kind === "plot" ? state?.plots.find((x) => x.no === it.plot) : undefined;
     if (!p || !state || !catalog) return it.prompt;
     return plotPrompt(p, accountId, catalog.varieties.find((v) => v.id === p.crop?.variety) ?? null, catalog, state.mine, now);
@@ -666,6 +731,9 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     crab,
     endCrab,
     closeCrab,
+    bed,
+    cancelBed,
+    moved: cancelBed,
     act,
     buy,
     sell,

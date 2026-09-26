@@ -150,6 +150,8 @@ export default function PlotPanel({ no, state, catalog, failed, me, busy, now, o
   const p = state?.plots.find((x) => x.no === no) ?? null;
   const v = p?.crop ? catalog?.varieties.find((x) => x.id === p.crop!.variety) ?? null : null;
   const tab = handbookTabFor(p?.crop ?? null, v, now);
+  const tabs = catalog ? handbookTabs(catalog.uplands, catalog.critters) : [];
+  const tabName = (id: string) => tabs.find(([t]) => t === id)?.[1];
   const ctx: LandCtx | null = state ? { me, plots: state.plots, mine: state.mine } : null;
   return (
     <ParchmentModal title={`🌾 Thửa ${no} · ${no <= 4 ? "đất tư" : "đất làng"}`} onClose={onClose}>
@@ -177,12 +179,15 @@ export default function PlotPanel({ no, state, catalog, failed, me, busy, now, o
                     {a.label}
                   </ConfirmButton>
                   {(a.why ?? a.hint) && <span className="min-w-0 flex-1 text-base opacity-80">{a.why ?? a.hint}</span>}
+                  {!a.why && a.hint && a.handbook && tabName(a.handbook) && (
+                    <button type="button" className="pch-btn" onClick={() => onOpenHandbook(a.handbook!)}>📖 {tabName(a.handbook)}</button>
+                  )}
                 </li>
               ))}
             </ul>
             <Land p={p} ctx={ctx} busy={busy} onAct={onAct} />
             <button type="button" className="pch-btn self-start" onClick={() => onOpenHandbook(tab)}>
-              📖 Sổ tay: {handbookTabs(catalog.uplands).find(([id]) => id === tab)?.[1]}
+              📖 Sổ tay: {tabName(tab)}
             </button>
           </>
         )}

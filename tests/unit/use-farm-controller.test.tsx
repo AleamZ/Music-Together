@@ -4,7 +4,7 @@ import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import {
   critterFromRow, farmItemFromRow, PART_WAIT_MS, PART_WINDOW_MS, uplandFromRow, varietyFromRow, type UplandCropRow,
 } from "@/lib/game/farm/catalog";
-import { CRAB_FINISH_WAIT_MS, TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
+import { BED_BAR_MS, CRAB_FINISH_WAIT_MS, TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
 import { CRAB_GAVE_UP, GATHER_LIMIT_TEXT, GIFT_TEXT, NOT_OPEN, NOT_OPEN_153 } from "@/lib/game/farm/messages";
 import { parseFarmMine, parseFieldState, type FieldState } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
@@ -14,7 +14,7 @@ import fixtures from "@/tests/fixtures/upland-cases.json";
 
 const rpc = vi.hoisted(() => ({
   fetchFieldState: vi.fn(), fetchFarmCatalog: vi.fn(), fieldAction: vi.fn(), sellRice: vi.fn(), buyFarmItem: vi.fn(),
-  claimFarmGift: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(),
+  claimFarmGift: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(), pickSnailBed: vi.fn(),
 }));
 vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/farm/rpc")>()),
@@ -70,8 +70,8 @@ const field = (over: {
 })!;
 
 const handle = () => ({
-  setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(),
-}) as unknown as GameCanvasHandle & Record<"setPlots" | "farmAnim" | "plotChanged" | "plant", ReturnType<typeof vi.fn>>;
+  setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(),
+}) as unknown as GameCanvasHandle & Record<"setPlots" | "farmAnim" | "plotChanged" | "plant" | "setGatherSpots", ReturnType<typeof vi.fn>>;
 const spot = (id: string): Interactable => getMap("field").interactables.find((i) => i.id === id)!;
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
@@ -719,6 +719,121 @@ describe("useFarmController, v15.3 crab holes", () => {
     await act(async () => { started(visit(3)); await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 2); });
     expect(view.result.current.crab).toBeNull();
     expect(fa(canvas, FARM_ANIM.crab)).toBe(0);
+  });
+});
+
+describe("useFarmController, v15.3 snail beds, pest snails, prompts and cues", () => {
+  const CRITTERS = [
+    critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 }),
+    critterFromRow({ id: "oc_dong", name: "Ốc đồng", grp: "snail", base_price: 8, sort_order: 30 }),
+    critterFromRow({ id: "oc_buou_vang", name: "Ốc bươu vàng", grp: "snail", base_price: 2, sort_order: 40 }),
+  ];
+  const BUCKET = farmItemFromRow({
+    id: "box_bucket", kind: "critter_box", name: "Xô nhựa", price: 1500, sort_order: 10, variety: null, fert: null, pest_target: null, capacity: 15,
+  });
+  const GATHERING = { ...CATALOG, critters: CRITTERS, items: [...CATALOG.items, BUCKET] };
+  const fa = (canvas: ReturnType<typeof handle>, a: number) => canvas.farmAnim.mock.calls.filter(([x]) => x === a).length;
+  const snails = (kinds: string[], escaped = 0) => ({
+    serverNow: iso(0), mine: field().mine, snails: { caught: kinds.map((kind) => ({ kind, price: kind === "oc_dong" ? 17 : 4 })), escaped },
+  });
+  const inMin = (m: number) => new Date(NOW + m * 60_000).toISOString();
+  beforeEach(() => {
+    rpc.fetchFarmCatalog.mockResolvedValue(GATHERING);
+  });
+
+  it("mò ốc at a ready bed: a 3 s bar with fa 7 at its start and at 2 s, then pick_snail_bed and what it gave", async () => {
+    const { result, canvas, toast } = setup();
+    await flush();
+    act(() => { expect(result.current.interact(spot("bed_2"))).toBe(true); });
+    expect(canvas.plant).toHaveBeenCalledWith(spot("bed_2").use, spot("bed_2").face);
+    expect(result.current.bed).toMatchObject({ bed: 2, text: "🐌 Đang mò ốc bãi 2…" });
+    expect(result.current.work).toBeNull();
+    expect(fa(canvas, FARM_ANIM.snails)).toBe(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(fa(canvas, FARM_ANIM.snails)).toBe(2);
+    rpc.pickSnailBed.mockResolvedValueOnce(snails(["oc_buou_vang", "oc_dong"]));
+    await act(async () => { await vi.advanceTimersByTimeAsync(BED_BAR_MS - 2000 - 1); });
+    expect(rpc.pickSnailBed).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(rpc.pickSnailBed).toHaveBeenCalledWith("r", "tok", 2);
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+    expect(result.current.bed).toBeNull();
+    expect(toast).toHaveBeenCalledWith("🐌 Mò được 2 con ốc: 1 ốc đồng, 1 ốc bươu vàng.");
+  });
+
+  it("cancels the bar before anything is sent when I move, or on Huỷ", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    act(() => { result.current.interact(spot("bed_1")); });
+    act(() => result.current.moved());
+    expect(result.current.bed).toBeNull();
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+    act(() => { result.current.interact(spot("bed_3")); });
+    act(() => result.current.cancelBed());
+    expect(result.current.bed).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(BED_BAR_MS * 2); });
+    expect(rpc.pickSnailBed).not.toHaveBeenCalled();
+    // moving with no bar running changes nothing
+    act(() => result.current.moved());
+    expect(result.current.bed).toBeNull();
+  });
+
+  it("says why a bed cannot be picked, and a refused pick as its toast", async () => {
+    rpc.fetchFieldState.mockResolvedValue(field({ mine: { gather: { ready_at: { bed4: inMin(7) }, left_today: 100 } } }));
+    const { result, toast } = setup();
+    await flush();
+    act(() => { result.current.interact(spot("bed_4")); });
+    expect(toast).toHaveBeenLastCalledWith("Bãi này vừa mò rồi — quay lại sau 7 phút.");
+    expect(result.current.bed).toBeNull();
+    act(() => { result.current.interact(spot("bed_2")); });
+    rpc.pickSnailBed.mockRejectedValueOnce({ message: "bed empty", details: "300" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(BED_BAR_MS); });
+    expect(toast).toHaveBeenLastCalledWith("Bãi này vừa mò rồi — quay lại sau 5 phút.");
+  });
+
+  it("toasts what a pest-snail pick kept for the picker, or v15.2's line before 0018", async () => {
+    rpc.fetchFieldState.mockResolvedValue(field({ mine: { items: { box_bucket: 1 } } }));
+    const { result, toast } = setup();
+    await flush();
+    const answer = (s: unknown) => ({
+      state: field({ mine: { items: { box_bucket: 1 } } }), harvest: null, harvestPart: null, picking: null, snails: s,
+    });
+    rpc.fieldAction.mockResolvedValueOnce(answer({ caught: [{ kind: "oc_buou_vang", price: 4 }, { kind: "oc_buou_vang", price: 4 }], escaped: 1 }));
+    await act(async () => { await result.current.act({ kind: "pick_snails", plot: 6 }, "Đã bắt ốc bươu vàng."); });
+    expect(toast).toHaveBeenLastCalledWith("🐌 Bắt ốc thửa 6: được 2 con, thả 1 con xuống mương vì xô nhựa đầy.");
+    rpc.fieldAction.mockResolvedValueOnce(answer(null));
+    await act(async () => { await result.current.act({ kind: "pick_snails", plot: 6 }, "Đã bắt ốc bươu vàng."); });
+    expect(toast).toHaveBeenLastCalledWith("Đã bắt ốc bươu vàng.");
+  });
+
+  it("names a hole's or a bed's state in its prompt, on the server's clock", async () => {
+    rpc.fetchFieldState.mockResolvedValue(field({ mine: { gather: { ready_at: { crab1: inMin(12), bed2: inMin(7) }, left_today: 150 } } }));
+    const { result } = setup();
+    await flush();
+    expect(result.current.promptText(spot("crab_1"))).toBe("Hang 1 · cua chưa ra (còn 12 phút)");
+    expect(result.current.promptText(spot("bed_2"))).toBe("Bãi 2 · còn 7 phút");
+    expect(result.current.promptText(spot("crab_3"))).toBe("Bắt cua hang 3");
+    expect(result.current.promptText(spot("bed_1"))).toBe("Mò ốc bãi 1");
+    rpc.fetchFieldState.mockResolvedValue(field({ mine: { critters: { cua_dong: { n: 3, xu: 36 } }, critter_cap: 3 } }));
+    const full = setup();
+    await flush();
+    expect(full.result.current.promptText(spot("crab_3"))).toBe("Hang 3 · tay đầy — bán ở vựa cô Út");
+  });
+
+  it("draws the ready cue on each hole and bed open and not cooling for me, none before 0018", async () => {
+    rpc.fetchFieldState.mockResolvedValue(field({ mine: { gather: { ready_at: { crab1: inMin(12), bed2: inMin(-1) }, left_today: 150 } } }));
+    const { canvas } = setup();
+    await flush();
+    const spots = canvas.setGatherSpots.mock.calls.at(-1)![0] as Array<{ id: string; ready: boolean }>;
+    expect(spots.map((s) => s.id).sort()).toEqual([
+      "bed_1", "bed_2", "bed_3", "bed_4", "crab_1", "crab_2", "crab_3", "crab_4", "crab_5", "crab_6",
+    ]);
+    expect(spots.filter((s) => !s.ready).map((s) => s.id)).toEqual(["crab_1"]);
+    rpc.fetchFarmCatalog.mockResolvedValue(CATALOG);
+    const before = setup();
+    await flush();
+    const none = before.canvas.setGatherSpots.mock.calls.at(-1)![0] as Array<{ ready: boolean }>;
+    expect(none.some((s) => s.ready)).toBe(false);
   });
 });
 

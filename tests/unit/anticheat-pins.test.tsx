@@ -26,7 +26,7 @@ import fixtures from "@/tests/fixtures/upland-cases.json";
 
 const rpc = vi.hoisted(() => ({
   fetchFieldState: vi.fn(), fetchFarmCatalog: vi.fn(), fieldAction: vi.fn(), sellRice: vi.fn(), buyFarmItem: vi.fn(),
-  claimFarmGift: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(),
+  claimFarmGift: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(), pickSnailBed: vi.fn(),
 }));
 vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/farm/rpc")>()),
@@ -396,7 +396,9 @@ describe("quality_range", () => {
   });
 
   it("transplants after a TransplantGame round, and picks, with quality 1", async () => {
-    const canvas = { setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn() } as unknown as GameCanvasHandle;
+    const canvas = {
+      setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(),
+    } as unknown as GameCanvasHandle;
     const { result } = renderHook(() => useFarmController({
       token: "tok", roomId: "r", accountId: "me", mapId: "field", canvas: () => canvas, toast: noop, onCoinsChanged: noop,
     }));
@@ -421,7 +423,7 @@ describe("bad_spot and bad_qty (v15.3)", () => {
     vi.useRealTimers();
   });
 
-  it("the field's holes are 1–6 and its beds 1–4, and a visit sends its hole's spot", async () => {
+  it("the field's holes are 1–6 and its beds 1–4, and a visit sends its spot", async () => {
     const spots = (kind: string) => getMap("field").interactables.filter((i) => i.kind === kind).map((i) => i.spot);
     expect(spots("crab_hole").sort()).toEqual([1, 2, 3, 4, 5, 6]);
     expect(spots("snail_bed").sort()).toEqual([1, 2, 3, 4]);
@@ -432,7 +434,10 @@ describe("bad_spot and bad_qty (v15.3)", () => {
     rpc.crabStart.mockImplementation(async (_room: string, _token: string, hole: number) => ({
       serverNow: iso(0), mine: STATE.mine, visit: { id: `v${hole}`, hole, startedAt: NOW },
     }));
-    const canvas = { setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn() } as unknown as GameCanvasHandle;
+    rpc.pickSnailBed.mockImplementation(async () => ({ serverNow: iso(0), mine: STATE.mine, snails: { caught: [], escaped: 0 } }));
+    const canvas = {
+      setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(),
+    } as unknown as GameCanvasHandle;
     const { result } = renderHook(() => useFarmController({
       token: "tok", roomId: "r", accountId: "me", mapId: "field", canvas: () => canvas, toast: noop, onCoinsChanged: noop,
     }));
@@ -445,6 +450,11 @@ describe("bad_spot and bad_qty (v15.3)", () => {
       act(() => result.current.closeCrab());
     }
     expect(rpc.crabStart.mock.calls.map(([, , hole]) => hole).sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    for (const it of getMap("field").interactables.filter((i) => i.kind === "snail_bed")) {
+      act(() => { result.current.interact(it); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    }
+    expect(rpc.pickSnailBed.mock.calls.map(([, , bed]) => bed).sort()).toEqual([1, 2, 3, 4]);
   });
 
   // twelve whole games, frame by frame: about 1.5 s alone and several times that on a loaded machine, hence the timeout

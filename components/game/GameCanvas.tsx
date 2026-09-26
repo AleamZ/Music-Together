@@ -75,6 +75,8 @@ export interface GameCanvasProps {
   onFishingInput: (kind: "tap" | "cancel") => void;
   /** Someone (or my other tab) changed plot `p` on this map (`fp`). */
   onPlotChanged?: (p: number) => void;
+  /** I started walking or set off on a path (a stop or a jump is not a move): a snail bed's bar stops (v15.3 §7.3). */
+  onLocalMove?: () => void;
   /** A new world drew its first frame. */
   onFirstFrame: () => void;
   /** The browser has no usable 2D canvas. */
@@ -196,8 +198,14 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       const art = paintMap(map);
       const fontVar = getComputedStyle(document.documentElement).getPropertyValue("--font-vt323").trim();
       engine = new GameEngine(canvas, map, art, {
-        onLocalMove: (m) => channel.send({ t: "mv", id: localId, ...m }),
-        onLocalPath: (m) => channel.send({ t: "pa", id: localId, ...m }),
+        onLocalMove: (m) => {
+          channel.send({ t: "mv", id: localId, ...m });
+          if (m.mv) propsRef.current.onLocalMove?.();
+        },
+        onLocalPath: (m) => {
+          channel.send({ t: "pa", id: localId, ...m });
+          propsRef.current.onLocalMove?.();
+        },
         onInteract: (it) => propsRef.current.onInteract(it),
         onPromptChange: (it) => propsRef.current.onPromptChange(it),
         onActorClick: (id) => propsRef.current.onActorClick(id),

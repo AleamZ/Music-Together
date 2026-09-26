@@ -6,8 +6,9 @@ import type { FarmCatalog } from "@/lib/game/farm/catalog";
 import { syncClock } from "@/lib/game/farm/clock";
 import { farmErrorMessage, isMissingRpc, NOT_OPEN_152, NOT_OPEN_153 } from "@/lib/game/farm/messages";
 import {
-  actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, fetchFarmCatalog, fetchFieldState, fieldAction, loadSprayer, RPCS_152,
-  RPCS_153, sellProduce, sellRice, type CatchAnswer, type CrabVisit, type FieldAction, type FieldAnswer, type MineAnswer,
+  actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, fetchFarmCatalog, fetchFieldState, fieldAction, loadSprayer,
+  pickSnailBed, RPCS_152, RPCS_153, sellProduce, sellRice, type CatchAnswer, type CrabVisit, type FieldAction, type FieldAnswer,
+  type MineAnswer,
 } from "@/lib/game/farm/rpc";
 import { withMine, type FarmMine, type FieldState } from "@/lib/game/farm/state";
 
@@ -36,6 +37,8 @@ export interface FieldData {
   crabStart: (hole: number) => Promise<(MineAnswer & { visit: CrabVisit }) | null>;
   crabFinish: (visitId: string, hits: number, onError?: (text: string) => void) =>
     Promise<(MineAnswer & { crab: CatchAnswer & { hits: number } }) | null>;
+  /** Mò ốc (v15.3 §7.3): 1–3 snails from bed `bed`. */
+  pickSnailBed: (bed: number) => Promise<(MineAnswer & { snails: CatchAnswer }) | null>;
   /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
    *  FP_MIN_GAP_MS apart. */
   plotChanged: () => void;
@@ -195,5 +198,7 @@ export function useField(roomId: string, token: string, active: boolean, onError
       call(() => crabStart(roomId, token, hole), applyMine, { rpc: "crab_start" }), [call, applyMine, roomId, token]),
     crabFinish: useCallback((visitId: string, hits: number, onError?: (text: string) => void) =>
       call(() => crabFinish(roomId, token, visitId, hits), applyMine, { rpc: "crab_finish", onError }), [call, applyMine, roomId, token]),
+    pickSnailBed: useCallback((bed: number) =>
+      call(() => pickSnailBed(roomId, token, bed), applyMine, { rpc: "pick_snail_bed" }), [call, applyMine, roomId, token]),
   };
 }

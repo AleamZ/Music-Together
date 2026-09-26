@@ -6,6 +6,7 @@ import {
   cropCare, cropModel, cropPhase, HOUR_MS, overripeAt, ripeAt, rotAt, seedlingsOldAt, sowLateAt, sproutAt,
   transplantReadyAt, waterAt, wantedWater, type CropModel,
 } from "./crop";
+import { critterCount, heldBox } from "./gather";
 import {
   BED_WATER_NAME, bedLevelsText, durationText, LEASE_ENDING, LEASE_ENDING_TP, NO_SEED, NOT_OPEN_152, PEST_NAME, PEST_REMEDY,
   TOO_FAST, WATER_NAME,
@@ -38,6 +39,8 @@ export interface PlotAction {
   warn?: string;
   /** A good use, said on the button's line. */
   hint?: string;
+  /** The handbook tab that tells more about the hint (the plot panel links it). */
+  handbook?: string;
 }
 
 export interface FarmTask { plot: number; text: string; urgent: boolean }
@@ -166,6 +169,15 @@ function sprayButtons(p: PlotView, crop: CropView, catalog: FarmCatalog, mine: F
     });
 }
 
+/** The pest-snail button's hint (v15.3 §13.4): the picker's ốc bươu vàng, or where they go when there is no room. Before
+ *  0018 (no critters in the catalog) there is none, so nothing promises snails. */
+function pestSnailHint(catalog: FarmCatalog, mine: FarmMine): Pick<PlotAction, "hint" | "handbook"> {
+  if (catalog.critters.length === 0) return {};
+  if (critterCount(mine.critters) < mine.critterCap) return { hint: "Bắt ốc cứu lúa — được thêm 1–3 con ốc bươu vàng bỏ xô.", handbook: "critters" };
+  const box = heldBox(mine.items, catalog.items);
+  return { hint: `${box ? box.name : "Tay"} đầy — ốc bắt được thả xuống mương, lúa vẫn được cứu.`, handbook: "critters" };
+}
+
 /** A transplant round's hint (v15.3 §13.4): rice hills are khóm, ớt seedlings cây. */
 const transplantHint = (ot: boolean): string =>
   `Mỗi lượt cắm ${TRANSPLANT.hills} ${ot ? "cây" : "khóm"} — được từ ${TRANSPLANT.pass} điểm là xong; hụt thì làm lại, không mất gì.`;
@@ -186,7 +198,7 @@ export function plotActions(p: PlotView, me: string, v: Variety | null, catalog:
   if (harvesterOn(crop)) return out;
   const cut = crop?.kind === "rice" && crop.parts > 0;
   if (!cut && crop?.pests.some((x) => x.kind === "snail" && x.treatedAt === null)) {
-    out.push({ key: "pick", label: "Bắt ốc bươu vàng", run: { kind: "pick_snails", plot }, enabled: true });
+    out.push({ key: "pick", label: "Bắt ốc bươu vàng", run: { kind: "pick_snails", plot }, enabled: true, ...pestSnailHint(catalog, mine) });
   }
   if (p.farmer?.id !== me) return out;
   const owned = (kind: FarmItemKind) => catalog.items.filter((i) => i.kind === kind && (mine.items[i.id] ?? 0) > 0);
