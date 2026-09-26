@@ -926,15 +926,21 @@ begin
   return v_changed;
 end $$;
 
--- Sit (§11.3): the refusals in their order, then the stake, the requirement (§6.1) and the poker buy-in.
+-- Sit (§11.3): the refusals in their order, then the stake, the requirement (§6.1) and the poker buy-in. The caller
+-- holds no seat at this table, so its wallet is locked with the table's seat wallets, in one account-id pass before
+-- the sweep can lock any of them (§11.6).
 create or replace function public._card_sit(p_room uuid, p_account uuid, p_game text, p_seat integer, p_stake integer,
                                             p_buyin integer, p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
 as $$
-declare t public.card_tables; w public.wallets;
+declare t public.card_tables; w public.wallets; r record;
 begin
   perform public._card_open(p_room, p_game);
   perform public._card_touch(p_room, p_account, p_now);
+  for r in select a from (select account_id as a from public.card_seats where room_id = p_room and game = p_game
+                          union select p_account) x order by a loop
+    perform public._wallet_lock(r.a);
+  end loop;
   perform public._card_sweep(p_room, p_game, p_now);
   select * into t from public.card_tables where room_id = p_room and game = p_game;
   if exists (select 1 from public.card_seats where room_id = p_room and account_id = p_account and leaving) then
