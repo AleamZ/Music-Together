@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnticheatError } from "@/lib/anticheat";
 import type { FarmCatalog } from "@/lib/game/farm/catalog";
 import { syncClock } from "@/lib/game/farm/clock";
-import { farmErrorMessage, isMissingRpc, NOT_OPEN_152 } from "@/lib/game/farm/messages";
+import { farmErrorMessage, isMissingRpc, NOT_OPEN_152, NOT_OPEN_153 } from "@/lib/game/farm/messages";
 import {
-  actionCall, buyFarmItem, claimFarmGift, fetchFarmCatalog, fetchFieldState, fieldAction, loadSprayer, RPCS_152, sellProduce, sellRice,
-  type FieldAction, type FieldAnswer, type MineAnswer,
+  actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, fetchFarmCatalog, fetchFieldState, fieldAction, loadSprayer, RPCS_152,
+  RPCS_153, sellProduce, sellRice, type CatchAnswer, type CrabVisit, type FieldAction, type FieldAnswer, type MineAnswer,
 } from "@/lib/game/farm/rpc";
 import { withMine, type FarmMine, type FieldState } from "@/lib/game/farm/state";
 
@@ -31,6 +31,11 @@ export interface FieldData {
   loadSprayer: (itemId: string, itemName?: string) => Promise<MineAnswer | null>;
   /** Sells kg of a hoa-màu crop to cô Út (v15.2 §9). */
   sellProduce: (upland: string, kg: number) => Promise<MineAnswer | null>;
+  /** Bắt cua (v15.3 §7.2): a visit to hole `hole` (R6), then its end with the hits, 0–3 (R7); a refusal's text goes to
+   *  `onError` when given. */
+  crabStart: (hole: number) => Promise<(MineAnswer & { visit: CrabVisit }) | null>;
+  crabFinish: (visitId: string, hits: number, onError?: (text: string) => void) =>
+    Promise<(MineAnswer & { crab: CatchAnswer & { hits: number } }) | null>;
   /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
    *  FP_MIN_GAP_MS apart. */
   plotChanged: () => void;
@@ -148,7 +153,8 @@ export function useField(roomId: string, token: string, active: boolean, onError
   /** Run RPC `rpc` and apply its answer. On error: the Vietnamese text, read in its context (the RPC's, unless `context`
    *  names another: a round's refusals read their own way), to `onError` or the toast; then a refetch, and null. A strike
    *  shows no text: the warning or the ban modal shows instead (anti-cheat §12.1). Before 0016 its RPCs are missing while
-   *  the field is open: they say NOT_OPEN_152 and leave the field open (v15.2 R28). */
+   *  the field is open: they say NOT_OPEN_152 and leave the field open (v15.2 R28); before 0018 the gathering RPCs say
+   *  NOT_OPEN_153 (v15.3 R23). */
   const call = useCallback(async <T,>(job: () => Promise<T>, keep: (n: number, r: T) => void,
     opts: { rpc: string; context?: string; itemName?: string; onError?: (text: string) => void }): Promise<T | null> => {
     const n = ++seq.current;
@@ -157,10 +163,11 @@ export function useField(roomId: string, token: string, active: boolean, onError
       keep(n, r);
       return r;
     } catch (err) {
-      const missing = isMissingRpc(err), v152 = RPCS_152.has(opts.rpc);
-      if (missing && !v152) setNotOpen(true);
+      const missing = isMissingRpc(err), v152 = RPCS_152.has(opts.rpc), v153 = RPCS_153.has(opts.rpc);
+      if (missing && !v152 && !v153) setNotOpen(true);
       if (!(err instanceof AnticheatError && err.info.strike >= 1)) {
-        (opts.onError ?? onErrorRef.current)(missing && v152 ? NOT_OPEN_152 : farmErrorMessage(err, opts.itemName, opts.context ?? opts.rpc));
+        const text = missing && v152 ? NOT_OPEN_152 : missing && v153 ? NOT_OPEN_153 : farmErrorMessage(err, opts.itemName, opts.context ?? opts.rpc);
+        (opts.onError ?? onErrorRef.current)(text);
       }
       void reload();
       return null;
@@ -184,5 +191,9 @@ export function useField(roomId: string, token: string, active: boolean, onError
       call(() => loadSprayer(token, itemId), applyMine, { rpc: "load_sprayer", itemName }), [call, applyMine, token]),
     sellProduce: useCallback((upland: string, kg: number) =>
       call(() => sellProduce(token, upland, kg), applyMine, { rpc: "sell_produce" }), [call, applyMine, token]),
+    crabStart: useCallback((hole: number) =>
+      call(() => crabStart(roomId, token, hole), applyMine, { rpc: "crab_start" }), [call, applyMine, roomId, token]),
+    crabFinish: useCallback((visitId: string, hits: number, onError?: (text: string) => void) =>
+      call(() => crabFinish(roomId, token, visitId, hits), applyMine, { rpc: "crab_finish", onError }), [call, applyMine, roomId, token]),
   };
 }

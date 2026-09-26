@@ -5,6 +5,7 @@ import { WORK_MS, type FarmController, type FarmWork } from "@/hooks/useFarmCont
 import { NOT_OPEN } from "@/lib/game/farm/messages";
 import { isTyping } from "@/lib/game/keys";
 import CoopPanel from "./CoopPanel";
+import CrabGame from "./CrabGame";
 import DryingPanel from "./DryingPanel";
 import FarmShopPanel from "./FarmShopPanel";
 import FarmTasksPanel from "./FarmTasks";
@@ -45,7 +46,7 @@ function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen
 }
 
 /** The field on top of the world (spec §13): the banner before the migration, the work progress, a round (HarvestGame,
- *  v15.2 §13.2; TransplantGame, v15.3 §13.3) and the field's panels. */
+ *  v15.2 §13.2; TransplantGame, v15.3 §13.3), a crab visit (CrabGame, v15.3 §13.2) and the field's panels. */
 export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
   farm: FarmController;
   me: string;
@@ -78,6 +79,10 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
       {round?.game === "transplant" && (
         <TransplantGame key={round.begunAt} round={round} busy={busy} panelOpen={panelOpen || panel !== null}
           onEnd={farm.endRound} onNext={farm.nextRound} onClose={farm.closeRound} />
+      )}
+      {farm.crab && (
+        <CrabGame key={farm.crab.visit.id} crab={farm.crab} panelOpen={panelOpen || panel !== null} onEnd={farm.endCrab}
+          onClose={farm.closeCrab} />
       )}
       {panel?.kind === "plot" && (
         <PlotPanel no={panel.plot} state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act}

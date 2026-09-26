@@ -25,10 +25,10 @@ const STATE = parseFieldState({
 const controller = (over: Partial<FarmController> = {}): FarmController => ({
   data: {
     state: STATE, catalog: CATALOG, failed: false, notOpen: false, reload: vi.fn(), run: vi.fn(), sellRice: vi.fn(), buyItem: vi.fn(),
-    claimGift: vi.fn(), plotChanged: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(),
+    claimGift: vi.fn(), plotChanged: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(),
   },
   now: NOW, tasks: [], urgent: 0, panel: null, openPanel: vi.fn(), closePanel: vi.fn(), busy: false, work: null, cancelWork: vi.fn(),
-  round: null, endRound: vi.fn(), nextRound: vi.fn(), closeRound: vi.fn(),
+  round: null, endRound: vi.fn(), nextRound: vi.fn(), closeRound: vi.fn(), crab: null, endCrab: vi.fn(), closeCrab: vi.fn(),
   act: vi.fn().mockResolvedValue(true), buy: vi.fn().mockResolvedValue(true), sell: vi.fn().mockResolvedValue(true),
   loadSprayer: vi.fn().mockResolvedValue(true), sellProduce: vi.fn().mockResolvedValue(true), interact: vi.fn(), promptText: vi.fn(),
   ...over,
@@ -112,6 +112,16 @@ describe("FarmOverlays, a round", () => {
     expect(screen.getByText("🌾 Gặt xong thửa 5: tổng 75 kg nếp (lúa ướt) — đem phơi rồi bán cho cô Út nhé!")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Đóng" }));
     expect(farm.closeRound).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens CrabGame for a crab visit (v15.3 §13.2)", () => {
+    const farm = controller({
+      crab: { hole: 4, visit: { id: "v", hole: 4, startedAt: 1 }, seed: 1, begunAt: 1, phase: "done", hits: 1, message: "🦀 Bắt được 1 con: 1 cua đồng!" },
+    });
+    render(<FarmOverlays farm={farm} me="me" onField />);
+    expect(screen.getByRole("dialog", { name: "Bắt cua hang 4" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Đóng" }));
+    expect(farm.closeCrab).toHaveBeenCalledTimes(1);
   });
 
   it("opens TransplantGame for a transplant round (v15.3 §13.3)", () => {

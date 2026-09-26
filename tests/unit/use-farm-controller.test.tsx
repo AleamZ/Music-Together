@@ -1,18 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
-import { farmItemFromRow, PART_WAIT_MS, PART_WINDOW_MS, uplandFromRow, varietyFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
-import { TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
-import { GIFT_TEXT, NOT_OPEN } from "@/lib/game/farm/messages";
+import {
+  critterFromRow, farmItemFromRow, PART_WAIT_MS, PART_WINDOW_MS, uplandFromRow, varietyFromRow, type UplandCropRow,
+} from "@/lib/game/farm/catalog";
+import { CRAB_FINISH_WAIT_MS, TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
+import { CRAB_GAVE_UP, GATHER_LIMIT_TEXT, GIFT_TEXT, NOT_OPEN, NOT_OPEN_153 } from "@/lib/game/farm/messages";
 import { parseFarmMine, parseFieldState, type FieldState } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
-import type { Interactable } from "@/lib/game/maps/types";
+import type { Interactable, MapId } from "@/lib/game/maps/types";
 import { FARM_ANIM } from "@/lib/game/net/protocol";
 import fixtures from "@/tests/fixtures/upland-cases.json";
 
 const rpc = vi.hoisted(() => ({
   fetchFieldState: vi.fn(), fetchFarmCatalog: vi.fn(), fieldAction: vi.fn(), sellRice: vi.fn(), buyFarmItem: vi.fn(),
-  claimFarmGift: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(),
+  claimFarmGift: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(),
 }));
 vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/farm/rpc")>()),
@@ -39,8 +41,11 @@ const CATALOG = {
   ],
 };
 
-/** Plot 5: my ripe nếp, drained, with brown planthoppers (I have a sickle); plot 6: Lan's; plot 1: for sale. */
-const field = (over: { coins?: number; giftClaimed?: boolean; crop5?: Record<string, unknown> | null; wet?: number } = {}): FieldState => parseFieldState({
+/** Plot 5: my ripe nếp, drained, with brown planthoppers (I have a sickle); plot 6: Lan's; plot 1: for sale. `mine` adds
+ *  to my part of the answer. */
+const field = (over: {
+  coins?: number; giftClaimed?: boolean; crop5?: Record<string, unknown> | null; wet?: number; mine?: Record<string, unknown>;
+} = {}): FieldState => parseFieldState({
   server_now: iso(0),
   plots: [
     { no: 1, kind: "private", owner: null, sale_price: null, sublease_price: null, farmer: null, lease: null, offers: 0, crop: null },
@@ -60,7 +65,7 @@ const field = (over: { coins?: number; giftClaimed?: boolean; crop5?: Record<str
   drying: [],
   mine: {
     items: { spray_hopper: 1, tool_sickle: 1 }, rice: { nep: { wet: over.wet ?? 0, dry: 50 } }, coins: over.coins ?? 1000,
-    gift_claimed: over.giftClaimed ?? true, owned_plot: null, farming: [5], my_offers: [], incoming_offers: [],
+    gift_claimed: over.giftClaimed ?? true, owned_plot: null, farming: [5], my_offers: [], incoming_offers: [], ...over.mine,
   },
 })!;
 
@@ -548,6 +553,172 @@ describe("useFarmController, v15.3 transplant rounds", () => {
     rpc.fieldAction.mockRejectedValueOnce({ message: "lease ending" });
     await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
     expect(toast).toHaveBeenLastCalledWith("Sắp hết hạn thuê — không kịp gặt phần này.");
+  });
+});
+
+describe("useFarmController, v15.3 crab holes", () => {
+  const CRITTERS = [
+    critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 }),
+    critterFromRow({ id: "cua_gach", name: "Cua gạch", grp: "crab", base_price: 45, sort_order: 20 }),
+  ];
+  const BUCKET = farmItemFromRow({
+    id: "box_bucket", kind: "critter_box", name: "Xô nhựa", price: 1500, sort_order: 10, variety: null, fert: null, pest_target: null, capacity: 15,
+  });
+  const GATHERING = { ...CATALOG, critters: CRITTERS, items: [...CATALOG.items, BUCKET] };
+  const fa = (canvas: ReturnType<typeof handle>, a: number) => canvas.farmAnim.mock.calls.filter(([x]) => x === a).length;
+  const visit = (hole: number) => ({ serverNow: iso(0), mine: field().mine, visit: { id: `v${hole}`, hole, startedAt: NOW } });
+  const caught = (kinds: Array<[string, number]>, escaped = 0) => ({
+    serverNow: iso(0), mine: field().mine,
+    crab: { caught: kinds.map(([kind, price]) => ({ kind, price })), escaped, hits: kinds.length + escaped },
+  });
+  /** Opens a visit to hole `hole` at a ready hole. */
+  async function start(result: { current: ReturnType<typeof useFarmController> }, hole: number) {
+    rpc.crabStart.mockResolvedValueOnce(visit(hole));
+    await act(async () => {
+      expect(result.current.interact(spot(`crab_${hole}`))).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+  beforeEach(() => {
+    rpc.fetchFarmCatalog.mockResolvedValue(GATHERING);
+  });
+
+  it("starts a visit at a ready hole: crab_start with its spot, the avatar at the hole, fa 6 every 2 s", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    await start(result, 3);
+    expect(rpc.crabStart).toHaveBeenCalledWith("r", "tok", 3);
+    expect(canvas.plant).toHaveBeenCalledWith(spot("crab_3").use, spot("crab_3").face);
+    expect(result.current.crab).toMatchObject({ hole: 3, visit: { id: "v3", hole: 3 }, phase: "playing", hits: null });
+    expect(fa(canvas, FARM_ANIM.crab)).toBe(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 2); });
+    expect(fa(canvas, FARM_ANIM.crab)).toBe(3);
+  });
+
+  it("sends a catch no earlier than 4 s after crab_start's answer, and shows what it brought", async () => {
+    const { result, canvas, toast } = setup();
+    await flush();
+    await start(result, 3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    act(() => result.current.endCrab(2));
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+    expect(result.current.crab).toMatchObject({ phase: "waiting", hits: 2 });
+    rpc.crabFinish.mockResolvedValueOnce(caught([["cua_gach", 100], ["cua_dong", 26]]));
+    await act(async () => { await vi.advanceTimersByTimeAsync(CRAB_FINISH_WAIT_MS - 2000 - 1); });
+    expect(rpc.crabFinish).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v3", 2);
+    expect(result.current.crab).toMatchObject({ phase: "done", message: "🦀 Bắt được 2 con: 1 cua đồng, 1 cua gạch!" });
+    act(() => result.current.closeCrab());
+    expect(result.current.crab).toBeNull();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("sends hits 0 at once", async () => {
+    const { result } = setup();
+    await flush();
+    await start(result, 1);
+    rpc.crabFinish.mockResolvedValueOnce(caught([]));
+    await act(async () => {
+      result.current.endCrab(0);
+      await Promise.resolve();
+    });
+    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v1", 0);
+    await flush();
+    expect(result.current.crab).toMatchObject({ phase: "done", hits: 0, message: "🦀 Cua chui hết vào hang rồi — 20 phút nữa quay lại nhé." });
+  });
+
+  it("Dừng before a try ends sends nothing; during the wait the catch is still sent, and toasted (R8)", async () => {
+    const { result, canvas, toast } = setup();
+    await flush();
+    await start(result, 2);
+    act(() => result.current.closeCrab());
+    expect(result.current.crab).toBeNull();
+    expect(toast).toHaveBeenCalledWith(CRAB_GAVE_UP);
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(rpc.crabFinish).not.toHaveBeenCalled();
+
+    await start(result, 4);
+    act(() => result.current.endCrab(1));
+    act(() => result.current.closeCrab());
+    expect(result.current.crab).toBeNull();
+    expect(toast).toHaveBeenCalledTimes(1);
+    rpc.crabFinish.mockResolvedValueOnce(caught([["cua_dong", 26]]));
+    await act(async () => { await vi.advanceTimersByTimeAsync(CRAB_FINISH_WAIT_MS); });
+    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v4", 1);
+    expect(toast).toHaveBeenLastCalledWith("🦀 Bắt được 1 con: 1 cua đồng!");
+    expect(result.current.crab).toBeNull();
+  });
+
+  it("shows a refused finish in the crab's words", async () => {
+    const { result, toast } = setup();
+    await flush();
+    await start(result, 5);
+    act(() => result.current.endCrab(3));
+    rpc.crabFinish.mockRejectedValueOnce({ message: "visit expired" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(CRAB_FINISH_WAIT_MS); });
+    expect(result.current.crab).toMatchObject({ phase: "refused", message: "Lâu quá, cua chui mất rồi — lát nữa quay lại nhé." });
+    act(() => result.current.closeCrab());
+    await start(result, 6);
+    act(() => result.current.endCrab(1));
+    rpc.crabFinish.mockRejectedValueOnce({ message: "too fast" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(CRAB_FINISH_WAIT_MS); });
+    expect(result.current.crab).toMatchObject({ phase: "refused", message: "Chưa bắt xong — thử lại sau vài giây." });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("says why a hole cannot be visited: before 0018, the day's limit, full hands or container, a cooling hole", async () => {
+    rpc.fetchFarmCatalog.mockResolvedValue(CATALOG);
+    const before = setup();
+    await flush();
+    act(() => { expect(before.result.current.interact(spot("crab_1"))).toBe(true); });
+    expect(before.toast).toHaveBeenLastCalledWith(NOT_OPEN_153);
+    rpc.fetchFarmCatalog.mockResolvedValue(GATHERING);
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ gather: { ready_at: {}, left_today: 0, day_resets_at: iso(5) } }, GATHER_LIMIT_TEXT],
+      [{ critters: { cua_dong: { n: 3, xu: 36 } }, critter_cap: 3 }, "Tay đầy rồi — ra vựa cô Út bán hoặc sắm xô ở tiệm anh Hai."],
+      [{ items: { box_bucket: 1 }, critters: { cua_dong: { n: 18, xu: 216 } }, critter_cap: 18 }, "Xô nhựa đầy rồi — ra vựa cô Út bán bớt nhé."],
+      [{ gather: { ready_at: { crab1: new Date(NOW + 12 * 60_000).toISOString() }, left_today: 150 } }, "Cua chưa ra — quay lại sau 12 phút."],
+    ];
+    for (const [mine, text] of cases) {
+      rpc.fetchFieldState.mockResolvedValue(field({ mine }));
+      const s = setup();
+      await flush();
+      act(() => { s.result.current.interact(spot("crab_1")); });
+      expect(s.toast).toHaveBeenLastCalledWith(text);
+    }
+    expect(rpc.crabStart).not.toHaveBeenCalled();
+  });
+
+  it("says NOT_OPEN_153 when crab_start is missing, and leaves the field open", async () => {
+    const { result, toast } = setup();
+    await flush();
+    rpc.crabStart.mockRejectedValueOnce({ code: "PGRST202", message: "Could not find the function public.crab_start" });
+    await act(async () => {
+      result.current.interact(spot("crab_2"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(toast).toHaveBeenCalledWith(NOT_OPEN_153);
+    expect(result.current.data.notOpen).toBe(false);
+    expect(result.current.crab).toBeNull();
+  });
+
+  it("drops a crab_start answer that comes back after I left the field", async () => {
+    const canvas = handle();
+    const view = renderHook(({ mapId }: { mapId: MapId }) => useFarmController({
+      token: "tok", roomId: "r", accountId: "me", mapId, canvas: () => canvas, toast: vi.fn(), onCoinsChanged: () => {},
+    }), { initialProps: { mapId: "field" as MapId } });
+    await flush();
+    let started!: (a: unknown) => void;
+    rpc.crabStart.mockReturnValueOnce(new Promise((resolve) => { started = resolve; }));
+    act(() => { view.result.current.interact(spot("crab_3")); });
+    expect(rpc.crabStart).toHaveBeenCalledWith("r", "tok", 3);
+    view.rerender({ mapId: "pond" });
+    await flush();
+    await act(async () => { started(visit(3)); await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 2); });
+    expect(view.result.current.crab).toBeNull();
+    expect(fa(canvas, FARM_ANIM.crab)).toBe(0);
   });
 });
 

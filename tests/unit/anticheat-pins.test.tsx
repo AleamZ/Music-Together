@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { act, cleanup, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import CoopPanel from "@/components/game/farm/CoopPanel";
+import CrabGame from "@/components/game/farm/CrabGame";
 import DryingPanel from "@/components/game/farm/DryingPanel";
 import FarmShopPanel from "@/components/game/farm/FarmShopPanel";
 import RiceDepotPanel from "@/components/game/farm/RiceDepotPanel";
 import ShopPanel from "@/components/game/fishing/ShopPanel";
 import { plotActions } from "@/lib/game/farm/actions";
 import {
-  DRYING_SLOTS, farmItemFromRow, TEND_ACTS, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow,
+  critterFromRow, DRYING_SLOTS, farmItemFromRow, TEND_ACTS, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow,
 } from "@/lib/game/farm/catalog";
 import { HOUR_MS } from "@/lib/game/farm/crop";
 import { parseFieldState, type CropView, type FarmMine, type FieldState, type PlotView } from "@/lib/game/farm/state";
@@ -25,7 +26,7 @@ import fixtures from "@/tests/fixtures/upland-cases.json";
 
 const rpc = vi.hoisted(() => ({
   fetchFieldState: vi.fn(), fetchFarmCatalog: vi.fn(), fieldAction: vi.fn(), sellRice: vi.fn(), buyFarmItem: vi.fn(),
-  claimFarmGift: vi.fn(),
+  claimFarmGift: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(),
 }));
 vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/farm/rpc")>()),
@@ -408,4 +409,60 @@ describe("quality_range", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(WORK_MS); });
     expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "harvest", plot: 6, quality: 1 });
   });
+});
+
+describe("bad_spot and bad_qty (v15.3)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    for (const f of Object.values(rpc)) f.mockReset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("the field's holes are 1–6 and its beds 1–4, and a visit sends its hole's spot", async () => {
+    const spots = (kind: string) => getMap("field").interactables.filter((i) => i.kind === kind).map((i) => i.spot);
+    expect(spots("crab_hole").sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(spots("snail_bed").sort()).toEqual([1, 2, 3, 4]);
+    rpc.fetchFieldState.mockResolvedValue(STATE);
+    rpc.fetchFarmCatalog.mockResolvedValue({
+      ...FARM, critters: [critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 })],
+    });
+    rpc.crabStart.mockImplementation(async (_room: string, _token: string, hole: number) => ({
+      serverNow: iso(0), mine: STATE.mine, visit: { id: `v${hole}`, hole, startedAt: NOW },
+    }));
+    const canvas = { setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn() } as unknown as GameCanvasHandle;
+    const { result } = renderHook(() => useFarmController({
+      token: "tok", roomId: "r", accountId: "me", mapId: "field", canvas: () => canvas, toast: noop, onCoinsChanged: noop,
+    }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    for (const it of getMap("field").interactables.filter((i) => i.kind === "crab_hole")) {
+      await act(async () => {
+        result.current.interact(it);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      act(() => result.current.closeCrab());
+    }
+    expect(rpc.crabStart.mock.calls.map(([, , hole]) => hole).sort()).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  // twelve whole games, frame by frame: about 1.5 s alone and several times that on a loaded machine, hence the timeout
+  it("CrabGame reports 0–3 hits whatever the input, once", () => {
+    let rng = 11;
+    for (let game = 0; game < 12; game++) {
+      const onEnd = vi.fn();
+      render(<CrabGame crab={{ hole: 1, visit: { id: "v", hole: 1, startedAt: 0 }, seed: game, begunAt: 0, phase: "playing", hits: null, message: null }}
+        panelOpen={false} onEnd={onEnd} onClose={noop} />);
+      for (let t = 0; t < 16_000; t += 50) {
+        rng = (rng * 1103515245 + 12345) % 2147483648;
+        if (rng % 5 === 0) fireEvent.keyDown(window, { code: "Space", key: " " });
+        act(() => { vi.advanceTimersByTime(50); });
+      }
+      expect(onEnd).toHaveBeenCalledTimes(1);
+      const [hits] = onEnd.mock.calls[0] as [number];
+      expect(Number.isInteger(hits) && hits >= 0 && hits <= 3).toBe(true);
+      cleanup();
+    }
+  }, 20_000);
 });

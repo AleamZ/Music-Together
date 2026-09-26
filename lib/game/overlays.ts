@@ -16,6 +16,8 @@ export interface OpenOverlays {
   farmWork: boolean;
   /** A round is open, HarvestGame (v15.2 §6.2) or TransplantGame (v15.3 §8): the avatar stays at the plot. */
   farmRound: boolean;
+  /** A crab visit is open in CrabGame (v15.3 §7.2): the avatar stays at the hole. */
+  farmCrab: boolean;
   /** A card table's panel (v16). */
   cardPanel: boolean;
   /** 📜 Sổ luật (v16). */
@@ -26,5 +28,5 @@ export interface OpenOverlays {
  *  and does not cancel the farm work (the field minds its own panels). */
 export function overlayLocks(o: OpenOverlays): { blocking: boolean; panelOpen: boolean } {
   const panelOpen = o.panel || o.fishingPanel || o.creating || o.anticheatModal || o.cardPanel || o.rulesBook;
-  return { blocking: panelOpen || o.farmPanel || o.farmWork || o.farmRound, panelOpen };
+  return { blocking: panelOpen || o.farmPanel || o.farmWork || o.farmRound || o.farmCrab, panelOpen };
 }

@@ -190,7 +190,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   //     an open overlay outside the field's own, not to the farm work
   const { blocking, panelOpen } = overlayLocks({
     panel: panel !== null, fishingPanel: fishing.panel !== null, creating, anticheatModal: anticheat.modal !== null,
-    farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null,
+    farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
     cardPanel: cards.panel !== null, rulesBook: cards.rules !== null,
   });
   useEffect(() => {
