@@ -49,6 +49,9 @@ export interface GameCanvasHandle {
   plotChanged: (p: number) => void;
   /** The hall's card-table labels (v16 spec §5). */
   setCardTables: (labels: Readonly<Partial<Record<CardGame, string>>>) => void;
+  /** The map whose world the canvas shows now, or null while it shows none: an answer that lands after I left a map is
+   *  dropped (v15.3 §7.2). */
+  mapId: () => MapId | null;
 }
 
 export interface GameCanvasProps {
@@ -89,6 +92,8 @@ export interface GameCanvasProps {
 export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...rest }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
+  // The map of the world that is up, set and cleared with its engine.
+  const worldRef = useRef<MapId | null>(null);
   const sendRef = useRef<((msg: GameMessage) => void) | null>(null);
   const propsRef = useRef(rest);
   // What every new engine must know again: my hand fish, the species names, the HUD inset, the input lock, the plots,
@@ -183,6 +188,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         cardTablesRef.current = labels;
         engineRef.current?.setCardTables(labels);
       },
+      mapId: () => worldRef.current,
     };
   }, [localId]);
 
@@ -288,6 +294,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     });
 
     engineRef.current = engine;
+    worldRef.current = map.id;
     sendRef.current = (msg) => channel.send(msg);
     engine.start();
     return () => {
@@ -295,6 +302,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       repliesRef.current = null;
       sendRef.current = null;
       engineRef.current = null;
+      worldRef.current = null;
       channel.leave({ t: "bye", id: localId });
       engine.destroy();
     };

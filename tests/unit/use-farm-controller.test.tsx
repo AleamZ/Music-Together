@@ -70,9 +70,11 @@ const field = (over: {
   },
 })!;
 
+/** The canvas, its world on the field (a test may move it on with `mapId.mockReturnValue`). */
 const handle = () => ({
-  setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(),
-}) as unknown as GameCanvasHandle & Record<"setPlots" | "farmAnim" | "plotChanged" | "plant" | "setGatherSpots", ReturnType<typeof vi.fn>>;
+  setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(), mapId: vi.fn(() => "field"),
+}) as unknown as GameCanvasHandle
+  & Record<"setPlots" | "farmAnim" | "plotChanged" | "plant" | "setGatherSpots" | "mapId", ReturnType<typeof vi.fn>>;
 const spot = (id: string): Interactable => getMap("field").interactables.find((i) => i.id === id)!;
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
@@ -743,6 +745,64 @@ describe("useFarmController, v15.3 crab holes", () => {
     await act(async () => { started(visit(3)); await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 2); });
     expect(view.result.current.crab).toBeNull();
     expect(fa(canvas, FARM_ANIM.crab)).toBe(0);
+  });
+
+  /** A transplant round's begin_work and a crab visit's crab_start, both on their way; the promises resolve them. */
+  async function bothOnTheirWay(result: { current: ReturnType<typeof useFarmController> }) {
+    let begun!: (a: unknown) => void;
+    rpc.fieldAction.mockReturnValueOnce(new Promise((resolve) => { begun = resolve; }));
+    let started!: (a: unknown) => void;
+    rpc.crabStart.mockReturnValueOnce(new Promise((resolve) => { started = resolve; }));
+    await act(async () => {
+      void result.current.act({ kind: "round", plot: 5, game: "transplant" });
+      result.current.interact(spot("crab_3"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "begin_work", plot: 5, work: "transplant" });
+    expect(rpc.crabStart).toHaveBeenCalledWith("r", "tok", 3);
+    return () => {
+      begun({ state: field(), harvest: null, harvestPart: null, picking: null, snails: null });
+      started(visit(3));
+    };
+  }
+
+  it("drops a begin_work or crab_start answer that lands after I left the field, before the task that closes the overlays", async () => {
+    const canvas = handle();
+    const view = renderHook(({ mapId }: { mapId: MapId }) => useFarmController({
+      token: "tok", roomId: "r", accountId: "me", mapId, canvas: () => canvas, toast: vi.fn(), onCoinsChanged: () => {},
+    }), { initialProps: { mapId: "field" as MapId } });
+    await flush();
+    const land = await bothOnTheirWay(view.result);
+    // the map has changed, and the canvas has not switched worlds yet; no timer runs, so the deferred close waits
+    view.rerender({ mapId: "pond" });
+    await act(async () => {
+      land();
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    });
+    expect(canvas.plant).not.toHaveBeenCalled();
+    expect(view.result.current.round).toBeNull();
+    expect(view.result.current.crab).toBeNull();
+    expect(fa(canvas, FARM_ANIM.transplant) + fa(canvas, FARM_ANIM.crab)).toBe(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUND_FA_MS * 2); });
+    expect(view.result.current.round).toBeNull();
+    expect(view.result.current.crab).toBeNull();
+    expect(fa(canvas, FARM_ANIM.transplant) + fa(canvas, FARM_ANIM.crab)).toBe(0);
+  });
+
+  it("drops a begin_work or crab_start answer that lands once the canvas shows another map, checked as it lands", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    const land = await bothOnTheirWay(result);
+    // the world has switched maps before this hook has rendered the new one
+    canvas.mapId.mockReturnValue("pond");
+    await act(async () => {
+      land();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(canvas.plant).not.toHaveBeenCalled();
+    expect(result.current.round).toBeNull();
+    expect(result.current.crab).toBeNull();
+    expect(fa(canvas, FARM_ANIM.transplant) + fa(canvas, FARM_ANIM.crab)).toBe(0);
   });
 });
 

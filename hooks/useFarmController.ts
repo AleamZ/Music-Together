@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { useField, type FieldData } from "@/hooks/useField";
 import { plotDraws } from "@/lib/game/art/crops";
@@ -347,8 +347,8 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   const roundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** A lost harvest round's report: it clears the server's record, so the next begin_work waits until it has landed. */
   const lostReport = useRef<Promise<unknown> | null>(null);
-  /** Counts the round overlay's closes (leaving the field is one): a begin_work or crab_start answer that comes back after
-   *  one is dropped. */
+  /** Counts the round overlay's closes (leaving the field is one, counted in the commit that leaves it): a begin_work or
+   *  crab_start answer that comes back after one is dropped. */
   const closes = useRef(0);
   const stopRoundAnim = useCallback(() => {
     if (!roundAnim.current) return;
@@ -368,9 +368,10 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     await lostReport.current;
     const begun = closes.current === closed ? await run({ kind: "begin_work", plot, work: game }) : null;
     setBusy(false);
-    // closed meanwhile (Esc, Nghỉ tay, the field left): the answer is dropped and the round stays closed
-    if (!begun || closes.current !== closed) return false;
+    // closed meanwhile (Esc, Nghỉ tay, the field left), or the canvas shows another map by now: the answer is dropped and
+    // the round stays closed
     const c = canvas();
+    if (!begun || closes.current !== closed || c?.mapId() !== "field") return false;
     const spot = getMap("field").interactables.find((i) => i.plot === plot);
     if (spot) c?.plant(spot.use, spot.face ?? "up");
     const anim = ROUND_ANIM[game];
@@ -473,9 +474,10 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     setBusy(true);
     const begun = await crabStart(it.spot, boxHeld(live.current.state, live.current.catalog));
     setBusy(false);
-    // the field left meanwhile: the answer is dropped, and the hole keeps its cooldown as after Dừng before a try (R8)
-    if (!begun || closes.current !== closed) return false;
+    // the field left meanwhile, or the canvas shows another map by now: the answer is dropped, and the hole keeps its
+    // cooldown as after Dừng before a try (R8)
     const c = canvas();
+    if (!begun || closes.current !== closed || c?.mapId() !== "field") return false;
     c?.plant(it.use, it.face ?? "down");
     c?.farmAnim(FARM_ANIM.crab);
     if (crabAnim.current) clearInterval(crabAnim.current);
@@ -556,6 +558,11 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     canvas()?.farmAnim(FARM_ANIM.stop);
   }, [canvas]);
 
+  // leaving the field drops a begin_work or crab_start answer still on its way from the commit that leaves it, before the
+  // canvas switches worlds (only a ref here: the overlays close in the task below)
+  useLayoutEffect(() => {
+    if (!active) closes.current += 1;
+  }, [active]);
   useEffect(() => {
     if (active) return;
     cancelWork();

@@ -179,6 +179,20 @@ describe("GameCanvas gathering cues across travel (v15.3 §13.1)", () => {
   });
 });
 
+describe("GameCanvas, the map its world shows (v15.3 §7.2)", () => {
+  it("names the map of the world that is up — the new one as soon as it has switched — and none once it is gone", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender, unmount } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(ref.current!.mapId()).toBe("field");
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    expect(engines.map((e) => e.mapId)).toEqual(["field", "pond"]);
+    expect(ref.current!.mapId()).toBe("pond");
+    const handle = ref.current!;
+    unmount();
+    expect(handle.mapId()).toBeNull();
+  });
+});
+
 describe("GameCanvas, my moves (v15.3 §7.3)", () => {
   it("tells the shell when I start walking or set off on a path, and sends them on; a stop or a jump is not a move", () => {
     const onLocalMove = vi.fn();
