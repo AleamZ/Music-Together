@@ -157,6 +157,14 @@ describe("FarmTasks", () => {
     render(<FarmTasksPanel farming={false} tasks={[]} onOpenHandbook={() => {}} onClose={() => {}} />);
     expect(screen.getByText("Bạn chưa có ruộng — ghé chú Tám ở Hợp tác xã thuê một thửa nhé.")).toBeInTheDocument();
   });
+  it("keys the lines by their place in the list, not by their text", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const twice = { plot: 5, text: "Thửa 5 · Sâu keo mùa thu! Xịt thuốc trừ sâu", urgent: true };
+    render(<FarmTasksPanel farming tasks={[twice, twice]} onOpenHandbook={() => {}} onClose={() => {}} />);
+    expect(screen.getAllByText(`❗ ${twice.text}`)).toHaveLength(2);
+    expect(error.mock.calls.filter(([m]) => String(m).includes("same key"))).toEqual([]);
+    error.mockRestore();
+  });
 });
 
 describe("PlotPanel, v15.2", () => {

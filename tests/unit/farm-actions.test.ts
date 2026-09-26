@@ -208,7 +208,10 @@ describe("dueTasks", () => {
   });
   it("follows the beds: planting, the ớt nursery, the hand jobs, the pickings, the water and the pests", () => {
     const tasks = (c: CropView, h: number) => dueTasks([plot(c)], "me", BEDS, BEDMINE, at(h)).map((t) => [t.text.replace("Thửa 5 · ", ""), t.urgent]);
-    expect(tasks(bed(null), 1)).toEqual([["Trồng hoa màu", false]]);
+    // bare beds: bón lót before planting, as on a paddy (on beds before P, the nursery included)
+    expect(tasks(bed(null), 1)).toEqual([["Bón lót (phân chuồng, phân lân)", false], ["Trồng hoa màu", false]]);
+    expect(tasks(bed(null, {}, [[0, 1]], [[0.5, "fert_manure"]]), 1)).toEqual([["Bón lót (phân chuồng, phân lân)", false], ["Trồng hoa màu", false]]);
+    expect(tasks(bed(null, {}, [[0, 1]], [[0.5, "fert_manure"], [0.5, "fert_phosphate"]]), 1)).toEqual([["Trồng hoa màu", false]]);
     // ớt sown at 0 h: its seedlings go out from 10 h and are old from 18 h
     const nursery = (fert: Array<[number, string]> = []) => bed("ot", { sowAt: at(0), plantAt: null }, [[0, 1], [12, 1]], fert);
     expect(tasks(nursery(), 5)).toEqual([["Bón lót (phân chuồng, phân lân)", false], ["Cây ớt con đang lớn — trồng được sau 5 giờ", false]]);
@@ -231,6 +234,14 @@ describe("dueTasks", () => {
     // ớt set out at 12 h and picked once at 59 h: the next picking is ripe at 70 h
     const ot = bed("ot", { sowAt: at(0), plantAt: at(12) }, [[0, 1], [59, 1]], [], [], [[59, 1, 24]]);
     expect(tasks(ot, 60)).toEqual([["Bón nuôi trái — còn 8 giờ", true], ["Hái ớt lứa 2 — chín sau 10 giờ", false]]);
+  });
+  it("says a pest once per plot, however many of its waves are on it", () => {
+    // bắp's two armyworm waves, both untreated at 30 h (Đẫm since 24 h: the water suits the knee stage)
+    const armyworm = (h: number): PestView => ({ kind: "armyworm", since: at(h), treatedAt: null });
+    const bap = plot(bed("bap", { pests: [armyworm(12), armyworm(29)] }, [[0, 1], [24, 2]]));
+    const list = dueTasks([bap], "me", BEDS, BEDMINE, at(30));
+    expect(list).toEqual([{ plot: 5, text: "Thửa 5 · Sâu keo mùa thu! Xịt thuốc trừ sâu", urgent: true }]);
+    expect(list.filter((t) => t.urgent)).toHaveLength(1);
   });
 });
 

@@ -390,11 +390,11 @@ export function dueTasks(plots: readonly PlotView[], me: string, catalog: FarmCa
   return out.sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.plot - b.plot);
 }
 
+/** One line per untreated pest kind: bắp's two armyworm waves are one job. */
 function pestTasks(crop: CropView, add: (text: string, urgent: boolean) => void): void {
-  for (const x of crop.pests) {
-    if (x.treatedAt !== null) continue;
-    const remedy = PEST_REMEDY[x.kind];
-    add(`${PEST_NAME[x.kind]}! ${remedy ? `Xịt ${REMEDY_LABEL[remedy]}` : "Bắt ốc hoặc tháo cạn nước"}`, true);
+  for (const kind of new Set(crop.pests.filter((x) => x.treatedAt === null).map((x) => x.kind))) {
+    const remedy = PEST_REMEDY[kind];
+    add(`${PEST_NAME[kind]}! ${remedy ? `Xịt ${REMEDY_LABEL[remedy]}` : "Bắt ốc hoặc tháo cạn nước"}`, true);
   }
 }
 
@@ -403,6 +403,9 @@ function bedTasks(crop: CropView, catalog: FarmCatalog, now: number, add: (text:
   const u = uplandOf(crop, catalog);
   const c = uplandModel(crop);
   if (!u) {
+    // bón lót goes on before planting, as on a paddy (with nothing planted, every bag so far is before P)
+    const base = (item: string) => c.fert.some((e) => e.item === item);
+    if (!base("fert_manure") || !base("fert_phosphate")) add("Bón lót (phân chuồng, phân lân)", false);
     add("Trồng hoa màu", false);
     return;
   }

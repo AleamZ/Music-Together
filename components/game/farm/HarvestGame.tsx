@@ -113,6 +113,8 @@ export default function HarvestGame({ round, busy, panelOpen, varietyName, onEnd
   }, [panelOpen, round.phase, round.slow, onClose]);
 
   const done = round.phase === "won" && round.result?.done === true;
+  // the part the server cut: another tab may have cut one since the round began
+  const cut = round.result?.parts ?? round.part;
   const button = (label: string, onClick: () => void, primary = false) => (
     <button type="button" className={`pch-btn${primary ? " pch-btn-primary" : ""}`} disabled={busy} onClick={onClick}>{label}</button>
   );
@@ -138,12 +140,12 @@ export default function HarvestGame({ round, busy, panelOpen, varietyName, onEnd
             <p role="status">
               {done
                 ? partsDoneText(round.plot, round.result!.total, varietyName)
-                : partText(round.part, round.result?.kg ?? 0)}
+                : partText(cut, round.result?.kg ?? 0)}
             </p>
             <div className="flex flex-wrap justify-center gap-2">
               {done ? button("Đóng", onClose, true) : (
                 <>
-                  {button(`Gặt tiếp phần ${round.part + 1}`, onNext, true)}
+                  {button(`Gặt tiếp phần ${cut + 1}`, onNext, true)}
                   {button("Nghỉ tay", onClose)}
                 </>
               )}

@@ -254,8 +254,10 @@ export function handbookPage(tab: HandbookTab, varieties: readonly Variety[], up
 export function handbookTabFor(crop: CropView | null, v: Variety | null, now: number): HandbookTab {
   if (!crop) return "process";
   if (crop.kind === "upland") return crop.upland ?? "process";
+  // a partly cut plot takes no spray (R8): what matters is finishing the cut, whatever pests it has
+  if (crop.parts > 0) return "tools";
   if (crop.pests.some((p) => p.treatedAt === null)) return "pests";
   const ph = cropPhase(cropModel(crop), v, now);
-  if (ph === "ripe" || ph === "overripe" || crop.parts > 0) return "tools";
+  if (ph === "ripe" || ph === "overripe") return "tools";
   return ph === "tillering" || ph === "panicle" ? "fertilizer" : "process";
 }

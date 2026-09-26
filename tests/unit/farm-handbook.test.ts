@@ -52,6 +52,8 @@ describe("handbook", () => {
     // v15.2: ripe or partly cut rice opens Nông cụ; beds open their crop's tab
     expect(handbookTabFor(crop({}), nep, at(12 + 49))).toBe("tools");
     expect(handbookTabFor(crop({ parts: 2 }), nep, at(12 + 47))).toBe("tools");
+    // a partly cut plot takes no spray (R8): its pests do not send it to Sâu bệnh
+    expect(handbookTabFor(crop({ parts: 2, pests: [{ kind: "hopper", since: at(12 + 46), treatedAt: null }] }), nep, at(12 + 49))).toBe("tools");
     expect(handbookTabFor(crop({ kind: "upland", variety: null, upland: "ot" }), null, at(20))).toBe("ot");
     expect(handbookTabFor(crop({ kind: "upland", variety: null, upland: null }), null, at(20))).toBe("process");
   });

@@ -111,6 +111,13 @@ describe("HarvestGame", () => {
     expect([onNext.mock.calls.length, onClose.mock.calls.length]).toEqual([1, 1]);
   });
 
+  it("names the part the server cut, not the one the round began on", () => {
+    // another tab cut part 2 meanwhile: this round's answer is part 3
+    show(round({ phase: "won", score: 6, result: { variety: "nep", kg: 12, parts: 3, total: 37, done: false } }));
+    expect(screen.getByText("✅ Xong phần 3/6: 12 kg lúa.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Gặt tiếp phần 4" })).toBeInTheDocument();
+  });
+
   it("says a failed round's score, printed with a comma, with Thử lại", () => {
     const { onNext } = show(round({ phase: "lost", score: 3.5 }));
     expect(screen.getByText("❌ Được 3,5/8 điểm — cần 4. Thử lại ngay nhé!")).toBeInTheDocument();

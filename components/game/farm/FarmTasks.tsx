@@ -32,8 +32,9 @@ export default function FarmTasksPanel({ tasks, farming, onOpenHandbook, onClose
           <p>{farming ? "Ruộng đang ổn, chưa cần làm gì." : "Bạn chưa có ruộng — ghé chú Tám ở Hợp tác xã thuê một thửa nhé."}</p>
         ) : (
           <ul className="flex flex-col gap-1">
-            {tasks.map((t) => (
-              <li key={t.text} className={t.urgent ? "text-burgundy" : ""}>{t.urgent ? "❗ " : "• "}{t.text}</li>
+            {tasks.map((t, i) => (
+              // two lines may read the same: the list is rebuilt whole each time, so its order is the key
+              <li key={i} className={t.urgent ? "text-burgundy" : ""}>{t.urgent ? "❗ " : "• "}{t.text}</li>
             ))}
           </ul>
         )}
