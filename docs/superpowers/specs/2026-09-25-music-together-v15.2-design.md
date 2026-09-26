@@ -56,7 +56,7 @@ The server stays authoritative. Every timer, yield, charge and roll lives in SEC
 | R1 | The code name for hoa màu is `upland` (`upland_crops`, `lib/game/farm/upland.ts`, `_up_*`). | "Color" reads as a colour in English code. "Upland crop" is the agronomic term for the dry crop in a rice–upland rotation. |
 | R2 | Both kinds share the one `crops` row per plot, with a new `kind` column. | The sweep, `_has_crop`, the land checks, abandon and the wipe keep working unchanged. |
 | R3 | Prices: sickle 1 500, sprayer 5 000, harvester 500 per remaining part (3 000 a whole plot). Seeds: khoai 800, bắp 1 000, ớt 1 500. | See §10. |
-| R4 | The newcomer gift adds a sickle for accounts that claim from `0016` on, and `0016` backfills one for each account that took the gift before it, a wiped account excepted (idempotent). | Rice now needs a tool, and a first-season player must not find that out at harvest. A player who took the gift before `0016` would otherwise have no sickle. |
+| R4 | The newcomer gift adds a sickle for accounts that claim from `0016` on, and `0016` backfills one for each account that took the gift before it, except an account wiped after it took the gift, even once pardoned (idempotent; a pardon restores no data, anti-cheat R8). | Rice now needs a tool, and a first-season player must not find that out at harvest. A player who took the gift before `0016` would otherwise have no sickle. |
 | R5 | Part i (1..6) pays `floor(i·Y/6) − floor((i−1)·Y/6)` kg of wet rice at once, where Y is `_crop_yield(…, t).kg` at that part's cut. The harvester pays each remaining i the same way at its end time. The crop keeps `harvested_parts` and `harvested_kg`. | At a constant Y the six parts sum to exactly Y, so splitting never inflates a harvest. Integer math keeps SQL and TS equal. |
 | R6 | A `begin_work` replaces any earlier work record on the plot. `harvest_part(true)` accepts the record only while 8 s ≤ now − `work_started_at` ≤ 120 s: earlier is `too fast`, later is `work expired`. The client waits 9 s from the `begin_work` answer. | An honest round always passes, two tabs can reset the start, and an Esc or a disconnect never leaves a plot stuck. Accepted residual: a script can claim a part every 8 s (§11.5). |
 | R7 | A failed round is reported (`p_success = false`) with no gate: it clears `work` and cuts nothing. A null `p_success` counts as false and is not flagged. | This is H1's "costs nothing, retry at once", and it matches `finish_cast`. |
@@ -202,7 +202,8 @@ part_kg_i = (i * Y(t)) / 6 - ((i - 1) * Y(t)) / 6       -- SQL integer division;
    - After each release, a 0.35 s cut beat ignores input.
    - **Success** is a score ≥ 4 of 8. A typical round takes 10–14 s.
 4. **Success.** The client waits until **9 s** after the `begin_work` answer (it shows "Đang bó lúa…"), then calls `harvest_part(plot, true)`. The server accepts the part only if `work = 'harvest'` and 8 s ≤ `p_now − work_started_at` ≤ 120 s. Otherwise it raises `too fast` (no record, or too early) or `work expired` (R6). An accepted part clears `work`, so every part needs its own `begin_work`.
-5. **Failure.** The client calls `harvest_part(plot, false)` at once, with no gate. The server clears `work` and cuts nothing. "Thử lại" starts a new round with a new `begin_work`.
+5. **Failure.** The client calls `harvest_part(plot, false)` at once, with no gate. The server clears `work` and cuts nothing. "Thử lại" starts a new round with a new `begin_work`, sent only after that failure report has settled, so the report can never clear the new round's record.
+6. **Limits.** A round left idle ends itself after 110 s (the server's 120 s window less a margin), with "Lượt gặt đã quá lâu — bắt đầu lại nhé.". A success whose claim is still unanswered after 15 s offers "Nghỉ tay" (and Esc), which closes the overlay; a late answer still updates the field, without a toast.
 
 **Input and leaving.** The v14 input rules apply (the typing guard, pointer, touch, Space). Movement is locked while the overlay is open. Under reduced motion the bar still moves, without shake effects.
 - **Esc, "Huỷ" or a disconnect** sends nothing. The leftover record expires after 120 s, and the next `begin_work` replaces it anyway, so a plot is never stuck.
@@ -705,7 +706,7 @@ The two `harvest_part` rows need the call's context: `farmErrorMessage(err, item
   | `harvest_label`, plus " (lứa {k}/{n})" when n > 1 | "Chưa chín — {đào khoai} được sau {d}." · "Tháo bớt nước trước khi {đào khoai} (đang {Đẫm})." |
 - **Rice, ripe:** "Gặt bằng liềm", then "Gặt tiếp (phần {n+1}/6)".
   - Hint: "Mỗi phần là một lượt 8 bó — đạt 4 điểm là xong phần."
-  - Reasons: "Chưa có liềm — mua ở tiệm anh Hai.", "Rút nước trước khi gặt (đang {Nông}).", "Máy gặt đang gặt thửa này.", while ripening "Lúa chưa chín — gặt được sau {d}.", and in the lease's last 25 s "Sắp hết hạn thuê — không kịp gặt phần này." (R11).
+  - Reasons: before `0016` (a catalog with no `tool` item) `NOT_OPEN_152` comes first; then "Chưa có liềm — mua ở tiệm anh Hai.", "Rút nước trước khi gặt (đang {Nông}).", "Máy gặt đang gặt thửa này.", while ripening "Lúa chưa chín — gặt được sau {d}.", and in the lease's last 25 s "Sắp hết hạn thuê — không kịp gặt phần này." (R11).
   - A note line: "🚜 Hoặc thuê máy gặt ở Hợp tác xã: 30 giây, 500 xu mỗi phần còn lại."
 - **Rice, partly cut:** status "🌾 Đã gặt {2}/6 phần ({25} kg)". Only "Gặt tiếp" and "Bỏ vụ" are offered; Bỏ vụ warns "Bỏ vụ là mất phần lúa chưa gặt."
 - **A running harvester:** "🚜 Máy gặt đang gặt — còn {25} giây", counting down in a 1 s local tick while the panel is open. No buttons.
@@ -719,6 +720,7 @@ The two `harvest_part` rows need the call's context: `farmErrorMessage(err, item
 - **Success:** "✅ Xong phần {k}/6: {13} kg lúa.", with "Gặt tiếp phần {k+1}" and "Nghỉ tay". After the sixth part: "🌾 Gặt xong thửa {3}: tổng {75} kg {nếp} (lúa ướt) — đem phơi rồi bán cho cô Út nhé!", with "Đóng".
 - **Refusals:** the §11.7 text with the `harvest_part` context: `too fast` reads "Chưa xong bó lúa — thử lại sau vài giây.", and `not your plot` (the lease ran out mid-round) reads "Hết hạn thuê — phần lúa chưa gặt đã mất."
 - **Failure:** "❌ Được {3,5}/8 điểm — cần 4. Thử lại ngay nhé!", with "Thử lại" and "Nghỉ tay". **Cancel:** "Huỷ (Esc)".
+- **Limits (§6.2 step 6):** an idle round ends with "Lượt gặt đã quá lâu — bắt đầu lại nhé."; a claim unanswered for 15 s shows "Nghỉ tay" under "Đang bó lúa…". The title and "Xong phần" name the part the server cut.
 
 ### 13.3 Task list (`dueTasks`)
 
@@ -729,8 +731,8 @@ Each line reads "Thửa {n} · …". The panel ticks every second while a harves
 | bare plot | "Làm đất (ruộng lúa hoặc lên luống)" | no |
 | rice, partly cut | "Gặt tiếp — đã gặt {2}/6 phần" | when overripe |
 | harvester running | "Máy gặt đang gặt — còn {25} giây" | no |
-| rice from heading on, no sickle | "Chưa có liềm — mua ở tiệm anh Hai hoặc thuê máy gặt" | once ripe |
-| beds, nothing planted | "Trồng hoa màu" | no |
+| rice from heading on, no sickle | "Chưa có liềm — mua ở tiệm anh Hai hoặc thuê máy gặt"; before `0016` (no `tool` in the catalog) `NOT_OPEN_152` instead | once ripe |
+| beds, nothing planted | "Bón lót (phân chuồng, phân lân)" while either is missing, and "Trồng hoa màu" | no |
 | ớt nursery | "Cây ớt con đang lớn — trồng được sau {d}", then "Trồng cây ớt con" | once old |
 | an open care window | "{Lật dây} — còn {d}" | yes |
 | picking | "{Đào khoai} — còn {d}" · "{Hái ớt} ngay — đang hư!" · "{Hái ớt} lứa {2} — chín sau {d}" | last 3 h · yes · no |

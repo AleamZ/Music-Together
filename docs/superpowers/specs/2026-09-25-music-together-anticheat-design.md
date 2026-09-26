@@ -1262,7 +1262,7 @@ After a refused action, its reason stays even when the reload fails too.
 | envelope `strike: 0` | the RPC's error function | its `error`, mapped as before. For example, `invalid quantity` in the fishing shop gives `Món này không mua được.`, and `invalid price` gives `Số không hợp lệ.` |
 | envelope `strike: 1` | `useFishing`, `useField` | no toast: the warning modal (§12.2) |
 | envelope `strike: 2` | `useFishing`, `useField` | no toast: the ban modal, then logout |
-| `invalid quality`, `invalid video`, `invalid slot`, `invalid work`, `invalid item` | — | not mapped: an honest client cannot trigger them. The generic `Có lỗi, thử lại nhé.` stays. |
+| `invalid quality`, `invalid video`, `invalid slot`, `invalid work`, `invalid item` | — | not mapped: a current client cannot trigger them. The one exception is a cached v15.1 client after `0016`: it offers to soak a hoa-màu seed and gets `invalid item` (no strike, the seed is kept; line 395). The generic `Có lỗi, thử lại nhé.` stays. |
 | admin errors | `AnticheatTab` | §12.5 |
 
 ## 14. Realtime client hardening
