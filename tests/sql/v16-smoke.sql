@@ -1248,6 +1248,33 @@ begin
                       and has_function_privilege('anon', p.oid, 'execute')), 'the poker helpers are private';
 end $$;
 
+-- Hand 7: both blinds stand up before the button acts; the button, which put nothing, takes the 1 500 they left (§9.2):
+-- the pots hold every chip put in while a seat is live.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c3 text := (select v from smoke where k = 'c3');
+        c4 text := (select v from smoke where k = 'c4'); t public.card_tables;
+begin
+  perform public.card_sit(room, c1, 'poker', 1, 1000, 50000);
+  perform public.card_sit(room, c3, 'poker', 2, 1000, 50000);
+  perform public.card_sit(room, c4, 'poker', 3, 1000, 50000);
+  update public.card_tables set pos = 3 where room_id = room and game = 'poker';
+  update smoke set v = pg_temp.total()::text where k = 'm';
+  t := pg_temp.pk_due(pg_temp.deck('AS AD', 'KS KD', 'QS QD', '2C 6H 9C JC 4H'));
+  assert t.pub->'button' = '1' and t.pub->'sb' = '2' and t.pub->'bb' = '3' and t.turn = 1, format('the button acts first: %s', t.pub);
+  perform public.card_leave(room, c3, 'poker');
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the small blind stands up';
+  perform public.card_leave(room, c4, 'poker');
+  t := pg_temp.pt();
+  assert pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'zero-sum after the big blind stands up: no chip vanishes';
+  assert t.phase = 'result'
+         and pg_temp.presult() = '{"pots": [[1500, [1], [1]]], "net": {"1": 1500, "2": -500, "3": -1000}, "uncontested": true}'
+         and pg_temp.chips() = '{"1": 51500}', format('the button takes the blinds: %s', t.last);
+  perform public.card_leave(room, c1, 'poker');
+  assert not exists (select 1 from public.card_seats where room_id = room)
+         and pg_temp.total() = (select v from smoke where k = 'm')::bigint, 'cashed out';
+end $$;
+
 select 'v16 poker smoke ok' as result;
 
 -- ---------- Holdings, wipes and deletions (§6.3, §11.5, R32), membership (R38), and the guards ----------

@@ -81,16 +81,16 @@ export interface PkSeatPut { put: number; fold?: boolean; allin?: boolean }
 export interface PkPot { xu: number; seats: number[]; winners?: number[]; shares?: Record<number, number> }
 
 /** The pots of a hand (§9.2): a level at each live all-in total and at the highest live total; each pot goes to the live
- *  seats that reach its level, and the top pot also takes every folded chip above the highest live total. With the live
- *  hands' keys (or one eligible seat) each pot gets its winners; its odd xu go one at a time to the winners in seat order
- *  starting left of the button (TDA 20). */
+ *  seats that reach its level, and the top pot also takes every folded chip above the highest live total — when no live
+ *  seat has put anything, those chips are the one pot, for the live seats. So while a seat is live the pots hold every
+ *  chip put in. With the live hands' keys (or one eligible seat) each pot gets its winners; its odd xu go one at a time
+ *  to the winners in seat order starting left of the button (TDA 20). */
 export function pkPots(p: { players: Readonly<Record<number, PkSeatPut>>; keys?: Readonly<Record<number, readonly number[]>> | null; button: number | null }): PkPot[] {
   const seats = Object.keys(p.players).map(Number).sort((a, b) => a - b);
   const live = seats.filter((s) => !p.players[s].fold);
   const put = (s: number) => p.players[s].put;
   if (live.length === 0) return [];
   const top = Math.max(...live.map(put));
-  if (top <= 0) return [];
   const levels = [...new Set([...live.filter((s) => p.players[s].allin).map(put), top])].filter((x) => x > 0).sort((a, b) => a - b);
   const pots: PkPot[] = [];
   let prev = 0;
@@ -105,7 +105,8 @@ export function pkPots(p: { players: Readonly<Record<number, PkSeatPut>>; keys?:
     prev = lvl;
   }
   const over = seats.reduce((a, s) => a + Math.max(put(s) - top, 0), 0);
-  if (over > 0) pots[pots.length - 1].xu += over;
+  if (over > 0 && pots.length === 0) pots.push({ xu: over, seats: [...live] });
+  else if (over > 0) pots[pots.length - 1].xu += over;
   const btn = p.button;
   const order = (s: number) => (btn === null ? s : (s - btn + 5) % 6);
   return pots.map((pot) => {

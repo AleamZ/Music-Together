@@ -21,6 +21,39 @@ const FX = fixtures as unknown as {
   };
 };
 const keyed = <T,>(o: Record<string, T>): Record<number, T> => Object.fromEntries(Object.entries(o).map(([k, v]) => [Number(k), v]));
+const sum = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0);
+
+/** The pots' invariant (§9.2): while a seat is live, the pots hold every chip put in, each for live seats only, and a
+ *  pot's shares add up to it; with no live seat there is no pot. */
+function potsKeepEveryChip(players: Record<number, PkSeatPut>, keys: Record<number, number[]> | null, button: number, what: string) {
+  const pots = pkPots({ players, keys, button });
+  const seats = Object.keys(players).map(Number);
+  const live = seats.filter((s) => !players[s].fold);
+  if (live.length === 0) {
+    expect(pots, what).toEqual([]);
+    return;
+  }
+  expect(sum(pots.map((p) => p.xu)), what).toBe(sum(seats.map((s) => players[s].put)));
+  for (const p of pots) {
+    expect(p.xu > 0 && p.seats.length > 0 && p.seats.every((s) => live.includes(s)), what).toBe(true);
+    if (p.winners) {
+      expect(p.winners.every((s) => p.seats.includes(s)), what).toBe(true);
+      expect(sum(Object.values(p.shares ?? {})), what).toBe(p.xu);
+    }
+  }
+}
+
+/** A small seeded generator (mulberry32): the random hands are the same on every run. */
+function seeded(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 describe("the shared Cào fixtures (the SQL smoke replays the same cases)", () => {
   it("hand values", () => {
@@ -70,6 +103,9 @@ describe("the shared poker fixtures (the SQL smoke replays the same cases)", () 
       expect(pkPots({ players: keyed(k.players), keys: k.keys ? keyed(k.keys) : null, button: k.button })).toEqual(k.expect);
     });
   }
+  it("while a seat is live, the pots hold every chip put in", () => {
+    for (const k of FX.poker.pots) potsKeepEveryChip(keyed(k.players), k.keys ? keyed(k.keys) : null, k.button, k.name);
+  });
   it("names a hand", () => {
     expect(pkHandName([1, 13, 9, 7, 4])).toBe("Đôi K");
     expect(pkHandName([2, 14, 8, 5])).toBe("Thú A và 8");
@@ -77,6 +113,27 @@ describe("the shared poker fixtures (the SQL smoke replays the same cases)", () 
     expect(pkHandName([6, 13, 4])).toBe("Cù lũ K 4");
     expect(pkHandName([0, 14, 12, 9, 7, 5])).toBe("Mậu thầu A");
     expect(pkHandName(pkEval(cardsOf(["KS", "KD"])))).toBe("Đôi K");
+  });
+});
+
+describe("pkPots keeps every chip (§9.2)", () => {
+  it("2 000 random hands: while a seat is live, the pots hold every chip put in", () => {
+    const r = seeded(16);
+    const pick = (n: number) => Math.floor(r() * n);
+    let nothingLive = 0;
+    for (let n = 0; n < 2000; n++) {
+      const seats = [1, 2, 3, 4, 5, 6].filter(() => r() < 0.6);
+      if (seats.length === 0) continue;
+      // a seat puts nothing about a third of the time, so every live seat has put nothing in many hands
+      const players: Record<number, PkSeatPut> = Object.fromEntries(seats.map((s) => [s, {
+        put: r() < 0.35 ? 0 : 1 + pick(5000), fold: r() < 0.4, allin: r() < 0.3,
+      }]));
+      const live = seats.filter((s) => !players[s].fold);
+      if (live.length > 0 && live.every((s) => players[s].put === 0) && seats.some((s) => players[s].put > 0)) nothingLive += 1;
+      const keys = r() < 0.5 ? Object.fromEntries(seats.map((s) => [s, [pick(3), 2 + pick(3)]])) : null;
+      potsKeepEveryChip(players, keys, seats[pick(seats.length)], JSON.stringify({ players, keys }));
+    }
+    expect(nothingLive).toBeGreaterThan(50);
   });
 });
 

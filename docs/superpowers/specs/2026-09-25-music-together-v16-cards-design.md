@@ -491,6 +491,7 @@ leave(p):  fold p, even out of turn; the stack → wallet; `put` stays (§6.3)
   - For each level L: `pot = Σ (min(put, L) − min(put, previous level))`, and it is eligible to the live seats with `put ≥ L`.
   - Pots with the same eligible seats merge.
   - The top pot also takes every folded chip above the highest live total (a player who left while holding the top bet), so every committed chip lands in a pot.
+  - When no live seat has put anything (both blinds stood up before the button acted), there is no level: every chip put in forms one pot, eligible to the live seats. So while a seat is live, the pots always hold every chip put in.
 - **After the hand:** `result` lasts 6 s (3 s when uncontested), then the next deal. A seat with 0 chips may top up during `result`; if it has still 0 at the deal, it is stood up.
 
 ### 9.3 Examples

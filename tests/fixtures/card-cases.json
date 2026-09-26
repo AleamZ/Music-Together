@@ -444,6 +444,11 @@
         "expect": [{ "xu": 4500, "seats": [1], "winners": [1], "shares": { "1": 4500 } }]
       },
       {
+        "name": "the blinds left before the button acted: the one live seat, which put nothing, takes every chip",
+        "players": { "1": { "put": 0 }, "2": { "put": 500, "fold": true }, "3": { "put": 1000, "fold": true } }, "button": 1,
+        "expect": [{ "xu": 1500, "seats": [1], "winners": [1], "shares": { "1": 1500 } }]
+      },
+      {
         "name": "§9.3: the odd chip goes to the winner first left of the button",
         "players": { "2": { "put": 1500 }, "3": { "put": 1500 }, "4": { "put": 1, "fold": true } },
         "keys": { "2": [1, 13, 9, 7, 4], "3": [1, 13, 9, 7, 4] }, "button": 3,

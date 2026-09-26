@@ -548,10 +548,12 @@ begin
 end $$;
 
 -- The pots of a hand (§9.2): a level at each live all-in total and at the highest live total; each pot goes to the live
--- seats that reach its level, and the top pot also takes every folded chip above the highest live total. With the live
--- hands' keys (or a single eligible seat) each pot gets its winners, and its odd xu go one at a time to the winners in
--- seat order starting left of the button (TDA 20). p = {players: {seat: {put, fold, allin}}, keys: {seat: key}, button};
--- the answer is [{xu, seats, winners, shares: {seat: xu}}] (winners and shares only when they are known).
+-- seats that reach its level, and the top pot also takes every folded chip above the highest live total — when no live
+-- seat has put anything, those chips are the one pot, for the live seats. So while a seat is live the pots hold every
+-- chip put in. With the live hands' keys (or a single eligible seat) each pot gets its winners, and its odd xu go one at
+-- a time to the winners in seat order starting left of the button (TDA 20). p = {players: {seat: {put, fold, allin}},
+-- keys: {seat: key}, button}; the answer is [{xu, seats, winners, shares: {seat: xu}}] (winners and shares only when
+-- they are known).
 create or replace function public._pk_pots(p jsonb) returns jsonb
 language plpgsql immutable set search_path = public, extensions
 as $$
@@ -560,7 +562,7 @@ declare pl jsonb := coalesce(p->'players', '{}'); btn integer := (p->>'button'):
         w integer[]; best integer[]; q integer; r integer;
 begin
   top := (select max((v->>'put')::int) from jsonb_each(pl) e(k, v) where not coalesce((v->>'fold')::boolean, false));
-  if top is null or top <= 0 then
+  if top is null then
     return '[]';
   end if;
   lv := array(select distinct x from (select (v->>'put')::int x from jsonb_each(pl) e(k, v)
@@ -582,7 +584,10 @@ begin
     prev := lvl;
   end loop;
   amt := (select coalesce(sum(greatest((v->>'put')::int - top, 0)), 0) from jsonb_each(pl) e(k, v));
-  if amt > 0 then
+  if amt > 0 and jsonb_array_length(pots) = 0 then
+    pots := jsonb_build_array(jsonb_build_object('xu', amt, 'seats', to_jsonb(array(
+              select k::int from jsonb_each(pl) e(k, v) where not coalesce((v->>'fold')::boolean, false) order by k::int))));
+  elsif amt > 0 then
     pots := jsonb_set(pots, array[(jsonb_array_length(pots) - 1)::text, 'xu'], to_jsonb((pots->-1->>'xu')::int + amt));
   end if;
   for pot in select value from jsonb_array_elements(pots) loop
