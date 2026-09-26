@@ -1806,9 +1806,9 @@ begin
   return true;
 end $$;
 
--- The checks after an act (§9.2): nobody left in the hand → refund; one player left → the pots to them (uncontested);
--- nobody to act → the street ends; else the next pending seat (only when the turn moves: a player who leaves out of
--- turn does not move it).
+-- The checks after an act (§9.2): nobody left in the hand → refund (_pk_leave refunds itself, knowing who it took out,
+-- so this is only a safety net); one player left → the pots to them (uncontested); nobody to act → the street ends;
+-- else the next pending seat (only when the turn moves: a player who leaves out of turn does not move it).
 create or replace function public._pk_after(p_room uuid, p_from integer, p_now timestamptz, p_move boolean) returns void
 language plpgsql security definer set search_path = public, extensions
 as $$
@@ -1817,7 +1817,7 @@ begin
   select pub into v_pub from public.card_tables where room_id = p_room and game = 'poker';
   v_live := (select count(*) from jsonb_each(v_pub->'players') where not (value->>'fold')::boolean);
   if v_live = 0 then
-    perform public._pk_refund(p_room, p_now);
+    perform public._pk_refund(p_room, p_now, '{}');
   elsif v_live = 1 then
     perform public._pk_award(p_room, p_now);
   elsif not exists (select 1 from jsonb_each(v_pub->'players') where (value->>'pending')::boolean) then
@@ -2024,28 +2024,55 @@ begin
     public._pk_pots(jsonb_build_object('players', t.pub->'players', 'button', t.pub->'button')), null, true);
 end $$;
 
--- Nobody left in the hand (every live player removed by one sweep): each contribution goes back to its contributor — to
--- the stack while the seat is still theirs, else to the wallet (card_refund); a deleted account's went with it — and the
--- hand ends without a winner.
-create or replace function public._pk_refund(p_room uuid, p_now timestamptz) returns void
+-- Nobody left in the hand: one sweep took out every live player at once (p_live: the seats it took out of the hand).
+-- The hand ends without a winner. Each contribution goes back to its contributor, to the stack while the seat is still
+-- theirs, else to the wallet (card_refund), except those of banned accounts (as _card_room_gone decides it: an
+-- anti-cheat ban, pending or wiped, always sets is_banned) and of deleted ones. Their wallets are never touched, so a
+-- wipe's deleted wallet is never re-created. As at a room deletion, that dead money is split equally among the seats
+-- still in the hand, here p_live's seats in good standing, the odd xu from the button (§9.1); a seat that folded
+-- earlier gets only its own back. With no such seat, the dead money goes with the banned and deleted accounts that put
+-- it in. `last.net` shows what each seat got back minus what it put in.
+drop function if exists public._pk_refund(uuid, timestamptz);
+create or replace function public._pk_refund(p_room uuid, p_now timestamptz, p_live integer[]) returns void
 language plpgsql security definer set search_path = public, extensions
 as $$
-declare t public.card_tables; r record;
+declare t public.card_tables; r record; v_back jsonb := '{}'::jsonb; v_dead integer := 0; v_to integer[]; q integer;
+        m integer;
 begin
   select * into t from public.card_tables where room_id = p_room and game = 'poker';
-  for r in select key::int as seat, (value->>'id')::uuid as id, (value->>'put')::int as put from jsonb_each(t.pub->'players')
-            where (value->>'put')::int > 0 order by (value->>'id') loop
-    update public.card_seats set chips = chips + r.put
+  for r in select key, (value->>'id')::uuid as id, (value->>'put')::int as put from jsonb_each(t.pub->'players')
+            where (value->>'put')::int > 0 loop
+    if exists (select 1 from public.accounts a where a.id = r.id and not a.is_banned) then
+      v_back := v_back || jsonb_build_object(r.key, r.put);
+    else
+      v_dead := v_dead + r.put;
+    end if;
+  end loop;
+  v_to := array(select s from unnest(p_live) s
+                 where exists (select 1 from public.accounts a
+                                where a.id = (t.pub->'players'->(s::text)->>'id')::uuid and not a.is_banned));
+  if v_dead > 0 and cardinality(v_to) > 0 then
+    q := v_dead / cardinality(v_to);
+    m := v_dead % cardinality(v_to);
+    for r in select s, row_number() over (order by (s - (t.pub->>'button')::int + 5) % 6) as n from unnest(v_to) s loop
+      v_back := v_back || jsonb_build_object(r.s::text, coalesce((v_back->>(r.s::text))::int, 0) + q
+                                                         + case when r.n <= m then 1 else 0 end);
+    end loop;
+  end if;
+  for r in select e.key::int as seat, (t.pub->'players'->e.key->>'id')::uuid as id, e.value::int as xu
+             from jsonb_each_text(v_back) e order by (t.pub->'players'->e.key->>'id')::uuid loop
+    update public.card_seats set chips = chips + r.xu
      where room_id = p_room and game = 'poker' and seat = r.seat and account_id = r.id and not leaving;
-    if not found and exists (select 1 from public.accounts where id = r.id) then
+    if not found then
       perform public._wallet_lock(r.id);
-      perform public._pay(r.id, r.put, 'card_refund', public._card_ref('poker', t.hand_no));
+      perform public._pay(r.id, r.xu, 'card_refund', public._card_ref('poker', t.hand_no));
     end if;
   end loop;
   update public.card_tables
      set last = jsonb_build_object('hand_no', t.hand_no, 'board', t.pub->'board', 'uncontested', false, 'cancelled', true,
                                    'shown', '{}'::jsonb, 'pots', '[]'::jsonb,
-                                   'net', (select jsonb_object_agg(key, 0) from jsonb_each(t.pub->'players'))),
+                                   'net', (select jsonb_object_agg(key, coalesce((v_back->>key)::int, 0) - (value->>'put')::int)
+                                             from jsonb_each(t.pub->'players'))),
          phase = 'result', turn = null, deadline = p_now + interval '6 seconds'
    where room_id = p_room and game = 'poker';
   delete from public.card_seats where room_id = p_room and game = 'poker' and leaving;
@@ -2074,14 +2101,17 @@ end $$;
 
 -- The leave operation in a live hand (§6.3), with the table's wallets locked: the seats fold, even out of turn; their
 -- stacks go back to their wallets at once (card_cashout) and what they put stays in the pot; the rows stay `leaving`
--- (chips 0) until the hand ends. Then the checks after an act; the turn moves on only if it was theirs.
+-- (chips 0) until the hand ends. Then the checks after an act; the turn moves on only if it was theirs. When they were
+-- the last players in the hand, it is refunded, their seats being the ones still in it (_pk_refund).
 create or replace function public._pk_leave(p_room uuid, p_seats integer[], p_how text, p_now timestamptz) returns void
 language plpgsql security definer set search_path = public, extensions
 as $$
-declare t public.card_tables; v_pub jsonb; s integer;
+declare t public.card_tables; v_pub jsonb; s integer; v_in integer[];
 begin
   select * into t from public.card_tables where room_id = p_room and game = 'poker';
   v_pub := t.pub;
+  v_in := array(select x from unnest(p_seats) x where not coalesce((v_pub->'players'->(x::text)->>'fold')::boolean, true)
+                 order by x);
   foreach s in array p_seats loop
     v_pub := jsonb_set(v_pub, array['players', s::text], v_pub->'players'->(s::text) || jsonb_build_object(
                'fold', true, 'pending', false, 'last', case when p_how = 'timeout' then 'timeout' else 'left' end));
@@ -2093,7 +2123,11 @@ begin
     perform public._card_log(p_room, 'poker', t.hand_no, (v_pub->'players'->(s::text)->>'id')::uuid, s, 'leave',
                              jsonb_build_object('how', p_how), p_now);
   end loop;
-  perform public._pk_after(p_room, t.turn, p_now, t.turn = any(p_seats));
+  if not exists (select 1 from jsonb_each(v_pub->'players') where not (value->>'fold')::boolean) then
+    perform public._pk_refund(p_room, p_now, v_in);
+  else
+    perform public._pk_after(p_room, t.turn, p_now, t.turn = any(p_seats));
+  end if;
 end $$;
 
 -- What is due at a poker table (§10): the deal after the countdown or the result, or the turn's timeout.
@@ -2153,7 +2187,7 @@ revoke all on function public._pk_street_end(uuid, timestamptz) from public, ano
 revoke all on function public._pk_end(uuid, timestamptz, jsonb, jsonb, boolean) from public, anon, authenticated;
 revoke all on function public._pk_showdown(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public._pk_award(uuid, timestamptz) from public, anon, authenticated;
-revoke all on function public._pk_refund(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public._pk_refund(uuid, timestamptz, integer[]) from public, anon, authenticated;
 revoke all on function public._pk_timeout(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public._pk_leave(uuid, integer[], text, timestamptz) from public, anon, authenticated;
 revoke all on function public._pk_due(uuid, timestamptz, integer[]) from public, anon, authenticated;

@@ -66,7 +66,8 @@ export interface PkPub {
 export interface PkLastPot { xu: number; seats: number[]; winners: number[]; hand: number[] | null }
 export interface PkLast {
   handNo: number; board: Card[]; uncontested: boolean;
-  /** Nobody was left in the hand: every contribution went back. */
+  /** Nobody was left in the hand: the contributions went back, and a banned or deleted account's were shared by the
+   *  players still in the hand (0017 _pk_refund). */
   cancelled: boolean;
   shown: Record<number, Card[]>;
   pots: PkLastPot[];

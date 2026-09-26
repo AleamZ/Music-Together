@@ -1501,6 +1501,64 @@ begin
   assert (select count(*) from public.card_log where action = 'room_gone') >= 3, 'the deletions are logged';
 end $$;
 
+-- A wiped player's pot contribution (anti-cheat R10): Q raises to 20 001, D folds its small blind, and Q is wiped
+-- mid-hand; the two players still in the hand are kicked and one sweep takes them together, so nobody is left in it.
+-- Everyone else gets their own contribution back (D to its stack); Q's is dead money that the two split, the odd xu
+-- first left of the button, D having folded; and Q's wallet is never re-created.
+insert into smoke select 'cq', token from public.register('v16q_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'aq', public._auth_account(v)::text from smoke where k = 'cq';
+insert into smoke select 'r5', room_id::text from public.create_room('Bàn Q', 'pw', (select v from smoke where k = 'cy'));
+do $$
+declare r5 uuid := (select v from smoke where k = 'r5')::uuid; croot text := (select v from smoke where k = 'croot');
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c4 text := (select v from smoke where k = 'c4'); cq text := (select v from smoke where k = 'cq');
+        cy text := (select v from smoke where k = 'cy');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a4 uuid := (select v from smoke where k = 'a4')::uuid; aq uuid := (select v from smoke where k = 'aq')::uuid;
+        ay uuid := (select v from smoke where k = 'ay')::uuid; t public.card_tables; r jsonb; v0 bigint;
+        q integer;
+begin
+  perform public.join_room((select code from public.rooms where id = r5), 'pw', tok) from unnest(array[c1, c2, c4, cq]) tok;
+  perform pg_temp.set_coins(a, 200000) from unnest(array[a1, a2, a4, aq]) a;
+  perform public.card_sit(r5, cq, 'poker', 1, 1000, 50000);
+  perform public.card_sit(r5, c4, 'poker', 2, 1000, 50000);
+  perform public.card_sit(r5, c1, 'poker', 3, 1000, 50000);
+  perform public.card_sit(r5, c2, 'poker', 4, 1000, 50000);
+  update public.card_tables set pos = 4, deadline = now() - interval '1 second' where room_id = r5 and game = 'poker';
+  r := public._card_tick(r5, ay, 'poker', now(), pg_temp.deck('AS AD', 'KS KD', 'QS QD', 'JS JD', '2C 6H 9C JC 4H'));
+  assert r->'state'->'pub'->'button' = '1' and r->'state'->'pub'->'sb' = '2' and (r->'state'->>'turn')::int = 4,
+    format('Q is the button, D the small blind: %s', r->'state'->'pub');
+  q := (select seq from public.card_tables where room_id = r5 and game = 'poker');
+  perform public.pk_act(r5, c2, q, 'call', null);
+  perform public.pk_act(r5, cq, q + 1, 'raise', 20001);
+  r := public.pk_act(r5, c4, q + 2, 'fold', null);
+  assert (r->'state'->>'turn')::int = 3 and r->'state'->'pub'->'players'->'2' @> '{"fold": true, "put": 500}',
+    format('C calls, Q raises, D folds: %s', r->'state'->'pub');
+  update public.accounts set is_banned = true where id = aq;
+  delete from public.sessions where account_id = aq;
+  insert into public.anticheat_status (account_id, strikes, ban_state, banned_at) values (aq, 2, 'pending_wipe', now())
+  on conflict (account_id) do update set strikes = 2, ban_state = 'pending_wipe', banned_at = now();
+  perform public.admin_anticheat_resolve(croot, aq, 'wipe');
+  t := (select x from public.card_tables x where room_id = r5 and game = 'poker');
+  assert not exists (select 1 from public.wallets where account_id = aq) and t.phase = 'playing'
+         and t.pub->'players'->'1' @> '{"fold": true, "put": 20001}', format('Q is wiped, its 20 001 in the pot: %s', t.pub);
+  perform public.kick_member(r5, cy, (select id from public.members where room_id = r5 and account_id = a)) from unnest(array[a1, a2]) a;
+  v0 := pg_temp.all_money();
+  r := public.card_tick(r5, cy, 'poker');
+  t := (select x from public.card_tables x where room_id = r5 and game = 'poker');
+  assert (r->>'changed')::boolean and pg_temp.all_money() = v0 and t.phase = 'result' and (t.last->>'cancelled')::boolean
+         and t.last->'net' = '{"1": -20001, "2": 0, "3": 10001, "4": 10000}', format('nobody is left in the hand: %s', t.last);
+  assert not exists (select 1 from public.wallets where account_id = aq)
+         and not exists (select 1 from public.coin_ledger where account_id = aq and reason = 'card_refund'),
+    'Q''s wallet is never re-created';
+  assert pg_temp.coins(a1) = 150000 + 49000 + 1000 + 10001 and pg_temp.coins(a2) = 150000 + 49000 + 1000 + 10000
+         and pg_temp.coins(a4) = 150000
+         and (select jsonb_agg(jsonb_build_array(seat, chips) order by seat) from public.card_seats where room_id = r5) = '[[2, 50000]]',
+    format('their own back, and Q''s split: %s %s %s', pg_temp.coins(a1), pg_temp.coins(a2), pg_temp.coins(a4));
+  perform public.card_leave(r5, c4, 'poker');
+  assert pg_temp.coins(a4) = 200000 and pg_temp.all_money() = v0, 'D cashes out what it brought';
+end $$;
+
 select 'v16 holdings and deletions smoke ok' as result;
 
 \i tests/sql/anticheat-guards.sql
