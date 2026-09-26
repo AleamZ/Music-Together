@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   dueTasks, fertAdvice, harvesterOn, lower, plotActions, plotPrompt, tendAdvice, upFertAdvice, uplandOf, type PlotAction,
 } from "@/lib/game/farm/actions";
-import { farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow } from "@/lib/game/farm/catalog";
+import {
+  farmItemFromRow, LEASE_ROUND_MS, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow,
+} from "@/lib/game/farm/catalog";
 import { HOUR_MS, type CropModel } from "@/lib/game/farm/crop";
 import type { CropView, FarmMine, PestView, PlotView } from "@/lib/game/farm/state";
 import type { UplandModel } from "@/lib/game/farm/upland";
@@ -128,6 +130,19 @@ describe("plotActions", () => {
     // a running harvester takes every button
     const running = ripe([[0, 3], [55, 1]], { harvester: { startedAt: at(61), endsAt: at(61) + 30_000 } });
     expect(plotActions(running, "me", nep, CATALOG, SICKLE, at(61))).toEqual([]);
+  });
+  it("keeps a round out of the lease's last 25 s, as begin_work does (R11)", () => {
+    const ripe = (left: number, over: Partial<CropView> = {}) => plot(crop({ sowAt: at(3), transplantAt: at(12), ...over }, [[0, 3], [55, 1]]),
+      { lease: { source: "village", until: at(61) + left, price: 250 } });
+    const round = (p: PlotView) => find(plotActions(p, "me", nep, CATALOG, SICKLE, at(61)), "round");
+    expect(LEASE_ROUND_MS).toBe(25_000);
+    expect(round(ripe(24_999))).toMatchObject({ enabled: false, why: "Sắp hết hạn thuê — không kịp gặt phần này." });
+    expect(round(ripe(25_000))).toMatchObject({ enabled: true, why: undefined });
+    expect(round(ripe(24_000, { parts: 2 }))).toMatchObject({
+      label: "Gặt tiếp (phần 3/6)", enabled: false, why: "Sắp hết hạn thuê — không kịp gặt phần này.",
+    });
+    // a plot of my own has no lease to end
+    expect(round({ ...ripe(0), lease: null })).toMatchObject({ enabled: true });
   });
   it("waits for 0016 to cut rice: a catalog with no tools has no sickle to sell and no harvest_part", () => {
     const ripe = (water: Array<[number, number]>) => plot(crop({ sowAt: at(3), transplantAt: at(12) }, water));

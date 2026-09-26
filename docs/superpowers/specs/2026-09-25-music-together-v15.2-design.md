@@ -63,7 +63,7 @@ The server stays authoritative. Every timer, yield, charge and roll lives in SEC
 | R8 | While 0 < parts < 6 the plot refuses care actions (`harvesting`). Rounds, the harvester and abandon remain; after an abandon the cut grain stays. | This is H2. Abandon is not care. |
 | R9 | The harvester is pro-rated at 500 xu per remaining part. | It keeps the 3 000 headline for a whole plot and is fair for a half-cut plot. |
 | R10 | Harvester completion is sweep step J. It runs after the anti-cheat step 0 and before step 1, and computes the grain at `harvester_until`. It pays only if the crop's farmer was still the plot's farmer at the job's start. | It runs before a lease can expire, and it never pays a wiped or reclaimed farmer. |
-| R11 | Work must fit in the lease. `begin_work` needs 10 s left for a rice round and 5 s for a transplant or a picking (`lease ending`); a harvester needs 30 s (`lease ends`). | A crop never outlives its lease mid-job. If a lease still runs out mid-round, the sweep takes the crop and the part is refused. |
+| R11 | Work must fit in the lease. `begin_work` needs 25 s left for a rice round and 5 s for a transplant or a picking (`lease ending`); a harvester needs 30 s (`lease ends`). The plot panel disables "Gặt" and "Gặt tiếp" with that reason in the lease's last 25 s. | A crop never outlives its lease mid-job: 25 s covers a round (10–14 s) and its claim. If a lease still runs out mid-round, the sweep takes the crop and the part is refused. |
 | R12 | Any number of harvesters may run at once. | A shared machine would add waiting for no gameplay gain. The fee is the sink. |
 | R13 | The harvester is rented only in the co-op panel, in a new tab "Máy gặt". The plot panel points there. | S10 places it at chú Tám's. |
 | R14 | A round sends `fa 2` at its start and every 2 s while it runs, then `fa 0`. | H4 asks for the existing hint, and an `fa` lasts 2.5 s. |
@@ -186,7 +186,7 @@ part_kg_i = (i * Y(t)) / 6 - ((i - 1) * Y(t)) / 6       -- SQL integer division;
 ### 6.2 Hand harvest: the sickle and HarvestGame
 
 **The flow:**
-1. **"Gặt bằng liềm"** calls `begin_work(plot, 'harvest')` on a rice crop. It needs the plot's farmer and no harvester job (`harvester busy`), phase `ripe` or `overripe` (`wrong phase`), water ≤ 1 (`need water`), `tool_sickle` in the inventory (`no sickle`), and at least 10 s left on the lease (`lease ending`). It writes `work = 'harvest'` and `work_started_at = p_now`, replacing any earlier record (R6).
+1. **"Gặt bằng liềm"** calls `begin_work(plot, 'harvest')` on a rice crop. It needs the plot's farmer and no harvester job (`harvester busy`), phase `ripe` or `overripe` (`wrong phase`), water ≤ 1 (`need water`), `tool_sickle` in the inventory (`no sickle`), and at least 25 s left on the lease (`lease ending`). It writes `work = 'harvest'` and `work_started_at = p_now`, replacing any earlier record (R6).
 2. The client plants the avatar at the plot's use spot, facing the plot, and opens the round overlay.
 3. **The round** (`lib/game/farm/minigames.ts`, R17). It starts when the `begin_work` answer arrives, and has 8 bundles.
    - **Hold** (Space, the mouse button or a finger) raises the sickle's power bar from 0 to 1 in **1.2 s**. The bar auto-releases at 1.
@@ -568,7 +568,7 @@ The other checks are also added with `drop constraint if exists` + `add`, so a r
 
 **Re-created:**
 - `_farm_crop` now selects the crop `for update` and becomes `volatile` (§6.5), and it raises `harvester busy` while a harvester runs. `_work_check` handles the rice round (sickle, phase, water), the ớt transplant and hoa-màu pickings.
-- `_farm_do_begin_work` replaces any earlier work record and applies the lease gates: 10 s left for a rice round, 5 s for a transplant or a picking (`lease ending`, R11).
+- `_farm_do_begin_work` replaces any earlier work record and applies the lease gates: 25 s left for a rice round, 5 s for a transplant or a picking (`lease ending`, R11).
 - `_farm_do_soak` and `_farm_do_sow` raise `wrong crop` on beds. `_farm_do_fertilize`, `_farm_do_water` and `_farm_do_spray` use `_care_crop`, and spray also uses the tank.
 - `_farm_do_transplant` sets P for ớt. `_farm_do_harvest` does hoa-màu pickings only. `_farm_do_pick_snails` adds `harvester busy` and `harvesting`; `_farm_do_abandon` adds `harvester busy`.
 - `_plot_view`, `_farm_mine`, `_field_sweep`.
@@ -599,7 +599,7 @@ A successful `harvest_part` answers `field_state || {"harvest_part": {"variety",
 | `sell_produce(p_session_token text, p_upland text, p_kg integer)` | `invalid quantity`, `invalid crop`, `not enough crop`. Pays `kg · price_per_kg` (`produce_sell`, ref `'<upland> <kg> kg'`). |
 
 **Changed behaviour, with the same signatures:**
-- `begin_work` replaces any earlier record. On rice, `'harvest'` starts a round (§6.2). It raises `lease ending` with under 10 s (round) or 5 s (transplant, picking) left on the lease.
+- `begin_work` replaces any earlier record. On rice, `'harvest'` starts a round (§6.2). It raises `lease ending` with under 25 s (round) or 5 s (transplant, picking) left on the lease.
 - `harvest(…, quality)` on rice raises `wrong crop`. `transplant` sets P on ớt. `spray` uses the tank. `buy_farm_item` sells tools (§9). `claim_farm_gift` adds the sickle.
 - Every action on a plot with a running harvester raises `harvester busy`, and every care action on a partly cut plot raises `harvesting`.
 
@@ -705,7 +705,7 @@ The two `harvest_part` rows need the call's context: `farmErrorMessage(err, item
   | `harvest_label`, plus " (lứa {k}/{n})" when n > 1 | "Chưa chín — {đào khoai} được sau {d}." · "Tháo bớt nước trước khi {đào khoai} (đang {Đẫm})." |
 - **Rice, ripe:** "Gặt bằng liềm", then "Gặt tiếp (phần {n+1}/6)".
   - Hint: "Mỗi phần là một lượt 8 bó — đạt 4 điểm là xong phần."
-  - Reasons: "Chưa có liềm — mua ở tiệm anh Hai.", "Rút nước trước khi gặt (đang {Nông}).", "Máy gặt đang gặt thửa này.", and while ripening "Lúa chưa chín — gặt được sau {d}."
+  - Reasons: "Chưa có liềm — mua ở tiệm anh Hai.", "Rút nước trước khi gặt (đang {Nông}).", "Máy gặt đang gặt thửa này.", while ripening "Lúa chưa chín — gặt được sau {d}.", and in the lease's last 25 s "Sắp hết hạn thuê — không kịp gặt phần này." (R11).
   - A note line: "🚜 Hoặc thuê máy gặt ở Hợp tác xã: 30 giây, 500 xu mỗi phần còn lại."
 - **Rice, partly cut:** status "🌾 Đã gặt {2}/6 phần ({25} kg)". Only "Gặt tiếp" and "Bỏ vụ" are offered; Bỏ vụ warns "Bỏ vụ là mất phần lúa chưa gặt."
 - **A running harvester:** "🚜 Máy gặt đang gặt — còn {25} giây", counting down in a 1 s local tick while the panel is open. No buttons.
@@ -887,7 +887,7 @@ Everything is original and drawn in code, in the module palettes (`K` in `crops.
   - the 120 s window (R6): a claim at 120 s is accepted, at 121 s it is `work expired`, and with no record it is `too fast`;
   - replacement: a second `begin_work` 5 s after the first restarts the gate, so a claim 9 s after the first is `too fast` and 13 s after is accepted;
   - recovery after Esc or a disconnect: an unclaimed record blocks nothing; 200 s later a new `begin_work` succeeds and its part is accepted 8 s on;
-  - the lease gate (R11): `begin_work` with 9 s left → `lease ending`, with 10 s allowed; that round's claim after the lease runs out → `not your plot`, with the crop and the lease gone and no rice added;
+  - the lease gate (R11): `begin_work` with 24 s left → `lease ending`, with 25 s allowed; that round's claim after the lease runs out → `not your plot`, with the crop and the lease gone and no rice added;
   - `false` and null cut nothing, clear `work` and skip the gate;
   - the sixth part deletes the crop and the lease; the fallen-rice sweep drops the uncut parts.
 - **Harvester:**

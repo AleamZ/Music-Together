@@ -1,13 +1,13 @@
 import {
-  HARVEST_PARTS, TEND_ACTS, TEND_MAX, TOOL_SICKLE, WATER_LOG_MAX, WATER_PER_HOUR, type FarmCatalog, type FarmItem, type FarmItemKind,
-  type UplandCare, type UplandCrop, type Variety,
+  HARVEST_PARTS, LEASE_ROUND_MS, TEND_ACTS, TEND_MAX, TOOL_SICKLE, WATER_LOG_MAX, WATER_PER_HOUR, type FarmCatalog, type FarmItem,
+  type FarmItemKind, type UplandCare, type UplandCrop, type Variety,
 } from "./catalog";
 import {
   cropCare, cropModel, cropPhase, HOUR_MS, overripeAt, ripeAt, rotAt, seedlingsOldAt, sowLateAt, sproutAt,
   transplantReadyAt, waterAt, wantedWater, type CropModel,
 } from "./crop";
 import {
-  BED_WATER_NAME, bedLevelsText, durationText, NO_SEED, NOT_OPEN_152, PEST_NAME, PEST_REMEDY, TOO_FAST, WATER_NAME,
+  BED_WATER_NAME, bedLevelsText, durationText, LEASE_ENDING, NO_SEED, NOT_OPEN_152, PEST_NAME, PEST_REMEDY, TOO_FAST, WATER_NAME,
 } from "./messages";
 import type { FieldAction } from "./rpc";
 import type { CropView, FarmMine, PlotView } from "./state";
@@ -205,7 +205,8 @@ export function plotActions(p: PlotView, me: string, v: Variety | null, catalog:
     const why = !tools ? NOT_OPEN_152
       : ph === "ripening" && v ? `Lúa chưa chín — gặt được sau ${durationText(ripeAt(c, v)! - now)}.`
       : w > 1 ? `Rút nước trước khi gặt (đang ${WATER_NAME[w]}).`
-      : (mine.items[TOOL_SICKLE] ?? 0) < 1 ? "Chưa có liềm — mua ở tiệm anh Hai." : undefined;
+      : (mine.items[TOOL_SICKLE] ?? 0) < 1 ? "Chưa có liềm — mua ở tiệm anh Hai."
+      : p.lease && p.lease.until - now < LEASE_ROUND_MS ? LEASE_ENDING : undefined;
     return { key: "round", label, run: { kind: "round", plot }, enabled: !why, why, ...(why ? {} : { hint: "Mỗi phần là một lượt 8 bó — đạt 4 điểm là xong phần." }) };
   };
   if (cut) {

@@ -566,7 +566,7 @@ begin
   assert pg_temp.plot(s, 5)->'crop' = 'null' and pg_temp.plot(s, 5)->'lease' = 'null', 'bare, and the lease ended';
 end $$;
 
--- Work must fit in the lease (R11): 10 s for a round, 30 s for the harvester. A round the lease cuts short pays nothing.
+-- Work must fit in the lease (R11): 25 s for a round, 30 s for the harvester. A round the lease cuts short pays nothing.
 do $$
 declare a1 uuid := (select v from smoke where k = 'a1')::uuid; room uuid := (select v from smoke where k = 'room3')::uuid;
         t timestamptz := (select v from smoke where k = 'now')::timestamptz; l timestamptz := t + interval '1 hour';
@@ -576,9 +576,9 @@ begin
   perform pg_temp.ripe_nep(room, 6, a1, t);
   update public.plot_leases set until = l where room_id = room and plot_no = 6;
   w0 := pg_temp.wet(a1);
-  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 6, %L, %L)', room, a1, 'harvest', l - interval '9 seconds'))
-         = 'lease ending', '9 s left';
-  perform public._farm_do_begin_work(room, a1, 6, 'harvest', l - interval '10 seconds');
+  assert pg_temp.err(format('select public._farm_do_begin_work(%L, %L, 6, %L, %L)', room, a1, 'harvest', l - interval '24 seconds'))
+         = 'lease ending', '24 s left';
+  perform public._farm_do_begin_work(room, a1, 6, 'harvest', l - interval '25 seconds');
   assert pg_temp.err(format('select public._farm_do_rent_harvester(%L, %L, 6, %L)', room, a1, l - interval '29 seconds'))
          = 'lease ends', 'the harvester needs 30 s';
   assert pg_temp.err(format('select public._farm_do_harvest_part(%L, %L, 6, true, %L)', room, a1, l + interval '1 second'))

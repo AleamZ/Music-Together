@@ -698,8 +698,8 @@ revoke all on function public._farm_mine(uuid) from public, anon, authenticated;
 revoke all on function public._field_sweep(uuid, timestamptz) from public, anon, authenticated;
 
 -- ---------- E. Actions and RPCs (§6, §7, §8.9, §11.4). Each _farm_do_* takes p_now; its public RPC passes now(). ----------
--- Starts a rice round or a 3-second action (R6, R11): it replaces any earlier record, and it needs 10 s left on a lease for
--- a round and 5 s for a transplant or a picking.
+-- Starts a rice round or a 3-second action (R6, R11): it replaces any earlier record, and it needs 25 s left on a lease for
+-- a round (the play and its 9 s claim) and 5 s for a transplant or a picking.
 create or replace function public._farm_do_begin_work(p_room uuid, p_account uuid, p_plot integer, p_work text,
                                                       p_now timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, extensions
@@ -712,7 +712,7 @@ begin
   perform public._work_check(c, public._variety(c.variety), p_work, p_now);
   if exists (select 1 from public.plot_leases pl
               where pl.room_id = p_room and pl.plot_no = p_plot
-                and pl.until < p_now + case when c.kind = 'rice' and p_work = 'harvest' then interval '10 seconds'
+                and pl.until < p_now + case when c.kind = 'rice' and p_work = 'harvest' then interval '25 seconds'
                                             else interval '5 seconds' end) then
     raise exception 'lease ending' using errcode = '22023';
   end if;
