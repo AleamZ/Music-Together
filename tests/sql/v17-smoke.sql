@@ -821,4 +821,52 @@ end $$;
 
 select 'v17 rpc smoke ok' as result;
 
+-- ---------- the wipe (§10.7, §16): the snapshot lists the dog and the rats; the dog, the bag, the aim, the ná, the pellets
+-- and the food go; the earlier migrations' parts stay ----------
+insert into smoke select 't5', token from public.register('rat_e_' || floor(random() * 1e9)::text, 'pw123456');
+do $$
+declare a5 uuid := public._auth_account((select v from smoke where k = 't5')); room uuid := (select v from smoke where k = 'room4')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz; h jsonb;
+begin
+  perform pg_temp.set_coins(a5, 5000);
+  perform pg_temp.give(a5, 'tool_sling', 1);
+  perform pg_temp.give(a5, 'ammo_pellet', 20);
+  perform pg_temp.give(a5, 'food_dog', 3);
+  insert into public.dogs (account_id, name, coat, adopted_at, fed_until, catches)
+  values (a5, 'Vện', 'ven', t, t + interval '1 day', 4);
+  insert into public.rat_bag (account_id, price, caught_at, how) values (a5, 150, t, 'sling'), (a5, 336, t, 'dog');
+  insert into public.sling_aims (account_id, room_id, rat_id, started_at) values (a5, room, 1, t);
+  insert into public.farm_profiles (account_id, rat_day_on, rat_day_count) values (a5, public._vn_today(), 5);
+  -- 0018's and 0017's parts stay (anti-cheat §11.3 rule 3): a critter, a cooldown, and a seat at the poker table
+  insert into public.critters (account_id, kind, price, caught_at) values (a5, 'cua_dong', 26, t);
+  insert into public.gather_cooldowns (account_id, spot, ready_at) values (a5, 'crab2', t + interval '5 minutes');
+  perform public._card_sit(room, a5, 'poker', 1, 100, 5000, now());
+  h := public._ac_holdings(a5);
+  assert h->'dog' = jsonb_build_object('name', 'Vện', 'coat', 'ven', 'adopted_at', t, 'fed_until', t + interval '1 day',
+                                       'next_hunt_at', null, 'catches', 4)
+     and h->'rats' = '{"count": 2, "value": 486}', format('holdings %s %s', h->'dog', h->'rats');
+  assert h->'critters' = '[{"kind": "cua_dong", "n": 1, "xu": 26}]' and h ? 'produce' and h ? 'tank' and h->'wallet'->'coins' = '0'
+     and h->'cards' = jsonb_build_array(jsonb_build_object('room_id', room, 'game', 'poker', 'seat', 1, 'chips', 5000, 'escrow', 0)),
+    format('the earlier parts stay: %s', h);
+  insert into public.anticheat_status (account_id, strikes, ban_state, banned_at) values (a5, 2, 'pending_wipe', now());
+  h := public._ac_wipe(a5, null);
+  assert h->'rats'->'count' = '2' and h->'dog'->>'name' = 'Vện'
+     and h->'inventory' @> '[{"item_id": "ammo_pellet", "qty": 20}, {"item_id": "food_dog", "qty": 3}, {"item_id": "tool_sling", "qty": 1}]'
+     and (select snapshot from public.anticheat_wipes where account_id = a5) = h, 'the snapshot keeps them';
+  assert h->'cards' = '[]' and h->'wallet'->'coins' = '5000', format('the seat is cashed out before the snapshot: %s', h);
+  assert not exists (select 1 from public.dogs where account_id = a5) and not exists (select 1 from public.rat_bag where account_id = a5)
+     and not exists (select 1 from public.sling_aims where account_id = a5) and not exists (select 1 from public.inventory where account_id = a5)
+     and not exists (select 1 from public.critters where account_id = a5)
+     and not exists (select 1 from public.gather_cooldowns where account_id = a5)
+     and not exists (select 1 from public.card_seats where account_id = a5)
+     and not exists (select 1 from public.wallets where account_id = a5), 'the dog, the bag, the aim, the items and the rest are gone';
+  assert exists (select 1 from public.coin_ledger where account_id = a5 and reason = 'wipe' and delta = -5000)
+     and (select ban_state = 'wiped' from public.anticheat_status where account_id = a5), 'the wipe row and the state';
+  assert (select rat_day_count from public.farm_profiles where account_id = a5) = 5, 'the farm profile stays';
+  assert public._farm_mine(a5)->'dog' = 'null' and public._farm_mine(a5)->'rats' = '{"count": 0, "value": 0}'
+     and public._farm_mine(a5)->'items' = '{}', 'mine is empty';
+end $$;
+
+select 'v17 wipe smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql

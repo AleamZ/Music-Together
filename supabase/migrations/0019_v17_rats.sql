@@ -843,3 +843,105 @@ grant execute on function public.feed_dog(text) to anon, authenticated;
 grant execute on function public.sell_rats(text) to anon, authenticated;
 grant execute on function public.dog_state(text) to anon, authenticated;
 grant execute on function public.buy_farm_item(text, text, integer) to anon, authenticated;
+
+-- ---------- F. Anti-cheat (§10.7, §16): the holdings and the wipe take the dog and the rats ----------
+-- SHARED WITH 0018 (v15.3), which re-created both functions last. Each body below is 0018's with only the lines marked
+-- "v17" added: _ac_holdings gains "dog" and "rats" after 0018's "critters" (0017's "cards" stays after "drying"), and
+-- _ac_wipe keeps 0017's first step (the seats resolved, §6.3 of the v16 spec) and deletes the dog, the rat bag and the
+-- aim after 0018's critters and cooldowns; the inventory delete already takes the ná, the pellets and the food.
+
+-- What a wipe removes: 0018's snapshot also lists the dog and the rats in the bag (count and what cô Út pays).
+create or replace function public._ac_holdings(p_account uuid) returns jsonb
+language sql stable security definer set search_path = public, extensions
+as $$
+  select jsonb_build_object(
+    'wallet', (select jsonb_build_object('coins', w.coins, 'daily_on', w.daily_on, 'bonus_on', w.bonus_on,
+                                         'bonus_count', w.bonus_count)
+                 from public.wallets w where w.account_id = p_account),
+    'inventory', coalesce((select jsonb_agg(jsonb_build_object('item_id', i.item_id, 'qty', i.qty) order by i.item_id)
+                             from public.inventory i where i.account_id = p_account), '[]'::jsonb),
+    'fishing_profile', (select jsonb_build_object('rod', p.rod, 'bobber', p.bobber, 'bait', p.bait)
+                          from public.fishing_profiles p where p.account_id = p_account),
+    'fish', coalesce((select jsonb_agg(jsonb_build_object('species_id', f.species_id, 'weight_g', f.weight_g, 'price', f.price,
+                                                          'caught_at', f.caught_at) order by f.caught_at, f.id)
+                        from public.fish f where f.account_id = p_account), '[]'::jsonb),
+    'personal_bests', coalesce((select jsonb_agg(jsonb_build_object('species_id', b.species_id, 'weight_g', b.weight_g,
+                                                                    'caught_at', b.caught_at) order by b.species_id)
+                                  from public.personal_bests b where b.account_id = p_account), '[]'::jsonb),
+    'rice', coalesce((select jsonb_agg(jsonb_build_object('variety', r.variety, 'wet_kg', r.wet_kg, 'dry_kg', r.dry_kg)
+                                       order by r.variety)
+                        from public.rice_stock r where r.account_id = p_account), '[]'::jsonb),
+    'produce', coalesce((select jsonb_agg(jsonb_build_object('upland', ps.upland, 'kg', ps.kg) order by ps.upland)
+                           from public.produce_stock ps where ps.account_id = p_account), '[]'::jsonb),
+    'tank', (select jsonb_build_object('item', pr.tank_item, 'charges', pr.tank_charges)
+               from public.farm_profiles pr where pr.account_id = p_account),
+    -- v15.3: the critters held
+    'critters', coalesce((select jsonb_agg(jsonb_build_object('kind', k.kind, 'n', k.n, 'xu', k.xu) order by k.kind)
+                            from (select cr.kind, count(*)::int as n, sum(cr.price)::int as xu from public.critters cr
+                                   where cr.account_id = p_account group by cr.kind) k), '[]'::jsonb),
+    -- v17: the dog and the rats in the bag
+    'dog', public._dog_view(p_account),
+    'rats', (select jsonb_build_object('count', count(*)::int, 'value', coalesce(sum(b.price), 0)::int)
+               from public.rat_bag b where b.account_id = p_account),
+    'plots', coalesce((select jsonb_agg(jsonb_build_object('room_id', fp.room_id, 'plot_no', fp.plot_no, 'kind', fp.kind,
+                                                           'owned_at', fp.owned_at, 'sale_price', fp.sale_price,
+                                                           'sublease_price', fp.sublease_price) order by fp.room_id, fp.plot_no)
+                         from public.field_plots fp where fp.owner_id = p_account), '[]'::jsonb),
+    'leases', coalesce((select jsonb_agg(jsonb_build_object('room_id', pl.room_id, 'plot_no', pl.plot_no, 'source', pl.source,
+                                                            'price', pl.price, 'until', pl.until) order by pl.room_id, pl.plot_no)
+                          from public.plot_leases pl where pl.farmer_id = p_account), '[]'::jsonb),
+    'offers', coalesce((select jsonb_agg(jsonb_build_object('room_id', lo.room_id, 'plot_no', lo.plot_no, 'price', lo.price,
+                                                            'created_at', lo.created_at) order by lo.created_at, lo.id)
+                          from public.land_offers lo where lo.buyer_id = p_account), '[]'::jsonb),
+    'crops', coalesce((select jsonb_agg(jsonb_build_object('room_id', c.room_id, 'plot_no', c.plot_no, 'kind', c.kind,
+                                                           'variety', c.variety, 'upland', c.upland,
+                                                           'transplant_at', c.transplant_at, 'plant_at', c.plant_at,
+                                                           'parts', c.harvested_parts, 'harvester_until', c.harvester_until)
+                                        order by c.room_id, c.plot_no)
+                         from public.crops c where c.farmer_id = p_account), '[]'::jsonb),
+    'drying', coalesce((select jsonb_agg(jsonb_build_object('room_id', d.room_id, 'slot', d.slot, 'variety', d.variety,
+                                                            'kg', d.kg, 'ready_at', d.ready_at) order by d.room_id, d.slot)
+                          from public.drying_slots d where d.account_id = p_account), '[]'::jsonb),
+    'cards', coalesce((select jsonb_agg(jsonb_build_object('room_id', s.room_id, 'game', s.game, 'seat', s.seat, 'chips', s.chips,
+                                                           'escrow', s.escrow) order by s.room_id, s.game)
+                         from public.card_seats s where s.account_id = p_account), '[]'::jsonb),
+    'announcements', (select count(*) from public.chat_messages m where m.system and m.about_account_id = p_account))
+$$;
+
+-- 0018's wipe (the seats first, so the xu they give back are part of the wiped balance; then the snapshot): v17 also
+-- deletes the dog, the rat bag and the aim; the farm profile (the gift, the day's visits and catches) stays.
+create or replace function public._ac_wipe(p_account uuid, p_by uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare v_snap jsonb; v_id bigint; v_coins integer;
+begin
+  perform public._card_forfeit_all(p_account);
+  v_snap := public._ac_holdings(p_account);
+  insert into public.anticheat_wipes (account_id, username, wiped_by, snapshot)
+  values (p_account, (select username from public.accounts where id = p_account), p_by, v_snap)
+  returning id into v_id;
+  select coins into v_coins from public.wallets where account_id = p_account;
+  if found then
+    insert into public.coin_ledger (account_id, delta, balance, reason, ref) values (p_account, -v_coins, 0, 'wipe', 'wipe #' || v_id);
+    delete from public.wallets where account_id = p_account;
+  end if;
+  delete from public.inventory where account_id = p_account;
+  delete from public.casts where account_id = p_account;
+  delete from public.fish where account_id = p_account;
+  delete from public.fishing_profiles where account_id = p_account;
+  delete from public.personal_bests where account_id = p_account;
+  delete from public.rice_stock where account_id = p_account;
+  delete from public.produce_stock where account_id = p_account;
+  update public.farm_profiles set tank_item = null, tank_charges = 0 where account_id = p_account;
+  delete from public.critters where account_id = p_account;                          -- v15.3
+  delete from public.gather_cooldowns where account_id = p_account;                  -- v15.3
+  delete from public.dogs where account_id = p_account;                              -- v17
+  delete from public.rat_bag where account_id = p_account;                           -- v17
+  delete from public.sling_aims where account_id = p_account;                        -- v17
+  delete from public.chat_messages where system and about_account_id = p_account;
+  update public.anticheat_status set ban_state = 'wiped', wiped_at = now() where account_id = p_account;
+  return v_snap;
+end $$;
+
+revoke all on function public._ac_holdings(uuid) from public, anon, authenticated;
+revoke all on function public._ac_wipe(uuid, uuid) from public, anon, authenticated;
