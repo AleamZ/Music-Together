@@ -1,13 +1,63 @@
 "use client";
 
+import ConfirmButton from "@/components/game/farm/ConfirmButton";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
-import { describeItem, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
+import { TANK_CHARGES, TOOL_SICKLE, TOOL_SPRAYER, type FarmItem } from "@/lib/game/farm/catalog";
+import type { FarmMine } from "@/lib/game/farm/state";
+import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
 import { baitCount, ownsItem, type FishingState, type Loadout } from "@/lib/game/fishing/state";
 import FishLine from "./FishLine";
 
-/** 🎒 Giỏ đồ (spec §10.2): the fish (hand, then bucket), the owned rods and bobbers, the baits, the bait box and bucket. */
-export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose }: {
+/** The field's side of the bag (v15.2 R29): my farm stock, the farm catalog's items, and Nạp thuốc. */
+export interface BagFarm { mine: FarmMine; items: readonly FarmItem[]; busy: boolean; onLoad: (itemId: string) => void }
+
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/** 🌾 Nông cụ (v15.2 §13.5): the sickle, the sprayer's tank, and a Nạp button per pesticide held. Loading over other
+ *  charges pours them away, so it asks first; a tank full of the same pesticide waits. */
+function FarmTools({ farm }: { farm: BagFarm }) {
+  const { mine, items, busy, onLoad } = farm;
+  const has = (id: string) => (mine.items[id] ?? 0) > 0;
+  const nameOf = (id: string) => items.find((i) => i.id === id)?.name ?? id;
+  const priceOf = (id: string) => formatXu(items.find((i) => i.id === id)?.price ?? 0);
+  const tank = mine.tank;
+  return (
+    <section>
+      <h3 className="text-xl text-burgundy">🌾 Nông cụ</h3>
+      <ul>
+        <li className="flex items-center gap-2 py-0.5">
+          <ItemIcon id={TOOL_SICKLE} scale={2} />
+          <span>{has(TOOL_SICKLE) ? "Liềm — gặt lúa 6 phần" : `Chưa có liềm — tiệm anh Hai bán ${priceOf(TOOL_SICKLE)}`}</span>
+        </li>
+        <li className="flex items-center gap-2 py-0.5">
+          <ItemIcon id={TOOL_SPRAYER} scale={2} />
+          <span>
+            {!has(TOOL_SPRAYER) ? `Chưa có bình phun — tiệm anh Hai bán ${priceOf(TOOL_SPRAYER)}`
+              : tank?.item ? `Bình phun — ${nameOf(tank.item)} · còn ${tank.charges}/${TANK_CHARGES} lần` : "Bình phun — trống"}
+          </span>
+        </li>
+        {has(TOOL_SPRAYER) && items.filter((i) => i.kind === "pesticide" && has(i.id)).map((p) => {
+          const full = tank?.item === p.id && tank.charges >= TANK_CHARGES;
+          const left = tank?.item && tank.charges > 0 ? tank : null;
+          return (
+            <li key={p.id} className="flex flex-wrap items-center gap-2 py-0.5">
+              <ConfirmButton disabled={busy || full} onConfirm={() => onLoad(p.id)}
+                warn={left ? `Bình còn ${left.charges} lần ${lower(nameOf(left.item!))}. Nạp ${lower(p.name)} sẽ đổ bỏ phần còn lại — nạp chứ?` : undefined}>
+                Nạp {lower(p.name)} ({mine.items[p.id]} chai)
+              </ConfirmButton>
+              {full && <span className="text-base opacity-80">Bình đang đầy thuốc này.</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** 🎒 Giỏ đồ (spec §10.2, v15.2 R29): the fish (hand, then bucket), the owned rods and bobbers, the baits, the bait box
+ *  and bucket, and — once the field has loaded — the farm tools. */
+export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose, farm = null }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
   /** An RPC is in flight: the buttons wait. */
@@ -15,6 +65,7 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
   onEquip: (loadout: Loadout) => void;
   onRelease: (fishId: string) => void;
   onClose: () => void;
+  farm?: BagFarm | null;
 }) {
   if (!state || !catalog) {
     return (
@@ -102,6 +153,7 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
             </li>
           </ul>
         </section>
+        {farm && <FarmTools farm={farm} />}
       </div>
     </ParchmentModal>
   );

@@ -17,7 +17,7 @@ import type { RoomView } from "@/hooks/useRoom";
 import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
 import { formatChatMessageBody, parseChatMessageBody } from "@/lib/chat-helpers";
 import { formatClock } from "@/lib/format";
-import { riceSummary } from "@/lib/game/farm/messages";
+import { produceSummary } from "@/lib/game/farm/messages";
 import { freshAnnouncements } from "@/lib/game/fishing/announce";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
@@ -280,7 +280,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               state={fishing.data.state}
               failed={fishing.data.failed}
               onReload={() => void fishing.data.reload()}
-              riceLine={map.id === "field" && farm.data.state ? riceSummary(farm.data.state.mine.rice) : null}
+              riceLine={map.id === "field" && farm.data.state ? produceSummary(farm.data.state.mine.rice, farm.data.state.mine.produce) : null}
             />
             <AnticheatChip secondsLeft={anticheat.secondsLeft} />
           </div>
@@ -332,7 +332,13 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         </button>
       )}
 
-      <FishingOverlays fishing={fishing} />
+      <FishingOverlays
+        fishing={fishing}
+        // the bag's farm tools, once the field has loaded and the catalog has them (before 0016 it has none)
+        farm={farm.data.state && farm.data.catalog?.items.some((i) => i.kind === "tool")
+          ? { mine: farm.data.state.mine, items: farm.data.catalog.items, busy: farm.busy, onLoad: (id) => void farm.loadSprayer(id) }
+          : null}
+      />
       <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} />
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">

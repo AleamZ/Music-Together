@@ -4,6 +4,8 @@ import BagPanel from "@/components/game/fishing/BagPanel";
 import DepotPanel from "@/components/game/fishing/DepotPanel";
 import RecordsPanel from "@/components/game/fishing/RecordsPanel";
 import ShopPanel from "@/components/game/fishing/ShopPanel";
+import { farmItemFromRow } from "@/lib/game/farm/catalog";
+import type { FarmMine, Tank } from "@/lib/game/farm/state";
 import { shopItemFromRow, speciesFromRow, type FishingCatalog, type ShopItemRow } from "@/lib/game/fishing/catalog";
 import type { FishingBoard } from "@/lib/game/fishing/rpc";
 import { parseFishingState } from "@/lib/game/fishing/state";
@@ -134,5 +136,57 @@ describe("RecordsPanel", () => {
     render(<RecordsPanel catalog={CATALOG} load={async () => ({ ...BOARD, prices: null })} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
     expect(await screen.findByText("Chưa có bảng giá.")).toBeInTheDocument();
+  });
+});
+
+describe("BagPanel, Nông cụ (v15.2 R29)", () => {
+  const farmItem = (id: string, kind: string, name: string, price: number, over: Record<string, unknown> = {}) => farmItemFromRow({
+    id, kind, name, price, sort_order: 0, variety: null, fert: null, pest_target: null, capacity: null, ...over,
+  });
+  const ITEMS = [
+    farmItem("tool_sickle", "tool", "Liềm", 1500), farmItem("tool_sprayer", "tool", "Bình phun", 5000),
+    farmItem("spray_insect", "pesticide", "Thuốc trừ sâu", 700, { pest_target: "insect" }),
+    farmItem("spray_fungus", "pesticide", "Thuốc trừ bệnh", 900, { pest_target: "fungus" }),
+  ];
+  const mine = (items: Record<string, number>, tank: Tank | null): FarmMine => ({ items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank });
+  const bag = (m: FarmMine) => {
+    const onLoad = vi.fn();
+    render(<BagPanel state={STATE} catalog={CATALOG} busy={false} onEquip={() => {}} onRelease={() => {}} onClose={() => {}}
+      farm={{ mine: m, items: ITEMS, busy: false, onLoad }} />);
+    return onLoad;
+  };
+
+  it("is not there before the field has loaded", () => {
+    render(<BagPanel state={STATE} catalog={CATALOG} busy={false} onEquip={() => {}} onRelease={() => {}} onClose={() => {}} />);
+    expect(screen.queryByText("🌾 Nông cụ")).toBeNull();
+  });
+
+  it("says where to buy the tools", () => {
+    bag(mine({}, null));
+    expect(screen.getByText("🌾 Nông cụ")).toBeInTheDocument();
+    expect(screen.getByText("Chưa có liềm — tiệm anh Hai bán 1.500 xu")).toBeInTheDocument();
+    expect(screen.getByText("Chưa có bình phun — tiệm anh Hai bán 5.000 xu")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Nạp/ })).toBeNull();
+  });
+
+  it("shows the tank, and asks before pouring another pesticide's charges away", () => {
+    const onLoad = bag(mine({ tool_sickle: 1, tool_sprayer: 1, spray_insect: 2, spray_fungus: 1 }, { item: "spray_fungus", charges: 2 }));
+    expect(screen.getByText("Liềm — gặt lúa 6 phần")).toBeInTheDocument();
+    expect(screen.getByText("Bình phun — Thuốc trừ bệnh · còn 2/3 lần")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Nạp thuốc trừ sâu (2 chai)" }));
+    expect(screen.getByText("⚠️ Bình còn 2 lần thuốc trừ bệnh. Nạp thuốc trừ sâu sẽ đổ bỏ phần còn lại — nạp chứ?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
+    expect(onLoad).toHaveBeenCalledWith("spray_insect");
+  });
+
+  it("loads an empty tank at once, and waits while it is full of the same", () => {
+    const onLoad = bag(mine({ tool_sprayer: 1, spray_insect: 1 }, { item: null, charges: 0 }));
+    expect(screen.getByText("Bình phun — trống")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Nạp thuốc trừ sâu (1 chai)" }));
+    expect(onLoad).toHaveBeenCalledWith("spray_insect");
+    cleanup();
+    bag(mine({ tool_sprayer: 1, spray_insect: 1 }, { item: "spray_insect", charges: 3 }));
+    expect(screen.getByRole("button", { name: "Nạp thuốc trừ sâu (1 chai)" })).toBeDisabled();
+    expect(screen.getByText("Bình đang đầy thuốc này.")).toBeInTheDocument();
   });
 });
