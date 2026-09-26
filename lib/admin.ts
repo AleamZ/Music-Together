@@ -27,6 +27,9 @@ export interface AnticheatHoldings {
   tank?: { item: string | null; charges: number } | null;
   /** v15.3 (`0018`): the critters held, per kind (count and what cô Út pays); older answers lack them. */
   critters?: Array<{ kind: string; n: number; xu: number }>;
+  /** v17 (`0019`): the dog and the rats in the bag; older answers lack them. */
+  dog?: { name: string } | null;
+  rats?: { count: number; value: number };
   plots: unknown[]; leases: unknown[]; offers: unknown[]; crops: unknown[]; drying: unknown[];
   /** Catch and land lines about the account in the chat. */
   announcements: number;

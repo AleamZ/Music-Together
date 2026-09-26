@@ -85,7 +85,7 @@ The server stays authoritative. Every timer, yield, charge and roll lives in SEC
 | R30 | An ớt nursery never rots. Old seedlings cost 3 %/h, capped at 30 %. | Leases end anyway, and this saves a sweep rule. |
 | R31 | `pct` is an integer percentage everywhere (40, 35, 25). A picking's floor is `ceil(base_kg · pct / 1000)`, which is 10 % of its share: `(base_kg * pct + 999) / 1000` in SQL and `Math.ceil(base_kg * pct / 1000)` in TS. | Integer arithmetic, so SQL and TS agree exactly. |
 | R32 | Every path that pays parts or removes a partly cut crop locks the crop row and re-checks `harvester_until` and `harvested_parts` under the lock: `harvest_part`, the harvester's completion and the lease sweep. Payout, crop deletion and lease end are one transition (§6.5). A hand part during a harvester job is refused (`harvester busy`). | No double payout and no lost part, even if the room-wide plot locks of `_field_open` are relaxed later (anti-cheat R36). |
-| R33 | The hoa-màu model follows the rice model's parity conventions (§8.7): epoch-ms times, 15-min samples while t < end, left-to-right products with explicit SQL parentheses, and `floor(x + 0.5)`. | Equal results on both sides, pinned by boundary fixtures (§16). |
+| R33 | The hoa-màu model follows the rice model's parity conventions (§8.7): epoch-ms times, 15-min samples while t < end, left-to-right products with explicit SQL parentheses, and `floor(x + 0.5)`. From v17 these conventions cover Mrat in both products. | Equal results on both sides, pinned by boundary fixtures (§16). |
 
 ## 3. What moved, and the lines other specs change
 
@@ -179,7 +179,7 @@ part_kg_i = (i * Y(t)) / 6 - ((i - 1) * Y(t)) / 6       -- SQL integer division;
 
 - Each accepted part adds `part_kg_i` to the farmer's **wet** rice at once, sets `harvested_parts = i` and adds the kg to `harvested_kg`.
 - At a constant Y the six parts sum to exactly Y. Nếp at full care, Y = 75, pays 12, 13, 12, 13, 12, 13 = 75 kg.
-- Nothing locks the yield. Parts cut later in the overripe window give less, and each part is within 1 kg of Y(t)/6. Uncut parts are lost when the crop falls (48 h after the ripe window, sweep step 6) or when its lease runs out (R26).
+- Nothing locks the yield. Parts cut later in the overripe window, or while rats eat, give less (Y(t) includes Mrat, v17 §5.5), and each part is within 1 kg of Y(t)/6. Uncut parts are lost when the crop falls (48 h after the ripe window, sweep step 6) or when its lease runs out (R26).
 - **The sixth part completes the harvest.** The crop is deleted, a lease ends, and the plot is bare.
 - **While 0 < parts < 6,** fertilizing, watering, spraying and picking snails raise `harvesting`. A round, the harvester and `abandon_crop` still work; after an abandon the grain already cut stays.
 
@@ -346,11 +346,11 @@ One row per crop, publicly readable like `rice_varieties`. Hours count from **P*
 ```
 Mplant = 1 − min(0.3, 0.03 · max(0, hrs(sow_at, P) − nursery_old_h))       (nursery; otherwise 1)
 Mlate  = 1 − min(0.6, over_rate · max(0, hrs(O_k, t)))
-x      = ((((((((base_kg · land) · Mcare) · Mplant) · Mwater) · Mrot) · Mpest) · Mlate) · pct_k) / 100
+x      = (((((((((base_kg · land) · Mcare) · Mplant) · Mwater) · Mrot) · Mpest) · Mlate) · Mrat) · pct_k) / 100
 kg_k   = max(ceil(base_kg · pct_k / 1000), floor(x + 0.5))
 ```
 
-- **Terms.** `land` is 1.10 on a private plot and 1.00 on a village plot. Every factor is evaluated at the picking time t.
+- **Terms.** `land` is 1.10 on a private plot and 1.00 on a village plot. Every factor is evaluated at the picking time t. `Mrat` (v17 §5.5) is the share the rats leave; the rice product (v15 §8.6, as §3 leaves it) gains `· Mrat` after `qT`, as its last factor, taken at the cut's time.
 - **`pct_k`** is the picking's integer percentage (40, 35, 25; 100 for one picking). The floor `ceil(base_kg · pct_k / 1000)` is 10 % of that picking's share. SQL computes it as `(base_kg * pct_k + 999) / 1000` (integer division), TS as `Math.ceil(base_kg * pct_k / 1000)` (R31). ớt picking 1: `ceil(60 · 40 / 1000)` = 3 kg.
 - **Parity conventions** (R33). These are the rice model's (0013 §D, `crop.ts`), named here so both sides stay bit-equal:
   1. **Times.** TS holds epoch milliseconds as doubles; SQL holds timestamptz. Hours are `(b − a) / 3 600 000` in TS and `extract(epoch from (b − a))::double precision / 3600` (`_hrs`) in SQL. Offsets go through `plusH` / `_plus_h`, which cut to whole seconds. Every fixture time is a whole second, so both sides divide the same integers and get the same double.

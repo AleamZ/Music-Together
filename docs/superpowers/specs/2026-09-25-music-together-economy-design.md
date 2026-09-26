@@ -176,6 +176,7 @@ S = trunc(0.80 + 0.60 × h, 2),   h = ('x' || left(md5(room_id || ':' || species
 
 - **Anti-cheat `0015`** re-creates `finish_cast` (H2). Its plan is refreshed after v15.1 so that it keeps the index pricing.
 - **v15.3** (`2026-09-26-music-together-v15.3-design.md` §7.1, §10): crabs and snails follow M too. Each is priced at the catch at `max(1, floor(base × M))`, with M from `_fish_index` (whose wealth leaves banned accounts out, anti-cheat R30) and no season factor, and stored per critter like a fish. That spec's §10 has the arithmetic: critters stay under fishing at every M.
+- **v17** (`2026-09-26-music-together-v17-rats-design.md` §9): rats are priced with the same M: floor(150 × M), no season factor (v17 §9).
 - **v15 spec §10** points here for the farm numbers. Task 20 also changes the v15 spec §7 land numbers, the §8.1 table and the §9 prices. Its v14 reference, "a skilled angler earns about 1 000–1 800 xu per active hour", holds at M = 1.
 
 ## 6. Testing

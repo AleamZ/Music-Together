@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 **Builds on:** `main` @ `cd32174`. That commit has v13 (game mode), v14 (fishing pond, xu economy) and the lyrics/karaoke line from PR #10. v15 is developed on `feat/v15-field`. The stack is unchanged: Next.js 16.2.9, React 19, TS 5, Tailwind v4, Supabase (Postgres + Realtime), custom account/session auth and SECURITY DEFINER RPCs.
-**Roadmap:** v13 = game mode + hall → v14 = fishing pond + xu economy → **v15 (this doc) = rice paddies and land (15.1), tools and hoa màu (15.2), crabs and snails (15.3)** → v16 = the harvest-season rat hunt, the dog pet (chó cỏ) and the slingshot (ná).
+**Roadmap:** v13 = game mode + hall → v14 = fishing pond + xu economy → **v15 (this doc) = rice paddies and land (15.1), tools and hoa màu (15.2), crabs and snails (15.3)** → v17 (`2026-09-26-music-together-v17-rats-design.md`) = the harvest-season rat hunt, the dog pet (chó cỏ) and the slingshot (ná); v16 became the card corner.
 
 ## 1. Goal
 
@@ -30,7 +30,7 @@ It also includes three minigames: the harvest minigame gates the rice parts (v15
 
 | # | Question | Ruling |
 |---|---|---|
-| 1 | Version split | v15 = rice + land + crabs/snails; v16 = rat hunt + dog + slingshot (B) |
+| 1 | Version split | v15 = rice + land + crabs/snails; v17 = rat hunt + dog + slingshot (B; first planned as v16) |
 | 2 | Where land lives | Each room has one shared field map with a fixed set of plots. A plot belongs to an account *in that room*, and everyone sees everyone's rice. Xu and items stay account-wide, as in v14 (A) |
 | 3 | How to get land | Rent a village plot per season. Buy a private plot. Owners may lease their plot to others and sell it to another player at a negotiated price. Newcomers rent; wealthy players buy (B + negotiated sales) |
 | 4 | Cycle length | About 3 real days per season. Each plot runs its own clock, rice grows while you are offline, care windows are hours wide, and a missed window costs yield, never the whole crop (B) |
@@ -578,7 +578,7 @@ v15.1 ignores the reported quality (D1), so a modified client gains nothing from
       "prepared_at": "…", "soak_at": "…", "sow_at": "…", "transplant_at": "…",
       "water": 2, "water_set_at": "…",     // current level and when it last changed (for the 12 h drop)
       "pests": [{ "kind": "hopper", "since": "…" }],
-      "excess_n": false, "ripe": false,    // "ripe" is the v16 rat hook
+      "excess_n": false, "ripe": false,    // "ripe" was the rat hook; v17 uses _rat_food
       "log": { … } | absent                // fert/spray/water logs, only for the farmer
     }
   }],
@@ -819,7 +819,7 @@ Both are pure state machines in `lib/game/farm/minigames.ts` (beside v15.2's Har
 
 ## 18. Out of scope
 
-- **v16:** the harvest-season rat hunt, the dog pet (chó cỏ) and the slingshot (ná). The `ripe` flag in `field_state` is its hook.
+- **v17:** the harvest-season rat hunt, the dog pet (chó cỏ) and the slingshot (ná), in v17 (`2026-09-26-music-together-v17-rats-design.md`). Its hook is `_rat_food`, not the `ripe` flag in `field_state`.
 - **Not in v15:**
   - weather, real seasons (vụ Đông Xuân …) and festivals;
   - milling, cooking and crafting;

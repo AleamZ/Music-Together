@@ -32,6 +32,7 @@ export const CODE_LABEL: Record<string, string> = {
   reel_gate_hug: "Kéo cá sát ngưỡng (20 lần/ngày)",
   cast_daily_cap: "Chạm 300 lần câu/ngày",
   gather_daily_cap: "Chạm 200 lượt bắt cua, mò ốc/ngày",
+  rat_daily_cap: "Chạm 24 con chuột/ngày",
   bad_game: "Sai bàn bài",
   bad_seat: "Số ghế sai",
   bad_stake: "Mức cược sai",
@@ -72,7 +73,10 @@ export function holdingsLine(h: AnticheatHoldings): string {
   const seats = h.cards ?? [];
   return [
     formatXu(h.wallet?.coins ?? 0), `${count(items)} món đồ`, `${count(h.fish.length)} con cá`, `${count(h.personal_bests.length)} kỷ lục`,
-    `${count(kg)} kg lúa`, `${count(produce)} kg hoa màu`, `${count(critters)} con cua ốc`, `${count(h.plots.length)} thửa sở hữu`,
+    `${count(kg)} kg lúa`, `${count(produce)} kg hoa màu`, `${count(critters)} con cua ốc`,
+    // v17: the rat bag, and the dog when there is one
+    ...(h.rats ? [`${count(h.rats.count)} con chuột`] : []), ...(h.dog ? [`chó ${h.dog.name}`] : []),
+    `${count(h.plots.length)} thửa sở hữu`,
     `${count(h.leases.length)} thửa đang thuê`,
     `${count(h.offers.length)} đề nghị mua`, `${count(h.drying.length)} ô phơi`, `${count(h.announcements)} tin khoe trong chat`,
     ...(seats.length > 0 ? [`${count(seats.length)} ghế bàn bài (${formatXu(seats.reduce((a, s) => a + s.chips + s.escrow, 0))})`] : []),
