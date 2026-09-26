@@ -1,4 +1,4 @@
-import { HALL_H, HALL_W, LIGHT_STRINGS, hallShoreY } from "./hall";
+import { CARD_DECK, HALL_H, HALL_W, LIGHT_STRINGS, hallShoreY } from "./hall";
 import { propSprite } from "./props";
 import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt } from "./scene-art";
 import type { GameMap } from "./types";
@@ -164,6 +164,46 @@ function paintCounter(c: Ctx): void {
   for (const gx of [482, 520, 566]) { rect(c, "#f4f1ea", gx, 74, 4, 5); rect(c, "#7a4a2a", gx + 1, 76, 2, 3); }
 }
 
+/** Góc đánh bài (v16 spec §15): a plank deck with a rope edge, a few floor lanterns and grass tufts at the edge. */
+function paintCardCorner(c: Ctx): void {
+  const R = rng(37);
+  const { x: x0, y: y0, w, h } = CARD_DECK;
+  const bottom = (x: number) => Math.min(y0 + h, Math.floor(hallShoreY(x)) - 5);
+  const planks = ["#a8743f", "#b07c46", "#9c6c3a"];
+  for (let x = x0; x < x0 + w; x++) {
+    for (let y = y0; y < bottom(x); y++) {
+      const row = Math.floor((y - y0) / 5);
+      const joint = (x - x0 + row * 23) % 46 === 0;
+      const seam = (y - y0) % 5 === 4;
+      px(c, seam || joint ? C.woodDark : planks[row % 3], x, y);
+    }
+  }
+  for (let i = 0; i < 140; i++) {
+    const x = x0 + Math.floor(R() * w), y = y0 + Math.floor(R() * h);
+    if (y < bottom(x) - 1 && (y - y0) % 5 !== 4) px(c, R() < 0.5 ? C.woodLight : "#8e5e32", x, y);
+  }
+  // the rope edge: a twisted rope along the deck, two tones
+  const rope = (x: number, y: number, k: number) => px(c, k % 3 === 0 ? "#8a6a3f" : "#e0c27a", x, y);
+  for (let x = x0; x < x0 + w; x++) {
+    rope(x, y0, x);
+    rope(x, bottom(x) - 1, x + 1);
+  }
+  for (let y = y0; y < bottom(x0); y++) rope(x0, y, y);
+  for (let y = y0; y < bottom(x0 + w - 1); y++) rope(x0 + w - 1, y, y);
+  // floor lanterns (đèn lồng) at the corners
+  for (const [lx, ly] of [[68, 246], [237, 246], [70, 312]] as const) {
+    rect(c, C.outline, lx - 2, ly - 5, 5, 7);
+    rect(c, C.red, lx - 1, ly - 4, 3, 5); rect(c, C.goldLight, lx, ly - 3, 1, 3);
+    rect(c, C.gold, lx - 1, ly - 6, 3, 1); rect(c, C.gold, lx - 1, ly + 2, 3, 1);
+  }
+  // grass tufts at the edge
+  for (let i = 0; i < 40; i++) {
+    const top = R() < 0.5;
+    const x = x0 + Math.floor(R() * w), y = top ? y0 - 1 : bottom(x);
+    px(c, C.grassDeep, x, y); px(c, C.grassTip, x + 1, y - 1); px(c, C.grassDark, x - 1, y - 1);
+  }
+}
+
 // ---------------------------------------------------------------- public
 
 /** Paint the hall once. Throws "canvas-2d-unavailable" when the browser has no 2D canvas. */
@@ -171,6 +211,7 @@ export function paintHall(map: GameMap): SceneArt {
   const background = makeCanvas(HALL_W, HALL_H);
   const g = ctx2d(background);
   paintGround(g);
+  paintCardCorner(g);
   paintRiverDetails(g);
   paintBamboo(g);
   paintStage(g);

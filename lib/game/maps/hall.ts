@@ -13,6 +13,19 @@ export function hallShoreY(x: number): number {
   return 338 + 5 * Math.sin(x / 40) + 2 * Math.sin(x / 13);
 }
 
+/** Góc đánh bài (v16 spec §5): the plank deck in the south-west, between palm A and palm B. */
+export const CARD_DECK: Rect = { x: 62, y: 240, w: 182, h: 86 };
+
+/** Each card table's rect covers the table and its stools (west, east and south); the north side stays open for the use
+ *  spot. Then the "Góc đánh bài" sign and the corner's light pole. */
+export const CARD_SOLIDS: Rect[] = [
+  { x: 78, y: 272, w: 40, h: 26 },    // Tiến lên table + 4 stools
+  { x: 130, y: 296, w: 52, h: 26 },   // Cào mat + 6 cushions
+  { x: 188, y: 272, w: 52, h: 27 },   // poker table + 6 stools
+  { x: 150, y: 242, w: 14, h: 10 },   // "Góc đánh bài" sign
+  { x: 238, y: 246, w: 4, h: 4 },     // light pole of the corner
+];
+
 export const HALL_SOLIDS: Rect[] = [
   { x: 0, y: 0, w: 72, h: 150 },      // bamboo grove
   { x: 232, y: 0, w: 176, h: 140 },   // stage + backstage
@@ -32,6 +45,7 @@ export const HALL_SOLIDS: Rect[] = [
   { x: 434, y: 132, w: 12, h: 8 },    // banana plant east of the stage
   { x: 158, y: 184, w: 4, h: 4 },     // light pole west
   { x: 444, y: 166, w: 4, h: 4 },     // light pole east
+  ...CARD_SOLIDS,
 ];
 
 /** Walkable even over water. */
@@ -48,6 +62,22 @@ export const HALL_INTERACTABLES: Interactable[] = [
     id: "field_sign", kind: "portal", label: "Ra đồng", prompt: "Ra đồng ruộng", rect: { x: 31, y: 206, w: 18, h: 26 },
     use: { x: HALL_FIELD_ARRIVE.x, y: HALL_FIELD_ARRIVE.y }, to: { map: "field", arrive: FIELD_WEST_ARRIVE },
   },
+  {
+    id: "cards_tienlen", kind: "card_table", game: "tienlen", label: "Bàn Tiến lên", prompt: "Vào bàn Tiến lên",
+    rect: { x: 76, y: 268, w: 44, h: 30 }, use: { x: 98, y: 266 }, face: "down",
+  },
+  {
+    id: "cards_cao", kind: "card_table", game: "cao", label: "Chiếu Cào", prompt: "Vào chiếu Cào",
+    rect: { x: 128, y: 294, w: 56, h: 28 }, use: { x: 156, y: 290 }, face: "down",
+  },
+  {
+    id: "cards_poker", kind: "card_table", game: "poker", label: "Bàn Poker", prompt: "Vào bàn Poker",
+    rect: { x: 187, y: 268, w: 54, h: 31 }, use: { x: 214, y: 266 }, face: "down",
+  },
+  {
+    id: "cards_sign", kind: "card_rules", label: "Góc đánh bài", prompt: "Đọc Sổ luật",
+    rect: { x: 147, y: 226, w: 18, h: 26 }, use: { x: 156, y: 262 }, face: "up",
+  },
 ];
 
 /** Classic-mode members stand behind the café tables (the table sprite hides their legs). */
@@ -57,7 +87,7 @@ export const HALL_SEATS: Spot[] = [
   { x: 507, y: 246, dir: "down" }, { x: 523, y: 246, dir: "down" },
 ];
 export const HALL_STAND_SPOTS: Spot[] = [
-  { x: 180, y: 172, dir: "down" }, { x: 452, y: 158, dir: "down" }, { x: 150, y: 280, dir: "right" },
+  { x: 180, y: 172, dir: "down" }, { x: 452, y: 158, dir: "down" }, { x: 300, y: 300, dir: "left" },
   { x: 430, y: 300, dir: "left" }, { x: 260, y: 306, dir: "up" }, { x: 380, y: 168, dir: "down" },
 ];
 /** A classic-mode DJ is drawn on the stage behind the mixer. */
@@ -83,6 +113,11 @@ export const HALL_PROPS: PropPlacement[] = [
   { kind: "banana", x: 440, y: 140 },
   { kind: "lightpole", x: 160, y: 188 },
   { kind: "lightpole", x: 446, y: 170 },
+  { kind: "card_table", x: 98, y: 298, game: "tienlen" },
+  { kind: "card_table", x: 156, y: 322, game: "cao" },
+  { kind: "card_table", x: 214, y: 299, game: "poker" },
+  { kind: "sign", x: 156, y: 252, icon: "cards" },
+  { kind: "lightpole", x: 240, y: 250 },
 ];
 
 /** Overhead string lights: [x1, y1, x2, y2, sag] in world px (drawn above everything). */
@@ -90,6 +125,7 @@ export const LIGHT_STRINGS: ReadonlyArray<readonly [number, number, number, numb
   [246, 24, 100, 128, 10],   // stage west pole → palm A crown
   [394, 24, 612, 58, 12],    // stage east pole → palm C crown
   [160, 152, 446, 134, 14],  // across the yard between the light poles
+  [100, 128, 240, 214, 10],  // palm A crown → the card corner's pole
 ];
 
 export function buildHallMap(): GameMap {

@@ -1,3 +1,4 @@
+import type { CardGame } from "@/lib/game/cards/deck";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -8,7 +9,8 @@ export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field"];
 
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
-  | "plot" | "coop" | "farm_shop" | "rice_depot" | "drying";
+  | "plot" | "coop" | "farm_shop" | "rice_depot" | "drying"
+  | "card_table" | "card_rules";
 
 export interface Interactable {
   /** Unique per map: "dock_sign", "fish_3", … */
@@ -28,6 +30,8 @@ export interface Interactable {
   to?: { map: MapId; arrive: Spot };
   /** plot: its number (1–10). */
   plot?: number;
+  /** card_table: its game (v16). */
+  game?: CardGame;
 }
 
 /** A rice plot on the field (v15): its number, its land and where its name post stands. */
@@ -44,7 +48,7 @@ export type PropPlacement =
   | { kind: "table"; x: number; y: number }
   | { kind: "mixer"; x: number; y: number }
   | { kind: "board"; x: number; y: number }
-  | { kind: "sign"; x: number; y: number; icon?: "fish" | "note" | "rice" }
+  | { kind: "sign"; x: number; y: number; icon?: SignIcon }
   | { kind: "banana"; x: number; y: number }
   | { kind: "lightpole"; x: number; y: number }
   | { kind: "stall_front"; x: number; y: number }
@@ -56,7 +60,12 @@ export type PropPlacement =
   | { kind: "ricedepot_front"; x: number; y: number }
   | { kind: "pump"; x: number; y: number }
   | { kind: "haystack"; x: number; y: number }
-  | { kind: "scarecrow"; x: number; y: number };
+  | { kind: "scarecrow"; x: number; y: number }
+  | { kind: "card_table"; x: number; y: number; game: CardGame };
+
+/** A signpost's pixel icon: a fish (to the pond), a music note (to the hall), a rice panicle (to the field) or ♠♥ (the
+ *  card corner's rules). */
+export type SignIcon = "fish" | "note" | "rice" | "cards";
 
 /** Where classic-mode members are shown (the hall only). */
 export interface Seating {

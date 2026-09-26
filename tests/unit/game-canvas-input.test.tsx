@@ -7,8 +7,8 @@ import { DEFAULT_LOOK } from "@/lib/game/look";
 // One fake engine and channel per world: they record what the canvas tells them (input lock, plots, farm
 // animations, messages, hellos and byes) and let a test deliver messages.
 type EngineRec = {
-  mapId: string; input: boolean[]; plots: unknown[]; anims: number[]; applied: unknown[]; hellos: string[]; removed: string[];
-  destroyed: boolean;
+  mapId: string; input: boolean[]; plots: unknown[]; cards: unknown[]; anims: number[]; applied: unknown[]; hellos: string[];
+  removed: string[]; destroyed: boolean;
 };
 const { engines, channels, replies } = vi.hoisted(() => ({
   engines: [] as EngineRec[],
@@ -20,7 +20,7 @@ vi.mock("@/lib/game/engine", () => ({
   GameEngine: class {
     rec: EngineRec;
     constructor(_canvas: unknown, map: { id: string }) {
-      this.rec = { mapId: map.id, input: [], plots: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false };
+      this.rec = { mapId: map.id, input: [], plots: [], cards: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false };
       engines.push(this.rec);
     }
     setInputEnabled(enabled: boolean) {
@@ -28,6 +28,9 @@ vi.mock("@/lib/game/engine", () => ({
     }
     setPlots(plots: unknown) {
       this.rec.plots.push(plots);
+    }
+    setCardTables(labels: unknown) {
+      this.rec.cards.push(labels);
     }
     showFarmAnim(a: number) {
       this.rec.anims.push(a);
@@ -140,6 +143,19 @@ describe("GameCanvas plots across travel", () => {
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
     rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
     expect(engines[2].plots.at(-1)).toBe(plots);
+  });
+});
+
+describe("GameCanvas card-table labels across travel", () => {
+  it("passes the labels on at once and gives them to the next map's engine", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    const labels = { tienlen: "Tiến lên · 2/4 · 1.000", cao: "Trống" };
+    ref.current!.setCardTables(labels);
+    expect(engines[0].cards.at(-1)).toBe(labels);
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[2].cards.at(-1)).toBe(labels);
   });
 });
 

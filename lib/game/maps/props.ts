@@ -1,5 +1,6 @@
 import { C, ctx2d, makeCanvas, px, rect, rng, type Ctx, type PropFrame, type PropSprite } from "./scene-art";
-import type { PropPlacement } from "./types";
+import type { CardGame } from "@/lib/game/cards/deck";
+import type { PropPlacement, SignIcon } from "./types";
 
 // Every depth-sorted prop of every map: its sprite frame (pure) and its painter (browser only).
 
@@ -24,8 +25,16 @@ export function propFrame(p: PropPlacement): PropFrame {
     case "pump": return { w: 36, h: 48, ox: 18, oy: 48 };
     case "haystack": return { w: 30, h: 26, ox: 15, oy: 25 };
     case "scarecrow": return { w: 20, h: 34, ox: 10, oy: 34 };
+    case "card_table": return CARD_TABLE_FRAMES[p.game];
   }
 }
+
+/** The card tables' sprites (v16 spec §15): the base point is the bottom of the south stools. */
+const CARD_TABLE_FRAMES: Record<CardGame, PropFrame> = {
+  tienlen: { w: 44, h: 30, ox: 22, oy: 30 },
+  cao: { w: 56, h: 28, ox: 28, oy: 28 },
+  poker: { w: 54, h: 31, ox: 27, oy: 31 },
+};
 
 function drawPalm(c: Ctx, h: number, lean: number, seed: number): void {
   const R = rng(seed), bx = 50, by = h + 38;
@@ -110,21 +119,114 @@ function drawBoard(c: Ctx): void {
   rect(c, "#b5566f", 7, 6, 3, 1); rect(c, "#3d86a8", 17, 5, 5, 1); rect(c, "#3d86a8", 17, 13, 4, 1);
 }
 
-const SIGN_ICONS: Record<"fish" | "note" | "rice", { rows: string[]; color: string; x: number; y: number }> = {
-  fish: { rows: ["..####...", ".######.#", "########.", ".######.#", "..####..."], color: "#3d86a8", x: 4, y: 3 },
-  note: { rows: ["...##.", "...#.#", "...#..", ".###..", "####..", ".##..."], color: C.red, x: 6, y: 2 },
-  rice: { rows: ["..#.#..", ".#.#.#.", "..#.#..", ".#.#.#.", "...#...", "...#..."], color: C.gold, x: 5, y: 2 },
+type SignGlyph = { rows: string[]; color: string; x: number; y: number };
+const SIGN_ICONS: Record<SignIcon, SignGlyph[]> = {
+  fish: [{ rows: ["..####...", ".######.#", "########.", ".######.#", "..####..."], color: "#3d86a8", x: 4, y: 3 }],
+  note: [{ rows: ["...##.", "...#.#", "...#..", ".###..", "####..", ".##..."], color: C.red, x: 6, y: 2 }],
+  rice: [{ rows: ["..#.#..", ".#.#.#.", "..#.#..", ".#.#.#.", "...#...", "...#..."], color: C.gold, x: 5, y: 2 }],
+  cards: [
+    { rows: ["..#..", ".###.", "#####", "#####", "..#..", ".###."], color: C.outline, x: 3, y: 2 },
+    { rows: [".#.#.", "#####", "#####", ".###.", "..#.."], color: C.red, x: 10, y: 3 },
+  ],
 };
 
-/** A signpost with a pixel icon: a fish (to the pond), a music note (to the hall) or a rice panicle (to the field). */
-function drawSign(c: Ctx, icon: "fish" | "note" | "rice"): void {
+/** A signpost with a pixel icon: a fish (to the pond), a music note (to the hall), a rice panicle (to the field) or ♠♥
+ *  (the card corner). */
+function drawSign(c: Ctx, icon: SignIcon): void {
   rect(c, C.outline, 7, 10, 4, 16); rect(c, C.wood, 8, 10, 2, 16);
   rect(c, C.outline, 0, 0, 18, 12); rect(c, C.woodLight, 1, 1, 16, 10);
-  const ic = SIGN_ICONS[icon];
-  ic.rows.forEach((r, j) => {
-    for (let i = 0; i < r.length; i++) if (r.charAt(i) === "#") px(c, ic.color, ic.x + i, ic.y + j);
-  });
+  for (const ic of SIGN_ICONS[icon]) {
+    ic.rows.forEach((r, j) => {
+      for (let i = 0; i < r.length; i++) if (r.charAt(i) === "#") px(c, ic.color, ic.x + i, ic.y + j);
+    });
+  }
   if (icon === "fish") px(c, C.white, 6, 5);
+}
+
+const STOOL_BLUE = "#3d6fd1", STOOL_BLUE_LIGHT = "#6f9be8", STOOL_BLUE_DARK = "#2a4f9c";
+
+/** A blue plastic stool (ghế nhựa) seen from the front: its seat's top-left at (x, y). */
+function drawStool(c: Ctx, x: number, y: number): void {
+  rect(c, C.outline, x, y, 8, 4); rect(c, STOOL_BLUE, x + 1, y + 1, 6, 2); rect(c, STOOL_BLUE_LIGHT, x + 1, y + 1, 6, 1);
+  rect(c, C.outline, x + 1, y + 4, 2, 4); rect(c, C.outline, x + 5, y + 4, 2, 4);
+  px(c, STOOL_BLUE_DARK, x + 1, y + 4); px(c, STOOL_BLUE_DARK, x + 6, y + 4);
+}
+
+/** A cushion (gối ngồi) on the floor. */
+function drawCushion(c: Ctx, x: number, y: number, col: string): void {
+  rect(c, C.outline, x + 1, y, 6, 6); rect(c, C.outline, x, y + 1, 8, 4);
+  rect(c, col, x + 1, y + 1, 6, 4); rect(c, C.goldLight, x + 3, y + 2, 2, 2);
+}
+
+/** A tiny card lying on a table: a white face with a red or black pip, or a burgundy back. */
+function drawTinyCard(c: Ctx, x: number, y: number, face: "red" | "black" | "back"): void {
+  rect(c, C.outline, x, y, 5, 6);
+  rect(c, face === "back" ? "#8e2a3f" : C.white, x + 1, y + 1, 3, 4);
+  if (face === "back") px(c, C.gold, x + 2, y + 2);
+  else px(c, face === "red" ? C.red : C.outline, x + 2, y + 2);
+}
+
+/** Tiến lên: a low square table with a red-checked cloth, a fan of cards and 4 blue plastic stools. */
+function drawTienLenTable(c: Ctx): void {
+  drawStool(c, 2, 12); drawStool(c, 34, 12);
+  // the table: cloth top, a checked apron, two legs
+  rect(c, C.outline, 9, 5, 26, 17);
+  for (let y = 6; y < 18; y++) for (let x = 10; x < 34; x++) {
+    const check = (Math.floor((x - 10) / 3) + Math.floor((y - 6) / 3)) % 2 === 0;
+    px(c, check ? C.red : C.white, x, y);
+  }
+  rect(c, C.redDark, 10, 18, 24, 3);
+  for (let x = 10; x < 34; x += 3) px(c, C.white, x, 19);
+  rect(c, C.outline, 11, 21, 3, 4); rect(c, C.outline, 30, 21, 3, 4);
+  rect(c, C.woodDark, 12, 21, 1, 3); rect(c, C.woodDark, 31, 21, 1, 3);
+  // a fan of cards and the pile
+  drawTinyCard(c, 15, 9, "black"); drawTinyCard(c, 18, 8, "red"); drawTinyCard(c, 21, 9, "black");
+  drawTinyCard(c, 27, 10, "back");
+  drawStool(c, 12, 22); drawStool(c, 24, 22);
+}
+
+/** Cào: a round straw mat (chiếu cói) with a red envelope, a stack of cards and 6 cushions. */
+function drawCaoMat(c: Ctx): void {
+  drawCushion(c, 2, 4, C.red); drawCushion(c, 47, 4, "#5caa4a");
+  const cx = 28, cy = 12, rx = 18, ry = 7;
+  for (let y = cy - ry - 1; y <= cy + ry + 1; y++) for (let x = cx - rx - 1; x <= cx + rx + 1; x++) {
+    const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+    if (d > 1.16) continue;
+    if (d > 0.9) px(c, d > 1.02 ? C.outline : "#a8843f", x, y);
+    else px(c, (x + y) % 4 === 0 ? "#c4a85e" : (x - y) % 6 === 0 ? "#e8d28a" : "#d8c07a", x, y);
+  }
+  // the red envelope (lì xì) and the stack of cards
+  rect(c, C.outline, 17, 8, 8, 6); rect(c, C.red, 18, 9, 6, 4); rect(c, C.gold, 20, 10, 2, 2);
+  drawTinyCard(c, 30, 8, "back"); drawTinyCard(c, 31, 7, "back");
+  drawCushion(c, 4, 14, C.gold); drawCushion(c, 45, 14, C.blue);
+  drawCushion(c, 17, 21, "#b5566f"); drawCushion(c, 32, 21, C.red);
+}
+
+/** Poker: an oval table with green felt, a wooden rim, a stack of chips and 6 stools. */
+function drawPokerTable(c: Ctx): void {
+  drawStool(c, 2, 11); drawStool(c, 44, 11);
+  rect(c, C.outline, 24, 20, 7, 6); rect(c, C.woodDeep, 25, 20, 5, 5);
+  const cx = 27, cy = 14, rx = 17, ry = 7;
+  for (let y = cy - ry - 1; y <= cy + ry + 1; y++) for (let x = cx - rx - 1; x <= cx + rx + 1; x++) {
+    const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+    if (d > 1.14) continue;
+    if (d > 1.0) px(c, C.outline, x, y);
+    else if (d > 0.72) px(c, y > cy ? C.woodDark : C.wood, x, y);
+    else px(c, d < 0.25 && y < cy ? "#3f9a62" : "#2f7d4f", x, y);
+  }
+  // the chips: red, white and blue coins
+  for (const [x, col] of [[22, C.red], [26, C.white], [30, C.blue]] as const) {
+    rect(c, C.outline, x - 1, 11, 5, 5);
+    for (let k = 0; k < 3; k++) rect(c, k % 2 === 0 ? col : C.goldLight, x, 12 + k, 3, 1);
+  }
+  drawTinyCard(c, 14, 10, "back"); drawTinyCard(c, 36, 11, "back");
+  for (const x of [11, 19, 27, 35]) drawStool(c, x, 23);
+}
+
+function drawCardTable(c: Ctx, game: CardGame): void {
+  if (game === "tienlen") drawTienLenTable(c);
+  else if (game === "cao") drawCaoMat(c);
+  else drawPokerTable(c);
 }
 
 function drawBanana(c: Ctx): void {
@@ -305,6 +407,7 @@ export function drawProp(c: Ctx, p: PropPlacement): void {
     case "pump": return drawPump(c);
     case "haystack": return drawHaystack(c);
     case "scarecrow": return drawScarecrow(c);
+    case "card_table": return drawCardTable(c, p.game);
   }
 }
 

@@ -2,6 +2,7 @@ import { createActor, setKeyboard, setPath, tickActor, walkFrame, type Actor } f
 import {
   drawHarvester, drawPlotShimmer, drawUrgentRing, harvesterSpot, liveLook, lookKey, paintPlot, postLabel, type PlotDraw,
 } from "@/lib/game/art/crops";
+import type { CardGame } from "@/lib/game/cards/deck";
 import { drawFarmAnim } from "@/lib/game/art/farm-anim";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { serverNow } from "@/lib/game/farm/clock";
@@ -115,6 +116,8 @@ export class GameEngine {
   private plots = new Map<number, PlotDraw>();
   /** Each plot's painted crop, repainted when its look's key changes. */
   private plotArt = new Map<number, { key: string; canvas: HTMLCanvasElement }>();
+  /** The hall's card-table labels (v16 spec §5). */
+  private cardTables: Partial<Record<CardGame, string>> = {};
   private raf = 0;
   private lastT = 0;
   private failures = 0;
@@ -227,6 +230,11 @@ export class GameEngine {
   /** The field's plots: the crops, the name posts' labels and my urgent rings (spec §13.4). */
   setPlots(plots: ReadonlyArray<PlotDraw>): void {
     this.plots = new Map(plots.map((p) => [p.no, p]));
+  }
+
+  /** The card tables' labels from card_lobby (v16 spec §5): one line over each table of the hall. */
+  setCardTables(labels: Readonly<Partial<Record<CardGame, string>>>): void {
+    this.cardTables = { ...labels };
   }
 
   /** Play farm animation `a` on my character for FARM_ANIM_MS (0 stops it). */
@@ -683,6 +691,19 @@ export class GameEngine {
       c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
       c.fillStyle = "#fbf3dc";
       c.fillText(label, x, y + s * 0.3);
+    }
+
+    // the card tables' labels: the lobby's line over each table (v16 spec §5)
+    for (const it of this.map.interactables) {
+      const text = it.kind === "card_table" && it.game ? this.cardTables[it.game] : undefined;
+      if (!text) continue;
+      const [x, y] = dev(it.rect.x + it.rect.w / 2, it.rect.y - 4);
+      const w = Math.round(c.measureText(text).width + 3 * s), h = Math.round(4.8 * s);
+      if (x + w / 2 < 0 || x - w / 2 > this.canvas.width || y + h < 0 || y - h > this.canvas.height) continue;
+      c.fillStyle = "rgba(31, 90, 58, 0.9)";
+      c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
+      c.fillStyle = "#fbf3dc";
+      c.fillText(text, x, y + s * 0.3);
     }
 
     // name tags under the feet — neighbours at a table would overlap, so later tags move down
