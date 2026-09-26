@@ -1,5 +1,8 @@
-// The field_state JSON (spec §11.5; v15.2 §11.6; v15.3 §11.7), camelCased, with times as ms since the epoch. Pure.
+// The field_state JSON (spec §11.5; v15.2 §11.6; v15.3 §11.7; v17 §10.5), camelCased, with times as ms since the epoch.
+// Pure.
+import { parseDog, type DogView } from "../dog";
 import { GATHER } from "./gather";
+import { parseRatBag, parseRatCaps, parseRats, type FieldRats, type RatBag, type RatCaps } from "./rats";
 
 export type Phase = "prepared" | "soaking" | "sprouted" | "seedling" | "tillering" | "panicle" | "heading" | "ripening" | "ripe" | "overripe";
 /** Rice pests, then the hoa-màu ones (v15.2 §8.8). */
@@ -116,6 +119,12 @@ export interface FarmMine {
   /** 3 by hand plus the largest container. */
   critterCap: number;
   gather: GatherMine;
+  /** v17: the rats in the bag (none before 0019). */
+  rats: RatBag;
+  /** v17: what the catch caps leave (full before 0019). */
+  ratCaps: RatCaps;
+  /** v17: the account's dog (null: none yet, or before 0019). */
+  dog: DogView | null;
 }
 
 export interface FieldMine extends FarmMine {
@@ -132,6 +141,8 @@ export interface FieldState {
   mine: FieldMine;
   /** null before 0018. */
   critterPrices: CritterPrices | null;
+  /** v17: the field's rats; null before 0019. */
+  rats: FieldRats | null;
 }
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
@@ -258,7 +269,10 @@ export function parseFarmMine(json: unknown): FarmMine | null {
   for (const [k, v] of Object.entries(obj(m.produce))) if (num(v) > 0) produce[k] = num(v);
   const t = m.tank && typeof m.tank === "object" ? (m.tank as Record<string, unknown>) : null;
   const tank = t ? { item: typeof t.item === "string" ? t.item : null, charges: num(t.charges) } : null;
-  return { items, rice, coins: num(m.coins), giftClaimed: m.gift_claimed === true, produce, tank, ...parseGather(m) };
+  return {
+    items, rice, coins: num(m.coins), giftClaimed: m.gift_claimed === true, produce, tank, ...parseGather(m),
+    rats: parseRatBag(m.rats), ratCaps: parseRatCaps(m.rat_caps), dog: parseDog(m.dog),
+  };
 }
 
 /** A field_state answer; null when it is not one. */
@@ -286,6 +300,7 @@ export function parseFieldState(json: unknown): FieldState | null {
       incomingOffers: offers(m.incoming_offers),
     },
     critterPrices: numOrNull(cp.mult) === null ? null : { mult: num(cp.mult), endsAt: time(cp.ends_at) },
+    rats: parseRats(j.rats),
   };
 }
 

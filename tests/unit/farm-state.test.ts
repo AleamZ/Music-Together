@@ -72,6 +72,7 @@ describe("parseFieldState", () => {
     expect(s.mine).toEqual({
       items: { seed_nep: 2 }, rice: { nep: { wet: 0, dry: 70 } }, coins: 1230, giftClaimed: true, produce: {}, tank: null,
       critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+      rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
       ownedPlot: 3, farming: [7],
       myOffers: [{ id: "o1", plot: 2, price: 8000, expiresAt: ms("2026-09-26T10:00:00Z"), buyer: null }],
       incomingOffers: [{ id: "o2", plot: 3, price: 8500, expiresAt: ms("2026-09-26T09:00:00Z"), buyer: LAN }],
@@ -177,5 +178,47 @@ describe("v15.3 (§11.7)", () => {
   it("keeps the newer account part's critters when it merges", () => {
     const next = withMine(parseFieldState(ANSWER)!, parseFarmMine(MINE)!);
     expect(next.mine).toMatchObject({ critterCap: 33, gather: { leftToday: 187 }, ownedPlot: 3 });
+  });
+});
+
+describe("v17 (§10.5)", () => {
+  const RATS = {
+    next_at: "2026-09-25T10:14:00+00:00", price: 336,
+    live: [{ id: 812, plot: 3, since: "2026-09-25T09:58:00+00:00", seed: 1234567 }], recent: [],
+    plots: { 3: [{ r: 812, from: "2026-09-25T09:59:00+00:00", to: null }] },
+  };
+  const DOG = {
+    name: "Mực", coat: "muc", adopted_at: "2026-09-24T08:00:00+00:00", fed_until: "2026-09-26T08:00:00+00:00", next_hunt_at: null,
+    catches: 12,
+  };
+  it("reads the field's rats", () => {
+    expect(parseFieldState({ ...ANSWER, rats: RATS })!.rats).toEqual({
+      nextAt: ms("2026-09-25T10:14:00Z"), price: 336, live: [{ id: 812, plot: 3, since: ms("2026-09-25T09:58:00Z"), seed: 1234567 }],
+      recent: [], plots: { 3: [{ r: 812, from: ms("2026-09-25T09:59:00Z"), to: null }] },
+    });
+  });
+  it("reads the bag, the caps and the dog in the account part", () => {
+    const m = parseFarmMine({
+      ...ANSWER.mine, rats: { count: 2, value: 486 }, dog: DOG,
+      rat_caps: { hour_left: 4, hour_resets_at: "2026-09-25T10:40:00+00:00", day_left: 21 },
+    })!;
+    expect(m.rats).toEqual({ count: 2, value: 486 });
+    expect(m.ratCaps).toEqual({ hourLeft: 4, hourResetsAt: ms("2026-09-25T10:40:00Z"), dayLeft: 21 });
+    expect(m.dog).toEqual({
+      name: "Mực", coat: "muc", adoptedAt: ms("2026-09-24T08:00:00Z"), fedUntil: ms("2026-09-26T08:00:00Z"), nextHuntAt: null,
+      catches: 12,
+    });
+  });
+  it("reads a database before 0019 as: no rats, an empty bag, full caps, no dog", () => {
+    const s = parseFieldState(ANSWER)!;
+    expect(s.rats).toBeNull();
+    expect(s.mine).toMatchObject({ rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null });
+  });
+  it("keeps the newer account part's bag, caps and dog when it merges", () => {
+    const s = parseFieldState({ ...ANSWER, rats: RATS, mine: { ...ANSWER.mine, rats: { count: 2, value: 486 }, dog: DOG } })!;
+    const next = withMine(s, parseFarmMine({ ...ANSWER.mine, rats: { count: 0, value: 0 }, dog: DOG })!);
+    expect(next.mine.rats).toEqual({ count: 0, value: 0 });
+    expect(next.mine.dog?.name).toBe("Mực");
+    expect(next.rats?.price).toBe(336);
   });
 });

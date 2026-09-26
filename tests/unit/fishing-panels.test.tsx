@@ -150,6 +150,7 @@ describe("BagPanel, Nông cụ (v15.2 R29)", () => {
   ];
   const mine = (items: Record<string, number>, tank: Tank | null): FarmMine => ({
     items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+    rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
   });
   const bag = (m: FarmMine) => {
     const onLoad = vi.fn();
@@ -208,7 +209,7 @@ describe("BagPanel, Cua & ốc (v15.3 §13.4)", () => {
   ];
   const mine = (items: Record<string, number>, critters: FarmMine["critters"], cap: number, left = 187, reset: number | null = null): FarmMine => ({
     items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null, critters, critterCap: cap,
-    gather: { readyAt: {}, leftToday: left, dayResetsAt: reset },
+    gather: { readyAt: {}, leftToday: left, dayResetsAt: reset }, rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
   });
   const bag = (m: FarmMine, critters = KINDS, now = 0) => render(<BagPanel state={STATE} catalog={CATALOG} busy={false} onEquip={() => {}}
     onRelease={() => {}} onClose={() => {}} farm={{ mine: m, items: ITEMS, critters, now, busy: false, onLoad: () => {} }} />);

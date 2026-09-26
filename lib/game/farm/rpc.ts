@@ -1,4 +1,5 @@
 import { AnticheatError, screenAnswer } from "@/lib/anticheat";
+import { parseDogAnswer, type DogAnswer, type DogCoat } from "@/lib/game/dog";
 import { supabase } from "@/lib/supabase";
 import {
   critterFromRow, FARM_KINDS, farmItemFromRow, uplandFromRow, varietyFromRow, type CritterKindRow, type FarmCatalog, type FarmItemRow,
@@ -6,9 +7,10 @@ import {
 } from "./catalog";
 import { parseFarmMine, parseFieldState, type FarmMine, type FieldState } from "./state";
 
-// Supabase calls for the field (spec §11.3; v15.2 §11.4; v15.3 §11.4). Every farm answer in a room is the whole
-// field_state; the account-only ones (sell_rice, buy_farm_item, claim_farm_gift, load_sprayer, sell_produce,
-// sell_critters) and the gathering ones (crab_start, crab_finish, pick_snail_bed) answer with the account part.
+// Supabase calls for the field (spec §11.3; v15.2 §11.4; v15.3 §11.4; v17 §10.4). Every farm answer in a room is the
+// whole field_state; the account-only ones (sell_rice, buy_farm_item, claim_farm_gift, load_sprayer, sell_produce,
+// sell_critters, sell_rats) and the gathering ones (crab_start, crab_finish, pick_snail_bed) answer with the account
+// part, and the dog's (dog_state, adopt_dog, rename_dog, feed_dog) with the dog, its food and the wallet.
 
 /** The RPCs 0016 adds: before it runs, PostgREST cannot find them (v15.2 R28). */
 export const RPCS_152: ReadonlySet<string> = new Set([
@@ -17,6 +19,11 @@ export const RPCS_152: ReadonlySet<string> = new Set([
 
 /** The RPCs 0018 adds: before it runs, PostgREST cannot find them (v15.3 R23). */
 export const RPCS_153: ReadonlySet<string> = new Set(["crab_start", "crab_finish", "pick_snail_bed", "sell_critters"]);
+
+/** The RPCs 0019 adds: before it runs, PostgREST cannot find them (v17 §3). */
+export const RPCS_17: ReadonlySet<string> = new Set([
+  "sling_start", "sling_shoot", "dog_hunt", "adopt_dog", "rename_dog", "feed_dog", "sell_rats", "dog_state",
+]);
 
 /** No such table: upland_crops before 0016, critter_kinds before 0018 (PostgREST's PGRST205, Postgres' 42P01). */
 const isMissingTable = (e: { code?: unknown } | null): boolean => e?.code === "PGRST205" || e?.code === "42P01";
@@ -258,4 +265,70 @@ export async function sellCritters(token: string, kind: string | null): Promise<
   const s = r.sold && typeof r.sold === "object" ? (r.sold as Record<string, unknown>) : {};
   if (!isNum(s.n) || !isNum(s.xu)) throw new Error("bad sale answer");
   return { ...mineAnswer(r), sold: { n: s.n, xu: s.xu } };
+}
+
+/** The slingshot's aim (v17 §6.1): at this rat, from the server's start (the 2–60 s gate counts from it). */
+export interface SlingAim { rat: number; startedAt: number }
+/** A shot (§6.1): a hit catches; its price is fixed at the catch; the pellets left. */
+export interface ShotAnswer { hit: boolean; price: number | null; pellets: number }
+
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+
+export async function slingStart(roomId: string, token: string, rat: number): Promise<{ state: FieldState; aim: SlingAim }> {
+  const r = await call("sling_start", { p_room_id: roomId, p_session_token: token, p_rat_id: rat });
+  const a = obj(r.aim);
+  const startedAt = typeof a.started_at === "string" ? Date.parse(a.started_at) : NaN;
+  if (!isNum(a.rat) || !Number.isFinite(startedAt)) throw new Error("bad aim");
+  return { state: fieldOf(r), aim: { rat: a.rat, startedAt } };
+}
+
+/** A shot's answer is the server's (as a catch's is, v15.3): a hit with its price, or a miss, and the pellets left; an
+ *  answer without them whole is malformed. */
+export async function slingShoot(roomId: string, token: string, rat: number, hit: boolean): Promise<{ state: FieldState; shot: ShotAnswer }> {
+  const r = await call("sling_shoot", { p_room_id: roomId, p_session_token: token, p_rat_id: rat, p_hit: hit });
+  const s = obj(r.shot);
+  if (typeof s.hit !== "boolean" || !isNum(s.pellets) || (s.hit && !isNum(s.price))) throw new Error("bad shot answer");
+  return { state: fieldOf(r), shot: { hit: s.hit, price: s.hit && isNum(s.price) ? s.price : null, pellets: s.pellets } };
+}
+
+/** The dog's pounce (§7.2): what the rat it caught fetched; an answer without it is malformed. */
+export async function dogHunt(roomId: string, token: string, rat: number): Promise<{ state: FieldState; price: number }> {
+  const r = await call("dog_hunt", { p_room_id: roomId, p_session_token: token, p_rat_id: rat });
+  const d = obj(r.dog_hunt);
+  if (!isNum(d.price)) throw new Error("bad hunt answer");
+  return { state: fieldOf(r), price: d.price };
+}
+
+async function dogCall(fn: string, args: Record<string, unknown>): Promise<DogAnswer> {
+  const a = parseDogAnswer(await call(fn, args));
+  if (!a) throw new Error("bad dog answer");
+  return a;
+}
+
+/** The dog on entering the game (§7.3): a read. */
+export function dogState(token: string): Promise<DogAnswer> {
+  return dogCall("dog_state", { p_session_token: token });
+}
+
+/** Nhận nuôi at chú Tám's (§7.1): a name and a coat, 20 000 xu. */
+export function adoptDog(token: string, name: string, coat: DogCoat): Promise<DogAnswer> {
+  return dogCall("adopt_dog", { p_session_token: token, p_name: name, p_coat: coat });
+}
+
+export function renameDog(token: string, name: string): Promise<DogAnswer> {
+  return dogCall("rename_dog", { p_session_token: token, p_name: name });
+}
+
+/** One bịch of thức ăn chó: fed 24 h more (D19). */
+export function feedDog(token: string): Promise<DogAnswer> {
+  return dogCall("feed_dog", { p_session_token: token });
+}
+
+/** cô Út buys every rat in the bag at the prices fixed at each catch (D12); `sold` is what she paid, so an answer
+ *  without it whole is malformed. */
+export async function sellRats(token: string): Promise<MineAnswer & { sold: { count: number; xu: number } }> {
+  const r = await call("sell_rats", { p_session_token: token });
+  const s = obj(r.sold);
+  if (!isNum(s.count) || !isNum(s.xu)) throw new Error("bad sale answer");
+  return { ...mineAnswer(r), sold: { count: s.count, xu: s.xu } };
 }

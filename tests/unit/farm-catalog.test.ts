@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  boxRow, critterFromRow, describeFarmItem, farmItemFromRow, harvesterPrice, producePrice, ricePrice, ripeAfterHours, uplandFromRow,
+  boxRow, critterFromRow, describeFarmItem, FARM_KINDS, farmItemFromRow, harvesterPrice, producePrice, ricePrice, ripeAfterHours, uplandFromRow,
   uplandHours, varietyFromRow, type FarmItemRow, type UplandCropRow, type VarietyRow,
 } from "@/lib/game/farm/catalog";
 import fixtures from "@/tests/fixtures/upland-cases.json";
@@ -125,5 +125,22 @@ describe("critters and containers (v15.3 §7.1, §9)", () => {
     expect([boxRow(bucket, { box_basket: 1 }, all), boxRow(basket, { box_basket: 1 }, all)])
       .toEqual([{ state: "bigger", name: "Giỏ tre" }, { state: "owned" }]);
     expect(boxRow(bucket, { box_bucket: 1, box_basket: 1 }, all)).toEqual({ state: "owned" });
+  });
+});
+
+describe("the slingshot, its pellets, the dog food and rat food (v17 §8, D4)", () => {
+  it("sells the ná, the pellets and the dog food", () => {
+    expect(FARM_KINDS).toEqual(["seed", "fertilizer", "pesticide", "critter_box", "tool", "ammo", "pet_food"]);
+    expect(farmItemFromRow(item({ id: "ammo_pellet", kind: "ammo", name: "Đạn đất", price: 10 })).kind).toBe("ammo");
+    expect(farmItemFromRow(item({ id: "food_dog", kind: "pet_food", name: "Thức ăn chó", price: 150 })).kind).toBe("pet_food");
+    const d = (over: Partial<FarmItemRow>) => describeFarmItem(farmItemFromRow(item(over)), VARIETIES);
+    expect(d({ id: "tool_sling", kind: "tool", price: 3000 })).toBe("Bắn chuột đồng — mua một lần");
+    expect(d({ id: "ammo_pellet", kind: "ammo", price: 10 })).toBe("Đạn cho ná · 10 viên 100 xu");
+    expect(d({ id: "food_dog", kind: "pet_food", price: 150 })).toBe("Cho chó ăn · no 24 giờ");
+  });
+  it("reads upland_crops.rat_food: khoai and bắp, not ớt; none before 0019", () => {
+    const rows = (fixtures as unknown as { crops: UplandCropRow[] }).crops;
+    expect(rows.map(uplandFromRow).map((u) => [u.id, u.ratFood])).toEqual([["khoai", true], ["bap", true], ["ot", false]]);
+    expect(uplandFromRow({ ...rows[0], rat_food: undefined }).ratFood).toBe(false);
   });
 });

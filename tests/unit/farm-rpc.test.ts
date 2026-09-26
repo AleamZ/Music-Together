@@ -5,8 +5,9 @@ vi.mock("@/lib/supabase", () => ({ supabase: { rpc: h.rpc, from: h.from } }));
 
 import { AnticheatError, subscribeAnticheat, type AnticheatEvent } from "@/lib/anticheat";
 import {
-  actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, fetchFarmCatalog, fetchFieldState, fieldAction, loadSprayer, pickSnailBed,
-  RPCS_152, RPCS_153, sellCritters, sellProduce, sellRice,
+  actionCall, adoptDog, buyFarmItem, claimFarmGift, crabFinish, crabStart, dogHunt, dogState, feedDog, fetchFarmCatalog, fetchFieldState,
+  fieldAction, loadSprayer, pickSnailBed, renameDog, RPCS_152, RPCS_153, RPCS_17, sellCritters, sellProduce, sellRats, sellRice, slingShoot,
+  slingStart,
 } from "@/lib/game/farm/rpc";
 import fixtures from "@/tests/fixtures/upland-cases.json";
 
@@ -54,7 +55,7 @@ describe("fetchFarmCatalog", () => {
     expect(a.uplands.map((u) => u.id)).toEqual(["khoai", "bap", "ot"]);
     expect(a.items[0]).toMatchObject({ id: "seed_ot", kind: "seed", upland: "ot" });
     expect(a.critters).toEqual([{ id: "cua_dong", name: "Cua đồng", group: "crab", basePrice: 12, sortOrder: 10 }]);
-    expect(filters).toEqual([["kind", ["seed", "fertilizer", "pesticide", "critter_box", "tool"]]]);
+    expect(filters).toEqual([["kind", ["seed", "fertilizer", "pesticide", "critter_box", "tool", "ammo", "pet_food"]]]);
   });
   it("has no hoa-màu crops before 0016, and fails on any other error", async () => {
     vi.resetModules();
@@ -145,7 +146,10 @@ describe("account RPCs", () => {
     h.rpc.mockResolvedValue({ data: { server_now: "2026-09-25T10:00:00+00:00", mine: MINE }, error: null });
     expect(await sellRice("tok", "nep", true, 10)).toEqual({
       serverNow: "2026-09-25T10:00:00+00:00",
-      mine: { items: { seed_nep: 2 }, rice: {}, coins: 10, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null } },
+      mine: {
+        items: { seed_nep: 2 }, rice: {}, coins: 10, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+        rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
+      },
     });
     expect(h.rpc).toHaveBeenLastCalledWith("sell_rice", { p_session_token: "tok", p_variety: "nep", p_dry: true, p_kg: 10 });
     await buyFarmItem("tok", "fert_npk", 3);
@@ -226,6 +230,68 @@ describe("v15.3 (§11.4)", () => {
       h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, sold }, error: null });
       await expect(sellCritters("tok", null)).rejects.toThrow("bad sale answer");
     }
+  });
+});
+
+describe("v17 (§10.4)", () => {
+  const NOW = "2026-09-25T10:00:00+00:00";
+  const DOG = { name: "Mực", coat: "muc", adopted_at: NOW, fed_until: "2026-09-26T10:00:00+00:00", next_hunt_at: null, catches: 0 };
+  it("names the RPCs 0019 adds", () => {
+    expect([...RPCS_17].sort()).toEqual(["adopt_dog", "dog_hunt", "dog_state", "feed_dog", "rename_dog", "sell_rats", "sling_shoot", "sling_start"]);
+  });
+  it("aims, shoots and pounces, with the room and the token", async () => {
+    h.rpc.mockResolvedValueOnce({ data: { ...FIELD, aim: { rat: 812, started_at: NOW } }, error: null });
+    const a = await slingStart("r", "tok", 812);
+    expect(h.rpc).toHaveBeenLastCalledWith("sling_start", { p_room_id: "r", p_session_token: "tok", p_rat_id: 812 });
+    expect(a.aim).toEqual({ rat: 812, startedAt: Date.parse(NOW) });
+    expect(a.state.plots[0].no).toBe(5);
+    h.rpc.mockResolvedValueOnce({ data: { ...FIELD, shot: { hit: true, price: 336, pellets: 11 } }, error: null });
+    expect((await slingShoot("r", "tok", 812, true)).shot).toEqual({ hit: true, price: 336, pellets: 11 });
+    expect(h.rpc).toHaveBeenLastCalledWith("sling_shoot", { p_room_id: "r", p_session_token: "tok", p_rat_id: 812, p_hit: true });
+    h.rpc.mockResolvedValueOnce({ data: { ...FIELD, shot: { hit: false, price: null, pellets: 10 } }, error: null });
+    expect((await slingShoot("r", "tok", 812, false)).shot).toEqual({ hit: false, price: null, pellets: 10 });
+    h.rpc.mockResolvedValueOnce({ data: { ...FIELD, dog_hunt: { price: 169 } }, error: null });
+    expect((await dogHunt("r", "tok", 813)).price).toBe(169);
+    expect(h.rpc).toHaveBeenLastCalledWith("dog_hunt", { p_room_id: "r", p_session_token: "tok", p_rat_id: 813 });
+    h.rpc.mockResolvedValueOnce({ data: FIELD, error: null });
+    await expect(slingStart("r", "tok", 812)).rejects.toThrow("bad aim");
+  });
+  it("throws on a shot, a pounce or a sale that is not whole (as v15.3's catches do)", async () => {
+    for (const shot of [undefined, { hit: "yes", pellets: 3 }, { hit: false }, { hit: true, pellets: 3 }, { hit: true, price: null, pellets: 3 }]) {
+      h.rpc.mockResolvedValueOnce({ data: { ...FIELD, shot }, error: null });
+      await expect(slingShoot("r", "tok", 812, true), JSON.stringify(shot)).rejects.toThrow("bad shot answer");
+    }
+    for (const dog_hunt of [undefined, {}, { price: "169" }]) {
+      h.rpc.mockResolvedValueOnce({ data: { ...FIELD, dog_hunt }, error: null });
+      await expect(dogHunt("r", "tok", 813), JSON.stringify(dog_hunt)).rejects.toThrow("bad hunt answer");
+    }
+    for (const sold of [undefined, { count: 3 }, { xu: 486 }, { count: "3", xu: 486 }]) {
+      h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine: MINE, sold }, error: null });
+      await expect(sellRats("tok"), JSON.stringify(sold)).rejects.toThrow("bad sale answer");
+    }
+  });
+  it("reads the dog calls' answer", async () => {
+    const answer = { server_now: NOW, dog: DOG, food: 3, coins: 1500 };
+    const want = { serverNow: Date.parse(NOW), dog: expect.objectContaining({ name: "Mực", coat: "muc" }), food: 3, coins: 1500 };
+    h.rpc.mockResolvedValue({ data: answer, error: null });
+    expect(await dogState("tok")).toEqual(want);
+    expect(h.rpc).toHaveBeenLastCalledWith("dog_state", { p_session_token: "tok" });
+    expect(await adoptDog("tok", "Mực", "muc")).toEqual(want);
+    expect(h.rpc).toHaveBeenLastCalledWith("adopt_dog", { p_session_token: "tok", p_name: "Mực", p_coat: "muc" });
+    await renameDog("tok", "Ki");
+    expect(h.rpc).toHaveBeenLastCalledWith("rename_dog", { p_session_token: "tok", p_name: "Ki" });
+    await feedDog("tok");
+    expect(h.rpc).toHaveBeenLastCalledWith("feed_dog", { p_session_token: "tok" });
+    h.rpc.mockResolvedValue({ data: { server_now: NOW, dog: null, food: 0, coins: 0 }, error: null });
+    expect((await dogState("tok")).dog).toBeNull();
+    h.rpc.mockResolvedValue({ data: {}, error: null });
+    await expect(dogState("tok")).rejects.toThrow("bad dog answer");
+  });
+  it("sells the rats", async () => {
+    h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine: { ...MINE, rats: { count: 0, value: 0 } }, sold: { count: 3, xu: 486 } }, error: null });
+    const r = await sellRats("tok");
+    expect(h.rpc).toHaveBeenLastCalledWith("sell_rats", { p_session_token: "tok" });
+    expect(r).toMatchObject({ sold: { count: 3, xu: 486 }, mine: { rats: { count: 0, value: 0 } } });
   });
 });
 
