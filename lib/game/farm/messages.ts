@@ -250,6 +250,8 @@ export function slingStatus(pellets: number, reloading: boolean): string {
 export function slingHitText(price: number): string {
   return `🎯 Trúng! Bắt được chuột đồng — ${price.toLocaleString("vi-VN")} xu, đem bán ở vựa cô Út.`;
 }
+/** `rat gone` (§10.6): the SlingGame then names who took it, from the state's `recent` (ratGoneText). */
+export const RAT_GONE = "Con chuột này không còn nữa.";
 /** Why the rat is gone (§12.2), from its `recent` entry when there is one: a sling, a dog, or back to its hole. */
 export function ratGoneText(r: RatRecent | null): string {
   if (r?.how === "sling" && r.by) return `Chuột bị ${r.by.name} bắt mất rồi!`;
@@ -324,7 +326,7 @@ export function farmErrorMessage(err: unknown, itemName?: string, action?: strin
     case "no critters": return "Không có cua ốc để bán.";
     case "no sling": return "Chưa có ná — mua ở tiệm anh Hai.";
     case "no pellets": return NO_PELLETS;
-    case "rat gone": return "Con chuột này không còn nữa.";
+    case "rat gone": return RAT_GONE;
     case "rat limit": return ratLimitText(detailSec(err));
     case "rat daily limit": return RAT_DAILY_LIMIT_TEXT;
     case "no aim": return "Ná chưa giương — thử lại nhé.";

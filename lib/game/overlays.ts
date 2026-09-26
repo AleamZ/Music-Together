@@ -18,6 +18,8 @@ export interface OpenOverlays {
   farmRound: boolean;
   /** A crab visit is open in CrabGame (v15.3 §7.2): the avatar stays at the hole. */
   farmCrab: boolean;
+  /** A SlingGame is open (v17 §12.2): the avatar stays by the rat. */
+  slingGame: boolean;
   /** A card table's panel (v16). */
   cardPanel: boolean;
   /** 📜 Sổ luật (v16). */
@@ -28,5 +30,5 @@ export interface OpenOverlays {
  *  and does not cancel the farm work (the field minds its own panels). */
 export function overlayLocks(o: OpenOverlays): { blocking: boolean; panelOpen: boolean } {
   const panelOpen = o.panel || o.fishingPanel || o.creating || o.anticheatModal || o.cardPanel || o.rulesBook;
-  return { blocking: panelOpen || o.farmPanel || o.farmWork || o.farmRound || o.farmCrab, panelOpen };
+  return { blocking: panelOpen || o.farmPanel || o.farmWork || o.farmRound || o.farmCrab || o.slingGame, panelOpen };
 }

@@ -398,7 +398,7 @@ describe("quality_range", () => {
 
   it("transplants after a TransplantGame round, and picks, with quality 1", async () => {
     const canvas = {
-      setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(), mapId: () => "field",
+      setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(), mapId: () => "field", setRats: vi.fn(),
     } as unknown as GameCanvasHandle;
     const { result } = renderHook(() => useFarmController({
       token: "tok", roomId: "r", accountId: "me", mapId: "field", canvas: () => canvas, toast: noop, onCoinsChanged: noop,
@@ -437,7 +437,7 @@ describe("bad_spot and bad_qty (v15.3)", () => {
     }));
     rpc.pickSnailBed.mockImplementation(async () => ({ serverNow: iso(0), mine: STATE.mine, snails: { caught: [], escaped: 0 } }));
     const canvas = {
-      setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(), mapId: () => "field",
+      setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(), mapId: () => "field", setRats: vi.fn(),
     } as unknown as GameCanvasHandle;
     const { result } = renderHook(() => useFarmController({
       token: "tok", roomId: "r", accountId: "me", mapId: "field", canvas: () => canvas, toast: noop, onCoinsChanged: noop,

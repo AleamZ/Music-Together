@@ -192,6 +192,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const { blocking, panelOpen } = overlayLocks({
     panel: panel !== null, fishingPanel: fishing.panel !== null, creating, anticheatModal: anticheat.modal !== null,
     farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
+    slingGame: farm.sling !== null,
     cardPanel: cards.panel !== null, rulesBook: cards.rules !== null,
   });
   useEffect(() => {
