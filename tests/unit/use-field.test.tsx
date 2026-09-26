@@ -2,19 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { AnticheatError, type AnticheatInfo } from "@/lib/anticheat";
 import { clockOffset } from "@/lib/game/farm/clock";
-import { NOT_OPEN_152 } from "@/lib/game/farm/messages";
+import { NOT_OPEN_152, NOT_OPEN_17 } from "@/lib/game/farm/messages";
 import { parseFarmMine, parseFieldState, type FieldState } from "@/lib/game/farm/state";
 
 const rpc = vi.hoisted(() => ({
   fetchFieldState: vi.fn(), fetchFarmCatalog: vi.fn(), fieldAction: vi.fn(), sellRice: vi.fn(), buyFarmItem: vi.fn(),
   claimFarmGift: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(),
+  slingStart: vi.fn(), slingShoot: vi.fn(), dogHunt: vi.fn(), sellRats: vi.fn(),
 }));
 vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/farm/rpc")>()),
   ...rpc,
 }));
 
-import { FP_GATHER_MS, FP_MIN_GAP_MS, useField } from "@/hooks/useField";
+import { FP_GATHER_MS, FP_MIN_GAP_MS, RAT_REFETCH_MIN_MS, useField } from "@/hooks/useField";
 
 const NOW = "2026-09-25T10:00:00+00:00";
 const field = (coins: number, serverNow = NOW): FieldState => parseFieldState({
@@ -258,5 +259,105 @@ describe("useField, v15.2", () => {
     rpc.fieldAction.mockRejectedValueOnce(missing("prepare_plot"));
     await act(async () => { await result.current.run({ kind: "prepare", plot: 5 }); });
     expect(result.current.notOpen).toBe(true);
+  });
+});
+
+describe("useField, v17", () => {
+  const at = (s: number) => new Date(Date.parse(NOW) + s * 1000).toISOString();
+  /** A field with rats: next_at `nextS` seconds after NOW, and the live rats given. */
+  const ratField = (nextS: number, live: unknown[] = [], serverNow = NOW): FieldState => parseFieldState({
+    server_now: serverNow,
+    plots: [{ no: 5, kind: "village", owner: null, sale_price: null, sublease_price: null, farmer: null, lease: null, offers: 0, crop: null }],
+    drying: [],
+    mine: { items: {}, rice: {}, coins: 10, gift_claimed: true },
+    rats: { next_at: at(nextS), price: 150, live, recent: [], plots: {} },
+  })!;
+  const RAT = { id: 1, plot: 5, since: NOW, seed: 1 };
+
+  it("aims, shoots, pounces and sells, applying their answers", async () => {
+    const { result } = renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    rpc.slingStart.mockResolvedValueOnce({ state: field(40), aim: { rat: 1, startedAt: 5 } });
+    await act(async () => { expect(await result.current.slingStart(1)).toMatchObject({ aim: { rat: 1 } }); });
+    expect(rpc.slingStart).toHaveBeenCalledWith("r", "tok", 1);
+    expect(result.current.state?.mine.coins).toBe(40);
+    rpc.slingShoot.mockResolvedValueOnce({ state: field(41), shot: { hit: true, price: 336, pellets: 9 } });
+    await act(async () => { await result.current.slingShoot(1, true); });
+    expect(rpc.slingShoot).toHaveBeenCalledWith("r", "tok", 1, true);
+    expect(result.current.state?.mine.coins).toBe(41);
+    rpc.dogHunt.mockResolvedValueOnce({ state: field(42), price: 169 });
+    await act(async () => { expect(await result.current.dogHunt(1)).toMatchObject({ price: 169 }); });
+    expect(rpc.dogHunt).toHaveBeenCalledWith("r", "tok", 1);
+    rpc.sellRats.mockResolvedValueOnce({ serverNow: NOW, mine: parseFarmMine({ coins: 528 })!, sold: { count: 3, xu: 486 } });
+    await act(async () => { expect(await result.current.sellRats()).toMatchObject({ sold: { count: 3, xu: 486 } }); });
+    expect(rpc.sellRats).toHaveBeenCalledWith("tok");
+    expect(result.current.state?.mine.coins).toBe(528);
+  });
+
+  it("reads the ná's refusals in the SlingGame's words and hands them to it; a hunt's go to its own handler", async () => {
+    const onError = vi.fn(), onGame = vi.fn(), onHunt = vi.fn();
+    const { result } = renderHook(() => useField("r", "tok", true, onError));
+    await flush();
+    rpc.slingShoot.mockRejectedValueOnce({ message: "too fast" });
+    await act(async () => { expect(await result.current.slingShoot(1, false, onGame)).toBeNull(); });
+    rpc.slingStart.mockRejectedValueOnce({ message: "rat gone" });
+    await act(async () => { await result.current.slingStart(1, onGame); });
+    expect(onGame.mock.calls).toEqual([["Đang nạp đạn…"], ["Con chuột này không còn nữa."]]);
+    rpc.dogHunt.mockRejectedValueOnce({ message: "dog resting", details: "192" });
+    await act(async () => { await result.current.dogHunt(1, onHunt); });
+    expect(onHunt).toHaveBeenCalledWith("Chó đang nghỉ — 3 phút 12 giây nữa mới vồ tiếp.");
+    expect(onError).not.toHaveBeenCalled();
+    rpc.sellRats.mockRejectedValueOnce({ message: "nothing to sell" });
+    await act(async () => { await result.current.sellRats(); });
+    expect(onError).toHaveBeenCalledWith("Chưa có con chuột nào để bán.");
+  });
+
+  it("says a v17 call waits for 0019 and leaves the field open", async () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() => useField("r", "tok", true, onError));
+    await flush();
+    rpc.fetchFieldState.mockReturnValue(new Promise(() => {}));
+    rpc.sellRats.mockRejectedValueOnce({ code: "PGRST202", message: "Could not find the function public.sell_rats" });
+    await act(async () => { await result.current.sellRats(); });
+    expect(onError).toHaveBeenCalledWith(NOT_OPEN_17);
+    expect(result.current.notOpen).toBe(false);
+  });
+
+  it("refetches at next_at plus 0–10 s in rat season, at most once a minute", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    rpc.fetchFieldState.mockResolvedValue(ratField(30, [RAT]));
+    const { result } = renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    expect(result.current.state?.rats?.live).toHaveLength(1);
+    rpc.fetchFieldState.mockClear();
+    // next_at in 30 s, plus 5 s of jitter
+    await act(async () => { await vi.advanceTimersByTimeAsync(34_999); });
+    expect(rpc.fetchFieldState).not.toHaveBeenCalled();
+    rpc.fetchFieldState.mockResolvedValue(ratField(40, [RAT], at(35)));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(1);
+    // the next next_at is 5 s away (+ 5 s): the minute since the last one wins
+    await act(async () => { await vi.advanceTimersByTimeAsync(RAT_REFETCH_MIN_MS - 1); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(rpc.fetchFieldState).toHaveBeenCalledTimes(2);
+    random.mockRestore();
+  });
+
+  it("waits for no spawn out of rat season, or before 0019", async () => {
+    rpc.fetchFieldState.mockResolvedValue(ratField(30));
+    const { result, unmount } = renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    expect(result.current.state?.rats).not.toBeNull();
+    rpc.fetchFieldState.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
+    expect(rpc.fetchFieldState).not.toHaveBeenCalled();
+    unmount();
+    rpc.fetchFieldState.mockResolvedValue(field(1));
+    renderHook(() => useField("r", "tok", true, () => {}));
+    await flush();
+    rpc.fetchFieldState.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
+    expect(rpc.fetchFieldState).not.toHaveBeenCalled();
   });
 });

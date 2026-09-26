@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnticheatError } from "@/lib/anticheat";
 import type { FarmCatalog } from "@/lib/game/farm/catalog";
-import { syncClock } from "@/lib/game/farm/clock";
-import { farmErrorMessage, isMissingRpc, NOT_OPEN_152, NOT_OPEN_153 } from "@/lib/game/farm/messages";
+import { serverNow, syncClock } from "@/lib/game/farm/clock";
+import { farmErrorMessage, isMissingRpc, NOT_OPEN_152, NOT_OPEN_153, NOT_OPEN_17 } from "@/lib/game/farm/messages";
 import {
-  actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, fetchFarmCatalog, fetchFieldState, fieldAction, loadSprayer,
-  pickSnailBed, RPCS_152, RPCS_153, sellCritters, sellProduce, sellRice, type CatchAnswer, type CrabVisit, type FieldAction,
-  type FieldAnswer, type MineAnswer,
+  actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, dogHunt, fetchFarmCatalog, fetchFieldState, fieldAction,
+  loadSprayer, pickSnailBed, RPCS_152, RPCS_153, RPCS_17, sellCritters, sellProduce, sellRats, sellRice, slingShoot, slingStart,
+  type CatchAnswer, type CrabVisit, type FieldAction, type FieldAnswer, type MineAnswer, type ShotAnswer, type SlingAim,
 } from "@/lib/game/farm/rpc";
+import { ratSeason } from "@/lib/game/farm/season";
 import { withMine, type FarmMine, type FieldState } from "@/lib/game/farm/state";
 
 export interface FieldData {
@@ -41,6 +42,14 @@ export interface FieldData {
   pickSnailBed: (bed: number, boxName?: string) => Promise<(MineAnswer & { snails: CatchAnswer }) | null>;
   /** Sells every critter of a kind to cô Út, or all of them (null), at their stored prices (v15.3 R15). */
   sellCritters: (kind: string | null) => Promise<(MineAnswer & { sold: { n: number; xu: number } }) | null>;
+  /** v17 (§6.1): aim the ná at a live rat. A refusal's text goes to `onError` when given (the SlingGame shows it). */
+  slingStart: (rat: number, onError?: (text: string) => void) => Promise<{ state: FieldState; aim: SlingAim } | null>;
+  /** A shot; a hit catches. Refusals read in the SlingGame's context ("too fast" is "Đang nạp đạn…"). */
+  slingShoot: (rat: number, hit: boolean, onError?: (text: string) => void) => Promise<{ state: FieldState; shot: ShotAnswer } | null>;
+  /** My dog's pounce (§7.2); a refusal's text goes to `onError` when given (the auto-hunt shows none). */
+  dogHunt: (rat: number, onError?: (text: string) => void) => Promise<{ state: FieldState; price: number } | null>;
+  /** cô Út buys every rat in the bag at the prices fixed at each catch (§5.6). */
+  sellRats: () => Promise<(MineAnswer & { sold: { count: number; xu: number } }) | null>;
   /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
    *  FP_MIN_GAP_MS apart. */
   plotChanged: () => void;
@@ -51,6 +60,9 @@ export const FP_GATHER_MS = 400;
 /** Refetches for `fp` start at least this far apart; an `fp` inside the gap brings one trailing refetch, so a flood costs
  *  at most one field_state every 2 s (anti-cheat R35). */
 export const FP_MIN_GAP_MS = 2000;
+/** v17 (§11): in rat season the field is fetched at `rats.next_at` plus up to 10 s, at most once a minute. */
+export const RAT_REFETCH_JITTER_MS = 10_000;
+export const RAT_REFETCH_MIN_MS = 60_000;
 
 /** Is answer `n` newer than the last one applied? Then it becomes the last one applied. */
 function newest(applied: { current: number }, n: number): boolean {
@@ -155,11 +167,26 @@ export function useField(roomId: string, token: string, active: boolean, onError
     }, Math.max(FP_GATHER_MS, gap));
   }, [reload]);
 
+  // v17 (§11): spawns send nothing, so in rat season the field is fetched again at rats.next_at plus 0–10 s, at most once
+  // a minute; each newer state sets the timer anew
+  const ratFetchAt = useRef<number | null>(null);
+  useEffect(() => {
+    const rats = state?.rats;
+    if (!active || !state || !rats || !catalog || !ratSeason(state, catalog, rats.nextAt)) return;
+    const due = rats.nextAt - serverNow() + Math.random() * RAT_REFETCH_JITTER_MS;
+    const floor = ratFetchAt.current === null ? 0 : ratFetchAt.current + RAT_REFETCH_MIN_MS - Date.now();
+    const timer = setTimeout(() => {
+      ratFetchAt.current = Date.now();
+      void reload();
+    }, Math.max(0, due, floor));
+    return () => clearTimeout(timer);
+  }, [active, state, catalog, reload]);
+
   /** Run RPC `rpc` and apply its answer. On error: the Vietnamese text, read in its context (the RPC's, unless `context`
    *  names another: a round's refusals read their own way), to `onError` or the toast; then a refetch, and null. A strike
    *  shows no text: the warning or the ban modal shows instead (anti-cheat §12.1). Before 0016 its RPCs are missing while
    *  the field is open: they say NOT_OPEN_152 and leave the field open (v15.2 R28); before 0018 the gathering RPCs say
-   *  NOT_OPEN_153 (v15.3 R23). */
+   *  NOT_OPEN_153 (v15.3 R23), and before 0019 the v17 ones NOT_OPEN_17. */
   const call = useCallback(async <T,>(job: () => Promise<T>, keep: (n: number, r: T) => void,
     opts: { rpc: string; context?: string; itemName?: string; onError?: (text: string) => void }): Promise<T | null> => {
     const n = ++seq.current;
@@ -168,10 +195,11 @@ export function useField(roomId: string, token: string, active: boolean, onError
       keep(n, r);
       return r;
     } catch (err) {
-      const missing = isMissingRpc(err), v152 = RPCS_152.has(opts.rpc), v153 = RPCS_153.has(opts.rpc);
-      if (missing && !v152 && !v153) setNotOpen(true);
+      const missing = isMissingRpc(err), v152 = RPCS_152.has(opts.rpc), v153 = RPCS_153.has(opts.rpc), v17 = RPCS_17.has(opts.rpc);
+      if (missing && !v152 && !v153 && !v17) setNotOpen(true);
       if (!(err instanceof AnticheatError && err.info.strike >= 1)) {
-        const text = missing && v152 ? NOT_OPEN_152 : missing && v153 ? NOT_OPEN_153 : farmErrorMessage(err, opts.itemName, opts.context ?? opts.rpc);
+        const text = missing && v152 ? NOT_OPEN_152 : missing && v153 ? NOT_OPEN_153 : missing && v17 ? NOT_OPEN_17
+          : farmErrorMessage(err, opts.itemName, opts.context ?? opts.rpc);
         (opts.onError ?? onErrorRef.current)(text);
       }
       void reload();
@@ -204,5 +232,14 @@ export function useField(roomId: string, token: string, active: boolean, onError
       call(() => pickSnailBed(roomId, token, bed), applyMine, { rpc: "pick_snail_bed", itemName: boxName }), [call, applyMine, roomId, token]),
     sellCritters: useCallback((kind: string | null) =>
       call(() => sellCritters(token, kind), applyMine, { rpc: "sell_critters" }), [call, applyMine, token]),
+    slingStart: useCallback((rat: number, onError?: (text: string) => void) =>
+      call(() => slingStart(roomId, token, rat), (n, r) => apply(n, r.state), { rpc: "sling_start", context: "sling", onError }),
+    [call, apply, roomId, token]),
+    slingShoot: useCallback((rat: number, hit: boolean, onError?: (text: string) => void) =>
+      call(() => slingShoot(roomId, token, rat, hit), (n, r) => apply(n, r.state), { rpc: "sling_shoot", context: "sling", onError }),
+    [call, apply, roomId, token]),
+    dogHunt: useCallback((rat: number, onError?: (text: string) => void) =>
+      call(() => dogHunt(roomId, token, rat), (n, r) => apply(n, r.state), { rpc: "dog_hunt", onError }), [call, apply, roomId, token]),
+    sellRats: useCallback(() => call(() => sellRats(token), applyMine, { rpc: "sell_rats" }), [call, applyMine, token]),
   };
 }
