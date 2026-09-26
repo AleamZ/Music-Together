@@ -3,7 +3,7 @@
 **Date:** 2026-09-25
 **Builds on:** `feat/v15-field` once v15.1 is finished, including `0013_v15_field.sql` with decision D1 applied. The stack is unchanged: Next.js 16.2.9, React 19, TS 5, Tailwind v4, Supabase (Postgres + Realtime), custom account/session auth and SECURITY DEFINER RPCs.
 **Source:** the tamper-surface audit of 2026-09-25. Its hole numbers H1–H5 are kept here. The owner's answers to its open questions are §2 (D1–D8).
-**Order:** `0014_lyrics_lockdown.sql` (hotfix on `main`) and v15.1 (`0013`) → **anti-cheat (`0015_anticheat.sql`, this doc)** → v15.2 (`0016_v15_2_crops.sql`) → v16 (`0017_v16_cards.sql`) → v15.3 (`0018_v15_3_gather.sql`).
+**Order:** `0014_lyrics_lockdown.sql` (hotfix on `main`) and v15.1 (`0013`) → **anti-cheat (`0015_anticheat.sql`, this doc)** → v15.2 (`0016_v15_2_crops.sql`) → v16 (`0017_v16_cards.sql`) → v15.3 (`0018_v15_3_gather.sql`) → v17 (`0019_v17_rats.sql`).
 
 ## 1. Goal and threat model
 
@@ -401,6 +401,7 @@ So an honest client always has `now() − bite_at ≥ min_reel_ms`. The margin o
 | `too fast` (the part gate), `work expired`, `harvesting`, `harvester busy`, `lease ending`, `lease ends` | `harvest_part`, `begin_work`, `rent_harvester`, farm care (`0016`) | two tabs; a stale state; a disconnect; a lease or a harvester running out |
 | `no sickle`, `no sprayer`, `already owned`, `wrong crop`, `invalid crop`, `not enough crop`, `invalid quantity` (a tool with a quantity other than 1) | farm, `load_sprayer`, `buy_farm_item`, `sell_produce` (`0016`) | stale state; two tabs; **the cached v15.1 client**, whose rice harvest gets `wrong crop`. It never sees the tools (it reads only its own `shop_items` kinds), so no shipped client sends a tool quantity other than 1; that refusal stays plain anyway (v15.2 R18). The hoa-màu seeds do reach it, and its soak of one gets `invalid item` (above). |
 | `hole empty`, `bed empty`, `critters full`, `gather daily limit`, `visit not found`, `visit expired`, `too fast` (`crab_finish`, `transplant`), `work expired`, `lease ending`, `no critters`, `invalid kind`, `already owned`, `invalid quantity` (a container with a quantity other than 1) | gathering, `begin_work`, `transplant`, `sell_critters`, `buy_farm_item` (`0018`) | two tabs; a double finish; a lost answer; a backgrounded tab; a room switch; a stale state; **a cached v15.2 client after `0018`** |
+| `rat gone`, `rat limit`, `rat daily limit`, `no aim`, `aim expired`, `too fast` (`sling_shoot`), `no sling`, `no pellets`, `no dog`, `dog hungry`, `dog resting`, `dog full`, `already own dog`, `invalid name`, `invalid coat`, `nothing to sell` | the ná, the dog and `sell_rats` (`0019`) | two tabs; a stale state; a background tab; another hunter or dog first; typing |
 | `invalid video`, `video too long`, `duration unknown`, `banned keyword`, `order limit reached` | queue | the rules changed while the UI was stale; two tabs. The queue never strikes (R22). |
 | `invalid username`, `username already taken`, `invalid username or password` | account | typing |
 | `too many messages, slow down` | chat | fast typing |
@@ -416,8 +417,9 @@ So an honest client always has `now() − bite_at ≥ min_reel_ms`. The margin o
 | `reel_gate_hug` | `finish_cast` (a catch) | the 20th catch of the Vietnam day with (`now − bite_at`)/`min_reel_ms` < 1.05. `anticheat_status.hug_on` and `hug_count` count them. | A skilled player on hard fish can get close. A bot that waits for the gate lands there every time. |
 | `cast_daily_cap` | `start_cast` | the cast that brings the day's count to 300 | A long honest session can reach it. |
 | `gather_daily_cap` | `crab_start`, `pick_snail_bed` (`0018`) | the visit that brings the Vietnam day's count to 200 | A long honest session can reach it. |
+| `rat_daily_cap` | `sling_shoot`, `dog_hunt` (`0019`) | the catch that brings the Vietnam day's count to 24 | A long honest session can reach it. |
 | `kind_mismatch` | `buy_item` | an existing priced item of a non-fishing kind | the old v14 client lists farm items as bait |
-| `kind_mismatch` | `buy_farm_item` | an existing priced item that is not a seed, fertilizer, pesticide, (from `0016`) tool or (from `0018`) critter box | catalogs change |
+| `kind_mismatch` | `buy_farm_item` | an existing priced item that is not a seed, fertilizer, pesticide, (from `0016`) tool, (from `0018`) critter box or (from `0019`) ammo or pet food | catalogs change |
 | `kind_mismatch` | `apply_fertilizer`, `soak_seed`, `spray`, and from `0016` `plant_crop` and `load_sprayer` | an existing item of the wrong kind | as above |
 | `bad_move` | `tl_play`, `tl_pass`, `cao_deal`, `pk_act` (`0017`) | a well-formed move the table refuses while `p_seq` matched: `invalid play`, `cannot beat`, `not your turn`, `must include`, `must play`, `invalid bet`, `cannot raise`, `not dealer`, `wrong phase` (v16 §11.5) | A bug in a client mirror must never strike an honest player (v16 R30). |
 
@@ -559,7 +561,7 @@ A flagged call returns HTTP 200, so PostgREST commits it:
 
 | Message | SQLSTATE | `details` | `hint` | Raised by |
 |---|---|---|---|---|
-| `account locked` | 42501 | whole seconds left | `anticheat` | `_ac_guard`, in the 52 game RPCs (35 in `0015`, 7 more in `0016`, 6 more in `0017`, 4 more in `0018`) |
+| `account locked` | 42501 | whole seconds left | `anticheat` | `_ac_guard`, in the 59 game RPCs (35 in `0015`, 7 more in `0016`, 6 more in `0017`, 4 more in `0018`, 7 more in `0019`) |
 | `account banned` | 42501 | — | — | `login` (new); `_auth_account` (existing) |
 | `invalid username` | 22023 | — | — | `register` |
 | `invalid video` | 22023 | — | — | `add_queue_item` |
@@ -646,6 +648,7 @@ end $$;
 - **v15.2 (7, `0016`):** `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`, 42 in all.
 - **v16 (6, `0017`):** `card_sit`, `pk_topup`, `tl_play`, `tl_pass`, `cao_deal` and `pk_act`, 48 in all.
 - **v15.3 (4, `0018`):** `crab_start`, `crab_finish`, `pick_snail_bed` and `sell_critters`, 52 in all.
+- **v17 (7, `0019`):** `sling_start`, `sling_shoot`, `dog_hunt`, `adopt_dog`, `rename_dog`, `feed_dog` and `sell_rats`, 59 in all.
 
 **Still open:**
 - the reads: `fishing_state`, `fishing_board`, `field_state`, `touch_room`, and from `0017` `card_lobby`, `card_state` and `card_hand`;
@@ -1007,7 +1010,7 @@ Re-running is safe:
 ### 11.3 Rules for later migrations
 
 1. **A re-created game RPC keeps its guard.** Any `create or replace` of a guarded RPC keeps its `_ac_account`/`_ac_play` call, its hard checks and its explicit grant.
-2. **New game RPCs start guarded** (deny by default, R23). For `0016` (v15.2): `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`. The gather RPCs `crab_start`, `crab_finish`, `pick_snail_bed` and `sell_critters` come with `0018` (v15.3).
+2. **New game RPCs start guarded** (deny by default, R23). For `0016` (v15.2): `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`. The gather RPCs `crab_start`, `crab_finish`, `pick_snail_bed` and `sell_critters` come with `0018` (v15.3). The ná, the dog and the rat sale come with `0019` (v17): `sling_start`, `sling_shoot`, `dog_hunt`, `adopt_dog`, `rename_dog`, `feed_dog` and `sell_rats`; the read-only `dog_state(text)` joins the allowlist.
    - `crab_finish` with `hits` outside 0–3 is a hard `bad_qty`.
    - A `crab_finish` faster than its 3 s gate never counts, for the same retry and double-start reasons as `too fast`.
 3. **Re-created shared functions keep this spec's parts:**
@@ -1017,10 +1020,11 @@ Re-running is safe:
    - `_land_sale` and `finish_cast` keep `system` and `about_account_id`;
    - `_ac_wipe` calls `_card_forfeit_all` before its snapshot, and `_ac_holdings` has `cards` (both from `0017`);
    - `_ac_wipe` deletes the account's `critters` and `gather_cooldowns`, and `_ac_holdings` has `critters` (both from `0018`).
-4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `harvester` and `produce_sell`, v16's `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`, then v15.3's `critter_sell`.
+   - `_ac_wipe` deletes the account's `dogs`, `rat_bag` and `sling_aims`, and `_ac_holdings` has `dog` and `rats` (both from `0019`).
+4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `harvester` and `produce_sell`, v16's `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`, then v15.3's `critter_sell`, then v17's `rat_sell` and `dog_adopt`.
 5. **Wider honest inputs widen the hard check.** A migration that widens the range of honest inputs widens the matching hard check in the same migration, and ships before its client.
 6. **Every later smoke run ends with `tests/sql/anticheat-guards.sql`.** The dynamic loop in that file gains the new game RPCs, and a new RPC that is not a game action joins its allowlist by signature.
-7. **Re-running `0013` after `0015` undoes the guards.** `0013` re-creates the game RPCs and the `coin_ledger` reason check without the anti-cheat parts. After any re-run of `0013`, run `0015` again right away. On a database that has already seen a wipe, `0013`'s reason check (without `'wipe'`) fails, so add `'wipe'` to its list first. Later migrations follow the same order: `0013` → `0015` → the rest. Once `0016` has run, re-running `0013` or `0015` also needs the checks they re-create to accept what later migrations wrote: `0013`'s `shop_items` kind check lacks `tool`, and the `coin_ledger` checks lack `harvester` and `produce_sell` (and `0013`'s also lacks `wipe`). Once `0017` has run, the `coin_ledger` checks of `0013`, `0015` and `0016` also lack its five card reasons, and `0015` and `0016` put back `_ac_holdings` and `_ac_wipe` without the card seats. Once `0018` has run, the `coin_ledger` checks of `0013`, `0015`, `0016` and `0017` also lack `critter_sell`; `0015`, `0016` and `0017` put back `_ac_holdings` and `_ac_wipe` without the critters; and `0013` and `0016` put back `_farm_mine`, `_field_view`, `_farm_do_begin_work`, `_farm_do_pick_snails` and `buy_farm_item`, and `0013` also `_work_gate`, all without v15.3's parts (`_field_view` comes from `0013` alone, and `0015` puts back `buy_farm_item` too). Add those values to the file first (after `0018`, `critter_sell`), then run the whole chain in order with the latest migration last (`0018`). In the SQL Editor a failing script rolls back whole, while under `psql -f` it stops part-way, each statement before the failure already committed (and without `ON_ERROR_STOP` psql runs on past it). A `0017` that fails on its ledger check, for one, has already dropped the check: the ledger is left with no reason check at all, and, run on past the failure, `_ac_holdings` and `_ac_wipe` lose the critters, until `0018` runs again.
+7. **Re-running `0013` after `0015` undoes the guards.** `0013` re-creates the game RPCs and the `coin_ledger` reason check without the anti-cheat parts. After any re-run of `0013`, run `0015` again right away. On a database that has already seen a wipe, `0013`'s reason check (without `'wipe'`) fails, so add `'wipe'` to its list first. Later migrations follow the same order: `0013` → `0015` → the rest. Once `0016` has run, re-running `0013` or `0015` also needs the checks they re-create to accept what later migrations wrote: `0013`'s `shop_items` kind check lacks `tool`, and the `coin_ledger` checks lack `harvester` and `produce_sell` (and `0013`'s also lacks `wipe`). Once `0017` has run, the `coin_ledger` checks of `0013`, `0015` and `0016` also lack its five card reasons, and `0015` and `0016` put back `_ac_holdings` and `_ac_wipe` without the card seats. Once `0018` has run, the `coin_ledger` checks of `0013`, `0015`, `0016` and `0017` also lack `critter_sell`; `0015`, `0016` and `0017` put back `_ac_holdings` and `_ac_wipe` without the critters; and `0013` and `0016` put back `_farm_mine`, `_field_view`, `_farm_do_begin_work`, `_farm_do_pick_snails` and `buy_farm_item`, and `0013` also `_work_gate`, all without v15.3's parts (`_field_view` comes from `0013` alone, and `0015` puts back `buy_farm_item` too). Add those values to the file first (after `0018`, `critter_sell`), then run the whole chain in order with the latest migration last (`0018`). In the SQL Editor a failing script rolls back whole, while under `psql -f` it stops part-way, each statement before the failure already committed (and without `ON_ERROR_STOP` psql runs on past it). A `0017` that fails on its ledger check, for one, has already dropped the check: the ledger is left with no reason check at all, and, run on past the failure, `_ac_holdings` and `_ac_wipe` lose the critters, until `0018` runs again. Re-running `0013`, `0015`, `0016`, `0017` or `0018` after `0019` undoes `0019`'s re-created parts, and their ledger checks lack `rat_sell` and `dog_adopt`, so they fail once a rat is sold or a dog adopted. Re-run them in order with `0019` last.
 
 ### 11.4 Pre-deploy checks (owner, in the SQL editor, before running `0015`)
 
@@ -1049,7 +1053,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 4. The pre-deploy checks (§11.4), then `0015`. It starts in `log` mode.
 5. The anti-cheat client, after `0015`. A client that goes live first by mistake still loads the chat, because it reads the messages again without `chat_messages.system` (§6.1), but it shows the catch and land announcements as plain lines until `0015` runs.
 6. After 7 days, the review (§9.8), then `enforce` in /admin.
-7. Later, `0016_v15_2_crops.sql` (v15.2), then `0017_v16_cards.sql` (v16) and `0018_v15_3_gather.sql` (v15.3), keeping the guards (§11.3).
+7. Later, `0016_v15_2_crops.sql` (v15.2), then `0017_v16_cards.sql` (v16), `0018_v15_3_gather.sql` (v15.3) and `0019_v17_rats.sql` (v17), keeping the guards (§11.3).
 
 **`0015` before the anti-cheat client is safe.** The v15.1 client against `0015` sees these differences only:
 - the raw English texts `invalid username` and `account banned` on the auth screen;
@@ -1106,13 +1110,13 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 | `WARN_TITLE` | `⚠️ Cảnh báo gian lận` |
 | `WARN_BODY` | `Hệ thống vừa ghi nhận một thao tác mà trò chơi bình thường không thể tạo ra (ví dụ: sửa dữ liệu bằng DevTools).` |
 | reason line | `Lý do: {reasonText(code)}` |
-| `WARN_LOCK` | `Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, bắt cua mò ốc, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.` (v15.3 adds "bắt cua mò ốc", v16 "đánh bài") |
+| `WARN_LOCK` | `Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, bắt cua mò ốc, săn chuột, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.` (v15.3 adds "bắt cua mò ốc", v17 "săn chuột" right after it, v16 "đánh bài") |
 | `WARN_REPEAT` | `Nếu tái phạm trong 30 ngày, tài khoản sẽ bị khoá vĩnh viễn và dữ liệu trò chơi có thể bị xoá.` |
 | `WARN_OK` | `Tôi đã hiểu` |
 | `BAN_TITLE` | `🚫 Tài khoản bị khoá vĩnh viễn` |
 | `BAN_BODY` | `Hệ thống ghi nhận thao tác gian lận lần thứ hai trong 30 ngày, nên tài khoản đã bị khoá.` |
 | reason line | `Lý do: {reasonText(code)}` |
-| `BAN_WIPE` | `Quản trị viên sẽ xem xét và có thể xoá toàn bộ dữ liệu trò chơi của tài khoản (xu, đồ câu, cá, kỷ lục, lúa, đất).` |
+| `BAN_WIPE` | `Quản trị viên sẽ xem xét và có thể xoá toàn bộ dữ liệu trò chơi của tài khoản (xu, đồ câu, cá, kỷ lục, lúa, đất, chó).` (v17 adds "chó") |
 | `BAN_OK` | `Đăng xuất` |
 | `reasonText("reel_too_fast")` | `Báo kéo được cá nhanh hơn mức trò chơi cho phép.` |
 | `reasonText("quality_range")` | `Gửi điểm cấy/gặt ngoài phạm vi của trò chơi.` |
@@ -1197,7 +1201,7 @@ The refusal shows in a `role="alert"` line, so a screen reader reads it out.
 | Element | Text |
 |---|---|
 | holdings heading | `Dữ liệu hiện có` |
-| holdings line | `{formatXu(coins)} · {n} món đồ · {n} con cá · {n} kỷ lục · {kg} kg lúa · {kg} kg hoa màu · {n} con cua ốc · {n} thửa sở hữu · {n} thửa đang thuê · {n} đề nghị mua · {n} ô phơi · {n} tin khoe trong chat`, then `· {n} ghế bàn bài ({formatXu(chips + escrow)})` when the account sits at card tables (`0017`); the cua ốc come with `0018` |
+| holdings line | `{formatXu(coins)} · {n} món đồ · {n} con cá · {n} kỷ lục · {kg} kg lúa · {kg} kg hoa màu · {n} con cua ốc · {n} con chuột · chó {tên} · {n} thửa sở hữu · {n} thửa đang thuê · {n} đề nghị mua · {n} ô phơi · {n} tin khoe trong chat`, then `· {n} ghế bàn bài ({formatXu(chips + escrow)})` when the account sits at card tables (`0017`); the cua ốc come with `0018`, and the rats and the dog (only when there is one) with `0019` |
 | events heading | `Ghi nhận ({n})` |
 | event line | `{time} · {code label} · {outcome label} · {rpc}`, then `detail` in a `<pre>` |
 | event footer | `Client: {client \| —} · Trình duyệt: {user_agent \| —}` |
@@ -1233,6 +1237,7 @@ After a refused action, its reason stays even when the reload fails too.
 | `reel_gate_hug` | `Kéo cá sát ngưỡng (20 lần/ngày)` |
 | `cast_daily_cap` | `Chạm 300 lần câu/ngày` |
 | `gather_daily_cap` (`0018`) | `Chạm 200 lượt bắt cua, mò ốc/ngày` |
+| `rat_daily_cap` (`0019`) | `Chạm 24 con chuột/ngày` |
 | `bad_game` (`0017`) | `Sai bàn bài` |
 | `bad_seat` (`0017`) | `Số ghế sai` |
 | `bad_stake` (`0017`) | `Mức cược sai` |
@@ -1367,7 +1372,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
    - state is unchanged (for example, `water` with delta 5 leaves `water_log` as it was).
 7. **Enforce mode:**
    - every hard signal gives `strike: 1`, committed: a `strike_1` row and `locked_until` ≈ now + 5 min;
-   - each of the guarded RPCs (35 in `0015`, 42 from `0016`, 48 from `0017`, 52 from `0018`) then raises `account locked` for that account, with a numeric detail and the hint `anticheat` (the call list is the one in `anticheat-guards.sql`);
+   - each of the guarded RPCs (35 in `0015`, 42 from `0016`, 48 from `0017`, 52 from `0018`, 59 from `0019`) then raises `account locked` for that account, with a numeric detail and the hint `anticheat` (the call list is the one in `anticheat-guards.sql`);
    - `fishing_state` has `lock`, and `field_state`, `fishing_board`, `touch_room`, chat and the queue still work;
    - `_ac_flag` called during the lock gives `in_lock`;
    - with `locked_until` moved into the past, the next hard signal gives strike 2: `is_banned`, sessions gone, `login` → `account banned`, `ban_state = 'pending_wipe'`;
@@ -1420,7 +1425,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
 - **The check checks itself:** in a transaction that is rolled back, an unguarded overload `login(text, text, integer)` must be reported.
 - **Dynamic loop:**
   1. Register an account, create a room and set `locked_until` to now + 5 min.
-  2. Call each of the guarded RPCs (35 in `0015`, 42 from `0016`, 48 from `0017`, 52 from `0018`) with plausible arguments. Each must raise `account locked`.
+  2. Call each of the guarded RPCs (35 in `0015`, 42 from `0016`, 48 from `0017`, 52 from `0018`, 59 from `0019`) with plausible arguments. Each must raise `account locked`.
   3. Then call the four reads (from `0017` also `card_lobby`, `card_state`, `card_hand` and `card_tick`); each must succeed.
 
 ### 15.2 Unit and RTL tests (Vitest)

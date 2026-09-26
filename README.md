@@ -430,3 +430,36 @@ The server still decides every cooldown, limit, roll, price and capacity. A clie
 ### Realtime budget (v15.3)
 
 No new channel and no new `fa` code. A crab game re-sends `fa 6` and a transplant round `fa 1` every 2 s, and a snail bed sends `fa 7` twice; a round of 6 holes and 4 beds sends about 40 `fa` over about 2 minutes. Gathering sends no `fp`.
+
+## v17: Mùa chuột — chuột đồng, chó cỏ và cái ná
+
+### DB migration
+
+`supabase/migrations/0019_v17_rats.sql` is **additive and re-runnable**: run it in the Supabase SQL Editor after `0018`, so the production order is `0012` → `0014` → `0013` → `0015` → `0016` → `0017` → `0018` → `0019`. It requires `0013`, `0015`, `0016`, `0017` and `0018`, because it re-creates functions they last defined and keeps their parts. It adds:
+
+- `upland_crops.rat_food` (khoai and bắp; rice always, ớt never);
+- three items at anh Hai's: `tool_sling` (Ná, 3 000 xu, once), `ammo_pellet` (Đạn đất, 10 xu) and `food_dog` (Thức ăn chó, 150 xu);
+- the private tables `field_rats`, `rat_clocks`, `rat_bag`, `dogs` and `sling_aims`, and a rat log on each crop;
+- the `coin_ledger` reasons `rat_sell` and `dog_adopt` (the list keeps every earlier reason, `wipe` included);
+- 7 guarded RPCs, `sling_start`, `sling_shoot`, `dog_hunt`, `adopt_dog`, `rename_dog`, `feed_dog` and `sell_rats`, and the read-only `dog_state`.
+
+It re-creates the field's opening sweep (the rats' spawn clock), the rice and hoa-màu yields (the rats' share, at most 10 %), `buy_farm_item` (the new kinds), the field state (the rats, the rat bag, the catch caps and the dog), and `_ac_holdings` and `_ac_wipe` (the dog and the rats). `tests/sql/v17-smoke.sql` checks it on a throwaway PostgreSQL cluster after the earlier smokes, which switch the rats off in their rooms (`pg_temp.no_rats`), and ends with `tests/sql/anticheat-guards.sql`, whose loop now calls 59 guarded RPCs. Run every file with plain `psql -f`, never under `psql -1`.
+
+> **Deploy order** (v17 §3): `0019` first, then the v17 client right after. Until the client ships, rats eat ripe crops that cached tabs can neither see nor hunt, and those tabs drop `fa` 11 and 12 and ignore presence's `dog`. Their shop hides the pellets and the dog food but lists the Ná (a `tool`); buying it there is harmless, and it works after a reload. A v17 client that meets a database without `0019` shows no rats and no dog, and its new calls say "Mùa chuột chưa mở — chủ phòng cần chạy migration 0019.".
+>
+> **Re-running earlier migrations:** `0013`, `0015`, `0016`, `0017` and `0018` put back their own versions of the functions `0019` re-creates, and their `coin_ledger` reason checks lack `rat_sell` and `dog_adopt`. None of them can be re-run as it is once a rat has been sold or a dog adopted. Re-run them in order with `0019` last (anti-cheat §11.3 rule 7).
+
+### What's new in v17
+
+- **Chuột đồng:** while rice, khoai or bắp is ripe, a rat comes out of a bund hole every 10–20 minutes to eat a ripe plot, up to 3 on the field at once. Each rat on a plot eats 2 % of its harvest an hour, and the rats take at most 10 % of a crop. A rat leaves only when it is caught, or when the plot is harvested, handed to the harvester, abandoned or lost. The chip under the map counts shows the season, and the plot panel shows what the rats took.
+- **Cái ná:** walk up to a rat and press E. Aim with the mouse or ←/→, hold Space (the mouse button or a finger) to pull the band into the green zone, and let go. Every shot costs one pellet and a 2-second reload, and a hit catches the rat.
+- **Chó cỏ:** adopt one at chú Tám's (20 000 xu, one per player) in vàng, mực, vện or đốm, and name it. It follows you on every map, and everyone in the room sees it. Fed (one bịch lasts 24 hours), it pounces on a rat near you once every 5 minutes, as long as you are playing. Pet it for hearts.
+- **Cô Út** buys rats at the price fixed at the catch: 150 xu × the room's fish multiplier M. A player catches at most 6 rats an hour and 24 a day.
+
+### Trust model (v17)
+
+The server decides the spawns, which plots the rats eat, the damage, the prices, the caps, and the dog's hunger and cooldown. A client reports a shot's hit or miss, no sooner than 2 s after its last sling answer, and when its dog pounces. A rat is shared by the whole field, so the first catch wins. Rat and dog positions, the slingshot minigame and presence's `dog` are client-side, spoofable and cosmetic. The 24th catch of a day is logged as the soft `rat_daily_cap`.
+
+### Realtime budget (v17)
+
+No new channel. Spawns send nothing: a client on the field refetches at the next spawn time plus 0–10 s, at most once a minute, and only in rat season. A catch sends one `fp`. The slingshot sends `fa 12` every 2 s (7 in a 12 s session), and petting sends one `fa 11`, at most one every 3 s. The dog sends nothing: presence carries its name and coat, re-tracked within the 4-per-30-s budget.
