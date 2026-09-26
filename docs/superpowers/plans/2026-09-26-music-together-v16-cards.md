@@ -12,6 +12,16 @@
 
 **Adopted:** the plan writer replay-validated the 18 task commits on `391eb7a`. The controller cherry-picked them onto `feat/v15-field` at `7682859` (v15.2's fix round), where every block applies unchanged. The counts below are those of the `391eb7a` replay; the fix round adds 12 tests.
 
+**After review:** the v16 fix round (`0f4c920`…`d44f29b`) and a controller follow-up changed:
+- `_pk_pots` / `pkPots`: one pot when no live seat has put anything;
+- `_tl_leave`: out seats settle before a forfeit;
+- `_pk_refund`: now `(uuid, timestamptz, integer[])`, with dead money for banned and deleted accounts;
+- `_card_sit`: the wallets in one account-id pass, with the touch after it;
+- `useCardTable` / `useCardLobby`: an answer is dropped after a room change;
+- the README and both specs.
+
+The task blocks below are the plan as it was validated, not the final code, and the rulings on `_pk_refund` and `_card_sit` are superseded.
+
 ## Global Constraints
 
 - **Start** from `feat/v15-field` at `391eb7a`: v15.1, `0014`, the anti-cheat layer `0015` with its fix rounds, and v15.2 (`0016_v15_2_crops.sql` and its client, the v15.2 plan, anti-cheat rule 7 on re-runs after `0016`). Work on the branch the owner names (suggested: `feat/v16`, created from that state, in place — no worktree). One commit per task, with the message the task gives; every message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. The messages contain quotes and apostrophes: write each one to a file and commit with `git commit -F <file>`.

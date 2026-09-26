@@ -187,6 +187,13 @@ The layout is approximate. The map tests pin the invariants and the plan fixes t
   - Tiến lên and Cào: every seat is paid its balance; lines already applied stand.
   - Poker: every live-pot contribution returns to its contributor (`card_refund`), then every stack. The contributions of banned or deleted accounts are dead money: they are split equally among the seats still live, with the odd xu from the button (§9.1).
   - Then the seats go.
+- **A poker hand that one sweep empties:** the sweep can take out every live player at once. The hand then ends without a winner, and `_pk_refund` applies the room-deletion rule:
+  - Each contribution goes back to its contributor: to the stack while the seat is still theirs, else to the wallet (`card_refund`).
+  - Banned and deleted accounts get nothing back, and their wallets are never touched, so a wipe's deleted wallet is never re-created.
+  - Their dead money is split equally among the seats that sweep took out while still in the hand and in good standing, with the odd xu from the button.
+  - A seat that folded earlier gets only its own chips back, having given up its claim to the pot.
+  - With no such seat, the dead money is lost with the banned or deleted accounts' other xu. No player in good standing loses xu either way.
+  - Known edge case: an account wiped and then pardoned within the same hand, before it ends this way, gets its own contribution back.
 - **Empty-table reset (R36):** when the last seat row of a table is deleted, the same transaction resets the table:
   - `first_game = true`;
   - `lead_id`, `pos`, `turn`, `deadline`, `pub` and `last` are cleared, and the stake is unset;
@@ -731,7 +738,8 @@ Every other refusal is raised and never logged: `stale`, `not seated`, `already 
   - a card settlement meeting a concurrent `_land_sale`, which locks buyer then seller;
   - a card call that holds a table and waits for a wallet held by `_card_forfeit_all`.
 
-  Ticks are retried by design; the land RPC and the admin action show their usual errors and can be repeated.
+  Ticks are retried by design; the land RPC and the admin action show their usual errors and can be repeated. Neither case moves xu before it aborts.
+- **`card_sit`'s wallets:** the caller has no seat at the table, so its wallet is locked in the same account-id pass as the table's seat wallets, right after the table and before the sweep. The caller's `seen_at` touch comes after that pass. A caller seated at another table of the room would otherwise hold that seat's row while waiting for its own wallet, which that table's deal holds before it updates the row.
 - **Reads:** `card_lobby`, `card_state` and `card_hand` build their answer in one `select` (one snapshot) and take no table lock; their only write to card rows is the caller's `seen_at` touch.
 
 ### 11.7 Sections and re-runs
