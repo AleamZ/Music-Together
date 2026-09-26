@@ -1,6 +1,7 @@
 import { nextRandom } from "../fishing/reel";
 import { FIELD_PLOTS, RAT_HOLES } from "../maps/field";
-import type { Rect } from "../maps/types";
+import type { GameMap, Interactable, Rect } from "../maps/types";
+import { nearestInteractable } from "../scene";
 import type { Vec } from "../types";
 
 // v17 "Mùa chuột" (spec §5): the rats on the client. The server spawns them, judges which plots they eat, and prices and
@@ -217,4 +218,25 @@ export function nearestRat(live: readonly RatLive[], pos: Vec, t: number, radius
     }
   }
   return best;
+}
+
+/** How near a rat must be drawn for its prompt (§12.1). */
+export const RAT_PROMPT_RANGE = 40;
+
+/** A live rat drawn at p as an interactable (kind "rat"): E shoots it, a tap walks toward it. */
+export function ratInteractable(r: RatLive, p: Vec): Interactable {
+  return {
+    id: `rat_${r.id}`, kind: "rat", label: "Chuột đồng", prompt: "Bắn chuột", rect: { x: p.x - 6, y: p.y - 7, w: 12, h: 9 },
+    use: { x: p.x, y: p.y }, rat: r.id,
+  };
+}
+
+/** What E does where I stand (§12.1): the nearest map interactable within PROMPT_RANGE always wins; else, on the
+ *  field, the nearest live rat drawn within 40 px. */
+export function promptTarget(map: GameMap, feet: Vec, live: readonly RatLive[], t: number): Interactable | null {
+  const near = nearestInteractable(map, feet);
+  if (near || map.id !== "field") return near;
+  const r = nearestRat(live, feet, t, RAT_PROMPT_RANGE);
+  const p = r ? ratAt(r, t) : null;
+  return r && p ? ratInteractable(r, p) : null;
 }

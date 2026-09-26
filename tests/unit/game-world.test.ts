@@ -203,6 +203,17 @@ describe("RemoteWorld: farm animations", () => {
     expect(w.farmAnim("ann", 5100)).toBe(0);
   });
 
+  it("tells when the one playing started, so a new fa 11 pets a dog once (v17)", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    w.applyMessage({ t: "fa", id: "ann", a: 11 }, 1000);
+    expect(w.farmAnimAt("ann", 1500)).toBe(1000);
+    w.applyMessage({ t: "fa", id: "ann", a: 11 }, 2000);
+    expect(w.farmAnimAt("ann", 2500)).toBe(2000);
+    expect(w.farmAnimAt("ann", 2000 + FARM_ANIM_MS)).toBeNull();
+    expect(w.farmAnimAt("bob", 1500)).toBeNull();
+  });
+
   it("forgets it on bye and ignores my own fa", () => {
     const w = new RemoteWorld(map, "me");
     w.setRoster([walking("ann")], 0);

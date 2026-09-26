@@ -9,7 +9,9 @@ import { DEFAULT_LOOK } from "@/lib/game/look";
 type EngineRec = {
   mapId: string; input: boolean[]; plots: unknown[]; cards: unknown[]; spots: unknown[]; anims: number[]; applied: unknown[];
   hellos: string[]; removed: string[]; destroyed: boolean;
-  cb: { onLocalMove: (m: unknown) => void; onLocalPath: (m: unknown) => void };
+  // v17: what setLocal, setRats and the dog calls received
+  locals: unknown[]; rats: unknown[]; pounces: number[]; recalls: number; pets: number;
+  cb: { onLocalMove: (m: unknown) => void; onLocalPath: (m: unknown) => void; onInput?: () => void };
 };
 const { engines, channels, replies } = vi.hoisted(() => ({
   engines: [] as EngineRec[],
@@ -23,9 +25,28 @@ vi.mock("@/lib/game/engine", () => ({
     constructor(_canvas: unknown, map: { id: string }, _art: unknown, cb: EngineRec["cb"]) {
       this.rec = {
         mapId: map.id, input: [], plots: [], cards: [], spots: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false,
-        cb,
+        locals: [], rats: [], pounces: [], recalls: 0, pets: 0, cb,
       };
       engines.push(this.rec);
+    }
+    setLocal(info: unknown) {
+      this.rec.locals.push(info);
+    }
+    setRats(rats: unknown) {
+      this.rec.rats.push(rats);
+    }
+    dogPounce(ratId: number) {
+      this.rec.pounces.push(ratId);
+      return true;
+    }
+    dogRecall() {
+      this.rec.recalls++;
+    }
+    petDog() {
+      this.rec.pets++;
+    }
+    localPos() {
+      return { x: 5, y: 6 };
     }
     setInputEnabled(enabled: boolean) {
       this.rec.input.push(enabled);
@@ -224,6 +245,62 @@ describe("GameCanvas farm messages", () => {
     expect(onPlotChanged.mock.calls).toEqual([[7], [0]]);
     channels[0].onMessage({ t: "fa", id: "ann", a: 1 });
     expect(engines[0].applied).toEqual([{ t: "fa", id: "ann", a: 1 }]);
+  });
+});
+
+describe("GameCanvas, the dog and the rats (v17)", () => {
+  const muc = { name: "Mực", coat: "muc" as const };
+  const RATS = { nextAt: 1, price: 150, live: [{ id: 3, plot: 5, since: 0, seed: 3 }], recent: [], plots: {} };
+
+  it("keeps my dog across travel, and a setLocal without a dog keeps it (null removes it)", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[0].locals.at(-1)).toMatchObject({ name: "An" });
+    expect((engines[0].locals.at(-1) as { dog?: unknown }).dog).toBeUndefined();
+    ref.current!.setLocal({ name: "An", badges: "", look: DEFAULT_LOOK, dog: muc, dogHungry: true });
+    expect(engines[0].locals.at(-1)).toMatchObject({ dog: muc, dogHungry: true });
+    ref.current!.setLocal({ name: "An", badges: "👑", look: DEFAULT_LOOK });
+    expect(engines[0].locals.at(-1)).toMatchObject({ badges: "👑", dog: muc, dogHungry: true });
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    expect(engines[1].locals.at(-1)).toMatchObject({ dog: muc, dogHungry: true });
+    ref.current!.setLocal({ name: "An", badges: "", look: DEFAULT_LOOK, dog: null, dogHungry: false });
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[2].locals.at(-1)).toMatchObject({ dog: null, dogHungry: false });
+  });
+  it("passes the rats on at once and gives them to the next field engine only", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    ref.current!.setRats(RATS);
+    expect(engines[0].rats.at(-1)).toBe(RATS);
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    expect(engines[1].rats).toEqual([]);
+    rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(engines[2].rats.at(-1)).toBe(RATS);
+  });
+  it("pets my dog with fa 11 for everyone, and passes on the pounce, the recall and where I stand", () => {
+    const ref = createRef<GameCanvasHandle>();
+    render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    ref.current!.petDog();
+    expect(engines[0]).toMatchObject({ pets: 1, anims: [11] });
+    expect(channels[0].sent).toEqual([{ t: "fa", id: "me", a: 11 }]);
+    expect(ref.current!.dogPounce(3)).toBe(true);
+    ref.current!.dogRecall();
+    expect(engines[0]).toMatchObject({ pounces: [3], recalls: 1 });
+    expect(ref.current!.localPos()).toEqual({ x: 5, y: 6 });
+  });
+  it("remembers my last key or touch across worlds", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender, unmount } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(ref.current!.lastInputAt()).toBe(-Infinity);
+    const now = vi.spyOn(performance, "now").mockReturnValue(4321);
+    engines[0].cb.onInput!();
+    now.mockRestore();
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    expect(ref.current!.lastInputAt()).toBe(4321);
+    const handle = ref.current!;
+    unmount();
+    expect(handle.localPos()).toBeNull();
+    expect(handle.dogPounce(3)).toBe(false);
   });
 });
 

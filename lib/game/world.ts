@@ -146,6 +146,12 @@ export class RemoteWorld {
     return n && now - n.at < FARM_ANIM_MS ? n.a : 0;
   }
 
+  /** When the farm animation playing on a member now started (null = none): a new `fa 11` pets their dog once (v17). */
+  farmAnimAt(id: string, now: number): number | null {
+    const n = this.farmById.get(id);
+    return n && now - n.at < FARM_ANIM_MS ? n.at : null;
+  }
+
   /** A member's fishing as of `now`: a phase older than FISHING_STALE_MS reads as idle, a catch label lasts CATCH_LABEL_MS. */
   fishing(id: string, now: number): RemoteFishing {
     const n = this.fishingById.get(id);

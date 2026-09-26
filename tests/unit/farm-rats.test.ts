@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { uplandFromRow, varietyFromRow, type UplandCrop, type UplandCropRow, type Variety } from "@/lib/game/farm/catalog";
 import { cropModel, cropYield, HOUR_MS, partKg, yieldEstimate, type CropModel } from "@/lib/game/farm/crop";
 import {
-  FULL_CAPS, nearestRat, parseRatBag, parseRatCaps, parseRats, RAT, ratAt, ratFactor, ratFleePos, ratHome, ratHours, ratPos,
-  type RatLogEntry,
+  FULL_CAPS, nearestRat, parseRatBag, parseRatCaps, parseRats, promptTarget, RAT, ratAt, ratFactor, ratFleePos, ratHome, ratHours,
+  ratPos, type RatLogEntry,
 } from "@/lib/game/farm/rats";
+import { buildFieldMap } from "@/lib/game/maps/field";
+import type { Interactable } from "@/lib/game/maps/types";
 import type { CropView } from "@/lib/game/farm/state";
 import { upEstimate, uplandModel, upYield, type UplandModel } from "@/lib/game/farm/upland";
 import { nextRandom } from "@/lib/game/fishing/reel";
@@ -198,6 +200,35 @@ describe("the rats on the field map (§5.4, §7.2)", () => {
     const t = T + 30_000, p = ratAt(r, t)!;
     expect(nearestRat([r], { x: p.x + 90, y: p.y }, t, 96)?.id).toBe(7);
     expect(nearestRat([r], { x: p.x, y: p.y + 97 }, t, 96)).toBeNull();
+  });
+});
+
+describe("the rat prompt (§12.1)", () => {
+  const T = Date.parse("2026-09-26T08:00:00Z");
+  const field = buildFieldMap();
+  // at `since` the rat is at plot 5's hole, (172, 310)
+  const r = { id: 7, plot: 5, since: T, seed: 7 };
+  it("offers the nearest live rat within 40 px when no interactable is in range", () => {
+    expect(promptTarget(field, { x: 172, y: 330 }, [r], T)).toMatchObject({
+      id: "rat_7", kind: "rat", rat: 7, prompt: "Bắn chuột", use: { x: 172, y: 310 }, rect: { x: 166, y: 303, w: 12, h: 9 },
+    });
+    expect(promptTarget(field, { x: 172, y: 351 }, [r], T)).toBeNull();
+    expect(promptTarget(field, { x: 172, y: 330 }, [], T)).toBeNull();
+  });
+  it("never takes E from a plot, a keeper or a portal in range", () => {
+    // plot 8's use spot is 37 px from the rat
+    const plot8 = field.interactables.find((i) => i.id === "plot_8")!;
+    expect(Math.hypot(plot8.use.x - 172, plot8.use.y - 310)).toBeLessThanOrEqual(40);
+    expect(promptTarget(field, plot8.use, [r], T)).toBe(plot8);
+    const at = (kind: Interactable["kind"]): Interactable =>
+      ({ id: kind, kind, label: kind, prompt: kind, rect: { x: 160, y: 320, w: 8, h: 8 }, use: { x: 172, y: 330 } });
+    for (const kind of ["portal", "coop", "farm_shop", "rice_depot"] as const) {
+      const it = at(kind);
+      expect(promptTarget({ ...field, interactables: [...field.interactables, it] }, { x: 172, y: 330 }, [r], T), kind).toBe(it);
+    }
+  });
+  it("offers rats on the field only", () => {
+    expect(promptTarget({ ...field, id: "hall" }, { x: 172, y: 330 }, [r], T)).toBeNull();
   });
 });
 

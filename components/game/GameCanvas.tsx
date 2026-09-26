@@ -3,20 +3,22 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
-import { GameEngine, type LocalFishing, type RosterEntry } from "@/lib/game/engine";
+import { GameEngine, type LocalFishing, type LocalInfo, type RosterEntry } from "@/lib/game/engine";
+import type { FieldRats } from "@/lib/game/farm/rats";
 import { phaseCode } from "@/lib/game/fishing/cast";
 import type { Rarity } from "@/lib/game/fishing/catalog";
 import { getMap, paintMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import { budgetKind, createBudget, GAME_LIMITS } from "@/lib/game/net/budget";
 import { joinGameChannel } from "@/lib/game/net/channel";
-import type { FarmAnim, FishPhase, GameMessage } from "@/lib/game/net/protocol";
+import { FARM_ANIM, type FarmAnim, type FishPhase, type GameMessage } from "@/lib/game/net/protocol";
 import { createReplyScheduler, replyWindowMs, type ReplyScheduler } from "@/lib/game/net/replies";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 
 export interface GameCanvasHandle {
   setRoster: (entries: RosterEntry[]) => void;
-  setLocal: (info: { name: string; badges: string; look: Look }) => void;
+  /** Me: name, badges, look, and (v17) my dog, drooping while hungry. */
+  setLocal: (info: LocalInfo) => void;
   showBubble: (accountId: string, text: string) => void;
   showReaction: (accountId: string | null, emoji: string) => void;
   setInputEnabled: (enabled: boolean) => void;
@@ -52,6 +54,18 @@ export interface GameCanvasHandle {
   /** The map whose world the canvas shows now, or null while it shows none: an answer that lands after I left a map is
    *  dropped (v15.3 §7.2). */
   mapId: () => MapId | null;
+  /** The field's rats (v17 §5.4): each walks its seeded path; an ending in `recent` plays once. */
+  setRats: (rats: FieldRats | null) => void;
+  /** My dog runs for live rat `ratId` (the dog_hunt call, §7.2); false without my dog or the rat. */
+  dogPounce: (ratId: number) => boolean;
+  /** A refused hunt: my dog comes back. */
+  dogRecall: () => void;
+  /** Pet my dog (D27): it comes to my front and wags, and `fa 11` shows the hearts to everyone. */
+  petDog: () => void;
+  /** Where I stand on the map shown (world px), or null while none is. */
+  localPos: () => Vec | null;
+  /** When I last pressed a key or touched the canvas (performance.now(); −Infinity before). */
+  lastInputAt: () => number;
 }
 
 export interface GameCanvasProps {
@@ -62,7 +76,7 @@ export interface GameCanvasProps {
   mapId: MapId;
   /** Where I appear on that map (null = its spawn). */
   arrive: Spot | null;
-  /** Used when a world starts; later changes go through the handle's setLocal. */
+  /** Used when a world starts; later changes go through the handle's setLocal (whose dog every new world keeps). */
   initial: { name: string; badges: string; look: Look };
   /** Is this account a current room member? Game messages from anyone else are dropped (spec §8.3). */
   isMember: (accountId: string) => boolean;
@@ -106,6 +120,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
   const gatherRef = useRef<ReadonlyArray<{ id: string; ready: boolean }>>([]);
+  // v17: my dog (from the latest setLocal), the field's rats and my last input, kept across worlds
+  const dogRef = useRef<Pick<LocalInfo, "dog" | "dogHungry">>({});
+  const ratsRef = useRef<FieldRats | null>(null);
+  const inputAtRef = useRef(-Infinity);
   // This world's answer to `hello`s, and who of its roster is here (null until its first roster).
   const repliesRef = useRef<ReplyScheduler | null>(null);
   const hereRef = useRef<Set<string> | null>(null);
@@ -129,7 +147,13 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         if (known && [...here].some((id) => !known.has(id))) repliesRef.current?.onHello();
         hereRef.current = here;
       },
-      setLocal: (info) => engineRef.current?.setLocal(info),
+      setLocal: (info) => {
+        // a call without a dog keeps the one I have (null removes it)
+        dogRef.current = {
+          dog: info.dog !== undefined ? info.dog : dogRef.current.dog, dogHungry: info.dogHungry ?? dogRef.current.dogHungry,
+        };
+        engineRef.current?.setLocal({ ...info, ...dogRef.current });
+      },
       showBubble: (id, text) => engineRef.current?.showBubble(id, text),
       showReaction: (id, emoji) => engineRef.current?.showReaction(id, emoji),
       setInputEnabled: (enabled) => {
@@ -189,6 +213,21 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         engineRef.current?.setCardTables(labels);
       },
       mapId: () => worldRef.current,
+      setRats: (rats) => {
+        ratsRef.current = rats;
+        engineRef.current?.setRats(rats);
+      },
+      dogPounce: (ratId) => engineRef.current?.dogPounce(ratId) ?? false,
+      dogRecall: () => engineRef.current?.dogRecall(),
+      petDog: () => {
+        const e = engineRef.current;
+        if (!e) return;
+        e.petDog();
+        e.showFarmAnim(FARM_ANIM.pet);
+        sendRef.current?.({ t: "fa", id: localId, a: FARM_ANIM.pet });
+      },
+      localPos: () => engineRef.current?.localPos() ?? null,
+      lastInputAt: () => inputAtRef.current,
     };
   }, [localId]);
 
@@ -218,6 +257,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         onFishingInput: (kind) => propsRef.current.onFishingInput(kind),
         onFirstFrame: () => propsRef.current.onFirstFrame(),
         onFatal: () => propsRef.current.onFatal(),
+        onInput: () => {
+          inputAtRef.current = performance.now();
+        },
       }, {
         localId,
         name: init.name,
@@ -238,6 +280,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setPlots(plotsRef.current);
     engine.setCardTables(cardTablesRef.current);
     engine.setGatherSpots(gatherRef.current);
+    engine.setLocal({ name: init.name, badges: init.badges, look: init.look, ...dogRef.current });
+    if (map.id === "field") engine.setRats(ratsRef.current);
 
     // One answer (my state) serves every `hello` that arrives before it goes out; answers are spread over a window
     // that grows with the world, because each one reaches every player.
