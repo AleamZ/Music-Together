@@ -586,4 +586,239 @@ end $$;
 
 select 'v17 field smoke ok' as result;
 
+-- ---------- the RPCs: the slingshot, the dog, the sale and anh Hai's items (§6.1, §7.1, §7.2, §8, §10.4, §10.7) ----------
+insert into smoke select 'room4', room_id::text from public.create_room('Bắn ná', 'pw', (select v from smoke where k = 't1'));
+select public.join_room((select code from public.rooms where id = (select v from smoke where k = 'room4')::uuid), 'pw', v)
+  from smoke where k in ('t2', 't3');
+insert into smoke select 't4', token from public.register('rat_d_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'a4', public._auth_account(v)::text from smoke where k = 't4';
+
+-- The slingshot (§6.1, D14–D16): the refusals in their order, the 2 s and 60 s bounds, misses, hits and their prices,
+-- and two hunters on one rat. Room 4's clock is off: its rats are placed by hand on a1's ripe plot.
+do $$
+declare a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room4')::uuid;
+        room2 uuid := (select v from smoke where k = 'room2')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        ra bigint; rb bigint; rc bigint; rd bigint; s jsonb; m numeric;
+begin
+  perform public._field_open(room, t - interval '1 hour');
+  update public.rat_clocks set last_k = 9000000000000000000 where room_id = room;
+  perform pg_temp.set_coins(a1, 100000);
+  perform public._farm_do_rent(room, a1, 5, t - interval '1 hour');
+  perform pg_temp.rice(room, 5, a1, 'short', t - interval '44 hours');
+  ra := pg_temp.rat(room, 5, t - interval '5 minutes');
+  rb := pg_temp.rat(room, 5, t - interval '5 minutes');
+  rc := pg_temp.rat(room, 5, t - interval '5 minutes');
+  -- the aim: no sling, no pellets, rat gone, in that order
+  delete from public.inventory where account_id = a2 and item_id in ('tool_sling', 'ammo_pellet');
+  assert pg_temp.err(format('select public._rat_do_sling_start(%L, %L, 0, %L)', room, a2, t)) = 'no sling', 'no sling';
+  perform pg_temp.give(a2, 'tool_sling', 1);
+  assert pg_temp.err(format('select public._rat_do_sling_start(%L, %L, 0, %L)', room, a2, t)) = 'no pellets', 'no pellets';
+  perform pg_temp.give(a2, 'ammo_pellet', 5);
+  assert pg_temp.err(format('select public._rat_do_sling_start(%L, %L, 0, %L)', room, a2, t)) = 'rat gone', 'no such rat';
+  assert pg_temp.err(format('select public._rat_do_sling_start(%L, %L, null, %L)', room, a2, t)) = 'rat gone', 'a null rat';
+  s := public._rat_do_sling_start(room, a2, ra, t);
+  assert s->'aim' = jsonb_build_object('rat', ra, 'started_at', t) and s->'rats'->'live' is not null
+     and (select room_id = room and rat_id = ra and started_at = t and last_shot_at is null and shots = 0
+            from public.sling_aims where account_id = a2), format('the aim %s', s->'aim');
+  -- 2 s after the aim, then after each shot; a miss (or a null hit) uses a pellet
+  assert pg_temp.err(format('select public._rat_do_sling_shoot(%L, %L, %s, false, %L)', room, a2, ra, t + interval '1.9 seconds'))
+         = 'too fast', '1.9 s';
+  s := public._rat_do_sling_shoot(room, a2, ra, false, t + interval '2 seconds');
+  assert s->'shot' = '{"hit": false, "price": null, "pellets": 4}' and pg_temp.qty(a2, 'ammo_pellet') = 4
+     and (select last_shot_at = t + interval '2 seconds' and shots = 1 from public.sling_aims where account_id = a2),
+    format('a miss at 2.0 s: %s', s->'shot');
+  assert pg_temp.err(format('select public._rat_do_sling_shoot(%L, %L, %s, true, %L)', room, a2, ra, t + interval '3.9 seconds'))
+         = 'too fast', 'from the previous shot';
+  s := public._rat_do_sling_shoot(room, a2, ra, null, t + interval '4 seconds');
+  assert s->'shot' = '{"hit": false, "price": null, "pellets": 3}'
+     and not exists (select 1 from public.anticheat_events where account_id = a2 and rpc = 'sling_shoot'), 'null is a miss, unflagged';
+  -- 60 s is the bound; another rat or another room has no aim
+  assert pg_temp.err(format('select public._rat_do_sling_shoot(%L, %L, %s, false, %L)', room, a2, ra, t + interval '65 seconds'))
+         = 'aim expired', '61 s idle';
+  assert pg_temp.err(format('select public._rat_do_sling_shoot(%L, %L, %s, false, %L)', room, a2, rb, t + interval '6 seconds'))
+         = 'no aim', 'another rat';
+  assert pg_temp.err(format('select public._rat_do_sling_shoot(%L, %L, %s, false, %L)', room2, a2, ra, t + interval '6 seconds'))
+         = 'no aim', 'another room';
+  assert pg_temp.qty(a2, 'ammo_pellet') = 3, 'refusals use no pellet';
+  -- a hit in a new period: the price of the preview, and the catch writes the row
+  delete from public.fish_price_index where room_id = room;
+  m := public._fish_mult(public._room_wealth(room, t + interval '6 seconds'));
+  s := public._rat_do_sling_shoot(room, a2, ra, true, t + interval '6 seconds');
+  assert s->'shot' = jsonb_build_object('hit', true, 'price', public._critter_price(150, m), 'pellets', 2)
+     and (select mult = m from public.fish_price_index where room_id = room), format('a hit at M %s: %s', m, s->'shot');
+  assert (select how = 'sling' and caught_by = a2 and ended_at = t + interval '6 seconds' from public.field_rats where id = ra)
+     and not exists (select 1 from public.sling_aims where account_id = a2)
+     and exists (select 1 from public.rat_bag where account_id = a2 and caught_at = t + interval '6 seconds')
+     and s->'rats'->'recent'->0->>'how' = 'sling' and s->'rats'->'recent'->0->'by' = public._who(a2), 'caught, aim gone, bagged';
+  -- M 2.24 → 336; and two hunters on one rat: the first valid hit wins
+  perform pg_temp.set_mult(room, 2.24, t);
+  -- a3 used up a day's catches above, on another Vietnam day: a clean slate
+  update public.farm_profiles set rat_win_start = null, rat_win_count = 0, rat_day_on = null, rat_day_count = 0
+   where account_id = a3;
+  perform pg_temp.give(a3, 'tool_sling', 1);
+  perform pg_temp.give(a3, 'ammo_pellet', 10);
+  perform public._rat_do_sling_start(room, a2, rb, t + interval '7 seconds');
+  perform public._rat_do_sling_start(room, a3, rb, t + interval '7 seconds');
+  s := public._rat_do_sling_shoot(room, a3, rb, true, t + interval '10 seconds');
+  assert (s->'shot'->>'price')::int = 336, 'floor(150 × 2.24)';
+  assert pg_temp.err(format('select public._rat_do_sling_shoot(%L, %L, %s, true, %L)', room, a2, rb, t + interval '10 seconds'))
+         = 'rat gone', 'the second hunter';
+  assert pg_temp.qty(a2, 'ammo_pellet') = 2 and exists (select 1 from public.sling_aims where account_id = a2 and rat_id = rb),
+    'a refused hit uses no pellet';
+  -- M 1.13 → 169 (a rounding would give 170)
+  update public.fish_price_index set mult = 1.13 where room_id = room;
+  perform public._rat_do_sling_start(room, a2, rc, t + interval '11 seconds');
+  s := public._rat_do_sling_shoot(room, a2, rc, true, t + interval '14 seconds');
+  assert s->'shot' = '{"hit": true, "price": 169, "pellets": 1}', format('floor(150 × 1.13): %s', s->'shot');
+  -- the last pellet
+  rd := pg_temp.rat(room, 5, t + interval '15 seconds');
+  perform public._rat_do_sling_start(room, a2, rd, t + interval '15 seconds');
+  perform public._rat_do_sling_shoot(room, a2, rd, false, t + interval '17 seconds');
+  assert pg_temp.err(format('select public._rat_do_sling_shoot(%L, %L, %s, true, %L)', room, a2, rd, t + interval '19 seconds'))
+         = 'no pellets', 'out of pellets';
+  insert into smoke values ('rd', rd::text);
+end $$;
+
+-- The dog (§7.1, §7.2): adoption and its refusals, food, the pounce, its rest, and a new name.
+do $$
+declare t3 text := (select v from smoke where k = 't3'); a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; room uuid := (select v from smoke where k = 'room4')::uuid;
+        t timestamptz := (select v from smoke where k = 'now')::timestamptz; rd bigint := (select v from smoke where k = 'rd')::bigint;
+        s jsonb; re bigint; x jsonb;
+begin
+  delete from public.dogs where account_id = a3;
+  perform pg_temp.set_coins(a3, 19999);
+  assert pg_temp.err(format('select public.adopt_dog(%L, %L, %L)', t3, 'M', 'x')) = 'invalid name', '1 character, before the coat';
+  assert pg_temp.err(format('select public.adopt_dog(%L, %L, %L)', t3, 'Mười bảy ký tự nè', 'muc')) = 'invalid name', '17 characters';
+  assert pg_temp.err(format('select public.adopt_dog(%L, %L, %L)', t3, 'Ao cá', 'muc')) = 'invalid name', 'Ao cá';
+  assert pg_temp.err(format('select public.adopt_dog(%L, %L, %L)', t3, U&'\200B\200B', 'muc')) = 'invalid name', 'zero-width';
+  assert pg_temp.err(format('select public.adopt_dog(%L, %L, %L)', t3, 'Mực', 'x')) = 'invalid coat', 'coat x';
+  assert pg_temp.err(format('select public.adopt_dog(%L, %L, null)', t3, 'Mực')) = 'invalid coat', 'no coat';
+  assert pg_temp.err(format('select public.adopt_dog(%L, %L, %L)', t3, 'Mực', 'muc')) = 'not enough coins', '19 999 xu';
+  perform pg_temp.set_coins(a3, 20000);
+  s := public.adopt_dog(t3, '  Mực ', 'muc');
+  assert s->'dog' = jsonb_build_object('name', 'Mực', 'coat', 'muc', 'adopted_at', s->'server_now',
+                                       'fed_until', (s->>'server_now')::timestamptz + interval '24 hours', 'next_hunt_at', null,
+                                       'catches', 0)
+     and s->'food' = '0' and s->'coins' = '0', format('adopted, fed for 24 h: %s', s);
+  assert exists (select 1 from public.coin_ledger where account_id = a3 and reason = 'dog_adopt' and delta = -20000
+                  and balance = 0 and ref = 'dog muc'), 'the dog_adopt row';
+  perform pg_temp.set_coins(a3, 50000);
+  assert pg_temp.err(format('select public.adopt_dog(%L, %L, %L)', t3, 'Ki', 'vang')) = 'already own dog', 'one a person';
+  assert public.dog_state(t3)->'dog'->>'name' = 'Mực' and public.dog_state(t3)->'coins' = '50000', 'dog_state';
+  -- food: refused above 12 h; 24 h from max(now, fed_until); no food
+  update public.dogs set fed_until = t + interval '12 hours 1 second' where account_id = a3;
+  perform pg_temp.give(a3, 'food_dog', 2);
+  assert pg_temp.err(format('select public._dog_do_feed(%L, %L)', a3, t)) = 'dog full', 'more than 12 h left';
+  update public.dogs set fed_until = t + interval '11 hours' where account_id = a3;
+  s := public._dog_do_feed(a3, t);
+  assert (s->'dog'->>'fed_until')::timestamptz = t + interval '35 hours' and s->'food' = '1', 'from fed_until';
+  update public.dogs set fed_until = t - interval '5 hours' where account_id = a3;
+  s := public._dog_do_feed(a3, t);
+  assert (s->'dog'->>'fed_until')::timestamptz = t + interval '24 hours' and s->'food' = '0', 'from now';
+  update public.dogs set fed_until = t - interval '1 hour' where account_id = a3;
+  assert pg_temp.err(format('select public._dog_do_feed(%L, %L)', a3, t)) = 'no item', 'no food';
+  assert pg_temp.err(format('select public._dog_do_feed(%L, %L)', a1, t)) = 'no dog', 'no dog to feed';
+  -- the pounce: hungry, then fed; a catch rests it 5 minutes (details = seconds)
+  assert pg_temp.err(format('select public._dog_do_hunt(%L, %L, %s, %L)', room, a3, rd, t + interval '20 seconds')) = 'dog hungry', 'hungry';
+  assert pg_temp.err(format('select public._dog_do_hunt(%L, %L, %s, %L)', room, a1, rd, t + interval '20 seconds')) = 'no dog', 'no dog';
+  update public.dogs set fed_until = t + interval '20 hours' where account_id = a3;
+  s := public._dog_do_hunt(room, a3, rd, t + interval '20 seconds');
+  assert (s->'dog_hunt'->>'price')::int = 169 and (select how = 'dog' and caught_by = a3 from public.field_rats where id = rd)
+     and (select next_hunt_at = t + interval '5 minutes 20 seconds' and catches = 1 from public.dogs where account_id = a3),
+    format('the pounce %s', s->'dog_hunt');
+  x := pg_temp.recent(s, rd);
+  assert x->>'how' = 'dog' and x->>'dog' = 'Mực' and x->'by' = public._who(a3), format('recent %s', x);
+  assert s->'mine'->'dog'->'catches' = '1' and s->'mine'->'rats'->'count' is not null, 'mine.dog';
+  re := pg_temp.rat(room, 5, t + interval '30 seconds');
+  assert pg_temp.errd(format('select public._dog_do_hunt(%L, %L, %s, %L)', room, a3, re, t + interval '1 minute'))
+         = '{"message": "dog resting", "detail": "260", "state": "22023"}', 'resting, with the seconds';
+  s := public._dog_do_hunt(room, a3, re, t + interval '5 minutes 20 seconds');
+  assert (select catches = 2 from public.dogs where account_id = a3), 'rested';
+  -- a new name: refused names, no dog, then free
+  assert pg_temp.err(format('select public.rename_dog(%L, %L)', t3, 'X')) = 'invalid name', 'rename: 1 character';
+  assert pg_temp.err(format('select public.rename_dog(%L, %L)', (select v from smoke where k = 't4'), 'Vện')) = 'no dog',
+    'rename: no dog';
+  s := public.rename_dog(t3, 'Ki Ki');
+  assert s->'dog'->>'name' = 'Ki Ki' and (select coins from public.wallets where account_id = a3) = 50000, 'renamed, free';
+  assert public.dog_state((select v from smoke where k = 't4')) = jsonb_build_object('server_now', now(), 'dog', null, 'food', 0,
+                                                                                    'coins', 0), 'a fresh account';
+end $$;
+
+-- Room binding (§5.6): a live rat of another room, called through this one, is 'rat gone'; nothing changes.
+do $$
+declare t2 text := (select v from smoke where k = 't2'); t3 text := (select v from smoke where k = 't3');
+        a2 uuid := (select v from smoke where k = 'a2')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        room uuid := (select v from smoke where k = 'room')::uuid; room4 uuid := (select v from smoke where k = 'room4')::uuid;
+        rb bigint; p0 integer; b0 integer;
+begin
+  select id into rb from public.field_rats where room_id = room4 and ended_at is null order by id limit 1;
+  if rb is null then
+    rb := pg_temp.rat(room4, 5, now());
+  end if;
+  perform pg_temp.give(a2, 'ammo_pellet', 5);
+  update public.dogs set fed_until = now() + interval '1 day', next_hunt_at = null where account_id = a3;
+  delete from public.sling_aims where account_id = a2;
+  p0 := pg_temp.qty(a2, 'ammo_pellet');
+  b0 := (select count(*) from public.rat_bag where account_id in (a2, a3));
+  assert pg_temp.err(format('select public.sling_start(%L, %L, %s)', room, t2, rb)) = 'rat gone', 'sling_start';
+  insert into public.sling_aims (account_id, room_id, rat_id, started_at) values (a2, room, rb, now() - interval '5 seconds');
+  assert pg_temp.err(format('select public.sling_shoot(%L, %L, %s, true)', room, t2, rb)) = 'rat gone', 'sling_shoot';
+  assert pg_temp.err(format('select public.dog_hunt(%L, %L, %s)', room, t3, rb)) = 'rat gone', 'dog_hunt';
+  assert (select ended_at is null from public.field_rats where id = rb) and pg_temp.qty(a2, 'ammo_pellet') = p0
+     and (select shots = 0 and last_shot_at is null from public.sling_aims where account_id = a2)
+     and (select next_hunt_at is null and catches = 2 from public.dogs where account_id = a3)
+     and (select count(*) from public.rat_bag where account_id in (a2, a3)) = b0, 'nothing changed';
+  delete from public.sling_aims where account_id = a2;
+end $$;
+
+-- cô Út buys the bag at its stored prices (§5.6, D12); anh Hai sells the three items (§8).
+do $$
+declare t1 text := (select v from smoke where k = 't1'); t2 text := (select v from smoke where k = 't2');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        n integer; xu integer; c0 integer; r jsonb;
+begin
+  select count(*)::int, sum(price)::int into n, xu from public.rat_bag where account_id = a2;
+  assert n >= 3, format('a2 caught %s', n);
+  c0 := (select coins from public.wallets where account_id = a2);
+  r := public.sell_rats(t2);
+  assert r->'sold' = jsonb_build_object('count', n, 'xu', xu) and r->'mine'->'coins' = to_jsonb(c0 + xu)
+     and r->'mine'->'rats' = '{"count": 0, "value": 0}'
+     and exists (select 1 from public.coin_ledger where account_id = a2 and reason = 'rat_sell' and delta = xu and ref = n || ' con'),
+    format('sold %s for %s: %s', n, xu, r->'sold');
+  assert pg_temp.err(format('select public.sell_rats(%L)', t2)) = 'nothing to sell', 'an empty bag';
+  -- the three items; the ná once, the stacks up to 99
+  delete from public.inventory where account_id = a1 and item_id in ('tool_sling', 'ammo_pellet', 'food_dog');
+  perform pg_temp.set_coins(a1, 10000);
+  r := public.buy_farm_item(t1, 'tool_sling', 1);
+  assert r->'mine'->'items'->'tool_sling' = '1' and r->'mine'->'coins' = '7000'
+     and exists (select 1 from public.coin_ledger where account_id = a1 and reason = 'farm_buy' and delta = -3000
+                  and ref = 'tool_sling x1'), 'the ná for 3 000 xu';
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 1)', t1, 'tool_sling')) = 'already owned', 'bought once';
+  r := public.buy_farm_item(t1, 'ammo_pellet', 10);
+  assert r->'mine'->'items'->'ammo_pellet' = '10' and r->'mine'->'coins' = '6900', '10 pellets for 100 xu';
+  r := public.buy_farm_item(t1, 'food_dog', 2);
+  assert r->'mine'->'items'->'food_dog' = '2' and r->'mine'->'coins' = '6600', 'two bags of food';
+  assert pg_temp.err(format('select public.buy_farm_item(%L, %L, 90)', t1, 'ammo_pellet')) = 'invalid quantity', '99 at most';
+  r := public.buy_farm_item(t1, 'ammo_pellet', 0);
+  assert r->'anticheat'->>'code' = 'bad_qty', 'a quantity outside 1–99 stays hard';
+  r := public.buy_farm_item(t1, 'rod_bamboo', 1);
+  assert r->'anticheat'->>'code' = 'kind_mismatch' and r->'anticheat'->>'strike' = '0', 'no fishing gear here';
+  -- public and guarded; the twins private
+  assert has_function_privilege('anon', 'public.sling_start(uuid,text,bigint)', 'execute')
+     and has_function_privilege('anon', 'public.sling_shoot(uuid,text,bigint,boolean)', 'execute')
+     and has_function_privilege('anon', 'public.dog_hunt(uuid,text,bigint)', 'execute')
+     and has_function_privilege('anon', 'public.adopt_dog(text,text,text)', 'execute')
+     and has_function_privilege('anon', 'public.rename_dog(text,text)', 'execute')
+     and has_function_privilege('anon', 'public.feed_dog(text)', 'execute')
+     and has_function_privilege('anon', 'public.sell_rats(text)', 'execute')
+     and has_function_privilege('anon', 'public.dog_state(text)', 'execute'), 'public RPCs';
+  assert not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
+                      and (p.proname like '\_rat\_%' or p.proname like '\_dog\_%')
+                      and has_function_privilege('anon', p.oid, 'execute')), 'the twins and helpers are private';
+end $$;
+
+select 'v17 rpc smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql
