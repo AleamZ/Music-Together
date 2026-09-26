@@ -114,7 +114,7 @@ insert into smoke select 'now', date_trunc('minute', now())::text;
 do $$
 declare j jsonb := (select j from fx); a1 uuid := (select v from smoke where k = 'a1')::uuid;
         room uuid := (select v from smoke where k = 'room')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
-        r jsonb; m jsonb;
+        dv integer := (j->'rules'->>'daily_visits')::int; r jsonb; m jsonb;
 begin
   -- 3 by hand, then the largest container (R5)
   assert public._critter_cap(a1) = (j->'rules'->>'hand')::int, 'hands: 3';
@@ -136,11 +136,12 @@ begin
   assert r = '{"caught": [{"kind": "oc_dong", "price": 17}], "escaped": 2}', format('one place left %s', r);
   r := public._critter_add(a1, room, array['oc_dong'], t);
   assert r = '{"caught": [], "escaped": 1}' and pg_temp.held(a1) = '{cua_dong,cua_gach,oc_dong}', 'full: nothing kept';
-  -- the account's part (§11.7): the critters held, the capacity and the gathering
+  -- the account's part (§11.7): the critters held, the capacity and the gathering; the fixture's visits a day
   m := public._farm_mine(a1);
   assert m->'critters' = '{"cua_dong": {"n": 1, "xu": 26}, "cua_gach": {"n": 1, "xu": 100}, "oc_dong": {"n": 1, "xu": 17}}'
      and m->'critter_cap' = '3', format('mine %s', m);
-  assert m->'gather' = '{"ready_at": {}, "left_today": 200, "day_resets_at": null}', format('gather %s', m->'gather');
+  assert m->'gather' = jsonb_build_object('ready_at', '{}'::jsonb, 'left_today', dv, 'day_resets_at', null),
+    format('gather %s', m->'gather');
   insert into public.gather_cooldowns (account_id, spot, ready_at) values
     (a1, 'crab3', now() + interval '12 minutes'), (a1, 'bed1', now() + interval '7 minutes'), (a1, 'crab1', now() - interval '1 minute');
   update public.farm_profiles set gather_on = public._vn_today(), gather_count = 13 where account_id = a1;
@@ -149,13 +150,13 @@ begin
   end if;
   m := public._farm_mine(a1)->'gather';
   assert m->'ready_at' = jsonb_build_object('bed1', now() + interval '7 minutes', 'crab3', now() + interval '12 minutes')
-     and m->'left_today' = '187' and m->'day_resets_at' = 'null', format('cooling spots, 187 left: %s', m);
-  update public.farm_profiles set gather_count = 200 where account_id = a1;
+     and m->'left_today' = to_jsonb(dv - 13) and m->'day_resets_at' = 'null', format('cooling spots, 187 left: %s', m);
+  update public.farm_profiles set gather_count = dv where account_id = a1;
   m := public._farm_mine(a1)->'gather';
   assert m->'left_today' = '0'
      and (m->>'day_resets_at')::timestamptz = (public._vn_today() + 1)::timestamp at time zone 'Asia/Ho_Chi_Minh', format('none left %s', m);
   update public.farm_profiles set gather_on = public._vn_today() - 1 where account_id = a1;
-  assert public._farm_mine(a1)->'gather'->'left_today' = '200', 'a new day';
+  assert public._farm_mine(a1)->'gather'->'left_today' = to_jsonb(dv), 'a new day';
 end $$;
 
 -- The prices the field shows (R12): the snapshot while its period is current, else a preview; a read never writes.
@@ -183,22 +184,24 @@ begin
      and not exists (select 1 from public.fish_price_index where room_id = room), 'the view never writes the index';
 end $$;
 
--- The daily limit's helpers (§7.5): the check first, the count after it; the 200th visit logs one soft signal.
+-- The daily limit's helpers (§7.5): the check first, the count after it; the 200th visit (the fixture's visits a day)
+-- logs one soft signal.
 do $$
-declare a2 uuid := (select v from smoke where k = 'a2')::uuid; room uuid := (select v from smoke where k = 'room')::uuid;
+declare j jsonb := (select j from fx); dv integer := (j->'rules'->>'daily_visits')::int;
+        a2 uuid := (select v from smoke where k = 'a2')::uuid; room uuid := (select v from smoke where k = 'room')::uuid;
         t timestamptz := (select v from smoke where k = 'now')::timestamptz; v_day date := (t at time zone 'Asia/Ho_Chi_Minh')::date;
         e jsonb;
 begin
   perform public._gather_check(a2, t);
   assert exists (select 1 from public.farm_profiles where account_id = a2 and gather_count = 0), 'a profile is made';
-  update public.farm_profiles set gather_on = v_day, gather_count = 198 where account_id = a2;
+  update public.farm_profiles set gather_on = v_day, gather_count = dv - 2 where account_id = a2;
   perform public._gather_count(a2, room, 'pick_snail_bed', t);
-  assert (select gather_count from public.farm_profiles where account_id = a2) = 199
+  assert (select gather_count from public.farm_profiles where account_id = a2) = dv - 1
      and not exists (select 1 from public.anticheat_events where account_id = a2), '199: nothing logged';
   perform public._gather_check(a2, t);
   perform public._gather_count(a2, room, 'crab_start', t);
   assert (select outcome = 'soft' and code = 'gather_daily_cap' and rpc = 'crab_start' and room_id = room
-                 and detail = jsonb_build_object('day', v_day, 'visits', 200)
+                 and detail = jsonb_build_object('day', v_day, 'visits', dv)
             from public.anticheat_events where account_id = a2), 'the 200th visit is logged, soft';
   e := pg_temp.errd(format('select public._gather_check(%L, %L)', a2, t));
   assert e->>'message' = 'gather daily limit' and e->>'state' = '53400'
@@ -272,20 +275,79 @@ begin
      and (select gather_count from public.farm_profiles where account_id = a3) = 1, 'a refusal changes and counts nothing';
 end $$;
 
--- crab_finish (§11.5, R7): too fast under 3 s, the visit kept; at 3 s the hits roll at the room's M; single use.
+-- The cooldown's end (§16): a second before it a hole and a bed still cool; at exactly 20:00, the fixture's cooldown, both
+-- are allowed again. a4's ten spots all started at tg, and its basket has room.
 do $$
-declare a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
+declare j jsonb := (select j from fx); a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        room uuid := (select v from smoke where k = 'room2')::uuid; tg timestamptz := (select v from smoke where k = 'tg')::timestamptz;
+        cd interval := make_interval(secs => (j->'rules'->>'cooldown_s')::int); r jsonb; e jsonb;
+begin
+  e := pg_temp.errd(format('select public._gather_do_crab_start(%L, %L, 1, %L)', room, a4, tg + cd - interval '1 second'));
+  assert e->>'message' = 'hole empty' and e->>'detail' = '1', format('hole 1 at 19:59 %s', e);
+  r := public._gather_do_crab_start(room, a4, 1, tg + cd);
+  assert r->'visit'->'hole' = '1' and (r->'visit'->>'started_at')::timestamptz = tg + cd
+     and (select ready_at = tg + cd + cd and visit_at = tg + cd and visit_id = (r->'visit'->>'id')::uuid
+            from public.gather_cooldowns where account_id = a4 and spot = 'crab1'), format('hole 1 at exactly 20:00 %s', r->'visit');
+  e := pg_temp.errd(format('select public._gather_do_bed(%L, %L, 1, %L)', room, a4, tg + cd - interval '1 second'));
+  assert e->>'message' = 'bed empty' and e->>'detail' = '1', format('bed 1 at 19:59 %s', e);
+  r := public._gather_do_bed(room, a4, 1, tg + cd, '{0, 0}');
+  assert r->'snails' = '{"caught": [{"kind": "oc_dong", "price": 17}], "escaped": 0}'
+     and (select ready_at = tg + cd + cd from public.gather_cooldowns where account_id = a4 and spot = 'bed1'),
+    format('bed 1 at exactly 20:00 %s', r->'snails');
+  assert (select gather_count from public.farm_profiles where account_id = a4) = 12, 'two more visits';
+end $$;
+
+-- The rolls at the fixture's thresholds (§7.2, §7.3, R2): a hit just under the cua gạch odds is a cua gạch, one at them a
+-- cua đồng; a bed gives lo + floor(u₁ · (hi − lo + 1)) snails for the fixture's [lo, hi] (u₁ at each step and just under
+-- the next give the same count), each an ốc đồng just under its odds and an ốc bươu vàng at them. a4, at M = 2.24.
+do $$
+declare j jsonb := (select j from fx); a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        room uuid := (select v from smoke where k = 'room2')::uuid; tg timestamptz := (select v from smoke where k = 'tg')::timestamptz;
+        gate interval := make_interval(secs => (j->'rules'->>'crab_gate_s')::numeric);
+        go double precision := (j->'rules'->>'cua_gach_odds')::double precision;
+        od double precision := (j->'rules'->>'oc_dong_odds')::double precision;
+        lo integer := (j->'rules'->'bed_snails'->>0)::int; hi integer := (j->'rules'->'bed_snails'->>1)::int;
+        eps double precision := 1e-9; kinds text[] := '{}'; u_kind double precision[] := '{}';
+        u double precision; k integer; r jsonb;
+begin
+  -- hole 2's visit, open since tg
+  r := public._gather_do_crab_finish(room, a4, (select visit_id from public.gather_cooldowns where account_id = a4 and spot = 'crab2'),
+                                     2, tg + gate, array[go - eps, go]);
+  assert r->'crab' = '{"hits": 2, "caught": [{"kind": "cua_gach", "price": 100}, {"kind": "cua_dong", "price": 26}], "escaped": 0}',
+    format('just under and at the cua gạch odds %s', r->'crab');
+  -- each snail's u, alternately just under and at the ốc đồng odds
+  for k in 1 .. hi loop
+    u_kind := u_kind || case when k % 2 = 1 then od - eps else od end;
+    kinds := kinds || case when k % 2 = 1 then 'oc_dong' else 'oc_buou_vang' end;
+  end loop;
+  for k in 0 .. hi - lo loop
+    foreach u in array array[k::double precision / (hi - lo + 1), (k + 1)::double precision / (hi - lo + 1) - eps] loop
+      delete from public.gather_cooldowns where account_id = a4 and spot = 'bed2';
+      r := public._gather_do_bed(room, a4, 2, tg + interval '30 minutes', u || u_kind);
+      assert (select coalesce(array_agg(c->>'kind' order by n), '{}') from jsonb_array_elements(r->'snails'->'caught')
+                with ordinality s(c, n)) = kinds[1:lo + k] and r->'snails'->'escaped' = '0',
+        format('u₁ = %s gives %s snails: %s', u, lo + k, r->'snails');
+    end loop;
+  end loop;
+  delete from public.critters where account_id = a4;
+end $$;
+
+-- crab_finish (§11.5, R7): too fast just under the fixture's 3 s gate, the visit kept; at exactly 3 s the hits roll at the
+-- room's M; single use.
+do $$
+declare j jsonb := (select j from fx); gate interval := make_interval(secs => (j->'rules'->>'crab_gate_s')::numeric);
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
         tg timestamptz := (select v from smoke where k = 'tg')::timestamptz; v1 uuid := (select v from smoke where k = 'visit1')::uuid;
         r jsonb;
 begin
   assert pg_temp.err(format('select public._gather_do_crab_finish(%L, %L, %L, 3, %L, %L)', room, a3, v1,
-                            tg + interval '2.9 seconds', '{0.05, 0.5, 0.95}')) = 'too fast', 'hits 3 at 2.9 s';
+                            tg + gate - interval '0.1 seconds', '{0.05, 0.5, 0.95}')) = 'too fast', 'hits 3 at 2.9 s';
   assert exists (select 1 from public.gather_cooldowns where account_id = a3 and visit_id = v1), 'the visit stays open';
-  r := public._gather_do_crab_finish(room, a3, v1, 3, tg + interval '3 seconds', '{0.05, 0.5, 0.95}');
+  r := public._gather_do_crab_finish(room, a3, v1, 3, tg + gate, '{0.05, 0.5, 0.95}');
   assert r->'crab' = '{"hits": 3, "caught": [{"kind": "cua_gach", "price": 100}, {"kind": "cua_dong", "price": 26},
                                               {"kind": "cua_dong", "price": 26}], "escaped": 0}', format('at 3 s %s', r->'crab');
   assert r->'mine'->'critters' = '{"cua_dong": {"n": 2, "xu": 52}, "cua_gach": {"n": 1, "xu": 100}}'
-     and (r->>'server_now')::timestamptz = tg + interval '3 seconds', format('mine %s', r->'mine'->'critters');
+     and (r->>'server_now')::timestamptz = tg + gate, format('mine %s', r->'mine'->'critters');
   assert (select visit_id is null and visit_at is null and visit_room is null and ready_at = tg + interval '20 minutes'
             from public.gather_cooldowns where account_id = a3 and spot = 'crab3'), 'consumed, still cooling';
   assert pg_temp.err(format('select public._gather_do_crab_finish(%L, %L, %L, 0, %L)', room, a3, v1, tg + interval '4 seconds'))
@@ -294,9 +356,10 @@ begin
 end $$;
 
 -- Full hands refuse a visit before its cooldown (R5); hits 0 needs no wait; another room's finish finds no visit; a
--- finish after 120 s is expired and leaves the visit; what does not fit escapes.
+-- finish after the fixture's 120 s window is expired and leaves the visit; what does not fit escapes.
 do $$
-declare a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
+declare j jsonb := (select j from fx); win interval := make_interval(secs => (j->'rules'->>'visit_window_s')::numeric);
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
         room3 uuid := (select v from smoke where k = 'room3')::uuid; tg timestamptz := (select v from smoke where k = 'tg')::timestamptz;
         r jsonb; v uuid;
 begin
@@ -315,8 +378,8 @@ begin
   assert pg_temp.err(format('select public._gather_do_crab_finish(%L, %L, %L, 1, %L)', room3, a3, v,
                             tg + interval '2 minutes 5 seconds')) = 'visit not found', 'another room';
   assert pg_temp.err(format('select public._gather_do_crab_finish(%L, %L, %L, 1, %L, %L)', room, a3, v,
-                            tg + interval '4 minutes 1 second', '{0.5}')) = 'visit expired', 'at 121 s';
-  r := public._gather_do_crab_finish(room, a3, v, 1, tg + interval '4 minutes', '{0.5}');
+                            tg + interval '2 minutes' + win + interval '1 second', '{0.5}')) = 'visit expired', 'at 121 s';
+  r := public._gather_do_crab_finish(room, a3, v, 1, tg + interval '2 minutes' + win, '{0.5}');
   assert r->'crab' = '{"hits": 1, "caught": [{"kind": "cua_dong", "price": 26}], "escaped": 0}', format('at 120 s %s', r->'crab');
   insert into public.critters (account_id, kind, price, caught_at) select a3, 'oc_dong', 17, tg from generate_series(1, 13);
   assert (select count(*) from public.critters where account_id = a3) = 17, '17 of 18';
@@ -373,18 +436,19 @@ begin
   delete from public.critters where account_id = a3;
 end $$;
 
--- The daily limit through the visits (§7.5, R3): the 200th works and logs one soft gather_daily_cap; the 201st is refused
--- first, before full and the cooldown; a new Vietnam day starts again.
+-- The daily limit through the visits (§7.5, R3): the 200th (the fixture's visits a day) works and logs one soft
+-- gather_daily_cap; the 201st is refused first, before full and the cooldown; a new Vietnam day starts again.
 do $$
-declare a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
+declare j jsonb := (select j from fx); dv integer := (j->'rules'->>'daily_visits')::int;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; room uuid := (select v from smoke where k = 'room2')::uuid;
         tg timestamptz := (select v from smoke where k = 'tg')::timestamptz; v_day date := (tg at time zone 'Asia/Ho_Chi_Minh')::date;
         e jsonb;
 begin
-  update public.farm_profiles set gather_on = v_day, gather_count = 199 where account_id = a3;
+  update public.farm_profiles set gather_on = v_day, gather_count = dv - 1 where account_id = a3;
   perform public._gather_do_crab_start(room, a3, 5, tg + interval '12 minutes');
-  assert (select gather_count from public.farm_profiles where account_id = a3) = 200
+  assert (select gather_count from public.farm_profiles where account_id = a3) = dv
      and (select count(*) from public.anticheat_events where account_id = a3 and code = 'gather_daily_cap' and outcome = 'soft'
-            and rpc = 'crab_start' and room_id = room and detail = jsonb_build_object('day', v_day, 'visits', 200)) = 1,
+            and rpc = 'crab_start' and room_id = room and detail = jsonb_build_object('day', v_day, 'visits', dv)) = 1,
     'the 200th visit';
   insert into public.critters (account_id, kind, price, caught_at) select a3, 'oc_dong', 40, tg from generate_series(1, 18);
   e := pg_temp.errd(format('select public._gather_do_bed(%L, %L, 1, %L)', room, a3, tg + interval '13 minutes'));
@@ -562,12 +626,14 @@ begin
   delete from public.critters where account_id = a4;
 end $$;
 
--- The transplant gate (§8.3, R19): 8–120 s after begin_work, rice and ớt; a second begin_work restarts it; the quality
--- stays 1.0.
+-- The transplant gate (§8.3, R19): the fixture's 8 s gate and 120 s window after begin_work, rice and ớt; a second
+-- begin_work restarts it; the quality stays 1.0.
 do $$
-declare a5 uuid := (select v from smoke where k = 'a5')::uuid; room uuid := (select v from smoke where k = 'room5')::uuid;
+declare j jsonb := (select j from fx); tp interval := make_interval(secs => (j->'rules'->>'transplant_gate_s')::numeric);
+        ww interval := make_interval(secs => (j->'rules'->>'work_window_s')::numeric);
+        a5 uuid := (select v from smoke where k = 'a5')::uuid; room uuid := (select v from smoke where k = 'room5')::uuid;
         room6 uuid := (select v from smoke where k = 'room6')::uuid; t timestamptz := (select v from smoke where k = 'now')::timestamptz;
-        s jsonb;
+        t2 timestamptz := t + interval '3 minutes 5 seconds'; s jsonb;
 begin
   perform pg_temp.set_coins(a5, 100000);
   perform public._farm_do_rent(room, a5, 5, t);
@@ -576,35 +642,35 @@ begin
   perform pg_temp.seedlings(room, 6, a5, t);
   -- rice, plot 5: 7.9 s and 121 s are refused and leave the record; a second begin_work restarts the gate
   perform public._farm_do_begin_work(room, a5, 5, 'transplant', t);
-  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t + interval '7.9 seconds'))
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t + tp - interval '0.1 seconds'))
          = 'too fast', '7.9 s';
-  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t + interval '121 seconds'))
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t + ww + interval '1 second'))
          = 'work expired', '121 s';
   assert (pg_temp.crop(room, 5)).work = 'transplant' and (pg_temp.crop(room, 5)).work_started_at = t, 'the record stays';
   perform public._farm_do_begin_work(room, a5, 5, 'transplant', t + interval '3 minutes');
-  perform public._farm_do_begin_work(room, a5, 5, 'transplant', t + interval '3 minutes 5 seconds');
-  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t + interval '3 minutes 12 seconds'))
+  perform public._farm_do_begin_work(room, a5, 5, 'transplant', t2);
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room, a5, t2 + tp - interval '1 second'))
          = 'too fast', '12 s after the first, 7 s after the second';
-  s := public._farm_do_transplant(room, a5, 5, 1, t + interval '3 minutes 13 seconds');
+  s := public._farm_do_transplant(room, a5, 5, 1, t2 + tp);
   assert pg_temp.plot(s, 5)->'crop'->>'phase' = 'tillering'
-     and (pg_temp.crop(room, 5)).transplant_at = t + interval '3 minutes 13 seconds' and (pg_temp.crop(room, 5)).q_transplant = 1.0
+     and (pg_temp.crop(room, 5)).transplant_at = t2 + tp and (pg_temp.crop(room, 5)).q_transplant = 1.0
      and (pg_temp.crop(room, 5)).work is null, 'transplanted at 8 s';
   -- rice, plot 6: accepted at 120 s
   perform public._farm_do_begin_work(room, a5, 6, 'transplant', t + interval '4 minutes');
-  s := public._farm_do_transplant(room, a5, 6, 1, t + interval '6 minutes');
-  assert (pg_temp.crop(room, 6)).transplant_at = t + interval '6 minutes' and (pg_temp.crop(room, 6)).q_transplant = 1.0,
+  s := public._farm_do_transplant(room, a5, 6, 1, t + interval '4 minutes' + ww);
+  assert (pg_temp.crop(room, 6)).transplant_at = t + interval '4 minutes' + ww and (pg_temp.crop(room, 6)).q_transplant = 1.0,
     'transplanted at 120 s';
   -- ớt, room 6 plot 5: the same gate; P is set
   perform public._farm_do_rent(room6, a5, 5, t);
   perform pg_temp.ot_nursery(room6, 5, a5, t);
   perform public._farm_do_begin_work(room6, a5, 5, 'transplant', t + interval '7 minutes');
-  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room6, a5, t + interval '7 minutes 7.9 seconds'))
-         = 'too fast', 'ớt at 7.9 s';
-  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room6, a5, t + interval '9 minutes 1 second'))
-         = 'work expired', 'ớt at 121 s';
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room6, a5,
+                            t + interval '7 minutes' + tp - interval '0.1 seconds')) = 'too fast', 'ớt at 7.9 s';
+  assert pg_temp.err(format('select public._farm_do_transplant(%L, %L, 5, 1, %L)', room6, a5,
+                            t + interval '7 minutes' + ww + interval '1 second')) = 'work expired', 'ớt at 121 s';
   perform public._farm_do_begin_work(room6, a5, 5, 'transplant', t + interval '10 minutes');
-  s := public._farm_do_transplant(room6, a5, 5, 1, t + interval '10 minutes 8 seconds');
-  assert pg_temp.plot(s, 5)->'crop'->>'phase' = 'root' and (pg_temp.crop(room6, 5)).plant_at = t + interval '10 minutes 8 seconds'
+  s := public._farm_do_transplant(room6, a5, 5, 1, t + interval '10 minutes' + tp);
+  assert pg_temp.plot(s, 5)->'crop'->>'phase' = 'root' and (pg_temp.crop(room6, 5)).plant_at = t + interval '10 minutes' + tp
      and (pg_temp.crop(room6, 5)).work is null, 'ớt planted out at 8 s';
 end $$;
 
