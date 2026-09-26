@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  createHarvestRound, HARVEST, HARVEST_MARK, scoreRelease, scoreText, stepHarvestRound, type HarvestRound,
+  crabClosed, CRAB, CRAB_MARK, createCrabRound, createHarvestRound, createTransplantRound, HARVEST, HARVEST_MARK, scoreHill, scoreRelease,
+  scoreText, stepCrabRound, stepHarvestRound, stepTransplantRound, TRANSPLANT, transplantMarkText, type CrabRound, type HarvestRound,
+  type TransplantRound,
 } from "@/lib/game/farm/minigames";
 
 /** Plays a round at `dt` seconds a frame: holds until the bar reaches `aim(centre, bundle)`, lets go, and presses again
@@ -126,5 +128,166 @@ describe("stepHarvestRound", () => {
 describe("scoreText", () => {
   it("writes a half point with a comma", () => {
     expect([scoreText(3.5), scoreText(4), scoreText(0), scoreText(0.5)]).toEqual(["3,5", "4", "0", "0,5"]);
+  });
+});
+
+/** Plays a crab game at `dt` seconds a frame, grabbing when `grab(state)` says so (only a frame in the claws matters). */
+function crab(seed: number, grab: (s: CrabRound) => boolean, dt = 0.05, start?: Partial<CrabRound>): CrabRound {
+  let s: CrabRound = { ...createCrabRound(seed), ...start };
+  for (let f = 0; f < 100_000 && !s.outcome; f++) s = stepCrabRound(s, dt, grab(s));
+  return s;
+}
+/** The claws' state in the frame after this one, when a grab would be judged. */
+const nextClosed = (s: CrabRound, dt = 0.05) => crabClosed(CRAB.periodsMs[s.tries.length], s.phases[s.tries.length], s.stageMs + dt * 1000);
+
+describe("CrabRound (v15.3 §7.2, R17)", () => {
+  it("seeds a phase in [0, P) for each of the 3 tries", () => {
+    const s = createCrabRound(4);
+    expect(s).toMatchObject({ tries: [], hits: 0, stage: "lead", stageMs: 0, elapsedMs: 0, outcome: null });
+    expect(CRAB.periodsMs).toEqual([1200, 950, 750]);
+    s.phases.forEach((p, i) => {
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThan(CRAB.periodsMs[i]);
+    });
+    expect(createCrabRound(4)).toEqual(s);
+    expect(createCrabRound(5).phases).not.toEqual(s.phases);
+  });
+  it("opens the claws for the first 60 % of each cycle and closes them for the last 40 %", () => {
+    expect([0, 719, 720, 1199, 1200, 1920].map((t) => crabClosed(1200, 0, t))).toEqual([false, false, true, true, false, true]);
+    expect([219, 220, 699, 700].map((t) => crabClosed(1200, 500, t))).toEqual([false, true, true, false]);
+    expect([569, 570, 749].map((t) => crabClosed(950, 0, t))).toEqual([false, true, true]);
+    expect([449, 450].map((t) => crabClosed(750, 0, t))).toEqual([false, true]);
+  });
+  it("ignores a grab in the 0.6 s lead-in and in the 0.5 s beat", () => {
+    let s = createCrabRound(1);
+    for (let i = 0; i < 11; i++) s = stepCrabRound(s, 0.05, true);
+    expect(s).toMatchObject({ stage: "lead", tries: [] });
+    s = stepCrabRound(s, 0.05, true);
+    expect(s).toMatchObject({ stage: "claws", stageMs: 0, tries: [] });
+    s = stepCrabRound(s, 0.05, true);
+    expect(s.tries).toHaveLength(1);
+    expect(s).toMatchObject({ stage: "beat" });
+    for (let i = 0; i < 9; i++) s = stepCrabRound(s, 0.05, true);
+    expect(s).toMatchObject({ stage: "beat", tries: [expect.anything()] });
+    s = stepCrabRound(s, 0.05, true);
+    expect(s).toMatchObject({ stage: "lead", tries: [expect.anything()] });
+  });
+  it("scores a grab: a hit while closed, a pinch while open; no grab in 4 cycles is a slip", () => {
+    const hits = crab(2, (s) => s.stage === "claws" && nextClosed(s));
+    expect(hits.tries).toEqual(["hit", "hit", "hit"]);
+    expect([hits.hits, hits.outcome]).toEqual([3, "done"]);
+    const pinches = crab(2, (s) => s.stage === "claws" && !nextClosed(s));
+    expect([pinches.tries, pinches.hits]).toEqual([["pinch", "pinch", "pinch"], 0]);
+    const none = crab(2, () => false);
+    expect([none.tries, none.hits]).toEqual([["slip", "slip", "slip"], 0]);
+    expect(CRAB_MARK).toEqual({ hit: "Bắt được!", pinch: "Á! Bị cua kẹp", slip: "Cua chui mất" });
+  });
+  it("judges a grab at the open/closed edge on the claws' clock", () => {
+    const at = (ms: number) => crab(0, (s) => s.stage === "claws" && s.stageMs + 1 >= ms && s.tries.length === 0, 0.001,
+      { phases: [0, 0, 0] }).tries[0];
+    expect([at(719), at(720)]).toEqual(["pinch", "hit"]);
+  });
+  it("counts 0–3 hits whatever the input", () => {
+    let rng = 7;
+    for (let game = 0; game < 200; game++) {
+      const s = crab(game, () => {
+        rng = (rng * 1103515245 + 12345) % 2147483648;
+        return rng % 7 === 0;
+      }, 0.01 + (game % 5) * 0.01);
+      expect(s.outcome).toBe("done");
+      expect(s.hits).toBe(s.tries.filter((t) => t === "hit").length);
+      expect(s.hits).toBeGreaterThanOrEqual(0);
+      expect(s.hits).toBeLessThanOrEqual(3);
+    }
+  });
+  it("takes 3.3 s at the least and 14.9 s at the most", () => {
+    const fast = crab(3, (s) => s.stage === "claws", 0.001);
+    expect(fast.elapsedMs).toBeGreaterThanOrEqual(3300);
+    expect(fast.elapsedMs).toBeLessThan(3310);
+    expect(crab(3, () => false).elapsedMs).toBeCloseTo(14_900, 6);
+  });
+  it("clamps a long frame to 50 ms, and stays put once done", () => {
+    const s = stepCrabRound(createCrabRound(1), 3, false);
+    expect(s.elapsedMs).toBeCloseTo(50, 6);
+    const done = crab(1, () => false);
+    expect(stepCrabRound(done, 0.05, true)).toBe(done);
+  });
+});
+
+/** Plays a transplant round, pressing when the hand reaches `aim(centre, hill)` (null: never). */
+function transplant(seed: number, aim: (c: number, i: number) => number | null, dt = 0.05): TransplantRound {
+  let s = createTransplantRound(seed);
+  for (let f = 0; f < 100_000 && !s.outcome; f++) {
+    const a = s.stage === "sweep" ? aim(s.centres[s.hills.length], s.hills.length) : null;
+    s = stepTransplantRound(s, dt, a !== null && s.x + (dt * 1000) / TRANSPLANT.sweepMs >= a);
+  }
+  return s;
+}
+
+describe("TransplantRound (v15.3 §8.2, R18)", () => {
+  it("seeds 12 bands centred in [0.35, 0.65]", () => {
+    const s = createTransplantRound(7);
+    expect(s).toMatchObject({ hills: [], score: 0, stage: "lead", x: 0, elapsedMs: 0, outcome: null });
+    expect(s.centres).toHaveLength(TRANSPLANT.hills);
+    for (const c of s.centres) {
+      expect(c).toBeGreaterThanOrEqual(0.35);
+      expect(c).toBeLessThanOrEqual(0.65);
+    }
+    expect(createTransplantRound(7)).toEqual(s);
+    expect(createTransplantRound(8).centres).not.toEqual(s.centres);
+  });
+  it("scores chuẩn within 0.08 of the centre, được within 0.18, else lệch", () => {
+    expect(scoreHill(0.5, 0.5)).toEqual({ mark: "chuan", score: 1 });
+    expect([scoreHill(0.58, 0.5), scoreHill(0.42, 0.5)].map((h) => h.mark)).toEqual(["chuan", "chuan"]);
+    expect([scoreHill(0.59, 0.5), scoreHill(0.68, 0.5), scoreHill(0.32, 0.5)].map((h) => h.score)).toEqual([0.5, 0.5, 0.5]);
+    expect([scoreHill(0.69, 0.5), scoreHill(0.31, 0.5)]).toEqual([{ mark: "lech", score: 0 }, { mark: "lech", score: 0 }]);
+  });
+  it("sweeps the hand from 0 to 1 in 1.4 s after a 1 s lead-in; a hill with no press is bỏ sót", () => {
+    let s = createTransplantRound(2);
+    for (let i = 0; i < 20; i++) s = stepTransplantRound(s, 0.05, true);
+    expect(s).toMatchObject({ stage: "sweep", x: 0, hills: [] });
+    for (let i = 0; i < 14; i++) s = stepTransplantRound(s, 0.05, false);
+    expect(s.x).toBeCloseTo(0.5, 9);
+    for (let i = 0; i < 14; i++) s = stepTransplantRound(s, 0.05, false);
+    expect(s.hills).toEqual([{ x: null, centre: s.centres[0], mark: "sot", score: 0 }]);
+    expect(s).toMatchObject({ stage: "beat" });
+  });
+  it("ignores a press in the lead-in and in the 0.25 s beat", () => {
+    let s = createTransplantRound(3);
+    for (let i = 0; i < 20; i++) s = stepTransplantRound(s, 0.05, true);
+    s = stepTransplantRound(s, 0.05, true);
+    expect(s.hills).toHaveLength(1);
+    for (let i = 0; i < 4; i++) s = stepTransplantRound(s, 0.05, true);
+    expect(s).toMatchObject({ stage: "beat" });
+    expect(s.hills).toHaveLength(1);
+    s = stepTransplantRound(s, 0.05, true);
+    expect(s).toMatchObject({ stage: "sweep", x: 0 });
+    expect(s.hills).toHaveLength(1);
+  });
+  it("needs 6 points of 12: 5,5 fails, 6 passes", () => {
+    const six = transplant(5, (c, i) => (i < 6 ? c : null));
+    expect([six.score, six.outcome]).toEqual([6, "pass"]);
+    const half = transplant(5, (c, i) => (i < 5 ? c : i === 5 ? c + 0.12 : null));
+    expect(half.hills.map((h) => h.mark)).toEqual([...Array(5).fill("chuan"), "duoc", ...Array(6).fill("sot")]);
+    expect([half.score, scoreText(half.score), half.outcome]).toEqual([5.5, "5,5", "fail"]);
+  });
+  it("takes about 12 s when played well, 4 s at the least and under 21 s at the most", () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const s = transplant(seed, (c) => c);
+      expect(s.score).toBe(12);
+      expect(s.elapsedMs).toBeGreaterThan(9_000);
+      expect(s.elapsedMs).toBeLessThan(15_000);
+    }
+    const fast = transplant(1, () => 0, 0.001);
+    expect(fast.elapsedMs).toBeGreaterThanOrEqual(4_000);
+    expect(fast.elapsedMs).toBeLessThan(4_020);
+    const idle = transplant(1, () => null);
+    expect([idle.score, idle.outcome]).toEqual([0, "fail"]);
+    expect(idle.elapsedMs).toBeCloseTo(20_800, 6);
+  });
+  it("names the marks, the ớt round with cây", () => {
+    expect(["chuan", "duoc", "lech", "sot"].map((m) => transplantMarkText(m as "chuan", false)))
+      .toEqual(["Thẳng hàng!", "Được", "Lệch hàng", "Bỏ sót khóm"]);
+    expect(transplantMarkText("sot", true)).toBe("Bỏ sót cây");
   });
 });
