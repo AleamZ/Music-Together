@@ -27,15 +27,19 @@ export function useCardLobby(roomId: string, token: string, active: boolean, onL
   const applied = useRef(0);
   const reload = useCallback(async () => {
     const n = ++seq.current;
+    // the room and the session the call is made for: an answer for ones I have left is dropped (a room change
+    // remounts the page today; this keeps an in-place switch safe)
+    const { roomId: room, token: tok } = live.current;
+    const still = () => live.current.roomId === room && live.current.token === tok;
     try {
-      const l = await fetchCardLobby(live.current.roomId, live.current.token);
-      if (n < applied.current) return;
+      const l = await fetchCardLobby(room, tok);
+      if (n < applied.current || !still()) return;
       applied.current = n;
       setLobby(l);
       setNotOpen(false);
       live.current.onLobby?.(l);
     } catch (err) {
-      if (isMissingRpc(err)) setNotOpen(true);
+      if (still() && isMissingRpc(err)) setNotOpen(true);
     }
   }, []);
   useEffect(() => {

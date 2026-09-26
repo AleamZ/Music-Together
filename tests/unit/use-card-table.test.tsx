@@ -3,9 +3,11 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { AnticheatError } from "@/lib/anticheat";
 import type { CardHand } from "@/lib/game/cards/state";
 import { syncClock } from "@/lib/game/farm/clock";
-import { cs, ID, parsed, T0, tlRaw, type Raw } from "./helpers/card-states";
+import { cs, ID, parsed, seatRaw, T0, tlRaw, type Raw } from "./helpers/card-states";
 
-const rpc = vi.hoisted(() => ({ fetchCardState: vi.fn(), fetchCardHand: vi.fn(), tickCardTable: vi.fn(), cardAction: vi.fn() }));
+const rpc = vi.hoisted(() => ({
+  fetchCardState: vi.fn(), fetchCardHand: vi.fn(), tickCardTable: vi.fn(), cardAction: vi.fn(), fetchCardLobby: vi.fn(),
+}));
 vi.mock("@/lib/game/cards/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/cards/rpc")>()),
   ...rpc,
@@ -22,6 +24,7 @@ vi.mock("@/lib/game/cards/channel", () => ({
 import {
   CARD_POLL_MS, CV_GATHER_MS, CV_MIN_GAP_MS, SPECTATOR_LAG_MS, TICK_LAG_MS, TICK_RETRY_MS, TICK_STEP_MS, useCardTable,
 } from "@/hooks/useCardTable";
+import { useCardLobby } from "@/hooks/useCardLobby";
 
 const ME = ID[1]; // seat 2 of the sample table
 const state = (over: Raw = {}) => parsed(tlRaw(over));
@@ -224,5 +227,91 @@ describe("useCardTable (spec §12, §13.1)", () => {
     slow(state({ v: 20, deadline: null }));
     await pending;
     expect(result.current.state?.v).toBe(30);
+  });
+});
+
+describe("a room change drops the answers of the room I left (a room change remounts the page today)", () => {
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  };
+  function mountIn(onCoins?: (c: number) => void) {
+    return renderHook((p: { roomId: string }) => useCardTable({
+      roomId: p.roomId, token: "tok", accountId: ME, game: "tienlen", active: true,
+      isMember: (id) => members.has(id), onError: () => {}, onCoins,
+    }), { initialProps: { roomId: "r" } });
+  }
+
+  it("a state asked for in room A never shows in room B", async () => {
+    const { result, rerender } = mountIn();
+    await flush();
+    const late = deferred<unknown>();
+    rpc.fetchCardState.mockReturnValueOnce(late.promise);
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.refetch(); });
+    rpc.fetchCardState.mockResolvedValue(state({ v: 12, deadline: null }));
+    rerender({ roomId: "r2" });
+    await flush();
+    expect(rpc.fetchCardState).toHaveBeenLastCalledWith("r2", "tok", "tienlen");
+    expect(result.current.state?.v).toBe(12);
+    await act(async () => {
+      late.resolve(state({ v: 30, deadline: null }));
+      await pending;
+    });
+    expect(result.current.state?.v).toBe(12);
+  });
+
+  it("my cards fetched in room A never show in room B, where I only watch", async () => {
+    const late = deferred<CardHand>();
+    rpc.fetchCardHand.mockReturnValueOnce(late.promise);
+    const { result, rerender } = mountIn();
+    await flush();
+    expect(rpc.fetchCardHand).toHaveBeenCalledWith("r", "tok", "tienlen");
+    rpc.fetchCardState.mockResolvedValue(state({ v: 12, deadline: null, seats: [seatRaw(1), seatRaw(3)] }));
+    rerender({ roomId: "r2" });
+    await flush();
+    expect(result.current.state?.v).toBe(12);
+    await act(async () => { late.resolve(hand(3)); });
+    expect(result.current.hand).toBeNull();
+  });
+
+  it("an action's answer from room A is not applied in room B: no state, no hint, no coins", async () => {
+    const onCoins = vi.fn();
+    const { result, rerender } = mountIn(onCoins);
+    await flush();
+    const late = deferred<unknown>();
+    rpc.cardAction.mockReturnValueOnce(late.promise);
+    let answer!: Promise<unknown>;
+    act(() => { answer = result.current.act({ kind: "tl_pass", seq: 5 }); });
+    rpc.fetchCardState.mockResolvedValue(state({ v: 12, deadline: null }));
+    rerender({ roomId: "r2" });
+    await flush();
+    await act(async () => {
+      late.resolve({ changed: true, state: state({ v: 30, deadline: null }), hand: hand(3), coins: 7000 });
+      expect(await answer).toBeNull();
+    });
+    expect(result.current.state?.v).toBe(12);
+    expect(ch.sent).toEqual([]);
+    expect(onCoins).not.toHaveBeenCalled();
+  });
+
+  it("the hall's lobby of room A never shows in room B", async () => {
+    const lobbyOf = (stake: number | null) => ({
+      serverNow: Date.parse(T0), tables: [{ game: "tienlen", stake, phase: "idle", max: 4, seats: [] }],
+    });
+    const a = deferred<unknown>(), b = deferred<unknown>();
+    rpc.fetchCardLobby.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+    const { result, rerender } = renderHook((p: { roomId: string }) => useCardLobby(p.roomId, "tok", true),
+      { initialProps: { roomId: "r" } });
+    await flush();
+    expect(rpc.fetchCardLobby).toHaveBeenLastCalledWith("r", "tok");
+    rerender({ roomId: "r2" });
+    await flush();
+    expect(rpc.fetchCardLobby).toHaveBeenLastCalledWith("r2", "tok");
+    await act(async () => { a.resolve(lobbyOf(100)); });
+    expect(result.current.lobby).toBeNull();
+    await act(async () => { b.resolve(lobbyOf(1000)); });
+    expect(result.current.lobby).toEqual(lobbyOf(1000));
   });
 });

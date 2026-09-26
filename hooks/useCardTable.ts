@@ -24,6 +24,9 @@ export const SPECTATOR_LAG_MS = 3000;
 /** A tick that found nothing due (the clocks disagree a little) goes again this much later. */
 export const TICK_RETRY_MS = 1000;
 
+/** The room and the session a call is made for. */
+interface Where { roomId: string; token: string }
+
 export interface CardTableOptions {
   roomId: string;
   token: string;
@@ -84,18 +87,24 @@ export function useCardTable({ roomId, token, accountId, game, active, isMember,
   const lastState = useRef<CardState | null>(null);
   const channel = useRef<CardChannelHandle | null>(null);
 
+  /** Where a call is made (the room and the session): its answer applies only while the hook still serves them. A
+   *  room change remounts the page today; this keeps an in-place switch safe. */
+  const where = useCallback((): Where => ({ roomId: live.current.roomId, token: live.current.token }), []);
+  const still = useCallback((w: Where) => w.roomId === live.current.roomId && w.token === live.current.token, []);
+
   const loadHand = useCallback(async (g: CardGame) => {
     const n = ++callNo.current;
+    const w = where();
     try {
-      const h = await fetchCardHand(live.current.roomId, live.current.token, g);
-      if (live.current.game !== g || n < handAt.current) return;
+      const h = await fetchCardHand(w.roomId, w.token, g);
+      if (!still(w) || live.current.game !== g || n < handAt.current) return;
       handAt.current = n;
       handNo.current = h.handNo;
       setData((d) => (d.game === g ? { ...d, hand: h.cards.length > 0 ? h : null } : d));
     } catch {
-      handNo.current = null; // the next state tries again
+      if (still(w)) handNo.current = null; // the next state tries again
     }
-  }, []);
+  }, [where, still]);
 
   /** Apply a state (and the hand that came with it): only the newest version, only for the table I still watch. A new
    *  hand number fetches my cards once while I sit at the table. */
@@ -130,43 +139,51 @@ export function useCardTable({ roomId, token, accountId, game, active, isMember,
     const g = live.current.game;
     if (!g) return;
     const n = ++callNo.current;
+    const w = where();
     try {
-      apply(g, await fetchCardState(live.current.roomId, live.current.token, g), n);
+      const s = await fetchCardState(w.roomId, w.token, g);
+      if (still(w)) apply(g, s, n);
     } catch (err) {
+      if (!still(w)) return;
       if (isMissingRpc(err)) setNotOpen(true);
       else setFailed(true);
     } finally {
       setPulse((p) => p + 1);
     }
-  }, [apply]);
+  }, [apply, where, still]);
 
   const tick = useCallback(async () => {
     const g = live.current.game;
     if (!g) return;
     const n = ++callNo.current;
+    const w = where();
     try {
-      const r = await tickCardTable(live.current.roomId, live.current.token, g);
+      const r = await tickCardTable(w.roomId, w.token, g);
+      if (!still(w)) return;
       apply(g, r.state, n);
       if (r.changed) channel.current?.send({ id: live.current.accountId, v: r.state.v });
     } catch (err) {
-      if (isMissingRpc(err)) setNotOpen(true);
+      if (still(w) && isMissingRpc(err)) setNotOpen(true);
     } finally {
       setPulse((p) => p + 1);
     }
-  }, [apply]);
+  }, [apply, where, still]);
 
   const act = useCallback(async (a: CardAction): Promise<CardAnswer | null> => {
     const g = live.current.game;
     if (!g) return null;
     const n = ++callNo.current;
+    const w = where();
     setBusy(true);
     try {
-      const r = await cardAction(live.current.roomId, live.current.token, g, a);
+      const r = await cardAction(w.roomId, w.token, g, a);
+      if (!still(w)) return null;
       apply(g, r.state, n, r.hand);
       if (r.changed) channel.current?.send({ id: live.current.accountId, v: r.state.v });
       if (r.coins !== null) live.current.onCoins?.(r.coins);
       return r;
     } catch (err) {
+      if (!still(w)) return null;
       const s = lastState.current;
       const must = s?.game === "tienlen" ? s.pub?.must ?? null : null;
       // a strike shows the anti-cheat warning or ban instead (anti-cheat §12.1)
@@ -178,7 +195,7 @@ export function useCardTable({ roomId, token, accountId, game, active, isMember,
     } finally {
       setBusy(false);
     }
-  }, [apply, refetch, tick]);
+  }, [apply, refetch, tick, where, still]);
 
   // --- the channel: hints from members, newer than what I show, within the sender's budget; gathered, then gapped
   const gather = useRef<ReturnType<typeof setTimeout> | null>(null);
