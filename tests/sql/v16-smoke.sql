@@ -1249,3 +1249,192 @@ begin
 end $$;
 
 select 'v16 poker smoke ok' as result;
+
+-- ---------- Holdings, wipes and deletions (§6.3, §11.5, R32), membership (R38), and the guards ----------
+-- Everything in xu: every wallet, every seat's stack and balance, and every live pot.
+create function pg_temp.all_money() returns bigint language sql as $$
+  select coalesce((select sum(coins) from public.wallets), 0)
+       + coalesce((select sum(chips + escrow) from public.card_seats), 0)
+       + coalesce((select sum((p.value->>'put')::bigint) from public.card_tables t, jsonb_each(t.pub->'players') p
+                    where t.game = 'poker' and t.phase = 'playing'), 0)
+$$;
+insert into smoke select 'c' || n, token from unnest(array['x', 'w', 'y', 'root']) n,
+  lateral public.register('v16' || n || '_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'a' || substr(k, 2), public._auth_account(v)::text from smoke where k in ('cx', 'cw', 'cy', 'croot');
+update public.accounts set is_root = true where id = (select v from smoke where k = 'aroot')::uuid;
+insert into smoke select 'r3', room_id::text from public.create_room('Chiếu Y', 'pw', (select v from smoke where k = 'cy'));
+insert into smoke select 'r4', room_id::text from public.create_room('Bàn C', 'pw', (select v from smoke where k = 'c3'));
+do $$
+declare x text := (select v from smoke where k = 'cx');
+begin
+  perform public.join_room((select code from public.rooms where id = (select v from smoke where k = r)::uuid), 'pw', x)
+     from unnest(array['room', 'other', 'r3', 'r4']) r;
+  perform public.join_room((select code from public.rooms where id = (select v from smoke where k = 'r4')::uuid), 'pw', v)
+     from smoke where k in ('cw', 'c4', 'c6');
+end $$;
+
+-- membership comes first in all 11 RPCs (R38)
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid; c5 text := (select v from smoke where k = 'c5'); call text;
+begin
+  foreach call in array array[
+    format('select public.card_lobby(%L, %L)', room, c5),
+    format('select public.card_state(%L, %L, %L)', room, c5, 'cao'),
+    format('select public.card_hand(%L, %L, %L)', room, c5, 'cao'),
+    format('select public.card_tick(%L, %L, %L)', room, c5, 'cao'),
+    format('select public.card_leave(%L, %L, %L)', room, c5, 'cao'),
+    format('select public.card_sit(%L, %L, %L, 1, 1000, null)', room, c5, 'cao'),
+    format('select public.pk_topup(%L, %L, 1000)', room, c5),
+    format('select public.tl_play(%L, %L, 0, array[0])', room, c5),
+    format('select public.tl_pass(%L, %L, 0)', room, c5),
+    format('select public.cao_deal(%L, %L, 0)', room, c5),
+    format('select public.pk_act(%L, %L, 0, %L, null)', room, c5, 'fold')] loop
+    assert pg_temp.err(call) = 'account is not a member of this room', format('%s: %s', call, pg_temp.err(call));
+    assert pg_temp.err(replace(call, c5, 'nope')) = 'invalid session', format('%s with a bad token', call);
+  end loop;
+end $$;
+
+-- X sits in four rooms: a Tiến lên game (holding 3♠), a Cào hand as a player, one as the dealer, and a poker hand
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid; other uuid := (select v from smoke where k = 'other')::uuid;
+        r3 uuid := (select v from smoke where k = 'r3')::uuid; r4 uuid := (select v from smoke where k = 'r4')::uuid;
+        c1 text := (select v from smoke where k = 'c1'); c2 text := (select v from smoke where k = 'c2');
+        c3 text := (select v from smoke where k = 'c3'); c4 text := (select v from smoke where k = 'c4');
+        c5 text := (select v from smoke where k = 'c5'); c6 text := (select v from smoke where k = 'c6');
+        cx text := (select v from smoke where k = 'cx'); cw text := (select v from smoke where k = 'cw');
+        cy text := (select v from smoke where k = 'cy');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a3 uuid := (select v from smoke where k = 'a3')::uuid;
+        a5 uuid := (select v from smoke where k = 'a5')::uuid; ax uuid := (select v from smoke where k = 'ax')::uuid;
+        t public.card_tables; r jsonb; tok text;
+begin
+  perform pg_temp.set_coins(v::uuid, 200000) from smoke where k in ('a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'ax', 'aw', 'ay');
+  -- Tiến lên in the main room: X, c1, c2
+  perform public.card_sit(room, cx, 'tienlen', 1, 1000, null);
+  perform public.card_sit(room, c1, 'tienlen', 2, 1000, null);
+  perform public.card_sit(room, c2, 'tienlen', 3, 1000, null);
+  t := pg_temp.tt();
+  r := public._card_tick(room, a1, 'tienlen', t.deadline,
+         pg_temp.deck('3S 4S 5S 6S 7S 8S 9S 10S JS QS KS 2H 2S', '3C 3D 4C 5C 6C 7C 8C 9C 10C JC QC KC 2C',
+                      '3H 4D 4H 5D 6D 7D 8D 9D 10D JD QD KD 2D'));
+  assert (pg_temp.tt()).phase = 'playing' and (pg_temp.tt()).turn = 1 and ((pg_temp.tt()).pub->>'must')::int = 0, 'X leads with 3♠';
+  -- Cào in the other room: c5 deals, X plays
+  perform public.card_sit(other, c5, 'cao', 1, 1000, null);
+  update public.card_seats set sat_at = now() - interval '1 minute' where room_id = other and account_id = a5;
+  perform public.card_sit(other, cx, 'cao', 2, 1000, null);
+  r := public._card_action(other, a5, 'cao', 'cao_deal', (select seq from public.card_tables where room_id = other and game = 'cao'),
+                           '{}'::jsonb, now(), pg_temp.deck('9S 8C 2H', 'KD 5S 3C'));
+  assert r->'state'->>'phase' = 'peek' and r->'state'->'pub'->'dealer' = '1', format('c5 deals: %s', r->'state');
+  -- Cào in r3: X deals, cy plays
+  perform public.card_sit(r3, cx, 'cao', 1, 1000, null);
+  update public.card_seats set sat_at = now() - interval '1 minute' where room_id = r3 and account_id = ax;
+  perform public.card_sit(r3, cy, 'cao', 2, 1000, null);
+  r := public._card_action(r3, ax, 'cao', 'cao_deal', (select seq from public.card_tables where room_id = r3 and game = 'cao'),
+                           '{}'::jsonb, now(), pg_temp.deck('4C 4H 4D', '9H 10H QH'));
+  assert r->'state'->>'phase' = 'peek' and r->'state'->'pub'->'dealer' = '1', format('X deals: %s', r->'state');
+  -- poker in r4: X (button), W, c3, c4, c6; everyone puts 2 001 preflop
+  perform public.card_sit(r4, k, 'poker', n::int, 1000, 50000)
+     from unnest(array[cx, cw, c3, c4, c6]) with ordinality u(k, n);
+  update public.card_tables set pos = 5, deadline = now() - interval '1 second' where room_id = r4 and game = 'poker';
+  r := public._card_tick(r4, a3, 'poker', now(),
+         pg_temp.deck('AS AD', 'KS KD', 'QS QD', 'JS JD', '10S 10D', '2C 6H 9C JC 4H'));
+  assert r->'state'->'pub'->'button' = '1' and (r->'state'->>'turn')::int = 4, format('the poker hand: %s', r->'state'->'pub');
+  foreach tok in array array[c4, c6, cx, cw, c3, c4, c6] loop
+    r := public.pk_act(r4, tok, (select seq from public.card_tables where room_id = r4 and game = 'poker'),
+                       case when tok = cx then 'raise' else 'call' end, case when tok = cx then 2001 end);
+    assert r ? 'state', format('an act: %s', r);
+  end loop;
+  t := (select x from public.card_tables x where room_id = r4 and game = 'poker');
+  assert t.pub->>'street' = 'flop' and t.turn = 2 and (t.pub->>'pot')::int = 10005, format('the flop: %s', t.pub);
+  assert jsonb_array_length(public._ac_holdings(ax)->'cards') = 4, format('the preview: %s', public._ac_holdings(ax)->'cards');
+end $$;
+
+-- The wipe (§6.3, §11.5): X's seats are resolved first — the Tiến lên forfeit, the lost Cào stake, the cancelled Cào hand,
+-- the folded poker hand — and only X's own balance is destroyed.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid; other uuid := (select v from smoke where k = 'other')::uuid;
+        r3 uuid := (select v from smoke where k = 'r3')::uuid; r4 uuid := (select v from smoke where k = 'r4')::uuid;
+        croot text := (select v from smoke where k = 'croot'); ax uuid := (select v from smoke where k = 'ax')::uuid;
+        ay uuid := (select v from smoke where k = 'ay')::uuid;
+        v0 bigint; v_wiped bigint; t public.card_tables; c jsonb;
+begin
+  update public.accounts set is_banned = true where id = ax;
+  delete from public.sessions where account_id = ax;
+  insert into public.anticheat_status (account_id, strikes, ban_state, banned_at) values (ax, 2, 'pending_wipe', now())
+  on conflict (account_id) do update set strikes = 2, ban_state = 'pending_wipe', banned_at = now();
+  -- 0016's parts of the wipe stay (anti-cheat §11.3 rule 3): X's hoa màu and sprayer tank go too
+  insert into public.produce_stock (account_id, upland, kg) values (ax, 'khoai', 12);
+  insert into public.farm_profiles (account_id, tank_item, tank_charges) values (ax, 'spray_insect', 2)
+  on conflict (account_id) do update set tank_item = 'spray_insect', tank_charges = 2;
+  v0 := pg_temp.all_money();
+  c := public.admin_anticheat_resolve(croot, ax, 'wipe');
+  v_wiped := (select -delta from public.coin_ledger where account_id = ax and reason = 'wipe' order by id desc limit 1);
+  assert v_wiped = 193499 and pg_temp.all_money() = v0 - v_wiped, format('only X''s own %s xu go', v_wiped);
+  assert not exists (select 1 from public.card_seats where account_id = ax)
+         and (select snapshot->'cards' = '[]' and (snapshot->'wallet'->>'coins')::int = v_wiped from public.anticheat_wipes
+               where account_id = ax order by id desc limit 1), 'the snapshot comes after the seats are resolved';
+  assert not exists (select 1 from public.produce_stock where account_id = ax)
+         and (select tank_item is null and tank_charges = 0 from public.farm_profiles where account_id = ax)
+         and (select snapshot->'produce' = '[{"upland": "khoai", "kg": 12}]' and snapshot->'tank' = '{"item": "spray_insect", "charges": 2}'
+                from public.anticheat_wipes where account_id = ax order by id desc limit 1), 'the hoa màu and the tank go too';
+  -- Tiến lên: X forfeits (R13); c1 leads, the first lead's `must` gone with X's cards
+  t := pg_temp.tt();
+  assert t.phase = 'playing' and t.turn = 2 and t.pub->'must' = 'null' and t.pub->'players'->'1' @> '{"out": "forfeit", "settled": true}'
+         and pg_temp.plines() = '[[1, 2, 2, 2, "forfeit"], [1, 3, 2, 2, "forfeit"], [1, 2, 3, 3, "thoi"]]'
+         and pg_temp.esc() = '{"2": 12500, "3": 11000}', format('the forfeit: %s', t.pub);
+  -- Cào as a player: X lost S to the dealer; Cào as the dealer: the hand is cancelled, cy is refunded
+  assert (select pub->'left' = '[2]' and phase = 'peek' from public.card_tables where room_id = other and game = 'cao')
+         and (select escrow from public.card_seats where room_id = other and game = 'cao' and seat = 1) = 2000, 'X lost S';
+  assert (select phase = 'result' and last->'cancelled' = 'true' from public.card_tables where room_id = r3 and game = 'cao')
+         and (select escrow from public.card_seats where room_id = r3 and account_id = ay) = 0 and pg_temp.coins(ay) = 200000,
+    'the dealer''s hand is cancelled';
+  -- poker: X folded; its 2 001 stay in the pot
+  t := (select x from public.card_tables x where room_id = r4 and game = 'poker');
+  assert t.phase = 'playing' and t.turn = 2 and t.pub->'players'->'1' @> '{"fold": true, "put": 2001}' and (t.pub->>'pot')::int = 10005,
+    format('X folded: %s', t.pub);
+end $$;
+
+-- An account deleted mid-hand (R32): the accounts trigger resolves its seat first; only its own balance goes.
+do $$
+declare r4 uuid := (select v from smoke where k = 'r4')::uuid; croot text := (select v from smoke where k = 'croot');
+        aw uuid := (select v from smoke where k = 'aw')::uuid; v0 bigint; t public.card_tables;
+begin
+  v0 := pg_temp.all_money();
+  perform public.admin_delete_account(croot, aw);
+  t := (select x from public.card_tables x where room_id = r4 and game = 'poker');
+  assert pg_temp.all_money() = v0 - 150000 - 47999 and not exists (select 1 from public.card_seats where account_id = aw)
+         and t.turn = 3 and t.pub->'players'->'2' @> '{"fold": true, "put": 2001}', format('W is gone, its chips in the pot: %s', t.pub);
+end $$;
+
+-- Room deletions (§6.3): a banned seat leaves first; every live hand is cancelled and every balance, contribution and stack
+-- goes home; the contributions of banned and deleted accounts are split among the live seats, the odd xu from the button.
+do $$
+declare room uuid := (select v from smoke where k = 'room')::uuid; other uuid := (select v from smoke where k = 'other')::uuid;
+        r3 uuid := (select v from smoke where k = 'r3')::uuid; r4 uuid := (select v from smoke where k = 'r4')::uuid;
+        croot text := (select v from smoke where k = 'croot');
+        a1 uuid := (select v from smoke where k = 'a1')::uuid; a2 uuid := (select v from smoke where k = 'a2')::uuid;
+        a3 uuid := (select v from smoke where k = 'a3')::uuid; a4 uuid := (select v from smoke where k = 'a4')::uuid;
+        a5 uuid := (select v from smoke where k = 'a5')::uuid; a6 uuid := (select v from smoke where k = 'a6')::uuid;
+        v0 bigint;
+begin
+  v0 := pg_temp.all_money();
+  update public.accounts set is_banned = true where id = a6;
+  perform public.admin_delete_room(croot, r4);
+  update public.accounts set is_banned = false where id = a6;
+  assert pg_temp.all_money() = v0 and not exists (select 1 from public.card_tables where room_id = r4), 'nothing lost with r4';
+  assert pg_temp.coins(a3) = 150000 + 2001 + 3002 + 47999 and pg_temp.coins(a4) = 150000 + 2001 + 3001 + 47999
+         and pg_temp.coins(a6) = 150000 + 47999
+         and (select count(*) from public.coin_ledger where account_id in (a3, a4) and reason = 'card_refund') = 4,
+    format('r4: %s %s %s', pg_temp.coins(a3), pg_temp.coins(a4), pg_temp.coins(a6));
+  perform public.admin_delete_room(croot, other);
+  perform public.admin_delete_room(croot, r3);
+  perform public.admin_delete_room(croot, room);
+  assert pg_temp.all_money() = v0 and not exists (select 1 from public.card_seats where room_id in (room, other, r3, r4))
+         and not exists (select 1 from public.card_tables where room_id in (room, other, r3, r4)), 'every table gone, every xu home';
+  assert pg_temp.coins(a5) = 199000 + 2000 and pg_temp.coins(a1) = 190000 + 12500 and pg_temp.coins(a2) = 190000 + 11000,
+    format('the balances: %s %s %s', pg_temp.coins(a5), pg_temp.coins(a1), pg_temp.coins(a2));
+  assert (select count(*) from public.card_log where action = 'room_gone') >= 3, 'the deletions are logged';
+end $$;
+
+select 'v16 holdings and deletions smoke ok' as result;
+
+\i tests/sql/anticheat-guards.sql
