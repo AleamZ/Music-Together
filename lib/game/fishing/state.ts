@@ -4,6 +4,8 @@ import type { ShopItem } from "./catalog";
 
 export interface FishRow { id: string; speciesId: string; weightG: number; price: number; caughtAt: string }
 export interface Loadout { rod: string; bobber: string; bait: string }
+/** A running anti-cheat lock (anti-cheat spec R14): its end and the signal that caused it. */
+export interface FishingLock { until: string; code: string }
 export interface FishingState {
   coins: number;
   dailyClaimed: boolean;
@@ -19,13 +21,25 @@ export interface FishingState {
   castsLeft: number;
   windowResetsAt: string | null;
   digReadyAt: string | null;
+  /** The server's clock at the answer (v15 §11.6; null before migration 0013). */
+  serverNow: string | null;
+  /** Casts left today (300 per Vietnam day, anti-cheat R21; 300 before migration 0015). */
+  castsTodayLeft: number;
+  /** The next Vietnam midnight, while no cast is left today. */
+  dayResetsAt: string | null;
+  lock: FishingLock | null;
 }
-export type CastBlocker = "no_bait" | "hands_full" | "bucket_full" | "cast_limit";
+export type CastBlocker = "no_bait" | "hands_full" | "bucket_full" | "cast_limit" | "daily_limit";
 
 const num = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
 const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+
+function lockOf(v: unknown): FishingLock | null {
+  const l = obj(v);
+  return typeof l.until === "string" && Number.isFinite(Date.parse(l.until)) ? { until: l.until, code: str(l.code) } : null;
+}
 
 /** The `state` JSON of any fishing RPC; null when it is not an object. */
 export function parseFishingState(json: unknown): FishingState | null {
@@ -49,6 +63,10 @@ export function parseFishingState(json: unknown): FishingState | null {
     castsLeft: num(j.casts_left, 40),
     windowResetsAt: strOrNull(j.window_resets_at),
     digReadyAt: strOrNull(j.dig_ready_at),
+    serverNow: strOrNull(j.server_now),
+    castsTodayLeft: num(j.casts_today_left, 300),
+    dayResetsAt: strOrNull(j.day_resets_at),
+    lock: lockOf(j.lock),
   };
 }
 
@@ -72,10 +90,16 @@ export function ownsItem(s: FishingState, item: ShopItem): boolean {
   return false;
 }
 
-/** Why start_cast would refuse right now (same order as the server), or null. `now` = Date.now(). */
+/** No cast is left today and the Vietnam day has not turned yet. */
+export function dayCapped(s: FishingState, now: number): boolean {
+  return s.castsTodayLeft <= 0 && !(s.dayResetsAt !== null && Date.parse(s.dayResetsAt) <= now);
+}
+
+/** Why start_cast would refuse right now (same order as the server), or null. `now` = serverNow(). */
 export function castBlocker(s: FishingState, now: number): CastBlocker | null {
   const windowOver = s.windowResetsAt !== null && Date.parse(s.windowResetsAt) <= now;
   if (s.castsLeft <= 0 && !windowOver) return "cast_limit";
+  if (dayCapped(s, now)) return "daily_limit";
   if (s.fish.length >= s.fishCap) return s.fishCap <= 1 ? "hands_full" : "bucket_full";
   if (baitCount(s, s.loadout.bait) < 1 && baitCount(s, "bait_worm") < 1) return "no_bait";
   return null;

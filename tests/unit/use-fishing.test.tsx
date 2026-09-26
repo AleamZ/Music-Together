@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
+import { AnticheatError, subscribeAnticheat, type AnticheatEvent, type AnticheatInfo } from "@/lib/anticheat";
+import { clockOffset, serverNow } from "@/lib/game/farm/clock";
 import { parseFishingState, type FishingState } from "@/lib/game/fishing/state";
 import type { QueueItem } from "@/lib/supabase";
 
@@ -45,6 +47,13 @@ describe("useFishing", () => {
     expect(result.current.failed).toBe(false);
   });
 
+  it("sets the shared server clock from the state's server_now (v15 §11.6)", async () => {
+    rpc.fetchFishingState.mockResolvedValue(state({ server_now: new Date(Date.now() + 90_000).toISOString() }));
+    renderHook(() => useFishing("tok", () => {}));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(Math.abs(clockOffset() - 90_000)).toBeLessThan(1000);
+  });
+
   it("marks a failed load so the HUD can offer a reload", async () => {
     rpc.fetchFishingState.mockRejectedValue(new Error("down"));
     const { result } = renderHook(() => useFishing("tok", () => {}));
@@ -82,6 +91,48 @@ describe("useFishing", () => {
     await flush();
     expect(errors).toEqual(["Không đủ xu."]);
     expect(result.current.state?.coins).toBe(44);
+  });
+
+  it("shows no toast for a strike, which the modal shows instead, but fetches again (anti-cheat §12.1)", async () => {
+    const errors: string[] = [];
+    const { result } = renderHook(() => useFishing("tok", (t) => errors.push(t)));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const info = (strike: 0 | 1 | 2): AnticheatInfo => ({
+      code: "bad_qty", strike, error: "invalid quantity", lockedUntil: null, banned: strike === 2, serverNow: null,
+    });
+    rpc.fetchFishingState.mockClear();
+    rpc.buyItem.mockRejectedValueOnce(new AnticheatError(info(1)));
+    await act(async () => { expect(await result.current.buy("bait_shrimp", 500)).toBe(false); });
+    rpc.buyItem.mockRejectedValueOnce(new AnticheatError(info(2)));
+    await act(async () => { expect(await result.current.buy("bait_shrimp", 500)).toBe(false); });
+    await flush();
+    expect(errors).toEqual([]);
+    expect(rpc.fetchFishingState).toHaveBeenCalledTimes(2);
+    rpc.buyItem.mockRejectedValueOnce(new AnticheatError(info(0)));
+    await act(async () => { await result.current.buy("bait_shrimp", 500); });
+    expect(errors).toEqual(["Món này không mua được."]);
+  });
+
+  it("reports the running lock a state carries (anti-cheat R14)", async () => {
+    const events: AnticheatEvent[] = [];
+    const off = subscribeAnticheat((e) => events.push(e));
+    rpc.fetchFishingState.mockResolvedValue(state({ lock: { until: "2026-10-02T10:20:00+00:00", code: "bad_plot" } }));
+    renderHook(() => useFishing("tok", () => {}));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    off();
+    expect(events).toEqual([{ kind: "lock", until: Date.parse("2026-10-02T10:20:00Z"), code: "bad_plot" }]);
+  });
+
+  it("reports that no lock runs when a state carries none, so a pardoned lock leaves the chip", async () => {
+    const events: AnticheatEvent[] = [];
+    const off = subscribeAnticheat((e) => events.push(e));
+    rpc.fetchFishingState.mockResolvedValue(state({ lock: { until: "2026-10-02T10:20:00+00:00", code: "bad_plot" } }));
+    const { result } = renderHook(() => useFishing("tok", () => {}));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rpc.fetchFishingState.mockResolvedValue(state({ lock: null }));
+    await act(async () => { await result.current.reload(); });
+    off();
+    expect(events).toEqual([{ kind: "lock", until: Date.parse("2026-10-02T10:20:00Z"), code: "bad_plot" }, { kind: "unlock" }]);
   });
 
   it("says the fish got away when finish_cast fails on the network", async () => {
@@ -183,6 +234,40 @@ describe("useFishingController", () => {
     act(() => { result.current.interact(mound); });
     expect(toasts.at(-1)).toMatch(/^Đất còn cứng, chờ \d+ giây nữa nhé\.$/);
     expect(result.current.interact({ ...mound, kind: "portal" })).toBe(false);
+  });
+
+  it("shows the daily cap at a fishing spot until the day turns (anti-cheat §12.4)", async () => {
+    const capped = () => state({ casts_today_left: 0, day_resets_at: new Date(serverNow() + 5000).toISOString() });
+    const first = capped();
+    rpc.fetchFishingState.mockResolvedValue(first);
+    rpc.claimDaily.mockResolvedValue({ claimed: false, amount: 0, state: first });
+    const { result } = setup();
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const spot = { id: "fish_1", kind: "fish_spot" as const, label: "x", prompt: "Quăng cần", rect: { x: 0, y: 0, w: 1, h: 1 }, use: { x: 0, y: 0 } };
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.promptText(spot)).toBe("Hết lượt câu hôm nay");
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(result.current.promptText(spot)).toBe("Quăng cần");
+  });
+
+  it("does not tick every second through a capped day: one tick shows the cap, one more when the day turns", async () => {
+    const capped = state({ casts_today_left: 0, day_resets_at: new Date(serverNow() + 3_600_000).toISOString() });
+    rpc.fetchFishingState.mockResolvedValue(capped);
+    rpc.claimDaily.mockResolvedValue({ claimed: false, amount: 0, state: capped });
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders++;
+      return useFishingController({ token: "tok", roomId: "r", accountId: "me", canvas: () => canvas, current: null, toast: () => {} });
+    });
+    const spot = { id: "fish_1", kind: "fish_spot" as const, label: "x", prompt: "Quăng cần", rect: { x: 0, y: 0, w: 1, h: 1 }, use: { x: 0, y: 0 } };
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.promptText(spot)).toBe("Hết lượt câu hôm nay");
+    const settled = renders;
+    for (let minute = 0; minute < 10; minute++) await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(renders - settled).toBe(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000_000); });
+    expect(result.current.promptText(spot)).toBe("Quăng cần");
   });
 
   it("does not dig into a full bait box", async () => {

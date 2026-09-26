@@ -1,5 +1,10 @@
+import { AnticheatError, lockSeconds, lockText, parseAnticheat, screenAnswer, type AnticheatInfo } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
-import { isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow } from "./catalog";
+import {
+  FISHING_KINDS, isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow,
+} from "./catalog";
+import { DAILY_LIMIT_TEXT } from "./messages";
+import { parseFishPrices, type FishPrices } from "./prices";
 import { parseFishingState, type FishingState, type Loadout } from "./state";
 
 // Supabase calls for the fishing RPCs (spec §8.3). Every answer carries the account's full state.
@@ -12,7 +17,7 @@ export function fetchFishingCatalog(): Promise<FishingCatalog> {
     catalogPromise = (async () => {
       const [sp, it] = await Promise.all([
         supabase.from("fish_species").select("*").order("sort_order"),
-        supabase.from("shop_items").select("*").order("kind").order("sort_order"),
+        supabase.from("shop_items").select("*").in("kind", FISHING_KINDS).order("kind").order("sort_order"),
       ]);
       if (sp.error || it.error) {
         catalogPromise = null;
@@ -30,9 +35,13 @@ export function fetchFishingCatalog(): Promise<FishingCatalog> {
   return catalogPromise;
 }
 
+/** An RPC's answer. A flagged answer (anti-cheat §9.1) throws an AnticheatError, except finish_cast's: its envelope
+ *  rides on the lost answer. */
 async function call(fn: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await supabase.rpc(fn, args);
+  const flagged = screenAnswer(data, error);
   if (error) throw error;
+  if (flagged && fn !== "finish_cast") throw new AnticheatError(flagged);
   return (data ?? {}) as Record<string, unknown>;
 }
 
@@ -85,7 +94,8 @@ export interface CaughtFish { id: string; speciesId: string; weightG: number; pr
 export type LostWhy = "expired" | "gave_up" | "too_early" | "full";
 export type FinishCast =
   | { result: "caught"; fish: CaughtFish; record: boolean; state: FishingState }
-  | { result: "lost"; why: LostWhy; state: FishingState };
+  /** `anticheat`: the envelope of a reel reported too fast (finishCast always sets it; null when there is none). */
+  | { result: "lost"; why: LostWhy; state: FishingState; anticheat?: AnticheatInfo | null };
 
 export async function finishCast(token: string, castId: string, success: boolean): Promise<FinishCast> {
   const r = await call("finish_cast", { p_session_token: token, p_cast_id: castId, p_success: success });
@@ -101,7 +111,7 @@ export async function finishCast(token: string, castId: string, success: boolean
     };
   }
   const why: LostWhy = r.why === "expired" || r.why === "too_early" || r.why === "full" ? r.why : "gave_up";
-  return { result: "lost", why, state };
+  return { result: "lost", why, state, anticheat: parseAnticheat(r) };
 }
 
 export async function sellFish(token: string, ids: string[]): Promise<{ sold: number; earned: number; state: FishingState }> {
@@ -119,6 +129,8 @@ export interface FishingBoard {
   richest: Array<{ username: string; coins: number }>;
   myRank: number;
   myCoins: number;
+  /** The room's fish price index (economy spec §5); null from a server without it. */
+  prices: FishPrices | null;
 }
 
 export async function fetchFishingBoard(roomId: string, token: string): Promise<FishingBoard> {
@@ -130,6 +142,7 @@ export async function fetchFishingBoard(roomId: string, token: string): Promise<
     richest: list(r.richest).map((x) => ({ username: String(x.username), coins: Number(x.coins) })),
     myRank: Number(r.my_rank ?? 1),
     myCoins: Number(r.my_coins ?? 0),
+    prices: parseFishPrices(r.prices),
   };
 }
 
@@ -152,6 +165,8 @@ export function fishingErrorMessage(err: unknown): string {
     case "dig cooldown": return `Đất còn cứng, chờ ${Number.isFinite(secs) ? Math.max(1, secs) : 45} giây nữa nhé.`;
     case "cast not found": return "Cá đã thoát mất rồi.";
     case "fish not found": return "Con cá này không còn nữa.";
+    case "account locked": return lockText(lockSeconds(err) ?? 300);
+    case "daily cast limit": return DAILY_LIMIT_TEXT;
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";
   if (msg.includes("account banned")) return "Tài khoản đã bị khoá.";

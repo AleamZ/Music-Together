@@ -40,6 +40,18 @@ describe("map registry", () => {
     // arriving at the pond does not show the exit prompt at once
     expect(Math.hypot(dock.to!.arrive.x - exit.use.x, dock.to!.arrive.y - exit.use.y)).toBeGreaterThan(PROMPT_RANGE);
   });
+  it("links the field both ways with the hall and the pond, arriving at the way back", () => {
+    const find = (map: "hall" | "pond" | "field", id: string) => getMap(map).interactables.find((i) => i.id === id)!;
+    const pairs: Array<[ReturnType<typeof find>, ReturnType<typeof find>]> = [
+      [find("hall", "field_sign"), find("field", "field_to_hall")],
+      [find("pond", "field_bridge"), find("field", "field_to_pond")],
+    ];
+    for (const [there, back] of pairs) {
+      expect(there.to!.map).toBe("field");
+      expect(back.to!.arrive).toMatchObject(there.use);
+      expect(there.to!.arrive).toMatchObject(back.use);
+    }
+  });
 });
 
 describe("pond art (pure parts)", () => {

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnticheatError, reportLock, reportNoLock } from "@/lib/anticheat";
+import { syncClock } from "@/lib/game/farm/clock";
 import type { FishingCatalog } from "@/lib/game/fishing/catalog";
 import {
   buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, finishCast, fishingErrorMessage, releaseFish,
@@ -46,8 +48,13 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
   const seq = useRef(0);
   const applied = useRef(0);
   const apply = useCallback((n: number, s: FishingState) => {
+    syncClock(s.serverNow);
     if (n < applied.current) return;
     applied.current = n;
+    // a lock that runs brings the chip back, after a reload too (anti-cheat R14); a state without one ends the chip,
+    // which a pardon or a switch to log mode may have left counting
+    if (s.lock) reportLock(Date.parse(s.lock.until), s.lock.code);
+    else reportNoLock();
     setState(s);
     setFailed(false);
   }, []);
@@ -86,7 +93,8 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     };
   }, [reload]);
 
-  /** Run an RPC; its state replaces ours. On error: toast, refetch, null. */
+  /** Run an RPC; its state replaces ours. On error: toast, refetch, null. A strike shows no toast: the warning or the ban
+   *  modal shows instead (anti-cheat §12.1). */
   const act = useCallback(async <T,>(call: () => Promise<T>, stateOf: (r: T) => FishingState, errorText = fishingErrorMessage): Promise<T | null> => {
     const n = ++seq.current;
     try {
@@ -94,7 +102,7 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
       apply(n, stateOf(r));
       return r;
     } catch (err) {
-      onErrorRef.current(errorText(err));
+      if (!(err instanceof AnticheatError && err.info.strike >= 1)) onErrorRef.current(errorText(err));
       void reload();
       return null;
     }

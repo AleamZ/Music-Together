@@ -39,6 +39,13 @@ describe("hall art (pure parts)", () => {
     expect(contains(box(prop("sign")), target("dock_sign"))).toBe(true);
   });
 
+  it("draws the card tables and the corner's sign where their interaction rects are (v16 spec §5)", () => {
+    const tables = HALL_PROPS.filter((p) => p.kind === "card_table");
+    expect(tables.map(box)).toEqual(["cards_tienlen", "cards_cao", "cards_poker"].map(target));
+    const sign = HALL_PROPS.find((p) => p.kind === "sign" && p.icon === "cards")!;
+    expect(box(sign)).toEqual(target("cards_sign"));
+  });
+
   it("sizes the hammock from its two anchors", () => {
     expect(propFrame({ kind: "hammock", x: 96, y: 202, x2: 170 })).toEqual({ w: 82, h: 34, ox: 4, oy: 32 });
   });

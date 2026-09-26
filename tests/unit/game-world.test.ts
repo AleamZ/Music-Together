@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import type { Spot } from "@/lib/game/maps/types";
 import type { GameMessage } from "@/lib/game/net/protocol";
-import { CATCH_LABEL_MS, FISHING_STALE_MS, RemoteWorld, type RosterEntry } from "@/lib/game/world";
+import { CATCH_LABEL_MS, FARM_ANIM_MS, FISHING_STALE_MS, RemoteWorld, type RosterEntry } from "@/lib/game/world";
 import { mapFromAscii } from "./helpers/ascii-map";
 
 const map = mapFromAscii(Array(20).fill(".".repeat(40))); // open 320 × 160 px, spawn (4, 4)
@@ -185,5 +185,42 @@ describe("RemoteWorld: fishing", () => {
     expect(w.fishing("ann", 10)).toEqual({ phase: 0, hand: null, landed: null });
     w.applyMessage(fs("me", 1, null), 20);
     expect(w.fishing("me", 20).phase).toBe(0);
+  });
+});
+
+describe("RemoteWorld: farm animations", () => {
+  const fa = (id: string, a: 0 | 1 | 3): GameMessage => ({ t: "fa", id, a });
+
+  it("plays an fa for 2.5 s; a = 0 stops it at once", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    expect(w.farmAnim("ann", 0)).toBe(0);
+    w.applyMessage(fa("ann", 3), 1000);
+    expect(w.farmAnim("ann", 1000 + FARM_ANIM_MS - 1)).toBe(3);
+    expect(w.farmAnim("ann", 1000 + FARM_ANIM_MS)).toBe(0);
+    w.applyMessage(fa("ann", 1), 5000);
+    w.applyMessage(fa("ann", 0), 5100);
+    expect(w.farmAnim("ann", 5100)).toBe(0);
+  });
+
+  it("tells when the one playing started, so a new fa 11 pets a dog once (v17)", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    w.applyMessage({ t: "fa", id: "ann", a: 11 }, 1000);
+    expect(w.farmAnimAt("ann", 1500)).toBe(1000);
+    w.applyMessage({ t: "fa", id: "ann", a: 11 }, 2000);
+    expect(w.farmAnimAt("ann", 2500)).toBe(2000);
+    expect(w.farmAnimAt("ann", 2000 + FARM_ANIM_MS)).toBeNull();
+    expect(w.farmAnimAt("bob", 1500)).toBeNull();
+  });
+
+  it("forgets it on bye and ignores my own fa", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    w.applyMessage(fa("ann", 1), 0);
+    w.remove("ann");
+    expect(w.farmAnim("ann", 10)).toBe(0);
+    w.applyMessage(fa("me", 1), 20);
+    expect(w.farmAnim("me", 20)).toBe(0);
   });
 });

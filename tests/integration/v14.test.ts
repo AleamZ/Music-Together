@@ -62,7 +62,8 @@ run("v14 fishing economy", () => {
 
   it("lets anyone read the catalog but nobody read wallets directly", async () => {
     const { data: species } = await db.from("fish_species").select("id");
-    const { data: items } = await db.from("shop_items").select("id");
+    // v15 adds farm items to shop_items: count the fishing kinds
+    const { data: items } = await db.from("shop_items").select("id").in("kind", ["rod", "bobber", "bait", "bait_box", "bucket"]);
     expect(species ?? []).toHaveLength(12);
     expect(items ?? []).toHaveLength(12);
     const wallets = await db.from("wallets").select("*");

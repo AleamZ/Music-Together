@@ -1,6 +1,6 @@
 import { CHU_TU_LOOK, CO_BA_LOOK } from "@/lib/game/look";
 import type { Vec } from "@/lib/game/types";
-import { HALL_DOCK_ARRIVE, POND_ARRIVE } from "./arrivals";
+import { FIELD_EAST_ARRIVE, HALL_DOCK_ARRIVE, POND_ARRIVE, POND_FIELD_ARRIVE } from "./arrivals";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, Npc, PropPlacement, Rect, Spot } from "./types";
 
@@ -51,6 +51,7 @@ export const POND_SOLIDS: Rect[] = [
   { x: 516, y: 196, w: 116, h: 98 },  // Tiệm đồ câu hut (chú Tư stands inside)
   { x: 496, y: 158, w: 24, h: 10 },   // Bảng kỷ lục posts
   { x: 345, y: 350, w: 14, h: 10 },   // "Bến vào" sign post
+  { x: 184, y: 370, w: 14, h: 10 },   // "Cầu khỉ ra đồng" sign post
   { x: 34, y: 94, w: 12, h: 8 },      // palm trunk NW
   { x: 620, y: 174, w: 12, h: 8 },    // palm trunk E
   { x: 18, y: 354, w: 12, h: 8 },     // palm trunk SW
@@ -82,6 +83,10 @@ export const POND_INTERACTABLES: Interactable[] = [
     id: "pond_exit", kind: "portal", label: "Bến vào", prompt: "Về sảnh nhạc", rect: { x: 343, y: 334, w: 18, h: 26 },
     use: { x: 352, y: 374 }, to: { map: "hall", arrive: HALL_DOCK_ARRIVE },
   },
+  {
+    id: "field_bridge", kind: "portal", label: "Cầu khỉ ra đồng", prompt: "Qua cầu khỉ ra đồng", rect: { x: 181, y: 354, w: 18, h: 26 },
+    use: { x: POND_FIELD_ARRIVE.x, y: POND_FIELD_ARRIVE.y }, to: { map: "field", arrive: FIELD_EAST_ARRIVE },
+  },
   ...POND_FISH_SPOTS.map((s, i): Interactable => ({
     id: `fish_${i + 1}`, kind: "fish_spot", label: "Chỗ câu", prompt: "Quăng cần", rect: waterRect(s), use: { x: s.x, y: s.y }, face: s.dir,
   })),
@@ -110,6 +115,7 @@ export const POND_PROPS: PropPlacement[] = [
   { kind: "hut_front", x: 576, y: 294 },
   { kind: "records", x: 508, y: 168 },
   { kind: "sign", x: 352, y: 360, icon: "note" },
+  { kind: "sign", x: 190, y: 380, icon: "rice" },
 ];
 
 export function buildPondMap(): GameMap {
@@ -124,6 +130,6 @@ export function buildPondMap(): GameMap {
   }
   return {
     id: "pond", width: POND_W, height: POND_H, cell: POND_CELL, cols, rows, blocked,
-    spawn: POND_ARRIVE, seating: null, interactables: POND_INTERACTABLES, props: POND_PROPS, npcs: POND_NPCS,
+    spawn: POND_ARRIVE, seating: null, interactables: POND_INTERACTABLES, props: POND_PROPS, npcs: POND_NPCS, plots: [],
   };
 }

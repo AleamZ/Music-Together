@@ -229,7 +229,7 @@ How it works: two tiny same-origin proxies — `/api/yt/suggest` (YouTube's sugg
 
 ### Realtime budget (Supabase free plan)
 
-Movement uses a Broadcast channel `game:{roomId}` with tiny event messages: an idle player sends nothing, a walking player about 1–2 messages/s (a client never sends more than 3/s), and every message is delivered to each other player in the world. Example: 10 players walking a quarter of the time ≈ 30 events/s (limit 100/s) ≈ 110 k/hour, so the free 2 M messages/month cover roughly 18 hours of a 10-person session (about 100 hours with 4 people). Entering the world costs a `hello`, the newcomer's own position and one answer from every other player — and every answer reaches every player, so with N players in the world a join costs about N² deliveries (≈ 100 for 10 players), spread over 1.5 s + 0.15 s per player. A client sends a single answer for all the `hello`s that arrive before it goes out, so when several people join at the same moment there is still one answer per client. Movement, joins and every room's classic realtime traffic (queue, chat, playback) share the project's 100 messages/s, which puts the practical ceiling at roughly 8–10 game-mode players per room on the free plan. Presence carries each member's view mode; switching views re-announces it — toggles within 1 s are merged and re-announcements are budgeted to at most 4 per 30 s, keeping the 5th call for a reconnect (Presence allows 5 calls per client per 30 s).
+Movement uses a Broadcast channel `game:{roomId}` with tiny event messages: an idle player sends nothing, a walking player about 1–2 messages/s (a client never sends more than 3/s), and every message is delivered to each other player in the world. Example: 10 players walking a quarter of the time ≈ 30 events/s (limit 100/s) ≈ 110 k/hour, so the free 2 M messages/month cover roughly 18 hours of a 10-person session (about 100 hours with 4 people). Entering the world costs a `hello`, the newcomer's own position and one answer from every other player — and every answer reaches every player, so with N players in the world a join costs about N² deliveries (≈ 100 for 10 players), spread over 1.5 s + 0.15 s per player. A client sends a single answer for all the `hello`s that arrive before it goes out, so when several people join at the same moment there is still one answer per client. The answers do not wait for the newcomer's presence, which arrives at least a second later: only drawing the newcomer and showing their fishing wait for it. When it arrives after a player's answer went out, that player answers once more, in case the receive budget dropped the `hello`, so a join costs at most twice as many deliveries. Movement, joins and every room's classic realtime traffic (queue, chat, playback) share the project's 100 messages/s, which puts the practical ceiling at roughly 8–10 game-mode players per room on the free plan. Presence carries each member's view mode; switching views re-announces it — toggles within 1 s are merged and re-announcements are budgeted to at most 4 per 30 s, keeping the 5th call for a reconnect (Presence allows 5 calls per client per 30 s).
 
 ## v14: Ao câu cá — câu cá, xu và cửa hàng
 
@@ -276,3 +276,190 @@ What it closes — until now anyone holding the public key, even logged out, cou
 > Rows written before `0014` may have been forged, and their "updated by" was whatever the client sent. The table is only a cache: if in doubt, `truncate public.video_lyrics;` is safe (DJs refill it as songs play; saved offsets are lost).
 
 **Trust model:** the cache is shared by every room, and any signed-in user is the DJ of a room they create, so they can still write the lyrics of a song they queued there — but only with an account, for songs queued in that room, within the caps, and under their own username.
+
+## v15: Đồng ruộng — ruộng lúa và đất đai
+
+### DB migration
+
+`supabase/migrations/0013_v15_field.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop … if exists`, seeds with `on conflict … do update`): run it in the Supabase SQL Editor after `0012`. It does not depend on `0014_lyrics_lockdown.sql` (the lyrics hotfix below, which may already be applied): the two can run in either order. It adds `rice_varieties` (3 varieties, public read) and 11 farm items in `shop_items` (the `kind` check gains `seed`, `fertilizer`, `pesticide` and `critter_box`); `members.last_seen_at`; the private tables `field_plots` (10 plots per room, made the first time anyone opens the field), `plot_leases`, `land_offers`, `crops`, `drying_slots`, `rice_stock` and `farm_profiles`, which only the RPCs touch; and the RPCs `field_state`, `touch_room`, the land RPCs (`rent_plot`, `buy_plot`, `sell_plot_to_village`, `list_plot`, `buy_listed_plot`, `offer_plot`, `withdraw_offer`, `decline_offer`, `accept_offer`, `set_sublease`, `rent_sublease`, `abandon_crop`), the farming RPCs (`prepare_plot`, `apply_fertilizer`, `soak_seed`, `sow_seed`, `begin_work`, `transplant`, `water`, `spray`, `pick_snails`, `harvest`), `dry_start`, `dry_collect`, `sell_rice`, `buy_farm_item` and `claim_farm_gift`. It also limits `buy_item` to fishing gear, adds `server_now` to the fishing state, prices every catch with the room's fish price index (`finish_cast`; the private table `fish_price_index` keeps one snapshot per room and 3-hour period) and adds the index to `fishing_board`. `tests/sql/v15-smoke.sql` checks all of it on a throwaway PostgreSQL cluster (run `psql` from the repo root: it reads `tests/fixtures/crop-cases.json`).
+
+> **Deploy order:** apply `0013` to the hosted database **before** the v15 client goes live. A v15 client against a database without it shows the field with the banner "Đồng ruộng chưa mở — chủ phòng cần chạy migration 0013."; the hall, the pond and fishing keep working. Older clients never see the field (their presence says hall or pond) and ignore its `fp` / `fa` messages. Clients still on v14 list the 11 farm items as bait in their fishing shop until they reload, and buying one there is refused with "item not available" ("Món này không mua được."). A database that ran an earlier build of `0013` (a demo) has its v15 state reset when this one runs: land, leases, offers, crops, drying batches, rice, gifts and farm items bought at the old prices are cleared, and xu stay.
+
+### What's new in v15 (15.1 "Ruộng lúa")
+
+- **🌾 Đồng ruộng:** the hall's **Ra đồng** sign and the pond's **Cầu khỉ ra đồng** lead to one shared field per room: 4 private plots north of the canal, 6 village plots south of it, the **Hợp tác xã** (chú Tám), the **Tiệm vật tư** (anh Hai), the **Vựa lúa** (cô Út) and the drying yard. The chip at the top shows **🌾 Đồng N**.
+- **Land:** rent a village plot for 10 000 xu a 4-day season (harvesting ends the lease), or buy one private plot per room for 800 000 xu (+10 % yield, no rent); nobody farms more than 2 plots. Owners list a plot for sale, sublet it for a season, accept or decline purchase offers, or sell it back to the village for 400 000 xu. A plot whose owner leaves the room or stays away 14 days is reclaimed with a 400 000 xu refund. Sales between players are announced in the chat by **Hợp tác xã**.
+- **Rice:** a real wet-rice season in 2–3 days, in 3 varieties: prepare the plot, base-fertilize, soak, sow the seedbed, transplant, top-dress twice, dry the field, keep the water right (it drops a level every 12 h), treat golden apple snails, leaf folders, planthoppers and blast, drain, harvest, dry the grain on the yard (3 h) and sell it to cô Út (wet rice pays 70 %). The server rolls the pests secretly and computes the yield; the plot panel shows the next job, why a button is disabled and a yield estimate. **🌾 Việc đồng áng** lists what is due on your plots (a dot counts the urgent tasks) and **📖 Sổ tay nhà nông** explains every step.
+- **Newcomers** get a bag of Giống lúa ngắn ngày and a bag of urea from chú Tám on their first visit.
+- The fishing prompts now count down on the server's clock.
+- **Giá cá:** fish prices follow the room. Every 3 hours (00:00, 03:00, … Vietnam time) the room's multiplier is set from the average wealth of the members seen in the last 14 days (xu plus 800 000 per private plot owned): ×1 up to 20 000 xu, then the square root of wealth ÷ 20 000, at most ×10. A room with fewer than 2 such members stays at ×1. Each species also gets a season factor from ×0.80 to ×1.39. A fish's price is fixed when it is caught. The records panel's **Giá cá** tab shows the multiplier, when it changes and every species' price now.
+
+### Trust model (v15)
+
+The server decides every time and phase, the water levels, the pests (rolled at sowing and hidden until they fire), the yield, all prices, and land ownership, leases and reclaims. A client still sends a transplant and harvest quality, but the server ignores it and uses 1.0 for good (anti-cheat decision D1): v15.2's harvest minigame and v15.3's transplant minigame only gate progress, and the hoa-màu pickings stay behind the 2 s work gate. As in v14, where a player stands is not verified, and the plots' look and the farm animations come from each client's own copy of the field state. Like the rest of the members table, the new `members.last_seen_at` is readable with the anon key, so anyone who has the key can see when each member last visited a room, to the hour (it is written at most once an hour, for the 14-day reclaim).
+
+### Realtime budget (v15)
+
+The field has its own channel `game:{roomId}:field`. After a land or farm action the client sends at most two messages, `fa` (a 2.5 s animation) and `fp` (a plot changed); everyone on the field then fetches `field_state` once, 400 ms after the first `fp` of a burst. Farm actions are minutes apart, so that stays well under one RPC a minute per person. `touch_room` is one call per room visit.
+
+## Anti-cheat: chống gian lận
+
+### DB migration
+
+`supabase/migrations/0015_anticheat.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop constraint if exists` + `add constraint`; the config row is inserted `on conflict do nothing`, so a re-run never switches `enforce` back to `log`): run it in the Supabase SQL Editor last: the production order is `0012` → `0014` → `0013` → `0015` (`0015` does not need `0014`). It adds the private tables `anticheat_config` (the mode), `anticheat_status`, `anticheat_events` and `anticheat_wipes`; `chat_messages.system` and `about_account_id`; the daily cast counters in `fishing_profiles`; the lock guard and the hard checks in the 8 fishing and the 27 farm and land RPCs; and the root-only RPCs `admin_anticheat_list`, `admin_anticheat_account`, `admin_anticheat_resolve` and `admin_anticheat_set_mode`. `tests/sql/anticheat-smoke.sql` checks it on a throwaway PostgreSQL cluster with Supabase's default grants (after `0004` … `0012` → `0014` → `0013` → `0015`, the production order, from the repo root). It ends with `tests/sql/anticheat-guards.sql`, which fails for any SECURITY DEFINER function in `public` that anon may call and that is neither on its allowlist (by signature, so a new overload is not allowed by its name) nor guarded: every later migration keeps it passing.
+
+> **Before running `0015`**, run the two pre-deploy queries in the spec (`docs/superpowers/specs/2026-09-25-music-together-anticheat-design.md`, §11.4): the names the new rules would refuse (they keep working), and the author-less announcer lines that the backfill marks as system lines.
+>
+> **Deploy order:** `0015` first, then the anti-cheat client. A client that goes live first by mistake still loads the chat (it reads it again without `chat_messages.system`), but shows the catch and land announcements as plain lines until `0015` runs. The v15.1 client against `0015` only shows the raw `invalid username` / `account banned` on the login screen, and "Có lỗi, thử lại nhé." for the daily cast cap and for the calls only a tampered client makes. `0015` starts in **log** mode.
+>
+> **Re-running `0013` after `0015`** puts back its unguarded versions of the functions `0015` re-creates (the game RPCs, the sweep, the fishing state and board): run `0015` again right after it. Once an account has been wiped, `0013` cannot be re-run as it is, because its `coin_ledger` reason check lacks `'wipe'`: add `'wipe'` to that list first.
+
+### What is detected
+
+- **Hard signals**, inputs that no shipped client can produce: a reel reported won before the reel time gate; a transplant or harvest quality outside [0.9, 1.1]; a plot outside 1–10 or a drying slot outside 1–4; a water change other than ±1 or a work other than transplanting or harvesting; a quantity no shop sends (bait 1–99, gear 1, farm items 1–99, rice at least 1 kg); a land price outside 1–5 000 000 for a listing or an offer (a sublease 1–100 000); an offer of this room that belongs to someone else. `tests/unit/anticheat-pins.test.tsx` pins, for each one, the client code that keeps honest players clear of it.
+- **Soft signals**, logged for review and never a strike: the 20th catch in a day reported less than 1.05 × the minimum reel time after the bite (the time gate itself is 0.9 ×), the 300th cast of a day, and an item bought or used at the wrong counter (the old v14 client lists farm items as bait).
+- **Never counted:** the refusals an honest player can cause — double clicks, two tabs, stale state, slow networks, clock drift, a cached client after a deploy.
+- **Not detected:** where a player stands, a script that reels exactly at the gate (now held to 300 casts a day), and anything sent over Realtime; the receiving clients filter and rate-limit that instead (below).
+
+### Modes, strikes and the review
+
+- **Chỉ ghi nhận** (log, the default): a flagged call is refused as before and logged; nothing is locked or banned, and log-mode rows never count later.
+- **Thi hành** (enforce): the first hard signal is strike 1 — the warning and a 5-minute lock of fishing, farming, the land market and the shops (chat and music keep working; the player card shows 🔒 m:ss). Another one within 30 days is strike 2 — a permanent ban: the sessions end, login answers "🚫 Tài khoản này đã bị khoá…", and the account waits for the owner. Root is never struck.
+- **/admin → Chống gian lận:** the mode switch, the cases (pending wipes first) and, per account, the evidence: its events with the client build (`X-Client-Info: music-together/<build>`) and the browser, and what a wipe would remove. **Xoá dữ liệu** wipes a banned account's game data (xu, gear, fish, records, rice; its land goes back to the village at the next field visit, and its catch and land lines leave the chat) and keeps a snapshot. **Ân xá** lifts a lock or an anti-cheat ban and clears the strikes, without restoring wiped data; a ban set by hand in the Accounts tab stays. Unbanning an anti-cheat ban in the Accounts tab is the same pardon.
+- **Review before enforcing:** after 7 days in log mode, look at the hard `log_only` rows. If any could come from an honest client, stay in log mode and fix the check; otherwise switch to Thi hành.
+- The evidence is kept 90 days (strikes and wipe snapshots for good), at most 200 rows per account and Vietnam day besides the strikes. No IP address is stored.
+
+### Also in this release
+
+- **Names:** 2–24 characters, no hidden characters and no reserved names (Ao cá, Hợp tác xã, root…); names that differ only in case, spacing or Unicode form are the same name. A banned account is told so at login, after the right password.
+- **Chat:** catch and land announcements are system lines that only the server can post; a look-alike line from a member shows as a normal message.
+- **Queue:** 11-character YouTube ids only; the title is cleaned, the thumbnail comes from the id, and an impossible duration counts as unknown.
+- **Fishing:** at most 300 casts per Vietnam day ("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!").
+- **Banned accounts**, by the anti-cheat or by hand, leave the records, the richest list and the room's fish price index, earn no song bonus, and lose their land-market listings and offers.
+
+### Trust model (updated)
+
+- **v14:** as above, plus the daily cap: a script that reels at the gate lands at most 300 fish a day instead of 960, and a reel reported faster than the gate is a strike.
+- **v15:** the transplant and harvest quality are ignored for good (1.0, D1): v15.2's harvest minigame and v15.3's transplant minigame gate progress and set no quality; a quality outside [0.9, 1.1] is still a strike.
+
+### Realtime hardening
+
+The server never sees Broadcast, so each client filters what it receives. `bye`, `lk`, `fs` and `fa` count only from a member who is in this map's presence in game mode; movement, `hello` and `fp` count from any member, because presence arrives at least a second late. Each sender has a budget — movement 5/s, `hello` and `bye` 1 per 10 s, `fs` and `fa` 3/s (5 at once), reactions 5/s (12/s in all) — and the rest is dropped; `fp` refetches start at least 2 s apart, and a look is fetched again at most once per 30 s. A member who appears in this map's presence gets everyone's state once more, in case their `hello` was dropped. Not stopped: a spoofer using a member's id (of a member on the map, for `bye`, `lk`, `fs` and `fa`), fake presence, and floods against the project's Realtime quota (spec §14).
+
+## v15.2: Nông cụ & hoa màu — liềm, máy gặt, bình phun, khoai, bắp, ớt
+
+### DB migration
+
+`supabase/migrations/0016_v15_2_crops.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop constraint if exists` + `add constraint`, seeds with `on conflict … do update`): run it in the Supabase SQL Editor after `0015`, so the production order is `0012` → `0014` → `0013` → `0015` → `0016`. It requires `0013` and `0015`, because it re-creates their farm RPCs, the field sweep and the anti-cheat helpers and keeps their parts; it does not need `0014`. It adds `upland_crops` (one config row each for khoai lang, bắp and ớt, public read); the column `shop_items.upland`, the kind `tool` and 5 items (the three hoa-màu seeds, `tool_sickle` for 1 500 xu and `tool_sprayer` for 5 000 xu); on `crops` the crop's kind, the hoa-màu crop and its logs, the cut parts and the harvester job; the sprayer's tank on `farm_profiles`; the private table `produce_stock`; the `coin_ledger` reasons `harvester` and `produce_sell` (the list keeps `wipe`); and 7 guarded RPCs: `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`. It re-creates the farm actions it changes (`harvest` now serves hoa màu only and answers `wrong crop` on rice), the sweep (a finished harvester is paid first), `buy_farm_item` (tools, once each), `claim_farm_gift` (a sickle joins the gift), the field state, and `_ac_holdings` and `_ac_wipe` (the hoa màu and the tank). `tests/sql/v15-2-smoke.sql` checks it on a throwaway PostgreSQL cluster after the v15 and anti-cheat smokes (from the repo root: it re-runs `0016`, reads `tests/fixtures/upland-cases.json` and `crop-cases.json`, and ends with `tests/sql/anticheat-guards.sql`, whose loop now calls 42 guarded RPCs). Run every file with plain `psql -f`, never under `psql -1`: the guard file rolls back its own self-test.
+
+> **Deploy order:** `0016` first, then the v15.2 client right after, ideally at a quiet hour. Until they reload, cached v15.1 clients cannot harvest rice: they have no sickle round, and `harvest` on rice answers `wrong crop`. They never see the tools, because they read only their own `shop_items` kinds, but they do see the three hoa-màu seeds: their shop sells them and their plot panel offers to soak them, which the server refuses as `invalid item` (no strike, and the seeds keep for the v15.2 client). A v15.2 client against a database without `0016` shows no hoa-màu seeds or tools, and it cannot cut rice: with no sickle to sell, "Gặt bằng liềm" stays disabled with "Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.", and the other new actions (lên luống, the harvester) answer with the same text. Ripe rice waits for `0016` meanwhile, and falls 48 h after its ripe window. `0016` also gives a sickle to everyone who took chú Tám's gift before it, except accounts wiped after they took it (a pardon does not bring the sickle back); a re-run gives none twice.
+>
+> **Re-running earlier migrations:** `0013` and `0015` put back their own versions of the functions `0016` re-creates, and their checks lack its values, so neither can be re-run as it is after `0016`: `0013`'s `shop_items` kind check lacks `tool` (the tools always exist) and its `coin_ledger` reasons lack `wipe`, `harvester` and `produce_sell`; `0015`'s reasons lack `harvester` and `produce_sell` (a problem once a harvester has been rented or hoa màu sold). Add the missing values to those lists first, then run them in order, `0013`, `0015`, and `0016` last (anti-cheat §11.3 rule 7).
+
+### What's new in v15.2
+
+- **Liềm and the harvest minigame:** rice is cut with a sickle in 6 parts. Each part is one round: hold Space, the mouse button or a finger to raise the sickle's power and let go inside the band, 8 bundles; 4 points pass (chuẩn 1, được 0,5). A failed round cuts nothing and can be retried at once. Each part pays a sixth of the plot's yield at that moment as wet rice, and the sixth part ends the season and a lease. Newcomers get a sickle with chú Tám's gift; anh Hai sells it for 1 500 xu.
+- **Máy gặt:** chú Tám's co-op has a new tab that rents a harvester for 500 xu per part still uncut. It cuts the rest of the plot in 30 seconds, even a half-cut one, with no cancel and no refund.
+- **Bình phun:** a 5 000 xu sprayer. **Nạp** in the bag (🎒 Giỏ đồ → 🌾 Nông cụ) turns one bottle into 3 sprays of that pesticide.
+- **Hoa màu:** at làm đất, choose **Làm ruộng lúa** or **Lên luống**. Raised beds grow **khoai lang** (cuttings, about 48 h; a soaked bed rots the tubers), **bắp** (sown directly, about 60 h, two waves of armyworms) or **ớt** (a 10 h nursery, then transplanting and 3 pickings 12 h apart). Each has its own care, pests, handbook tab and seed at anh Hai's (800–1 500 xu); cô Út buys them fresh by the kg, with no drying.
+- The plot panel, the task list, the shop (a **🛠️ Nông cụ** shelf), the depot and the handbook (a tab per crop and **Nông cụ**) cover all of it, and the HUD's rice line adds the hoa màu.
+
+### Trust model (v15.2)
+
+The server still decides every time, water level, pest, yield and price. A client now declares one more thing: that a harvest round succeeded (`harvest_part`). The server accepts a part only 8 to 120 s after its `begin_work`, so a script gains only time, one part per 8 s (a plot in 48 s instead of 1–3 minutes by hand), and never kg: the minigame multiplies nothing, and each part pays its share of the yield at the cut.
+
+### Realtime budget (v15.2)
+
+No new channel. A round sends `fa` every 2 s while it runs and `fp` after each part, about 36 `fa` and 6 `fp` for a whole plot by hand; the farmer's client refetches once when a harvester's 30 s are up. Older clients drop the new `fa` codes 9 (dig) and 10 (pick).
+
+## v16: Góc đánh bài — Tiến lên, Cào và Poker
+
+### DB migration
+
+`supabase/migrations/0017_v16_cards.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop trigger if exists` + `create trigger`, `drop constraint if exists` + `add constraint`): run it in the Supabase SQL Editor after `0016` (v15.2). The production order is `0012` → `0014` → `0013` → `0015` → `0016` → `0017`. It requires `0015` and `0016`: it re-creates `0016`'s `_ac_holdings` and `_ac_wipe` and keeps `0016`'s `coin_ledger` reasons. It adds the private tables `card_tables` (three per room, made the first time anyone ticks or sits), `card_seats`, `card_hands`, `card_secrets` and `card_log` (14 days), which only the RPCs touch; the `coin_ledger` reasons `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`; the reads `card_lobby`, `card_state` and `card_hand`, `card_tick` and `card_leave` (all five on the anti-cheat allowlist), and the six guarded writes `card_sit`, `tl_play`, `tl_pass`, `cao_deal`, `pk_act` and `pk_topup`; the BEFORE DELETE triggers on `rooms` and `accounts` that settle every seat before a room or an account goes; and `_ac_holdings` / `_ac_wipe` re-created so a wipe resolves the account's seats first. `tests/sql/v16-smoke.sql` checks all of it on a throwaway PostgreSQL cluster (from the repo root, after the migrations in production order: it reads `tests/fixtures/card-cases.json` and ends with `tests/sql/anticheat-guards.sql`).
+
+> **Deploy order:** `0017` first, then the v16 client. A v16 client against a database without it shows "Góc đánh bài chưa mở — chủ phòng cần chạy migration 0017." at the tables; the rest of the game keeps working. Older clients draw the hall without the corner and never call the card RPCs.
+>
+> **Re-running earlier migrations after `0017`:** `0013`, `0015` and `0016` put back their own `coin_ledger` reason checks, and `0015` and `0016` their `_ac_holdings` and `_ac_wipe` without the card seats. Once any card xu has moved (a poker buy-in or cash-out alone writes `card_buyin` or `card_cashout`), their reason lists also lack `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`: add those (and the values the v15.2 note above names) first, then run them in order with `0017` last (anti-cheat §11.3 rule 7).
+
+### What's new in v16
+
+- **Góc đánh bài:** a plank deck in the hall's south-west, between the two palms, with three tables — **Bàn Tiến lên** (2–4 players), **Chiếu Cào** (ba cây, cào cái, 2–6) and **Bàn Poker** (Texas Hold'em no-limit, 2–6) — and a **📜 Sổ luật** sign. Walk to a table and press E: the panel shows the seats, the cards on the table and the timers; other members can watch (👀 Đang xem) and see only what is public.
+- **Stakes:** the first to sit picks 100, 1 000 or 10 000 xu. Tiến lên holds 10 stakes per game and Cào one stake (the dealer one per player) while a hand runs, and gives back the rest at its end; poker takes a buy-in of 50–200 big blinds (blinds ½ and 1 stake) that goes back to the wallet on standing up, with top-ups between hands.
+- **One variant per game:** Tiến lên miền Nam with nhất-nhì-ba-bét, chặt heo and chặt chồng, thối, cóng and tới trắng; Cào with sáp, ba tây and nút, a rotating dealer and "nặn bài"; poker by the TDA rules (min-raise, short all-ins, side pots, the odd chip). Every rule, with card examples and the money of each game at the table's stake, is in **📜 Sổ luật**.
+- **Timers:** 20 s a turn in Tiến lên, 15 s to deal and to peek in Cào, 30 s a turn in poker; a missed turn plays the default move, two in a row stand the player up (a Tiến lên player "xử thua": 1 stake to each player still in the game plus the thối of their hand). A seat whose owner made no card call for a minute is not dealt in.
+- **Sitting while walking around:** close the panel and the chip under the player card shows the table and the turn ("🃏 Tiến lên · Đến lượt bạn! 14s"); a toast calls you back once per turn.
+- **The hall's labels** over each table show its players and stake, refreshed every 20 s.
+
+### Play money (legal & product)
+
+Xu is play money: it is earned only in the game (fishing, farming, check-in, songs), never sold and never cashed out, and the tables take no cut — the winners get exactly what the losers pay. Vietnam fines gambling for money or property (Decree 144/2021/NĐ-CP, art. 28, names "tiến lên 13 lá" and "3 cây"), so while the corner exists no feature may sell xu or let xu buy anything of monetary value, and trading xu or accounts for money is forbidden (the owner may ban for it). The sit dialog and the rules book say so. Colluding players can move xu between accounts, as land sales already allow; there is no detection beyond the owner's review of `card_log`. This note is not legal advice.
+
+### Trust model (v16)
+
+The server decides the shuffle (Fisher–Yates over `gen_random_bytes`, no seed kept), the deal, every legal move, the timers and every xu that moves, and keeps each hand private: `card_state` is the same for every viewer and a player's cards come only from `card_hand` and their own answers. A client only chooses its own moves. Malformed inputs are strikes (a wrong game, seat, stake, amount, card list or bet); a well-formed move the table refuses is only logged. Every action carries the table's `seq`, so a double click or a late request is refused as `stale`. A room deletion or an account deletion settles the seats first, and a wipe resolves the account's seats before the wallet is cleared: no other player's xu is ever lost.
+
+### Realtime budget (v16)
+
+Each table has its own channel `cards:{roomId}:{game}` carrying only a hint `cv {id, v}` from the client whose call changed the table; the others fetch `card_state` 150 ms later, at most every 500 ms, and poll every 15 s while nothing arrives. A spoofed hint can only cause refetches at that rate, and each sender has a budget of 5 hints a second. With all three tables full that is about 11 600 messages an hour (≈ 3 a second, peaks near 10), far below the free plan's 100 a second; 2 M messages a month cover about 170 hours of full tables. The hall's labels come from `card_lobby` every 20 s, with no realtime cost.
+
+## v15.3: Đồng vui — hang cua, bãi ốc, cấy lúa bằng minigame
+
+### DB migration
+
+`supabase/migrations/0018_v15_3_gather.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop constraint if exists` + `add constraint`, seeds with `on conflict … do update`): run it in the Supabase SQL Editor after `0017`, so the production order is `0012` → `0014` → `0013` → `0015` → `0016` → `0017` → `0018`. It requires `0015`, `0016` and `0017`, because it re-creates functions they last defined and keeps their parts; it does not need `0014`. It adds `critter_kinds` (cua đồng, cua gạch, ốc đồng and ốc bươu vàng with their base prices, public read); two containers at anh Hai's (`box_bucket`, Xô nhựa, 15 places for 1 500 xu, and `box_basket`, Giỏ tre, 30 places for 6 000 xu); the private tables `critters` (one row per critter held, priced at the catch) and `gather_cooldowns` (each spot's 20-minute cooldown per account, across rooms, and an open crab visit); the day's visits on `farm_profiles`; the `coin_ledger` reason `critter_sell` (the list keeps every earlier reason, `wipe` and `0017`'s card reasons included); and 4 guarded RPCs: `crab_start`, `crab_finish`, `pick_snail_bed` and `sell_critters`. It re-creates the work gate and `begin_work` (a transplant is now a round: `transplant` is accepted 8 to 120 s after its `begin_work`, which needs 25 s left on a lease, as a rice round does), `pick_snails` (the picker also gets 1–3 ốc bươu vàng), `buy_farm_item` (the containers, once each), the field state (today's critter prices, and each player's critters, capacity and visits left), and `_ac_holdings` and `_ac_wipe` (the critters and the cooldowns). `tests/sql/v15-gather-smoke.sql` checks it on a throwaway PostgreSQL cluster after the v15, anti-cheat, v15.2 and v16 smokes (from the repo root: it re-runs `0018`, reads `tests/fixtures/gather-cases.json`, and ends with `tests/sql/anticheat-guards.sql`, whose loop now calls 52 guarded RPCs). Run every file with plain `psql -f`, never under `psql -1`.
+
+> **Deploy order:** the v15.3 client first, then `0018` as soon as possible after — the reverse of v15.2. The v15.3 client works against `0017`: its transplant round waits 9 s, which passes the old 2 s gate, and the crab holes and snail beds say "Bắt cua, mò ốc chưa mở — chủ phòng cần chạy migration 0018." If `0018` runs first, cached v15.2 tabs get "Từ từ thôi…" when they transplant, until they reload.
+>
+> **Re-running earlier migrations:** `0013`, `0015`, `0016` and `0017` put back their own versions of the functions `0018` re-creates, and their `coin_ledger` reason checks lack `critter_sell`, so none of them can be re-run as it is once a critter has been sold. Add `critter_sell` to those lists first, then run them in order with `0018` last (anti-cheat §11.3 rule 7).
+
+### What's new in v15.3
+
+- **Hang cua:** 6 crab holes along the canal. E at a ready hole opens **Bắt cua**: the crab's claws open and close faster with each of 3 tries; grab (Space, the mouse button or a finger) while they are closed. Each hit is a cua đồng, or a cua gạch one time in ten. "Dừng (Esc)" before the first try sends nothing; after a try it keeps what was caught.
+- **Bãi ốc:** 4 snail beds. E starts a 3-second bar that gives 1–3 snails (ốc đồng or ốc bươu vàng); walking away cancels it.
+- Each hole and bed rests 20 minutes per player, in every room together, and a player has 200 visits a Vietnam day. A spot that is ready for you shows a small cue on the field.
+- **Đồ đựng:** hands hold 3 critters; anh Hai sells a Xô nhựa (+15, 1 500 xu) and a Giỏ tre (+30, 6 000 xu), each bought once. A catch beyond the free space escapes, and the toast says so.
+- **Cô Út** buys cua & ốc at the price fixed at the catch: the base price × the room's fish multiplier M at that moment. Pest snails picked off a rice plot now go into your container too (1–3 ốc bươu vàng), and a full container never stops the pick.
+- **Cấy lúa and Trồng cây ớt con** are a TransplantGame round: a hand sweeps along the row, and you press inside the band for each of 12 hills; 6 points pass (chuẩn 1, được 0,5). A failed round costs nothing and can be retried at once. The round gates progress only: no score changes the yield.
+- The bag's **🦀 Cua & ốc**, the HUD's count, the handbook's **Cua & ốc** tab and the admin's evidence cover all of it.
+
+### Trust model (v15.3)
+
+The server still decides every cooldown, limit, roll, price and capacity. A client now declares two more things: a transplant round's success, accepted only 8 to 120 s after its `begin_work` and with no effect on the yield, and a crab visit's hits, 0–3, accepted no sooner than 3 s after `crab_start`. A script that claims 3 hits at every visit earns no more than a perfect player: on average 975·M xu an hour and 9 180·M a day, and at worst 2 718·M an hour. A hole outside 1–6, a bed outside 1–4 or hits outside 0–3 are hard signals (`bad_spot`, `bad_qty`); the 200th visit of a day is logged as the soft `gather_daily_cap`. The transplant quality stays ignored for good (anti-cheat D1).
+
+### Realtime budget (v15.3)
+
+No new channel and no new `fa` code. A crab game re-sends `fa 6` and a transplant round `fa 1` every 2 s, and a snail bed sends `fa 7` twice; a round of 6 holes and 4 beds sends about 40 `fa` over about 2 minutes. Gathering sends no `fp`.
+
+## v17: Mùa chuột — chuột đồng, chó cỏ và cái ná
+
+### DB migration
+
+`supabase/migrations/0019_v17_rats.sql` is **additive and re-runnable**: run it in the Supabase SQL Editor after `0018`, so the production order is `0012` → `0014` → `0013` → `0015` → `0016` → `0017` → `0018` → `0019`. It requires `0013`, `0015`, `0016`, `0017` and `0018`, because it re-creates functions they last defined and keeps their parts. It adds:
+
+- `upland_crops.rat_food` (khoai and bắp; rice always, ớt never);
+- three items at anh Hai's: `tool_sling` (Ná, 3 000 xu, once), `ammo_pellet` (Đạn đất, 10 xu) and `food_dog` (Thức ăn chó, 150 xu);
+- the private tables `field_rats`, `rat_clocks`, `rat_bag`, `dogs` and `sling_aims`, and a rat log on each crop;
+- the `coin_ledger` reasons `rat_sell` and `dog_adopt` (the list keeps every earlier reason, `wipe` included);
+- 7 guarded RPCs, `sling_start`, `sling_shoot`, `dog_hunt`, `adopt_dog`, `rename_dog`, `feed_dog` and `sell_rats`, and the read-only `dog_state`.
+
+It re-creates the field's opening sweep (the rats' spawn clock), the rice and hoa-màu yields (the rats' share, at most 10 %), `buy_farm_item` (the new kinds), the field state (the rats, the rat bag, the catch caps and the dog), and `_ac_holdings` and `_ac_wipe` (the dog and the rats). `tests/sql/v17-smoke.sql` checks it on a throwaway PostgreSQL cluster after the earlier smokes, which switch the rats off in their rooms (`pg_temp.no_rats`), and ends with `tests/sql/anticheat-guards.sql`, whose loop now calls 59 guarded RPCs. Run every file with plain `psql -f`, never under `psql -1`.
+
+> **Deploy order** (v17 §3): `0019` first, then the v17 client right after. Until the client ships, rats eat ripe crops that cached tabs can neither see nor hunt, and those tabs drop `fa` 11 and 12 and ignore presence's `dog`. Their shop hides the pellets and the dog food but lists the Ná (a `tool`); buying it there is harmless, and it works after a reload. A v17 client that meets a database without `0019` shows no rats and no dog, and its new calls say "Mùa chuột chưa mở — chủ phòng cần chạy migration 0019.".
+>
+> **Re-running earlier migrations:** `0013`, `0015`, `0016`, `0017` and `0018` put back their own versions of the functions `0019` re-creates, and their `coin_ledger` reason checks lack `rat_sell` and `dog_adopt`. None of them can be re-run as it is once a rat has been sold or a dog adopted. Re-run them in order with `0019` last (anti-cheat §11.3 rule 7).
+
+### What's new in v17
+
+- **Chuột đồng:** while rice, khoai or bắp is ripe, a rat comes out of a bund hole every 10–20 minutes to eat a ripe plot, up to 3 on the field at once. Each rat on a plot eats 2 % of its harvest an hour, and the rats take at most 10 % of a crop. A rat leaves only when it is caught, or when the plot is harvested, handed to the harvester, abandoned or lost. The chip under the map counts shows the season, and the plot panel shows what the rats took.
+- **Cái ná:** walk up to a rat and press E. Aim with the mouse or ←/→, hold Space (the mouse button or a finger) to pull the band into the green zone, and let go. Every shot costs one pellet and a 2-second reload, and a hit catches the rat.
+- **Chó cỏ:** adopt one at chú Tám's (20 000 xu, one per player) in vàng, mực, vện or đốm, and name it. It follows you on every map, and everyone in the room sees it. Fed (one bịch lasts 24 hours), it pounces on a rat near you once every 5 minutes, as long as you are playing. Pet it for hearts.
+- **Cô Út** buys rats at the price fixed at the catch: 150 xu × the room's fish multiplier M. A player catches at most 6 rats an hour and 24 a day.
+
+### Trust model (v17)
+
+The server decides the spawns, which plots the rats eat, the damage, the prices, the caps, and the dog's hunger and cooldown. A client reports a shot's hit or miss, no sooner than 2 s after its last sling answer, and when its dog pounces. A rat is shared by the whole field, so the first catch wins. Rat and dog positions, the slingshot minigame and presence's `dog` are client-side, spoofable and cosmetic. The 24th catch of a day is logged as the soft `rat_daily_cap`.
+
+### Realtime budget (v17)
+
+No new channel. Spawns send nothing: a client on the field refetches at the next spawn time plus 0–10 s, at most once a minute, and only in rat season. A catch sends one `fp`. The slingshot sends `fa 12` every 2 s (7 in a 12 s session), and petting sends one `fa 11`, at most one every 3 s. The dog sends nothing: presence carries its name and coat, re-tracked within the 4-per-30-s budget.

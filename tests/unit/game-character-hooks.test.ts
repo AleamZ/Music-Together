@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { DEFAULT_LOOK } from "@/lib/game/character";
-import { useLooks } from "@/hooks/useLooks";
+import { LK_WINDOW_MS, useLooks } from "@/hooks/useLooks";
 import { useMyCharacter } from "@/hooks/useMyCharacter";
 
 const { fetchCharacters } = vi.hoisted(() => ({ fetchCharacters: vi.fn() }));
@@ -15,6 +15,10 @@ const TAN = { ...DEFAULT_LOOK, skin: "tan" as const };
 // braces matter: a function returned from beforeEach is run as a teardown
 beforeEach(() => {
   fetchCharacters.mockReset();
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
 });
 
 describe("useMyCharacter", () => {
@@ -66,5 +70,24 @@ describe("useLooks", () => {
     fetchCharacters.mockResolvedValue(new Map([["a", PINK]]));
     act(() => result.current.refresh("a"));
     await waitFor(() => expect(result.current.looks.get("a")).toEqual(PINK));
+  });
+  it("refreshes an account at most once per 30 s, with one trailing refresh (anti-cheat §14)", async () => {
+    vi.useFakeTimers();
+    fetchCharacters.mockResolvedValue(new Map([["a", TAN]]));
+    const { result } = renderHook(() => useLooks(["a"]));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fetchCharacters.mockClear();
+    act(() => {
+      for (let i = 0; i < 5; i++) result.current.refresh("a");
+    });
+    expect(fetchCharacters.mock.calls).toEqual([[["a"]]]);
+    act(() => result.current.refresh("b"));
+    expect(fetchCharacters).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(LK_WINDOW_MS - 1); });
+    expect(fetchCharacters).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(fetchCharacters.mock.calls).toEqual([[["a"]], [["b"]], [["a"]]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(LK_WINDOW_MS * 2); });
+    expect(fetchCharacters).toHaveBeenCalledTimes(3);
   });
 });

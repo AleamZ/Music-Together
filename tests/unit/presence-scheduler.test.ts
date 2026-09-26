@@ -7,7 +7,7 @@ import type { PresenceMode } from "@/lib/presence-modes";
 const h = vi.hoisted(() => {
   const state = {
     subscribeCb: null as ((s: string) => void) | null,
-    calls: [] as { at: number; mode: unknown; map: unknown }[],
+    calls: [] as { at: number; mode: unknown; map: unknown; dog: unknown }[],
     replies: [] as Array<string | Promise<string> | Error>,
     removed: 0,
   };
@@ -15,8 +15,8 @@ const h = vi.hoisted(() => {
     on() { return channel; },
     subscribe(cb: (s: string) => void) { state.subscribeCb = cb; return channel; },
     presenceState() { return {}; },
-    track(payload: { mode: unknown; map?: unknown }) {
-      state.calls.push({ at: Date.now(), mode: payload.mode, map: payload.map });
+    track(payload: { mode: unknown; map?: unknown; dog?: unknown }) {
+      state.calls.push({ at: Date.now(), mode: payload.mode, map: payload.map, dog: payload.dog });
       const reply = state.replies.shift() ?? "ok";
       return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply);
     },
@@ -214,6 +214,36 @@ describe("trackPresence scheduler", () => {
     for (let i = 0; i < 12; i++) {
       if (i % 2) hd.setMap(i % 4 === 1 ? "pond" : "hall");
       else hd.setMode(i % 4 === 0 ? "classic" : "game");
+      await adv(1500);
+    }
+    await adv(120_000);
+    const ts = times();
+    for (const t of ts) expect(ts.filter((x) => x >= t && x < t + 30_000).length).toBeLessThanOrEqual(4);
+    hd.unsubscribe();
+  });
+
+  it("publishes the dog as {n, c} with the mode and the map, in game mode only (v17 §7.3)", async () => {
+    const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "game", map: "field", dog: { name: "Mực", coat: "muc" } }, () => {});
+    sub(); await adv(0);
+    expect(h.state.calls.map((c) => c.dog)).toEqual([{ n: "Mực", c: "muc" }]);
+    hd.setDog({ name: "Mực", coat: "muc" }); await adv(10_000); expect(h.state.calls).toHaveLength(1); // the same dog
+    hd.setDog({ name: "Ki", coat: "muc" }); await adv(400); hd.setMap("hall"); await adv(1000);
+    expect(h.state.calls.map((c) => [c.map, c.dog])).toEqual([["field", { n: "Mực", c: "muc" }], ["hall", { n: "Ki", c: "muc" }]]);
+    hd.setMode("classic"); await adv(1000);
+    expect(h.state.calls.at(-1)).toMatchObject({ mode: "classic", map: null, dog: null });
+    hd.setDog(null); await adv(10_000); expect(h.state.calls).toHaveLength(3); // nothing visible changed
+    hd.setMode("game"); await adv(1000);
+    expect(h.state.calls.at(-1)).toMatchObject({ mode: "game", map: "hall", dog: null });
+    hd.unsubscribe();
+  });
+
+  it("shares the 4-per-30 s budget between dog, map and mode changes", async () => {
+    const hd = trackPresence("r", { memberId: "a", name: "Ann", mode: "game", map: "hall" }, () => {});
+    sub(); await adv(0);
+    for (let i = 0; i < 12; i++) {
+      if (i % 3 === 0) hd.setDog(i % 2 ? null : { name: "Ki", coat: "vang" });
+      else if (i % 3 === 1) hd.setMap(i % 2 ? "pond" : "field");
+      else hd.setMode(i % 2 ? "classic" : "game");
       await adv(1500);
     }
     await adv(120_000);

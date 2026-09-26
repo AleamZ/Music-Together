@@ -4,21 +4,75 @@ import { createRef } from "react";
 import GameCanvas, { type GameCanvasHandle, type GameCanvasProps } from "@/components/game/GameCanvas";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 
-// One fake engine per world: it records what the canvas tells it about the input lock.
-const { engines } = vi.hoisted(() => ({
-  engines: [] as Array<{ mapId: string; input: boolean[]; destroyed: boolean }>,
+// One fake engine and channel per world: they record what the canvas tells them (input lock, plots, card labels,
+// gathering cues, farm animations, messages, hellos and byes) and let a test deliver messages.
+type EngineRec = {
+  mapId: string; input: boolean[]; plots: unknown[]; cards: unknown[]; spots: unknown[]; anims: number[]; applied: unknown[];
+  hellos: string[]; removed: string[]; destroyed: boolean;
+  // v17: what setLocal, setRats and the dog calls received
+  locals: unknown[]; rats: unknown[]; pounces: number[]; recalls: number; pets: number;
+  cb: { onLocalMove: (m: unknown) => void; onLocalPath: (m: unknown) => void; onInput?: () => void };
+};
+const { engines, channels, replies } = vi.hoisted(() => ({
+  engines: [] as EngineRec[],
+  channels: [] as Array<{ onMessage: (msg: unknown) => void; sent: unknown[] }>,
+  replies: { hellos: 0 },
 }));
 
 vi.mock("@/lib/game/engine", () => ({
   GameEngine: class {
-    rec: { mapId: string; input: boolean[]; destroyed: boolean };
-    constructor(_canvas: unknown, map: { id: string }) {
-      this.rec = { mapId: map.id, input: [], destroyed: false };
+    rec: EngineRec;
+    constructor(_canvas: unknown, map: { id: string }, _art: unknown, cb: EngineRec["cb"]) {
+      this.rec = {
+        mapId: map.id, input: [], plots: [], cards: [], spots: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false,
+        locals: [], rats: [], pounces: [], recalls: 0, pets: 0, cb,
+      };
       engines.push(this.rec);
+    }
+    setLocal(info: unknown) {
+      this.rec.locals.push(info);
+    }
+    setRats(rats: unknown) {
+      this.rec.rats.push(rats);
+    }
+    dogPounce(ratId: number) {
+      this.rec.pounces.push(ratId);
+      return true;
+    }
+    dogRecall() {
+      this.rec.recalls++;
+    }
+    petDog() {
+      this.rec.pets++;
+    }
+    localPos() {
+      return { x: 5, y: 6 };
     }
     setInputEnabled(enabled: boolean) {
       this.rec.input.push(enabled);
     }
+    setPlots(plots: unknown) {
+      this.rec.plots.push(plots);
+    }
+    setCardTables(labels: unknown) {
+      this.rec.cards.push(labels);
+    }
+    setGatherSpots(spots: unknown) {
+      this.rec.spots.push(spots);
+    }
+    showFarmAnim(a: number) {
+      this.rec.anims.push(a);
+    }
+    applyMessage(msg: unknown) {
+      this.rec.applied.push(msg);
+    }
+    noteHello(id: string) {
+      this.rec.hellos.push(id);
+    }
+    removeActor(id: string) {
+      this.rec.removed.push(id);
+    }
+    setRoster() {}
     setLocalHand() {}
     setSpecies() {}
     setBottomInset() {}
@@ -39,16 +93,22 @@ vi.mock("@/lib/game/maps/registry", () => ({
   paintMap: () => ({}),
 }));
 vi.mock("@/lib/game/net/channel", () => ({
-  joinGameChannel: () => ({ send: () => {}, leave: () => {} }),
+  joinGameChannel: (_room: string, _map: unknown, h: { onMessage: (msg: unknown) => void }) => {
+    const ch = { onMessage: h.onMessage, sent: [] as unknown[] };
+    channels.push(ch);
+    return { send: (msg: unknown) => ch.sent.push(msg), leave: () => {} };
+  },
 }));
 vi.mock("@/lib/game/net/replies", () => ({
-  createReplyScheduler: () => ({ onHello: () => {}, dispose: () => {} }),
+  createReplyScheduler: () => ({ onHello: () => { replies.hellos++; }, dispose: () => {} }),
   replyWindowMs: () => 0,
 }));
 
 // braces matter: a function returned from beforeEach is run as a teardown
 beforeEach(() => {
   engines.length = 0;
+  channels.length = 0;
+  replies.hellos = 0;
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query }));
 });
 afterEach(() => {
@@ -64,6 +124,7 @@ const props: Omit<GameCanvasProps, "ref" | "mapId"> = {
   arrive: null,
   initial: { name: "An", badges: "", look: DEFAULT_LOOK },
   isMember: () => true,
+  isHere: () => true,
   onInteract: noop,
   onPromptChange: noop,
   onActorClick: noop,
@@ -97,5 +158,228 @@ describe("GameCanvas input lock across travel", () => {
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
     expect(engines.map((e) => e.mapId)).toEqual(["hall", "pond", "hall"]);
     expect(engines[2].input.at(-1)).toBe(true);
+  });
+});
+
+describe("GameCanvas plots across travel", () => {
+  it("passes the plots on at once and gives them to the next map's engine", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    const plots = [{ no: 1, look: null, label: "1 · An", urgent: false, parts: 0, harvester: null }];
+    ref.current!.setPlots(plots);
+    expect(engines[0].plots.at(-1)).toBe(plots);
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(engines[2].plots.at(-1)).toBe(plots);
+  });
+});
+
+describe("GameCanvas card-table labels across travel", () => {
+  it("passes the labels on at once and gives them to the next map's engine", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    const labels = { tienlen: "Tiến lên · 2/4 · 1.000", cao: "Trống" };
+    ref.current!.setCardTables(labels);
+    expect(engines[0].cards.at(-1)).toBe(labels);
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[2].cards.at(-1)).toBe(labels);
+  });
+});
+
+describe("GameCanvas gathering cues across travel (v15.3 §13.1)", () => {
+  it("passes the spots on at once and gives them to the next map's engine", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    const spots = [{ id: "crab_1", ready: true }, { id: "bed_2", ready: false }];
+    ref.current!.setGatherSpots(spots);
+    expect(engines[0].spots.at(-1)).toBe(spots);
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(engines[2].spots.at(-1)).toBe(spots);
+  });
+});
+
+describe("GameCanvas, the map its world shows (v15.3 §7.2)", () => {
+  it("names the map of the world that is up — the new one as soon as it has switched — and none once it is gone", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender, unmount } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(ref.current!.mapId()).toBe("field");
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    expect(engines.map((e) => e.mapId)).toEqual(["field", "pond"]);
+    expect(ref.current!.mapId()).toBe("pond");
+    const handle = ref.current!;
+    unmount();
+    expect(handle.mapId()).toBeNull();
+  });
+});
+
+describe("GameCanvas, my moves (v15.3 §7.3)", () => {
+  it("tells the shell when I start walking or set off on a path, and sends them on; a stop or a jump is not a move", () => {
+    const onLocalMove = vi.fn();
+    render(<GameCanvas mapId="field" {...props} onLocalMove={onLocalMove} />);
+    const { cb } = engines[0];
+    cb.onLocalMove({ mv: false, x: 1, y: 2, vx: 0, vy: 0, f: 0 });
+    expect(onLocalMove).not.toHaveBeenCalled();
+    cb.onLocalMove({ mv: true, x: 1, y: 2, vx: 1, vy: 0, f: 3 });
+    cb.onLocalPath({ x: 1, y: 2, p: [[3, 4]] });
+    expect(onLocalMove).toHaveBeenCalledTimes(2);
+    expect(channels[0].sent.map((m) => (m as { t: string }).t)).toEqual(["mv", "mv", "pa"]);
+  });
+});
+
+describe("GameCanvas farm messages", () => {
+  it("plays my farm animation and sends fa and fp", () => {
+    const ref = createRef<GameCanvasHandle>();
+    render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    ref.current!.farmAnim(3);
+    ref.current!.plotChanged(7);
+    expect(engines[0].anims).toEqual([3]);
+    expect(channels[0].sent).toEqual([{ t: "fa", id: "me", a: 3 }, { t: "fp", id: "me", p: 7 }]);
+  });
+  it("passes on fp from the others and from my other tab, and gives fa to the engine", () => {
+    const onPlotChanged = vi.fn();
+    render(<GameCanvas mapId="field" {...props} onPlotChanged={onPlotChanged} />);
+    channels[0].onMessage({ t: "fp", id: "ann", p: 7 });
+    channels[0].onMessage({ t: "fp", id: "me", p: 0 });
+    expect(onPlotChanged.mock.calls).toEqual([[7], [0]]);
+    channels[0].onMessage({ t: "fa", id: "ann", a: 1 });
+    expect(engines[0].applied).toEqual([{ t: "fa", id: "ann", a: 1 }]);
+  });
+});
+
+describe("GameCanvas, the dog and the rats (v17)", () => {
+  const muc = { name: "Mực", coat: "muc" as const };
+  const RATS = { nextAt: 1, price: 150, live: [{ id: 3, plot: 5, since: 0, seed: 3 }], recent: [], plots: {} };
+
+  it("keeps my dog across travel, and a setLocal without a dog keeps it (null removes it)", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[0].locals.at(-1)).toMatchObject({ name: "An" });
+    expect((engines[0].locals.at(-1) as { dog?: unknown }).dog).toBeUndefined();
+    ref.current!.setLocal({ name: "An", badges: "", look: DEFAULT_LOOK, dog: muc, dogHungry: true });
+    expect(engines[0].locals.at(-1)).toMatchObject({ dog: muc, dogHungry: true });
+    ref.current!.setLocal({ name: "An", badges: "👑", look: DEFAULT_LOOK });
+    expect(engines[0].locals.at(-1)).toMatchObject({ badges: "👑", dog: muc, dogHungry: true });
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    expect(engines[1].locals.at(-1)).toMatchObject({ dog: muc, dogHungry: true });
+    ref.current!.setLocal({ name: "An", badges: "", look: DEFAULT_LOOK, dog: null, dogHungry: false });
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[2].locals.at(-1)).toMatchObject({ dog: null, dogHungry: false });
+  });
+  it("passes the rats on at once and gives them to the next field engine only", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    ref.current!.setRats(RATS);
+    expect(engines[0].rats.at(-1)).toBe(RATS);
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    expect(engines[1].rats).toEqual([]);
+    rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(engines[2].rats.at(-1)).toBe(RATS);
+  });
+  it("pets my dog with fa 11 for everyone, and passes on the pounce, the recall and where I stand", () => {
+    const ref = createRef<GameCanvasHandle>();
+    render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    ref.current!.petDog();
+    expect(engines[0]).toMatchObject({ pets: 1, anims: [11] });
+    expect(channels[0].sent).toEqual([{ t: "fa", id: "me", a: 11 }]);
+    expect(ref.current!.dogPounce(3)).toBe(true);
+    ref.current!.dogRecall();
+    expect(engines[0]).toMatchObject({ pounces: [3], recalls: 1 });
+    expect(ref.current!.localPos()).toEqual({ x: 5, y: 6 });
+  });
+  it("remembers my last key or touch across worlds", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender, unmount } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(ref.current!.lastInputAt()).toBe(-Infinity);
+    const now = vi.spyOn(performance, "now").mockReturnValue(4321);
+    engines[0].cb.onInput!();
+    now.mockRestore();
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    expect(ref.current!.lastInputAt()).toBe(4321);
+    const handle = ref.current!;
+    unmount();
+    expect(handle.localPos()).toBeNull();
+    expect(handle.dogPounce(3)).toBe(false);
+  });
+});
+
+describe("GameCanvas presence filter and receive budgets (anti-cheat spec §14)", () => {
+  const mv = (id: string) => ({ t: "mv", id, x: 1, y: 1, d: "d", mv: true, vx: 0, vy: 1 });
+  const entry = (id: string) => ({ id, name: id, badges: "", look: DEFAULT_LOOK, spot: null });
+
+  it("takes bye, lk, fs and fa only from members on this map, and nothing from anyone who is not a member", () => {
+    const onLookChanged = vi.fn();
+    const onPlotChanged = vi.fn();
+    render(<GameCanvas mapId="field" {...props} isMember={(id) => id !== "stranger"} isHere={(id) => id === "ann"}
+      onLookChanged={onLookChanged} onPlotChanged={onPlotChanged} />);
+    const deliver = (msg: unknown) => channels[0].onMessage(msg);
+    for (const msg of [{ t: "lk", id: "bob" }, { t: "fs", id: "bob", f: 1, h: null }, { t: "fa", id: "bob", a: 1 }, { t: "bye", id: "bob" }]) {
+      deliver(msg);
+    }
+    const id = "stranger";
+    for (const msg of [{ t: "hello", id }, { t: "lk", id }, { t: "fp", id, p: 1 }, { t: "fs", id, f: 1, h: null }, { t: "fa", id, a: 1 }, { t: "bye", id }]) {
+      deliver(msg);
+    }
+    expect(onLookChanged).not.toHaveBeenCalled();
+    expect(onPlotChanged).not.toHaveBeenCalled();
+    expect(engines[0]).toMatchObject({ applied: [], hellos: [], removed: [] });
+    expect(replies.hellos).toBe(0);
+    deliver(mv("bob"));
+    deliver(mv("stranger"));
+    expect(engines[0].applied).toEqual([mv("bob")]);
+    for (const msg of [{ t: "hello", id: "ann" }, { t: "lk", id: "ann" }, { t: "fp", id: "ann", p: 1 }, { t: "fa", id: "ann", a: 1 }, { t: "bye", id: "ann" }]) {
+      deliver(msg);
+    }
+    expect(engines[0]).toMatchObject({ hellos: ["ann"], removed: ["ann"] });
+    expect(replies.hellos).toBe(1);
+    expect(onLookChanged).toHaveBeenCalledWith("ann");
+    expect(onPlotChanged).toHaveBeenCalledWith(1);
+    expect(engines[0].applied).toEqual([mv("bob"), { t: "fa", id: "ann", a: 1 }]);
+  });
+
+  it("answers the hello and passes on the fp of a member whose presence has not arrived yet (R34)", () => {
+    const onPlotChanged = vi.fn();
+    render(<GameCanvas mapId="field" {...props} isHere={() => false} onPlotChanged={onPlotChanged} />);
+    channels[0].onMessage({ t: "hello", id: "newbie" });
+    channels[0].onMessage({ t: "fp", id: "newbie", p: 4 });
+    expect(engines[0].hellos).toEqual(["newbie"]);
+    expect(replies.hellos).toBe(1);
+    expect(onPlotChanged).toHaveBeenCalledWith(4);
+  });
+
+  it("drops what a sender sends over its budget", () => {
+    render(<GameCanvas mapId="pond" {...props} />);
+    const deliver = (msg: unknown, times: number) => { for (let i = 0; i < times; i++) channels[0].onMessage(msg); };
+    deliver(mv("ann"), 10);
+    deliver({ t: "fs", id: "ann", f: 1, h: null }, 8);
+    deliver({ t: "fa", id: "ann", a: 2 }, 8);
+    deliver({ t: "hello", id: "ann" }, 5);
+    deliver({ t: "bye", id: "ann" }, 3);
+    deliver(mv("bob"), 1);
+    const applied = engines[0].applied as Array<{ t: string; id: string }>;
+    expect(applied.filter((m) => m.t === "mv" && m.id === "ann")).toHaveLength(5);
+    expect(applied.filter((m) => m.t === "fs")).toHaveLength(5);
+    expect(applied.filter((m) => m.t === "fa")).toHaveLength(5);
+    expect(applied.filter((m) => m.id === "bob")).toHaveLength(1);
+    expect(engines[0]).toMatchObject({ hellos: ["ann"], removed: ["ann"] });
+    expect(replies.hellos).toBe(1);
+  });
+
+  it("answers a member who appears on this map as a hello would, but not the roster a world starts with", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="pond" {...props} isHere={(id) => id !== "cara"} />);
+    ref.current!.setRoster([entry("ann")]);
+    expect(replies.hellos).toBe(0);
+    ref.current!.setRoster([entry("ann"), entry("bob")]);
+    expect(replies.hellos).toBe(1);
+    ref.current!.setRoster([entry("ann"), entry("bob"), entry("cara")]);
+    expect(replies.hellos).toBe(1);
+    ref.current!.setRoster([entry("ann")]);
+    ref.current!.setRoster([entry("ann"), entry("bob")]);
+    expect(replies.hellos).toBe(2);
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} isHere={(id) => id !== "cara"} />);
+    ref.current!.setRoster([entry("dan")]);
+    expect(replies.hellos).toBe(2);
   });
 });

@@ -5,6 +5,44 @@ export interface AdminRoom { id: string; code: string; name: string; is_playing:
 export interface AdminAccount { id: string; username: string; is_root: boolean; is_banned: boolean; created_at: string; }
 export interface AdminStats { total_rooms: number; total_accounts: number; feedback_new: number; feedback_total: number; }
 
+/** The anti-cheat tab (anti-cheat spec §10.5, §12.5). */
+export type AnticheatMode = "log" | "enforce";
+export interface AnticheatCase {
+  account_id: string; username: string; is_root: boolean; is_banned: boolean;
+  strikes: number; active_strikes: number; last_strike_at: string | null; last_strike_code: string | null;
+  /** Only while the lock runs. */
+  locked_until: string | null;
+  ban_state: "pending_wipe" | "wiped" | null; banned_at: string | null; wiped_at: string | null; pardoned_at: string | null;
+  hard_events: number; soft_events: number; last_event_at: string | null;
+}
+export interface AnticheatList { mode: AnticheatMode; mode_changed_at: string | null; server_now: string; cases: AnticheatCase[]; }
+/** What a wipe would remove (the same JSON is a wipe's snapshot). */
+export interface AnticheatHoldings {
+  wallet: { coins: number } | null;
+  inventory: Array<{ item_id: string; qty: number }>;
+  fish: unknown[]; personal_bests: unknown[];
+  rice: Array<{ variety: string; wet_kg: number; dry_kg: number }>;
+  /** v15.2 (`0016`): the hoa màu and the sprayer's tank; older answers lack them. */
+  produce?: Array<{ upland: string; kg: number }>;
+  tank?: { item: string | null; charges: number } | null;
+  /** v15.3 (`0018`): the critters held, per kind (count and what cô Út pays); older answers lack them. */
+  critters?: Array<{ kind: string; n: number; xu: number }>;
+  /** v17 (`0019`): the dog and the rats in the bag; older answers lack them. */
+  dog?: { name: string } | null;
+  rats?: { count: number; value: number };
+  plots: unknown[]; leases: unknown[]; offers: unknown[]; crops: unknown[]; drying: unknown[];
+  /** Catch and land lines about the account in the chat. */
+  announcements: number;
+  /** v16: the account's seats at the card tables, with their stacks and balances (absent before 0017). */
+  cards?: Array<{ room_id: string; game: string; seat: number; chips: number; escrow: number }>;
+}
+export interface AnticheatEventRow {
+  id: number; created_at: string; code: string; outcome: string; rpc: string; room_id: string | null; detail: unknown;
+  client: string | null; user_agent: string | null;
+}
+export interface AnticheatWipe { id: number; wiped_at: string; wiped_by: string | null; snapshot: unknown; }
+export interface AnticheatAccount { case: AnticheatCase | null; holdings: AnticheatHoldings; events: AnticheatEventRow[]; wipes: AnticheatWipe[]; }
+
 const rows = <T>(d: unknown): T[] => (Array.isArray(d) ? (d as T[]) : []);
 const one = <T>(d: unknown): T | undefined => (Array.isArray(d) ? (d as T[])[0] : (d as T));
 
@@ -49,4 +87,24 @@ export async function adminStats(token: string): Promise<AdminStats> {
   const s = one<AdminStats>(data);
   if (!s) throw new Error("admin_stats returned no data");
   return s;
+}
+export async function adminAnticheatList(token: string): Promise<AnticheatList> {
+  const { data, error } = await supabase.rpc("admin_anticheat_list", { p_session_token: token });
+  if (error) throw error;
+  return data as AnticheatList;
+}
+export async function adminAnticheatAccount(token: string, accountId: string): Promise<AnticheatAccount> {
+  const { data, error } = await supabase.rpc("admin_anticheat_account", { p_session_token: token, p_account_id: accountId });
+  if (error) throw error;
+  return data as AnticheatAccount;
+}
+export async function adminAnticheatResolve(token: string, accountId: string, action: "wipe" | "pardon"): Promise<AnticheatCase> {
+  const { data, error } = await supabase.rpc("admin_anticheat_resolve", { p_session_token: token, p_account_id: accountId, p_action: action });
+  if (error) throw error;
+  return data as AnticheatCase;
+}
+export async function adminAnticheatSetMode(token: string, mode: AnticheatMode): Promise<{ mode: AnticheatMode; mode_changed_at: string }> {
+  const { data, error } = await supabase.rpc("admin_anticheat_set_mode", { p_session_token: token, p_mode: mode });
+  if (error) throw error;
+  return data as { mode: AnticheatMode; mode_changed_at: string };
 }

@@ -7,6 +7,8 @@ const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 export const supabase: SupabaseClient = createClient(url, publishableKey, {
   auth: { persistSession: false },
   realtime: { params: { eventsPerSecond: 5 } },
+  // the anti-cheat evidence reads the client build from this header (anti-cheat spec §12.6)
+  global: { headers: { "X-Client-Info": `music-together/${process.env.NEXT_PUBLIC_CLIENT_BUILD ?? "dev"}` } },
 });
 
 export type PlayMode = "order" | "shuffle";
@@ -119,6 +121,11 @@ export async function transferAdmin(roomId: string, token: string, targetMemberI
 }
 export async function kickMember(roomId: string, token: string, targetMemberId: string) {
   const { error } = await supabase.rpc("kick_member", { p_room_id: roomId, p_session_token: token, p_target_member: targetMemberId });
+  if (error) throw error;
+}
+/** Marks me as seen in the room (v15: a private plot is reclaimed after 14 days away). */
+export async function touchRoom(roomId: string, token: string) {
+  const { error } = await supabase.rpc("touch_room", { p_room_id: roomId, p_session_token: token });
   if (error) throw error;
 }
 export async function renameRoom(roomId: string, token: string, newName: string) {

@@ -87,7 +87,8 @@ export function useCastSession({ roomId, data, canvas, toast }: {
       setCaught({ fish: r.fish, record: r.record });
     } else {
       canvas()?.setFishing({ phase: "idle" });
-      toastRef.current(lostText(cause, success ? r.why : null, r.state.fishCap));
+      // a reel reported too fast as a strike: the warning or the ban modal shows instead (anti-cheat §12.1)
+      if ((r.anticheat?.strike ?? 0) < 1) toastRef.current(lostText(cause, success ? r.why : null, r.state.fishCap));
     }
   }, [canvas, finishCast]);
 

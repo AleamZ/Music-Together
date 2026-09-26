@@ -35,7 +35,7 @@ export interface RosterInput {
 /**
  * Everyone online in the room and on my map, except me (non-members are ignored). Classic-view members are in
  * the hall with a fixed spot — the DJ behind the mixer, the others on café seats in account-id order — so every
- * client shows the same arrangement. Game-view members on this map walk (spot null).
+ * client shows the same arrangement. Game-view members on this map walk (spot null), with their dog (v17).
  */
 export function buildRoster({ presence, members, room, localId, looks, mapId, seating }: RosterInput): RosterEntry[] {
   const byAccount = new Map(members.map((m) => [m.account_id, m] as const));
@@ -53,8 +53,15 @@ export function buildRoster({ presence, members, room, localId, looks, mapId, se
       badges: badgesFor(p.accountId, roles, classic),
       look: looks.get(p.accountId) ?? DEFAULT_LOOK,
       spot,
+      dog: classic ? null : p.dog ?? null,
     };
   });
+}
+
+/** Is this account in the room's presence in game mode on this map? Game messages other than movement, `hello` and `fp`
+ *  are taken only from such a member (anti-cheat spec §14). */
+export function isHereOn(presence: readonly PresenceEntry[], accountId: string, mapId: MapId): boolean {
+  return presence.some((p) => p.accountId === accountId && p.mode === "game" && p.map === mapId);
 }
 
 /** Chat messages that should pop up as bubbles: not shown yet, written by a person, at most maxAgeMs old. */

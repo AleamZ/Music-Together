@@ -53,12 +53,14 @@ describe("MapCounts", () => {
     render(<MapCounts counts={{
       hall: [{ accountId: "a", name: "An", classic: true }, { accountId: "b", name: "Bình", classic: false }],
       pond: [{ accountId: "c", name: "Chi", classic: false }],
+      field: [{ accountId: "d", name: "Dũng", classic: false }],
     }} />);
-    const chip = screen.getByRole("button", { name: "🎵 Sảnh 2 · 🎣 Ao cá 1" });
+    const chip = screen.getByRole("button", { name: "🎵 Sảnh 2 · 🎣 Ao cá 1 · 🌾 Đồng 1" });
     expect(screen.queryByText("🖥️ An")).toBeNull();
     fireEvent.click(chip);
     expect(screen.getByText("🖥️ An")).toBeInTheDocument();
     expect(screen.getByText("Bình")).toBeInTheDocument();
     expect(screen.getByText("Chi")).toBeInTheDocument();
+    expect(screen.getByText("Dũng")).toBeInTheDocument();
   });
 });

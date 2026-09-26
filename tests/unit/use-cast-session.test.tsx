@@ -124,6 +124,24 @@ describe("useCastSession", () => {
     expect(lost.toasts).toEqual(["Cá đã thoát!"]);
   });
 
+  it("shows no lost toast when the reel came back as a strike (anti-cheat §12.1)", async () => {
+    const ac = (strike: 0 | 1 | 2) => ({ code: "reel_too_fast", strike, error: null, lockedUntil: null, banned: strike === 2, serverNow: null });
+    const struck = setup(async () => answer(), async () => ({ result: "lost", why: "too_early", state: STATE, anticheat: ac(1) }));
+    act(() => struck.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    act(() => struck.result.current.hook());
+    await act(async () => { struck.result.current.reelDone(true); await vi.advanceTimersByTimeAsync(0); });
+    expect(struck.finishCast).toHaveBeenCalledWith("c1", true);
+    expect(struck.toasts).toEqual([]);
+    expect(struck.canvas.setFishing).toHaveBeenLastCalledWith({ phase: "idle" });
+    const logged = setup(async () => answer(), async () => ({ result: "lost", why: "too_early", state: STATE, anticheat: ac(0) }));
+    act(() => logged.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    act(() => logged.result.current.hook());
+    await act(async () => { logged.result.current.reelDone(true); await vi.advanceTimersByTimeAsync(0); });
+    expect(logged.toasts).toEqual(["Cá đã thoát!"]);
+  });
+
   it("gives the cast up quietly when abandoned, even before start_cast answered", async () => {
     let answerNow!: (a: StartCast) => void;
     const s = setup(() => new Promise<StartCast>((r) => { answerNow = r; }), async () => ({ result: "lost", why: "gave_up", state: STATE }));

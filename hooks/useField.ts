@@ -1,0 +1,245 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AnticheatError } from "@/lib/anticheat";
+import type { FarmCatalog } from "@/lib/game/farm/catalog";
+import { serverNow, syncClock } from "@/lib/game/farm/clock";
+import { farmErrorMessage, isMissingRpc, NOT_OPEN_152, NOT_OPEN_153, NOT_OPEN_17 } from "@/lib/game/farm/messages";
+import {
+  actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, dogHunt, fetchFarmCatalog, fetchFieldState, fieldAction,
+  loadSprayer, pickSnailBed, RPCS_152, RPCS_153, RPCS_17, sellCritters, sellProduce, sellRats, sellRice, slingShoot, slingStart,
+  type CatchAnswer, type CrabVisit, type FieldAction, type FieldAnswer, type MineAnswer, type ShotAnswer, type SlingAim,
+} from "@/lib/game/farm/rpc";
+import { ratSeason } from "@/lib/game/farm/season";
+import { withMine, type FarmMine, type FieldState } from "@/lib/game/farm/state";
+
+export interface FieldData {
+  /** null until the first field_state answer. */
+  state: FieldState | null;
+  catalog: FarmCatalog | null;
+  /** field_state or the catalog failed: the panels show FIELD_FAILED with a reload button. */
+  failed: boolean;
+  /** Migration 0013 is not run: the field shows the NOT_OPEN banner. */
+  notOpen: boolean;
+  /** Fetches the field again, and the catalog too while it has not loaded. */
+  reload: () => Promise<FieldState | null>;
+  /** A land, farming or drying action; its answer replaces the state. On error: the refusal's text goes to `onError`
+   *  (the harvest round shows it) or to the toast; then a refetch, and null. */
+  run: (a: FieldAction, itemName?: string, onError?: (text: string) => void) => Promise<FieldAnswer | null>;
+  sellRice: (variety: string, dry: boolean, kg: number) => Promise<MineAnswer | null>;
+  buyItem: (itemId: string, qty: number, itemName?: string) => Promise<MineAnswer | null>;
+  claimGift: () => Promise<(MineAnswer & { gifted: boolean }) | null>;
+  /** Nạp thuốc: one bottle of the pesticide into the sprayer (v15.2 §7). */
+  loadSprayer: (itemId: string, itemName?: string) => Promise<MineAnswer | null>;
+  /** Sells kg of a hoa-màu crop to cô Út (v15.2 §9). */
+  sellProduce: (upland: string, kg: number) => Promise<MineAnswer | null>;
+  /** Bắt cua (v15.3 §7.2): a visit to hole `hole` (R6), then its end with the hits, 0–3 (R7); a refusal's text goes to
+   *  `onError` when given. `boxName` is the container held, which a `critters full` refusal names (§11.8). */
+  crabStart: (hole: number, boxName?: string) => Promise<(MineAnswer & { visit: CrabVisit }) | null>;
+  crabFinish: (visitId: string, hits: number, onError?: (text: string) => void) =>
+    Promise<(MineAnswer & { crab: CatchAnswer & { hits: number } }) | null>;
+  /** Mò ốc (v15.3 §7.3): 1–3 snails from bed `bed`; `boxName` as for crabStart. */
+  pickSnailBed: (bed: number, boxName?: string) => Promise<(MineAnswer & { snails: CatchAnswer }) | null>;
+  /** Sells every critter of a kind to cô Út, or all of them (null), at their stored prices (v15.3 R15). */
+  sellCritters: (kind: string | null) => Promise<(MineAnswer & { sold: { n: number; xu: number } }) | null>;
+  /** v17 (§6.1): aim the ná at a live rat. A refusal's text goes to `onError` when given (the SlingGame shows it). */
+  slingStart: (rat: number, onError?: (text: string) => void) => Promise<{ state: FieldState; aim: SlingAim } | null>;
+  /** A shot; a hit catches. Refusals read in the SlingGame's context ("too fast" is "Đang nạp đạn…"). */
+  slingShoot: (rat: number, hit: boolean, onError?: (text: string) => void) => Promise<{ state: FieldState; shot: ShotAnswer } | null>;
+  /** My dog's pounce (§7.2); a refusal's text goes to `onError` when given (the auto-hunt shows none). */
+  dogHunt: (rat: number, onError?: (text: string) => void) => Promise<{ state: FieldState; price: number } | null>;
+  /** cô Út buys every rat in the bag at the prices fixed at each catch (§5.6). */
+  sellRats: () => Promise<(MineAnswer & { sold: { count: number; xu: number } }) | null>;
+  /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
+   *  FP_MIN_GAP_MS apart. */
+  plotChanged: () => void;
+}
+
+/** `fp`s arriving this close together are answered by one refetch (spec §12). */
+export const FP_GATHER_MS = 400;
+/** Refetches for `fp` start at least this far apart; an `fp` inside the gap brings one trailing refetch, so a flood costs
+ *  at most one field_state every 2 s (anti-cheat R35). */
+export const FP_MIN_GAP_MS = 2000;
+/** v17 (§11): in rat season the field is fetched at `rats.next_at` plus up to 10 s, at most once a minute. */
+export const RAT_REFETCH_JITTER_MS = 10_000;
+export const RAT_REFETCH_MIN_MS = 60_000;
+
+/** Is answer `n` newer than the last one applied? Then it becomes the last one applied. */
+function newest(applied: { current: number }, n: number): boolean {
+  if (n < applied.current) return false;
+  applied.current = n;
+  return true;
+}
+
+/** The field of this room as the server sees it (spec §11.5) and the RPCs that change it. Answers carry server_now,
+ *  which sets the shared clock; after an error the toast shows the Vietnamese text and the field is fetched again. Nothing
+ *  is fetched while `active` is false (I am not on the field). */
+export function useField(roomId: string, token: string, active: boolean, onError: (text: string) => void): FieldData {
+  const [state, setState] = useState<FieldState | null>(null);
+  const [catalog, setCatalog] = useState<FarmCatalog | null>(null);
+  // The panels need both the field and the catalog: either one failing offers the reload button (`failed`).
+  const [fieldFailed, setFieldFailed] = useState(false);
+  const [catalogFailed, setCatalogFailed] = useState(false);
+  const [notOpen, setNotOpen] = useState(false);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onErrorRef.current = onError;
+  });
+  // Answers can overtake each other: only an answer to a call started after the last applied one is kept. The field
+  // and the account part count apart: sell_rice, buy_farm_item and claim_farm_gift answer with the account part only,
+  // so they must not make a field_state that is still on its way look old.
+  const seq = useRef(0);
+  const fieldAt = useRef(0);
+  const mineAt = useRef(0);
+  /** The account part of the last account-only answer applied. */
+  const lastMine = useRef<FarmMine | null>(null);
+  const apply = useCallback((n: number, s: FieldState) => {
+    syncClock(s.serverNow);
+    if (!newest(fieldAt, n)) return;
+    // An account answer to a later call has landed: its account part is newer than this answer's, so it stays.
+    const newer = newest(mineAt, n) ? null : lastMine.current;
+    setState(newer ? withMine(s, newer) : s);
+    setFieldFailed(false);
+    setNotOpen(false);
+  }, []);
+  const applyMine = useCallback((n: number, r: MineAnswer) => {
+    syncClock(r.serverNow);
+    if (!newest(mineAt, n)) return;
+    lastMine.current = r.mine;
+    setState((s) => s && withMine(s, r.mine));
+  }, []);
+
+  const mounted = useRef(false);
+  const catalogLoaded = useRef(false);
+  const loadCatalog = useCallback(() => fetchFarmCatalog().then((c) => {
+    if (!mounted.current) return;
+    catalogLoaded.current = true;
+    setCatalog(c);
+    setCatalogFailed(false);
+  }, () => {
+    // Another reload may have loaded it meanwhile.
+    if (mounted.current && !catalogLoaded.current) setCatalogFailed(true);
+  }), []);
+
+  const reload = useCallback(async () => {
+    // The catalog comes along until it has loaded, so the next reload fetches a failed one again.
+    const catalogDone = catalogLoaded.current ? null : loadCatalog();
+    const n = ++seq.current;
+    try {
+      const s = await fetchFieldState(roomId, token);
+      apply(n, s);
+      return s;
+    } catch (err) {
+      if (n >= fieldAt.current) {
+        if (isMissingRpc(err)) setNotOpen(true);
+        else setFieldFailed(true);
+      }
+      return null;
+    } finally {
+      await catalogDone; // the reload is done when the catalog is
+    }
+  }, [roomId, token, apply, loadCatalog]);
+
+  const gather = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** When the last refetch for an `fp` started. */
+  const fpAt = useRef<number | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (gather.current) clearTimeout(gather.current);
+      gather.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (!active) return;
+    const first = setTimeout(() => void reload(), 0);
+    return () => clearTimeout(first);
+  }, [active, reload]);
+
+  const plotChanged = useCallback(() => {
+    if (gather.current) return;
+    const gap = fpAt.current === null ? 0 : fpAt.current + FP_MIN_GAP_MS - Date.now();
+    gather.current = setTimeout(() => {
+      gather.current = null;
+      fpAt.current = Date.now();
+      void reload();
+    }, Math.max(FP_GATHER_MS, gap));
+  }, [reload]);
+
+  // v17 (§11): spawns send nothing, so in rat season the field is fetched again at rats.next_at plus 0–10 s, at most once
+  // a minute; each newer state sets the timer anew
+  const ratFetchAt = useRef<number | null>(null);
+  useEffect(() => {
+    const rats = state?.rats;
+    if (!active || !state || !rats || !catalog || !ratSeason(state, catalog, rats.nextAt)) return;
+    const due = rats.nextAt - serverNow() + Math.random() * RAT_REFETCH_JITTER_MS;
+    const floor = ratFetchAt.current === null ? 0 : ratFetchAt.current + RAT_REFETCH_MIN_MS - Date.now();
+    const timer = setTimeout(() => {
+      ratFetchAt.current = Date.now();
+      void reload();
+    }, Math.max(0, due, floor));
+    return () => clearTimeout(timer);
+  }, [active, state, catalog, reload]);
+
+  /** Run RPC `rpc` and apply its answer. On error: the Vietnamese text, read in its context (the RPC's, unless `context`
+   *  names another: a round's refusals read their own way), to `onError` or the toast; then a refetch, and null. A strike
+   *  shows no text: the warning or the ban modal shows instead (anti-cheat §12.1). Before 0016 its RPCs are missing while
+   *  the field is open: they say NOT_OPEN_152 and leave the field open (v15.2 R28); before 0018 the gathering RPCs say
+   *  NOT_OPEN_153 (v15.3 R23), and before 0019 the v17 ones NOT_OPEN_17. */
+  const call = useCallback(async <T,>(job: () => Promise<T>, keep: (n: number, r: T) => void,
+    opts: { rpc: string; context?: string; itemName?: string; onError?: (text: string) => void }): Promise<T | null> => {
+    const n = ++seq.current;
+    try {
+      const r = await job();
+      keep(n, r);
+      return r;
+    } catch (err) {
+      const missing = isMissingRpc(err), v152 = RPCS_152.has(opts.rpc), v153 = RPCS_153.has(opts.rpc), v17 = RPCS_17.has(opts.rpc);
+      if (missing && !v152 && !v153 && !v17) setNotOpen(true);
+      if (!(err instanceof AnticheatError && err.info.strike >= 1)) {
+        const text = missing && v152 ? NOT_OPEN_152 : missing && v153 ? NOT_OPEN_153 : missing && v17 ? NOT_OPEN_17
+          : farmErrorMessage(err, opts.itemName, opts.context ?? opts.rpc);
+        (opts.onError ?? onErrorRef.current)(text);
+      }
+      void reload();
+      return null;
+    }
+  }, [reload]);
+
+  return {
+    state, catalog, failed: fieldFailed || catalogFailed, notOpen, reload, plotChanged,
+    run: useCallback((a: FieldAction, itemName?: string, onError?: (text: string) => void) =>
+      call(() => fieldAction(roomId, token, a), (n, r) => apply(n, r.state), {
+        // a transplant round's begin_work (lease ending) reads as the transplant does (v15.3 §11.8)
+        rpc: actionCall(a)[0], context: a.kind === "begin_work" && a.work === "transplant" ? "transplant" : undefined, itemName, onError,
+      }),
+    [call, apply, roomId, token]),
+    sellRice: useCallback((variety: string, dry: boolean, kg: number) =>
+      call(() => sellRice(token, variety, dry, kg), applyMine, { rpc: "sell_rice" }), [call, applyMine, token]),
+    buyItem: useCallback((itemId: string, qty: number, itemName?: string) =>
+      call(() => buyFarmItem(token, itemId, qty), applyMine, { rpc: "buy_farm_item", itemName }), [call, applyMine, token]),
+    claimGift: useCallback(() => call(() => claimFarmGift(token), applyMine, { rpc: "claim_farm_gift" }), [call, applyMine, token]),
+    loadSprayer: useCallback((itemId: string, itemName?: string) =>
+      call(() => loadSprayer(token, itemId), applyMine, { rpc: "load_sprayer", itemName }), [call, applyMine, token]),
+    sellProduce: useCallback((upland: string, kg: number) =>
+      call(() => sellProduce(token, upland, kg), applyMine, { rpc: "sell_produce" }), [call, applyMine, token]),
+    crabStart: useCallback((hole: number, boxName?: string) =>
+      call(() => crabStart(roomId, token, hole), applyMine, { rpc: "crab_start", itemName: boxName }), [call, applyMine, roomId, token]),
+    crabFinish: useCallback((visitId: string, hits: number, onError?: (text: string) => void) =>
+      call(() => crabFinish(roomId, token, visitId, hits), applyMine, { rpc: "crab_finish", onError }), [call, applyMine, roomId, token]),
+    pickSnailBed: useCallback((bed: number, boxName?: string) =>
+      call(() => pickSnailBed(roomId, token, bed), applyMine, { rpc: "pick_snail_bed", itemName: boxName }), [call, applyMine, roomId, token]),
+    sellCritters: useCallback((kind: string | null) =>
+      call(() => sellCritters(token, kind), applyMine, { rpc: "sell_critters" }), [call, applyMine, token]),
+    slingStart: useCallback((rat: number, onError?: (text: string) => void) =>
+      call(() => slingStart(roomId, token, rat), (n, r) => apply(n, r.state), { rpc: "sling_start", context: "sling", onError }),
+    [call, apply, roomId, token]),
+    slingShoot: useCallback((rat: number, hit: boolean, onError?: (text: string) => void) =>
+      call(() => slingShoot(roomId, token, rat, hit), (n, r) => apply(n, r.state), { rpc: "sling_shoot", context: "sling", onError }),
+    [call, apply, roomId, token]),
+    dogHunt: useCallback((rat: number, onError?: (text: string) => void) =>
+      call(() => dogHunt(roomId, token, rat), (n, r) => apply(n, r.state), { rpc: "dog_hunt", onError }), [call, apply, roomId, token]),
+    sellRats: useCallback(() => call(() => sellRats(token), applyMine, { rpc: "sell_rats" }), [call, applyMine, token]),
+  };
+}

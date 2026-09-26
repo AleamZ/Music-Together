@@ -1,7 +1,7 @@
 import type { Interactable } from "@/lib/game/maps/types";
 import { formatXu } from "./catalog";
 import type { LostWhy } from "./rpc";
-import { castBlocker, castWaitMin, digWaitSec, type CastBlocker, type FishingState } from "./state";
+import { castBlocker, castWaitMin, dayCapped, digWaitSec, type CastBlocker, type FishingState } from "./state";
 
 // The fishing HUD's Vietnamese texts (spec §6, §10.1, §13). Pure.
 
@@ -10,6 +10,8 @@ export const NOT_LOADED = "Chưa tải được giỏ đồ — bấm “Tải l
 export const LOADING = "Đang tải giỏ đồ…";
 export const BAIT_FULL = "Hộp mồi đầy rồi.";
 export const SONG_BONUS = "🎵 Bài bạn gọi đã phát xong: +10 xu";
+/** The daily cast cap (anti-cheat spec §12.4). */
+export const DAILY_LIMIT_TEXT = "Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!";
 
 export function dailyText(amount: number): string {
   return `🪙 Điểm danh hôm nay: +${amount} xu`;
@@ -34,10 +36,12 @@ export function blockerText(b: CastBlocker, waitMin: number): string {
     case "hands_full": return "Tay đang cầm cá — ra vựa bán hoặc sắm xô nhé!";
     case "bucket_full": return "Xô đầy rồi — ra vựa bán bớt nhé!";
     case "cast_limit": return `Câu nhiều quá rồi, nghỉ tay chút nhé (còn ${Math.max(1, waitMin)} phút).`;
+    case "daily_limit": return DAILY_LIMIT_TEXT;
   }
 }
 
-/** The HUD prompt for an interactable: a dig spot counts down its cooldown, a fishing spot the hourly cap. */
+/** The HUD prompt for an interactable: a dig spot counts down its cooldown, a fishing spot the hourly cap and the daily
+ *  cap. */
 export function promptText(it: Interactable, s: FishingState | null, now: number | null): string {
   if (!s || now === null) return it.prompt;
   if (it.kind === "dig_spot") {
@@ -46,7 +50,8 @@ export function promptText(it: Interactable, s: FishingState | null, now: number
   }
   if (it.kind === "fish_spot") {
     const min = castWaitMin(s, now);
-    return min > 0 ? `Nghỉ tay — còn ${min} phút` : it.prompt;
+    if (min > 0) return `Nghỉ tay — còn ${min} phút`;
+    return dayCapped(s, now) ? "Hết lượt câu hôm nay" : it.prompt;
   }
   return it.prompt;
 }

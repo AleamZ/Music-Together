@@ -1,13 +1,115 @@
 "use client";
 
+import ConfirmButton from "@/components/game/farm/ConfirmButton";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
-import { describeItem, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
+import {
+  AMMO_PELLET, FOOD_DOG, TANK_CHARGES, TOOL_SICKLE, TOOL_SLING, TOOL_SPRAYER, type CritterKind, type FarmItem,
+} from "@/lib/game/farm/catalog";
+import { critterCount, heldBox, lowerFirst, visitsLeft } from "@/lib/game/farm/gather";
+import type { FarmMine } from "@/lib/game/farm/state";
+import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
 import { baitCount, ownsItem, type FishingState, type Loadout } from "@/lib/game/fishing/state";
 import FishLine from "./FishLine";
 
-/** 🎒 Giỏ đồ (spec §10.2): the fish (hand, then bucket), the owned rods and bobbers, the baits, the bait box and bucket. */
-export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose }: {
+/** The field's side of the bag (v15.2 R29): my farm stock, the farm catalog's items and critter kinds (none before 0018),
+ *  the server's clock, and Nạp thuốc. */
+export interface BagFarm {
+  mine: FarmMine;
+  items: readonly FarmItem[];
+  critters: readonly CritterKind[];
+  now: number;
+  busy: boolean;
+  onLoad: (itemId: string) => void;
+}
+
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/** 🌾 Nông cụ (v15.2 §13.5): the sickle, the sprayer's tank, and a Nạp button per pesticide held. Loading over other
+ *  charges pours them away, so it asks first; a tank full of the same pesticide waits. */
+function FarmTools({ farm }: { farm: BagFarm }) {
+  const { mine, items, busy, onLoad } = farm;
+  const has = (id: string) => (mine.items[id] ?? 0) > 0;
+  const nameOf = (id: string) => items.find((i) => i.id === id)?.name ?? id;
+  const priceOf = (id: string) => formatXu(items.find((i) => i.id === id)?.price ?? 0);
+  const tank = mine.tank;
+  return (
+    <section>
+      <h3 className="text-xl text-burgundy">🌾 Nông cụ</h3>
+      <ul>
+        <li className="flex items-center gap-2 py-0.5">
+          <ItemIcon id={TOOL_SICKLE} scale={2} />
+          <span>{has(TOOL_SICKLE) ? "Liềm — gặt lúa 6 phần" : `Chưa có liềm — tiệm anh Hai bán ${priceOf(TOOL_SICKLE)}`}</span>
+        </li>
+        <li className="flex items-center gap-2 py-0.5">
+          <ItemIcon id={TOOL_SPRAYER} scale={2} />
+          <span>
+            {!has(TOOL_SPRAYER) ? `Chưa có bình phun — tiệm anh Hai bán ${priceOf(TOOL_SPRAYER)}`
+              : tank?.item ? `Bình phun — ${nameOf(tank.item)} · còn ${tank.charges}/${TANK_CHARGES} lần` : "Bình phun — trống"}
+          </span>
+        </li>
+        {has(TOOL_SPRAYER) && items.filter((i) => i.kind === "pesticide" && has(i.id)).map((p) => {
+          const full = tank?.item === p.id && tank.charges >= TANK_CHARGES;
+          const left = tank?.item && tank.charges > 0 ? tank : null;
+          return (
+            <li key={p.id} className="flex flex-wrap items-center gap-2 py-0.5">
+              <ConfirmButton disabled={busy || full} onConfirm={() => onLoad(p.id)}
+                warn={left ? `Bình còn ${left.charges} lần ${lower(nameOf(left.item!))}. Nạp ${lower(p.name)} sẽ đổ bỏ phần còn lại — nạp chứ?` : undefined}>
+                Nạp {lower(p.name)} ({mine.items[p.id]} chai)
+              </ConfirmButton>
+              {full && <span className="text-base opacity-80">Bình đang đầy thuốc này.</span>}
+            </li>
+          );
+        })}
+        {/* v17 §12.4: the ná and the dog food, once the shop sells them (0019) */}
+        {items.some((i) => i.id === TOOL_SLING) && (
+          <li className="flex items-center gap-2 py-0.5">
+            <ItemIcon id={TOOL_SLING} scale={2} />
+            <span>{has(TOOL_SLING) ? `Ná — còn ${mine.items[AMMO_PELLET] ?? 0} viên đạn đất` : `Chưa có ná — tiệm anh Hai bán ${priceOf(TOOL_SLING)}`}</span>
+          </li>
+        )}
+        {has(FOOD_DOG) && (
+          <li className="flex items-center gap-2 py-0.5">
+            <ItemIcon id={FOOD_DOG} scale={2} />
+            <span>Thức ăn chó — {mine.items[FOOD_DOG]} bịch</span>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+/** 🦀 Cua & ốc (v15.3 §13.4): the container and how full it is (or where to buy one), a line per kind held, and today's
+ *  visits left. */
+function Critters({ farm }: { farm: BagFarm }) {
+  const { mine, items, critters, now } = farm;
+  const box = heldBox(mine.items, items);
+  const n = critterCount(mine.critters);
+  const shop = items.filter((i) => i.kind === "critter_box").sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((b) => `${lowerFirst(b.name)} ${formatXu(b.price ?? 0)}`).join(", ");
+  return (
+    <section>
+      <h3 className="text-xl text-burgundy">🦀 Cua & ốc</h3>
+      <ul>
+        <li className="flex items-center gap-2 py-0.5">
+          {box ? <ItemIcon id={box.id} scale={2} /> : <span className="w-8" />}
+          <span>{box ? `${box.name} · ${n}/${mine.critterCap} con` : `Tay không · ${n}/${mine.critterCap} con — tiệm anh Hai bán ${shop}`}</span>
+        </li>
+        {critters.filter((k) => (mine.critters[k.id]?.n ?? 0) > 0).map((k) => (
+          <li key={k.id} className="flex items-center gap-2 py-0.5">
+            <ItemIcon id={k.id} scale={2} />
+            <span>{k.name} × {mine.critters[k.id].n} · {formatXu(mine.critters[k.id].xu)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-base opacity-80">Bán ở vựa cô Út · hôm nay còn {visitsLeft(mine.gather, now)} lượt bắt cua, mò ốc.</p>
+    </section>
+  );
+}
+
+/** 🎒 Giỏ đồ (spec §10.2, v15.2 R29, v15.3 §13.4): the fish (hand, then bucket), the owned rods and bobbers, the baits,
+ *  the bait box and bucket, and — once the field has loaded — the farm tools and the cua & ốc. */
+export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose, farm = null }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
   /** An RPC is in flight: the buttons wait. */
@@ -15,6 +117,7 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
   onEquip: (loadout: Loadout) => void;
   onRelease: (fishId: string) => void;
   onClose: () => void;
+  farm?: BagFarm | null;
 }) {
   if (!state || !catalog) {
     return (
@@ -102,6 +205,8 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
             </li>
           </ul>
         </section>
+        {farm && <FarmTools farm={farm} />}
+        {farm && farm.critters.length > 0 && <Critters farm={farm} />}
       </div>
     </ParchmentModal>
   );

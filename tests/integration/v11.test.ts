@@ -26,10 +26,12 @@ run("v11 per-member order limit", () => {
     if (error) throw error;
     return (Array.isArray(data) ? data[0] : data) as { room_id: string; member_id: string };
   };
+  /** 0015 takes 11-character YouTube ids only: the short test ids are padded. */
+  const vid = (id: string) => id.padEnd(11, "0");
   const add = (roomId: string, token: string, videoId: string) =>
-    db.rpc("add_queue_item", { p_room_id: roomId, p_session_token: token, p_video_id: videoId, p_title: videoId, p_thumb: null, p_duration: 100 });
+    db.rpc("add_queue_item", { p_room_id: roomId, p_session_token: token, p_video_id: vid(videoId), p_title: videoId, p_thumb: null, p_duration: 100 });
   const addMany = (roomId: string, token: string, ids: string[], duration = 100) =>
-    db.rpc("add_queue_items", { p_room_id: roomId, p_session_token: token, p_items: ids.map((id) => ({ video_id: id, title: id, thumb: null, duration })) });
+    db.rpc("add_queue_items", { p_room_id: roomId, p_session_token: token, p_items: ids.map((id) => ({ video_id: vid(id), title: id, thumb: null, duration })) });
   const settings = (roomId: string, token: string, maxOrders: number | null, approval = false) =>
     db.rpc("update_room_settings", {
       p_room_id: roomId, p_session_token: token, p_max_duration_seconds: 600, p_require_approval: approval, p_banned_keywords: [],
@@ -71,14 +73,14 @@ run("v11 per-member order limit", () => {
     const member = await reg(uniq("mem")); await join(room.code, member.token);
     expect((await settings(room.room_id, admin.token, 2)).error).toBeNull();
     const { data, error } = await db.rpc("add_queue_items", { p_room_id: room.room_id, p_session_token: member.token, p_items: [
-      { video_id: "p1", title: "ok", thumb: null, duration: 100 },
-      { video_id: "p2", title: "too long", thumb: null, duration: 700 },
-      { video_id: "p3", title: "ok", thumb: null, duration: 100 },
-      { video_id: "p4", title: "ok", thumb: null, duration: 100 },
+      { video_id: vid("p1"), title: "ok", thumb: null, duration: 100 },
+      { video_id: vid("p2"), title: "too long", thumb: null, duration: 700 },
+      { video_id: vid("p3"), title: "ok", thumb: null, duration: 100 },
+      { video_id: vid("p4"), title: "ok", thumb: null, duration: 100 },
     ] });
     expect(error).toBeNull(); expect(data).toBe(2);
     const { data: rows } = await db.from("queue_items").select("youtube_video_id").eq("room_id", room.room_id).order("position");
-    expect(rows).toEqual([{ youtube_video_id: "p1" }, { youtube_video_id: "p3" }]);
+    expect(rows).toEqual([{ youtube_video_id: vid("p1") }, { youtube_video_id: vid("p3") }]);
     const again = await addMany(room.room_id, member.token, ["p5"]);
     expect(again.error).toBeNull(); expect(again.data).toBe(0);
   });

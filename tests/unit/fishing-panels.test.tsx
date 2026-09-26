@@ -4,6 +4,8 @@ import BagPanel from "@/components/game/fishing/BagPanel";
 import DepotPanel from "@/components/game/fishing/DepotPanel";
 import RecordsPanel from "@/components/game/fishing/RecordsPanel";
 import ShopPanel from "@/components/game/fishing/ShopPanel";
+import { critterFromRow, farmItemFromRow } from "@/lib/game/farm/catalog";
+import type { FarmMine, Tank } from "@/lib/game/farm/state";
 import { shopItemFromRow, speciesFromRow, type FishingCatalog, type ShopItemRow } from "@/lib/game/fishing/catalog";
 import type { FishingBoard } from "@/lib/game/fishing/rpc";
 import { parseFishingState } from "@/lib/game/fishing/state";
@@ -102,6 +104,7 @@ describe("RecordsPanel", () => {
   const BOARD: FishingBoard = {
     records: [{ speciesId: "ca_loc", username: "Dat", weightG: 2400 }], mine: [{ speciesId: "ca_ro", weightG: 210 }],
     richest: [{ username: "Dat", coins: 900 }, { username: "An", coins: 120 }], myRank: 2, myCoins: 120,
+    prices: { mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12, ca_loc: 0.93 } },
   };
   it("shows the room records next to mine, and the richest members", async () => {
     render(<RecordsPanel catalog={CATALOG} load={async () => BOARD} onClose={() => {}} />);
@@ -117,5 +120,117 @@ describe("RecordsPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Thử lại" }));
     expect(await screen.findByText("Dat · 2,4 kg")).toBeInTheDocument();
     expect(load).toHaveBeenCalledTimes(2);
+  });
+  it("shows the room's fish prices: the multiplier, when they change, and each species now", async () => {
+    render(<RecordsPanel catalog={CATALOG} load={async () => BOARD} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
+    expect(await screen.findByText("Hệ số phòng ×2,24 · tài sản trung bình 100.000 xu · giá đổi lúc 15:00")).toBeInTheDocument();
+    const [, ro, loc] = screen.getAllByRole("row");
+    expect(within(ro).getByText("45 xu/kg")).toBeInTheDocument();
+    expect(within(ro).getByText("113 xu/kg ▲")).toBeInTheDocument();
+    expect(within(loc).getByText("60 xu/kg")).toBeInTheDocument();
+    expect(within(loc).getByText("125 xu/kg ▼")).toBeInTheDocument();
+    expect(screen.getByText("Giá chốt lúc câu được cá; bán sau vẫn giữ giá đó.")).toBeInTheDocument();
+  });
+  it("says so when the server sends no fish prices", async () => {
+    render(<RecordsPanel catalog={CATALOG} load={async () => ({ ...BOARD, prices: null })} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
+    expect(await screen.findByText("Chưa có bảng giá.")).toBeInTheDocument();
+  });
+});
+
+describe("BagPanel, Nông cụ (v15.2 R29)", () => {
+  const farmItem = (id: string, kind: string, name: string, price: number, over: Record<string, unknown> = {}) => farmItemFromRow({
+    id, kind, name, price, sort_order: 0, variety: null, fert: null, pest_target: null, capacity: null, ...over,
+  });
+  const ITEMS = [
+    farmItem("tool_sickle", "tool", "Liềm", 1500), farmItem("tool_sprayer", "tool", "Bình phun", 5000),
+    farmItem("spray_insect", "pesticide", "Thuốc trừ sâu", 700, { pest_target: "insect" }),
+    farmItem("spray_fungus", "pesticide", "Thuốc trừ bệnh", 900, { pest_target: "fungus" }),
+  ];
+  const mine = (items: Record<string, number>, tank: Tank | null): FarmMine => ({
+    items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
+    rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
+  });
+  const bag = (m: FarmMine) => {
+    const onLoad = vi.fn();
+    render(<BagPanel state={STATE} catalog={CATALOG} busy={false} onEquip={() => {}} onRelease={() => {}} onClose={() => {}}
+      farm={{ mine: m, items: ITEMS, critters: [], now: 0, busy: false, onLoad }} />);
+    return onLoad;
+  };
+
+  it("is not there before the field has loaded", () => {
+    render(<BagPanel state={STATE} catalog={CATALOG} busy={false} onEquip={() => {}} onRelease={() => {}} onClose={() => {}} />);
+    expect(screen.queryByText("🌾 Nông cụ")).toBeNull();
+  });
+
+  it("says where to buy the tools", () => {
+    bag(mine({}, null));
+    expect(screen.getByText("🌾 Nông cụ")).toBeInTheDocument();
+    expect(screen.getByText("Chưa có liềm — tiệm anh Hai bán 1.500 xu")).toBeInTheDocument();
+    expect(screen.getByText("Chưa có bình phun — tiệm anh Hai bán 5.000 xu")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Nạp/ })).toBeNull();
+  });
+
+  it("shows the tank, and asks before pouring another pesticide's charges away", () => {
+    const onLoad = bag(mine({ tool_sickle: 1, tool_sprayer: 1, spray_insect: 2, spray_fungus: 1 }, { item: "spray_fungus", charges: 2 }));
+    expect(screen.getByText("Liềm — gặt lúa 6 phần")).toBeInTheDocument();
+    expect(screen.getByText("Bình phun — Thuốc trừ bệnh · còn 2/3 lần")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Nạp thuốc trừ sâu (2 chai)" }));
+    expect(screen.getByText("⚠️ Bình còn 2 lần thuốc trừ bệnh. Nạp thuốc trừ sâu sẽ đổ bỏ phần còn lại — nạp chứ?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
+    expect(onLoad).toHaveBeenCalledWith("spray_insect");
+  });
+
+  it("loads an empty tank at once, and waits while it is full of the same", () => {
+    const onLoad = bag(mine({ tool_sprayer: 1, spray_insect: 1 }, { item: null, charges: 0 }));
+    expect(screen.getByText("Bình phun — trống")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Nạp thuốc trừ sâu (1 chai)" }));
+    expect(onLoad).toHaveBeenCalledWith("spray_insect");
+    cleanup();
+    bag(mine({ tool_sprayer: 1, spray_insect: 1 }, { item: "spray_insect", charges: 3 }));
+    expect(screen.getByRole("button", { name: "Nạp thuốc trừ sâu (1 chai)" })).toBeDisabled();
+    expect(screen.getByText("Bình đang đầy thuốc này.")).toBeInTheDocument();
+  });
+});
+
+describe("BagPanel, Cua & ốc (v15.3 §13.4)", () => {
+  const farmItem = (id: string, kind: string, name: string, price: number, over: Record<string, unknown> = {}) => farmItemFromRow({
+    id, kind, name, price, sort_order: 0, variety: null, fert: null, pest_target: null, capacity: null, ...over,
+  });
+  const ITEMS = [
+    farmItem("tool_sickle", "tool", "Liềm", 1500),
+    farmItem("box_bucket", "critter_box", "Xô nhựa", 1500, { sort_order: 10, capacity: 15 }),
+    farmItem("box_basket", "critter_box", "Giỏ tre", 6000, { sort_order: 20, capacity: 30 }),
+  ];
+  const KINDS = [
+    critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 }),
+    critterFromRow({ id: "cua_gach", name: "Cua gạch", grp: "crab", base_price: 45, sort_order: 20 }),
+  ];
+  const mine = (items: Record<string, number>, critters: FarmMine["critters"], cap: number, left = 187, reset: number | null = null): FarmMine => ({
+    items, rice: {}, coins: 0, giftClaimed: true, produce: {}, tank: null, critters, critterCap: cap,
+    gather: { readyAt: {}, leftToday: left, dayResetsAt: reset }, rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
+  });
+  const bag = (m: FarmMine, critters = KINDS, now = 0) => render(<BagPanel state={STATE} catalog={CATALOG} busy={false} onEquip={() => {}}
+    onRelease={() => {}} onClose={() => {}} farm={{ mine: m, items: ITEMS, critters, now, busy: false, onLoad: () => {} }} />);
+
+  it("shows the container, the critters held and today's visits left", () => {
+    bag(mine({ box_basket: 1 }, { cua_dong: { n: 11, xu: 286 }, cua_gach: { n: 1, xu: 100 } }, 33));
+    expect(screen.getByText("🦀 Cua & ốc")).toBeInTheDocument();
+    expect(screen.getByText("Giỏ tre · 12/33 con")).toBeInTheDocument();
+    expect(screen.getByText("Cua đồng × 11 · 286 xu")).toBeInTheDocument();
+    expect(screen.getByText("Cua gạch × 1 · 100 xu")).toBeInTheDocument();
+    expect(screen.getByText("Bán ở vựa cô Út · hôm nay còn 187 lượt bắt cua, mò ốc.")).toBeInTheDocument();
+  });
+
+  it("says where to buy a container, and counts a new day's visits once it has begun", () => {
+    bag(mine({}, { cua_dong: { n: 2, xu: 24 } }, 3, 0, 5_000), KINDS, 5_000);
+    expect(screen.getByText("Tay không · 2/3 con — tiệm anh Hai bán xô nhựa 1.500 xu, giỏ tre 6.000 xu")).toBeInTheDocument();
+    expect(screen.getByText("Bán ở vựa cô Út · hôm nay còn 200 lượt bắt cua, mò ốc.")).toBeInTheDocument();
+  });
+
+  it("is not there before 0018", () => {
+    bag(mine({}, {}, 3), []);
+    expect(screen.queryByText("🦀 Cua & ốc")).toBeNull();
   });
 });

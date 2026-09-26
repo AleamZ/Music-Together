@@ -5,7 +5,11 @@ import ChatDrawer from "@/components/room/ChatDrawer";
 import MemberList from "@/components/room/MemberList";
 import RoomChartModal from "@/components/room/RoomChartModal";
 import SettingsDialog from "@/components/room/SettingsDialog";
+import { useAnticheat } from "@/hooks/useAnticheat";
+import { useCardsController } from "@/hooks/useCardsController";
 import { useChat } from "@/hooks/useChat";
+import { useDog } from "@/hooks/useDog";
+import { useFarmController } from "@/hooks/useFarmController";
 import { useFishingController } from "@/hooks/useFishingController";
 import { useLooks } from "@/hooks/useLooks";
 import { useMyCharacter } from "@/hooks/useMyCharacter";
@@ -15,16 +19,27 @@ import type { RoomView } from "@/hooks/useRoom";
 import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
 import { formatChatMessageBody, parseChatMessageBody } from "@/lib/chat-helpers";
 import { formatClock } from "@/lib/format";
+import { critterCount } from "@/lib/game/farm/gather";
+import { dogHudText, produceSummary } from "@/lib/game/farm/messages";
 import { freshAnnouncements } from "@/lib/game/fishing/announce";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
-import { badgesFor, buildRoster, freshChatBubbles, roleAccounts } from "@/lib/game/social";
+import { overlayLocks } from "@/lib/game/overlays";
+import { badgesFor, buildRoster, freshChatBubbles, isHereOn, roleAccounts } from "@/lib/game/social";
 import type { Look } from "@/lib/game/types";
 import { mapCounts } from "@/lib/presence-modes";
 import type { RoomDerived } from "@/lib/room-derived";
 import { getCategoryLabel } from "@/lib/sponsorblock";
+import AnticheatChip from "./AnticheatChip";
+import AnticheatModal from "./AnticheatModal";
+import CardOverlays from "./cards/CardOverlays";
+import CardSeatChip from "./cards/CardSeatChip";
 import CharacterEditor from "./CharacterEditor";
+import DogPanel from "./farm/DogPanel";
+import FarmOverlays from "./farm/FarmOverlays";
+import RatChip from "./farm/RatChip";
+import { FarmTasksButton } from "./farm/FarmTasks";
 import FishingHud from "./fishing/FishingHud";
 import FishingOverlays from "./fishing/FishingOverlays";
 import GameCanvas, { type GameCanvasHandle } from "./GameCanvas";
@@ -43,15 +58,15 @@ export interface GameShellProps {
   onExitGame: () => void;
 }
 
-type Panel = "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | null;
+type Panel = "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "dog" | null;
 
 /** A portal fades to dark in FADE_MS, the new map starts, and it fades back in after the map's first frame. */
 const FADE_MS = 250;
 
-/** Game mode: the room world (hall + pond) and the parchment HUD. Music, queue, chat and roles are the same as the
+/** Game mode: the room world (hall, pond and field) and the parchment HUD. Music, queue, chat and roles are the same as the
  *  classic view. */
 export default function GameShell({ view, derived, playback, sponsorBlock, onExitGame }: GameShellProps) {
-  const { state, role, presence, onlineIds, token, accountId, username, myMemberId, setPresenceMap } = view;
+  const { state, role, presence, onlineIds, token, accountId, username, myMemberId, setPresenceMap, setPresenceDog } = view;
   const room = state.room!;
   const { members } = state;
   const { admin_member_id, dj_member_id } = room;
@@ -112,9 +127,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const myBadges = badgesFor(accountId, roles, false);
   const myName = username || members.find((m) => m.account_id === accountId)?.username || "Bạn";
   const creating = savedLook !== null && !exists;
-  useEffect(() => {
-    canvasRef.current?.setLocal({ name: myName, badges: myBadges, look: myLook });
-  }, [myName, myBadges, myLook]);
 
   // --- everyone else on this map (room members only: presence keys and game messages from anyone else are ignored)
   const memberIds = useMemo(() => new Set(members.map((m) => m.account_id)), [members]);
@@ -137,12 +149,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     }
   }, [messages]);
 
-  // --- rare catches the server announced in the chat (my own catch shows the catch card instead)
+  // --- rare catches and land sales the server announced in the chat (my own catch shows the catch card instead)
   const announcedRef = useRef(new Set<string>());
   useEffect(() => {
     for (const { id, announcement } of freshAnnouncements(messages, announcedRef.current, Date.now())) {
       announcedRef.current.add(id);
-      if (announcement.accountId !== accountId) showToast(announcement.text);
+      if (announcement.kind !== "catch" || announcement.accountId !== accountId) showToast(announcement.text);
     }
   }, [messages, accountId, showToast]);
 
@@ -156,8 +168,47 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: showToast });
   const { interact: fishingInteract, promptText, cancelCast, onFishingInput } = fishing;
 
-  // --- input is off while any panel or the create editor is open
-  const blocking = panel !== null || fishing.panel !== null || creating;
+  // --- farming: the field of this room, its panels, the due tasks, the plots on the canvas and the work progress
+  const farm = useFarmController({
+    token, roomId: room.id, accountId, mapId: travel.mapId, canvas: getCanvas, toast: showToast,
+    // the HUD's wallet is the fishing state's: fetch it again when the field moved my coins
+    onCoinsChanged: () => void fishing.data.reload(),
+  });
+  const { interact: farmInteract, promptText: farmPrompt } = farm;
+
+  // --- my dog (v17 §7.3, §12.3): learned on entering game mode, on the canvas behind me and in presence
+  const petDog = useCallback(() => canvasRef.current?.petDog(), []);
+  const dog = useDog({
+    token, field: farm.data.state, petDog, setPresenceDog, toast: showToast, onCoinsChanged: () => void fishing.data.reload(),
+  });
+  const dogName = dog.dog?.name ?? null, dogCoat = dog.dog?.coat ?? null, dogHungry = dog.hungry;
+  useEffect(() => {
+    canvasRef.current?.setLocal({
+      name: myName, badges: myBadges, look: myLook, dog: dogName !== null && dogCoat !== null ? { name: dogName, coat: dogCoat } : null, dogHungry,
+    });
+  }, [myName, myBadges, myLook, dogName, dogCoat, dogHungry]);
+  const { closePanel: closeFarmPanel } = farm;
+  const coopDog = { dog: dog.dog, busy: dog.busy, onAdopt: dog.adopt, onOpenDog: () => { closeFarmPanel(); setPanel("dog"); } };
+
+  // --- the card corner: the hall's labels, the table panels, the rules book, and the table I sit at (v16)
+  const isMember = useCallback((id: string) => memberIds.has(id), [memberIds]);
+  const cards = useCardsController({
+    token, roomId: room.id, accountId, mapId: travel.mapId, canvas: getCanvas, toast: showToast, isMember,
+    onCoinsChanged: () => void fishing.data.reload(),
+  });
+  const { interact: cardsInteract } = cards;
+
+  // --- anti-cheat: the warning or the ban after a strike, and the lock's countdown (anti-cheat spec §12.1)
+  const anticheat = useAnticheat();
+
+  // --- input is off while any panel, the farm work, the create editor or an anti-cheat modal is open; an Esc belongs to
+  //     an open overlay outside the field's own, not to the farm work
+  const { blocking, panelOpen } = overlayLocks({
+    panel: panel !== null, fishingPanel: fishing.panel !== null, creating, anticheatModal: anticheat.modal !== null,
+    farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
+    slingGame: farm.sling !== null,
+    cardPanel: cards.panel !== null, rulesBook: cards.rules !== null, dogPanel: panel === "dog",
+  });
   useEffect(() => {
     canvasRef.current?.setInputEnabled(!blocking);
   }, [blocking]);
@@ -188,9 +239,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         travelTo(it.to);
         break;
       default:
-        if (!fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
+        if (!farmInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, cancelCast]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast]);
 
   const leaveBroken = useCallback((message: string) => {
     window.alert(message);
@@ -210,10 +261,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const cardMember = card ? members.find((m) => m.account_id === card) : undefined;
   const cardPresence = card ? presence.find((p) => p.accountId === card) : undefined;
   const cardWhere = cardPresence?.mode === "classic" ? "🖥️ Đang ở giao diện cũ"
-    : cardPresence?.map === "pond" ? "🎣 Đang ở ao câu cá" : "🎮 Đang dạo quanh sảnh";
+    : cardPresence?.map === "pond" ? "🎣 Đang ở ao câu cá"
+    : cardPresence?.map === "field" ? "🌾 Đang ở đồng ruộng" : "🎮 Đang dạo quanh sảnh";
 
   return (
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "pond" ? "bg-[#5a8f32]" : "bg-[#2f6e8f]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
@@ -222,12 +274,15 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         arrive={travel.arrive}
         initial={{ name: myName, badges: myBadges, look: myLook }}
         isMember={(id) => memberIds.has(id)}
+        isHere={(id) => isHereOn(presence, id, travel.mapId)}
         onInteract={onInteract}
         onPromptChange={setPrompt}
         onActorClick={setCard}
         onConnectionChange={setConnected}
         onLookChanged={refresh}
         onFishingInput={onFishingInput}
+        onPlotChanged={farm.data.plotChanged}
+        onLocalMove={farm.moved}
         onFirstFrame={onFirstFrame}
         onUnsupported={onUnsupported}
         onFatal={onFatal}
@@ -243,16 +298,34 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           <div className="flex flex-col gap-1">
             <span className="max-w-44 truncate text-xl">{myBadges ? `${myBadges} ` : ""}{myName}</span>
             {!connected && <span className="text-base opacity-80">Đang kết nối thế giới…</span>}
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               <button type="button" className="pch-btn" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
                 👕 Tủ đồ
               </button>
               <button type="button" className="pch-btn" onClick={() => fishing.openPanel("bag")}>🎒 Giỏ đồ</button>
+              {dog.dog && (
+                <button type="button" className="pch-btn" onClick={() => setPanel("dog")}>{dogHudText(dog.dog.name, dog.hungry)}</button>
+              )}
+              {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
             </div>
-            <FishingHud state={fishing.data.state} failed={fishing.data.failed} onReload={() => void fishing.data.reload()} />
+            <FishingHud
+              state={fishing.data.state}
+              failed={fishing.data.failed}
+              onReload={() => void fishing.data.reload()}
+              riceLine={map.id === "field" && farm.data.state
+                ? produceSummary(farm.data.state.mine.rice, farm.data.state.mine.produce, critterCount(farm.data.state.mine.critters))
+                : null}
+            />
+            <AnticheatChip secondsLeft={anticheat.secondsLeft} />
+            {cards.seated && <CardSeatChip table={cards.seatTable} me={accountId} onOpen={() => cards.seated && cards.openPanel(cards.seated)} />}
           </div>
         </div>
-        <MapCounts counts={counts} />
+        <div className="flex flex-col items-center gap-1">
+          <MapCounts counts={counts} />
+          {map.id === "field" && (
+            <RatChip live={farm.data.state?.rats?.live.length ?? 0} onOpen={() => farm.openPanel({ kind: "handbook", tab: "rats" })} />
+          )}
+        </div>
         <HudNowPlaying
           room={room}
           current={derived.current}
@@ -295,11 +368,22 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           className="pch-btn pch-btn-primary absolute bottom-24 left-1/2 z-10 -translate-x-1/2 text-xl"
         >
           <span className="pointer-coarse:hidden">E · </span>
-          {promptText(prompt)}
+          {farmPrompt(prompt) ?? promptText(prompt)}
         </button>
       )}
 
-      <FishingOverlays fishing={fishing} />
+      <FishingOverlays
+        fishing={fishing}
+        // the bag's farm tools, once the field has loaded and the catalog has them (before 0016 it has none)
+        farm={farm.data.state && farm.data.catalog?.items.some((i) => i.kind === "tool")
+          ? {
+            mine: farm.data.state.mine, items: farm.data.catalog.items, critters: farm.data.catalog.critters, now: farm.now, busy: farm.busy,
+            onLoad: (id) => void farm.loadSprayer(id),
+          }
+          : null}
+      />
+      <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} dog={coopDog} />
+      <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} />
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
         <HudChatBar
@@ -334,12 +418,17 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         members={members}
         room={room}
       />
+      {panel === "dog" && dog.dog && (
+        <DogPanel dog={dog.dog} food={dog.food} busy={dog.busy} onFeed={() => void dog.feed()}
+          onRename={dog.rename} onPet={() => void dog.pet()} onClose={close} />
+      )}
       {panel === "wardrobe" && savedLook && (
         <CharacterEditor mode="edit" initial={savedLook} token={token} onSaved={onSaved} onClose={close} onBackToClassic={onExitGame} />
       )}
       {creating && (
         <CharacterEditor mode="create" initial={DEFAULT_LOOK} token={token} onSaved={onSaved} onClose={onExitGame} onBackToClassic={onExitGame} />
       )}
+      {anticheat.modal && <AnticheatModal kind={anticheat.modal} reason={anticheat.reason} onClose={anticheat.dismiss} />}
     </div>
   );
 }
