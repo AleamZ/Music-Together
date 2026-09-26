@@ -1,9 +1,9 @@
 import type { PixelIcon } from "./icons";
 
-// 16×16 icons for the farm (spec §14, v15.2 §15, v15.3 §15): seed sacks in the variety's colour, fertilizer bags with
-// their nutrient on the label, pesticide bottles with their pest, rice sacks (wet/dry); hoa-màu seeds, the sickle, the
-// sprayer and the hoa màu itself; the critter containers and the critters. "." transparent, "o" outline, other letters
-// from the icon's own palette. Original art.
+// 16×16 icons for the farm (spec §14, v15.2 §15, v15.3 §15, v17 §14): seed sacks in the variety's colour, fertilizer
+// bags with their nutrient on the label, pesticide bottles with their pest, rice sacks (wet/dry); hoa-màu seeds, the
+// sickle, the sprayer and the hoa màu itself; the critter containers and the critters; the ná, its pellets, the dog's
+// food and bowl, and the rat. "." transparent, "o" outline, other letters from the icon's own palette. Original art.
 
 const SEED_SACK = [
   "................",
@@ -391,6 +391,118 @@ const OC_BUOU_VANG: PixelIcon = {
   pal: { y: "#c9955a", Y: "#8a5a2b", e: "#f29bb5" },
 };
 
+// v17: the ná (a forked stick, its band and pouch), three clay pellets on a cloth, a sack of dog food with a bone, the
+// map rat's run pose outlined, and a clay bowl of kibble
+const TOOL_SLING: PixelIcon = {
+  rows: [
+    "................",
+    "..oo........oo..",
+    ".oyYkk....kkyYo.",
+    ".oyYo.kppk.oyYo.",
+    "..oyYo.pp.oyYo..",
+    "...oyYo..oyYo...",
+    "....oyYooyYo....",
+    ".....oyyyYo.....",
+    "......oyYo......",
+    "......oyYo......",
+    "......oyYo......",
+    "......oyYo......",
+    "......oyYo......",
+    "......oyYo......",
+    ".......oo.......",
+    "................",
+  ],
+  pal: { y: "#8b5a33", Y: "#6e4424", k: "#2e2a2a", p: "#b0643a" },
+};
+
+const AMMO_PELLET: PixelIcon = {
+  rows: [
+    "................",
+    "................",
+    "................",
+    "......oooo......",
+    ".....oLaaao.....",
+    ".....oaaaao.....",
+    ".....oaaaao.....",
+    "..oooooooooooo..",
+    "..oLaaaooLaaao..",
+    "..oaaaaooaaaao..",
+    "..oaaaaooaaaao..",
+    "cccooooccooooccc",
+    "cccccccccccccccc",
+    ".cccccccccccccc.",
+    "................",
+    "................",
+  ],
+  pal: { a: "#a0522d", L: "#c9784a", c: "#d9c9a0" },
+};
+
+const FOOD_DOG: PixelIcon = {
+  rows: [
+    "................",
+    "......oooo......",
+    ".....osssso.....",
+    "......oSSo......",
+    ".....osssSo.....",
+    "....osssssSo....",
+    "...ossssssSSo...",
+    "..osssssssSSSo..",
+    "..osksssskSSSo..",
+    "..oskkkkkkSSSo..",
+    "..osksssskSSSo..",
+    "..ossssssssSSo..",
+    "...osssssssSo...",
+    "....oooooooo....",
+    "................",
+    "................",
+  ],
+  pal: { s: "#d9c27a", S: "#b8a05a", k: "#f4efe0" },
+};
+
+const RAT_ICON: PixelIcon = {
+  rows: [
+    "................",
+    "................",
+    "................",
+    "..........pp....",
+    ".........offo...",
+    "......oooffffo..",
+    "....oofffffffeo.",
+    "...offssffffffpo",
+    "p.offsssfffffo..",
+    "p.offfffffffo...",
+    ".pofsbbbbbbso...",
+    "..ooso.....so...",
+    "....so.....so...",
+    "....oo.....oo...",
+    "................",
+    "................",
+  ],
+  pal: { f: "#7a6450", s: "#5a4636", b: "#b8a48a", p: "#c98f86", e: "#1c1410" },
+};
+
+const DOG_BOWL: PixelIcon = {
+  rows: [
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "......k.kk......",
+    "....kkkkkkkk....",
+    "..oooooooooooo..",
+    "..obbbbbbbbbBo..",
+    "...obbbbbbbBo...",
+    "...obbbbbbbBo...",
+    "....oBBBBBBo....",
+    ".....oooooo.....",
+    "................",
+    "................",
+    "................",
+  ],
+  pal: { b: "#b0643a", B: "#8a4a26", k: "#8b5a33" },
+};
+
 export const FARM_ICONS: Record<string, PixelIcon> = {
   seed_short: seedSack("#7fb548", "#5a8f32"),
   seed_nep: seedSack("#efe6cf", "#cfc3a3"),
@@ -430,4 +542,10 @@ export const FARM_ICONS: Record<string, PixelIcon> = {
   cua_gach: { rows: CRAB_BELLY, pal: { ...CRAB_PAL, g: "#e0662f", G: "#f29b4a" } },
   oc_dong: OC_DONG,
   oc_buou_vang: OC_BUOU_VANG,
+  // v17
+  tool_sling: TOOL_SLING,
+  ammo_pellet: AMMO_PELLET,
+  food_dog: FOOD_DOG,
+  rat: RAT_ICON,
+  dog_bowl: DOG_BOWL,
 };

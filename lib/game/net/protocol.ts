@@ -9,10 +9,11 @@ export type Unit = -1 | 0 | 1;
 /** Fishing phase (v14): 0 idle, 1 line out, 2 bite, 3 reeling. */
 export type FishPhase = 0 | 1 | 2 | 3;
 /** Farm animation (v15 spec §12), played for 2.5 s; 0 stops it. */
-export type FarmAnim = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
-/** v15.2 adds dig (đào khoai) and pick (bẻ bắp, hái ớt); older clients drop codes they do not know. */
+export type FarmAnim = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+/** v15.2 adds dig (đào khoai) and pick (bẻ bắp, hái ớt), v17 pet (a dog) and aim (a ná); older clients drop codes they
+ *  do not know. */
 export const FARM_ANIM = {
-  stop: 0, transplant: 1, harvest: 2, pump: 3, spray: 4, fertilize: 5, crab: 6, snails: 7, prepare: 8, dig: 9, pick: 10,
+  stop: 0, transplant: 1, harvest: 2, pump: 3, spray: 4, fertilize: 5, crab: 6, snails: 7, prepare: 8, dig: 9, pick: 10, pet: 11, aim: 12,
 } as const satisfies Record<string, FarmAnim>;
 /** The highest plot number on the field; `fp` with p = 0 means the drying yard or the offers. */
 export const MAX_PLOT = 10;
@@ -43,7 +44,7 @@ const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 
 const isUnit = (v: unknown): v is Unit => v === -1 || v === 0 || v === 1;
 const isCode = (v: unknown): v is FacingCode => v === "u" || v === "d" || v === "l" || v === "r";
 const isPhase = (v: unknown): v is FishPhase => v === 0 || v === 1 || v === 2 || v === 3;
-const isFarmAnim = (v: unknown): v is FarmAnim => isInt(v) && v >= 0 && v <= 10;
+const isFarmAnim = (v: unknown): v is FarmAnim => isInt(v) && v >= 0 && v <= 12;
 const isSpecies = (v: unknown): v is string => typeof v === "string" && /^[a-z_]{1,32}$/.test(v);
 /** Optional hand fish: absent → undefined (unchanged), else null or a species id; anything else is malformed. */
 const handOf = (v: unknown): string | null | undefined | false => (v === undefined || v === null || isSpecies(v) ? v : false);
