@@ -1,4 +1,5 @@
 import { ANH_HAI_LOOK, CHU_TAM_LOOK, CO_UT_LOOK } from "@/lib/game/look";
+import type { Vec } from "@/lib/game/types";
 import { FIELD_EAST_ARRIVE, FIELD_WEST_ARRIVE, HALL_FIELD_ARRIVE, POND_FIELD_ARRIVE } from "./arrivals";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, Npc, PlotGeom, PropPlacement, Rect } from "./types";
@@ -30,6 +31,10 @@ export const FIELD_PLOTS: PlotGeom[] = [
     no: 5 + row * 3 + i, kind: "village", rect: { x, y, w: PLOT_W, h: VILLAGE_H }, post: { x: x + 10, y: y - 4 },
   }))),
 ];
+
+/** v17 (spec §5.4): a rat hole on the bund by each plot, 100 px along it — north of plots 1–4 under the bamboo (y 46),
+ *  between the village rows for plots 5–7 (y 310), on the south edge for plots 8–10 (y 412). Indexed by plot − 1. */
+export const RAT_HOLES: readonly Vec[] = FIELD_PLOTS.map((g) => ({ x: g.rect.x + 100, y: g.no <= 4 ? 46 : g.no <= 7 ? 310 : 412 }));
 
 /** Hợp tác xã (chú Tám), Tiệm vật tư nông nghiệp (anh Hai), Vựa lúa (cô Út) and the pump house (decoration). */
 export const COOP: Rect = { x: 680, y: 44, w: 112, h: 92 };

@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { uplandFromRow, varietyFromRow, type UplandCrop, type UplandCropRow, type Variety } from "@/lib/game/farm/catalog";
 import { cropModel, cropYield, HOUR_MS, partKg, yieldEstimate, type CropModel } from "@/lib/game/farm/crop";
 import {
-  FULL_CAPS, parseRatBag, parseRatCaps, parseRats, RAT, ratFactor, ratFleePos, ratHours, ratPos, type RatLogEntry,
+  FULL_CAPS, nearestRat, parseRatBag, parseRatCaps, parseRats, RAT, ratAt, ratFactor, ratFleePos, ratHome, ratHours, ratPos,
+  type RatLogEntry,
 } from "@/lib/game/farm/rats";
 import type { CropView } from "@/lib/game/farm/state";
 import { upEstimate, uplandModel, upYield, type UplandModel } from "@/lib/game/farm/upland";
@@ -164,6 +165,39 @@ describe("a rat's path (§5.4)", () => {
     expect(half.x).toBeCloseTo((p.x + 172) / 2, 9);
     expect(half.y).toBeCloseTo((p.y + 46) / 2, 9);
     expect(ratFleePos(seed, since, end, hole, plot, end + 1500)).toBeNull();
+  });
+});
+
+describe("the rats on the field map (§5.4, §7.2)", () => {
+  const T = Date.parse("2026-09-26T08:00:00Z");
+  it("finds each plot's hole and rect, and draws a live rat from them", () => {
+    expect(ratHome(1)).toEqual({ hole: { x: 172, y: 46 }, rect: { x: 72, y: 52, w: 128, h: 96 } });
+    expect(ratHome(9)).toEqual({ hole: { x: 324, y: 412 }, rect: { x: 224, y: 328, w: 128, h: 76 } });
+    expect([ratHome(0), ratHome(11)]).toEqual([null, null]);
+    const r = { id: 1, plot: 1, since: T, seed: 1234567 };
+    expect(ratAt(r, T + 20_000)).toEqual(ratPos(1234567, T, { x: 172, y: 46 }, { x: 72, y: 52, w: 128, h: 96 }, T + 20_000));
+    expect(ratAt(r, T - 1)).toBeNull();
+    expect(ratAt({ ...r, plot: 12 }, T + 20_000)).toBeNull();
+  });
+  it("finds the rat drawn nearest a point, within the radius", () => {
+    // at `since` a rat is at its hole: plot 5's is (172, 310), plot 6's (324, 310), plot 1's (172, 46)
+    const rat = (id: number, plot: number) => ({ id, plot, since: T, seed: id });
+    const live = [rat(1, 5), rat(2, 6), rat(3, 1)];
+    expect(nearestRat(live, { x: 180, y: 310 }, T, 96)?.id).toBe(1);
+    expect(nearestRat(live, { x: 300, y: 310 }, T, 96)?.id).toBe(2);
+    expect(nearestRat(live, { x: 247, y: 310 }, T, 96)?.id).toBe(1);
+    expect(nearestRat(live, { x: 172, y: 406 }, T, 96)?.id).toBe(1);
+    expect(nearestRat(live, { x: 172, y: 407 }, T, 96)).toBeNull();
+    expect(nearestRat(live, { x: 172, y: 86 }, T, 40)?.id).toBe(3);
+    expect(nearestRat(live, { x: 172, y: 87 }, T, 40)).toBeNull();
+    expect(nearestRat(live, { x: 180, y: 310 }, T - 1, 96)).toBeNull();
+    expect(nearestRat([], { x: 180, y: 310 }, T, 96)).toBeNull();
+  });
+  it("measures from where the rat is drawn now", () => {
+    const r = { id: 7, plot: 5, since: T, seed: 7 };
+    const t = T + 30_000, p = ratAt(r, t)!;
+    expect(nearestRat([r], { x: p.x + 90, y: p.y }, t, 96)?.id).toBe(7);
+    expect(nearestRat([r], { x: p.x, y: p.y + 97 }, t, 96)).toBeNull();
   });
 });
 
