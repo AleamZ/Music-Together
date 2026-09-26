@@ -22,6 +22,7 @@ const CATALOG: FarmCatalog = {
     item("fert_manure", "fertilizer", "Phân chuồng hoai", { fert: "manure" }),
     item("fert_urea", "fertilizer", "Phân urê", { fert: "urea" }),
     item("spray_hopper", "pesticide", "Thuốc trừ rầy", { pest_target: "hopper" }),
+    item("tool_sickle", "tool", "Liềm"),
   ],
 };
 const ME = { id: "me", name: "Me" };
@@ -127,6 +128,14 @@ describe("plotActions", () => {
     // a running harvester takes every button
     const running = ripe([[0, 3], [55, 1]], { harvester: { startedAt: at(61), endsAt: at(61) + 30_000 } });
     expect(plotActions(running, "me", nep, CATALOG, SICKLE, at(61))).toEqual([]);
+  });
+  it("waits for 0016 to cut rice: a catalog with no tools has no sickle to sell and no harvest_part", () => {
+    const ripe = (water: Array<[number, number]>) => plot(crop({ sowAt: at(3), transplantAt: at(12) }, water));
+    const before0016: FarmCatalog = { ...CATALOG, items: CATALOG.items.filter((i) => i.kind !== "tool") };
+    const why = (p: PlotView, h: number) => find(plotActions(p, "me", nep, before0016, ALL, at(h)), "round")?.why;
+    expect(why(ripe([[0, 3], [55, 1]]), 61)).toBe("Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.");
+    expect(why(ripe([[0, 3], [50, 1]]), 55)).toBe("Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.");
+    expect(plotPrompt(ripe([[0, 3], [55, 1]]), "me", nep, before0016, SICKLE, at(61))).toBe("Xem thửa 5");
   });
   it("says which fertilizer and spray help, and warns about the rest", () => {
     const list = plotActions(plot(crop({ sowAt: at(3), transplantAt: at(12) })), "me", nep, CATALOG, ALL, at(17));

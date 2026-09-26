@@ -31,7 +31,10 @@ const nep = varietyFromRow({ id: "nep", name: "Nếp", scale: 1, base_kg: 75, pr
 const CATALOG = {
   varieties: [nep],
   uplands: [],
-  items: [farmItemFromRow({ id: "spray_hopper", kind: "pesticide", name: "Thuốc trừ rầy", price: 80, sort_order: 20, variety: null, fert: null, pest_target: "hopper", capacity: null })],
+  items: [
+    farmItemFromRow({ id: "spray_hopper", kind: "pesticide", name: "Thuốc trừ rầy", price: 80, sort_order: 20, variety: null, fert: null, pest_target: "hopper", capacity: null }),
+    farmItemFromRow({ id: "tool_sickle", kind: "tool", name: "Liềm", price: 1500, sort_order: 10, variety: null, fert: null, pest_target: null, capacity: null }),
+  ],
 };
 
 /** Plot 5: my ripe nếp, drained, with brown planthoppers (I have a sickle); plot 6: Lan's; plot 1: for sale. */
