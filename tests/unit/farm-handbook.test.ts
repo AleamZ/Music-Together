@@ -178,3 +178,62 @@ describe("v15.3: the Cua & ốc tab (§14)", () => {
     expect(handbookPage("tips", [nep])[0].lines).not.toContain(tip);
   });
 });
+
+describe("v17: the Chuột, chó & ná tab (§13)", () => {
+  const UPLANDS = (fixtures as unknown as { crops: UplandCropRow[] }).crops.map(uplandFromRow);
+  const KINDS = [critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 })];
+  const SLING = farmItemFromRow({
+    id: "tool_sling", kind: "tool", name: "Ná", price: 3000, sort_order: 30, variety: null, fert: null, pest_target: null, capacity: null,
+  });
+  it("comes last, once 0019 sells the ná", () => {
+    expect(handbookTabs(UPLANDS, KINDS, [SLING]).map(([, label]) => label)).toEqual([
+      "Quy trình", "Phân bón", "Sâu bệnh", "Nước", "Giống lúa", "Mẹo", "Khoai lang", "Bắp", "Ớt", "Nông cụ", "Cua & ốc", "Chuột, chó & ná",
+    ]);
+    expect(handbookTabs(UPLANDS, [], [SLING]).map(([tab]) => tab).at(-1)).toBe("rats");
+    expect(handbookTabs(UPLANDS, KINDS).map(([tab]) => tab)).not.toContain("rats");
+    expect(handbookPage("rats", [nep], UPLANDS, [])).toEqual([]);
+  });
+  it("reads the spec's lines verbatim", () => {
+    const page = handbookPage("rats", [nep], UPLANDS, [SLING]);
+    expect(page.map((s) => s.title)).toEqual(["Mùa chuột", "Ná", "Chó cỏ"]);
+    expect(page.map((s) => s.lines)).toEqual([
+      [
+        "Lúa, khoai lang, bắp chín là mùa chuột đồng. Chuột đào hang dưới bờ ruộng, cứ 10–20 phút lại có một con mò ra ăn một thửa đang chín; cả đồng cùng lúc tối đa 3 con. Ớt cay, chuột chê.",
+        "Mỗi con chuột ngồi trên thửa ăn mất 2% sản lượng mỗi giờ; cộng lại chuột lấy tối đa 10% một vụ. Bắt được trong 15 phút thì gần như không mất gì.",
+        "Chuột chỉ chịu đi khi bị bắt, hoặc khi thửa đó gặt xong cả 6 phần (hay đào, bẻ xong), thuê máy gặt, bỏ vụ hoặc bị mất. Gặt dở chừng thì chuột vẫn ăn phần còn lại.",
+        "Chuột là của chung cả đồng: ai bắt trước thì được, kể cả chuột trên ruộng người khác. Mỗi người bắt tối đa 6 con mỗi giờ, 24 con mỗi ngày.",
+        "Chuột bắt được bán cho cô Út: 150 xu × hệ số phòng (như giá cá), chốt giá lúc bắt.",
+      ],
+      [
+        "Ná 3.000 xu, mua một lần ở tiệm anh Hai. Đạn đất 10 xu một viên — 10 viên 100 xu.",
+        "Lại gần con chuột, bấm E (hoặc chạm vào nó) để giương ná. Rê chuột hoặc bấm ←/→ để ngắm; giữ Space (hoặc giữ chuột, giữ ngón tay) cho dây căng tới vùng xanh rồi thả.",
+        "Căng chưa tới vùng xanh là đạn rơi trước, căng quá là đạn bay qua. Đạn bay mất một chút: chuột đang chạy thì ngắm đón đầu, hoặc chờ nó dừng lại gặm lúa.",
+        "Mỗi phát tốn 1 viên, trúng là bắt được. Bắn xong phải nạp đạn 2 giây.",
+      ],
+      [
+        "Nhận nuôi ở Hợp tác xã (chú Tám): 20.000 xu, mỗi người một con. Chọn màu lông vàng, mực, vện hay đốm, rồi đặt tên.",
+        "Chó theo bạn khắp nơi: sảnh, ao cá, đồng ruộng. Ai trong phòng cũng thấy nó.",
+        "Mỗi ngày cho ăn 1 bịch thức ăn chó (150 xu, tiệm anh Hai): no 24 giờ; còn no hơn 12 giờ thì chưa ăn thêm. Chú Tám cho ăn bữa đầu.",
+        "Chó no, bạn ở ngoài đồng và đứng gần con chuột (cỡ một thửa ruộng) là nó tự vồ — 5 phút một lần, vồ là trúng. Chó đói chỉ đi theo; bạn ngồi im quá 3 phút thì nó cũng thôi săn.",
+        "Vuốt ve cho vui — không tốn gì.",
+      ],
+    ]);
+  });
+  it("adds the rat tip to Mẹo, after the crab one", () => {
+    const tip = "Lúa chín là mùa chuột — thu hoạch cho xong sớm (hoặc thuê máy gặt), hay rủ hàng xóm ra bắn chuột giùm.";
+    const tips = handbookPage("tips", [nep], [], [SLING], KINDS)[0].lines;
+    expect(tips.at(-1)).toBe(tip);
+    expect(tips.at(-2)).toBe("Trong lúc chờ lúa, cứ 20 phút ghé bờ mương bắt cua, mò ốc — thêm tiền mà không tốn giống, phân.");
+    expect(handbookPage("tips", [nep], [], [], KINDS)[0].lines).not.toContain(tip);
+  });
+  it("links a plot with rats to the tab", () => {
+    const crop: CropView = {
+      kind: "rice", variety: "nep", upland: null, phase: "ripe", preparedAt: at(0), soakAt: at(0), sowAt: at(3), transplantAt: at(12),
+      plantAt: null, water: 1, waterSetAt: at(12), pests: [], excessN: false, ripe: true, rottedAt: null, picking: null, pickings: 1,
+      parts: 2, harvester: null, log: null,
+    };
+    expect(handbookTabFor(crop, nep, at(12 + 49), true)).toBe("rats");
+    expect(handbookTabFor(crop, nep, at(12 + 49))).toBe("tools");
+    expect(handbookTabFor(null, null, at(0), true)).toBe("process");
+  });
+});

@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  bedLevelsText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, durationText, farmErrorMessage,
-  GATHER_LIMIT_TEXT, GIFT_TEXT, harvesterDoneText, harvesterStartText, harvestText, isMissingRpc, loadedText, NOT_OPEN_152, NOT_OPEN_153,
-  partsDoneText, partText, PEST_NAME, PEST_REMEDY, pestSnailText, PHASE_NAME, pickingText, produceSaleText, produceSummary, riceSaleText,
-  riceSummary, uplandPhaseName,
+  bedLevelsText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, dogCatchText, dogRestingText,
+  durationText, farmErrorMessage, GATHER_LIMIT_TEXT, GIFT_TEXT, harvesterDoneText, harvesterStartText, harvestText, isMissingRpc, loadedText,
+  NO_PELLETS, NOT_OPEN_152, NOT_OPEN_153, NOT_OPEN_17, partsDoneText, partText, PEST_NAME, PEST_REMEDY, pestSnailText, PHASE_NAME,
+  pickingText, produceSaleText, produceSummary, RAT_DAILY_LIMIT_TEXT, ratChipLabel, ratChipText, ratGoneText, ratLimitText, ratPlotText,
+  ratPrompt, ratSaleText, ratSpawnText, riceSaleText, riceSummary, SLING_CANCEL, SLING_HELP, slingGear, slingHitText, slingStatus,
+  slingTitle, uplandPhaseName,
 } from "@/lib/game/farm/messages";
 import { critterFromRow, uplandFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
 import fixtures from "@/tests/fixtures/upland-cases.json";
@@ -192,5 +194,75 @@ describe("v15.3 texts (§11.8, §13.2, §13.4)", () => {
     expect(produceSummary({ nep: { wet: 0, dry: 70 } }, { khoai: 180 }, 12)).toBe("🌾 70 kg khô · 0 kg ướt · 🧺 180 kg màu · 🦀 12");
     expect(produceSummary({}, {}, 3)).toBe("🌾 Chưa có lúa · 🦀 3");
     expect(produceSummary({}, {}, 0)).toBe("🌾 Chưa có lúa");
+  });
+});
+
+describe("v17 texts (§10.6, §12)", () => {
+  const m = (message: string, extra: Record<string, unknown> = {}, action?: string) => farmErrorMessage({ message, ...extra }, undefined, action);
+  it("maps the rat, sling and dog refusals (§10.6), with the waits from the details", () => {
+    expect(m("no sling")).toBe("Chưa có ná — mua ở tiệm anh Hai.");
+    expect(m("no pellets")).toBe("Hết đạn đất — mua ở tiệm anh Hai.");
+    expect(m("rat gone")).toBe("Con chuột này không còn nữa.");
+    expect(m("rat limit", { details: "1500" })).toBe("Bạn bắt đủ 6 con chuột trong giờ này rồi — nghỉ 25 phút nhé.");
+    expect(m("rat limit", { details: "125" })).toBe("Bạn bắt đủ 6 con chuột trong giờ này rồi — nghỉ 2 phút 5 giây nhé.");
+    expect(m("rat limit")).toBe("Bạn bắt đủ 6 con chuột trong giờ này rồi — nghỉ ít phút nhé.");
+    expect(m("rat daily limit", { details: "40000" })).toBe("Hôm nay bạn bắt đủ 24 con chuột rồi — mai nhé!");
+    expect(m("no aim")).toBe("Ná chưa giương — thử lại nhé.");
+    expect(m("aim expired")).toBe("Giương ná lâu quá — ngắm lại nhé.");
+    expect(m("no dog")).toBe("Bạn chưa nuôi chó.");
+    expect(m("dog hungry")).toBe("Chó đói rồi — cho ăn trước đã.");
+    expect(m("dog resting", { details: "192" })).toBe("Chó đang nghỉ — 3 phút 12 giây nữa mới vồ tiếp.");
+    expect(m("dog resting")).toBe("Chó đang nghỉ — ít phút nữa mới vồ tiếp.");
+    expect(m("dog full")).toBe("Chó còn no — chưa ăn thêm được.");
+    expect(m("already own dog")).toBe("Bạn đã nuôi một con rồi — mỗi người một con thôi.");
+    expect(m("invalid name")).toBe("Tên chó cần 2–16 ký tự, không dùng tên dành riêng (Ao cá, Hợp tác xã…) hoặc ký tự ẩn.");
+    expect(m("nothing to sell")).toBe("Chưa có con chuột nào để bán.");
+    expect(farmErrorMessage({ message: "no item" }, "thức ăn chó")).toBe("Chưa có thức ăn chó — ghé tiệm anh Hai.");
+    expect(m("invalid coat")).toBe("Có lỗi, thử lại nhé.");
+    expect([NO_PELLETS, RAT_DAILY_LIMIT_TEXT, ratLimitText(3600), dogRestingText(59)]).toEqual([
+      "Hết đạn đất — mua ở tiệm anh Hai.", "Hôm nay bạn bắt đủ 24 con chuột rồi — mai nhé!",
+      "Bạn bắt đủ 6 con chuột trong giờ này rồi — nghỉ 60 phút nhé.", "Chó đang nghỉ — 59 giây nữa mới vồ tiếp.",
+    ]);
+    expect(NOT_OPEN_17).toBe("Mùa chuột chưa mở — chủ phòng cần chạy migration 0019.");
+  });
+  it("reads too fast in the SlingGame's context, and keeps the others", () => {
+    expect(m("too fast", {}, "sling")).toBe("Đang nạp đạn…");
+    expect(m("too fast")).toBe("Từ từ thôi…");
+    expect(m("aim expired", {}, "sling")).toBe("Giương ná lâu quá — ngắm lại nhé.");
+  });
+  it("tells the gear a rat's prompt needs (§12.1)", () => {
+    expect(slingGear({})).toBe("no sling");
+    expect(slingGear({ ammo_pellet: 12 })).toBe("no sling");
+    expect(slingGear({ tool_sling: 1 })).toBe("no pellets");
+    expect(slingGear({ tool_sling: 1, ammo_pellet: 0 })).toBe("no pellets");
+    expect(slingGear({ tool_sling: 1, ammo_pellet: 12 })).toBeNull();
+    expect([ratPrompt(null), ratPrompt("no sling"), ratPrompt("no pellets")]).toEqual([
+      "Bắn chuột", "Chuột đồng (cần ná)", "Chuột đồng (hết đạn)",
+    ]);
+  });
+  it("tells the field's toasts, the chip and the plot line (§12.1)", () => {
+    expect(ratSpawnText(3)).toBe("🐀 Chuột mò ra phá thửa 3 của bạn!");
+    expect(dogCatchText("Mực")).toBe("🐕 Mực vồ được một con chuột! Đem bán cho cô Út nhé.");
+    expect(ratSaleText(3, 450)).toBe("💰 Bán 3 con chuột được 450 xu.");
+    expect(ratSaleText(12, 4032)).toBe("💰 Bán 12 con chuột được 4.032 xu.");
+    expect(ratChipText(2)).toBe("🐀 Mùa chuột · 2 con");
+    expect(ratChipLabel(2)).toBe("Mùa chuột: 2 con chuột đang phá đồng — mở Sổ tay");
+    expect(ratPlotText(2, 3.2)).toBe("🐀 2 con chuột đang ăn · đã mất ~3% (tối đa 10%)");
+    expect(ratPlotText(1, 0.5)).toBe("🐀 1 con chuột đang ăn · đã mất dưới 1% (tối đa 10%)");
+    expect(ratPlotText(0, 10)).toBe("🐀 0 con chuột đang ăn · đã mất ~10% (tối đa 10%)");
+  });
+  it("tells the SlingGame's lines (§12.2)", () => {
+    expect(slingTitle(3)).toBe("🎯 Bắn chuột · thửa 3");
+    expect(SLING_HELP).toBe("Rê chuột hoặc bấm ←/→ để ngắm. Giữ Space (hoặc giữ chuột, giữ ngón tay) cho dây căng tới vùng xanh rồi thả.");
+    expect(slingStatus(12, true)).toBe("Đạn: 12 viên · Nạp đạn…");
+    expect(slingStatus(11, false)).toBe("Đạn: 11 viên");
+    expect(slingHitText(336)).toBe("🎯 Trúng! Bắt được chuột đồng — 336 xu, đem bán ở vựa cô Út.");
+    expect(slingHitText(1050)).toBe("🎯 Trúng! Bắt được chuột đồng — 1.050 xu, đem bán ở vựa cô Út.");
+    const r = { id: 1, plot: 3, since: 0, seed: 1, endedAt: 0, by: { id: "u2", name: "Lan" }, dog: null };
+    expect(ratGoneText({ ...r, how: "sling" })).toBe("Chuột bị Lan bắt mất rồi!");
+    expect(ratGoneText({ ...r, how: "dog", by: { id: "u3", name: "Dat" }, dog: "Mực" })).toBe("Chuột bị Mực của Dat vồ mất rồi!");
+    expect(ratGoneText({ ...r, how: "fled", by: null })).toBe("Chuột chạy về hang rồi.");
+    expect(ratGoneText(null)).toBe("Chuột chạy về hang rồi.");
+    expect(SLING_CANCEL).toBe("Thôi (Esc)");
   });
 });

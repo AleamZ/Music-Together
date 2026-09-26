@@ -1,11 +1,12 @@
-import { lockSeconds, lockText } from "@/lib/anticheat";
-import type { CritterKind, UplandCrop } from "./catalog";
+import { durationVi, lockSeconds, lockText } from "@/lib/anticheat";
+import { AMMO_PELLET, TOOL_SLING, type CritterKind, type UplandCrop } from "./catalog";
 import { GATHER, lowerFirst } from "./gather";
+import { RAT, type RatRecent } from "./rats";
 import type { CatchAnswer } from "./rpc";
 import type { PestKind, Phase } from "./state";
 
-// The farm's Vietnamese texts (spec §8, §11.7, §13; v15.2 §11.7, §13; v15.3 §11.8, §13): names, durations, toasts and
-// the RPC errors. Pure.
+// The farm's Vietnamese texts (spec §8, §11.7, §13; v15.2 §11.7, §13; v15.3 §11.8, §13; v17 §10.6, §12): names,
+// durations, toasts and the RPC errors. Pure.
 
 export const PHASE_NAME: Record<Phase, string> = {
   prepared: "Đã làm đất", soaking: "Đang ngâm ủ", sprouted: "Hạt nứt nanh", seedling: "Mạ non", tillering: "Đẻ nhánh",
@@ -48,6 +49,8 @@ export const NOT_OPEN = "Đồng ruộng chưa mở — chủ phòng cần chạ
 export const NOT_OPEN_152 = "Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016.";
 /** A v15.3 gathering action against a database without 0018 (R23). */
 export const NOT_OPEN_153 = "Bắt cua, mò ốc chưa mở — chủ phòng cần chạy migration 0018.";
+/** A v17 action (the ná, the dog, the rat sale) against a database without 0019 (v17 §10.6). */
+export const NOT_OPEN_17 = "Mùa chuột chưa mở — chủ phòng cần chạy migration 0019.";
 export const FIELD_LOADING = "Đang tải đồng ruộng…";
 export const FIELD_FAILED = "Chưa tải được đồng ruộng — thử lại nhé.";
 export const FARM_LIMIT_TEXT = "Bạn đang canh tác 2 thửa rồi.";
@@ -188,15 +191,86 @@ export function riceSaleText(kg: number, varietyName: string, dry: boolean, earn
   return `💰 Bán ${kg} kg ${varietyName.toLowerCase()} ${dry ? "khô" : "ướt"} được ${earned.toLocaleString("vi-VN")} xu.`;
 }
 
-/** The seconds an error's details carry (hole empty, bed empty), as ms; null without them. */
+// v17 (§10.6, §12): the rats, the ná and the dog.
+
+/** No pellets (§10.6), which also ends a SlingGame (§12.2). */
+export const NO_PELLETS = "Hết đạn đất — mua ở tiệm anh Hai.";
+export const RAT_DAILY_LIMIT_TEXT = `Hôm nay bạn bắt đủ ${RAT.dayCap} con chuột rồi — mai nhé!`;
+/** A catch cap's wait, or a resting dog's, from the refusal's seconds; "ít phút" when the answer has none. */
+export function ratLimitText(sec: number | null): string {
+  return `Bạn bắt đủ ${RAT.hourCap} con chuột trong giờ này rồi — nghỉ ${sec === null ? "ít phút" : durationVi(sec)} nhé.`;
+}
+export function dogRestingText(sec: number | null): string {
+  return `Chó đang nghỉ — ${sec === null ? "ít phút" : durationVi(sec)} nữa mới vồ tiếp.`;
+}
+
+/** What stops a shot before the server would (§12.1), as its refusal: no ná, then no pellet; null with both. */
+export function slingGear(items: Readonly<Record<string, number>>): "no sling" | "no pellets" | null {
+  if ((items[TOOL_SLING] ?? 0) < 1) return "no sling";
+  return (items[AMMO_PELLET] ?? 0) < 1 ? "no pellets" : null;
+}
+/** A rat's field prompt (§12.1), after the shell's "E · ". */
+export function ratPrompt(gear: "no sling" | "no pellets" | null): string {
+  return gear === "no sling" ? "Chuột đồng (cần ná)" : gear === "no pellets" ? "Chuột đồng (hết đạn)" : "Bắn chuột";
+}
+
+/** The toasts (§12.1): a rat out on my plot (once per rat), my dog's catch, and cô Út's for sell_rats. */
+export function ratSpawnText(plot: number): string {
+  return `🐀 Chuột mò ra phá thửa ${plot} của bạn!`;
+}
+export function dogCatchText(dog: string): string {
+  return `🐕 ${dog} vồ được một con chuột! Đem bán cho cô Út nhé.`;
+}
+export function ratSaleText(n: number, xu: number): string {
+  return `💰 Bán ${n} con chuột được ${xu.toLocaleString("vi-VN")} xu.`;
+}
+
+/** The field chip (§12.1) while rats are live: its text and its aria-label. */
+export function ratChipText(n: number): string {
+  return `🐀 Mùa chuột · ${n} con`;
+}
+export function ratChipLabel(n: number): string {
+  return `Mùa chuột: ${n} con chuột đang phá đồng — mở Sổ tay`;
+}
+
+/** The plot panel's line (§12.1) on a plot with a rat log: the rats on it now and the share lost so far. */
+export function ratPlotText(live: number, lostPct: number): string {
+  return `🐀 ${live} con chuột đang ăn · đã mất ${lostPct < 1 ? "dưới 1%" : `~${Math.round(lostPct)}%`} (tối đa 10%)`;
+}
+
+/** The SlingGame overlay (§12.2); the misses are sling.ts's SLING_MISS. */
+export function slingTitle(plot: number): string {
+  return `🎯 Bắn chuột · thửa ${plot}`;
+}
+export const SLING_HELP = "Rê chuột hoặc bấm ←/→ để ngắm. Giữ Space (hoặc giữ chuột, giữ ngón tay) cho dây căng tới vùng xanh rồi thả.";
+export const SLING_CANCEL = "Thôi (Esc)";
+export function slingStatus(pellets: number, reloading: boolean): string {
+  return `Đạn: ${pellets} viên${reloading ? " · Nạp đạn…" : ""}`;
+}
+export function slingHitText(price: number): string {
+  return `🎯 Trúng! Bắt được chuột đồng — ${price.toLocaleString("vi-VN")} xu, đem bán ở vựa cô Út.`;
+}
+/** Why the rat is gone (§12.2), from its `recent` entry when there is one: a sling, a dog, or back to its hole. */
+export function ratGoneText(r: RatRecent | null): string {
+  if (r?.how === "sling" && r.by) return `Chuột bị ${r.by.name} bắt mất rồi!`;
+  if (r?.how === "dog" && r.by) return `Chuột bị ${r.dog ?? "chó"} của ${r.by.name} vồ mất rồi!`;
+  return "Chuột chạy về hang rồi.";
+}
+
+/** The seconds an error's details carry (hole empty, bed empty, rat limit, dog resting), as ms; null without them. */
 function detailMs(err: unknown): number | null {
   const d = (err && typeof err === "object" ? err : {}) as { details?: unknown };
   return typeof d.details === "string" && /^\d+$/.test(d.details) ? Number(d.details) * 1000 : null;
 }
+const detailSec = (err: unknown): number | null => {
+  const ms = detailMs(err);
+  return ms === null ? null : ms / 1000;
+};
 
-/** Vietnamese toast text for a farm RPC error (spec §11.7, v15.2 §11.7, v15.3 §11.8). `itemName` names the item a
- *  "no item" error is about, or the container a "critters full" one is; `action` reads a round's refusals in its
- *  context: "harvest_part" (HarvestGame), "crab_finish" (CrabGame) or "transplant" (TransplantGame). */
+/** Vietnamese toast text for a farm RPC error (spec §11.7, v15.2 §11.7, v15.3 §11.8, v17 §10.6; the dog calls share
+ *  it). `itemName` names the item a "no item" error is about, or the container a "critters full" one is; `action`
+ *  reads a round's refusals in its context: "harvest_part" (HarvestGame), "crab_finish" (CrabGame), "transplant"
+ *  (TransplantGame) or "sling" (SlingGame). */
 export function farmErrorMessage(err: unknown, itemName?: string, action?: string): string {
   const e = (err && typeof err === "object" ? err : {}) as { message?: unknown };
   const msg = typeof e.message === "string" ? e.message : "";
@@ -230,7 +304,7 @@ export function farmErrorMessage(err: unknown, itemName?: string, action?: strin
     case "invalid price": return "Số không hợp lệ.";
     case "too fast":
       return round ? "Chưa xong bó lúa — thử lại sau vài giây." : crab ? "Chưa bắt xong — thử lại sau vài giây."
-        : tp ? "Chưa cấy xong hàng mạ — thử lại sau vài giây." : TOO_FAST;
+        : tp ? "Chưa cấy xong hàng mạ — thử lại sau vài giây." : action === "sling" ? "Đang nạp đạn…" : TOO_FAST;
     case "no sickle": return "Chưa có liềm — mua ở tiệm anh Hai (hoặc thuê máy gặt ở Hợp tác xã).";
     case "no sprayer": return "Chưa có bình phun — mua ở tiệm anh Hai.";
     case "harvesting": return "Đang gặt dở — gặt cho xong đã.";
@@ -248,6 +322,20 @@ export function farmErrorMessage(err: unknown, itemName?: string, action?: strin
     case "visit not found": return "Lượt bắt cua này đã xong.";
     case "visit expired": return "Lâu quá, cua chui mất rồi — lát nữa quay lại nhé.";
     case "no critters": return "Không có cua ốc để bán.";
+    case "no sling": return "Chưa có ná — mua ở tiệm anh Hai.";
+    case "no pellets": return NO_PELLETS;
+    case "rat gone": return "Con chuột này không còn nữa.";
+    case "rat limit": return ratLimitText(detailSec(err));
+    case "rat daily limit": return RAT_DAILY_LIMIT_TEXT;
+    case "no aim": return "Ná chưa giương — thử lại nhé.";
+    case "aim expired": return "Giương ná lâu quá — ngắm lại nhé.";
+    case "no dog": return "Bạn chưa nuôi chó.";
+    case "dog hungry": return "Chó đói rồi — cho ăn trước đã.";
+    case "dog resting": return dogRestingText(detailSec(err));
+    case "dog full": return "Chó còn no — chưa ăn thêm được.";
+    case "already own dog": return "Bạn đã nuôi một con rồi — mỗi người một con thôi.";
+    case "invalid name": return "Tên chó cần 2–16 ký tự, không dùng tên dành riêng (Ao cá, Hợp tác xã…) hoặc ký tự ẩn.";
+    case "nothing to sell": return "Chưa có con chuột nào để bán.";
     case "account locked": return lockText(lockSeconds(err) ?? 300);
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";

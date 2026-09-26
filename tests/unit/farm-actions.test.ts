@@ -304,6 +304,24 @@ describe("dueTasks", () => {
     expect(list).toEqual([{ plot: 5, text: "Thửa 5 · Sâu keo mùa thu! Xịt thuốc trừ sâu", urgent: true }]);
     expect(list.filter((t) => t.urgent)).toHaveLength(1);
   });
+  it("adds the rats eating my plots, urgent, and my hungry dog on a line of its own (v17 §12.1)", () => {
+    const ripe = plot(crop({ sowAt: at(3), transplantAt: at(12) }, [[0, 3], [52, 1]]));
+    const lans = plot(null, { no: 7, farmer: { id: "lan", name: "Lan" } });
+    const rat = (id: number, no: number) => ({ id, plot: no, since: at(69), seed: id });
+    expect(dueTasks([ripe, lans], "me", CATALOG, SICKLE, at(70), [rat(1, 5), rat(2, 5), rat(3, 7)])).toEqual([
+      { plot: 5, text: "Thửa 5 · 🐀 Chuột đang phá (2 con) — bắn ná, dẫn chó tới hoặc thu hoạch cho xong", urgent: true },
+      { plot: 5, text: "Thửa 5 · Gặt — còn 2 giờ", urgent: true },
+    ]);
+    const dog = { name: "Mực", coat: "muc" as const, adoptedAt: at(0), fedUntil: at(70), nextHuntAt: null, catches: 0 };
+    expect(dueTasks([ripe], "me", CATALOG, { ...SICKLE, dog }, at(70))).toEqual([
+      { plot: 5, text: "Thửa 5 · Gặt — còn 2 giờ", urgent: true },
+      { plot: 0, text: "🐕 Mực đói — cho ăn để nó săn chuột", urgent: false },
+    ]);
+    expect(dueTasks([], "me", CATALOG, { ...SICKLE, dog: { ...dog, fedUntil: null } }, at(70))).toEqual([
+      { plot: 0, text: "🐕 Mực đói — cho ăn để nó săn chuột", urgent: false },
+    ]);
+    expect(dueTasks([], "me", CATALOG, { ...SICKLE, dog: { ...dog, fedUntil: at(71) } }, at(70))).toEqual([]);
+  });
 });
 
 describe("plotActions on beds", () => {
