@@ -252,19 +252,29 @@ insert into smoke select 't2', token from public.register('smoke152_b_' || floor
 insert into public.farm_profiles (account_id, tank_item, tank_charges)
 select public._auth_account((select v from smoke where k = 't2')), null, 2;
 -- The gift's sickle for those who took the gift before 0016 (R4): g1 took it, g2 too and waits for its wipe, g3 took it
--- and was wiped, g4 never took it.
+-- and was wiped, g4 never took it, g5 took it, was wiped and then pardoned (a pardon restores nothing), g6 was wiped,
+-- pardoned, and only then took the gift.
 insert into smoke select 'g1', public._auth_account(token)::text from public.register('smoke152_g1_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 'g2', public._auth_account(token)::text from public.register('smoke152_g2_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 'g3', public._auth_account(token)::text from public.register('smoke152_g3_' || floor(random() * 1e9)::text, 'pw123456');
 insert into smoke select 'g4', public._auth_account(token)::text from public.register('smoke152_g4_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'g5', public._auth_account(token)::text from public.register('smoke152_g5_' || floor(random() * 1e9)::text, 'pw123456');
+insert into smoke select 'g6', public._auth_account(token)::text from public.register('smoke152_g6_' || floor(random() * 1e9)::text, 'pw123456');
 insert into public.farm_profiles (account_id, gift_at)
-select v::uuid, case when k = 'g4' then null else now() - interval '1 day' end from smoke where k in ('g1', 'g2', 'g3', 'g4');
+select v::uuid, case k when 'g4' then null when 'g5' then now() - interval '2 days' else now() - interval '1 day' end
+  from smoke where k in ('g1', 'g2', 'g3', 'g4', 'g5', 'g6');
 insert into public.anticheat_status (account_id, strikes, ban_state, banned_at, wiped_at)
 select v::uuid, 2, case when k = 'g2' then 'pending_wipe' else 'wiped' end, now(), case when k = 'g3' then now() end
   from smoke where k in ('g2', 'g3');
+-- a pardon lifts the ban and keeps the wipe's time (anti-cheat R11)
+insert into public.anticheat_status (account_id, strikes, ban_state, banned_at, wiped_at, pardoned_at)
+select v::uuid, 0, null, now() - interval '3 days',
+       case when k = 'g5' then now() - interval '1 day' else now() - interval '2 days' end,
+       case when k = 'g5' then now() - interval '12 hours' else now() - interval '36 hours' end
+  from smoke where k in ('g5', 'g6');
 create function pg_temp.sickles() returns jsonb language sql
 as $$ select jsonb_object_agg(s.k, coalesce((select i.qty from public.inventory i where i.account_id = s.v::uuid and i.item_id = 'tool_sickle'), 0))
-        from smoke s where s.k in ('g1', 'g2', 'g3', 'g4') $$;
+        from smoke s where s.k in ('g1', 'g2', 'g3', 'g4', 'g5', 'g6') $$;
 set client_min_messages = warning;
 \i supabase/migrations/0016_v15_2_crops.sql
 reset client_min_messages;
@@ -274,8 +284,9 @@ begin
   assert (select tank_item is null and tank_charges = 0 from public.farm_profiles where account_id = a1), '(item, 0) → (null, 0)';
   assert (select tank_item is null and tank_charges = 0 from public.farm_profiles where account_id = a2), '(null, 2) → (null, 0)';
   assert exists (select 1 from pg_constraint where conname = 'farm_profiles_tank_check'), 'the check is back';
-  -- one sickle for each account that took the gift, none for a wiped one or one that never took it
-  assert pg_temp.sickles() = '{"g1": 1, "g2": 1, "g3": 0, "g4": 0}', format('the backfill %s', pg_temp.sickles());
+  -- one sickle for each account that took the gift, none for one wiped after it took the gift (pardoned or not) or one
+  -- that never took it
+  assert pg_temp.sickles() = '{"g1": 1, "g2": 1, "g3": 0, "g4": 0, "g5": 0, "g6": 1}', format('the backfill %s', pg_temp.sickles());
 end $$;
 -- a second run gives none more
 set client_min_messages = warning;
@@ -283,7 +294,7 @@ set client_min_messages = warning;
 reset client_min_messages;
 do $$
 begin
-  assert pg_temp.sickles() = '{"g1": 1, "g2": 1, "g3": 0, "g4": 0}', format('the backfill run again %s', pg_temp.sickles());
+  assert pg_temp.sickles() = '{"g1": 1, "g2": 1, "g3": 0, "g4": 0, "g5": 0, "g6": 1}', format('the backfill run again %s', pg_temp.sickles());
 end $$;
 
 select 'v15.2 model smoke ok' as result;
