@@ -6,7 +6,7 @@ import { BED_BAR_MS } from "@/lib/game/farm/gather";
 import { AMMO_PELLET } from "@/lib/game/farm/catalog";
 import { NOT_OPEN, ratGoneText } from "@/lib/game/farm/messages";
 import { isTyping } from "@/lib/game/keys";
-import CoopPanel from "./CoopPanel";
+import CoopPanel, { type CoopDog } from "./CoopPanel";
 import CrabGame from "./CrabGame";
 import DryingPanel from "./DryingPanel";
 import FarmShopPanel from "./FarmShopPanel";
@@ -51,10 +51,12 @@ function Progress({ text, ms, panelOpen, onCancel }: { text: string; ms: number;
 /** The field on top of the world (spec §13): the banner before the migration, the progress of a picking or a snail bed, a
  *  round (HarvestGame, v15.2 §13.2; TransplantGame, v15.3 §13.3), a crab visit (CrabGame, v15.3 §13.2) and the field's
  *  panels. */
-export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
+export default function FarmOverlays({ farm, me, onField, panelOpen = false, dog = null }: {
   farm: FarmController;
   me: string;
   onField: boolean;
+  /** v17: the CoopPanel's dog tab (null before 0019). */
+  dog?: CoopDog | null;
   /** A panel or modal outside the field's own is open (the shell's, fishing's, the character editor or the anti-cheat
    *  modal): Esc is its. */
   panelOpen?: boolean;
@@ -105,7 +107,7 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
       )}
       {panel?.kind === "coop" && (
         <CoopPanel state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act} onReload={onReload}
-          onClose={closePanel} />
+          onClose={closePanel} dog={state?.rats ? dog : null} />
       )}
       {panel?.kind === "shop" && (
         <FarmShopPanel mine={state?.mine ?? null} catalog={catalog} failed={failed} busy={busy}

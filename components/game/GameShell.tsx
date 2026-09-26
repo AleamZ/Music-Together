@@ -8,6 +8,7 @@ import SettingsDialog from "@/components/room/SettingsDialog";
 import { useAnticheat } from "@/hooks/useAnticheat";
 import { useCardsController } from "@/hooks/useCardsController";
 import { useChat } from "@/hooks/useChat";
+import { useDog } from "@/hooks/useDog";
 import { useFarmController } from "@/hooks/useFarmController";
 import { useFishingController } from "@/hooks/useFishingController";
 import { useLooks } from "@/hooks/useLooks";
@@ -19,7 +20,7 @@ import type { UseSponsorBlockResult } from "@/hooks/useSponsorBlock";
 import { formatChatMessageBody, parseChatMessageBody } from "@/lib/chat-helpers";
 import { formatClock } from "@/lib/format";
 import { critterCount } from "@/lib/game/farm/gather";
-import { produceSummary } from "@/lib/game/farm/messages";
+import { dogHudText, produceSummary } from "@/lib/game/farm/messages";
 import { freshAnnouncements } from "@/lib/game/fishing/announce";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
@@ -35,6 +36,7 @@ import AnticheatModal from "./AnticheatModal";
 import CardOverlays from "./cards/CardOverlays";
 import CardSeatChip from "./cards/CardSeatChip";
 import CharacterEditor from "./CharacterEditor";
+import DogPanel from "./farm/DogPanel";
 import FarmOverlays from "./farm/FarmOverlays";
 import { FarmTasksButton } from "./farm/FarmTasks";
 import FishingHud from "./fishing/FishingHud";
@@ -55,7 +57,7 @@ export interface GameShellProps {
   onExitGame: () => void;
 }
 
-type Panel = "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | null;
+type Panel = "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "dog" | null;
 
 /** A portal fades to dark in FADE_MS, the new map starts, and it fades back in after the map's first frame. */
 const FADE_MS = 250;
@@ -63,7 +65,7 @@ const FADE_MS = 250;
 /** Game mode: the room world (hall, pond and field) and the parchment HUD. Music, queue, chat and roles are the same as the
  *  classic view. */
 export default function GameShell({ view, derived, playback, sponsorBlock, onExitGame }: GameShellProps) {
-  const { state, role, presence, onlineIds, token, accountId, username, myMemberId, setPresenceMap } = view;
+  const { state, role, presence, onlineIds, token, accountId, username, myMemberId, setPresenceMap, setPresenceDog } = view;
   const room = state.room!;
   const { members } = state;
   const { admin_member_id, dj_member_id } = room;
@@ -124,9 +126,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const myBadges = badgesFor(accountId, roles, false);
   const myName = username || members.find((m) => m.account_id === accountId)?.username || "Bạn";
   const creating = savedLook !== null && !exists;
-  useEffect(() => {
-    canvasRef.current?.setLocal({ name: myName, badges: myBadges, look: myLook });
-  }, [myName, myBadges, myLook]);
 
   // --- everyone else on this map (room members only: presence keys and game messages from anyone else are ignored)
   const memberIds = useMemo(() => new Set(members.map((m) => m.account_id)), [members]);
@@ -176,6 +175,20 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   });
   const { interact: farmInteract, promptText: farmPrompt } = farm;
 
+  // --- my dog (v17 §7.3, §12.3): learned on entering game mode, on the canvas behind me and in presence
+  const petDog = useCallback(() => canvasRef.current?.petDog(), []);
+  const dog = useDog({
+    token, field: farm.data.state, petDog, setPresenceDog, toast: showToast, onCoinsChanged: () => void fishing.data.reload(),
+  });
+  const dogName = dog.dog?.name ?? null, dogCoat = dog.dog?.coat ?? null, dogHungry = dog.hungry;
+  useEffect(() => {
+    canvasRef.current?.setLocal({
+      name: myName, badges: myBadges, look: myLook, dog: dogName !== null && dogCoat !== null ? { name: dogName, coat: dogCoat } : null, dogHungry,
+    });
+  }, [myName, myBadges, myLook, dogName, dogCoat, dogHungry]);
+  const { closePanel: closeFarmPanel } = farm;
+  const coopDog = { dog: dog.dog, busy: dog.busy, onAdopt: dog.adopt, onOpenDog: () => { closeFarmPanel(); setPanel("dog"); } };
+
   // --- the card corner: the hall's labels, the table panels, the rules book, and the table I sit at (v16)
   const isMember = useCallback((id: string) => memberIds.has(id), [memberIds]);
   const cards = useCardsController({
@@ -193,7 +206,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     panel: panel !== null, fishingPanel: fishing.panel !== null, creating, anticheatModal: anticheat.modal !== null,
     farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
     slingGame: farm.sling !== null,
-    cardPanel: cards.panel !== null, rulesBook: cards.rules !== null,
+    cardPanel: cards.panel !== null, rulesBook: cards.rules !== null, dogPanel: panel === "dog",
   });
   useEffect(() => {
     canvasRef.current?.setInputEnabled(!blocking);
@@ -289,6 +302,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                 👕 Tủ đồ
               </button>
               <button type="button" className="pch-btn" onClick={() => fishing.openPanel("bag")}>🎒 Giỏ đồ</button>
+              {dog.dog && (
+                <button type="button" className="pch-btn" onClick={() => setPanel("dog")}>{dogHudText(dog.dog.name, dog.hungry)}</button>
+              )}
               {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
             </div>
             <FishingHud
@@ -360,7 +376,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           }
           : null}
       />
-      <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} />
+      <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} dog={coopDog} />
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} />
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
@@ -396,6 +412,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         members={members}
         room={room}
       />
+      {panel === "dog" && dog.dog && (
+        <DogPanel dog={dog.dog} food={dog.food} busy={dog.busy} onFeed={() => void dog.feed()}
+          onRename={dog.rename} onPet={() => void dog.pet()} onClose={close} />
+      )}
       {panel === "wardrobe" && savedLook && (
         <CharacterEditor mode="edit" initial={savedLook} token={token} onSaved={onSaved} onClose={close} onBackToClassic={onExitGame} />
       )}

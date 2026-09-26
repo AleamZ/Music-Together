@@ -11,17 +11,73 @@ import {
   acceptRefusal, buyListedRefusal, buyPlotRefusal, farmingCount, harvesterRefusal, listRefusal, offerRefusal, reasonText, rentRefusal,
   rentSubleaseRefusal, sellBackRefusal, subleaseRefusal, type LandCtx,
 } from "@/lib/game/farm/land";
-import { durationText, harvesterStartText, PHASE_NAME } from "@/lib/game/farm/messages";
+import { COAT_NAME, DOG, DOG_COATS, dogNameRefusal, type DogCoat, type DogView } from "@/lib/game/dog";
+import {
+  ADOPT_BUTTON, ADOPT_INTRO, adoptConfirmText, DOG_NAME_HINT, DOG_NAME_PROBLEM, dogOwnedText, durationText, harvesterStartText,
+  PHASE_NAME,
+} from "@/lib/game/farm/messages";
 import type { FieldAction } from "@/lib/game/farm/rpc";
 import type { CropView, FieldState, PlotView } from "@/lib/game/farm/state";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import ConfirmButton from "./ConfirmButton";
+import DogSprite from "./DogSprite";
 import FieldStatus from "./FieldStatus";
 
-type Tab = "village" | "private" | "market" | "harvester" | "mine";
+type Tab = "village" | "private" | "market" | "harvester" | "dog" | "mine";
 const TABS: ReadonlyArray<[Tab, string]> = [
-  ["village", "Đất làng"], ["private", "Đất tư"], ["market", "Chợ đất"], ["harvester", "Máy gặt"], ["mine", "Của tôi"],
+  ["village", "Đất làng"], ["private", "Đất tư"], ["market", "Chợ đất"], ["harvester", "Máy gặt"], ["dog", "🐕 Chó cỏ"], ["mine", "Của tôi"],
 ];
+
+/** The dog tab's part (v17 §12.3): my dog, and the adoption. Null before 0019 (the field has no rats): no tab. */
+export interface CoopDog {
+  dog: DogView | null;
+  busy: boolean;
+  onAdopt: (name: string, coat: DogCoat) => Promise<boolean>;
+  onOpenDog: () => void;
+}
+
+/** 🐕 Chó cỏ: the four coats (sprites), the name (the coat's by default) and "Nhận nuôi", which asks first; with a dog
+ *  owned, a line and "Mở bảng chó". */
+function DogTab({ coins, part }: { coins: number; part: CoopDog }) {
+  const [coat, setCoat] = useState<DogCoat>("vang");
+  const [typed, setTyped] = useState<string | null>(null);
+  if (part.dog) {
+    return (
+      <>
+        <p>{dogOwnedText(part.dog.name)}</p>
+        <button type="button" className="pch-btn self-start" onClick={part.onOpenDog}>Mở bảng chó</button>
+      </>
+    );
+  }
+  const name = typed ?? COAT_NAME[coat];
+  const problem = dogNameRefusal(name);
+  return (
+    <>
+      <p className="italic">{ADOPT_INTRO}</p>
+      <div className="flex flex-wrap gap-1" role="group" aria-label="Màu lông">
+        {DOG_COATS.map((c) => (
+          <button key={c} type="button" aria-pressed={coat === c} className={`pch-btn flex flex-col items-center ${coat === c ? "pch-btn-primary" : ""}`}
+            onClick={() => setCoat(c)}>
+            <DogSprite coat={c} />
+            {COAT_NAME[c]}
+          </button>
+        ))}
+      </div>
+      <label className="flex items-center gap-2">
+        Tên
+        <input className="flex-1 rounded-sm border border-ink/40 bg-parchment px-1" value={name} maxLength={32}
+          onChange={(e) => setTyped(e.target.value)} />
+      </label>
+      <span className={`text-base ${problem ? "text-burgundy" : "opacity-80"}`}>{problem ? DOG_NAME_PROBLEM[problem] : DOG_NAME_HINT}</span>
+      <div className="self-start">
+        <ConfirmButton primary warn={adoptConfirmText(name, coat)} disabled={part.busy || problem !== null || coins < DOG.price}
+          onConfirm={() => void part.onAdopt(name, coat)}>
+          {ADOPT_BUTTON}
+        </ConfirmButton>
+      </div>
+    </>
+  );
+}
 
 type Act = (a: FieldAction, done?: string) => void;
 
@@ -388,8 +444,10 @@ function HarvesterTab({ ctx, varieties, busy, now, onAct }: {
 
 /** 🏛️ Hợp tác xã · chú Tám (spec §7, §13.3; v15.2 §13.4): rent village plots, buy private ones, the land market, the
  *  harvester and my land. It opens on Máy gặt while a rice plot of mine is ripe. */
-export default function CoopPanel({ state, catalog = null, failed, me, busy, now, onAct, onReload, onClose }: {
+export default function CoopPanel({ state, catalog = null, failed, me, busy, now, onAct, onReload, onClose, dog = null }: {
   state: FieldState | null;
+  /** v17: the dog tab's part; null hides the tab. */
+  dog?: CoopDog | null;
   /** The varieties, for the rice's phases (without it every variety ripens as nếp does). */
   catalog?: FarmCatalog | null;
   failed: boolean;
@@ -407,7 +465,7 @@ export default function CoopPanel({ state, catalog = null, failed, me, busy, now
     <ParchmentModal title="🏛️ Hợp tác xã · chú Tám" onClose={onClose} className="max-w-2xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         <div role="tablist" aria-label="Hợp tác xã" className="flex flex-wrap gap-1">
-          {TABS.map(([id, label]) => (
+          {TABS.filter(([id]) => id !== "dog" || dog !== null).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} className={`pch-btn ${tab === id ? "pch-btn-primary" : ""}`} onClick={() => setTab(id)}>
               {label}
             </button>
@@ -422,6 +480,7 @@ export default function CoopPanel({ state, catalog = null, failed, me, busy, now
             {tab === "private" && <PrivateTab ctx={ctx} busy={busy} onAct={onAct} />}
             {tab === "market" && <MarketTab ctx={ctx} busy={busy} onAct={onAct} />}
             {tab === "harvester" && <HarvesterTab ctx={ctx} varieties={varieties} busy={busy} now={now} onAct={onAct} />}
+            {tab === "dog" && dog && <DogTab coins={state.mine.coins} part={dog} />}
             {tab === "mine" && <MineTab ctx={ctx} state={state} busy={busy} now={now} onAct={onAct} />}
           </div>
         )}

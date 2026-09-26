@@ -6,6 +6,7 @@ import {
 } from "@/lib/game/farm/catalog";
 import { BED_BAR_MS, CRAB_FINISH_WAIT_MS, TRANSPLANT_WAIT_MS } from "@/lib/game/farm/gather";
 import { CRAB_GAVE_UP, GATHER_LIMIT_TEXT, GIFT_TEXT, NOT_OPEN, NOT_OPEN_153 } from "@/lib/game/farm/messages";
+import { ratAt } from "@/lib/game/farm/rats";
 import { parseFarmMine, parseFieldState, type FieldState } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId } from "@/lib/game/maps/types";
@@ -23,7 +24,7 @@ vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
 }));
 
 import {
-  CLAIM_SLOW_MS, HARVESTER_REFETCH_MS, ROUND_FA_MS, ROUND_LIMIT_MS, SLING_FA_MS, useFarmController, WORK_MS,
+  CLAIM_SLOW_MS, DOG_HUNT_EVERY_MS, HARVESTER_REFETCH_MS, ROUND_FA_MS, ROUND_LIMIT_MS, SLING_FA_MS, useFarmController, WORK_MS,
 } from "@/hooks/useFarmController";
 import { FP_GATHER_MS } from "@/hooks/useField";
 
@@ -1105,5 +1106,114 @@ describe("useFarmController, v17 the ná", () => {
     expect(vi.mocked(toast).mock.calls).toEqual([["🐀 Chuột mò ra phá thửa 5 của bạn!"]]);
     await act(async () => { await result.current.data.reload(); });
     expect(toast).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useFarmController, v17 the dog's auto-hunt", () => {
+  const RAT = { id: 9, plot: 6, since: iso(-0.1), seed: 5 };
+  const DOG = (over: Record<string, unknown> = {}) => ({
+    name: "Mực", coat: "muc", adopted_at: iso(-48), fed_until: iso(10), next_hunt_at: null, catches: 2, ...over,
+  });
+  const huntField = (over: { dog?: Record<string, unknown> | null; caps?: Record<string, unknown>; live?: unknown[] } = {}): FieldState =>
+    parseFieldState({
+      server_now: iso(0),
+      plots: [
+        { no: 6, kind: "village", owner: null, sale_price: null, sublease_price: null, farmer: LAN, lease: null, offers: 0, crop: null },
+      ],
+      drying: [],
+      mine: {
+        items: {}, rice: {}, coins: 1000, gift_claimed: true, owned_plot: null, farming: [], my_offers: [], incoming_offers: [],
+        dog: over.dog === undefined ? DOG() : over.dog, rat_caps: over.caps ?? { hour_left: 6, hour_resets_at: null, day_left: 24 },
+      },
+      rats: { next_at: iso(1), price: 150, live: over.live ?? [RAT], recent: [], plots: {} },
+    })!;
+  /** The canvas with my feet on the rat (or `far` px from it), my last input `idleMs` ago. */
+  function hunter(opts: { far?: number; idleMs?: number } = {}) {
+    const canvas = handle() as ReturnType<typeof handle> & Record<"localPos" | "lastInputAt" | "dogPounce" | "dogRecall", ReturnType<typeof vi.fn>>;
+    Object.assign(canvas, {
+      localPos: vi.fn(() => {
+        const p = ratAt({ ...RAT, since: Date.parse(RAT.since) }, Date.now());
+        return p ? { x: p.x + (opts.far ?? 0), y: p.y } : null;
+      }),
+      lastInputAt: vi.fn(() => Date.now() - (opts.idleMs ?? 0)),
+      dogPounce: vi.fn(() => true), dogRecall: vi.fn(),
+    });
+    const toast = vi.fn();
+    const view = renderHook(() => useFarmController({
+      token: "tok", roomId: "r", accountId: "me", mapId: "field", canvas: () => canvas, toast, onCoinsChanged: () => {},
+    }));
+    return { canvas, toast, ...view };
+  }
+  const tick = () => act(async () => { await vi.advanceTimersByTimeAsync(DOG_HUNT_EVERY_MS); });
+
+  it("pounces at a rat within 96 px: the dog runs at the call, then fp for the plot and a toast", async () => {
+    rpc.fetchFieldState.mockResolvedValue(huntField());
+    rpc.dogHunt.mockResolvedValueOnce({ state: huntField({ live: [], dog: DOG({ next_hunt_at: iso(0.1) }) }), price: 169 });
+    const { canvas, toast } = hunter();
+    await flush();
+    await tick();
+    expect(canvas.dogPounce).toHaveBeenCalledWith(9);
+    expect(rpc.dogHunt).toHaveBeenCalledWith("r", "tok", 9);
+    expect(canvas.plotChanged).toHaveBeenCalledWith(6);
+    expect(toast).toHaveBeenCalledWith("🐕 Mực vồ được một con chuột! Đem bán cho cô Út nhé.");
+    // resting now: no second call
+    await tick();
+    expect(rpc.dogHunt).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls the dog back on a refusal, says nothing, and waits 10 s", async () => {
+    rpc.fetchFieldState.mockResolvedValue(huntField());
+    rpc.dogHunt.mockRejectedValue({ message: "rat gone" });
+    const { canvas, toast } = hunter();
+    await flush();
+    await tick();
+    expect(canvas.dogRecall).toHaveBeenCalledTimes(1);
+    expect(toast).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    expect(rpc.dogHunt).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(rpc.dogHunt).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["no dog", { dog: null }, {}],
+    ["a hungry dog", { dog: DOG({ fed_until: iso(-1) }) }, {}],
+    ["a resting dog", { dog: DOG({ next_hunt_at: iso(0.05) }) }, {}],
+    ["no room in this hour's cap", { caps: { hour_left: 0, hour_resets_at: iso(0.5), day_left: 20 } }, {}],
+    ["no room in the day's cap", { caps: { hour_left: 6, hour_resets_at: null, day_left: 0 } }, {}],
+    ["a rat farther than 96 px", {}, { far: 100 }],
+    ["no input for 3 minutes", {}, { idleMs: 3 * 60_000 + 1000 }],
+  ] as const)("waits with %s", async (_why, field, opts) => {
+    rpc.fetchFieldState.mockResolvedValue(huntField(field as Parameters<typeof huntField>[0]));
+    hunter(opts);
+    await flush();
+    await tick();
+    await tick();
+    expect(rpc.dogHunt).not.toHaveBeenCalled();
+  });
+
+  it("hunts again once this hour's window has passed", async () => {
+    rpc.fetchFieldState.mockResolvedValue(huntField({ caps: { hour_left: 0, hour_resets_at: iso(-0.01), day_left: 20 } }));
+    rpc.dogHunt.mockResolvedValueOnce({ state: huntField({ live: [] }), price: 169 });
+    hunter();
+    await flush();
+    await tick();
+    expect(rpc.dogHunt).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits while the SlingGame is open", async () => {
+    const f = huntField();
+    const withSling = { ...f, mine: { ...f.mine, items: { tool_sling: 1, ammo_pellet: 3 } } };
+    rpc.fetchFieldState.mockResolvedValue(withSling);
+    const { result } = hunter();
+    await flush();
+    rpc.slingStart.mockResolvedValueOnce({ state: withSling, aim: { rat: 9, startedAt: NOW } });
+    await act(async () => {
+      result.current.interact({ id: "rat_9", kind: "rat", rat: 9 } as unknown as Interactable);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.sling).not.toBeNull();
+    await tick();
+    expect(rpc.dogHunt).not.toHaveBeenCalled();
   });
 });
