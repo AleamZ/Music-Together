@@ -15,7 +15,7 @@ import fixtures from "@/tests/fixtures/upland-cases.json";
 const rpc = vi.hoisted(() => ({
   fetchFieldState: vi.fn(), fetchFarmCatalog: vi.fn(), fieldAction: vi.fn(), sellRice: vi.fn(), buyFarmItem: vi.fn(),
   claimFarmGift: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(), pickSnailBed: vi.fn(),
-  sellCritters: vi.fn(),
+  sellCritters: vi.fn(), slingStart: vi.fn(), slingShoot: vi.fn(), dogHunt: vi.fn(), sellRats: vi.fn(),
 }));
 vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/farm/rpc")>()),
@@ -23,7 +23,7 @@ vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
 }));
 
 import {
-  CLAIM_SLOW_MS, HARVESTER_REFETCH_MS, ROUND_FA_MS, ROUND_LIMIT_MS, useFarmController, WORK_MS,
+  CLAIM_SLOW_MS, HARVESTER_REFETCH_MS, ROUND_FA_MS, ROUND_LIMIT_MS, SLING_FA_MS, useFarmController, WORK_MS,
 } from "@/hooks/useFarmController";
 import { FP_GATHER_MS } from "@/hooks/useField";
 
@@ -73,8 +73,9 @@ const field = (over: {
 /** The canvas, its world on the field (a test may move it on with `mapId.mockReturnValue`). */
 const handle = () => ({
   setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(), mapId: vi.fn(() => "field"),
+  setRats: vi.fn(),
 }) as unknown as GameCanvasHandle
-  & Record<"setPlots" | "farmAnim" | "plotChanged" | "plant" | "setGatherSpots" | "mapId", ReturnType<typeof vi.fn>>;
+  & Record<"setPlots" | "farmAnim" | "plotChanged" | "plant" | "setGatherSpots" | "mapId" | "setRats", ReturnType<typeof vi.fn>>;
 const spot = (id: string): Interactable => getMap("field").interactables.find((i) => i.id === id)!;
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
@@ -965,5 +966,144 @@ describe("useFarmController, the clock while a harvester runs", () => {
     expect(result.current.tasks.map((t) => t.text)).toContain("Thửa 5 · Máy gặt đang gặt — còn 10 giây");
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(result.current.tasks.map((t) => t.text)).toContain("Thửa 5 · Máy gặt đang gặt — còn 9 giây");
+  });
+});
+
+describe("useFarmController, v17 the ná", () => {
+  const RAT = { id: 7, plot: 6, since: iso(0), seed: 3 };
+  /** The field with rat 7 on Lan's plot 6 (and `live` more), my pellets and my ná. */
+  const ratField = (over: { items?: Record<string, number>; live?: unknown[]; recent?: unknown[] } = {}): FieldState => {
+    const f = field({ mine: { items: over.items ?? { tool_sling: 1, ammo_pellet: 12 } } });
+    return parseFieldState({
+      server_now: iso(0),
+      plots: [
+        { no: 5, kind: "village", owner: null, sale_price: null, sublease_price: null, farmer: ME, lease: null, offers: 0, crop: null },
+        { no: 6, kind: "village", owner: null, sale_price: null, sublease_price: null, farmer: LAN, lease: null, offers: 0, crop: null },
+      ],
+      drying: [],
+      mine: { items: f.mine.items, rice: {}, coins: 1000, gift_claimed: true, owned_plot: null, farming: [], my_offers: [], incoming_offers: [] },
+      rats: { next_at: iso(1), price: 150, live: over.live ?? [RAT], recent: over.recent ?? [], plots: {} },
+    })!;
+  };
+  const ratSpot = (id = 7): Interactable => ({
+    id: `rat_${id}`, kind: "rat", rat: id, prompt: "", use: { x: 0, y: 0 }, rect: { x: 0, y: 0, w: 1, h: 1 },
+  }) as unknown as Interactable;
+  const fa = (canvas: ReturnType<typeof handle>, a: number) => canvas.farmAnim.mock.calls.filter(([x]) => x === a).length;
+  const aim = () => ({ state: ratField(), aim: { rat: 7, startedAt: NOW } });
+  async function open(result: { current: ReturnType<typeof useFarmController> }) {
+    rpc.slingStart.mockResolvedValueOnce(aim());
+    await act(async () => {
+      expect(result.current.interact(ratSpot())).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+  beforeEach(() => {
+    rpc.fetchFieldState.mockResolvedValue(ratField());
+  });
+
+  it("puts the rats on the canvas, and names the gear in the prompt", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    expect(canvas.setRats).toHaveBeenLastCalledWith(expect.objectContaining({ live: [expect.objectContaining({ id: 7 })] }));
+    expect(result.current.promptText(ratSpot())).toBe("Bắn chuột");
+    rpc.fetchFieldState.mockResolvedValue(ratField({ items: { tool_sling: 1 } }));
+    await act(async () => { await result.current.data.reload(); });
+    expect(result.current.promptText(ratSpot())).toBe("Chuột đồng (hết đạn)");
+    rpc.fetchFieldState.mockResolvedValue(ratField({ items: {} }));
+    await act(async () => { await result.current.data.reload(); });
+    expect(result.current.promptText(ratSpot())).toBe("Chuột đồng (cần ná)");
+  });
+
+  it("says what gear is missing on E and calls nothing", async () => {
+    rpc.fetchFieldState.mockResolvedValue(ratField({ items: { ammo_pellet: 5 } }));
+    const { result, toast } = setup();
+    await flush();
+    act(() => { result.current.interact(ratSpot()); });
+    expect(toast).toHaveBeenCalledWith("Chưa có ná — mua ở tiệm anh Hai.");
+    expect(rpc.slingStart).not.toHaveBeenCalled();
+  });
+
+  it("aims with sling_start and opens the game, with fa 12 every 2 s", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    await open(result);
+    expect(rpc.slingStart).toHaveBeenCalledWith("r", "tok", 7);
+    expect(result.current.sling).toMatchObject({ rat: 7, plot: 6, answers: 0, phase: "playing" });
+    expect(fa(canvas, FARM_ANIM.aim)).toBe(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(SLING_FA_MS * 3); });
+    expect(fa(canvas, FARM_ANIM.aim)).toBe(4);
+    act(() => result.current.closeSling());
+    expect(result.current.sling).toBeNull();
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+    await act(async () => { await vi.advanceTimersByTimeAsync(SLING_FA_MS * 2); });
+    expect(fa(canvas, FARM_ANIM.aim)).toBe(4);
+  });
+
+  it("drops a sling_start answer that lands after the game was closed or the field left", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    let answer: (v: unknown) => void = () => {};
+    rpc.slingStart.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    act(() => { result.current.interact(ratSpot()); });
+    canvas.mapId.mockReturnValue("lobby");
+    await act(async () => { answer(aim()); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.sling).toBeNull();
+    expect(fa(canvas, FARM_ANIM.aim)).toBe(0);
+  });
+
+  it("counts a miss as an answer, ends on a hit with its price and sends fp for the plot", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    await open(result);
+    rpc.slingShoot.mockResolvedValueOnce({ state: ratField(), shot: { hit: false, price: null, pellets: 11 } });
+    await act(async () => { await result.current.slingShot(false); });
+    expect(rpc.slingShoot).toHaveBeenCalledWith("r", "tok", 7, false);
+    expect(result.current.sling).toMatchObject({ answers: 1, phase: "playing" });
+    expect(canvas.plotChanged).not.toHaveBeenCalled();
+    rpc.slingShoot.mockResolvedValueOnce({ state: ratField({ live: [] }), shot: { hit: true, price: 336, pellets: 10 } });
+    await act(async () => { await result.current.slingShot(true); });
+    expect(result.current.sling).toMatchObject({
+      phase: "done", message: "🎯 Trúng! Bắt được chuột đồng — 336 xu, đem bán ở vựa cô Út.",
+    });
+    expect(canvas.plotChanged).toHaveBeenCalledWith(6);
+    expect(canvas.farmAnim).toHaveBeenLastCalledWith(FARM_ANIM.stop);
+  });
+
+  it("ends when the last pellet is spent, and on a refusal: rat gone asks the overlay to name the catcher", async () => {
+    const { result } = setup();
+    await flush();
+    await open(result);
+    rpc.slingShoot.mockResolvedValueOnce({ state: ratField(), shot: { hit: false, price: null, pellets: 0 } });
+    await act(async () => { await result.current.slingShot(false); });
+    expect(result.current.sling).toMatchObject({ phase: "refused", message: "Hết đạn đất — mua ở tiệm anh Hai.", gone: false });
+    act(() => result.current.closeSling());
+    await open(result);
+    rpc.slingShoot.mockRejectedValueOnce({ message: "rat gone" });
+    await act(async () => { await result.current.slingShot(true); });
+    expect(result.current.sling).toMatchObject({ phase: "refused", gone: true });
+    act(() => result.current.closeSling());
+    await open(result);
+    rpc.slingShoot.mockRejectedValueOnce({ message: "rat limit", details: "600" });
+    await act(async () => { await result.current.slingShot(true); });
+    expect(result.current.sling).toMatchObject({ phase: "refused", message: "Bạn bắt đủ 6 con chuột trong giờ này rồi — nghỉ 10 phút nhé.", gone: false });
+  });
+
+  it("re-aims with a new sling_start, which counts an answer", async () => {
+    const { result } = setup();
+    await flush();
+    await open(result);
+    rpc.slingStart.mockResolvedValueOnce(aim());
+    await act(async () => { await result.current.slingReaim(); });
+    expect(rpc.slingStart).toHaveBeenCalledTimes(2);
+    expect(result.current.sling).toMatchObject({ answers: 1, phase: "playing" });
+  });
+
+  it("toasts a rat out on a plot I farm, once per rat", async () => {
+    rpc.fetchFieldState.mockResolvedValue(ratField({ live: [RAT, { id: 8, plot: 5, since: iso(0), seed: 4 }] }));
+    const { result, toast } = setup();
+    await flush();
+    expect(vi.mocked(toast).mock.calls).toEqual([["🐀 Chuột mò ra phá thửa 5 của bạn!"]]);
+    await act(async () => { await result.current.data.reload(); });
+    expect(toast).toHaveBeenCalledTimes(1);
   });
 });

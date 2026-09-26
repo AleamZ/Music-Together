@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { WORK_MS, type FarmController } from "@/hooks/useFarmController";
 import { BED_BAR_MS } from "@/lib/game/farm/gather";
-import { NOT_OPEN } from "@/lib/game/farm/messages";
+import { AMMO_PELLET } from "@/lib/game/farm/catalog";
+import { NOT_OPEN, ratGoneText } from "@/lib/game/farm/messages";
 import { isTyping } from "@/lib/game/keys";
 import CoopPanel from "./CoopPanel";
 import CrabGame from "./CrabGame";
@@ -14,6 +15,7 @@ import Handbook from "./Handbook";
 import HarvestGame from "./HarvestGame";
 import PlotPanel from "./PlotPanel";
 import RiceDepotPanel from "./RiceDepotPanel";
+import SlingGame from "./SlingGame";
 import TransplantGame from "./TransplantGame";
 
 /** A 3-second job, a picking or a snail bed (v15.3 §7.3): its line, a bar that fills in `ms`, and "Huỷ" (or Esc) before
@@ -90,6 +92,12 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
       {farm.crab && (
         <CrabGame key={farm.crab.visit.id} crab={farm.crab} panelOpen={panelOpen || panel !== null} onEnd={farm.endCrab}
           onClose={farm.closeCrab} />
+      )}
+      {farm.sling && (
+        <SlingGame key={farm.sling.begunAt} sling={farm.sling} pellets={state?.mine.items[AMMO_PELLET] ?? 0}
+          message={farm.sling.gone ? ratGoneText(state?.rats?.recent.find((r) => r.id === farm.sling?.rat) ?? null) : farm.sling.message}
+          panelOpen={panelOpen || panel !== null} onShot={(hit) => void farm.slingShot(hit)} onReaim={() => void farm.slingReaim()}
+          onClose={farm.closeSling} />
       )}
       {panel?.kind === "plot" && (
         <PlotPanel no={panel.plot} state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act}

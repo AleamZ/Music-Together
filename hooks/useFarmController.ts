@@ -11,9 +11,10 @@ import {
   BED_BAR_MS, CRAB_FINISH_WAIT_MS, gatherPrompt, heldBox, spotKey, spotState, TRANSPLANT_WAIT_MS,
 } from "@/lib/game/farm/gather";
 import {
-  bedEmptyText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, FIELD_LOADING,
-  GATHER_LIMIT_TEXT, GIFT_TEXT, harvestText, harvesterDoneText, holeEmptyText, loadedText, NOT_OPEN, NOT_OPEN_153, pestSnailText,
-  pickingText, produceSaleText, riceSaleText, WORK_EXPIRED, WORK_EXPIRED_TP,
+  bedEmptyText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, farmErrorMessage,
+  FIELD_LOADING, GATHER_LIMIT_TEXT, GIFT_TEXT, harvestText, harvesterDoneText, holeEmptyText, loadedText, NO_PELLETS, NOT_OPEN,
+  NOT_OPEN_153, NOT_OPEN_17, pestSnailText, pickingText, produceSaleText, RAT_GONE, ratPrompt, ratSpawnText, riceSaleText,
+  slingGear, slingHitText, WORK_EXPIRED, WORK_EXPIRED_TP,
 } from "@/lib/game/farm/messages";
 import type { CrabVisit, FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
 import type { FieldState, PlotView } from "@/lib/game/farm/state";
@@ -81,6 +82,25 @@ export interface FarmCrab {
 /** A snail bed's 3-second bar (v15.3 §7.3): movement stays free, and moving cancels it. `text` is the bar's line. */
 export interface FarmBed { bed: number; startedAt: number; text: string }
 
+/** A SlingGame session (v17 §6.2): SlingGame plays it at a rat, the controller talks to the server. */
+export interface FarmSling {
+  rat: number;
+  /** The plot the rat eats (the title, and the `fp` after a hit). */
+  plot: number;
+  /** Seeds the rat's runs (shot i moves on seed + 7 919 · i). */
+  seed: number;
+  /** When sling_start's answer arrived (client ms): a new session is a new game. */
+  begunAt: number;
+  /** The sling answers since the start (a miss, a new aim): each one starts the overlay's 2.2 s reload. */
+  answers: number;
+  /** playing (shots go out) → done (a hit); or refused (a refusal, or the last pellet spent). */
+  phase: "playing" | "done" | "refused";
+  /** The hit's line or the refusal's. */
+  message: string | null;
+  /** The refusal was `rat gone`: the overlay names who took it, from the state's `recent` (§12.2). */
+  gone: boolean;
+}
+
 export interface FarmController {
   data: FieldData;
   /** Now on the server's clock (refreshed every 30 s and by every answer); 0 before the first tick. */
@@ -116,6 +136,15 @@ export interface FarmController {
   bed: FarmBed | null;
   /** "Huỷ" or Esc: the bar stops before anything is sent. */
   cancelBed: () => void;
+  /** A SlingGame session, open in its overlay (v17 §6.2). */
+  sling: FarmSling | null;
+  /** The overlay's shot, after its flight: sling_shoot. A miss with pellets left counts an answer; a hit, a refusal or the
+   *  last pellet ends the session. */
+  slingShot: (hit: boolean) => Promise<void>;
+  /** A shot ready 55 s or more after the last answer was dropped: a new sling_start, which counts an answer. */
+  slingReaim: () => Promise<void>;
+  /** "Thôi", "Đóng" or Esc: the overlay closes and nothing is sent; a sling answer still to come is dropped. */
+  closeSling: () => void;
   /** I moved (the canvas): a snail bed's bar stops before anything is sent (§7.3). */
   moved: () => void;
   /** A land, farming or drying action (a picking starts the progress, a round opens its game); `done` is toasted when it
@@ -173,7 +202,9 @@ const ANIM: Partial<Record<FieldAction["kind"], FarmAnim>> = {
   prepare: FARM_ANIM.prepare, prepare_beds: FARM_ANIM.prepare, tend: FARM_ANIM.prepare, water: FARM_ANIM.pump, spray: FARM_ANIM.spray,
   fertilize: FARM_ANIM.fertilize, pick_snails: FARM_ANIM.snails,
 };
-const FIELD_KINDS: ReadonlySet<string> = new Set(["plot", "coop", "farm_shop", "rice_depot", "drying", "crab_hole", "snail_bed"]);
+const FIELD_KINDS: ReadonlySet<string> = new Set(["plot", "coop", "farm_shop", "rice_depot", "drying", "crab_hole", "snail_bed", "rat"]);
+/** A SlingGame re-sends its `fa 12` this often while it is open (§6.2, §11). */
+export const SLING_FA_MS = 2000;
 
 /** A round is being played or waits for its claim: no other job or round starts. */
 const roundOn = (r: FarmRound | null): boolean => r !== null && (r.phase === "playing" || r.phase === "waiting");
@@ -181,6 +212,8 @@ const roundOn = (r: FarmRound | null): boolean => r !== null && (r.phase === "pl
 const sameRound = (showing: FarmRound | null, r: FarmRound): boolean => showing?.plot === r.plot && showing.begunAt === r.begunAt;
 /** The crab visit showing is still `c`. */
 const sameCrab = (showing: FarmCrab | null, c: FarmCrab): boolean => showing?.visit.id === c.visit.id;
+/** The sling session showing is still `s`. */
+const sameSling = (showing: FarmSling | null, s: FarmSling): boolean => showing?.rat === s.rat && showing.begunAt === s.begunAt;
 
 /** Why a hole or a bed cannot be visited now (v15.3 §13.1), in the server's refusal order, or null: it is ready. */
 function gatherRefusal(it: Interactable, s: FieldState | null, catalog: FarmCatalog | null, now: number): string | null {
@@ -222,16 +255,17 @@ function workLook(p: PlotView | undefined, catalog: FarmCatalog | null, plot: nu
 export function useFarmController({ token, roomId, accountId, mapId, canvas, toast, onCoinsChanged }: FarmControllerOptions): FarmController {
   const active = mapId === "field";
   const data = useField(roomId, token, active, toast);
-  const { state, catalog, notOpen, run, claimGift, buyItem, sellRice, reload, crabStart, crabFinish, pickSnailBed } = data;
+  const { state, catalog, notOpen, run, claimGift, buyItem, sellRice, reload, crabStart, crabFinish, pickSnailBed, slingStart, slingShoot } = data;
   const [panel, setPanel] = useState<FarmPanel | null>(null);
   const [busy, setBusy] = useState(false);
   const [work, setWork] = useState<FarmWork | null>(null);
   const [round, setRound] = useState<FarmRound | null>(null);
   const [crab, setCrab] = useState<FarmCrab | null>(null);
   const [bed, setBed] = useState<FarmBed | null>(null);
-  const live = useRef({ toast, onCoinsChanged, state, catalog, notOpen, round, crab });
+  const [sling, setSling] = useState<FarmSling | null>(null);
+  const live = useRef({ toast, onCoinsChanged, state, catalog, notOpen, round, crab, sling });
   useEffect(() => {
-    live.current = { toast, onCoinsChanged, state, catalog, notOpen, round, crab };
+    live.current = { toast, onCoinsChanged, state, catalog, notOpen, round, crab, sling };
   });
 
   // --- the clock: an answer carries the server's time, and a tick moves it on while I am on the field — every second
@@ -561,6 +595,92 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     canvas()?.farmAnim(FARM_ANIM.stop);
   }, [canvas]);
 
+  // --- the field's rats (v17 §5.4, §12.1): on the canvas with every state, and a toast for each rat out on a plot I farm
+  //     (once per rat)
+  useEffect(() => {
+    if (active) canvas()?.setRats(state?.rats ?? null);
+  }, [active, state, canvas]);
+  const ratsSeen = useRef(new Set<number>());
+  useEffect(() => {
+    if (!active || !state?.rats) return;
+    for (const r of state.rats.live) {
+      if (ratsSeen.current.has(r.id)) continue;
+      ratsSeen.current.add(r.id);
+      if (state.plots.find((p) => p.no === r.plot)?.farmer?.id === accountId) live.current.toast(ratSpawnText(r.plot));
+    }
+  }, [active, state, accountId]);
+
+  // --- the ná (v17 §6.2): sling_start, SlingGame with fa 12 every 2 s, then a sling_shoot per shot, each after its flight.
+  // A hit sends fp {plot}. Thôi or Esc sends nothing; an answer still on its way is dropped.
+  const slingAnim = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopSlingAnim = useCallback(() => {
+    if (!slingAnim.current) return;
+    clearInterval(slingAnim.current);
+    slingAnim.current = null;
+    canvas()?.farmAnim(FARM_ANIM.stop);
+  }, [canvas]);
+  useEffect(() => () => {
+    if (slingAnim.current) clearInterval(slingAnim.current);
+  }, []);
+  const startSling = useCallback(async (ratId: number): Promise<boolean> => {
+    if (workTimer.current || roundOn(live.current.round) || live.current.crab || live.current.sling) return false;
+    const plot = live.current.state?.rats?.live.find((r) => r.id === ratId)?.plot;
+    if (plot === undefined) return false;
+    const closed = closes.current;
+    setBusy(true);
+    const begun = await slingStart(ratId);
+    setBusy(false);
+    // the field left meanwhile, or the canvas shows another map by now: the aim is dropped (it expires on the server)
+    const c = canvas();
+    if (!begun || closes.current !== closed || c?.mapId() !== "field") return false;
+    c?.farmAnim(FARM_ANIM.aim);
+    if (slingAnim.current) clearInterval(slingAnim.current);
+    slingAnim.current = setInterval(() => canvas()?.farmAnim(FARM_ANIM.aim), SLING_FA_MS);
+    setPanel(null);
+    setSling({
+      rat: ratId, plot, seed: Math.floor(Math.random() * 0x7fffffff), begunAt: Date.now(), answers: 0, phase: "playing",
+      message: null, gone: false,
+    });
+    return true;
+  }, [slingStart, canvas]);
+  /** A refusal ends the session with its text; a strike (no text) closes it for its modal. */
+  const slingRefused = useCallback((s: FarmSling, text: string | null) => {
+    stopSlingAnim();
+    setSling(text === null ? null : { ...s, phase: "refused", message: text, gone: text === RAT_GONE });
+  }, [stopSlingAnim]);
+  const slingShot = useCallback(async (hit: boolean) => {
+    const s = live.current.sling;
+    if (!s || s.phase !== "playing") return;
+    let refusal: string | null = null;
+    const r = await slingShoot(s.rat, hit, (text) => { refusal = text; });
+    // a catch changed the plot for everyone, even when the overlay was closed meanwhile
+    if (r?.shot.hit) canvas()?.plotChanged(s.plot);
+    if (!sameSling(live.current.sling, s)) return;
+    if (!r) return slingRefused(s, refusal);
+    if (r.shot.hit) {
+      stopSlingAnim();
+      setSling({ ...s, phase: "done", message: slingHitText(r.shot.price ?? 0) });
+    } else if (r.shot.pellets < 1) {
+      slingRefused(s, NO_PELLETS);
+    } else {
+      setSling({ ...s, answers: s.answers + 1 });
+    }
+  }, [slingShoot, canvas, stopSlingAnim, slingRefused]);
+  const slingReaim = useCallback(async () => {
+    const s = live.current.sling;
+    if (!s || s.phase !== "playing") return;
+    let refusal: string | null = null;
+    const r = await slingStart(s.rat, (text) => { refusal = text; });
+    if (!sameSling(live.current.sling, s)) return;
+    if (!r) return slingRefused(s, refusal);
+    setSling({ ...s, answers: s.answers + 1 });
+  }, [slingStart, slingRefused]);
+  const closeSling = useCallback(() => {
+    closes.current += 1;
+    stopSlingAnim();
+    setSling(null);
+  }, [stopSlingAnim]);
+
   // leaving the field drops a begin_work or crab_start answer still on its way from the commit that leaves it, before the
   // canvas switches worlds (only a ref here: the overlays close in the task below)
   useLayoutEffect(() => {
@@ -574,9 +694,10 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     const t = setTimeout(() => {
       closeRound();
       shutCrab(false);
+      closeSling();
     }, 0);
     return () => clearTimeout(t);
-  }, [active, cancelWork, cancelBed, closeRound, shutCrab]);
+  }, [active, cancelWork, cancelBed, closeRound, shutCrab, closeSling]);
 
   // --- my harvesters (R15): fetched at the end + 1 s, and again while the job still shows. The end is seen on the state's
   //     change, whichever fetch brings it: then fp, and a toast with the wet rice they brought
@@ -732,11 +853,24 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
         else startBed(it);
         break;
       }
+      case "rat": {
+        // without the ná or a pellet, E says so (§12.1); before 0019 there are no rats to meet
+        const s = live.current.state;
+        if (!s) live.current.toast(FIELD_LOADING);
+        else if (!s.rats) live.current.toast(NOT_OPEN_17);
+        else {
+          const gear = slingGear(s.mine.items);
+          if (gear) live.current.toast(farmErrorMessage({ message: gear }, undefined, "sling"));
+          else if (it.rat !== undefined) void startSling(it.rat);
+        }
+        break;
+      }
     }
     return true;
-  }, [startCrab, startBed]);
+  }, [startCrab, startBed, startSling]);
   const promptText = useCallback((it: Interactable): string | null => {
     if (!FIELD_KINDS.has(it.kind)) return null;
+    if (it.kind === "rat") return ratPrompt(slingGear(state?.mine.items ?? {}));
     if (it.kind === "crab_hole" || it.kind === "snail_bed") return gatherPrompt(it, state?.mine ?? null, catalog, now);
     const p = it.kind === "plot" ? state?.plots.find((x) => x.no === it.plot) : undefined;
     if (!p || !state || !catalog) return it.prompt;
@@ -763,6 +897,10 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     closeCrab,
     bed,
     cancelBed,
+    sling,
+    slingShot,
+    slingReaim,
+    closeSling,
     moved: cancelBed,
     act,
     buy,

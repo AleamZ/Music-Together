@@ -3,7 +3,7 @@ import { overlayLocks } from "@/lib/game/overlays";
 
 const none = {
   panel: false, fishingPanel: false, creating: false, anticheatModal: false, farmPanel: false, farmWork: false, farmRound: false,
-  farmCrab: false, cardPanel: false, rulesBook: false,
+  farmCrab: false, slingGame: false, cardPanel: false, rulesBook: false,
 };
 
 describe("overlayLocks (the game shell's blocking and FarmOverlays' panelOpen)", () => {
@@ -27,5 +27,9 @@ describe("overlayLocks (the game shell's blocking and FarmOverlays' panelOpen)",
     expect(overlayLocks({ ...none, farmWork: true })).toEqual({ blocking: true, panelOpen: false });
     expect(overlayLocks({ ...none, farmRound: true })).toEqual({ blocking: true, panelOpen: false });
     expect(overlayLocks({ ...none, farmCrab: true })).toEqual({ blocking: true, panelOpen: false });
+  });
+
+  it("takes only the canvas input for a SlingGame, which minds its own Esc (v17 §12.2)", () => {
+    expect(overlayLocks({ ...none, slingGame: true })).toEqual({ blocking: true, panelOpen: false });
   });
 });

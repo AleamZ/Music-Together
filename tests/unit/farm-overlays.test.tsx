@@ -32,10 +32,40 @@ const controller = (over: Partial<FarmController> = {}): FarmController => ({
   now: NOW, tasks: [], urgent: 0, panel: null, openPanel: vi.fn(), closePanel: vi.fn(), busy: false, work: null, cancelWork: vi.fn(),
   round: null, endRound: vi.fn(), nextRound: vi.fn(), closeRound: vi.fn(), crab: null, endCrab: vi.fn(), closeCrab: vi.fn(),
   bed: null, cancelBed: vi.fn(), moved: vi.fn(),
+  sling: null, slingShot: vi.fn(), slingReaim: vi.fn(), closeSling: vi.fn(),
   act: vi.fn().mockResolvedValue(true), buy: vi.fn().mockResolvedValue(true), sell: vi.fn().mockResolvedValue(true),
   loadSprayer: vi.fn().mockResolvedValue(true), sellProduce: vi.fn().mockResolvedValue(true), sellCritters: vi.fn().mockResolvedValue(true),
   interact: vi.fn(), promptText: vi.fn(),
   ...over,
+});
+
+describe("FarmOverlays, the ná (v17 §12.2)", () => {
+  const SLING = { rat: 7, plot: 5, seed: 1, begunAt: 1, answers: 0, phase: "refused" as const, message: "Con chuột này không còn nữa.", gone: true };
+  const withRats = (recent: unknown[]) => parseFieldState({
+    server_now: new Date(NOW).toISOString(),
+    plots: [{ no: 5, kind: "village", owner: null, sale_price: null, sublease_price: null, farmer: null, lease: null, offers: 0, crop: null }],
+    drying: [],
+    mine: { items: { ammo_pellet: 12 }, rice: {}, coins: 10, gift_claimed: true },
+    rats: { next_at: new Date(NOW).toISOString(), price: 150, live: [], recent, plots: {} },
+  })!;
+
+  it("names who took a gone rat from the state's recent, or sends it home", () => {
+    const ended = new Date(NOW).toISOString();
+    const recent = [{ id: 7, plot: 5, since: ended, seed: 1, ended_at: ended, how: "dog", by: { id: "b", name: "Dat" }, dog: "Mực" }];
+    const farm = controller({ sling: SLING, data: { ...controller().data, state: withRats(recent) } });
+    const { rerender } = render(<FarmOverlays farm={farm} me="me" onField />);
+    expect(screen.getByRole("status")).toHaveTextContent("Chuột bị Mực của Dat vồ mất rồi!");
+    rerender(<FarmOverlays farm={controller({ sling: SLING, data: { ...controller().data, state: withRats([]) } })} me="me" onField />);
+    expect(screen.getByRole("status")).toHaveTextContent("Chuột chạy về hang rồi.");
+  });
+
+  it("shows a refusal's own text, and closes on Đóng", () => {
+    const farm = controller({ sling: { ...SLING, gone: false, message: "Hết đạn đất — mua ở tiệm anh Hai." } });
+    render(<FarmOverlays farm={farm} me="me" onField />);
+    expect(screen.getByRole("status")).toHaveTextContent("Hết đạn đất — mua ở tiệm anh Hai.");
+    fireEvent.click(screen.getByRole("button", { name: "Đóng" }));
+    expect(farm.closeSling).toHaveBeenCalled();
+  });
 });
 
 describe("FarmOverlays", () => {
