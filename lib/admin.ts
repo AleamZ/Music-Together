@@ -25,6 +25,8 @@ export interface AnticheatHoldings {
   /** v15.2 (`0016`): the hoa màu and the sprayer's tank; older answers lack them. */
   produce?: Array<{ upland: string; kg: number }>;
   tank?: { item: string | null; charges: number } | null;
+  /** v15.3 (`0018`): the critters held, per kind (count and what cô Út pays); older answers lack them. */
+  critters?: Array<{ kind: string; n: number; xu: number }>;
   plots: unknown[]; leases: unknown[]; offers: unknown[]; crops: unknown[]; drying: unknown[];
   /** Catch and land lines about the account in the chat. */
   announcements: number;

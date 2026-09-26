@@ -22,6 +22,7 @@ export const CODE_LABEL: Record<string, string> = {
   quality_range: "Điểm cấy/gặt sai",
   bad_plot: "Số thửa sai",
   bad_slot: "Số ô phơi sai",
+  bad_spot: "Số hang cua/bãi ốc sai",
   bad_water: "Mức bơm/tháo nước sai",
   bad_work: "Việc đồng sai",
   bad_qty: "Số lượng sai",
@@ -30,6 +31,7 @@ export const CODE_LABEL: Record<string, string> = {
   kind_mismatch: "Sai loại vật phẩm",
   reel_gate_hug: "Kéo cá sát ngưỡng (20 lần/ngày)",
   cast_daily_cap: "Chạm 300 lần câu/ngày",
+  gather_daily_cap: "Chạm 200 lượt bắt cua, mò ốc/ngày",
   bad_game: "Sai bàn bài",
   bad_seat: "Số ghế sai",
   bad_stake: "Mức cược sai",
@@ -66,10 +68,12 @@ export function holdingsLine(h: AnticheatHoldings): string {
   const items = h.inventory.reduce((a, i) => a + i.qty, 0);
   const kg = h.rice.reduce((a, r) => a + r.wet_kg + r.dry_kg, 0);
   const produce = (h.produce ?? []).reduce((a, p) => a + p.kg, 0);
+  const critters = (h.critters ?? []).reduce((a, c) => a + c.n, 0);
   const seats = h.cards ?? [];
   return [
     formatXu(h.wallet?.coins ?? 0), `${count(items)} món đồ`, `${count(h.fish.length)} con cá`, `${count(h.personal_bests.length)} kỷ lục`,
-    `${count(kg)} kg lúa`, `${count(produce)} kg hoa màu`, `${count(h.plots.length)} thửa sở hữu`, `${count(h.leases.length)} thửa đang thuê`,
+    `${count(kg)} kg lúa`, `${count(produce)} kg hoa màu`, `${count(critters)} con cua ốc`, `${count(h.plots.length)} thửa sở hữu`,
+    `${count(h.leases.length)} thửa đang thuê`,
     `${count(h.offers.length)} đề nghị mua`, `${count(h.drying.length)} ô phơi`, `${count(h.announcements)} tin khoe trong chat`,
     ...(seats.length > 0 ? [`${count(seats.length)} ghế bàn bài (${formatXu(seats.reduce((a, s) => a + s.chips + s.escrow, 0))})`] : []),
   ].join(" · ");

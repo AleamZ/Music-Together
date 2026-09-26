@@ -6,7 +6,7 @@
 - Every other ruling here (R1–R33) is the controller's recommendation, recorded as decided with its reason. The 2026-09-25 review's twelve fixes are folded in.
 
 **Builds on:** `feat/v15-field` with v15.1 (`0013`, including the economy rebalance), `0014_lyrics_lockdown.sql` and the anti-cheat layer (`0015_anticheat.sql`). The stack is unchanged.
-**Order:** `0013` → `0014` → `0015` → **`0016_v15_2_crops.sql` (this doc)** → v15.3 `0017_v15_3_gather.sql` → v16.
+**Order:** `0013` → `0014` → `0015` → **`0016_v15_2_crops.sql` (this doc)** → v16 `0017_v16_cards.sql` → v15.3 `0018_v15_3_gather.sql` (`2026-09-26-music-together-v15.3-design.md`, whose §3 amends this doc).
 **Amends:** the v15 spec, the anti-cheat spec and the economy spec. §3 lists the lines.
 
 ## 1. Goal
@@ -38,7 +38,7 @@ The server stays authoritative. Every timer, yield, charge and roll lives in SEC
 | H3 | **Harvester.** A 30 s job that cuts every remaining part, with the grain computed at its end. It completes lazily and can finish a partly cut plot. The price is about 3 000 xu. |
 | H4 | **No 60-min job.** The "one hand job at a time" rule and the idle animation are gone. The farmer's harvest animation plays during a round, through `fa`. |
 | S5 | **Sprayer.** A durable tool at anh Hai's, about 5 000 xu, one per account. "Nạp thuốc" turns 1 bottle into 3 charges of that pesticide, and reloading replaces the contents (the client confirms first). A spray uses a charge when the tank holds the matching pesticide, otherwise a bottle. |
-| S6 | **Rice harvest.** Rice is harvested only by sickle (in parts) or by the harvester. Transplanting (rice and ớt) and the quick hoa-màu harvests keep the 3 s action behind the 2 s gate. |
+| S6 | **Rice harvest.** Rice is harvested only by sickle (in parts) or by the harvester. The quick hoa-màu harvests keep the 3 s action behind the 2 s gate; so did transplanting (rice and ớt) until v15.3 made it a TransplantGame round (v15.3 R19). |
 | S7 | **Where hoa màu grows.** On the same plots. Làm đất offers "làm ruộng lúa" (flooded) or "lên luống" (raised beds), and the choice sets the plot's crop kind for that season. |
 | S8 | **One model.** A generic, data-driven hoa-màu model in SQL, mirrored in TS and pinned by a shared fixtures JSON. Each crop is a config row. |
 | S9 | **Twists and targets.** Profit on a rented, well-cared plot: khoai ≈ 40 000, bắp ≈ 55 000, ớt ≈ 80 000. Seeds cost 600–1 500. The numbers live in config, with the arithmetic per crop (§10). |
@@ -63,7 +63,7 @@ The server stays authoritative. Every timer, yield, charge and roll lives in SEC
 | R8 | While 0 < parts < 6 the plot refuses care actions (`harvesting`). Rounds, the harvester and abandon remain; after an abandon the cut grain stays. | This is H2. Abandon is not care. |
 | R9 | The harvester is pro-rated at 500 xu per remaining part. | It keeps the 3 000 headline for a whole plot and is fair for a half-cut plot. |
 | R10 | Harvester completion is sweep step J. It runs after the anti-cheat step 0 and before step 1, and computes the grain at `harvester_until`. It pays only if the crop's farmer was still the plot's farmer at the job's start. | It runs before a lease can expire, and it never pays a wiped or reclaimed farmer. |
-| R11 | Work must fit in the lease. `begin_work` needs 25 s left for a rice round and 5 s for a transplant or a picking (`lease ending`); a harvester needs 30 s (`lease ends`). The plot panel disables "Gặt" and "Gặt tiếp" with that reason in the lease's last 25 s. | A crop never outlives its lease mid-job: 25 s covers a round (10–14 s) and its claim. If a lease still runs out mid-round, the sweep takes the crop and the part is refused. |
+| R11 | Work must fit in the lease. `begin_work` needs 25 s left for a rice round (and, from v15.3, a transplant round) and 5 s for a picking (`lease ending`); a harvester needs 30 s (`lease ends`). The plot panel disables "Gặt" and "Gặt tiếp" (from v15.3 also "Cấy lúa" and "Trồng cây ớt con") with that reason in the lease's last 25 s. | A crop never outlives its lease mid-job: 25 s covers a round (10–14 s; a transplant round 4–21 s, v15.3 §8.2) and its claim. If a lease still runs out mid-round, the sweep takes the crop and the part is refused. |
 | R12 | Any number of harvesters may run at once. | A shared machine would add waiting for no gameplay gain. The fee is the sink. |
 | R13 | The harvester is rented only in the co-op panel, in a new tab "Máy gặt". The plot panel points there. | S10 places it at chú Tám's. |
 | R14 | A round sends `fa 2` at its start and every 2 s while it runs, then `fa 0`. | H4 asks for the existing hint, and an `fa` lasts 2.5 s. |
@@ -89,12 +89,12 @@ The server stays authoritative. Every timer, yield, charge and roll lives in SEC
 
 ## 3. What moved, and the lines other specs change
 
-**Moved to v15.3 "Đồng vui"** (`0017_v15_3_gather.sql`):
+**Moved to v15.3 "Đồng vui"** (`0018_v15_3_gather.sql`; `0017` became the v16 card corner):
 - crab holes and snail beds;
 - the critter containers (`box_bucket`, `box_basket`) and selling crabs and snails;
 - pest snails going into the container;
-- the **transplant minigame** (transplanting stays behind the 2 s gate) and the **crab minigame**;
-- the question of how a transplant quality returns (D1), with its soft signal.
+- the **transplant minigame** (transplanting stays behind the 2 s gate until v15.3 gates it at 8–120 s) and the **crab minigame**;
+- the question of how a transplant quality returns (D1), with its soft signal. v15.3 closes it (its R20): no quality returns, and the signal is dropped.
 
 The **harvest minigame stays in v15.2**, but it gates progress (6 parts) and never sets a quality.
 
@@ -105,9 +105,9 @@ The **harvest minigame stays in v15.2**, but it gates progress (6 parts) and nev
 | Header, Roadmap | v15 = rice and land (15.1), tools and hoa màu (15.2), crabs and snails (15.3). |
 | §1 | Goal 3 (crabs, snails) → v15.3. "Three minigames … (second phase)" → the harvest minigame gates rice parts (v15.2); transplanting and crab-grabbing come in v15.3. |
 | §2 | Row 7 → "plus the harvest minigame (v15.2) and two more (v15.3)". Clarification f → the transplant quality is v15.3's question. |
-| §3 | "v15.2 is `0016_v15_gather.sql`" → v15.2 is `0016_v15_2_crops.sql` and v15.3 is `0017_v15_3_gather.sql`. |
+| §3 | "v15.2 is `0016_v15_gather.sql`" → v15.2 is `0016_v15_2_crops.sql` and v15.3 is `0018_v15_3_gather.sql`. |
 | §4 | Replace the v15.2 block with a pointer to this spec, and add a v15.3 block with the moved list above. |
-| §5 | "v15.2: TransplantGame, HarvestGame, CrabGame" → v15.2: HarvestGame; v15.3: TransplantGame, CrabGame. Migrations: `0016_v15_2_crops.sql`, `0017_v15_3_gather.sql`. |
+| §5 | "v15.2: TransplantGame, HarvestGame, CrabGame" → v15.2: HarvestGame; v15.3: TransplantGame, CrabGame. Migrations: `0016_v15_2_crops.sql`, `0018_v15_3_gather.sql`. |
 | §6.2 | "v15.2 gathering spots" → v15.3. |
 | §8.2 | Row `ripe`: "harvest" → harvest by sickle in 6 parts or by harvester (v15.2 §6). |
 | §8.6 | `qT, qH` → qT is 1.0 until v15.3 (D1); qH is removed, since the harvest minigame gates parts and multiplies nothing. |
@@ -119,14 +119,14 @@ The **harvest minigame stays in v15.2**, but it gates progress (6 parts) and nev
 | §11.8 | Clients also report a harvest round's success (8 s gate, no yield effect). "(v15.2) crab hits" → v15.3. |
 | §12 | `fa` codes: add 9 dig and 10 pick. |
 | §13.3 | Shop: tools and hoa-màu seeds (v15.2), containers (v15.3). Depot: hoa màu (v15.2), crabs and snails (v15.3). Co-op: the "Máy gặt" tab. |
-| §15 | Retitle to "v15.3 — gathering and minigames (`0017_v15_3_gather.sql`)". HarvestGame moves to v15.2 §6.2. "All three are pure state machines" → both. |
+| §15 | Retitle to "v15.3 — gathering and minigames (`0018_v15_3_gather.sql`)". HarvestGame moves to v15.2 §6.2. "All three are pure state machines" → both. |
 | §17 | Minigame tests: HarvestGame is v15.2, the others v15.3. "v15.2 adds v15-gather-smoke.sql" → v15.2 adds `v15-2-smoke.sql`, v15.3 adds `v15-gather-smoke.sql`. |
 
 **Anti-cheat spec:**
-- **Migration names.** The header order, D7 and §11.5 name `0016_v15_2_crops.sql`, then `0017_v15_3_gather.sql`.
-- **Moved to v15.3.** In §6.4 and the §7.2 `quality_range` row, "v15.2 brings a real quality back" becomes v15.3. The "quality always 1.1" soft signal in §7.4 and §16 moves to `0017`.
+- **Migration names.** The header order, D7 and §11.5 name `0016_v15_2_crops.sql`, then `0017_v16_cards.sql` and `0018_v15_3_gather.sql`.
+- **Moved to v15.3.** In §6.4 and the §7.2 `quality_range` row, "v15.2 brings a real quality back" becomes v15.3. The "quality always 1.1" soft signal in §7.4 and §16 moves to `0018`, and v15.3 drops it (its R20).
 - **§7.2 and §7.3.** `bad_plot` covers 24 plot RPCs, `bad_work` also covers `tend_crop`, and `bad_qty` also covers `sell_produce`. §7.3 gains the new honest refusals (§11.5).
-- **§9.3 and §11.3.** Add the 7 v15.2 RPCs (42 in all); the gather RPCs belong to `0017`. Rule 4 adds `harvester` and `produce_sell` (v15.2), then `critter_sell` (v15.3).
+- **§9.3 and §11.3.** Add the 7 v15.2 RPCs (42 in all); the gather RPCs belong to `0018`. Rule 4 adds `harvester` and `produce_sell` (v15.2), then `critter_sell` (v15.3).
 - **§9.6, §12.5 and §1.5.** The wipe clears `produce_stock` and the tank, the holdings line gains `· {kg} kg hoa màu`, and §1.5 gains the harvest-part residual (§11.5).
 
 **Economy spec §4:** add a pointer to v15.2 §10, which restates the rice table (a hand harvest adds no per-season cost; the harvester adds 3 000) and adds the hoa-màu seasons.
@@ -307,7 +307,7 @@ One row per crop, publicly readable like `rice_varieties`. Hours count from **P*
 - **A picking** is the 3 s `harvest` work. Earlier unpicked pickings are lost.
 - **After the last picking** the crop is deleted and a lease ends.
 - **When every remaining picking is lost** (t ≥ L_n), sweep step 6 deletes the crop, and the lease stays (R26).
-- **When the lease runs out,** the crop is lost with every picking not yet taken, as rice is. The lease sweep (steps 1 and 4) runs in `_field_open`, before any action on the plot. `begin_work` for a picking or a transplant needs at least 5 s left on the lease (`lease ending`); a 3 s action that still loses the race is refused (`not your plot`).
+- **When the lease runs out,** the crop is lost with every picking not yet taken, as rice is. The lease sweep (steps 1 and 4) runs in `_field_open`, before any action on the plot. `begin_work` for a picking needs at least 5 s left on the lease (`lease ending`), and for a transplant 25 s from v15.3 (its R19, as a rice round); a job that still loses the race is refused (`not your plot`).
 
 ### 8.4 Water and rot
 
@@ -430,7 +430,7 @@ kg_k   = max(ceil(base_kg · pct_k / 1000), floor(x + 0.5))
 |---|---|---|
 | Lên luống | `prepare_beds` | A bare plot; water 1. |
 | Trồng / gieo / ươm | `plant_crop(item)` | Beds with nothing planted; the bed must be Ẩm. Uses one bag of a seed with `upland` set. Sets `upland` and P (cutting, direct) or `sow_at` (nursery), and rolls the pests. |
-| Trồng cây con (ớt) | `begin_work('transplant')` + `transplant` | The nursery is ≥ `nursery_ready_h` old, the bed is Ẩm, and at least 5 s are left on the lease (`lease ending`). Sets P. The 2 s gate; quality ignored (D1). |
+| Trồng cây con (ớt) | `begin_work('transplant')` + `transplant` | The nursery is ≥ `nursery_ready_h` old, the bed is Ẩm, and at least 25 s are left on the lease (`lease ending`; 5 s before v15.3). Sets P. A TransplantGame round from v15.3, taken 8–120 s after `begin_work` (v15.3 §8.3; the 2 s gate before); quality ignored (D1). |
 | Lật dây, vun gốc | `tend_crop(act)` | After P. The act must be one of this crop's `act` cares (`wrong crop`). Recorded in `work_log` whenever it is done; the panel warns outside the windows. |
 | Tưới/tháo, bón, xịt | `water`, `apply_fertilizer`, `spray` | Unchanged RPCs. The panel's advice follows §8.5. |
 | Đào / bẻ / hái | `begin_work('harvest')` + `harvest` | The next picking is ready (R_k ≤ t < L_k), water ≤ 1, and at least 5 s are left on the lease (`lease ending`). The kg go to `produce_stock`, and `harvests` gains `{t, k, kg}`. The last picking deletes the crop and ends a lease. |
@@ -569,7 +569,7 @@ The other checks are also added with `drop constraint if exists` + `add`, so a r
 
 **Re-created:**
 - `_farm_crop` now selects the crop `for update` and becomes `volatile` (§6.5), and it raises `harvester busy` while a harvester runs. `_work_check` handles the rice round (sickle, phase, water), the ớt transplant and hoa-màu pickings.
-- `_farm_do_begin_work` replaces any earlier work record and applies the lease gates: 25 s left for a rice round, 5 s for a transplant or a picking (`lease ending`, R11).
+- `_farm_do_begin_work` replaces any earlier work record and applies the lease gates: 25 s left for a rice round, 5 s for a transplant or a picking (`lease ending`, R11); from v15.3 a transplant needs 25 s too (v15.3 R19).
 - `_farm_do_soak` and `_farm_do_sow` raise `wrong crop` on beds. `_farm_do_fertilize`, `_farm_do_water` and `_farm_do_spray` use `_care_crop`, and spray also uses the tank.
 - `_farm_do_transplant` sets P for ớt. `_farm_do_harvest` does hoa-màu pickings only. `_farm_do_pick_snails` adds `harvester busy` and `harvesting`; `_farm_do_abandon` adds `harvester busy`.
 - `_plot_view`, `_farm_mine`, `_field_sweep`.
@@ -600,7 +600,7 @@ A successful `harvest_part` answers `field_state || {"harvest_part": {"variety",
 | `sell_produce(p_session_token text, p_upland text, p_kg integer)` | `invalid quantity`, `invalid crop`, `not enough crop`. Pays `kg · price_per_kg` (`produce_sell`, ref `'<upland> <kg> kg'`). |
 
 **Changed behaviour, with the same signatures:**
-- `begin_work` replaces any earlier record. On rice, `'harvest'` starts a round (§6.2). It raises `lease ending` with under 25 s (round) or 5 s (transplant, picking) left on the lease.
+- `begin_work` replaces any earlier record. On rice, `'harvest'` starts a round (§6.2). It raises `lease ending` with under 25 s (a round; a transplant from v15.3) or 5 s (a picking; a transplant before v15.3) left on the lease.
 - `harvest(…, quality)` on rice raises `wrong crop`. `transplant` sets P on ớt. `spray` uses the tank. `buy_farm_item` sells tools (§9). `claim_farm_gift` adds the sickle.
 - Every action on a plot with a running harvester raises `harvester busy`, and every care action on a partly cut plot raises `harvesting`.
 
@@ -699,7 +699,7 @@ The two `harvest_part` rows need the call's context: `farmErrorMessage(err, item
   | Button | Reasons and advice |
   |---|---|
   | `plant_label`, one per owned hoa-màu seed | "Cần đất Ẩm (đang {Khô})." With no seed, a disabled "Trồng hoa màu": "Chưa có giống hoa màu — ghé tiệm anh Hai." |
-  | `transplant_label` (ớt) | "Cây con chưa đủ tuổi — trồng được sau {d}." · "Cần đất Ẩm (đang {Đẫm})." |
+  | `transplant_label` (ớt) | "Cây con chưa đủ tuổi — trồng được sau {d}." · "Cần đất Ẩm (đang {Đẫm})." From v15.3 it opens TransplantGame (v15.3 §13.3, §13.4). |
   | each act care ("Lật dây", "Vun gốc") | done on time: disabled "Đã {lật dây} rồi." · on time: hint "Đúng lúc {lật dây}." · early: "Chưa tới lúc — {lật dây} lúc {24}–{32} giờ sau trồng." · half region: "Trễ rồi — chỉ được nửa công." · later: "Quá muộn — làm bây giờ là phí công." |
   | "Bón {phân …}" | before P: "Bón lót trước khi trồng." · "Đã bón lót loại này — bón thêm là phí." · "Chưa trồng — bón thúc bây giờ là phí." After P: "Đã trồng — bón lót bây giờ là phí." · "Đúng lúc {bón thúc nuôi củ}." · "Hơi sớm — chỉ được nửa công (đúng lúc sau {d})." · "Trễ rồi — chỉ được nửa công." · "{Phân urê} lúc này chỉ được nửa công." · "Đã bón đạm đợt này — bón nữa sẽ dư đạm!" · "Bón đạm lúc này gây dư đạm!" · "Lúc này bón là phí." |
   | "Tưới nước (lên {Ẩm})" or "Tưới thêm (giữ Ngập)"; "Tháo nước (xuống {Ẩm})" | at 0: disabled "Luống đã khô." On khoai past 22 h, watering to ≥ 2 warns "Đất Đẫm làm thối củ khoai!" |
@@ -768,7 +768,7 @@ Each line reads "Thửa {n} · …". The panel ticks every second while a harves
 - **Name-post label** (`plotLabel`, per frame): "3 · Dat · gặt {2}/6" while partly cut; "3 · Dat · máy gặt {25}s" while a harvester runs (seconds from `serverNow()`).
 - **Prompt:** the first enabled job, by its button label: "Gặt tiếp thửa 3", "Trồng dây khoai thửa 5", "Hái ớt thửa 6".
 - **HUD:** `produceSummary` gives "🌾 {70} kg khô · {0} kg ướt", plus " · 🧺 {180} kg màu" when there is any.
-- **Toasts:** "Đã lên luống — đất Ẩm, sẵn sàng trồng." · "Đã {trồng dây khoai}." · "Đã {lật dây}." · "🧺 Thu hoạch {24} kg {ớt} (lứa {1}/{3}) — đem bán cho cô Út nhé!" The 3 s bar reads "🧺 Đang {hái ớt} thửa {6}…" or "🌱 Đang trồng cây ớt con thửa {6}…".
+- **Toasts:** "Đã lên luống — đất Ẩm, sẵn sàng trồng." · "Đã {trồng dây khoai}." · "Đã {lật dây}." · "🧺 Thu hoạch {24} kg {ớt} (lứa {1}/{3}) — đem bán cho cô Út nhé!" The 3 s bar reads "🧺 Đang {hái ớt} thửa {6}…" (before v15.3 also "🌱 Đang trồng cây ớt con thửa {6}…"; v15.3 makes "Trồng cây ớt con" a TransplantGame round, and that bar goes).
 - **Before `0016`:** the field shows no hoa-màu seeds, and the new RPCs toast `NOT_OPEN_152`: "Nông cụ và hoa màu chưa mở — chủ phòng cần chạy migration 0016."
 
 ## 14. Handbook — Sổ tay nhà nông
@@ -882,7 +882,7 @@ Everything is original and drawn in code, in the module palettes (`K` in `crops.
   - every method, from `prepare_beds` to planting; water, fertilizer, tend; a pest fired and treated; three ớt pickings with time travel; `sell_produce` and its ledger row;
   - `wrong crop` (soak on beds, `harvest_part` on beds), `need water`, `crop exists`, `wrong phase`;
   - the lease end (R26): with picking 1 taken, `_field_open` after the end removes the crop and the lease, pickings 2 and 3 with them, and `produce_stock` keeps picking 1;
-  - `begin_work` for a picking or a transplant with 4 s left → `lease ending`, with 5 s allowed; a picking claimed after the end → `not your plot`, nothing added.
+  - `begin_work` for a picking with 4 s left → `lease ending`, with 5 s allowed (a transplant, from v15.3: 24 s → `lease ending`, 25 s allowed); a picking claimed after the end → `not your plot`, nothing added.
 - **Parts:**
   - no sickle → `no sickle`; care while partly cut → `harvesting`;
   - `harvest_part(true)` at 7.9 s → `too fast`; at 8 s part 1 pays `Y / 6` kg of wet rice (integer division); six parts at a constant Y sum to Y; a later overripe part is smaller;

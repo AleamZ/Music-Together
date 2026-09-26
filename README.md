@@ -296,7 +296,7 @@ What it closes — until now anyone holding the public key, even logged out, cou
 
 ### Trust model (v15)
 
-The server decides every time and phase, the water levels, the pests (rolled at sowing and hidden until they fire), the yield, all prices, and land ownership, leases and reclaims. A client still sends a transplant and harvest quality, but v15.1 ignores it and uses 1.0 (anti-cheat decision D1) until the v15.3 transplant minigame (v15.2's harvest minigame only gates the rice parts); transplanting and harvesting stay behind the 2 s work gate. As in v14, where a player stands is not verified, and the plots' look and the farm animations come from each client's own copy of the field state. Like the rest of the members table, the new `members.last_seen_at` is readable with the anon key, so anyone who has the key can see when each member last visited a room, to the hour (it is written at most once an hour, for the 14-day reclaim).
+The server decides every time and phase, the water levels, the pests (rolled at sowing and hidden until they fire), the yield, all prices, and land ownership, leases and reclaims. A client still sends a transplant and harvest quality, but the server ignores it and uses 1.0 for good (anti-cheat decision D1): v15.2's harvest minigame and v15.3's transplant minigame only gate progress, and the hoa-màu pickings stay behind the 2 s work gate. As in v14, where a player stands is not verified, and the plots' look and the farm animations come from each client's own copy of the field state. Like the rest of the members table, the new `members.last_seen_at` is readable with the anon key, so anyone who has the key can see when each member last visited a room, to the hour (it is written at most once an hour, for the 14-day reclaim).
 
 ### Realtime budget (v15)
 
@@ -340,7 +340,7 @@ The field has its own channel `game:{roomId}:field`. After a land or farm action
 ### Trust model (updated)
 
 - **v14:** as above, plus the daily cap: a script that reels at the gate lands at most 300 fish a day instead of 960, and a reel reported faster than the gate is a strike.
-- **v15:** v15.1 ignores the transplant and harvest quality and uses 1.0 until v15.3 (v15.2's harvest minigame gates the rice parts and sets no quality); a quality outside [0.9, 1.1] is a strike.
+- **v15:** the transplant and harvest quality are ignored for good (1.0, D1): v15.2's harvest minigame and v15.3's transplant minigame gate progress and set no quality; a quality outside [0.9, 1.1] is still a strike.
 
 ### Realtime hardening
 
@@ -402,3 +402,31 @@ The server decides the shuffle (Fisher–Yates over `gen_random_bytes`, no seed 
 ### Realtime budget (v16)
 
 Each table has its own channel `cards:{roomId}:{game}` carrying only a hint `cv {id, v}` from the client whose call changed the table; the others fetch `card_state` 150 ms later, at most every 500 ms, and poll every 15 s while nothing arrives. A spoofed hint can only cause refetches at that rate, and each sender has a budget of 5 hints a second. With all three tables full that is about 11 600 messages an hour (≈ 3 a second, peaks near 10), far below the free plan's 100 a second; 2 M messages a month cover about 170 hours of full tables. The hall's labels come from `card_lobby` every 20 s, with no realtime cost.
+
+## v15.3: Đồng vui — hang cua, bãi ốc, cấy lúa bằng minigame
+
+### DB migration
+
+`supabase/migrations/0018_v15_3_gather.sql` is **additive and re-runnable** (`create … if not exists`, `create or replace`, `drop constraint if exists` + `add constraint`, seeds with `on conflict … do update`): run it in the Supabase SQL Editor after `0017`, so the production order is `0012` → `0014` → `0013` → `0015` → `0016` → `0017` → `0018`. It requires `0015`, `0016` and `0017`, because it re-creates functions they last defined and keeps their parts; it does not need `0014`. It adds `critter_kinds` (cua đồng, cua gạch, ốc đồng and ốc bươu vàng with their base prices, public read); two containers at anh Hai's (`box_bucket`, Xô nhựa, 15 places for 1 500 xu, and `box_basket`, Giỏ tre, 30 places for 6 000 xu); the private tables `critters` (one row per critter held, priced at the catch) and `gather_cooldowns` (each spot's 20-minute cooldown per account, across rooms, and an open crab visit); the day's visits on `farm_profiles`; the `coin_ledger` reason `critter_sell` (the list keeps every earlier reason, `wipe` and `0017`'s card reasons included); and 4 guarded RPCs: `crab_start`, `crab_finish`, `pick_snail_bed` and `sell_critters`. It re-creates the work gate and `begin_work` (a transplant is now a round: `transplant` is accepted 8 to 120 s after its `begin_work`, which needs 25 s left on a lease, as a rice round does), `pick_snails` (the picker also gets 1–3 ốc bươu vàng), `buy_farm_item` (the containers, once each), the field state (today's critter prices, and each player's critters, capacity and visits left), and `_ac_holdings` and `_ac_wipe` (the critters and the cooldowns). `tests/sql/v15-gather-smoke.sql` checks it on a throwaway PostgreSQL cluster after the v15, anti-cheat, v15.2 and v16 smokes (from the repo root: it re-runs `0018`, reads `tests/fixtures/gather-cases.json`, and ends with `tests/sql/anticheat-guards.sql`, whose loop now calls 52 guarded RPCs). Run every file with plain `psql -f`, never under `psql -1`.
+
+> **Deploy order:** the v15.3 client first, then `0018` as soon as possible after — the reverse of v15.2. The v15.3 client works against `0017`: its transplant round waits 9 s, which passes the old 2 s gate, and the crab holes and snail beds say "Bắt cua, mò ốc chưa mở — chủ phòng cần chạy migration 0018." If `0018` runs first, cached v15.2 tabs get "Từ từ thôi…" when they transplant, until they reload.
+>
+> **Re-running earlier migrations:** `0013`, `0015`, `0016` and `0017` put back their own versions of the functions `0018` re-creates, and their `coin_ledger` reason checks lack `critter_sell`, so none of them can be re-run as it is once a critter has been sold. Add `critter_sell` to those lists first, then run them in order with `0018` last (anti-cheat §11.3 rule 7).
+
+### What's new in v15.3
+
+- **Hang cua:** 6 crab holes along the canal. E at a ready hole opens **Bắt cua**: the crab's claws open and close faster with each of 3 tries; grab (Space, the mouse button or a finger) while they are closed. Each hit is a cua đồng, or a cua gạch one time in ten. "Dừng (Esc)" before the first try sends nothing; after a try it keeps what was caught.
+- **Bãi ốc:** 4 snail beds. E starts a 3-second bar that gives 1–3 snails (ốc đồng or ốc bươu vàng); walking away cancels it.
+- Each hole and bed rests 20 minutes per player, in every room together, and a player has 200 visits a Vietnam day. A spot that is ready for you shows a small cue on the field.
+- **Đồ đựng:** hands hold 3 critters; anh Hai sells a Xô nhựa (+15, 1 500 xu) and a Giỏ tre (+30, 6 000 xu), each bought once. A catch beyond the free space escapes, and the toast says so.
+- **Cô Út** buys cua & ốc at the price fixed at the catch: the base price × the room's fish multiplier M at that moment. Pest snails picked off a rice plot now go into your container too (1–3 ốc bươu vàng), and a full container never stops the pick.
+- **Cấy lúa and Trồng cây ớt con** are a TransplantGame round: a hand sweeps along the row, and you press inside the band for each of 12 hills; 6 points pass (chuẩn 1, được 0,5). A failed round costs nothing and can be retried at once. The round gates progress only: no score changes the yield.
+- The bag's **🦀 Cua & ốc**, the HUD's count, the handbook's **Cua & ốc** tab and the admin's evidence cover all of it.
+
+### Trust model (v15.3)
+
+The server still decides every cooldown, limit, roll, price and capacity. A client now declares two more things: a transplant round's success, accepted only 8 to 120 s after its `begin_work` and with no effect on the yield, and a crab visit's hits, 0–3, accepted no sooner than 3 s after `crab_start`. A script that claims 3 hits at every visit earns no more than a perfect player: on average 975·M xu an hour and 9 180·M a day, and at worst 2 718·M an hour. A hole outside 1–6, a bed outside 1–4 or hits outside 0–3 are hard signals (`bad_spot`, `bad_qty`); the 200th visit of a day is logged as the soft `gather_daily_cap`. The transplant quality stays ignored for good (anti-cheat D1).
+
+### Realtime budget (v15.3)
+
+No new channel and no new `fa` code. A crab game re-sends `fa 6` and a transplant round `fa 1` every 2 s, and a snail bed sends `fa 7` twice; a round of 6 holes and 4 beds sends about 40 `fa` over about 2 minutes. Gathering sends no `fp`.

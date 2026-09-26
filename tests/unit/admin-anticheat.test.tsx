@@ -31,6 +31,7 @@ const HOLDINGS = {
   rice: [{ variety: "nep", wet_kg: 1200, dry_kg: 300 }],
   produce: [{ upland: "khoai", kg: 40 }, { upland: "ot", kg: 5 }],
   tank: { item: "spray_insect", charges: 2 },
+  critters: [{ kind: "cua_dong", n: 5, xu: 130 }, { kind: "oc_dong", n: 2, xu: 22 }],
   plots: [{ room_id: "r", plot_no: 1, kind: "private", owned_at: T, sale_price: null, sublease_price: null }],
   leases: [],
   offers: [{ room_id: "r", plot_no: 2, price: 5000, created_at: T }],
@@ -202,7 +203,7 @@ describe("AnticheatTab (anti-cheat spec §12.5)", () => {
     expect(lan.getByRole("button", { name: "Ẩn bằng chứng" })).toHaveAttribute("aria-expanded", "true");
     expect(h.rpc).toHaveBeenCalledWith("admin_anticheat_account", { p_session_token: "tok", p_account_id: "a1" });
     expect(lan.getByText(
-      "1.230 xu · 4 món đồ · 1 con cá · 2 kỷ lục · 1.500 kg lúa · 45 kg hoa màu · 1 thửa sở hữu · 0 thửa đang thuê · 1 đề nghị mua · 1 ô phơi · 2 tin khoe trong chat",
+      "1.230 xu · 4 món đồ · 1 con cá · 2 kỷ lục · 1.500 kg lúa · 45 kg hoa màu · 7 con cua ốc · 1 thửa sở hữu · 0 thửa đang thuê · 1 đề nghị mua · 1 ô phơi · 2 tin khoe trong chat",
     )).toBeInTheDocument();
     expect(lan.getByText("Ghi nhận (2)")).toBeInTheDocument();
     expect(lan.getByText(`${at(T)} · Số lượng sai · Vi phạm 2 → cấm · buy_item`)).toBeInTheDocument();
@@ -221,5 +222,22 @@ describe("AnticheatTab (anti-cheat spec §12.5)", () => {
     fireEvent.click(lan.getByRole("button", { name: "Ẩn bằng chứng" }));
     expect(lan.queryByText("Dữ liệu hiện có")).toBeNull();
     expect(lan.getByRole("button", { name: "Bằng chứng" })).toBeInTheDocument();
+  });
+
+  it("names v15.3's signals (§11.6)", async () => {
+    const events = [
+      { id: 4, created_at: T, code: "bad_spot", outcome: "log_only", rpc: "crab_start", room_id: "r", detail: { spot: 7 }, client: null,
+        user_agent: null },
+      { id: 3, created_at: T, code: "gather_daily_cap", outcome: "soft", rpc: "pick_snail_bed", room_id: "r", detail: { visits: 200 },
+        client: null, user_agent: null },
+    ];
+    h.rpc.mockImplementation(async (fn: string) => (fn === "admin_anticheat_list"
+      ? { data: { mode, mode_changed_at: T, server_now: T, cases: CASES }, error: null }
+      : { data: { ...ACCOUNT, events }, error: null }));
+    render(<AnticheatTab token="tok" />);
+    const lan = within(await card("Lan"));
+    fireEvent.click(lan.getByRole("button", { name: "Bằng chứng" }));
+    expect(await lan.findByText(`${at(T)} · Số hang cua/bãi ốc sai · Chỉ ghi nhận · crab_start`)).toBeInTheDocument();
+    expect(lan.getByText(`${at(T)} · Chạm 200 lượt bắt cua, mò ốc/ngày · Tín hiệu mềm · pick_snail_bed`)).toBeInTheDocument();
   });
 });

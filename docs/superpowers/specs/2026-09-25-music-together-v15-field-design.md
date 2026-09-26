@@ -47,7 +47,7 @@ Clarifications made while writing this spec. The owner should confirm them durin
 - **c) Pests.** Each crop has three pest *chances* (§8.5), so 0–3 outbreaks happen, about 1.2 on average.
 - **d) When you can harvest.** Only once the rice is ripe (§8.2). Harvesting during ripening is refused.
 - **e) Water scoring.** The water penalty is sampled every 15 minutes of crop time.
-- **f) Minigame trust.** The 2-second work gate exists from `0013` on. v15.1 ignores the reported quality and uses 1.0 (anti-cheat decision D1); the harvest minigame (v15.2) only gates the rice parts, and how a transplant quality comes back is v15.3's question, which needs an SQL change.
+- **f) Minigame trust.** The 2-second work gate exists from `0013` on. v15.1 ignores the reported quality and uses 1.0 (anti-cheat decision D1), and it stays so: the harvest minigame (v15.2) and the transplant minigame (v15.3) only gate progress, and no quality comes back (v15.3 R20).
 - **g) Drying keeps the weight.** Drying changes the price, not the kilograms.
 - **h) Farming limit.** An account farms at most **2 plots at once per room**. An unleased private plot of your own counts; a plot you have leased out does not.
 - **i) Newcomer gift.** Given once per account, not once per room.
@@ -80,11 +80,11 @@ One spec, three phases (v15.2 and v15.3 have their own specs), and the owner shi
 
 **v15.2 "Nông cụ & hoa màu"** (`0016_v15_2_crops.sql`): see `2026-09-25-music-together-v15.2-design.md`. The sickle and the harvest minigame (a rice plot is cut in 6 parts), the harvester, the sprayer, and khoai lang, bắp and ớt on raised beds.
 
-**v15.3 "Đồng vui"** (`0018_v15_3_gather.sql`)
+**v15.3 "Đồng vui"** (`0018_v15_3_gather.sql`): see `2026-09-26-music-together-v15.3-design.md`.
 - Crab holes and snail beds, the critter containers (`box_bucket`, `box_basket`), and selling crabs and snails.
 - Pest snails picked from plots now land in your container.
-- The transplant minigame (transplanting stays behind the 2 s gate until then) and the crab minigame.
-- How a transplant quality comes back (D1), with its soft signal.
+- The transplant minigame (it gates progress only, behind an 8 s gate) and the crab minigame.
+- No transplant quality comes back: D1 is permanent (v15.3 R20).
 
 ## 5. Architecture
 
@@ -137,7 +137,7 @@ The layout is approximate. The map tests pin the invariants (§17), and the plan
   The three new looks go in `lib/game/look.ts`.
 - **Sân phơi** (drying yard): south-east, with 4 marked drying slots.
 - **Where you stand to act:** every plot has a use spot on an adjacent dike, facing the plot. Each NPC, the drying yard and each portal has one use spot.
-- **v15.3 gathering spots:** 6 crab holes along the canal banks, at least 40 px apart and each with a use spot on the bank, and 4 snail beds at the canal's shallow edges.
+- **v15.3 gathering spots:** 6 crab holes along the canal banks, at least 40 px apart and each with a use spot on the bank, and 4 snail beds at the canal's shallow edges. Their places are in the v15.3 spec, §6.
 - **Walkability:** dikes, bridges, roads and yards are walkable. Plot interiors are **walkable**, so you can step into your paddy, and the collision grid does not block them. Water in the canal is blocked.
 
 ### 6.3 New portals on the existing maps
@@ -381,7 +381,7 @@ kg = max(ceil(0.1 · base), round(base · land · Mcare · Mseed · Mwater · Mp
 | `Mwater` | 1 − min(0.2, 0.01 · off-target hours) |
 | `Mpest` | Π over pests of (1 − min(0.3, 0.015 · active hours)) |
 | `Mlate` | 1 − min(0.6, 0.02 · hours after the ripe window) |
-| `qT` | transplant quality; always 1.0 until v15.3 (the server ignores the reported value, D1). The harvest quality `qH` is gone: the harvest minigame (v15.2) gates the 6 parts and multiplies nothing |
+| `qT` | transplant quality; always 1.0 (the server ignores the reported value, D1, for good since v15.3 R20). The harvest quality `qH` is gone: the harvest minigame (v15.2) gates the 6 parts and multiplies nothing |
 
 **Two implementations of one formula:**
 - The server computes the yield at harvest (`_crop_yield(crop, variety, land, q_harvest, p_now)`).
@@ -441,8 +441,8 @@ The plot panel links to the relevant tab.
 | `spray_insect` | pesticide | Thuốc trừ sâu | 700 |
 | `spray_hopper` | pesticide | Thuốc trừ rầy | 800 |
 | `spray_fungus` | pesticide | Thuốc trừ bệnh | 900 |
-| `box_bucket` (v15.3) | critter_box | Xô nhựa | 150, capacity 15 |
-| `box_basket` (v15.3) | critter_box | Giỏ tre | 600, capacity 30 |
+| `box_bucket` (v15.3) | critter_box | Xô nhựa | 1 500, capacity 15 |
+| `box_basket` (v15.3) | critter_box | Giỏ tre | 6 000, capacity 30 |
 
 **Buying:**
 - Farm items are bought with `buy_farm_item(item, qty)` at anh Hai: consumables take qty 1–99; containers are bought once, like v14 gear.
@@ -456,17 +456,16 @@ Reference point: in v14 a skilled angler earns about 1 000–1 800 xu per active
 
 The farm numbers changed on 2026-09-25 (rent 10 000, plot 800 000, inputs ×10, rice 710 / 950 / 1 350 xu/kg). The per-variety profits, the poor-care and lost-crop cases and the time to buy land are in `2026-09-25-music-together-economy-design.md` §4.
 
-**Crabs and snails (v15.3):**
+**Crabs and snails (v15.3):** see `2026-09-26-music-together-v15.3-design.md` §10. A critter's price is its base × the room's multiplier M at the catch (floored, at least 1), stored with it:
 
-| Item | Price |
+| Item | Base price |
 |---|---|
 | Cua đồng | 12 |
 | Cua gạch (10 %) | 45 |
 | Ốc đồng | 8 |
 | Ốc bươu vàng | 2 |
 
-- A full round of 6 crab holes every 20 min earns ≈ 800 xu/h, below fishing and without gear.
-- Snails are a side activity, ≈ 240 xu/h.
+- The 6 crab holes and the 4 snail beds (20 min each, 1–3 snails a bed) earn at most 975·M xu an hour on average, below fishing's 1 000·M floor, and 9 180·M a day under the 200-visit limit.
 
 All prices live in config tables, so tuning is a data change.
 
@@ -487,7 +486,7 @@ All new tables have RLS on and no policies, except the config tables, which get 
 | `rice_stock` | `account_id`, `variety` PK; `wet_kg`; `dry_kg` (≥ 0) |
 | `farm_profiles` | `account_id` PK; `gift_at` |
 | `members` (altered) | `add column if not exists last_seen_at timestamptz` |
-| `coin_ledger` (altered) | the `reason` check is replaced to add `rent`, `land_buy`, `land_sell`, `land_refund`, `lease_pay`, `lease_income`, `farm_buy`, `rice_sell` (v15.2 adds `harvester` and `produce_sell`; v15.3 adds `critter_sell`) |
+| `coin_ledger` (altered) | the `reason` check is replaced to add `rent`, `land_buy`, `land_sell`, `land_refund`, `lease_pay`, `lease_income`, `farm_buy`, `rice_sell` (v15.2 adds `harvester` and `produce_sell`; `0018` (v15.3) adds `critter_sell`) |
 
 ### 11.2 Private helpers (all revoked from `public`, `anon`, `authenticated`)
 
@@ -557,7 +556,8 @@ All are SECURITY DEFINER with `grant execute … to anon, authenticated`. `field
 1. `begin_work(plot, w)` records `work = w` and `work_started_at = now()` on the crop.
 2. `transplant(…, q)` and `harvest(…, q)` require `work = w` and `now() − work_started_at ≥ 2 s`.
 3. They use `q` = 1.0 whatever the client sends (v15.1, D1) and clear `work`.
-4. From v15.2 (its spec §6.2) the 2 s gate covers transplanting and the hoa-màu pickings (`harvest`). Rice is cut in parts with `harvest_part`, each accepted 8–120 s after its own `begin_work`.
+4. From v15.2 (its spec §6.2) the 2 s gate covers the hoa-màu pickings (`harvest`), and transplanting until v15.3. Rice is cut in parts with `harvest_part`, each accepted 8–120 s after its own `begin_work`.
+5. From v15.3 (its spec §8.3) transplanting is a TransplantGame round: `transplant` is accepted 8–120 s after its own `begin_work`, and `q` stays 1.0 for good (D1, v15.3 R20).
 
 v15.1 ignores the reported quality (D1), so a modified client gains nothing from it and can never work faster than the gate.
 
@@ -636,7 +636,7 @@ After an error the client refetches `field_state`, as in v14.
 - pest rolls, which stay hidden until they fire;
 - prices, yields, land ownership, leases and reclaims.
 
-**Clients only report a few things:** the transplant and harvest quality, which v15.1 ignores (always 1.0, D1) behind a 2 s gate; from v15.2 a harvest round's success, which gates one rice part behind an 8 s gate and has no effect on the yield; and (v15.3) crab hits, bounded to 3 per hole visit.
+**Clients only report a few things:** the transplant and harvest quality, which the server ignores for good (always 1.0, D1, v15.3 R20); from v15.2 a harvest round's success, which gates one rice part behind an 8 s gate and has no effect on the yield; and from v15.3 a transplant round's success (an 8 s gate, no effect on the yield) and crab hits (0–3 a visit, behind a 3 s gate). A script that claims 3 hits at every visit earns no more than a perfect player: on average 975·M xu an hour and 9 180·M a day, and at worst 2 718·M an hour (v15.3 §10, §11.6).
 
 ## 12. Networking
 
@@ -741,6 +741,8 @@ Everything is original and drawn in code.
 - **NPC looks:** chú Tám, anh Hai and cô Út use existing clothing layers and palettes, plus a khăn rằn neck item if the catalog has none.
 
 ## 15. v15.3 — gathering and minigames (`0018_v15_3_gather.sql`)
+
+> **Superseded by `2026-09-26-music-together-v15.3-design.md`**, which designs this phase: the cooldowns hold across all rooms (its R1), a snail bed rests 20 minutes and gives 1–3 snails (R2), a player has 200 visits a Vietnam day (R3), and no quality comes back from the minigames (R20). The text below is the first sketch.
 
 ### 15.1 Minigames
 

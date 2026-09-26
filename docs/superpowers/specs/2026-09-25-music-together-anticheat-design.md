@@ -70,7 +70,7 @@ Only (1) reaches Postgres in a form the server can judge. A call from the consol
 
 | # | Question | Ruling |
 |---|---|---|
-| D1 | Farm quality in v15.1 | Ignored (always 1.0) until the v15.3 transplant minigame (v15.2's harvest minigame gates the rice parts and sets no quality). A separate v15.1 task does this inside `0013`; this spec relies on it (§6.4). |
+| D1 | Farm quality in v15.1 | Ignored (always 1.0), for good: v15.2's harvest minigame and v15.3's transplant minigame gate progress and set no quality (v15.3 R20). A separate v15.1 task does this inside `0013`; this spec relies on it (§6.4). |
 | D2 | What the 5-minute lock blocks | Game actions only: fishing, farming, land, and the fishing and farm shops. The daily check-in and the farm gift count as fishing and farming. Chat, the music queue and all reads stay open (§9.3). |
 | D3 | Strike 2 | Ban at once: sessions are deleted and login is refused. The data is wiped only after the owner confirms it in /admin, where the owner can also pardon. |
 | D4 | Expiry of a first strike | 30 days. |
@@ -321,7 +321,7 @@ When `v_day = 300`, it logs the soft signal `cast_daily_cap` (§7.4).
 ### 6.4 H3 — farm quality (D1)
 
 - **In `0013`:** the v15.1 task makes `_farm_do_transplant` and `_farm_do_harvest` use 1.0 whatever `p_quality` is. The v15 smoke's "quality clamped" assertion becomes "quality ignored = 1".
-- **In `0015`:** the public wrappers `transplant` and `harvest` gain the `quality_range` hard check (§7.2). It stays when v15.3 brings a real quality back.
+- **In `0015`:** the public wrappers `transplant` and `harvest` gain the `quality_range` hard check (§7.2). It stays: no real quality comes back (v15.3 R20), and the client keeps sending exactly 1.
 
 ### 6.5 H1 — lyrics (`0014`)
 
@@ -349,9 +349,10 @@ When `v_day = 300`, it logs the soft signal `cast_daily_cap` (§7.4).
 | Code | RPC | Strike when | Error | Why an honest client never sends it |
 |---|---|---|---|---|
 | `reel_too_fast` | `finish_cast` | `p_success = true`, the cast has not expired, and `now() < bite_at + 0.9·min_reel_ms`. This is the existing `too_early` branch. | none: the answer stays `{"result":"lost","why":"too_early"}` plus the envelope | See the timing argument below the table. |
-| `quality_range` | `transplant`, `harvest` | `p_quality` is null, NaN or ±∞, or outside [0.9 − 1e-9, 1.1 + 1e-9]. NaN is larger than every number in PostgreSQL, so the range test catches it. | `invalid quality` | v15.1 sends exactly 1 (`useFarmController` `finishWork`). v15.3's `0.9 + 0.2·score/12` stays in range; the 1e-9 tolerance absorbs floating-point error. |
+| `quality_range` | `transplant`, `harvest` | `p_quality` is null, NaN or ±∞, or outside [0.9 − 1e-9, 1.1 + 1e-9]. NaN is larger than every number in PostgreSQL, so the range test catches it. | `invalid quality` | v15.1 sends exactly 1 (`useFarmController` `finishWork`), and so does v15.3's transplant round: D1 is permanent (v15.3 R20). The 1e-9 tolerance absorbs floating-point error. |
 | `bad_plot` | the 24 plot RPCs (§10.3) | `p_plot` is null or outside 1–10 | `invalid plot` | Plot numbers come from `field_state` (`PlotView.no`) and from the map's plot interactables. `MAX_PLOT = 10`. |
 | `bad_slot` | `dry_collect` | `p_slot` is null or outside 1–4 | `invalid slot` | `DryingPanel` loops over `1..DRYING_SLOTS` (4). |
+| `bad_spot` | `crab_start`, `pick_snail_bed` (`0018`) | a hole null or outside 1–6; a bed null or outside 1–4 | `invalid spot` | The spot comes from the map's `crab_hole` and `snail_bed` interactables (`spot`), 1–6 and 1–4. |
 | `bad_water` | `water` | `p_delta` is null or not ±1 | `invalid quantity` | `plotActions` sends `delta: 1` or `delta: -1` only (`lib/game/farm/actions.ts`). |
 | `bad_work` | `begin_work` | `p_work` is null or not `transplant`/`harvest` | `invalid work` | `PlotRun.work` is `"transplant" \| "harvest"`. |
 | `bad_work` | `tend_crop` (`0016`) | `p_act` is null or not `lat_day`/`vun_goc` | `invalid act` | `plotActions` emits acts only from the crop's config, whose act ids the v15.2 smoke pins to {`lat_day`, `vun_goc`}. |
@@ -360,6 +361,7 @@ When `v_day = 300`, it logs the soft signal `cast_daily_cap` (§7.4).
 | `bad_qty` | `sell_rice` | `p_kg` null or < 1, or `p_dry` null | `invalid quantity` | `RiceDepotPanel` `n` ∈ [1, stock] and "Bán hết" sends the stock (≥ 1). `dry` is a boolean. |
 | `bad_qty` | `dry_start` | `p_kg` null or < 1 | `invalid quantity` | `DryingPanel` `n` ∈ [1, wet stock]; it only lists varieties with wet stock > 0. |
 | `bad_qty` | `sell_produce` (`0016`), after `_wallet_lock` | `p_kg` null or < 1 | `invalid quantity` | `RiceDepotPanel`'s produce rows send kg ∈ [1, stock], and "Bán hết" sends the stock (≥ 1). |
+| `bad_qty` | `crab_finish` (`0018`) | `p_hits` null or outside 0–3 | `invalid quantity` | `CrabRound.hits` counts the hit tries (`CRAB_TRIES = 3`), and the controller sends it unchanged. |
 | `bad_price` | `list_plot`, `set_sublease` | a non-null price outside 1–5 000 000 / 1–100 000 (the economy spec's caps) | `invalid price` | `CoopPanel` sends only prices that pass `toPrice` → `priceRefusal` → `priceOk`. `LandButton` stays disabled unless the refusal is null, including "" and "0". |
 | `bad_price` | `offer_plot` | the price is null, or outside 1–5 000 000 | `invalid price` | as above; an offer always carries a price |
 | `foreign_offer` | `withdraw_offer` | the id is an offer **of this room** whose buyer is someone else | `offer not found` | The panel offers "Rút" only for `mine.my_offers`. A replaced offer gets a new id (`0013` `_farm_do_offer`), so an old id never points at someone else's offer. |
@@ -398,6 +400,7 @@ So an honest client always has `now() − bite_at ≥ min_reel_ms`. The margin o
 | `no snails` | `pick_snails` | someone picked them first |
 | `too fast` (the part gate), `work expired`, `harvesting`, `harvester busy`, `lease ending`, `lease ends` | `harvest_part`, `begin_work`, `rent_harvester`, farm care (`0016`) | two tabs; a stale state; a disconnect; a lease or a harvester running out |
 | `no sickle`, `no sprayer`, `already owned`, `wrong crop`, `invalid crop`, `not enough crop`, `invalid quantity` (a tool with a quantity other than 1) | farm, `load_sprayer`, `buy_farm_item`, `sell_produce` (`0016`) | stale state; two tabs; **the cached v15.1 client**, whose rice harvest gets `wrong crop`. It never sees the tools (it reads only its own `shop_items` kinds), so no shipped client sends a tool quantity other than 1; that refusal stays plain anyway (v15.2 R18). The hoa-màu seeds do reach it, and its soak of one gets `invalid item` (above). |
+| `hole empty`, `bed empty`, `critters full`, `gather daily limit`, `visit not found`, `visit expired`, `too fast` (`crab_finish`, `transplant`), `work expired`, `lease ending`, `no critters`, `invalid kind`, `already owned`, `invalid quantity` (a container with a quantity other than 1) | gathering, `begin_work`, `transplant`, `sell_critters`, `buy_farm_item` (`0018`) | two tabs; a double finish; a lost answer; a backgrounded tab; a room switch; a stale state; **a cached v15.2 client after `0018`** |
 | `invalid video`, `video too long`, `duration unknown`, `banned keyword`, `order limit reached` | queue | the rules changed while the UI was stale; two tabs. The queue never strikes (R22). |
 | `invalid username`, `username already taken`, `invalid username or password` | account | typing |
 | `too many messages, slow down` | chat | fast typing |
@@ -412,13 +415,14 @@ So an honest client always has `now() − bite_at ≥ min_reel_ms`. The margin o
 |---|---|---|---|
 | `reel_gate_hug` | `finish_cast` (a catch) | the 20th catch of the Vietnam day with (`now − bite_at`)/`min_reel_ms` < 1.05. `anticheat_status.hug_on` and `hug_count` count them. | A skilled player on hard fish can get close. A bot that waits for the gate lands there every time. |
 | `cast_daily_cap` | `start_cast` | the cast that brings the day's count to 300 | A long honest session can reach it. |
+| `gather_daily_cap` | `crab_start`, `pick_snail_bed` (`0018`) | the visit that brings the Vietnam day's count to 200 | A long honest session can reach it. |
 | `kind_mismatch` | `buy_item` | an existing priced item of a non-fishing kind | the old v14 client lists farm items as bait |
-| `kind_mismatch` | `buy_farm_item` | an existing priced item that is not a seed, fertilizer, pesticide or (from `0016`) tool | catalogs change; v15.3 adds `critter_box` |
+| `kind_mismatch` | `buy_farm_item` | an existing priced item that is not a seed, fertilizer, pesticide, (from `0016`) tool or (from `0018`) critter box | catalogs change |
 | `kind_mismatch` | `apply_fertilizer`, `soak_seed`, `spray`, and from `0016` `plant_crop` and `load_sprayer` | an existing item of the wrong kind | as above |
 | `bad_move` | `tl_play`, `tl_pass`, `cao_deal`, `pk_act` (`0017`) | a well-formed move the table refuses while `p_seq` matched: `invalid play`, `cannot beat`, `not your turn`, `must include`, `must play`, `invalid bet`, `cannot raise`, `not dealer`, `wrong phase` (v16 §11.5) | A bug in a client mirror must never strike an honest player (v16 R30). |
 
 - **Not logged:** every refusal in §7.3.
-- **Later, v15.3 (`0018`):** a soft counter for "the quality is always 1.1".
+- **Dropped:** the soft counter for "the quality is always 1.1" once planned for v15.3, since no quality comes back (v15.3 R20).
 
 ## 8. Data model
 
@@ -486,14 +490,16 @@ What goes in `detail`, per code:
 | `quality_range` | `plot`, `quality` (as text, so NaN and ∞ survive) |
 | `bad_plot` | `plot` |
 | `bad_slot` | `slot` |
+| `bad_spot` (`0018`) | `spot` |
 | `bad_water` | `plot`, `delta` |
 | `bad_work` | `plot`, `work` |
-| `bad_qty` | `item` or `variety`, `qty` or `kg`, `dry` |
+| `bad_qty` | `item` or `variety`, `qty` or `kg`, `dry`; `visit` and `hits` (`crab_finish`) |
 | `bad_price` | `plot`, `price` |
 | `foreign_offer` | `offer_id` plus the offer's `buyer_id` (withdraw) or `plot` and `owner_id` (decline, accept) |
 | `kind_mismatch` | `item`, `kind` |
 | `reel_gate_hug` | `day`, `count`, `ratio` |
 | `cast_daily_cap` | `day`, `casts` |
+| `gather_daily_cap` (`0018`) | `day`, `visits` |
 | `bad_game`, `bad_seat`, `bad_stake`, `bad_qty` (`0017`) | `game`, and `seat`, `stake` or `stake` and `buyin` (`card_sit`); `amount` (`pk_topup`) |
 | `bad_cards`, `bad_bet` (`0017`) | `seq`, and `cards` or `action` and `amount` |
 | `bad_move` (`0017`) | `game`, `seat`, `seq` and the move (`cards`, or `action` and `amount`) |
@@ -553,7 +559,7 @@ A flagged call returns HTTP 200, so PostgREST commits it:
 
 | Message | SQLSTATE | `details` | `hint` | Raised by |
 |---|---|---|---|---|
-| `account locked` | 42501 | whole seconds left | `anticheat` | `_ac_guard`, in the 48 game RPCs (35 in `0015`, 7 more in `0016`, 6 more in `0017`) |
+| `account locked` | 42501 | whole seconds left | `anticheat` | `_ac_guard`, in the 52 game RPCs (35 in `0015`, 7 more in `0016`, 6 more in `0017`, 4 more in `0018`) |
 | `account banned` | 42501 | — | — | `login` (new); `_auth_account` (existing) |
 | `invalid username` | 22023 | — | — | `register` |
 | `invalid video` | 22023 | — | — | `add_queue_item` |
@@ -637,8 +643,9 @@ end $$;
 - **Farm and land (27):**
   - the 24 room actions: `rent_plot`, `buy_plot`, `sell_plot_to_village`, `list_plot`, `buy_listed_plot`, `offer_plot`, `withdraw_offer`, `decline_offer`, `accept_offer`, `set_sublease`, `rent_sublease`, `abandon_crop`, `prepare_plot`, `apply_fertilizer`, `soak_seed`, `sow_seed`, `begin_work`, `transplant`, `water`, `spray`, `pick_snails`, `harvest`, `dry_start`, `dry_collect`;
   - plus `sell_rice`, `buy_farm_item` and `claim_farm_gift`.
-- **v15.2 (7, `0016`):** `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`, 42 in all. The gather RPCs come with v15.3's `0018` (§11.3).
+- **v15.2 (7, `0016`):** `harvest_part`, `rent_harvester`, `prepare_beds`, `plant_crop`, `tend_crop`, `load_sprayer` and `sell_produce`, 42 in all.
 - **v16 (6, `0017`):** `card_sit`, `pk_topup`, `tl_play`, `tl_pass`, `cao_deal` and `pk_act`, 48 in all.
+- **v15.3 (4, `0018`):** `crab_start`, `crab_finish`, `pick_snail_bed` and `sell_critters`, 52 in all.
 
 **Still open:**
 - the reads: `fishing_state`, `fishing_board`, `field_state`, `touch_room`, and from `0017` `card_lobby`, `card_state` and `card_hand`;
@@ -1051,7 +1058,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 **The README** gains an "Anti-cheat" section:
 - what is detected and what is not;
 - the modes, how to review, and the deploy order;
-- the updated trust models (v14: the daily cap; v15: quality ignored until v15.3).
+- the updated trust models (v14: the daily cap; v15: quality ignored for good, v15.3 R20).
 
 ## 12. Client and Vietnamese UI
 
@@ -1098,7 +1105,7 @@ If query 1 shows that a look-alike announcer account ever existed and was delete
 | `WARN_TITLE` | `⚠️ Cảnh báo gian lận` |
 | `WARN_BODY` | `Hệ thống vừa ghi nhận một thao tác mà trò chơi bình thường không thể tạo ra (ví dụ: sửa dữ liệu bằng DevTools).` |
 | reason line | `Lý do: {reasonText(code)}` |
-| `WARN_LOCK` | `Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.` (v16 adds "đánh bài") |
+| `WARN_LOCK` | `Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, bắt cua mò ốc, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.` (v15.3 adds "bắt cua mò ốc", v16 "đánh bài") |
 | `WARN_REPEAT` | `Nếu tái phạm trong 30 ngày, tài khoản sẽ bị khoá vĩnh viễn và dữ liệu trò chơi có thể bị xoá.` |
 | `WARN_OK` | `Tôi đã hiểu` |
 | `BAN_TITLE` | `🚫 Tài khoản bị khoá vĩnh viễn` |
@@ -1189,7 +1196,7 @@ The refusal shows in a `role="alert"` line, so a screen reader reads it out.
 | Element | Text |
 |---|---|
 | holdings heading | `Dữ liệu hiện có` |
-| holdings line | `{formatXu(coins)} · {n} món đồ · {n} con cá · {n} kỷ lục · {kg} kg lúa · {kg} kg hoa màu · {n} thửa sở hữu · {n} thửa đang thuê · {n} đề nghị mua · {n} ô phơi · {n} tin khoe trong chat`, then `· {n} ghế bàn bài ({formatXu(chips + escrow)})` when the account sits at card tables (`0017`) |
+| holdings line | `{formatXu(coins)} · {n} món đồ · {n} con cá · {n} kỷ lục · {kg} kg lúa · {kg} kg hoa màu · {n} con cua ốc · {n} thửa sở hữu · {n} thửa đang thuê · {n} đề nghị mua · {n} ô phơi · {n} tin khoe trong chat`, then `· {n} ghế bàn bài ({formatXu(chips + escrow)})` when the account sits at card tables (`0017`); the cua ốc come with `0018` |
 | events heading | `Ghi nhận ({n})` |
 | event line | `{time} · {code label} · {outcome label} · {rpc}`, then `detail` in a `<pre>` |
 | event footer | `Client: {client \| —} · Trình duyệt: {user_agent \| —}` |
@@ -1215,6 +1222,7 @@ After a refused action, its reason stays even when the reload fails too.
 | `quality_range` | `Điểm cấy/gặt sai` |
 | `bad_plot` | `Số thửa sai` |
 | `bad_slot` | `Số ô phơi sai` |
+| `bad_spot` (`0018`) | `Số hang cua/bãi ốc sai` |
 | `bad_water` | `Mức bơm/tháo nước sai` |
 | `bad_work` | `Việc đồng sai` |
 | `bad_qty` | `Số lượng sai` |
@@ -1223,6 +1231,7 @@ After a refused action, its reason stays even when the reload fails too.
 | `kind_mismatch` | `Sai loại vật phẩm` |
 | `reel_gate_hug` | `Kéo cá sát ngưỡng (20 lần/ngày)` |
 | `cast_daily_cap` | `Chạm 300 lần câu/ngày` |
+| `gather_daily_cap` (`0018`) | `Chạm 200 lượt bắt cua, mò ốc/ngày` |
 | `bad_game` (`0017`) | `Sai bàn bài` |
 | `bad_seat` (`0017`) | `Số ghế sai` |
 | `bad_stake` (`0017`) | `Mức cược sai` |
@@ -1357,7 +1366,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
    - state is unchanged (for example, `water` with delta 5 leaves `water_log` as it was).
 7. **Enforce mode:**
    - every hard signal gives `strike: 1`, committed: a `strike_1` row and `locked_until` ≈ now + 5 min;
-   - each of the guarded RPCs (35 in `0015`, 42 from `0016`) then raises `account locked` for that account, with a numeric detail and the hint `anticheat` (the call list is the one in `anticheat-guards.sql`);
+   - each of the guarded RPCs (35 in `0015`, 42 from `0016`, 48 from `0017`, 52 from `0018`) then raises `account locked` for that account, with a numeric detail and the hint `anticheat` (the call list is the one in `anticheat-guards.sql`);
    - `fishing_state` has `lock`, and `field_state`, `fishing_board`, `touch_room`, chat and the queue still work;
    - `_ac_flag` called during the lock gives `in_lock`;
    - with `locked_until` moved into the past, the next hard signal gives strike 2: `is_banned`, sessions gone, `login` → `account banned`, `ban_state = 'pending_wipe'`;
@@ -1410,7 +1419,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
 - **The check checks itself:** in a transaction that is rolled back, an unguarded overload `login(text, text, integer)` must be reported.
 - **Dynamic loop:**
   1. Register an account, create a room and set `locked_until` to now + 5 min.
-  2. Call each of the guarded RPCs (35 in `0015`, 42 from `0016`, 48 from `0017`) with plausible arguments. Each must raise `account locked`.
+  2. Call each of the guarded RPCs (35 in `0015`, 42 from `0016`, 48 from `0017`, 52 from `0018`) with plausible arguments. Each must raise `account locked`.
   3. Then call the four reads (from `0017` also `card_lobby`, `card_state`, `card_hand` and `card_tick`); each must succeed.
 
 ### 15.2 Unit and RTL tests (Vitest)
@@ -1440,6 +1449,8 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
 | `bad_water`, `bad_work` | `plotActions` emits only `delta` ±1 and `work` `transplant`/`harvest`. |
 | `bad_plot` | Plot numbers come from the state, 1–10. |
 | `bad_slot` | `DryingPanel` slots are 1–4. |
+| `bad_spot` | the map's crab holes are 1–6 and its snail beds 1–4, and `crab_start` / `pick_snail_bed` send their `spot` (v15.3). |
+| `bad_qty` (crabs) | `crab_finish` sends `CrabRound.hits` ∈ 0..3 (v15.3). |
 | `foreign_offer` | "Rút" uses `myOffers` ids; "Đồng ý" and "Từ chối" use `incomingOffers` ids. |
 | `quality_range` | `useFarmController` sends quality 1. |
 
@@ -1494,6 +1505,7 @@ Each phase sets the mode explicitly, so a second run passes too. The house style
   - public `members.last_seen_at`.
 - **Colluding accounts** moving xu through land sales at any price (by design).
 - **Cosmetic Realtime spoofing:** lobby spoofing, reaction and presence names, and the `[reply:…]` prefix (§14).
-- **The v15.3 soft signal** "quality always 1.1", which comes with `0018`.
+- **The soft signal "quality always 1.1"**, dropped for good: no quality comes back (v15.3 R20).
+- **A soft counter for crab finishes claimed right at the 3 s gate** (v15.3 R22).
 - **A soft counter for rice parts claimed under 9 s** after their `begin_work` (v15.2 §11.5).
 - **The lyrics hole (H1) and its broadcast budget**, which `0014` covers.

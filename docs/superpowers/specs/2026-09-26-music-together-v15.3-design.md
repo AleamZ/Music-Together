@@ -56,7 +56,7 @@ The server stays authoritative: cooldowns, the daily limit, rolls, prices and ca
 | R16 | **Containers** are one-time buys through `buy_farm_item` with quantity 1. A container no larger than the one you hold raises `already owned` (v14's bucket rule). A quantity ≠ 1 is a plain `invalid quantity`, as v15.2 R18. | One rule for tools and containers. A second, smaller box would add nothing. |
 | R17 | **CrabGame numbers** (§7.2): claw cycles of 1.2 / 0.95 / 0.75 s, closed for 40 % of each, a 0.6 s lead-in, a slip after 4 cycles without a grab, and a 0.5 s beat. | The old design made concrete: 5–10 s per hole. |
 | R18 | **TransplantGame numbers** (§8.2): 12 beats, a 1.4 s sweep, bands ±0.08 / ±0.18 around c ∈ [0.35, 0.65], a 1 s lead-in, a 0.25 s beat, and a pass at ≥ 6. | The old design made concrete: about 12 s. |
-| R19 | **Transplant contract.** `begin_work('transplant')` needs 10 s left on the lease (v15.2 R11: 5 s). Then `transplant(p_quality)`, with the quality still ignored; the client sends 1. A failure sends nothing: "Thử lại" calls `begin_work` again, which replaces the record. There is no new RPC. | V5 with the fewest changes; an honest round needs ≥ 9 s. The `quality_range` pin stays valid. |
+| R19 | **Transplant contract.** `begin_work('transplant')` needs 25 s left on the lease, as a rice round (v15.2 R11, which its fix round raised from 10 s; a transplant needed 5 s). Then `transplant(p_quality)`, with the quality still ignored; the client sends 1. A failure sends nothing: "Thử lại" calls `begin_work` again, which replaces the record. There is no new RPC. | V5 with the fewest changes: a transplant round takes a rice round's gates, and 25 s covers its play (4–21 s, §8.2) and its 9 s claim. The `quality_range` pin stays valid. |
 | R20 | **D1 is permanent.** `q_transplant` stays 1.0, and the anti-cheat's planned soft signal "quality always 1.1" is dropped. | The quality is never used, and the client always sends 1. |
 | R21 | New hard signal `bad_spot` (`invalid spot`): a hole outside 1–6 or a bed outside 1–4. | Spots come only from the map's interactables, on the same basis as `bad_plot` and `bad_slot`. |
 | R22 | No soft counter for crab finishes claimed right at the gate. | As for v15.2's parts, it is left to later. The hourly and daily caps bound a script. |
@@ -75,8 +75,8 @@ The server stays authoritative: cooldowns, the daily limit, rolls, prices and ca
 | v15 | §11.8 | Trust model: clients report a transplant round's success (8 s gate, no yield effect) and crab hits (0–3 a visit, 3 s gate), in §11.6's income wording. |
 | v15 | §15 | Superseded by this spec: the cooldown across rooms (R1), the snail beds (R2), the daily limit (R3). |
 | v15.2 | Header, §3 | v15.3 is `0018_v15_3_gather.sql` (`0017` is v16). "Transplanting stays behind the 2 s gate" and the open transplant-quality question end here (§8, R20). |
-| v15.2 | S6, R11, §8.3, §8.9, §11.3, §11.4 | Transplanting (rice and ớt) is a TransplantGame round: `begin_work` needs 10 s left on the lease (was 5 s) and `transplant` is gated at 8–120 s (was 2 s). Pickings keep the 3 s action, the 2 s gate and 5 s. |
-| v15.2 | §13.1, §13.6, §16 | "Trồng cây ớt con" opens TransplantGame, and its 3 s bar and text go. The smoke's transplant lease case becomes 9 s → `lease ending`, 10 s → allowed. |
+| v15.2 | S6, R11, §8.3, §8.9, §11.3, §11.4 | Transplanting (rice and ớt) is a TransplantGame round: `begin_work` needs 25 s left on the lease, as a rice round (was 5 s), and `transplant` is gated at 8–120 s (was 2 s). Pickings keep the 3 s action, the 2 s gate and 5 s. |
+| v15.2 | §13.1, §13.6, §16 | "Trồng cây ớt con" opens TransplantGame, and its 3 s bar and text go. The smoke's transplant lease case becomes 24 s → `lease ending`, 25 s → allowed. |
 | anti-cheat | Header, D7, §9.3, §11.3 rules 2 and 4, §11.5 step 7 | The gather migration is `0018`, after `0016` and `0017`. |
 | anti-cheat | D1, §6.4, §7.2 `quality_range` row, §7.4, §11.5 README line, §16 | D1 is permanent: no quality comes back, `quality_range` stays with the client sending exactly 1, and there is no "quality always 1.1" signal. |
 | anti-cheat | §7.2, §7.3, §7.4 | §7.2 gains `bad_qty` on `crab_finish` and `bad_spot`. §7.3 gains the refusals in §11.6. §7.4 gains `gather_daily_cap`. |
@@ -156,7 +156,7 @@ The canal runs at y 176–208, x 56–764, with bridges at x 196–228 and 548�
 **The flow:**
 1. At a ready hole, E calls `crab_start(hole)`. It checks, in order, the daily limit (`gather daily limit`), at least one free place (`critters full`) and the hole's cooldown for this account (`hole empty`, with `details` = the seconds left).
 2. It then sets `ready_at = now + 20 min`, records the visit (`visit_id`, `visit_at`, `visit_room`) and counts a visit (§7.5). It answers `visit: {id, hole, started_at}`.
-3. The client plants the avatar at the hole's use spot, facing the water, and opens CrabGame. It sends `fa 6` at the start and every 2 s, then `fa 0` at the end.
+3. The client plants the avatar at the hole's use spot, facing the water, and opens CrabGame. It sends `fa 6` at the start and every 2 s, then `fa 0` at the end. An answer that comes back after the player left the field is dropped: the hole keeps its cooldown, as after "Dừng" before a try (R8).
 4. **When the game ends:**
    - with hits ≥ 1, the client waits until 4 s after the `crab_start` answer ("Đang bỏ cua vào xô…") and calls `crab_finish(visit, hits)`;
    - with hits 0 it calls at once. "Dừng (Esc)" follows R8 (§13.2).
@@ -205,10 +205,11 @@ The re-created `_farm_do_pick_snails` keeps every `0016` check (`no snails`, `ha
 
 ### 8.1 The flow
 
-1. "Cấy lúa" (rice, seedlings ≥ 8·s h old, water Nông) or "Trồng cây ớt con" (ớt, nursery ≥ `nursery_ready_h`, Ẩm) calls `begin_work(plot, 'transplant')`. It needs **10 s** left on the lease (`lease ending`, R19) and replaces any earlier record (v15.2 R6).
+1. "Cấy lúa" (rice, seedlings ≥ 8·s h old, water Nông) or "Trồng cây ớt con" (ớt, nursery ≥ `nursery_ready_h`, Ẩm) calls `begin_work(plot, 'transplant')`. It needs **25 s** left on the lease, as a rice round (`lease ending`, R19), and replaces any earlier record (v15.2 R6).
 2. The client plants the avatar and opens the overlay when the answer arrives. It sends `fa 1` at the start and every 2 s, then `fa 0` at the end (v15.2 R14).
 3. **Success (score ≥ 6).** The client waits until **9 s** after the `begin_work` answer ("Đang cắm nốt hàng mạ…"), then calls `transplant(plot, 1)`.
 4. **Failure.** "❌ … Thử lại" starts a new round with a new `begin_work`. Nothing is reported. Esc, "Huỷ" or a disconnect sends nothing either; the leftover record expires after 120 s or is replaced.
+5. **Limits,** as a harvest round's (v15.2 §6.2 step 6): a round left idle ends itself after 110 s with "Lượt cấy đã quá lâu — bắt đầu lại nhé.", and a success whose claim is still unanswered after 15 s offers "Nghỉ tay" (and Esc), which closes the overlay; a late answer still updates the field, without a toast.
 
 ### 8.2 TransplantRound (`minigames.ts`, seeded)
 
@@ -230,7 +231,7 @@ The re-created `_farm_do_pick_snails` keeps every `0016` check (`no snails`, `ha
 ### 8.3 Server (R19)
 
 - **`_work_gate` and `_farm_do_transplant`, each re-created from its latest definition** (`0016` may have changed the gate for `harvest_part`). For `transplant` the gate accepts only while `work = 'transplant'` and 8 s ≤ `p_now − work_started_at` ≤ 120 s: earlier, or with no record, is `too fast`; later is `work expired`. Every other work keeps its latest rule: a hoa-màu picking needs 2 s with no upper bound, and `harvest_part` keeps its 8–120 s. `_farm_do_transplant` applies that gate, sets `transplant_at` (rice) or P (ớt), and keeps `q_transplant = 1.0`.
-- **`_farm_do_begin_work`, re-created from `0016`.** The lease gate is 10 s for a rice round or any transplant, and 5 s for a picking.
+- **`_farm_do_begin_work`, re-created from `0016`.** The lease gate is 25 s for a rice round or any transplant, and 5 s for a picking.
 - **The wrapper** `transplant` keeps `bad_plot` and `quality_range`. The gather smoke pins all three gates (§16).
 - **A lease that runs out mid-round.** The call's sweep deletes the crop, and `transplant` raises `not your plot`, shown with the transplant context (§11.8).
 
@@ -365,7 +366,7 @@ Each is SECURITY DEFINER with `set search_path = public, extensions` and an expl
 
 - **`hole empty` and `bed empty`** carry `details` = the whole seconds left. All refusals are 22023, except `gather daily limit` (53400).
 - **Changed, with the same signatures:**
-  - `begin_work(…, 'transplant')` has the 10 s lease gate;
+  - `begin_work(…, 'transplant')` has a rice round's 25 s lease gate;
   - `transplant` has the 8–120 s gate;
   - `pick_snails` adds `snails`;
   - `buy_farm_item` sells containers;
@@ -488,12 +489,13 @@ Before `0018` (the catalog has no critter kinds) every spot shows its ready prom
   - ớt: "✅ Trồng xong cây ớt con thửa {6}.";
   - the button is "Đóng".
 - **Failure:** "❌ Được {5,5}/12 điểm — cần 6. Thử lại ngay nhé!", with "Thử lại" and "Nghỉ tay". Cancel is "Huỷ (Esc)".
+- **Limits (§8.1 step 5):** an idle round ends with "Lượt cấy đã quá lâu — bắt đầu lại nhé."; a claim unanswered for 15 s shows "Nghỉ tay" under "Đang cắm nốt hàng mạ…".
 
 ### 13.4 Plot panel, shop, depot, bag, HUD
 
 - **Plot panel.**
   - "Cấy lúa" and "Trồng cây ớt con" open TransplantGame. Their hint: "Mỗi lượt cắm 12 {khóm | cây} — được từ 6 điểm là xong; hụt thì làm lại, không mất gì."
-  - A disabled reason is added: "Sắp hết hạn thuê — không kịp cấy." (under 10 s).
+  - A disabled reason is added: "Sắp hết hạn thuê — không kịp cấy." (under 25 s, as for "Gặt").
   - The pest button "Bắt ốc bươu vàng" gains the hint "Bắt ốc cứu lúa — được thêm 1–3 con ốc bươu vàng bỏ xô." When full, it reads "{Xô nhựa | Giỏ tre | Tay} đầy — ốc bắt được thả xuống mương, lúa vẫn được cứu." Before `0018` (no critter kinds in the catalog) it keeps v15.2's button with no hint, so nothing promises snails. The button stays enabled.
 - **Shop (anh Hai).** A new section "🪣 Đồ đựng cua ốc", after "🛠️ Nông cụ". A row has no stepper: "Mua · {1.500 xu}", or disabled "✓ Đã có" / "Đã có {giỏ tre} lớn hơn".
 - **Depot (cô Út).** A new section "🦀 Cua & ốc":
@@ -604,7 +606,7 @@ Everything is original and drawn in code.
 - **Run order.** Replay `0004`…`0018`; run the v15, anti-cheat, v15.2, v16 and gather smokes; replay `0018` and re-run the gather smoke. Every run ends with `\i tests/sql/anticheat-guards.sql`.
 - **Edits to the earlier smokes.**
   - `v15-smoke.sql`, `anticheat-smoke.sql` and `v15-2-smoke.sql` claim transplants 8 s after `begin_work`, not 2 s.
-  - `v15-2-smoke.sql`'s transplant lease case becomes 9 s → `lease ending` and 10 s → allowed.
+  - `v15-2-smoke.sql`'s transplant lease case becomes 24 s → `lease ending` and 25 s → allowed.
 - **Config:** anon can select `critter_kinds`, and the rows equal §7.1. The fixture's prices and rules hold.
 - **Crab starts:** `crab_start` writes the cooldown and the visit; `hole empty` at 19:59, allowed at exactly 20:00; the same hole in a second room is `hole empty` too (R1); `critters full` at 0 free, with no cooldown written.
 - **Crab finishes:** hits 3 at 2.9 s → `too fast`, visit kept; at 3 s with `p_u = {0.05, 0.5, 0.95}` → 1 cua gạch and 2 cua đồng at base × M; hits 0 at 0.5 s → consumed, nothing added; a second finish, or another room → `visit not found`; at 121 s → `visit expired`; 1 free place with hits 3 → 1 caught, 2 escaped.
@@ -614,7 +616,7 @@ Everything is original and drawn in code.
 - **Pest snails:** on a plot with an active snail pest, `pick_snails` by a non-farmer treats it and gives the picker 1–3 ốc bươu vàng; with a full container it still treats, with the escaped count; no visit is counted.
 - **Containers:** a bucket → cap 18; a second bucket → `already owned`; a basket → cap 33, then a bucket → `already owned`; quantity 2 → a plain `invalid quantity` with no event row; a `farm_buy` ledger row.
 - **The three gates:**
-  - transplant (rice and ớt): 7.9 s → `too fast`; 8 s and 120 s → transplanted with `q_transplant` = 1; 121 s → `work expired`. A second `begin_work` 5 s after the first restarts the gate. `lease ending` with 9 s left, allowed with 10 s. A claim after the lease ran out → `not your plot`.
+  - transplant (rice and ớt): 7.9 s → `too fast`; 8 s and 120 s → transplanted with `q_transplant` = 1; 121 s → `work expired`. A second `begin_work` 5 s after the first restarts the gate. `lease ending` with 24 s left, allowed with 25 s. A claim after the lease ran out → `not your plot`.
   - a hoa-màu picking: 1.9 s → `too fast`; 2 s → picked; and no upper bound (a picking 10 minutes after its `begin_work` is accepted).
   - `harvest_part`: unchanged from v15.2 (7.9 s → `too fast`, 8 s and 120 s accepted, 121 s → `work expired`).
 - **Anti-cheat:** envelopes for `crab_finish` hits 4, −1 and null (`bad_qty`) and for `crab_start` hole 7 and `pick_snail_bed` bed 0 (`bad_spot`), with the state unchanged; the guard loop refuses the 4 new RPCs while locked; a wipe deletes critters and cooldowns, and the snapshot has `critters`; the ledger check accepts all 21 reasons and refuses `'foo'`.

@@ -102,7 +102,7 @@ describe("the Vietnamese texts (spec §12.2)", () => {
     expect(reasonText("reel_too_fast")).toBe("Báo kéo được cá nhanh hơn mức trò chơi cho phép.");
     expect(reasonText("quality_range")).toBe("Gửi điểm cấy/gặt ngoài phạm vi của trò chơi.");
     for (const code of ["bad_plot", "bad_slot", "bad_water", "bad_work", "bad_qty", "bad_price", "foreign_offer",
-      "kind_mismatch", "reel_gate_hug", "cast_daily_cap", "something_new"]) {
+      "kind_mismatch", "reel_gate_hug", "cast_daily_cap", "bad_spot", "gather_daily_cap", "something_new"]) {
       expect(reasonText(code)).toBe("Gửi dữ liệu mà giao diện trò chơi không thể tạo ra.");
     }
   });
@@ -110,7 +110,7 @@ describe("the Vietnamese texts (spec §12.2)", () => {
   it("keeps the modal texts verbatim", () => {
     expect(WARN_TITLE).toBe("⚠️ Cảnh báo gian lận");
     expect(WARN_BODY).toBe("Hệ thống vừa ghi nhận một thao tác mà trò chơi bình thường không thể tạo ra (ví dụ: sửa dữ liệu bằng DevTools).");
-    expect(WARN_LOCK).toBe("Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.");
+    expect(WARN_LOCK).toBe("Tài khoản của bạn bị tạm khoá câu cá, làm ruộng, bắt cua mò ốc, mua bán đất, mua bán ở các tiệm và đánh bài trong 5 phút. Trò chuyện và nghe nhạc vẫn dùng bình thường.");
     expect(WARN_REPEAT).toBe("Nếu tái phạm trong 30 ngày, tài khoản sẽ bị khoá vĩnh viễn và dữ liệu trò chơi có thể bị xoá.");
     expect(WARN_OK).toBe("Tôi đã hiểu");
     expect(BAN_TITLE).toBe("🚫 Tài khoản bị khoá vĩnh viễn");
