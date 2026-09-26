@@ -19,7 +19,39 @@ const SECTIONS: ReadonlyArray<[string, string, (i: FarmItem) => boolean]> = [
   ["pesticide", "🧴 Thuốc", (i) => i.kind === "pesticide"],
   ["tool", "🛠️ Nông cụ", (i) => i.kind === "tool"],
   ["critter_box", "🪣 Đồ đựng cua ốc", (i) => i.kind === "critter_box"],
+  ["pet", "🐾 Đạn & thức ăn chó", (i) => i.kind === "ammo" || i.kind === "pet_food"],
 ];
+
+/** Pellets (by 10, "Mua {10} viên · {100} xu") and dog food, v17 §12.4: at most 99 held, as many as the coins pay for. */
+function PetRow({ item, mine, busy, onBuy }: { item: FarmItem; mine: FarmMine; busy: boolean; onBuy: (itemId: string, qty: number) => void }) {
+  const price = item.price ?? 0;
+  const held = itemCount(mine, item.id);
+  const max = Math.min(ITEM_CAP - held, Math.floor(mine.coins / Math.max(1, price)));
+  const ammo = item.kind === "ammo";
+  const [qty, setQty] = useState(ammo ? 10 : 1);
+  const n = Math.min(qty, Math.max(1, max));
+  return (
+    <li className="pch flex flex-col gap-1 p-2">
+      <div className="flex items-center gap-2">
+        <ItemIcon id={item.id} scale={3} />
+        <div className="flex min-w-0 flex-1 flex-col leading-none">
+          <span className="truncate text-xl">{item.name}</span>
+          <span className="text-base">{ammo ? `${price} xu/viên` : `${price} xu/bịch · no 24 giờ`} · có {held}</span>
+        </div>
+      </div>
+      {max < 1 ? (
+        <button type="button" className="pch-btn" disabled>{held >= ITEM_CAP ? `Đã đủ ${ITEM_CAP}` : "Không đủ xu"}</button>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-1">
+          <Stepper value={n} max={max} by={ammo ? 10 : 1} label={`Số lượng ${item.name}`} onChange={setQty} />
+          <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => onBuy(item.id, n)}>
+            {ammo ? `Mua ${n} viên` : `Mua ${n}`} · {formatXu(price * n)}
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
 
 /** A tool: bought once, no stepper (R18). */
 function ToolRow({ item, mine, busy, onBuy }: { item: FarmItem; mine: FarmMine; busy: boolean; onBuy: (itemId: string, qty: number) => void }) {
@@ -146,7 +178,9 @@ export default function FarmShopPanel({ mine, catalog, failed, busy, onBuy, onRe
                       ? <ToolRow key={i.id} item={i} mine={mine} busy={busy} onBuy={onBuy} />
                       : i.kind === "critter_box"
                         ? <BoxRow key={i.id} item={i} mine={mine} all={catalog.items} busy={busy} onBuy={onBuy} />
-                        : <Row key={i.id} item={i} mine={mine} catalog={catalog} busy={busy} onBuy={onBuy} />))}
+                        : i.kind === "ammo" || i.kind === "pet_food"
+                          ? <PetRow key={i.id} item={i} mine={mine} busy={busy} onBuy={onBuy} />
+                          : <Row key={i.id} item={i} mine={mine} catalog={catalog} busy={busy} onBuy={onBuy} />))}
                   </ul>
                 </section>
               );

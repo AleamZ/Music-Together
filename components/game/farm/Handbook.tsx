@@ -16,7 +16,7 @@ export default function Handbook({ varieties, uplands = [], items = [], critters
   initial: string | null;
   onClose: () => void;
 }) {
-  const tabs = handbookTabs(uplands, critters);
+  const tabs = handbookTabs(uplands, critters, items);
   const [tab, setTab] = useState<HandbookTab>(tabs.some(([id]) => id === initial) ? initial! : "process");
   return (
     // sm:, because ParchmentModal's own max-w-lg comes later in Tailwind's output than a plain max-w-2xl

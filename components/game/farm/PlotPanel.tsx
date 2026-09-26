@@ -7,8 +7,9 @@ import { cropModel, cropPhase, nextPhaseAt, waterAt, wantedWater, yieldEstimate 
 import { handbookTabFor, handbookTabs, type HandbookTab } from "@/lib/game/farm/handbook";
 import type { LandCtx } from "@/lib/game/farm/land";
 import {
-  BED_WATER_NAME, bedLevelsText, durationText, PEST_NAME, PEST_REMEDY, PHASE_NAME, uplandPhaseName, WATER_NAME,
+  BED_WATER_NAME, bedLevelsText, durationText, PEST_NAME, PEST_REMEDY, PHASE_NAME, ratPlotText, uplandPhaseName, WATER_NAME,
 } from "@/lib/game/farm/messages";
+import { ratFactor, ratHours } from "@/lib/game/farm/rats";
 import type { CropView, FieldState, PlotView } from "@/lib/game/farm/state";
 import {
   rotFromAt, upEstimate, uplandModel, upNext, upNextPhaseAt, upPhase, upSeasonEstimate, upWantedWater,
@@ -149,8 +150,12 @@ export default function PlotPanel({ no, state, catalog, failed, me, busy, now, o
 }) {
   const p = state?.plots.find((x) => x.no === no) ?? null;
   const v = p?.crop ? catalog?.varieties.find((x) => x.id === p.crop!.variety) ?? null : null;
-  const tab = handbookTabFor(p?.crop ?? null, v, now);
-  const tabs = catalog ? handbookTabs(catalog.uplands, catalog.critters) : [];
+  // v17 §12.1: a plot with a rat log or live rats says so, and its handbook link goes to the rats' tab
+  const ratLog = state?.rats?.plots[no] ?? null;
+  const ratsHere = state?.rats?.live.filter((r) => r.plot === no).length ?? 0;
+  const ratted = ratLog !== null || ratsHere > 0;
+  const tab = handbookTabFor(p?.crop ?? null, v, now, ratted);
+  const tabs = catalog ? handbookTabs(catalog.uplands, catalog.critters, catalog.items) : [];
   const tabName = (id: string) => tabs.find(([t]) => t === id)?.[1];
   const ctx: LandCtx | null = state ? { me, plots: state.plots, mine: state.mine } : null;
   return (
@@ -172,6 +177,7 @@ export default function PlotPanel({ no, state, catalog, failed, me, busy, now, o
             ) : (
               <RiceStatus p={p} me={me} catalog={catalog} now={now} />
             )}
+            {ratted && <p>{ratPlotText(ratsHere, (1 - ratFactor(ratHours(ratLog ?? [], now))) * 100)}</p>}
             <ul className="flex flex-col gap-1">
               {plotActions(p, me, v, catalog, state.mine, now).map((a) => (
                 <li key={a.key} className="flex flex-wrap items-center gap-2">

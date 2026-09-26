@@ -14,7 +14,7 @@ import {
 import {
   bedEmptyText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, dogCatchText, farmErrorMessage,
   FIELD_LOADING, GATHER_LIMIT_TEXT, GIFT_TEXT, harvestText, harvesterDoneText, holeEmptyText, loadedText, NO_PELLETS, NOT_OPEN,
-  NOT_OPEN_153, NOT_OPEN_17, pestSnailText, pickingText, produceSaleText, RAT_GONE, ratPrompt, ratSpawnText, riceSaleText,
+  NOT_OPEN_153, NOT_OPEN_17, pestSnailText, pickingText, produceSaleText, RAT_GONE, ratPrompt, ratSaleText, ratSpawnText, riceSaleText,
   slingGear, slingHitText, WORK_EXPIRED, WORK_EXPIRED_TP,
 } from "@/lib/game/farm/messages";
 import type { CrabVisit, FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
@@ -158,6 +158,8 @@ export interface FarmController {
   sellProduce: (upland: string, kg: number) => Promise<boolean>;
   /** cô Út buys my critters of a kind, or all of them (null), at their stored prices (v15.3 §7.6). */
   sellCritters: (kind: string | null) => Promise<boolean>;
+  /** cô Út buys my whole rat bag at the prices fixed at the catch (v17 §5.6). */
+  sellRats: () => Promise<boolean>;
   /** Handles the field's interactables; false for anything else. */
   interact: (it: Interactable) => boolean;
   /** A plot's prompt names my next job there, a hole's or a bed's its state for me (v15.3 §13.1); the field's other
@@ -289,7 +291,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
   }, [active, machine]);
 
   // --- due tasks, and the plots on the canvas with my urgent rings
-  const tasks = useMemo(() => (state && catalog ? dueTasks(state.plots, accountId, catalog, state.mine, now) : []), [state, catalog, accountId, now]);
+  const tasks = useMemo(() => (state && catalog ? dueTasks(state.plots, accountId, catalog, state.mine, now, state.rats?.live ?? []) : []), [state, catalog, accountId, now]);
   useEffect(() => {
     if (!active || !state) return;
     const urgentPlots = new Set(tasks.filter((t) => t.urgent).map((t) => t.plot));
@@ -868,6 +870,17 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       setBusy(false);
     }
   }, [sellCatch]);
+  const { sellRats: sellBag } = data;
+  const sellRats = useCallback(async (): Promise<boolean> => {
+    setBusy(true);
+    try {
+      const r = await sellBag();
+      if (r) live.current.toast(ratSaleText(r.sold.count, r.sold.xu));
+      return r !== null;
+    } finally {
+      setBusy(false);
+    }
+  }, [sellBag]);
 
   // --- the field's interactables and prompts
   const interact = useCallback((it: Interactable): boolean => {
@@ -955,6 +968,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     loadSprayer,
     sellProduce,
     sellCritters,
+    sellRats,
     interact,
     promptText,
   };

@@ -3,7 +3,9 @@
 import ConfirmButton from "@/components/game/farm/ConfirmButton";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
-import { TANK_CHARGES, TOOL_SICKLE, TOOL_SPRAYER, type CritterKind, type FarmItem } from "@/lib/game/farm/catalog";
+import {
+  AMMO_PELLET, FOOD_DOG, TANK_CHARGES, TOOL_SICKLE, TOOL_SLING, TOOL_SPRAYER, type CritterKind, type FarmItem,
+} from "@/lib/game/farm/catalog";
 import { critterCount, heldBox, lowerFirst, visitsLeft } from "@/lib/game/farm/gather";
 import type { FarmMine } from "@/lib/game/farm/state";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
@@ -59,6 +61,19 @@ function FarmTools({ farm }: { farm: BagFarm }) {
             </li>
           );
         })}
+        {/* v17 §12.4: the ná and the dog food, once the shop sells them (0019) */}
+        {items.some((i) => i.id === TOOL_SLING) && (
+          <li className="flex items-center gap-2 py-0.5">
+            <ItemIcon id={TOOL_SLING} scale={2} />
+            <span>{has(TOOL_SLING) ? `Ná — còn ${mine.items[AMMO_PELLET] ?? 0} viên đạn đất` : `Chưa có ná — tiệm anh Hai bán ${priceOf(TOOL_SLING)}`}</span>
+          </li>
+        )}
+        {has(FOOD_DOG) && (
+          <li className="flex items-center gap-2 py-0.5">
+            <ItemIcon id={FOOD_DOG} scale={2} />
+            <span>Thức ăn chó — {mine.items[FOOD_DOG]} bịch</span>
+          </li>
+        )}
       </ul>
     </section>
   );

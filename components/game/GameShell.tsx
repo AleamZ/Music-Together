@@ -38,6 +38,7 @@ import CardSeatChip from "./cards/CardSeatChip";
 import CharacterEditor from "./CharacterEditor";
 import DogPanel from "./farm/DogPanel";
 import FarmOverlays from "./farm/FarmOverlays";
+import RatChip from "./farm/RatChip";
 import { FarmTasksButton } from "./farm/FarmTasks";
 import FishingHud from "./fishing/FishingHud";
 import FishingOverlays from "./fishing/FishingOverlays";
@@ -319,7 +320,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             {cards.seated && <CardSeatChip table={cards.seatTable} me={accountId} onOpen={() => cards.seated && cards.openPanel(cards.seated)} />}
           </div>
         </div>
-        <MapCounts counts={counts} />
+        <div className="flex flex-col items-center gap-1">
+          <MapCounts counts={counts} />
+          {map.id === "field" && (
+            <RatChip live={farm.data.state?.rats?.live.length ?? 0} onOpen={() => farm.openPanel({ kind: "handbook", tab: "rats" })} />
+          )}
+        </div>
         <HudNowPlaying
           room={room}
           current={derived.current}
