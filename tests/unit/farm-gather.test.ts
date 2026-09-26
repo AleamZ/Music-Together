@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { critterFromRow, farmItemFromRow, type FarmCatalog } from "@/lib/game/farm/catalog";
 import {
   BED_BAR_MS, BED_COUNT, CRAB_FINISH_WAIT_MS, critterCap, critterCount, critterPrice, GATHER, gatherPrompt, heldBox, HOLE_COUNT,
-  minutesLeft, spotId, spotKey, spotState, TRANSPLANT_WAIT_MS,
+  minutesLeft, spotId, spotKey, spotState, TRANSPLANT_WAIT_MS, visitsLeft,
 } from "@/lib/game/farm/gather";
 import type { FarmMine } from "@/lib/game/farm/state";
 import type { Interactable } from "@/lib/game/maps/types";
@@ -142,5 +142,13 @@ describe("the field prompts (§13.1)", () => {
     expect(prompt(HOLE, mine({ ...FULL, gather: LIMIT }), before)).toBe("Bắt cua hang 3");
     expect(prompt(BED, mine({ gather: cooling("bed2", 60_000) }), before)).toBe("Mò ốc bãi 2");
     expect(gatherPrompt(HOLE, null, null, NOW)).toBe("Bắt cua hang 3");
+  });
+});
+
+describe("visitsLeft (v15.3 §7.5)", () => {
+  it("is the server's count until its Vietnam midnight, then a whole day's", () => {
+    const g = { readyAt: {}, leftToday: 13, dayResetsAt: 5_000 };
+    expect([visitsLeft(g, 4_999), visitsLeft(g, 5_000)]).toEqual([13, GATHER.dailyVisits]);
+    expect(visitsLeft({ ...g, dayResetsAt: null }, 9_999)).toBe(13);
   });
 });

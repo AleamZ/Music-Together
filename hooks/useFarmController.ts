@@ -11,9 +11,9 @@ import {
   BED_BAR_MS, CRAB_FINISH_WAIT_MS, gatherPrompt, heldBox, spotKey, spotState, TRANSPLANT_WAIT_MS,
 } from "@/lib/game/farm/gather";
 import {
-  bedEmptyText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, crittersFullText, FIELD_LOADING, GATHER_LIMIT_TEXT, GIFT_TEXT,
-  harvestText, harvesterDoneText, holeEmptyText, loadedText, NOT_OPEN, NOT_OPEN_153, pestSnailText, pickingText, produceSaleText,
-  riceSaleText, WORK_EXPIRED, WORK_EXPIRED_TP,
+  bedEmptyText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, FIELD_LOADING,
+  GATHER_LIMIT_TEXT, GIFT_TEXT, harvestText, harvesterDoneText, holeEmptyText, loadedText, NOT_OPEN, NOT_OPEN_153, pestSnailText,
+  pickingText, produceSaleText, riceSaleText, WORK_EXPIRED, WORK_EXPIRED_TP,
 } from "@/lib/game/farm/messages";
 import type { CrabVisit, FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
 import type { FieldState, PlotView } from "@/lib/game/farm/state";
@@ -125,6 +125,8 @@ export interface FarmController {
   sell: (variety: string, dry: boolean, kg: number) => Promise<boolean>;
   loadSprayer: (itemId: string) => Promise<boolean>;
   sellProduce: (upland: string, kg: number) => Promise<boolean>;
+  /** cô Út buys my critters of a kind, or all of them (null), at their stored prices (v15.3 §7.6). */
+  sellCritters: (kind: string | null) => Promise<boolean>;
   /** Handles the field's interactables; false for anything else. */
   interact: (it: Interactable) => boolean;
   /** A plot's prompt names my next job there, a hole's or a bed's its state for me (v15.3 §13.1); the field's other
@@ -670,6 +672,18 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       setBusy(false);
     }
   }, [sellCrop]);
+  const { sellCritters: sellCatch } = data;
+  const sellCritters = useCallback(async (kind: string | null): Promise<boolean> => {
+    setBusy(true);
+    try {
+      const r = await sellCatch(kind);
+      // what she paid, from the answer (the prices were fixed at the catch)
+      if (r) live.current.toast(critterSaleText(r.sold.n, r.sold.xu));
+      return r !== null;
+    } finally {
+      setBusy(false);
+    }
+  }, [sellCatch]);
 
   // --- the field's interactables and prompts
   const interact = useCallback((it: Interactable): boolean => {
@@ -739,6 +753,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     sell,
     loadSprayer,
     sellProduce,
+    sellCritters,
     interact,
     promptText,
   };

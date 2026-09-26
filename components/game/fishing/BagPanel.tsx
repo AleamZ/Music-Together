@@ -3,14 +3,23 @@
 import ConfirmButton from "@/components/game/farm/ConfirmButton";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
-import { TANK_CHARGES, TOOL_SICKLE, TOOL_SPRAYER, type FarmItem } from "@/lib/game/farm/catalog";
+import { TANK_CHARGES, TOOL_SICKLE, TOOL_SPRAYER, type CritterKind, type FarmItem } from "@/lib/game/farm/catalog";
+import { critterCount, heldBox, lowerFirst, visitsLeft } from "@/lib/game/farm/gather";
 import type { FarmMine } from "@/lib/game/farm/state";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
 import { baitCount, ownsItem, type FishingState, type Loadout } from "@/lib/game/fishing/state";
 import FishLine from "./FishLine";
 
-/** The field's side of the bag (v15.2 R29): my farm stock, the farm catalog's items, and Nạp thuốc. */
-export interface BagFarm { mine: FarmMine; items: readonly FarmItem[]; busy: boolean; onLoad: (itemId: string) => void }
+/** The field's side of the bag (v15.2 R29): my farm stock, the farm catalog's items and critter kinds (none before 0018),
+ *  the server's clock, and Nạp thuốc. */
+export interface BagFarm {
+  mine: FarmMine;
+  items: readonly FarmItem[];
+  critters: readonly CritterKind[];
+  now: number;
+  busy: boolean;
+  onLoad: (itemId: string) => void;
+}
 
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
@@ -55,8 +64,36 @@ function FarmTools({ farm }: { farm: BagFarm }) {
   );
 }
 
-/** 🎒 Giỏ đồ (spec §10.2, v15.2 R29): the fish (hand, then bucket), the owned rods and bobbers, the baits, the bait box
- *  and bucket, and — once the field has loaded — the farm tools. */
+/** 🦀 Cua & ốc (v15.3 §13.4): the container and how full it is (or where to buy one), a line per kind held, and today's
+ *  visits left. */
+function Critters({ farm }: { farm: BagFarm }) {
+  const { mine, items, critters, now } = farm;
+  const box = heldBox(mine.items, items);
+  const n = critterCount(mine.critters);
+  const shop = items.filter((i) => i.kind === "critter_box").sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((b) => `${lowerFirst(b.name)} ${formatXu(b.price ?? 0)}`).join(", ");
+  return (
+    <section>
+      <h3 className="text-xl text-burgundy">🦀 Cua & ốc</h3>
+      <ul>
+        <li className="flex items-center gap-2 py-0.5">
+          {box ? <ItemIcon id={box.id} scale={2} /> : <span className="w-8" />}
+          <span>{box ? `${box.name} · ${n}/${mine.critterCap} con` : `Tay không · ${n}/${mine.critterCap} con — tiệm anh Hai bán ${shop}`}</span>
+        </li>
+        {critters.filter((k) => (mine.critters[k.id]?.n ?? 0) > 0).map((k) => (
+          <li key={k.id} className="flex items-center gap-2 py-0.5">
+            <ItemIcon id={k.id} scale={2} />
+            <span>{k.name} × {mine.critters[k.id].n} · {formatXu(mine.critters[k.id].xu)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-base opacity-80">Bán ở vựa cô Út · hôm nay còn {visitsLeft(mine.gather, now)} lượt bắt cua, mò ốc.</p>
+    </section>
+  );
+}
+
+/** 🎒 Giỏ đồ (spec §10.2, v15.2 R29, v15.3 §13.4): the fish (hand, then bucket), the owned rods and bobbers, the baits,
+ *  the bait box and bucket, and — once the field has loaded — the farm tools and the cua & ốc. */
 export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose, farm = null }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
@@ -154,6 +191,7 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
           </ul>
         </section>
         {farm && <FarmTools farm={farm} />}
+        {farm && farm.critters.length > 0 && <Critters farm={farm} />}
       </div>
     </ParchmentModal>
   );

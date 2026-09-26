@@ -2,7 +2,7 @@
 // critter prices, the spot keys, the capacity, and each spot's state and prompt. Pure.
 import type { Interactable } from "@/lib/game/maps/types";
 import type { FarmCatalog, FarmItem } from "./catalog";
-import type { FarmMine } from "./state";
+import type { FarmMine, GatherMine } from "./state";
 
 /** 0018's rules (R1–R5, R7, R19): the hands, a spot's cooldown, the visits a Vietnam day, the gates and windows, the
  *  odds, and the snails a bed gives. */
@@ -64,6 +64,11 @@ export function critterCap(items: Readonly<Record<string, number>>, all: readonl
   return GATHER.hand + (heldBox(items, all)?.capacity ?? 0);
 }
 
+/** Today's visits left (§7.5): the server's count, or a whole day's once its Vietnam midnight has passed. */
+export function visitsLeft(g: GatherMine, now: number): number {
+  return g.dayResetsAt !== null && now >= g.dayResetsAt ? GATHER.dailyVisits : g.leftToday;
+}
+
 /** How many critters are held, every kind together. */
 export function critterCount(critters: Readonly<Record<string, { n: number }>>): number {
   return Object.values(critters).reduce((s, c) => s + c.n, 0);
@@ -81,7 +86,7 @@ export type SpotState =
 export function spotState(it: Interactable, mine: FarmMine | null, catalog: FarmCatalog | null, now: number): SpotState {
   if (!mine || !catalog || catalog.critters.length === 0) return { kind: "ready" };
   const g = mine.gather;
-  if (g.leftToday <= 0 && (g.dayResetsAt === null || now < g.dayResetsAt)) return { kind: "limit" };
+  if (visitsLeft(g, now) <= 0) return { kind: "limit" };
   if (critterCount(mine.critters) >= mine.critterCap) return { kind: "full", box: heldBox(mine.items, catalog.items) };
   const key = spotKey(it.id);
   const readyAt = key === null ? undefined : g.readyAt[key];

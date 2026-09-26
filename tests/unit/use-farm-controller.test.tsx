@@ -15,6 +15,7 @@ import fixtures from "@/tests/fixtures/upland-cases.json";
 const rpc = vi.hoisted(() => ({
   fetchFieldState: vi.fn(), fetchFarmCatalog: vi.fn(), fieldAction: vi.fn(), sellRice: vi.fn(), buyFarmItem: vi.fn(),
   claimFarmGift: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(), pickSnailBed: vi.fn(),
+  sellCritters: vi.fn(),
 }));
 vi.mock("@/lib/game/farm/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/farm/rpc")>()),
@@ -818,6 +819,22 @@ describe("useFarmController, v15.3 snail beds, pest snails, prompts and cues", (
     const full = setup();
     await flush();
     expect(full.result.current.promptText(spot("crab_3"))).toBe("Hang 3 · tay đầy — bán ở vựa cô Út");
+  });
+
+  it("sells cua & ốc to cô Út, a kind or all, and toasts what she paid", async () => {
+    const onCoinsChanged = vi.fn();
+    const { result, toast } = setup({ onCoinsChanged });
+    await flush();
+    rpc.sellCritters.mockResolvedValueOnce({
+      serverNow: iso(0), mine: parseFarmMine({ items: {}, rice: {}, coins: 1230, gift_claimed: true }), sold: { n: 6, xu: 230 },
+    });
+    await act(async () => { expect(await result.current.sellCritters(null)).toBe(true); });
+    expect(rpc.sellCritters).toHaveBeenCalledWith("tok", null);
+    expect(toast).toHaveBeenCalledWith("💰 Bán 6 con cua ốc được 230 xu.");
+    expect(onCoinsChanged).toHaveBeenCalledTimes(1);
+    rpc.sellCritters.mockRejectedValueOnce({ message: "no critters" });
+    await act(async () => { expect(await result.current.sellCritters("cua_dong")).toBe(false); });
+    expect(toast).toHaveBeenLastCalledWith("Không có cua ốc để bán.");
   });
 
   it("draws the ready cue on each hole and bed open and not cooling for me, none before 0018", async () => {

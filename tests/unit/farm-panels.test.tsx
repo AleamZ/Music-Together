@@ -4,7 +4,9 @@ import CoopPanel from "@/components/game/farm/CoopPanel";
 import DryingPanel from "@/components/game/farm/DryingPanel";
 import FarmShopPanel from "@/components/game/farm/FarmShopPanel";
 import RiceDepotPanel from "@/components/game/farm/RiceDepotPanel";
-import { farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow } from "@/lib/game/farm/catalog";
+import {
+  critterFromRow, farmItemFromRow, uplandFromRow, varietyFromRow, type FarmCatalog, type UplandCropRow,
+} from "@/lib/game/farm/catalog";
 import { parseFieldState, type FieldState } from "@/lib/game/farm/state";
 import fixtures from "@/tests/fixtures/upland-cases.json";
 
@@ -370,5 +372,78 @@ describe("v15.2: the shop's tools, cô Út's hoa màu and chú Tám's harvester"
     expect(screen.getByRole("tab", { name: "Đất làng" })).toHaveAttribute("aria-selected", "true");
     fireEvent.click(screen.getByRole("tab", { name: "Máy gặt" }));
     expect(screen.getByText("Bạn chưa làm ruộng lúa nào trong phòng này.")).toBeInTheDocument();
+  });
+});
+
+describe("v15.3: anh Hai's containers and cô Út's cua & ốc", () => {
+  const KINDS = [
+    critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 }),
+    critterFromRow({ id: "cua_gach", name: "Cua gạch", grp: "crab", base_price: 45, sort_order: 20 }),
+    critterFromRow({ id: "oc_dong", name: "Ốc đồng", grp: "snail", base_price: 8, sort_order: 30 }),
+    critterFromRow({ id: "oc_buou_vang", name: "Ốc bươu vàng", grp: "snail", base_price: 2, sort_order: 40 }),
+  ];
+  const GATHERING: FarmCatalog = {
+    ...CATALOG, critters: KINDS,
+    items: [
+      ...CATALOG.items, item("tool_sickle", "tool", "Liềm", 1500),
+      item("box_bucket", "critter_box", "Xô nhựa", 1500, { sort_order: 10, capacity: 15 }),
+      item("box_basket", "critter_box", "Giỏ tre", 6000, { sort_order: 20, capacity: 30 }),
+    ],
+  };
+  const shop = (coins: number, items: Record<string, number>, onBuy = vi.fn()) => {
+    render(<FarmShopPanel mine={{ ...STATE.mine, coins, items }} catalog={GATHERING} failed={false} busy={false} onBuy={onBuy}
+      onReload={noop} onClose={noop} />);
+    return onBuy;
+  };
+  const row = (name: string) => screen.getByText(name).closest("li")!;
+
+  it("sells the containers once each, after Nông cụ, and no smaller one than mine", () => {
+    const onBuy = shop(10_000, {});
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(
+      ["🌾 Giống lúa", "🧺 Phân bón", "🧴 Thuốc", "🛠\uFE0F Nông cụ", "🪣 Đồ đựng cua ốc"]);
+    expect(within(row("Xô nhựa")).queryByRole("group")).toBeNull();
+    expect(within(row("Xô nhựa")).getByText("Đựng thêm 15 con cua, ốc (tay cầm được 3 con)")).toBeInTheDocument();
+    fireEvent.click(within(row("Xô nhựa")).getByRole("button", { name: "Mua · 1.500 xu" }));
+    expect(onBuy).toHaveBeenCalledWith("box_bucket", 1);
+    cleanup();
+    shop(10_000, { box_basket: 1 });
+    expect(within(row("Giỏ tre")).getByRole("button", { name: "✓ Đã có" })).toBeDisabled();
+    expect(within(row("Xô nhựa")).getByRole("button", { name: "Đã có giỏ tre lớn hơn" })).toBeDisabled();
+    cleanup();
+    shop(10_000, { box_bucket: 1 });
+    expect(within(row("Giỏ tre")).getByRole("button", { name: "Mua · 6.000 xu" })).toBeEnabled();
+    cleanup();
+    shop(1000, {});
+    expect(within(row("Xô nhựa")).getByRole("button", { name: "Không đủ xu" })).toBeDisabled();
+  });
+
+  it("buys cua & ốc at the prices fixed at the catch, a kind or all, under today's prices", () => {
+    const onSell = vi.fn();
+    const mine = { ...STATE.mine, rice: {}, critters: { cua_dong: { n: 5, xu: 130 }, oc_buou_vang: { n: 1, xu: 4 } } };
+    render(<RiceDepotPanel mine={mine} catalog={GATHERING} failed={false} busy={false} onSell={noop} onSellProduce={noop} onReload={noop}
+      onClose={noop} critters={{ prices: { mult: 2.24, endsAt: null }, onSell }} />);
+    expect(screen.getByRole("heading", { name: "🦀 Cua & ốc" })).toBeInTheDocument();
+    expect(screen.getByText("Giá hôm nay ×2,24: cua đồng 26 · cua gạch 100 · ốc đồng 17 · ốc bươu vàng 4 xu/con")).toBeInTheDocument();
+    fireEvent.click(within(row("Cua đồng × 5 · 130 xu")).getByRole("button", { name: "Bán 5 con · 130 xu" }));
+    expect(onSell).toHaveBeenLastCalledWith("cua_dong");
+    fireEvent.click(within(row("Ốc bươu vàng × 1 · 4 xu")).getByRole("button", { name: "Bán 1 con · 4 xu" }));
+    expect(onSell).toHaveBeenLastCalledWith("oc_buou_vang");
+    fireEvent.click(screen.getByRole("button", { name: "Bán hết cua ốc · 134 xu" }));
+    expect(onSell).toHaveBeenLastCalledWith(null);
+    expect(screen.getByText("Giá chốt lúc bắt được; bán sau vẫn giữ giá đó.")).toBeInTheDocument();
+    expect(screen.queryByText(/Chưa có lúa/)).toBeNull();
+  });
+
+  it("names cua & ốc among what cô Út takes once 0018 is in, and shows its prices with nothing held", () => {
+    render(<RiceDepotPanel mine={{ ...STATE.mine, rice: {} }} catalog={GATHERING} failed={false} busy={false} onSell={noop}
+      onSellProduce={noop} onReload={noop} onClose={noop} critters={{ prices: { mult: 1, endsAt: null }, onSell: noop }} />);
+    expect(screen.getByText("“Chưa có lúa, hoa màu hay cua ốc hả con? Có hàng mang qua, cô trả giá cao!”")).toBeInTheDocument();
+    expect(screen.getByText("Giá hôm nay ×1,00: cua đồng 12 · cua gạch 45 · ốc đồng 8 · ốc bươu vàng 2 xu/con")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Bán/ })).toBeNull();
+    cleanup();
+    render(<RiceDepotPanel mine={{ ...STATE.mine, rice: {} }} catalog={CATALOG} failed={false} busy={false} onSell={noop}
+      onSellProduce={noop} onReload={noop} onClose={noop} />);
+    expect(screen.getByText("“Chưa có lúa hay hoa màu hả con? Thu hoạch xong mang qua, cô trả giá cao!”")).toBeInTheDocument();
+    expect(screen.queryByText("🦀 Cua & ốc")).toBeNull();
   });
 });

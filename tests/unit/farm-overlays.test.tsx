@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import FarmOverlays from "@/components/game/farm/FarmOverlays";
 import type { FarmController, FarmRound } from "@/hooks/useFarmController";
-import { farmItemFromRow, varietyFromRow } from "@/lib/game/farm/catalog";
+import { critterFromRow, farmItemFromRow, varietyFromRow } from "@/lib/game/farm/catalog";
 import { NOT_OPEN } from "@/lib/game/farm/messages";
 import { parseFieldState } from "@/lib/game/farm/state";
 
@@ -26,13 +26,14 @@ const controller = (over: Partial<FarmController> = {}): FarmController => ({
   data: {
     state: STATE, catalog: CATALOG, failed: false, notOpen: false, reload: vi.fn(), run: vi.fn(), sellRice: vi.fn(), buyItem: vi.fn(),
     claimGift: vi.fn(), plotChanged: vi.fn(), loadSprayer: vi.fn(), sellProduce: vi.fn(), crabStart: vi.fn(), crabFinish: vi.fn(),
-    pickSnailBed: vi.fn(),
+    pickSnailBed: vi.fn(), sellCritters: vi.fn(),
   },
   now: NOW, tasks: [], urgent: 0, panel: null, openPanel: vi.fn(), closePanel: vi.fn(), busy: false, work: null, cancelWork: vi.fn(),
   round: null, endRound: vi.fn(), nextRound: vi.fn(), closeRound: vi.fn(), crab: null, endCrab: vi.fn(), closeCrab: vi.fn(),
   bed: null, cancelBed: vi.fn(), moved: vi.fn(),
   act: vi.fn().mockResolvedValue(true), buy: vi.fn().mockResolvedValue(true), sell: vi.fn().mockResolvedValue(true),
-  loadSprayer: vi.fn().mockResolvedValue(true), sellProduce: vi.fn().mockResolvedValue(true), interact: vi.fn(), promptText: vi.fn(),
+  loadSprayer: vi.fn().mockResolvedValue(true), sellProduce: vi.fn().mockResolvedValue(true), sellCritters: vi.fn().mockResolvedValue(true),
+  interact: vi.fn(), promptText: vi.fn(),
   ...over,
 });
 
@@ -107,6 +108,19 @@ describe("FarmOverlays", () => {
 
     rerender(<FarmOverlays farm={controller({ panel: { kind: "handbook", tab: "water" } })} me="me" onField />);
     expect(screen.getByRole("tab", { name: "Nước" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("sells cua & ốc at cô Út's once 0018 has critters (v15.3 §13.4)", () => {
+    const kinds = [critterFromRow({ id: "cua_dong", name: "Cua đồng", grp: "crab", base_price: 12, sort_order: 10 })];
+    const state = { ...STATE, critterPrices: { mult: 1.5, endsAt: null }, mine: { ...STATE.mine, critters: { cua_dong: { n: 2, xu: 36 } } } };
+    const depot = controller({ panel: { kind: "depot" }, data: { ...controller().data, state, catalog: { ...CATALOG, critters: kinds } } });
+    const { rerender } = render(<FarmOverlays farm={depot} me="me" onField />);
+    expect(screen.getByText("Giá hôm nay ×1,50: cua đồng 18 xu/con")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Bán hết cua ốc · 36 xu" }));
+    expect(depot.sellCritters).toHaveBeenCalledWith(null);
+    // before 0018: no critter kinds, no section
+    rerender(<FarmOverlays farm={controller({ panel: { kind: "depot" } })} me="me" onField />);
+    expect(screen.queryByText("🦀 Cua & ốc")).toBeNull();
   });
 });
 

@@ -7,8 +7,8 @@ import { syncClock } from "@/lib/game/farm/clock";
 import { farmErrorMessage, isMissingRpc, NOT_OPEN_152, NOT_OPEN_153 } from "@/lib/game/farm/messages";
 import {
   actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, fetchFarmCatalog, fetchFieldState, fieldAction, loadSprayer,
-  pickSnailBed, RPCS_152, RPCS_153, sellProduce, sellRice, type CatchAnswer, type CrabVisit, type FieldAction, type FieldAnswer,
-  type MineAnswer,
+  pickSnailBed, RPCS_152, RPCS_153, sellCritters, sellProduce, sellRice, type CatchAnswer, type CrabVisit, type FieldAction,
+  type FieldAnswer, type MineAnswer,
 } from "@/lib/game/farm/rpc";
 import { withMine, type FarmMine, type FieldState } from "@/lib/game/farm/state";
 
@@ -39,6 +39,8 @@ export interface FieldData {
     Promise<(MineAnswer & { crab: CatchAnswer & { hits: number } }) | null>;
   /** Mò ốc (v15.3 §7.3): 1–3 snails from bed `bed`. */
   pickSnailBed: (bed: number) => Promise<(MineAnswer & { snails: CatchAnswer }) | null>;
+  /** Sells every critter of a kind to cô Út, or all of them (null), at their stored prices (v15.3 R15). */
+  sellCritters: (kind: string | null) => Promise<(MineAnswer & { sold: { n: number; xu: number } }) | null>;
   /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
    *  FP_MIN_GAP_MS apart. */
   plotChanged: () => void;
@@ -200,5 +202,7 @@ export function useField(roomId: string, token: string, active: boolean, onError
       call(() => crabFinish(roomId, token, visitId, hits), applyMine, { rpc: "crab_finish", onError }), [call, applyMine, roomId, token]),
     pickSnailBed: useCallback((bed: number) =>
       call(() => pickSnailBed(roomId, token, bed), applyMine, { rpc: "pick_snail_bed" }), [call, applyMine, roomId, token]),
+    sellCritters: useCallback((kind: string | null) =>
+      call(() => sellCritters(token, kind), applyMine, { rpc: "sell_critters" }), [call, applyMine, token]),
   };
 }

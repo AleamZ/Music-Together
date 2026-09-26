@@ -106,6 +106,8 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
       {panel?.kind === "depot" && (
         <RiceDepotPanel mine={state?.mine ?? null} catalog={catalog} failed={failed} busy={busy}
           onSell={(v, dry, kg) => void farm.sell(v, dry, kg)} onSellProduce={(u, kg) => void farm.sellProduce(u, kg)}
+          critters={(catalog?.critters.length ?? 0) > 0
+            ? { prices: state?.critterPrices ?? null, onSell: (k) => void farm.sellCritters(k) } : null}
           onReload={onReload} onClose={closePanel} />
       )}
       {panel?.kind === "drying" && (

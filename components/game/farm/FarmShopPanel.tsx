@@ -3,19 +3,22 @@
 import { useState } from "react";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
-import { describeFarmItem, ITEM_CAP, type FarmCatalog, type FarmItem } from "@/lib/game/farm/catalog";
+import { boxRow, describeFarmItem, ITEM_CAP, type FarmCatalog, type FarmItem } from "@/lib/game/farm/catalog";
+import { lowerFirst } from "@/lib/game/farm/gather";
 import { itemCount, type FarmMine } from "@/lib/game/farm/state";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import FieldStatus from "./FieldStatus";
 import Stepper from "./Stepper";
 
-/** The shelves (v15.2 §13.5): rice seed, hoa-màu seed, fertilizers, pesticides and the tools. */
+/** The shelves (v15.2 §13.5, v15.3 §13.4): rice seed, hoa-màu seed, fertilizers, pesticides, the tools and the critter
+ *  containers. */
 const SECTIONS: ReadonlyArray<[string, string, (i: FarmItem) => boolean]> = [
   ["rice", "🌾 Giống lúa", (i) => i.kind === "seed" && i.upland === null],
   ["upland", "🥔 Giống hoa màu", (i) => i.kind === "seed" && i.upland !== null],
   ["fertilizer", "🧺 Phân bón", (i) => i.kind === "fertilizer"],
   ["pesticide", "🧴 Thuốc", (i) => i.kind === "pesticide"],
   ["tool", "🛠️ Nông cụ", (i) => i.kind === "tool"],
+  ["critter_box", "🪣 Đồ đựng cua ốc", (i) => i.kind === "critter_box"],
 ];
 
 /** A tool: bought once, no stepper (R18). */
@@ -34,6 +37,39 @@ function ToolRow({ item, mine, busy, onBuy }: { item: FarmItem; mine: FarmMine; 
       <p className="text-base leading-tight opacity-80">{describeFarmItem(item, [])}</p>
       {owned ? (
         <button type="button" className="pch-btn" disabled>✓ Đã có</button>
+      ) : mine.coins < price ? (
+        <button type="button" className="pch-btn" disabled>Không đủ xu</button>
+      ) : (
+        <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => onBuy(item.id, 1)}>Mua · {formatXu(price)}</button>
+      )}
+    </li>
+  );
+}
+
+/** A critter container (v15.3 R16): bought once, no stepper; one no larger than the one I hold is no use. */
+function BoxRow({ item, mine, all, busy, onBuy }: {
+  item: FarmItem;
+  mine: FarmMine;
+  all: readonly FarmItem[];
+  busy: boolean;
+  onBuy: (itemId: string, qty: number) => void;
+}) {
+  const price = item.price ?? 0;
+  const row = boxRow(item, mine.items, all);
+  return (
+    <li className="pch flex flex-col gap-1 p-2">
+      <div className="flex items-center gap-2">
+        <ItemIcon id={item.id} scale={3} />
+        <div className="flex min-w-0 flex-1 flex-col leading-none">
+          <span className="truncate text-xl">{item.name}</span>
+          <span className="text-base">{formatXu(price)}</span>
+        </div>
+      </div>
+      <p className="text-base leading-tight opacity-80">{describeFarmItem(item, [])}</p>
+      {row.state === "owned" ? (
+        <button type="button" className="pch-btn" disabled>✓ Đã có</button>
+      ) : row.state === "bigger" ? (
+        <button type="button" className="pch-btn" disabled>Đã có {lowerFirst(row.name)} lớn hơn</button>
       ) : mine.coins < price ? (
         <button type="button" className="pch-btn" disabled>Không đủ xu</button>
       ) : (
@@ -80,8 +116,8 @@ function Row({ item, mine, catalog, busy, onBuy }: {
   );
 }
 
-/** 🧺 Tiệm vật tư · anh Hai (spec §9, §13.3; v15.2 §13.5): seeds, fertilizers and pesticides by the quantity, and the
- *  tools once. */
+/** 🧺 Tiệm vật tư · anh Hai (spec §9, §13.3; v15.2 §13.5; v15.3 §13.4): seeds, fertilizers and pesticides by the
+ *  quantity, and the tools and the critter containers once. */
 export default function FarmShopPanel({ mine, catalog, failed, busy, onBuy, onReload, onClose }: {
   mine: FarmMine | null;
   catalog: FarmCatalog | null;
@@ -108,7 +144,9 @@ export default function FarmShopPanel({ mine, catalog, failed, busy, onBuy, onRe
                   <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {items.map((i) => (i.kind === "tool"
                       ? <ToolRow key={i.id} item={i} mine={mine} busy={busy} onBuy={onBuy} />
-                      : <Row key={i.id} item={i} mine={mine} catalog={catalog} busy={busy} onBuy={onBuy} />))}
+                      : i.kind === "critter_box"
+                        ? <BoxRow key={i.id} item={i} mine={mine} all={catalog.items} busy={busy} onBuy={onBuy} />
+                        : <Row key={i.id} item={i} mine={mine} catalog={catalog} busy={busy} onBuy={onBuy} />))}
                   </ul>
                 </section>
               );
