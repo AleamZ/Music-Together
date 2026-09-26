@@ -662,4 +662,39 @@ end $$;
 
 select 'v15.3 farm smoke ok' as result;
 
+-- ---------- the wipe (§11.6): the snapshot lists the critters; the critters and the cooldowns go ----------
+insert into smoke select 't6', token from public.register('gather_f_' || floor(random() * 1e9)::text, 'pw123456');
+do $$
+declare a6 uuid := public._auth_account((select v from smoke where k = 't6')); t timestamptz := (select v from smoke where k = 'now')::timestamptz;
+        room uuid := (select v from smoke where k = 'room')::uuid; h jsonb;
+begin
+  perform pg_temp.set_coins(a6, 5000);
+  insert into public.critters (account_id, kind, price, caught_at)
+  values (a6, 'cua_dong', 26, t), (a6, 'oc_dong', 17, t), (a6, 'cua_dong', 12, t);
+  insert into public.gather_cooldowns (account_id, spot, ready_at)
+  values (a6, 'crab2', t + interval '5 minutes'), (a6, 'bed4', t + interval '9 minutes');
+  insert into public.farm_profiles (account_id, gather_on, gather_count) values (a6, public._vn_today(), 12);
+  -- 0017's parts stay (anti-cheat §11.3 rule 3): a6 also sits at the room's poker table with all its xu
+  perform public._card_sit(room, a6, 'poker', 1, 100, 5000, now());
+  h := public._ac_holdings(a6);
+  assert h->'critters' = '[{"kind": "cua_dong", "n": 2, "xu": 38}, {"kind": "oc_dong", "n": 1, "xu": 17}]',
+    format('holdings %s', h->'critters');
+  assert h ? 'produce' and h ? 'tank' and h->'wallet'->'coins' = '0'
+     and h->'cards' = jsonb_build_array(jsonb_build_object('room_id', room, 'game', 'poker', 'seat', 1, 'chips', 5000, 'escrow', 0)),
+    format('the earlier parts stay: %s', h);
+  insert into public.anticheat_status (account_id, strikes, ban_state, banned_at) values (a6, 2, 'pending_wipe', now());
+  h := public._ac_wipe(a6, null);
+  assert h->'critters'->0->'n' = '2'
+     and (select snapshot->'critters' from public.anticheat_wipes where account_id = a6) = h->'critters', 'the snapshot keeps them';
+  assert h->'cards' = '[]' and h->'wallet'->'coins' = '5000', format('the seat is cashed out before the snapshot: %s', h);
+  assert not exists (select 1 from public.critters where account_id = a6)
+     and not exists (select 1 from public.gather_cooldowns where account_id = a6)
+     and not exists (select 1 from public.card_seats where account_id = a6)
+     and not exists (select 1 from public.wallets where account_id = a6), 'the critters, the cooldowns, the seat and the wallet are gone';
+  assert (select gather_count from public.farm_profiles where account_id = a6) = 12, 'the farm profile stays';
+  assert public._farm_mine(a6)->'critters' = '{}' and public._farm_mine(a6)->'gather'->'ready_at' = '{}', 'mine is empty';
+end $$;
+
+select 'v15.3 wipe smoke ok' as result;
+
 \i tests/sql/anticheat-guards.sql
