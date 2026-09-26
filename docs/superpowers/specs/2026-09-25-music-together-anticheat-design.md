@@ -701,7 +701,7 @@ end $$;
 | `rice_stock` | Deleted. |
 | `produce_stock` (`0016`) | Deleted: the hoa màu. |
 | The sprayer's tank (`0016`) | Emptied: `farm_profiles.tank_item` null and `tank_charges` 0. The profile stays, so the gift stays claimed. |
-| Card seats (`0017`) | Resolved first, by `_card_forfeit_all` (v16 §6.3), as if the account stood up at each table: a live hand is forfeited by the leave rules, the rest of its escrow or stack comes back to the wallet, and the wipe then takes the whole balance. Nobody else's stake or pot changes, and the snapshot lists no seat. |
+| Card seats (`0017`) | Resolved first, by `_card_forfeit_all` (v16 §6.3), as if the account stood up at each table: a live hand is forfeited by the leave rules, the rest of its escrow or stack comes back to the wallet, and the wipe then takes the whole balance. Nobody else loses xu (a forfeit pays the others), and the snapshot lists no seat. |
 | Catch and land announcements (D6) | `delete from chat_messages where system and about_account_id = <account>`. Realtime DELETE events remove them from open chats. |
 | `field_plots` owned | Released **lazily** by sweep step 0b at the next field call in that room: `owner_id`, `owned_at`, `sale_price` and `sublease_price` become null, and the plot's offers are deleted. There is **no refund**. A sublease held by another player keeps running; the plot is the village's once it ends. |
 | `plot_leases` held | Deleted by step 0b. A village plot is free again; an owner's plot goes back to its owner, who keeps the rent. |
@@ -1007,7 +1007,8 @@ Re-running is safe:
    - `_field_sweep` keeps step 0;
    - `_fishing_state` keeps `lock`, `casts_today_left` and `day_resets_at`;
    - `_song_bonus` and `_room_wealth` keep the banned check;
-   - `_land_sale` and `finish_cast` keep `system` and `about_account_id`.
+   - `_land_sale` and `finish_cast` keep `system` and `about_account_id`;
+   - `_ac_wipe` calls `_card_forfeit_all` before its snapshot, and `_ac_holdings` has `cards` (both from `0017`).
 4. **A new `coin_ledger` reason check keeps `'wipe'`.** This applies to v15.2's `harvester` and `produce_sell`, v16's `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`, then v15.3's `critter_sell`.
 5. **Wider honest inputs widen the hard check.** A migration that widens the range of honest inputs widens the matching hard check in the same migration, and ships before its client.
 6. **Every later smoke run ends with `tests/sql/anticheat-guards.sql`.** The dynamic loop in that file gains the new game RPCs, and a new RPC that is not a game action joins its allowlist by signature.

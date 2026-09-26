@@ -380,7 +380,7 @@ No new channel. A round sends `fa` every 2 s while it runs and `fp` after each p
 
 > **Deploy order:** `0017` first, then the v16 client. A v16 client against a database without it shows "Góc đánh bài chưa mở — chủ phòng cần chạy migration 0017." at the tables; the rest of the game keeps working. Older clients draw the hall without the corner and never call the card RPCs.
 >
-> **Re-running earlier migrations after `0017`:** `0013`, `0015` and `0016` put back their own `coin_ledger` reason checks, and `0015` and `0016` their `_ac_holdings` and `_ac_wipe` without the card seats. Once a hand has been played, their reason lists also lack `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`: add those (and the values the v15.2 note above names) first, then run them in order with `0017` last (anti-cheat §11.3 rule 7).
+> **Re-running earlier migrations after `0017`:** `0013`, `0015` and `0016` put back their own `coin_ledger` reason checks, and `0015` and `0016` their `_ac_holdings` and `_ac_wipe` without the card seats. Once any card xu has moved (a poker buy-in or cash-out alone writes `card_buyin` or `card_cashout`), their reason lists also lack `card_hold`, `card_settle`, `card_buyin`, `card_cashout` and `card_refund`: add those (and the values the v15.2 note above names) first, then run them in order with `0017` last (anti-cheat §11.3 rule 7).
 
 ### What's new in v16
 
