@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { overlayLocks } from "@/lib/game/overlays";
 
-const none = { panel: false, fishingPanel: false, creating: false, anticheatModal: false, farmPanel: false, farmWork: false };
+const none = {
+  panel: false, fishingPanel: false, creating: false, anticheatModal: false, farmPanel: false, farmWork: false, farmRound: false,
+};
 
 describe("overlayLocks (the game shell's blocking and FarmOverlays' panelOpen)", () => {
   it("leaves the canvas and the farm work their input while nothing is open", () => {
@@ -19,8 +21,9 @@ describe("overlayLocks (the game shell's blocking and FarmOverlays' panelOpen)",
     }
   });
 
-  it("takes only the canvas input for the field's own panel and the farm work, whose Esc the field handles", () => {
+  it("takes only the canvas input for the field's own panel, the farm work and a harvest round, whose Esc the field handles", () => {
     expect(overlayLocks({ ...none, farmPanel: true })).toEqual({ blocking: true, panelOpen: false });
     expect(overlayLocks({ ...none, farmWork: true })).toEqual({ blocking: true, panelOpen: false });
+    expect(overlayLocks({ ...none, farmRound: true })).toEqual({ blocking: true, panelOpen: false });
   });
 });

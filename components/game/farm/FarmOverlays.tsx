@@ -9,6 +9,7 @@ import DryingPanel from "./DryingPanel";
 import FarmShopPanel from "./FarmShopPanel";
 import FarmTasksPanel from "./FarmTasks";
 import Handbook from "./Handbook";
+import HarvestGame from "./HarvestGame";
 import PlotPanel from "./PlotPanel";
 import RiceDepotPanel from "./RiceDepotPanel";
 
@@ -43,8 +44,8 @@ function WorkProgress({ work, panelOpen, onCancel }: { work: FarmWork; panelOpen
   );
 }
 
-/** The field on top of the world (spec §13): the banner before the migration, the work progress and the field's
- *  panels. */
+/** The field on top of the world (spec §13): the banner before the migration, the work progress, a harvest round
+ *  (v15.2 §13.2) and the field's panels. */
 export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
   farm: FarmController;
   me: string;
@@ -57,6 +58,9 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
   const { state, catalog, failed, notOpen, reload } = farm.data;
   const onReload = () => void reload();
   const act = (a: Parameters<FarmController["act"]>[0], done?: string) => void farm.act(a, done);
+  const round = farm.round;
+  const variety = round?.result?.variety ?? state?.plots.find((p) => p.no === round?.plot)?.crop?.variety ?? null;
+  const varietyName = catalog?.varieties.find((v) => v.id === variety)?.name ?? variety ?? "";
   return (
     <>
       {onField && notOpen && (
@@ -65,6 +69,11 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false }: {
       {farm.work && (
         // the field's own tasks panel and handbook can open from the HUD while the work runs
         <WorkProgress key={farm.work.startedAt} work={farm.work} panelOpen={panelOpen || panel !== null} onCancel={farm.cancelWork} />
+      )}
+      {round && (
+        // a new round (Gặt tiếp, Thử lại) starts a new game
+        <HarvestGame key={round.begunAt} round={round} busy={busy} panelOpen={panelOpen || panel !== null} varietyName={varietyName}
+          onEnd={farm.endRound} onNext={farm.nextRound} onClose={farm.closeRound} />
       )}
       {panel?.kind === "plot" && (
         <PlotPanel no={panel.plot} state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act}

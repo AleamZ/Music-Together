@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import FarmOverlays from "@/components/game/farm/FarmOverlays";
-import type { FarmController } from "@/hooks/useFarmController";
+import type { FarmController, FarmRound } from "@/hooks/useFarmController";
 import { farmItemFromRow, varietyFromRow } from "@/lib/game/farm/catalog";
 import { NOT_OPEN } from "@/lib/game/farm/messages";
 import { parseFieldState } from "@/lib/game/farm/state";
@@ -95,5 +95,20 @@ describe("FarmOverlays", () => {
 
     rerender(<FarmOverlays farm={controller({ panel: { kind: "handbook", tab: "water" } })} me="me" onField />);
     expect(screen.getByRole("tab", { name: "Nước" })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+describe("FarmOverlays, a harvest round", () => {
+  const round = (over: Partial<FarmRound> = {}): FarmRound => ({
+    plot: 5, part: 2, seed: 7, begunAt: 1, phase: "playing", score: null, result: null, message: null, ...over,
+  });
+
+  it("opens HarvestGame for the round, with the harvest's variety for its last line", () => {
+    const farm = controller({ round: round({ phase: "won", result: { variety: "nep", kg: 13, parts: 6, total: 75, done: true } }) });
+    render(<FarmOverlays farm={farm} me="me" onField />);
+    expect(screen.getByRole("dialog", { name: "Gặt thửa 5" })).toBeInTheDocument();
+    expect(screen.getByText("🌾 Gặt xong thửa 5: tổng 75 kg nếp (lúa ướt) — đem phơi rồi bán cho cô Út nhé!")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Đóng" }));
+    expect(farm.closeRound).toHaveBeenCalledTimes(1);
   });
 });
