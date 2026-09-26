@@ -734,11 +734,12 @@ Every other refusal is raised and never logged: `stale`, `not seated`, `already 
 - **Lock order when an account goes away:** `_card_forfeit_all` runs with the account's wallet already locked (the wipe after `_wallet_lock`; the `accounts` trigger calls `_wallet_lock(old.id)` first). It then takes the account's tables in table-id order, then the other wallets in account-id order. The wallet stays first, as anti-cheat R16 orders; the wipe also holds the status row, which no card path waits for, because a banned account has no session.
 - **Room deletion:** `_card_room_gone` takes the room's tables in table-id order, then the wallets of every seated account in account-id order, before it moves anything.
 - **One table at a time:** calls on one table serialize. Calls on different tables or rooms never block each other except on a shared wallet.
-- **Deadlocks:** two rare cases end in a Postgres deadlock abort of one side:
+- **Deadlocks:** three rare cases end in a Postgres deadlock abort of one side:
   - a card settlement meeting a concurrent `_land_sale`, which locks buyer then seller;
-  - a card call that holds a table and waits for a wallet held by `_card_forfeit_all`.
+  - a card call that holds a table and waits for a wallet held by `_card_forfeit_all`;
+  - an account deletion meeting an in-flight call of that account: the call aborts; nothing moves. The BEFORE DELETE trigger on `accounts` holds the account row and waits for its wallet, while the call (any economy RPC of that account) holds the wallet and waits for the account row through its ledger or fish insert's foreign key.
 
-  Ticks are retried by design; the land RPC and the admin action show their usual errors and can be repeated. Neither case moves xu before it aborts.
+  Ticks are retried by design; the land RPC and the admin action show their usual errors and can be repeated. No case moves xu before it aborts.
 - **`card_sit`'s wallets:** the caller has no seat at the table, so its wallet is locked in the same account-id pass as the table's seat wallets, right after the table and before the sweep. The caller's `seen_at` touch comes after that pass. A caller seated at another table of the room would otherwise hold that seat's row while waiting for its own wallet, which that table's deal holds before it updates the row.
 - **Reads:** `card_lobby`, `card_state` and `card_hand` build their answer in one `select` (one snapshot) and take no table lock; their only write to card rows is the caller's `seen_at` touch.
 

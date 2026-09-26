@@ -81,6 +81,7 @@ The server stays authoritative: cooldowns, the daily limit, rolls, prices and ca
 | anti-cheat | D1, §6.4, §7.2 `quality_range` row, §7.4, §11.5 README line, §16 | D1 is permanent: no quality comes back, `quality_range` stays with the client sending exactly 1, and there is no "quality always 1.1" signal. |
 | anti-cheat | §7.2, §7.3, §7.4 | §7.2 gains `bad_qty` on `crab_finish` and `bad_spot`. §7.3 gains the refusals in §11.6. §7.4 gains `gather_daily_cap`. |
 | anti-cheat | §9.3 | The lock list gains the 4 gathering RPCs: 52 in all (48 after `0017`). |
+| anti-cheat | §11.3 rules 3 and 7 | Rule 3 gains `0018`'s parts: `_ac_wipe` deletes the critters and the gather cooldowns, and `_ac_holdings` has `critters`. Rule 7 gains the re-runs after `0018`: the `coin_ledger` checks of `0013`, `0015`, `0016` and `0017` lack `critter_sell`; `0015`, `0016` and `0017` put back `_ac_holdings` and `_ac_wipe` without the critters; `0013` and `0016` put back `_farm_mine`, `_field_view`, `_farm_do_begin_work`, `_farm_do_pick_snails` and `buy_farm_item`, and `0013` also `_work_gate`, without v15.3's parts (`_field_view` is `0013`'s alone; `0015` also puts back `buy_farm_item`). Add `critter_sell` to the file first, then run the chain with `0018` last. The SQL Editor rolls a failing script back whole; `psql -f` stops part-way. |
 | anti-cheat | §12.5 | Two labels (§11.6). The holdings line gains `· {n} con cua ốc`. |
 | economy | §5 | Critters follow M (banned accounts left out, anti-cheat R30) with floor pricing and no season factor. This spec's §10 has the arithmetic. |
 
