@@ -1,8 +1,9 @@
 import type { PixelIcon } from "./icons";
 
-// 16×16 icons for the farm (spec §14, v15.2 §15): seed sacks in the variety's colour, fertilizer bags with their
-// nutrient on the label, pesticide bottles with their pest, rice sacks (wet/dry); hoa-màu seeds, the sickle, the
-// sprayer and the hoa màu itself. "." transparent, "o" outline, other letters from the icon's own palette. Original art.
+// 16×16 icons for the farm (spec §14, v15.2 §15, v15.3 §15): seed sacks in the variety's colour, fertilizer bags with
+// their nutrient on the label, pesticide bottles with their pest, rice sacks (wet/dry); hoa-màu seeds, the sickle, the
+// sprayer and the hoa màu itself; the critter containers and the critters. "." transparent, "o" outline, other letters
+// from the icon's own palette. Original art.
 
 const SEED_SACK = [
   "................",
@@ -268,6 +269,128 @@ const PRODUCE_OT: PixelIcon = {
   pal: { r: "#d8342a", R: "#a82a22", s: "#4f9a38" },
 };
 
+// v15.3: a plastic bucket and a woven bamboo basket
+const BOX_BUCKET: PixelIcon = {
+  rows: [
+    "................",
+    ".....hhhhhh.....",
+    "....h......h....",
+    "...h........h...",
+    "..oooooooooooo..",
+    "..obbbbbbbbbBo..",
+    "..oBBBBBBBBBBo..",
+    "...obbbbbbbBo...",
+    "...obbbbbbbBo...",
+    "...obbbbbbbBo...",
+    "...obbbbbbbBo...",
+    "....obbbbbBo....",
+    "....obbbbbBo....",
+    "....oooooooo....",
+    "................",
+    "................",
+  ],
+  pal: { b: "#3d6fd1", B: "#2f56a6", h: "#d9d9e0" },
+};
+
+const BOX_BASKET: PixelIcon = {
+  rows: [
+    "................",
+    "......oooo......",
+    ".....o....o.....",
+    "..oooooooooooo..",
+    "..owWwWwWwWwWo..",
+    "..oWWWWWWWWWWo..",
+    "..owwWwwWwwWwo..",
+    "...owWwwWwwWo...",
+    "...oWwWWwWWwo...",
+    "...owwWwwWwwo...",
+    "....owWwwWwo....",
+    "....oWwWWwWo....",
+    ".....oooooo.....",
+    "................",
+    "................",
+    "................",
+  ],
+  pal: { w: "#c8a46a", W: "#9a7a44" },
+};
+
+// the field crab from above, red-tipped claws raised; the cua gạch belly-up, its roe showing
+const CRAB_TOP = [
+  "................",
+  "..rr........rr..",
+  ".rrc........crr.",
+  ".occ..e..e..cco.",
+  "..oc..o..o..co..",
+  "...oocccccccoo..",
+  "..occCCCCCCcco..",
+  ".occCCCCCCCCcco.",
+  "o.ocCCCCCCCCco.o",
+  ".oocCCCCCCCCcoo.",
+  "o..occCCCCcco..o",
+  ".o..occcccco..o.",
+  "..o..oooooo..o..",
+  "................",
+  "................",
+  "................",
+];
+const CRAB_BELLY = [
+  ...CRAB_TOP.slice(0, 3),
+  ".occ........cco.",
+  "..oc........co..",
+  CRAB_TOP[5],
+  "..occgGGGGgcco..",
+  ".occgGGggGGgcco.",
+  "o.ocgGggggGgco.o",
+  ".oocgGGggGGgcoo.",
+  "o..occgGGgcco..o",
+  ...CRAB_TOP.slice(11),
+];
+const CRAB_PAL = { r: "#b8432f", c: "#8e7a44", C: "#6b5a2e" };
+
+const OC_DONG: PixelIcon = {
+  rows: [
+    "................",
+    "................",
+    "................",
+    ".....oooooo.....",
+    "....osssssso....",
+    "...osppppppso...",
+    "..ospsssssspso..",
+    "..ospsppppspso..",
+    "..ospspsspspso..",
+    "..ospspppspsso..",
+    "..ospsssspssso..",
+    "...ospppppsso...",
+    "....osssssso....",
+    ".....oooooo.....",
+    "................",
+    "................",
+  ],
+  pal: { s: "#4a3a22", p: "#8a6a3f" },
+};
+
+const OC_BUOU_VANG: PixelIcon = {
+  rows: [
+    "................",
+    "......oo........",
+    ".....oyyo.......",
+    ".....oyYo.......",
+    "....oyyYYo......",
+    "...oyyyyYYo.....",
+    "..oyyYYyyyYo....",
+    ".oyyyyYYyyyYo...",
+    ".oyyyyyyYYyyYo..",
+    ".oyYyyyyyyYYyYo.",
+    ".oyyYYyyyyyyyYo.",
+    "..oyyyYYYyyyYo..",
+    "...oyyyyyyyYo.ee",
+    "....ooooooooo.ee",
+    "................",
+    "................",
+  ],
+  pal: { y: "#c9955a", Y: "#8a5a2b", e: "#f29bb5" },
+};
+
 export const FARM_ICONS: Record<string, PixelIcon> = {
   seed_short: seedSack("#7fb548", "#5a8f32"),
   seed_nep: seedSack("#efe6cf", "#cfc3a3"),
@@ -300,4 +423,11 @@ export const FARM_ICONS: Record<string, PixelIcon> = {
   produce_khoai: PRODUCE_KHOAI,
   produce_bap: PRODUCE_BAP,
   produce_ot: PRODUCE_OT,
+  // v15.3
+  box_bucket: BOX_BUCKET,
+  box_basket: BOX_BASKET,
+  cua_dong: { rows: CRAB_TOP, pal: { ...CRAB_PAL, e: "#2a2f3a" } },
+  cua_gach: { rows: CRAB_BELLY, pal: { ...CRAB_PAL, g: "#e0662f", G: "#f29b4a" } },
+  oc_dong: OC_DONG,
+  oc_buou_vang: OC_BUOU_VANG,
 };

@@ -1,11 +1,15 @@
-import { BRIDGES, CANAL, COOP, DRYING_SQUARES, DRYING_YARD, FARM_SHOP, FIELD_H, FIELD_PLOTS, FIELD_W, RICE_DEPOT } from "./field";
+import { paintBed, paintHole } from "@/lib/game/art/gather-art";
+import {
+  BRIDGES, CANAL, COOP, CRAB_HOLES, DRYING_SQUARES, DRYING_YARD, FARM_SHOP, FIELD_H, FIELD_PLOTS, FIELD_W, RICE_DEPOT, SNAIL_BEDS,
+} from "./field";
 import { propSprite } from "./props";
 import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt } from "./scene-art";
 import type { GameMap, Rect } from "./types";
 
 // Procedural painters for the field ("Đồng ruộng"). Browser only (canvas). Props live in props.ts, the layout in
 // field.ts; the rice on each plot is drawn by the engine from field_state (art/crops.ts) — here the plots are bare
-// stubble. Original art in the approved Miền Tây style — no copied images.
+// stubble — and so are the cues on the crab holes and snail beds painted here (art/gather-art.ts). Original art in the
+// approved Miền Tây style — no copied images.
 
 /** Field-only colours (the shared ones are in scene-art.ts). */
 const F = {
@@ -155,6 +159,8 @@ export function paintField(map: GameMap): SceneArt {
   const g = ctx2d(background);
   paintGround(g);
   paintBridges(g);
+  for (const r of CRAB_HOLES) paintHole(g, r);
+  for (const r of SNAIL_BEDS) paintBed(g, r);
   paintDryingYard(g);
   paintBuildings(g);
   paintBamboo(g);

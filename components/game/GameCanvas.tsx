@@ -41,6 +41,8 @@ export interface GameCanvasHandle {
   puff: (at: Vec) => void;
   /** What the field's plots show (crops, name posts, my urgent rings). */
   setPlots: (plots: ReadonlyArray<PlotDraw>) => void;
+  /** Which of the field's crab holes and snail beds are ready for me: those show their cue (v15.3 §13.1). */
+  setGatherSpots: (spots: ReadonlyArray<{ id: string; ready: boolean }>) => void;
   /** Play a farm animation on my character and show it to the others (`fa`; 0 stops it). */
   farmAnim: (a: FarmAnim) => void;
   /** Tell the others that plot `p` (0 = the drying yard or the offers) changed: they fetch the field again (`fp`). */
@@ -87,8 +89,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const engineRef = useRef<GameEngine | null>(null);
   const sendRef = useRef<((msg: GameMessage) => void) | null>(null);
   const propsRef = useRef(rest);
-  // What every new engine must know again: my hand fish, the species names, the HUD inset, the input lock, the plots and
-  // the card tables' labels.
+  // What every new engine must know again: my hand fish, the species names, the HUD inset, the input lock, the plots,
+  // the card tables' labels and the gathering cues.
   const handRef = useRef<string | null>(null);
   const phaseRef = useRef<FishPhase>(0);
   const speciesRef = useRef<ReadonlyArray<{ id: string; name: string; rarity: Rarity }>>([]);
@@ -96,6 +98,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const inputRef = useRef(true);
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
+  const gatherRef = useRef<ReadonlyArray<{ id: string; ready: boolean }>>([]);
   // This world's answer to `hello`s, and who of its roster is here (null until its first roster).
   const repliesRef = useRef<ReplyScheduler | null>(null);
   const hereRef = useRef<Set<string> | null>(null);
@@ -165,6 +168,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         plotsRef.current = plots;
         engineRef.current?.setPlots(plots);
       },
+      setGatherSpots: (spots) => {
+        gatherRef.current = spots;
+        engineRef.current?.setGatherSpots(spots);
+      },
       farmAnim: (a) => {
         engineRef.current?.showFarmAnim(a);
         sendRef.current?.({ t: "fa", id: localId, a });
@@ -216,6 +223,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setInputEnabled(inputRef.current);
     engine.setPlots(plotsRef.current);
     engine.setCardTables(cardTablesRef.current);
+    engine.setGatherSpots(gatherRef.current);
 
     // One answer (my state) serves every `hello` that arrives before it goes out; answers are spread over a window
     // that grows with the world, because each one reaches every player.

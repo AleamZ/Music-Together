@@ -4,6 +4,7 @@ import {
 } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
 import { drawFarmAnim } from "@/lib/game/art/farm-anim";
+import { drawBedCue, drawHoleCue } from "@/lib/game/art/gather-art";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { serverNow } from "@/lib/game/farm/clock";
 import { getCharacterFrames } from "@/lib/game/art/raster";
@@ -118,6 +119,8 @@ export class GameEngine {
   private plotArt = new Map<number, { key: string; canvas: HTMLCanvasElement }>();
   /** The hall's card-table labels (v16 spec §5). */
   private cardTables: Partial<Record<CardGame, string>> = {};
+  /** The field's crab holes and snail beds ready for me (their interactable ids). */
+  private gatherReady = new Set<string>();
   private raf = 0;
   private lastT = 0;
   private failures = 0;
@@ -235,6 +238,11 @@ export class GameEngine {
   /** The card tables' labels from card_lobby (v16 spec §5): one line over each table of the hall. */
   setCardTables(labels: Readonly<Partial<Record<CardGame, string>>>): void {
     this.cardTables = { ...labels };
+  }
+
+  /** The field's crab holes and snail beds, each ready for me or not: a ready one shows its cue (v15.3 §13.1). */
+  setGatherSpots(spots: ReadonlyArray<{ id: string; ready: boolean }>): void {
+    this.gatherReady = new Set(spots.filter((s) => s.ready).map((s) => s.id));
   }
 
   /** Play farm animation `a` on my character for FARM_ANIM_MS (0 stops it). */
@@ -563,6 +571,7 @@ export class GameEngine {
     b.drawImage(this.art.background, -camX, -camY);
     this.art.drawAnimated(b, t, camX, camY, reduced);
     this.drawPlots(b, t, camX, camY, reduced);
+    this.drawGatherCues(b, t, camX, camY, reduced);
 
     const items: Array<{ y: number; draw: () => void }> = [];
     for (const p of this.art.props) {
@@ -667,6 +676,18 @@ export class GameEngine {
         if (d.harvester && now < d.harvester.endsAt) drawHarvester(b, harvesterSpot(x, y, w, h, look.cut), t, reduced);
       }
       if (d.urgent) drawUrgentRing(b, x, y, w, h, t, reduced);
+    }
+  }
+
+  /** The cue on each crab hole and snail bed ready for me (v15.3 §15): over the background, under props and people. */
+  private drawGatherCues(b: CanvasRenderingContext2D, t: number, camX: number, camY: number, reduced: boolean): void {
+    if (this.gatherReady.size === 0) return;
+    for (const it of this.map.interactables) {
+      if (!this.gatherReady.has(it.id)) continue;
+      const x = it.rect.x - camX, y = it.rect.y - camY;
+      if (x > this.vw || y > this.vh || x + it.rect.w < 0 || y + it.rect.h < 0) continue;
+      if (it.kind === "crab_hole") drawHoleCue(b, x, y, t, reduced);
+      else if (it.kind === "snail_bed") drawBedCue(b, x, y, t, reduced);
     }
   }
 

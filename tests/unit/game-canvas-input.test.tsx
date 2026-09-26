@@ -4,11 +4,11 @@ import { createRef } from "react";
 import GameCanvas, { type GameCanvasHandle, type GameCanvasProps } from "@/components/game/GameCanvas";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 
-// One fake engine and channel per world: they record what the canvas tells them (input lock, plots, farm
-// animations, messages, hellos and byes) and let a test deliver messages.
+// One fake engine and channel per world: they record what the canvas tells them (input lock, plots, card labels,
+// gathering cues, farm animations, messages, hellos and byes) and let a test deliver messages.
 type EngineRec = {
-  mapId: string; input: boolean[]; plots: unknown[]; cards: unknown[]; anims: number[]; applied: unknown[]; hellos: string[];
-  removed: string[]; destroyed: boolean;
+  mapId: string; input: boolean[]; plots: unknown[]; cards: unknown[]; spots: unknown[]; anims: number[]; applied: unknown[];
+  hellos: string[]; removed: string[]; destroyed: boolean;
 };
 const { engines, channels, replies } = vi.hoisted(() => ({
   engines: [] as EngineRec[],
@@ -20,7 +20,9 @@ vi.mock("@/lib/game/engine", () => ({
   GameEngine: class {
     rec: EngineRec;
     constructor(_canvas: unknown, map: { id: string }) {
-      this.rec = { mapId: map.id, input: [], plots: [], cards: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false };
+      this.rec = {
+        mapId: map.id, input: [], plots: [], cards: [], spots: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false,
+      };
       engines.push(this.rec);
     }
     setInputEnabled(enabled: boolean) {
@@ -31,6 +33,9 @@ vi.mock("@/lib/game/engine", () => ({
     }
     setCardTables(labels: unknown) {
       this.rec.cards.push(labels);
+    }
+    setGatherSpots(spots: unknown) {
+      this.rec.spots.push(spots);
     }
     showFarmAnim(a: number) {
       this.rec.anims.push(a);
@@ -156,6 +161,19 @@ describe("GameCanvas card-table labels across travel", () => {
     rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
     expect(engines[2].cards.at(-1)).toBe(labels);
+  });
+});
+
+describe("GameCanvas gathering cues across travel (v15.3 §13.1)", () => {
+  it("passes the spots on at once and gives them to the next map's engine", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="field" {...props} />);
+    const spots = [{ id: "crab_1", ready: true }, { id: "bed_2", ready: false }];
+    ref.current!.setGatherSpots(spots);
+    expect(engines[0].spots.at(-1)).toBe(spots);
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
+    rerender(<GameCanvas ref={ref} mapId="field" {...props} />);
+    expect(engines[2].spots.at(-1)).toBe(spots);
   });
 });
 
