@@ -15,7 +15,7 @@ export interface RuleSection { title: string; lines: RuleLine[]; examples: RuleE
 export interface RulesPage { game: CardGame; header: readonly string[]; sections: RuleSection[] }
 
 export const RULES_TABS: ReadonlyArray<{ game: CardGame; label: string }> = [
-  { game: "tienlen", label: "Tiến lên" }, { game: "cao", label: "Cào" }, { game: "poker", label: "Poker" },
+  { game: "tienlen", label: "Tiến lên" }, { game: "cao", label: "Cào" }, { game: "poker", label: "Poker" }, { game: "xidach", label: "Xì Dách" },
 ];
 
 export const RULES_HEADER: readonly string[] = [
@@ -250,8 +250,61 @@ function poker(stake: number): RuleSection[] {
   ];
 }
 
+function xidach(stake: number): RuleSection[] {
+  const example = {
+    title: `Ván ví dụ (${xuNum(stake)} xu)`,
+    lines: [
+      ruleLine("Cái: 18 điểm [10♠ 8♦]. A: Xì Bàng [A♠ A♥]. B: 17 điểm [10♣ 7♥]. C: 18 điểm [10♥ 8♠]. D: Quắc 23 điểm [10♦ 8♣ 5♥]."),
+    ],
+    net: [
+      { who: "A", xu: 2 * stake },
+      { who: "B", xu: -stake },
+      { who: "C", xu: 0 },
+      { who: "D", xu: -stake },
+      { who: "Cái", xu: 0 },
+    ],
+  };
+
+  return [
+    section("Mục tiêu", [
+      "So điểm giữa từng nhà con và nhà cái. Mục tiêu là đạt tổng điểm càng gần 21 càng tốt nhưng không được vượt quá 21.",
+    ]),
+    section("Tính điểm", [
+      "Lá 2–10 tính theo số điểm tương ứng.",
+      "Lá J, Q, K tính 10 điểm.",
+      "Lá Át (A) linh hoạt tính 1, 10 hoặc 11 điểm để đạt tổng điểm tối ưu không quá 21.",
+      "Quá 21 điểm gọi là Quắc (Bù).",
+    ]),
+    section("Bài đặc biệt", [
+      "Xì Bàng [A♠ A♥]: 2 lá Át, bộ mạnh nhất, thắng gấp đôi (x2 tiền cược).",
+      "Xì Dách [A♠ K♦]: 1 Át và 1 lá 10/J/Q/K ở 2 lá đầu.",
+      "Ngũ Linh [2♠ 3♦ 4♣ 2♥ 4♠]: Rút đủ 5 lá mà tổng điểm không quá 21, thắng gấp đôi (x2 tiền cược). Cùng Ngũ Linh thì ít điểm hơn thắng.",
+    ]),
+    section("Lượt chơi", [
+      "Mỗi người được chia 2 lá ban đầu.",
+      "Bấm Sẵn sàng: đủ từ 2 người và tất cả đều sẵn sàng thì mới chia bài.",
+      "Bài chia úp — bấm vào từng lá để nặn bài.",
+      "Nhà con lần lượt rút thêm bài (tối đa 5 lá, quá 21 vẫn được rút tiếp) hoặc Dằn bài (cần tối thiểu 16 điểm mới được dằn). Mỗi lượt 30 giây.",
+      "Bài ai cũng úp tới khi cái rút xong mới ngã ngũ — không ai biết ai Quắc.",
+      "Sau khi các nhà con xong, nhà cái rút bài (tối thiểu 15 điểm) và có quyền xét riêng từng người hoặc xét toàn bộ bàn.",
+    ]),
+    section("Đền làng", [
+      "Ai rút quá 28 điểm thì đền cả làng: trả 1 lần cược cho mỗi người còn trong ván.",
+      "Không đủ xu thì ví bị trừ thành âm; ví âm vẫn nhận xu bình thường nhưng chưa ngồi bàn được.",
+    ]),
+    section("Tính tiền", [
+      "Thắng/thua so trực tiếp với nhà cái. Xì Bàng và Ngũ Linh ăn x2, thắng điểm thường ăn x1.",
+      "Cùng điểm hoặc cùng Quắc thì hoà.",
+    ], [example]),
+  ];
+}
+
 /** The rules book's tab for a game, its money examples at this stake. */
 export function rulesPage(game: CardGame, stake = 1000): RulesPage {
-  const sections = game === "tienlen" ? tienlen(stake) : game === "cao" ? cao(stake) : poker(stake);
+  const sections =
+    game === "tienlen" ? tienlen(stake)
+    : game === "cao" ? cao(stake)
+    : game === "xidach" ? xidach(stake)
+    : poker(stake);
   return { game, header: RULES_HEADER, sections };
 }

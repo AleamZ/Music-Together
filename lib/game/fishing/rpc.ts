@@ -1,9 +1,11 @@
 import { AnticheatError, lockSeconds, lockText, parseAnticheat, screenAnswer, type AnticheatInfo } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
+import { vitalsErrorMessage } from "@/lib/game/vitals-rpc";
+import { STORM_TEXT } from "@/lib/game/weather/rpc";
 import {
   FISHING_KINDS, isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow,
 } from "./catalog";
-import { DAILY_LIMIT_TEXT } from "./messages";
+import { BAD_SPOT, DAILY_LIMIT_TEXT } from "./messages";
 import { parseFishPrices, type FishPrices } from "./prices";
 import { parseFishingState, type FishingState, type Loadout } from "./state";
 
@@ -69,6 +71,72 @@ export async function buyItem(token: string, itemId: string, qty: number): Promi
   return stateOf((await call("buy_item", { p_session_token: token, p_item_id: itemId, p_qty: qty })).state);
 }
 
+/** v18.2 Sửa cần: the rod back to its max durability for 30% of its price. */
+export async function repairRod(token: string, itemId: string): Promise<{ cost: number; state: FishingState }> {
+  const r = await call("repair_rod", { p_session_token: token, p_item_id: itemId });
+  return { cost: Number(r.cost ?? 0), state: stateOf(r.state) };
+}
+
+/** v18.2: a net throw in progress — the seed's rhythm and the net's radius. */
+export interface StartNet { throwId: string; seed: number; beatMs: number; radiusPx: number; state: FishingState }
+
+export async function startNet(roomId: string, token: string, cell: { col: number; row: number }, net: string): Promise<StartNet> {
+  const r = await call("start_net", { p_room_id: roomId, p_session_token: token, p_col: cell.col, p_row: cell.row, p_net: net });
+  return {
+    throwId: String(r.throw_id), seed: Number(r.seed ?? 0), beatMs: Number(r.beat_ms ?? 600), radiusPx: Number(r.radius_px ?? 24),
+    state: stateOf(r.state),
+  };
+}
+
+const netFish = (v: unknown): CaughtFish[] => (Array.isArray(v) ? v : []).map((x) => {
+  const f = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+  return {
+    id: String(f.id ?? ""), speciesId: String(f.species_id), weightG: Number(f.weight_g), price: Number(f.price),
+    rarity: isRarity(f.rarity) ? f.rarity : 1,
+  } satisfies CaughtFish;
+});
+
+/** The net sank: `haul` = the fish under it (not in the bag until kéo lưới ends; ids empty); `empty` = none;
+ *  `lost` = too fast or too late (the throw is gone). */
+export type NetHaul =
+  | { result: "haul"; fish: CaughtFish[]; state: FishingState }
+  | { result: "empty"; state: FishingState }
+  | { result: "lost"; why: "expired" | "too_early"; state: FishingState };
+
+/** `offsets`: one per fish shadow — 0 under the net, NET.missOffset got away. */
+export async function netHaul(token: string, throwId: string, chargeMs: number, offsets: number[]): Promise<NetHaul> {
+  const r = await call("net_haul", {
+    p_session_token: token, p_throw_id: throwId, p_charge_ms: Math.round(chargeMs), p_offsets: offsets.map(Math.round),
+  });
+  const state = stateOf(r.state);
+  if (r.result === "haul") return { result: "haul", fish: netFish(r.fish), state };
+  if (r.result === "empty") return { result: "empty", state };
+  return { result: "lost", why: r.why === "expired" ? "expired" : "too_early", state };
+}
+
+/** Kéo lưới ended with `mistakes` (0 … 4, 0037): the fish left into the bag (one escapes per mistake; `escaped`); the 4th
+ *  mistake = pulled into the pond (`overboard`, like v18.1's). */
+export type FinishNet =
+  | { result: "caught"; count: number; escaped: number; fish: CaughtFish[]; state: FishingState }
+  | { result: "lost"; why: "expired" | "too_early" | "overboard"; state: FishingState; overboard?: Overboard };
+
+/** `mistakes` 0 … 4 (0037): one fish escapes per mistake; the 4th = pulled into the pond. */
+export async function finishNet(token: string, throwId: string, mistakes: number): Promise<FinishNet> {
+  const r = await call("finish_net", {
+    p_session_token: token, p_throw_id: throwId, p_mistakes: Math.min(4, Math.max(0, Math.round(mistakes))),
+  });
+  const state = stateOf(r.state);
+  if (r.result === "caught") {
+    const fish = netFish(r.fish);
+    return { result: "caught", count: Number(r.count ?? fish.length), escaped: Number(r.escaped ?? 0), fish, state };
+  }
+  if (r.why === "overboard") {
+    const o = (r.overboard && typeof r.overboard === "object" ? r.overboard : {}) as Record<string, unknown>;
+    return { result: "lost", why: "overboard", state, overboard: { rod: "", rodLost: false, hunger: Number(o.hunger ?? 10) } };
+  }
+  return { result: "lost", why: r.why === "expired" ? "expired" : "too_early", state };
+}
+
 export async function setLoadout(token: string, l: Loadout): Promise<FishingState> {
   return stateOf((await call("set_loadout", { p_session_token: token, p_rod: l.rod, p_bobber: l.bobber, p_bait: l.bait })).state);
 }
@@ -78,44 +146,71 @@ export interface StartCast {
   /** Only when the bobber shows it. */
   rarity: Rarity | null;
   baitSwitched: boolean;
+  /** v18.1: "shore" casts bite less often and later. */
+  spot: "dock" | "shore";
+  /** v18.1: false = nothing will bite this cast (a shore cast; absent from an older server = true). */
+  bites: boolean;
   state: FishingState;
 }
 
-export async function startCast(roomId: string, token: string): Promise<StartCast> {
-  const r = await call("start_cast", { p_room_id: roomId, p_session_token: token });
+/** `cell` (v18.1): the 8-px cell of the pond map the cast starts from; the server checks it is a dock or shore cell. */
+export async function startCast(roomId: string, token: string, cell?: { col: number; row: number }): Promise<StartCast> {
+  const args: Record<string, unknown> = { p_room_id: roomId, p_session_token: token };
+  if (cell) {
+    args.p_col = cell.col;
+    args.p_row = cell.row;
+  }
+  const r = await call("start_cast", args);
   return {
     castId: String(r.cast_id), biteMs: Number(r.bite_ms), windowMs: Number(r.window_ms), difficulty: Number(r.difficulty),
     minReelMs: Number(r.min_reel_ms), zonePct: Number(r.zone_pct), rarity: isRarity(r.rarity) ? r.rarity : null,
-    baitSwitched: r.bait_switched === true, state: stateOf(r.state),
+    baitSwitched: r.bait_switched === true, spot: r.spot === "shore" ? "shore" : "dock", bites: r.bites !== false,
+    state: stateOf(r.state),
   };
 }
 
 export interface CaughtFish { id: string; speciesId: string; weightG: number; price: number; rarity: Rarity }
-export type LostWhy = "expired" | "gave_up" | "too_early" | "full";
+export type LostWhy = "expired" | "gave_up" | "too_early" | "full" | "no_bite" | "overboard";
+/** v18.1: what falling into the pond cost: the rod (lost or not) and the hunger taken. */
+export interface Overboard { rod: string; rodLost: boolean; hunger: number }
+/** `rodBroke` (v18.2): the cast wore the rod down to 0 (it is unequipped; absent from an older server = false). */
 export type FinishCast =
-  | { result: "caught"; fish: CaughtFish; record: boolean; state: FishingState }
-  /** `anticheat`: the envelope of a reel reported too fast (finishCast always sets it; null when there is none). */
-  | { result: "lost"; why: LostWhy; state: FishingState; anticheat?: AnticheatInfo | null };
+  | { result: "caught"; fish: CaughtFish; record: boolean; state: FishingState; rodBroke?: boolean }
+  /** `anticheat`: the envelope of a reel reported too fast (finishCast always sets it; null when there is none).
+   *  `overboard` (v18.1): set when why is "overboard". */
+  | { result: "lost"; why: LostWhy; state: FishingState; anticheat?: AnticheatInfo | null; overboard?: Overboard; rodBroke?: boolean };
 
-export async function finishCast(token: string, castId: string, success: boolean): Promise<FinishCast> {
-  const r = await call("finish_cast", { p_session_token: token, p_cast_id: castId, p_success: success });
+const LOST_WHYS: readonly LostWhy[] = ["expired", "too_early", "full", "no_bite", "overboard"];
+
+/** `hooked` (v18.1): the fish was hooked and the reel lost — a big fish may pull me in. Sent only when true. */
+export async function finishCast(token: string, castId: string, success: boolean, hooked = false): Promise<FinishCast> {
+  const args: Record<string, unknown> = { p_session_token: token, p_cast_id: castId, p_success: success };
+  if (hooked) args.p_hooked = true;
+  const r = await call("finish_cast", args);
   const state = stateOf(r.state);
+  const rodBroke = r.rod_broke === true;
   if (r.result === "caught" && r.fish && typeof r.fish === "object") {
     const f = r.fish as Record<string, unknown>;
     return {
-      result: "caught", record: r.record === true, state,
+      result: "caught", record: r.record === true, state, ...(rodBroke ? { rodBroke } : {}),
       fish: {
         id: String(f.id), speciesId: String(f.species_id), weightG: Number(f.weight_g), price: Number(f.price),
         rarity: isRarity(f.rarity) ? f.rarity : 1,
       },
     };
   }
-  const why: LostWhy = r.why === "expired" || r.why === "too_early" || r.why === "full" ? r.why : "gave_up";
-  return { result: "lost", why, state, anticheat: parseAnticheat(r) };
+  const why: LostWhy = (LOST_WHYS as readonly unknown[]).includes(r.why) ? (r.why as LostWhy) : "gave_up";
+  const lost: FinishCast = { result: "lost", why, state, anticheat: parseAnticheat(r), ...(rodBroke ? { rodBroke } : {}) };
+  if (why === "overboard") {
+    const o = (r.overboard && typeof r.overboard === "object" ? r.overboard : {}) as Record<string, unknown>;
+    lost.overboard = { rod: String(o.rod ?? "rod_wood"), rodLost: o.rod_lost === true, hunger: Number(o.hunger ?? 10) };
+  }
+  return lost;
 }
 
-export async function sellFish(token: string, ids: string[]): Promise<{ sold: number; earned: number; state: FishingState }> {
-  const r = await call("sell_fish", { p_session_token: token, p_fish_ids: ids });
+/** Sells fish to cô Ba at the pond, or (`market`, v18.5) to Vựa cá Chợ Lớn, which pays +20%. */
+export async function sellFish(token: string, ids: string[], market = false): Promise<{ sold: number; earned: number; state: FishingState }> {
+  const r = await call(market ? "sell_fish_market" : "sell_fish", { p_session_token: token, p_fish_ids: ids });
   return { sold: Number(r.sold ?? 0), earned: Number(r.earned ?? 0), state: stateOf(r.state) };
 }
 
@@ -150,6 +245,14 @@ export async function fetchFishingBoard(roomId: string, token: string): Promise<
 export function fishingErrorMessage(err: unknown): string {
   const e = (err && typeof err === "object" ? err : {}) as { message?: unknown; details?: unknown };
   const msg = typeof e.message === "string" ? e.message : "";
+  const v = vitalsErrorMessage(msg);
+  if (v) return v;
+  if (msg === "storm") return STORM_TEXT;
+  if (msg === "bad spot") return BAD_SPOT;
+  // PostgREST's "function not found" (a migration not yet run on the server): say so instead of blaming the network
+  if ((e as { code?: unknown }).code === "PGRST202" || msg.includes("Could not find the function")) {
+    return "Máy chủ chưa cập nhật tính năng này (thiếu migration).";
+  }
   const secs = Number(e.details);
   switch (msg) {
     case "not enough coins": return "Không đủ xu.";
@@ -167,6 +270,10 @@ export function fishingErrorMessage(err: unknown): string {
     case "fish not found": return "Con cá này không còn nữa.";
     case "account locked": return lockText(lockSeconds(err) ?? 300);
     case "daily cast limit": return DAILY_LIMIT_TEXT;
+    case "rod broken": return "Cần này gãy rồi — mang tới tiệm chú Tư sửa nhé.";
+    case "not worn": return "Cần còn tốt, chưa cần sửa.";
+    case "no net": return "Bạn chưa có lưới — tiệm chú Tư có bán.";
+    case "throw not found": return "Lưới đã trôi mất rồi.";
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";
   if (msg.includes("account banned")) return "Tài khoản đã bị khoá.";

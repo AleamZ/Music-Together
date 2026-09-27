@@ -12,9 +12,9 @@ export interface FishSpecies {
   id: string; name: string; rarity: Rarity; minG: number; maxG: number; pricePerKg: number; difficulty: number; sortOrder: number;
 }
 
-export type ShopKind = "rod" | "bobber" | "bait" | "bait_box" | "bucket";
+export type ShopKind = "rod" | "bobber" | "bait" | "bait_box" | "bucket" | "net";
 /** The shop_items kinds the fishing shop sells (the farm items share the table since v15). */
-export const FISHING_KINDS: readonly ShopKind[] = ["rod", "bobber", "bait", "bait_box", "bucket"];
+export const FISHING_KINDS: readonly ShopKind[] = ["rod", "bobber", "bait", "bait_box", "bucket", "net"];
 const SHOP_KINDS: readonly string[] = FISHING_KINDS;
 
 export interface ShopItem {
@@ -30,6 +30,12 @@ export interface ShopItem {
   windowMs: number | null; biteMinMs: number | null; biteMaxMs: number | null; showsRarity: boolean;
   multHiem: number; multQuy: number; multLegend: number;
   capacity: number | null;
+  /** v18.2: a rod's or net's max durability (net: throws); null = unbreakable (rod_wood). */
+  durability?: number | null;
+  /** v18.2: a net's radius in px (a big net, ≥ 32, brings one more fish). */
+  radiusPx?: number | null;
+  /** v18.2: bait: the bite wait × this (< 1 = a boosting bait, which also raises a shore bite to 80%). */
+  biteBoost?: number;
 }
 
 export interface FishingCatalog { species: FishSpecies[]; items: ShopItem[] }
@@ -43,6 +49,8 @@ export interface ShopItemRow {
   zone_pct: number | null; weight_k: number | null; rare_mult: number;
   window_ms: number | null; bite_min_ms: number | null; bite_max_ms: number | null; shows_rarity: boolean;
   mult_hiem: number; mult_quy: number; mult_legend: number; capacity: number | null;
+  /** v18.2 (absent before 0034). */
+  durability?: number | null; radius_px?: number | null; bite_boost?: number | null;
 }
 
 export function speciesFromRow(r: SpeciesRow): FishSpecies {
@@ -59,6 +67,7 @@ export function shopItemFromRow(r: ShopItemRow): ShopItem {
     zonePct: r.zone_pct, weightK: r.weight_k, rareMult: r.rare_mult ?? 1,
     windowMs: r.window_ms, biteMinMs: r.bite_min_ms, biteMaxMs: r.bite_max_ms, showsRarity: r.shows_rarity,
     multHiem: r.mult_hiem ?? 1, multQuy: r.mult_quy ?? 1, multLegend: r.mult_legend ?? 1, capacity: r.capacity,
+    durability: r.durability ?? null, radiusPx: r.radius_px ?? null, biteBoost: r.bite_boost ?? 1,
   };
 }
 
@@ -84,6 +93,7 @@ export function describeItem(it: ShopItem): string {
       const parts = [`Vùng giữ cá ${it.zonePct ?? 25}%`];
       if ((it.weightK ?? 2) < 2) parts.push("cá nặng hơn");
       if (it.rareMult > 1) parts.push(`cá hiếm +${Math.round((it.rareMult - 1) * 100)}%`);
+      if (it.durability != null) parts.push(`bền ${it.durability} lần`);
       return parts.join(" · ");
     }
     case "bobber": {
@@ -93,6 +103,7 @@ export function describeItem(it: ShopItem): string {
       return parts.join(" · ");
     }
     case "bait":
+      if ((it.biteBoost ?? 1) < 1) return `Cá cắn nhanh hơn, gần bờ dễ cắn · cá hiếm ×${decimal(it.multHiem)}`;
       if (it.multLegend > it.multHiem) return `Cá hiếm ×${decimal(it.multHiem)}, huyền thoại ×${decimal(it.multLegend)}`;
       if (it.multHiem > 1) return `Cá hiếm trở lên ×${decimal(it.multHiem)}`;
       return "Mồi thường — đào ở bãi trùn";
@@ -100,5 +111,7 @@ export function describeItem(it: ShopItem): string {
       return `Chứa ${it.capacity ?? 0} mồi`;
     case "bucket":
       return `Đựng ${it.capacity ?? 0} con cá`;
+    case "net":
+      return `Quăng ${it.durability ?? 0} lần · 2–5 cá thường${(it.radiusPx ?? 0) >= 32 ? " · lưới rộng, thêm 1 con" : ""}`;
   }
 }

@@ -15,7 +15,18 @@ export interface SceneArt {
   drawAnimated(ctx: CanvasRenderingContext2D, t: number, camX: number, camY: number, reducedMotion: boolean): void;
   /** Drawn above the characters (string lights, awnings, roofs). */
   drawOverhead(ctx: CanvasRenderingContext2D, t: number, camX: number, camY: number, reducedMotion: boolean): void;
+  /** v18.8: lamps, lanterns and doorways that glow after dusk (world px; the pool's radius). */
+  lights?: ReadonlyArray<SceneLight>;
+  /** v18.8: window panes lit from inside at night (world px). */
+  windows?: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
+  /** v18.8: where the moon's reflection shimmers on the water at night (world px; the half-width). */
+  moon?: { x: number; y: number; w: number };
 }
+
+/** The colour of a night light: an oil lamp / bulb, a red paper lantern, or a cool shop light. */
+export type LightHue = "warm" | "lantern" | "cool";
+
+export interface SceneLight { x: number; y: number; r: number; hue: LightHue }
 
 /** Sprite canvas size and the anchor (the prop's base point) inside it. Pure. */
 export interface PropFrame { w: number; h: number; ox: number; oy: number }

@@ -1,6 +1,7 @@
 import type { CaoKind } from "./cao";
 import { isCard, isCardGame, type Card, type CardGame } from "./deck";
 import { tlCombo, type TlChain, type TlCombo, type TlLine, type TlOut, type TlTrang, type TlWhy } from "./tienlen";
+import type { XidachKind } from "./xidach";
 
 // The card RPCs' JSON (spec §11.3, §11.4), camelCased, with times as ms since the epoch: the lobby, a table's public
 // state, the caller's hand and the answers. Defensive: anything malformed parses to null. Pure.
@@ -74,6 +75,33 @@ export interface PkLast {
   net: Record<number, number>;
 }
 
+export interface XidachPubPlayer {
+  id: string;
+  n: number;
+  standing: boolean;
+  busted: boolean;
+  inspected: boolean;
+  cards?: Card[];
+}
+export interface XidachPub {
+  dealer: number | null;
+  order: number[];
+  left: number[];
+  players: Record<number, XidachPubPlayer>;
+  deckCount: number;
+  /** The seats that pressed Sẵn sàng while the table waits (the hand starts when every seat is ready, at least 2). */
+  ready: number[];
+}
+export interface XidachLastLine { from: number; to: number; xu: number; why: "win" | "xi_bang" | "ngu_linh" | "left" | "den_lang" }
+export interface XidachLast {
+  handNo: number;
+  dealer: number | null;
+  cancelled: boolean;
+  hands: Record<number, { cards: Card[]; kind: XidachKind; points: number }>;
+  lines: XidachLastLine[];
+  net: Record<number, number>;
+}
+
 interface StateBase {
   serverNow: number;
   stake: number | null;
@@ -89,7 +117,8 @@ interface StateBase {
 export type TlState = StateBase & { game: "tienlen"; pub: TlPub | null; last: TlLast | null };
 export type CaoState = StateBase & { game: "cao"; pub: CaoPub | null; last: CaoLast | null };
 export type PkState = StateBase & { game: "poker"; pub: PkPub | null; last: PkLast | null };
-export type CardState = TlState | CaoState | PkState;
+export type XidachState = StateBase & { game: "xidach"; pub: XidachPub | null; last: XidachLast | null };
+export type CardState = TlState | CaoState | PkState | XidachState;
 
 export interface CardHand { serverNow: number; game: CardGame; handNo: number; seat: number | null; cards: Card[] }
 export interface LobbyTable { game: CardGame; stake: number | null; phase: CardPhase; max: number; seats: Array<{ seat: number; id: string; name: string }> }
@@ -289,6 +318,45 @@ function part<T>(v: unknown, f: (o: Obj) => T | null): T | null | undefined {
   return f(o) ?? undefined;
 }
 
+function xidachPlayer(v: unknown): XidachPubPlayer | null {
+  const o = obj(v);
+  if (!o) return null;
+  const id = str(o.id), n = int(o.n), standing = bool(o.standing), busted = bool(o.busted), inspected = bool(o.inspected);
+  const cs = o.cards === undefined ? undefined : cards(o.cards);
+  if (id === null || n === null || standing === null || busted === null || inspected === null || cs === null) return null;
+  return { id, n, standing, busted, inspected, cards: cs ?? undefined };
+}
+
+function xidachPub(o: Obj): XidachPub | null {
+  const dealer = intOrNull(o.dealer) ?? null;
+  const order = ints(o.order) ?? [];
+  const left = ints(o.left) ?? [];
+  const deckCount = int(o.deck_count ?? o.deckCount ?? 0) ?? 0;
+  const players = o.players ? (bySeat(o.players, xidachPlayer) ?? {}) : {};
+  const ready = ints(o.ready) ?? [];
+  return { dealer, order, left, players, deckCount, ready };
+}
+
+function xidachLast(o: Obj): XidachLast | null {
+  const handNo = int(o.hand_no) ?? 0;
+  const dealer = intOrNull(o.dealer) ?? null;
+  const cancelled = bool(o.cancelled) ?? false;
+  const net = o.net ? (bySeat(o.net, int) ?? {}) : {};
+  const hands = o.hands ? (bySeat(o.hands, (x) => {
+    const h = obj(x);
+    const cs = cards(h?.cards), kind = str(h?.kind), points = int(h?.points);
+    if (cs === null || kind === null || points === null) return null;
+    return { cards: cs, kind: kind as XidachKind, points };
+  }) ?? {}) : {};
+  const lines = list(o.lines, (x) => {
+    const l = obj(x);
+    const from = int(l?.from), to = int(l?.to), xu = int(l?.xu), why = str(l?.why);
+    if (from === null || to === null || xu === null || why === null) return null;
+    return { from, to, xu, why: why as XidachLastLine["why"] };
+  }) ?? [];
+  return { handNo, dealer, cancelled, hands, lines, net };
+}
+
 /** card_state (§11.4). */
 export function parseCardState(raw: unknown): CardState | null {
   const o = obj(raw);
@@ -307,6 +375,10 @@ export function parseCardState(raw: unknown): CardState | null {
   }
   if (game === "cao") {
     const pub = part(o.pub, caoPub), last = part(o.last, caoLast);
+    return pub === undefined || last === undefined ? null : { ...base, game, pub, last };
+  }
+  if (game === "xidach") {
+    const pub = part(o.pub, xidachPub), last = part(o.last, xidachLast);
     return pub === undefined || last === undefined ? null : { ...base, game, pub, last };
   }
   const pub = part(o.pub, pkPub), last = part(o.last, pkLast);

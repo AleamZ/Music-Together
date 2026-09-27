@@ -1,6 +1,7 @@
 import type { GameMap } from "@/lib/game/maps/types";
 import type { Facing, Vec } from "@/lib/game/types";
 import { facingFor, facingForVector, stepMove, WALK_SPEED } from "@/lib/game/movement";
+import { WALK_CYCLE, type Frame } from "@/lib/game/art/layers";
 
 /** One walking character. The local player and every remote player use the same simulation. */
 export interface Actor {
@@ -67,10 +68,10 @@ export function applyPathMsg(a: Actor, m: { x: number; y: number; pts: Vec[] }, 
 }
 
 /** Advance one frame. Returns true exactly when a path has just been completed. */
-export function tickActor(map: GameMap, a: Actor, dtSec: number, now: number, remote: boolean): boolean {
+export function tickActor(map: GameMap, a: Actor, dtSec: number, now: number, remote: boolean, speed = WALK_SPEED): boolean {
   let arrived = false;
   if (a.path) {
-    let budget = WALK_SPEED * dtSec;
+    let budget = speed * dtSec;
     while (budget > 0 && a.path.length > 0) {
       const t = a.path[0];
       const dx = t.x - a.pos.x, dy = t.y - a.pos.y, d = Math.hypot(dx, dy);
@@ -94,7 +95,7 @@ export function tickActor(map: GameMap, a: Actor, dtSec: number, now: number, re
       a.moving = false; // lost "stop" guard
       a.dir = { x: 0, y: 0 };
     } else {
-      a.pos = stepMove(map, a.pos, a.dir, dtSec);
+      a.pos = stepMove(map, a.pos, a.dir, dtSec, speed);
     }
   }
   a.walkT = a.moving ? a.walkT + dtSec : 0;
@@ -107,6 +108,13 @@ export function tickActor(map: GameMap, a: Actor, dtSec: number, now: number, re
   return arrived;
 }
 
-export function walkFrame(a: Actor): 0 | 1 | 2 | 3 {
-  return a.moving ? ((Math.floor(a.walkT * 8) % 4) as 0 | 1 | 2 | 3) : 0;
+/** The pose frame: the walk cycle at 8 frames per second of walking (two steps, each with a bounce), 0 when idle. */
+export function walkFrame(a: Actor): Frame {
+  return a.moving ? WALK_CYCLE[Math.floor(a.walkT * 8) % WALK_CYCLE.length] : 0;
+}
+
+/** A standing character breathes: frame 5 (the body settles a pixel) for 0.9 s out of every 1.8 s. `seed` staggers
+ *  characters so they do not breathe in step. Canvas-loop time only (never called in React render). */
+export function idleFrame(tMs: number, seed: number): Frame {
+  return Math.floor((tMs + seed) / 900) % 2 ? 5 : 0;
 }

@@ -4,7 +4,7 @@ import {
   SNAIL_BEDS,
 } from "./field";
 import { propSprite } from "./props";
-import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt } from "./scene-art";
+import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt, type SceneLight } from "./scene-art";
 import type { GameMap, Rect } from "./types";
 
 // Procedural painters for the field ("Đồng ruộng"). Browser only (canvas). Props live in props.ts, the layout in
@@ -212,5 +212,17 @@ export function paintField(map: GameMap): SceneArt {
     for (let x = 0; x < RICE_DEPOT.w + 12; x += 5) rect(c, F.tinLight, tx + x, ty, 1, 19);
   };
 
-  return { background, props, edge: C.grassDark, drawAnimated, drawOverhead };
+  return {
+    background, props, edge: C.grassDark, drawAnimated, drawOverhead, lights: FIELD_LIGHTS,
+    windows: [COOP.x + 14, COOP.x + 76].map((x) => ({ x: x + 1, y: COOP.y + 31, w: 18, h: 14 })),
+    moon: { x: 400, y: CANAL.y + 16, w: 16 },
+  };
 }
+
+/** v18.8 night lights: the coop's windows and porch, the farm shop and the rice depot's doorways. */
+const FIELD_LIGHTS: ReadonlyArray<SceneLight> = [
+  { x: COOP.x + 24, y: COOP.y + 40, r: 22, hue: "warm" }, { x: COOP.x + 86, y: COOP.y + 40, r: 22, hue: "warm" },
+  { x: COOP.x + 56, y: COOP.y + COOP.h + 10, r: 40, hue: "warm" },
+  { x: FARM_SHOP.x + FARM_SHOP.w / 2, y: FARM_SHOP.y + FARM_SHOP.h + 6, r: 42, hue: "warm" },
+  { x: RICE_DEPOT.x + 72, y: RICE_DEPOT.y + RICE_DEPOT.h + 6, r: 38, hue: "warm" },
+];

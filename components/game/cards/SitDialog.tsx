@@ -6,9 +6,10 @@ import type { CardGame } from "@/lib/game/cards/deck";
 import { GAME_NAME, holdLine, PLAY_MONEY, STAKES, stakeLine, xuNum } from "@/lib/game/cards/messages";
 import { pkBuyInRange } from "@/lib/game/cards/poker";
 
-/** What sitting needs in the wallet (§6.1): Tiến lên 10 S, Cào S, poker the buy-in (at least 50 BB). */
+/** What sitting needs in the wallet (§6.1): Tiến lên 10 S, Cào S, Xì Dách 2 S, poker the buy-in (at least 50 BB). */
 export function sitNeeds(game: CardGame, stake: number): number {
-  return game === "tienlen" ? 10 * stake : game === "cao" ? stake : 50 * stake;
+  // xì dách: a player's hold, 2 S (what card_sit checks); poker: the smallest buy-in
+  return game === "tienlen" ? 10 * stake : game === "cao" ? stake : game === "xidach" ? 2 * stake : 50 * stake;
 }
 
 /** Sitting down (spec §13.2): the stake picker only at an empty table, what each hand holds (or poker's buy-in slider,

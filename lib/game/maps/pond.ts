@@ -1,8 +1,12 @@
 import { CHU_TU_LOOK, CO_BA_LOOK } from "@/lib/game/look";
 import type { Vec } from "@/lib/game/types";
 import { FIELD_EAST_ARRIVE, HALL_DOCK_ARRIVE, POND_ARRIVE, POND_FIELD_ARRIVE } from "./arrivals";
+import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, Npc, PropPlacement, Rect, Spot } from "./types";
+
+/** The city-map signpost near the way in (every map has one). */
+export const POND_CITY_POST = cityMapPost(256, 374);
 
 // "Ao cá": the Miền Tây fishing pond (spec §5.3). Pure layout + collision; the painter is pond-art.ts.
 
@@ -46,6 +50,7 @@ export function onPlatform(x: number, y: number): boolean {
 }
 
 export const POND_SOLIDS: Rect[] = [
+  POND_CITY_POST.solid,               // the city-map signpost
   { x: 0, y: 0, w: 640, h: 44 },      // bamboo along the north edge
   { x: 516, y: 40, w: 116, h: 86 },   // Vựa cá stall (cô Ba stands inside)
   { x: 516, y: 196, w: 116, h: 98 },  // Tiệm đồ câu hut (chú Tư stands inside)
@@ -79,6 +84,7 @@ function waterRect(s: Spot): Rect {
 }
 
 export const POND_INTERACTABLES: Interactable[] = [
+  POND_CITY_POST.interactable,
   {
     id: "pond_exit", kind: "portal", label: "Bến vào", prompt: "Về sảnh nhạc", rect: { x: 343, y: 334, w: 18, h: 26 },
     use: { x: 352, y: 374 }, to: { map: "hall", arrive: HALL_DOCK_ARRIVE },
@@ -106,6 +112,7 @@ export const POND_NPCS: Npc[] = [
 ];
 
 export const POND_PROPS: PropPlacement[] = [
+  POND_CITY_POST.prop,
   { kind: "palm", x: 40, y: 100, h: 70, lean: 0.35, seed: 5 },
   { kind: "palm", x: 626, y: 180, h: 66, lean: 0.25, seed: 9 },
   { kind: "palm", x: 24, y: 360, h: 62, lean: 0.4, seed: 13 },

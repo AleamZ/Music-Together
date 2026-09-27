@@ -206,8 +206,9 @@ function mineAnswer(r: Record<string, unknown>): MineAnswer {
   return { serverNow: typeof r.server_now === "string" ? r.server_now : null, mine: mineOf(r.mine) };
 }
 
-export async function sellRice(token: string, variety: string, dry: boolean, kg: number): Promise<MineAnswer> {
-  return mineAnswer(await call("sell_rice", { p_session_token: token, p_variety: variety, p_dry: dry, p_kg: kg }));
+/** `market` (v18.5): sold at Vựa nông sản Chợ Lớn, +20%. */
+export async function sellRice(token: string, variety: string, dry: boolean, kg: number, market = false): Promise<MineAnswer> {
+  return mineAnswer(await call(market ? "sell_rice_market" : "sell_rice", { p_session_token: token, p_variety: variety, p_dry: dry, p_kg: kg }));
 }
 
 export async function buyFarmItem(token: string, itemId: string, qty: number): Promise<MineAnswer> {
@@ -225,8 +226,8 @@ export async function loadSprayer(token: string, itemId: string): Promise<MineAn
 }
 
 /** Sells kg of a hoa-màu crop to cô Út (§9). */
-export async function sellProduce(token: string, upland: string, kg: number): Promise<MineAnswer> {
-  return mineAnswer(await call("sell_produce", { p_session_token: token, p_upland: upland, p_kg: kg }));
+export async function sellProduce(token: string, upland: string, kg: number, market = false): Promise<MineAnswer> {
+  return mineAnswer(await call(market ? "sell_produce_market" : "sell_produce", { p_session_token: token, p_upland: upland, p_kg: kg }));
 }
 
 /** A crab visit (v15.3 §7.2): its id, the hole, and when the server started it. */

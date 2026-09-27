@@ -45,7 +45,7 @@ export default function RecordsPanel({ catalog, load, onClose }: {
   );
 
   return (
-    <ParchmentModal title="🏆 Bảng kỷ lục" onClose={onClose}>
+    <ParchmentModal title="🏆 Bảng kỷ lục" onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         <div className="flex gap-1.5" role="tablist">
           {tabButton("records", "Kỷ lục câu cá")}

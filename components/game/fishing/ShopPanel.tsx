@@ -3,10 +3,11 @@
 import { useState } from "react";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
+import { UmbrellaShelf } from "@/components/game/rain/UmbrellaShelf";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
-import { baitTotal, maxBuyQty, ownsItem, type FishingState } from "@/lib/game/fishing/state";
+import { baitTotal, maxBuyQty, needsRepair, ownsItem, repairPrice, wearFor, type FishingState } from "@/lib/game/fishing/state";
 
-const KIND_ORDER: ReadonlyArray<ShopItem["kind"]> = ["rod", "bobber", "bait", "bait_box", "bucket"];
+const KIND_ORDER: ReadonlyArray<ShopItem["kind"]> = ["rod", "net", "bobber", "bait", "bait_box", "bucket"];
 
 /** One shop tile: icon, name, price, effect and the buy button (bait: with a quantity). */
 function Tile({ item, state, busy, onBuy }: { item: ShopItem; state: FishingState; busy: boolean; onBuy: (itemId: string, qty: number) => void }) {
@@ -52,28 +53,59 @@ function Tile({ item, state, busy, onBuy }: { item: ShopItem; state: FishingStat
   );
 }
 
-/** 🎣 Tiệm đồ câu · chú Tư (spec §10.2): rods, bobbers, bait, the bait box and buckets. */
-export default function ShopPanel({ state, catalog, busy, onBuy, onClose }: {
+/** v18.2 🔧 Sửa cần: each owned rod below its max durability, with its repair price (30% of the rod's). */
+function Repairs({ items, state, busy, onRepair }: { items: ShopItem[]; state: FishingState; busy: boolean; onRepair: (itemId: string) => void }) {
+  const worn = items.filter((i) => needsRepair(state, i));
+  return (
+    <section>
+      <h3 className="text-xl text-burgundy">🔧 Sửa cần</h3>
+      {worn.length === 0 ? <p className="text-base opacity-80">Cần của bạn còn tốt cả.</p> : (
+        <ul className="flex flex-col gap-1">
+          {worn.map((i) => {
+            const w = wearFor(state, i.id);
+            const cost = repairPrice(i);
+            return (
+              <li key={i.id} className="flex flex-wrap items-center gap-2">
+                <ItemIcon id={i.id} scale={2} />
+                <span className="flex-1">{i.name} · {w ? `${w.left}/${w.max}` : ""}{w && w.left <= 0 ? " · gãy" : ""}</span>
+                <button type="button" className="pch-btn pch-btn-primary" disabled={busy || state.coins < cost} onClick={() => onRepair(i.id)}>
+                  Sửa · {formatXu(cost)}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** 🎣 Tiệm đồ câu · chú Tư (spec §10.2, v18.2): rods, nets, bobbers, bait, the bait box, buckets, and Sửa cần. */
+export default function ShopPanel({ state, catalog, busy, onBuy, onRepair = () => {}, onClose }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
   busy: boolean;
   onBuy: (itemId: string, qty: number) => void;
+  /** v18.2 Sửa cần. */
+  onRepair?: (itemId: string) => void;
   onClose: () => void;
 }) {
   const items = (catalog?.items ?? [])
     .filter((i) => i.price !== null)
     .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.sortOrder - b.sortOrder);
   return (
-    <ParchmentModal title="🎣 Tiệm đồ câu · chú Tư" onClose={onClose} className="max-w-2xl">
+    <ParchmentModal title="🎣 Tiệm đồ câu · chú Tư" onClose={onClose} className="sm:max-w-5xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         {!state || !catalog ? (
           <p>Đang tải tiệm…</p>
         ) : (
           <>
             <p>Bạn có <b>{formatXu(state.coins)}</b>.</p>
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {items.map((i) => <Tile key={i.id} item={i} state={state} busy={busy} onBuy={onBuy} />)}
             </ul>
+            <Repairs items={catalog.items} state={state} busy={busy} onRepair={onRepair} />
+            <UmbrellaShelf />{/* v18.9 */}
           </>
         )}
       </div>

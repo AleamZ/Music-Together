@@ -4,6 +4,7 @@ import type { FishingController } from "@/hooks/useFishingController";
 import BagPanel, { type BagFarm } from "./BagPanel";
 import CatchCard from "./CatchCard";
 import DepotPanel from "./DepotPanel";
+import NetOverlay from "./NetOverlay";
 import RecordsPanel from "./RecordsPanel";
 import ReelOverlay from "./ReelOverlay";
 import ShopPanel from "./ShopPanel";
@@ -31,13 +32,27 @@ export default function FishingOverlays({ fishing, farm = null }: { fishing: Fis
         </button>
       )}
       {cast.phase === "reeling" && <ReelOverlay params={cast.params} rarity={cast.info.rarity} onDone={fishing.reelDone} />}
+      {fishing.net && (
+        <NetOverlay
+          view={fishing.net}
+          speciesName={(id) => catalog?.species.find((s) => s.id === id)?.name ?? id}
+          onThrow={fishing.netThrow}
+          onHaul={fishing.netHaul}
+          onFinish={fishing.netFinish}
+          onClose={fishing.netClose}
+          onPhase={fishing.netPhase}
+        />
+      )}
       {caught && <CatchCard fish={caught.fish} name={name} record={caught.record} onClose={fishing.dismissCatch} />}
       {panel === "bag" && (
         <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equip} onRelease={fishing.release} onClose={closePanel}
           farm={farm} />
       )}
-      {panel === "depot" && <DepotPanel state={state} catalog={catalog} busy={busy} onSell={fishing.sell} onClose={closePanel} />}
-      {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onClose={closePanel} />}
+      {panel === "depot" && <DepotPanel state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids)} onClose={closePanel} />}
+      {panel === "market_depot" && (
+        <DepotPanel market state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids, true)} onClose={closePanel} />
+      )}
+      {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onRepair={fishing.repair} onClose={closePanel} />}
       {panel === "records" && <RecordsPanel catalog={catalog} load={fishing.loadBoard} onClose={closePanel} />}
     </>
   );

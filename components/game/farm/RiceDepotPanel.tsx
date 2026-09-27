@@ -8,14 +8,17 @@ import { critterPrice, lowerFirst } from "@/lib/game/farm/gather";
 import type { CritterPrices, FarmMine } from "@/lib/game/farm/state";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import { formatMult } from "@/lib/game/fishing/prices";
+import { marketPrice } from "@/lib/game/market/depots";
 import FieldStatus from "./FieldStatus";
 import Stepper from "./Stepper";
 
 /** One stock line: a variety, wet or dry, with "Bán" for the chosen kg and "Bán hết". */
-function StockRow({ v, dry, kg, busy, onSell }: { v: Variety; dry: boolean; kg: number; busy: boolean; onSell: (variety: string, dry: boolean, kg: number) => void }) {
+function StockRow({ v, dry, kg, busy, onSell, pay }: {
+  v: Variety; dry: boolean; kg: number; busy: boolean; onSell: (variety: string, dry: boolean, kg: number) => void; pay: (xu: number) => number;
+}) {
   const [amount, setAmount] = useState(Math.min(10, kg));
   const n = Math.min(Math.max(1, amount), kg);
-  const perKg = dry ? v.pricePerKg : ricePrice(10, v.pricePerKg, false) / 10;
+  const perKg = pay(ricePrice(10, v.pricePerKg, dry)) / 10;
   return (
     <li className="pch flex flex-col gap-1 p-2">
       <div className="flex items-center gap-2">
@@ -28,18 +31,20 @@ function StockRow({ v, dry, kg, busy, onSell }: { v: Variety; dry: boolean; kg: 
       <div className="flex flex-wrap items-center justify-between gap-1">
         <Stepper value={n} max={kg} label={`Số kg ${v.name} ${dry ? "khô" : "ướt"}`} unit=" kg" onChange={setAmount} />
         <button type="button" className="pch-btn" disabled={busy} onClick={() => onSell(v.id, dry, n)}>
-          Bán · {formatXu(ricePrice(n, v.pricePerKg, dry))}
+          Bán · {formatXu(pay(ricePrice(n, v.pricePerKg, dry)))}
         </button>
       </div>
       <button type="button" className="pch-btn pch-btn-primary self-end" disabled={busy} onClick={() => onSell(v.id, dry, kg)}>
-        Bán hết · {formatXu(ricePrice(kg, v.pricePerKg, dry))}
+        Bán hết · {formatXu(pay(ricePrice(kg, v.pricePerKg, dry)))}
       </button>
     </li>
   );
 }
 
 /** One hoa-màu line (v15.2 §13.5): sold fresh, some or all. */
-function ProduceRow({ u, kg, busy, onSell }: { u: UplandCrop; kg: number; busy: boolean; onSell: (upland: string, kg: number) => void }) {
+function ProduceRow({ u, kg, busy, onSell, pay }: {
+  u: UplandCrop; kg: number; busy: boolean; onSell: (upland: string, kg: number) => void; pay: (xu: number) => number;
+}) {
   const [amount, setAmount] = useState(Math.min(10, kg));
   const n = Math.min(Math.max(1, amount), kg);
   return (
@@ -48,15 +53,15 @@ function ProduceRow({ u, kg, busy, onSell }: { u: UplandCrop; kg: number; busy: 
         <ItemIcon id={`produce_${u.id}`} scale={3} />
         <div className="flex flex-col leading-none">
           <span className="text-xl">{u.name} · {kg} kg</span>
-          <span className="text-base">{u.pricePerKg.toLocaleString("vi-VN")} xu/kg · bán tươi</span>
+          <span className="text-base">{(pay(producePrice(10, u)) / 10).toLocaleString("vi-VN")} xu/kg · bán tươi</span>
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-1">
         <Stepper value={n} max={kg} label={`Số kg ${u.name}`} unit=" kg" onChange={setAmount} />
-        <button type="button" className="pch-btn" disabled={busy} onClick={() => onSell(u.id, n)}>Bán · {formatXu(producePrice(n, u))}</button>
+        <button type="button" className="pch-btn" disabled={busy} onClick={() => onSell(u.id, n)}>Bán · {formatXu(pay(producePrice(n, u)))}</button>
       </div>
       <button type="button" className="pch-btn pch-btn-primary self-end" disabled={busy} onClick={() => onSell(u.id, kg)}>
-        Bán hết · {formatXu(producePrice(kg, u))}
+        Bán hết · {formatXu(pay(producePrice(kg, u)))}
       </button>
     </li>
   );
@@ -125,7 +130,9 @@ function RatSection({ mine, rats, busy }: { mine: FarmMine; rats: DepotRats; bus
 
 /** 🌾 Vựa lúa · cô Út (spec §8.7, §13.3; v15.2 §13.5; v15.3 §13.4; v17 §12.4): sell wet or dry rice per variety — dry
  *  rice pays the full price — hoa màu, fresh, cua & ốc once 0018 has critters, and rats once 0019 is in. */
-export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, onSellProduce, onReload, onClose, critters = null, rats = null }: {
+export default function RiceDepotPanel({
+  mine, catalog, failed, busy, onSell, onSellProduce, onReload, onClose, critters = null, rats = null, market = false,
+}: {
   mine: FarmMine | null;
   catalog: FarmCatalog | null;
   failed: boolean;
@@ -136,7 +143,10 @@ export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, on
   onClose: () => void;
   critters?: DepotCritters | null;
   rats?: DepotRats | null;
+  /** Vựa nông sản · cô Tư at Chợ Lớn (v18.5): the same rice and hoa màu at +20% (a display copy; the market RPCs pay). */
+  market?: boolean;
 }) {
+  const pay = market ? marketPrice : (xu: number) => xu;
   const lines = (catalog?.varieties ?? []).flatMap((v) => {
     const stock = mine?.rice[v.id];
     return [
@@ -148,8 +158,11 @@ export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, on
   const caught = Object.values(mine?.critters ?? {}).some((s) => s.n > 0);
   const ratted = rats !== null && (mine?.rats.count ?? 0) > 0;
   return (
-    <ParchmentModal title="🌾 Vựa lúa · cô Út" onClose={onClose}>
+    <ParchmentModal title={market ? "🌾 Vựa nông sản Chợ Lớn · cô Tư" : "🌾 Vựa lúa · cô Út"} onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
+        {market && (
+          <span className="self-start rounded border border-emerald-400 bg-emerald-100 px-2 font-bold text-emerald-800">Giá chợ +20%</span>
+        )}
         {!mine || !catalog ? (
           <FieldStatus failed={failed} onReload={onReload} />
         ) : (
@@ -158,10 +171,12 @@ export default function RiceDepotPanel({ mine, catalog, failed, busy, onSell, on
               <>
                 <p>{lines.length > 0 ? "“Lúa phơi khô cô trả đủ giá, lúa ướt chỉ được bảy phần.”" : "“Hoa màu bán tươi, khỏi phơi — cô lấy hết!”"}</p>
                 <ul className="flex flex-col gap-2">
-                  {lines.map((l) => <StockRow key={`${l.v.id}:${l.dry}`} {...l} busy={busy} onSell={onSell} />)}
-                  {produce.map((x) => <ProduceRow key={x.u.id} u={x.u} kg={x.kg} busy={busy} onSell={onSellProduce} />)}
+                  {lines.map((l) => <StockRow key={`${l.v.id}:${l.dry}`} {...l} busy={busy} onSell={onSell} pay={pay} />)}
+                  {produce.map((x) => <ProduceRow key={x.u.id} u={x.u} kg={x.kg} busy={busy} onSell={onSellProduce} pay={pay} />)}
                 </ul>
               </>
+            ) : market ? (
+              <p>“Chưa có lúa hay hoa màu hả con? Gặt xong chở lên chợ, cô Tư trả hơn ngoài đồng!”</p>
             ) : !critters ? (
               <p>“Chưa có lúa hay hoa màu hả con? Thu hoạch xong mang qua, cô trả giá cao!”</p>
             ) : caught ? null : ratted ? (

@@ -2,9 +2,9 @@
 // 1 ♣, 2 ♦, 3 ♥). In Tiến lên a higher c is a stronger card; Cào and poker map r to their own orders. Pure.
 
 export type Card = number;
-export type CardGame = "tienlen" | "cao" | "poker";
+export type CardGame = "tienlen" | "cao" | "poker" | "xidach";
 
-export const CARD_GAMES: readonly CardGame[] = ["tienlen", "cao", "poker"];
+export const CARD_GAMES: readonly CardGame[] = ["tienlen", "cao", "poker", "xidach"];
 export const RANK_NAMES: readonly string[] = ["3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"];
 export const SUIT_GLYPHS: readonly string[] = ["♠", "♣", "♦", "♥"];
 export const SUIT_NAMES: readonly string[] = ["bích", "chuồn", "rô", "cơ"];
@@ -12,7 +12,7 @@ export const SUIT_NAMES: readonly string[] = ["bích", "chuồn", "rô", "cơ"];
 const SUIT_CODES = "SCDH";
 
 export function isCardGame(v: unknown): v is CardGame {
-  return v === "tienlen" || v === "cao" || v === "poker";
+  return v === "tienlen" || v === "cao" || v === "poker" || v === "xidach";
 }
 
 export function isCard(v: unknown): v is Card {

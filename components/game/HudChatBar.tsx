@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { REACTION_EMOJIS, type ReactionEmoji } from "@/lib/reactions";
+import KeyBadge from "./KeyBadge";
 
 /** Bottom bar: quick chat (hidden under 640 px — use 💬), reactions, chat drawer, members, back to classic. */
 export default function HudChatBar({ onSend, onReact, onOpenChat, onOpenMembers, onlineCount, onExitGame }: {
@@ -51,16 +52,18 @@ export default function HudChatBar({ onSend, onReact, onOpenChat, onOpenMembers,
             value={text}
             onChange={(e) => setText(e.target.value)}
             maxLength={500}
-            placeholder="Nhắn gì đó… (Enter để gửi)"
+            placeholder="Nhắn gì đó… (T để gõ, Enter để gửi, Esc để thôi)"
+            data-hotkey="chatFocus"
+            onKeyDown={(e) => { if (e.key === "Escape") e.currentTarget.blur(); }}
             className="min-w-0 flex-1 rounded-sm border-2 border-gold-200 bg-parchment px-2 py-1 text-lg leading-none outline-none focus:border-burgundy"
             aria-label="Tin nhắn"
           />
           <button type="submit" className="pch-btn" disabled={sending || !text.trim()}>Gửi</button>
         </form>
         <div className="ml-auto flex shrink-0 gap-1.5 sm:ml-0">
-          <button type="button" className="pch-btn" aria-pressed={picker} onClick={() => setPicker((p) => !p)} aria-label="Thả cảm xúc">😊</button>
-          <button type="button" className="pch-btn" onClick={onOpenChat} aria-label="Mở phòng chat">💬</button>
-          <button type="button" className="pch-btn" onClick={onOpenMembers} aria-label="Thành viên">👥 {onlineCount}</button>
+          <button type="button" className="pch-btn relative" data-hotkey="react" title="Thả cảm xúc (X)" aria-pressed={picker} onClick={() => setPicker((p) => !p)} aria-label="Thả cảm xúc">😊<KeyBadge id="react" /></button>
+          <button type="button" className="pch-btn relative" data-hotkey="chat" title="Mở phòng chat (C)" onClick={onOpenChat} aria-label="Mở phòng chat">💬<KeyBadge id="chat" /></button>
+          <button type="button" className="pch-btn relative" data-hotkey="members" title="Thành viên (V)" onClick={onOpenMembers} aria-label="Thành viên">👥 {onlineCount}<KeyBadge id="members" /></button>
           <button type="button" className="pch-btn" onClick={onExitGame} title="Quay về giao diện cũ">🖥️ <span className="hidden sm:inline">Giao diện cũ</span></button>
         </div>
       </div>

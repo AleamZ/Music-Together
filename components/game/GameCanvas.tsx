@@ -3,9 +3,12 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
-import { GameEngine, type LocalFishing, type LocalInfo, type RosterEntry } from "@/lib/game/engine";
+import type { HouseDraw } from "@/lib/game/housing/lot";
+import { GameEngine, type HeatProbe, type LocalFishing, type LocalInfo, type RosterEntry } from "@/lib/game/engine";
+import type { UmbrellaKind } from "@/lib/game/rain/model";
 import type { FieldRats } from "@/lib/game/farm/rats";
 import { phaseCode } from "@/lib/game/fishing/cast";
+import { encodeNet, nextNet, type NetInput, type NetState } from "@/lib/game/fishing/netcast";
 import type { Rarity } from "@/lib/game/fishing/catalog";
 import { getMap, paintMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
@@ -13,7 +16,16 @@ import { budgetKind, createBudget, GAME_LIMITS } from "@/lib/game/net/budget";
 import { joinGameChannel } from "@/lib/game/net/channel";
 import { FARM_ANIM, type FarmAnim, type FishPhase, type GameMessage } from "@/lib/game/net/protocol";
 import { createReplyScheduler, replyWindowMs, type ReplyScheduler } from "@/lib/game/net/replies";
+import type { VehicleId } from "@/lib/game/travel/vehicles";
+import type { LocalLift } from "@/lib/game/engine";
+import type { LiftMessage } from "@/lib/game/net/protocol";
+import type { LiftSend } from "@/lib/game/travel/lift";
 import type { Facing, Look, Vec } from "@/lib/game/types";
+import type { RoomWeather } from "@/lib/game/weather/model";
+import type { WeatherFx } from "@/lib/game/art/weather";
+
+/** v18.10: the heat layer's handlers. */
+export interface HeatHandlers { onRescue: (id: string) => void; onLeftWater: () => void }
 
 export interface GameCanvasHandle {
   setRoster: (entries: RosterEntry[]) => void;
@@ -22,6 +34,16 @@ export interface GameCanvasHandle {
   showBubble: (accountId: string, text: string) => void;
   showReaction: (accountId: string | null, emoji: string) => void;
   setInputEnabled: (enabled: boolean) => void;
+  /** v18: scale my walk speed (hunger/thirst), clamped by the engine to [0.1, 1]. */
+  setSpeedFactor: (f: number) => void;
+  /** v18.7: ride vehicle `v` (null = on foot): faster walking, and the others see it. Kept across worlds. */
+  setRiding: (v: VehicleId | null) => void;
+  /** v18.12: my following pet's `pt` code (null = none) and its walk-speed factor; the others see it. Kept across worlds. */
+  setPet: (code: string | null, speed: number) => void;
+  /** v18.8: the room's weather (drawn on every map; null = none). Kept across worlds. */
+  setWeather: (w: RoomWeather | null) => void;
+  /** v18.8: the viewer's weather-effects level (a personal setting). Kept across worlds. */
+  setWeatherFx: (level: WeatherFx) => void;
   interact: () => void;
   /** Tell everyone my character changed (they re-fetch it). */
   announceLook: () => void;
@@ -39,6 +61,25 @@ export interface GameCanvasHandle {
   landCatch: (speciesId: string, weightG: number, hand: string | null) => void;
   /** Is someone else fishing right at this spot? */
   anglerNear: (p: Vec) => boolean;
+  /** v18.1: a big fish pulled me into the pond — swim mode until I climb onto a bank (the others see it). */
+  overboard: () => void;
+  /** v18.2: my net throw's phase (null = none): drawn on me, and one `fs` with `n` when it changes. `face` (aiming)
+   *  turns me towards the water. */
+  setNet: (inp: NetInput | null, face?: Vec) => void;
+  /** v18.10: jump into the pond from the shore or dock cell I stand on (false when I can't). */
+  jumpIn: () => boolean;
+  /** v18.10: the 10 s warm-up stretch (false when I can't), and stopping it early. */
+  warmUp: () => boolean;
+  cancelWarmUp: () => void;
+  /** v18.10: my heat from the server (red face, a cramp's countdown; `rescued` sets a swimmer down on the bank). */
+  setHeat: (h: { shocked: boolean; crampLeftMs: number | null; rescued?: boolean }) => void;
+  /** v18.9: my rain look (wet, cảm lạnh, the umbrella open over me), and a lightning strike on me. */
+  setRain?: (l: { wet: boolean; cold: boolean; umbrella: UmbrellaKind | null }) => void;
+  strike?: () => void;
+  /** v18.10: what the heat layer shows (null while no world is up). */
+  heatProbe: () => HeatProbe | null;
+  /** v18.10: who hears E next to a cramping member and my climbing out of the water. */
+  setHeatHandlers: (h: HeatHandlers | null) => void;
   /** A dust puff (digging worms). */
   puff: (at: Vec) => void;
   /** What the field's plots show (crops, name posts, my urgent rings). */
@@ -51,6 +92,10 @@ export interface GameCanvasHandle {
   plotChanged: (p: number) => void;
   /** The hall's card-table labels (v16 spec §5). */
   setCardTables: (labels: Readonly<Partial<Record<CardGame, string>>>) => void;
+  /** v19.3: Khu nhà's lots and their houses. */
+  setHouses: (houses: ReadonlyArray<HouseDraw>) => void;
+  /** v18.11: the unread dot on the Báo Làng stand. */
+  setNewsUnread: (unread: boolean) => void;
   /** The map whose world the canvas shows now, or null while it shows none: an answer that lands after I left a map is
    *  dropped (v15.3 §7.2). */
   mapId: () => MapId | null;
@@ -66,6 +111,17 @@ export interface GameCanvasHandle {
   localPos: () => Vec | null;
   /** When I last pressed a key or touched the canvas (performance.now(); −Infinity before). */
   lastInputAt: () => number;
+  /** Set camera zoom factor (< 1 zooms out / wider view, > 1 zooms in). */
+  setZoom: (zoom: number) => void;
+  getZoom: () => number;
+  /** v18.13 Đi nhờ xe: my lift (null = none). Kept across worlds: a new world gets it once its channel exists. */
+  setLift: (l: LocalLift | null) => void;
+  /** v18.13: send a lift message (rq / ra / rx / lg; my id is added). */
+  sendLift: (m: LiftSend) => void;
+  /** v18.13: the rider I could ask for a lift now (null with no world). */
+  liftCandidate: () => { id: string; name: string } | null;
+  /** v18.13: is member `id` within lift range of me (false with no world)? */
+  nearForLift: (id: string) => boolean;
 }
 
 export interface GameCanvasProps {
@@ -100,6 +156,10 @@ export interface GameCanvasProps {
   onUnsupported: () => void;
   /** The game loop kept failing and stopped. */
   onFatal: () => void;
+  /** v18.13: a lift message addressed to me, from a member on this map. */
+  onLift?: (msg: LiftMessage) => void;
+  /** v18.13: the engine ended my lift (the partner left, vanished or stopped agreeing). */
+  onLiftLost?: () => void;
 }
 
 /** The game world: one engine + one broadcast channel per map visit. */
@@ -114,16 +174,32 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   // the card tables' labels and the gathering cues.
   const handRef = useRef<string | null>(null);
   const phaseRef = useRef<FishPhase>(0);
+  const netRef = useRef<NetState | null>(null);                                    // v18.2
   const speciesRef = useRef<ReadonlyArray<{ id: string; name: string; rarity: Rarity }>>([]);
   const insetRef = useRef(0);
   const inputRef = useRef(true);
+  const speedRef = useRef(1);
+  const ridingRef = useRef<VehicleId | null>(null);
+  const liftRef = useRef<LocalLift | null>(null);                                   // v18.13
+  const weatherRef = useRef<RoomWeather | null>(null);
+  const weatherFxRef = useRef<WeatherFx>(3);
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
+  const housesRef = useRef<ReadonlyArray<HouseDraw>>([]);                           // v19.3
+  const newsUnreadRef = useRef(false);
   const gatherRef = useRef<ReadonlyArray<{ id: string; ready: boolean }>>([]);
   // v17: my dog (from the latest setLocal), the field's rats and my last input, kept across worlds
   const dogRef = useRef<Pick<LocalInfo, "dog" | "dogHungry">>({});
+  // v18.12: my following pet, kept across worlds
+  const petRef = useRef<{ code: string | null; speed: number }>({ code: null, speed: 1 });
   const ratsRef = useRef<FieldRats | null>(null);
+  const zoomRef = useRef(1);
   const inputAtRef = useRef(-Infinity);
+  // v18.10: heat-shocked (kept across worlds) and the heat layer's handlers (E rescue, climbing out)
+  const shockedRef = useRef(false);
+  const heatHandlersRef = useRef<HeatHandlers | null>(null);
+  // v18.9: my rain look, kept across worlds
+  const rainRef = useRef<{ wet: boolean; cold: boolean; umbrella: UmbrellaKind | null } | null>(null);
   // This world's answer to `hello`s, and who of its roster is here (null until its first roster).
   const repliesRef = useRef<ReplyScheduler | null>(null);
   const hereRef = useRef<Set<string> | null>(null);
@@ -133,9 +209,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
 
   useImperativeHandle(ref, () => {
     const sendFs = (c?: [string, number]) => {
+      const net = netRef.current;
       const msg: GameMessage = c
         ? { t: "fs", id: localId, f: 0, h: handRef.current, c }
-        : { t: "fs", id: localId, f: phaseRef.current, h: handRef.current };
+        : net && phaseRef.current === 0
+          ? { t: "fs", id: localId, f: 0, h: handRef.current, n: encodeNet(net) }
+          : { t: "fs", id: localId, f: phaseRef.current, h: handRef.current };
       sendRef.current?.(msg);
     };
     return {
@@ -159,6 +238,26 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       setInputEnabled: (enabled) => {
         inputRef.current = enabled;
         engineRef.current?.setInputEnabled(enabled);
+      },
+      setSpeedFactor: (f) => {
+        speedRef.current = f;
+        engineRef.current?.setSpeedFactor(f);
+      },
+      setRiding: (v) => {
+        ridingRef.current = v;
+        engineRef.current?.setRiding(v);
+      },
+      setPet: (code, speed) => {
+        petRef.current = { code, speed };
+        engineRef.current?.setPet(code, speed);
+      },
+      setWeather: (w) => {
+        weatherRef.current = w;
+        engineRef.current?.setWeather(w);
+      },
+      setWeatherFx: (level) => {
+        weatherFxRef.current = level;
+        engineRef.current?.setWeatherFx(level);
       },
       interact: () => engineRef.current?.interact(),
       announceLook: () => sendRef.current?.({ t: "lk", id: localId }),
@@ -194,6 +293,33 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         sendFs([speciesId, weightG]);
       },
       anglerNear: (p) => engineRef.current?.anglerNear(p) ?? false,
+      overboard: () => engineRef.current?.overboard(),
+      setNet: (inp, face) => {
+        const e = engineRef.current;
+        const prev = netRef.current;
+        if (inp && face) e?.faceTowards(face);                                         // turn first: offsets follow the facing
+        const s = inp ? nextNet(prev, inp, e?.localFacing() ?? "down") : null;
+        e?.setLocalNet(s);
+        netRef.current = s;
+        if (JSON.stringify(s && encodeNet(s)) === JSON.stringify(prev && encodeNet(prev))) return;
+        sendFs();
+      },
+      jumpIn: () => engineRef.current?.jumpIn() ?? false,
+      warmUp: () => engineRef.current?.warmUp() ?? false,
+      cancelWarmUp: () => engineRef.current?.cancelWarmUp(),
+      setHeat: (h) => {
+        shockedRef.current = h.shocked;
+        engineRef.current?.setHeat(h);
+      },
+      setRain: (l) => {
+        rainRef.current = l;
+        engineRef.current?.setRain(l);
+      },
+      strike: () => engineRef.current?.strike(),
+      heatProbe: () => engineRef.current?.heatProbe() ?? null,
+      setHeatHandlers: (h) => {
+        heatHandlersRef.current = h;
+      },
       puff: (at) => engineRef.current?.puff(at),
       setPlots: (plots) => {
         plotsRef.current = plots;
@@ -212,6 +338,14 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         cardTablesRef.current = labels;
         engineRef.current?.setCardTables(labels);
       },
+      setHouses: (houses) => {
+        housesRef.current = houses;
+        engineRef.current?.setHouses(houses);
+      },
+      setNewsUnread: (unread) => {
+        newsUnreadRef.current = unread;
+        engineRef.current?.setNewsUnread(unread);
+      },
       mapId: () => worldRef.current,
       setRats: (rats) => {
         ratsRef.current = rats;
@@ -228,6 +362,18 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       },
       localPos: () => engineRef.current?.localPos() ?? null,
       lastInputAt: () => inputAtRef.current,
+      setZoom: (zoom: number) => {
+        zoomRef.current = zoom;
+        engineRef.current?.setZoom(zoom);
+      },
+      getZoom: () => zoomRef.current,
+      setLift: (l) => {
+        liftRef.current = l;
+        engineRef.current?.setLift(l);
+      },
+      sendLift: (m) => sendRef.current?.({ ...m, id: localId } as GameMessage),
+      liftCandidate: () => engineRef.current?.liftCandidate() ?? null,
+      nearForLift: (id) => engineRef.current?.nearForLift(id) ?? false,
     };
   }, [localId]);
 
@@ -238,6 +384,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     const init = propsRef.current.initial;
     // a new map starts with the rod in (the shell cancels any cast before travelling)
     phaseRef.current = 0;
+    netRef.current = null;
     let engine: GameEngine;
     try {
       const art = paintMap(map);
@@ -260,6 +407,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         onInput: () => {
           inputAtRef.current = performance.now();
         },
+        onRescue: (id) => heatHandlersRef.current?.onRescue(id),
+        onLeftWater: () => heatHandlersRef.current?.onLeftWater(),
+        onLiftLost: () => {
+          liftRef.current = null;
+          propsRef.current.onLiftLost?.();
+        },
       }, {
         localId,
         name: init.name,
@@ -277,10 +430,18 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setSpecies(speciesRef.current);
     engine.setBottomInset(insetRef.current);
     engine.setInputEnabled(inputRef.current);
+    engine.setSpeedFactor(speedRef.current);
+    engine.setWeather(weatherRef.current);
+    engine.setWeatherFx(weatherFxRef.current);
     engine.setPlots(plotsRef.current);
     engine.setCardTables(cardTablesRef.current);
+    engine.setHouses(housesRef.current);
+    engine.setNewsUnread(newsUnreadRef.current);
     engine.setGatherSpots(gatherRef.current);
+    if (shockedRef.current) engine.setHeat({ shocked: true, crampLeftMs: null });
+    if (rainRef.current) engine.setRain(rainRef.current);
     engine.setLocal({ name: init.name, badges: init.badges, look: init.look, ...dogRef.current });
+    if (zoomRef.current !== 1) engine.setZoom(zoomRef.current);
     if (map.id === "field") engine.setRats(ratsRef.current);
 
     // One answer (my state) serves every `hello` that arrives before it goes out; answers are spread over a window
@@ -324,6 +485,13 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
           case "bye":
             engine.removeActor(msg.id);
             break;
+          case "rq":
+          case "ra":
+          case "rx":
+          case "lg":
+            // v18.13: a lift message addressed to me goes to the shell
+            if (msg.to === localId) propsRef.current.onLift?.(msg);
+            break;
           default:
             engine.applyMessage(msg);
         }
@@ -340,6 +508,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engineRef.current = engine;
     worldRef.current = map.id;
     sendRef.current = (msg) => channel.send(msg);
+    // setRiding announces my state at once (onLocalMove → channel.send), so it waits until the channel exists: riding
+    // through a portal rebuilds the engine with the vehicle still on
+    engine.setRiding(ridingRef.current);
+    engine.setPet(petRef.current.code, petRef.current.speed);                           // v18.12
+    // v18.13: a lift through a portal goes on in the new world (it announces too, so it waits for the channel as well)
+    engine.setLift(liftRef.current);
     engine.start();
     return () => {
       replies.dispose();

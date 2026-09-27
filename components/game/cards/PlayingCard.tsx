@@ -2,9 +2,10 @@
 
 import { cardAria, isRed, RANK_NAMES, rankOf, SUIT_GLYPHS, suitOf, type Card } from "@/lib/game/cards/deck";
 
-/** The card sizes (spec §13.2): 40 × 56 (32 × 46 on phones), a mini size for the rules book and the pile, and a tiny
+/** The card sizes (spec §13.2): large for POV/nặn bài, normal 40 × 56 (32 × 46 on phones), a mini size for the rules book and the pile, and a tiny
  *  one for the backs at the seats. */
 const SIZE = {
+  large: "h-20 w-14 text-2xl sm:h-28 sm:w-20 sm:text-3xl",
   normal: "h-[46px] w-8 text-base sm:h-14 sm:w-10 sm:text-lg",
   mini: "h-[34px] w-6 text-sm",
   tiny: "h-[22px] w-4 text-[10px]",

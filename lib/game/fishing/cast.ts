@@ -8,6 +8,8 @@ export interface CastInfo {
   castId: string; biteMs: number; windowMs: number; difficulty: number; minReelMs: number; zonePct: number;
   /** Shown by Phao xốp / Phao đèn only. */
   rarity: Rarity | null;
+  /** v18.1: false = a shore cast nothing will bite (it ends at biteMs without a bite); absent = true. */
+  bites?: boolean;
 }
 
 export type CastPhase = "waiting" | "bite" | "missed";

@@ -462,7 +462,7 @@ export default function CoopPanel({ state, catalog = null, failed, me, busy, now
   const varieties = catalog?.varieties ?? [];
   const [tab, setTab] = useState<Tab>(() => (ctx && riceReady(ctx, varieties, now) ? "harvester" : "village"));
   return (
-    <ParchmentModal title="🏛️ Hợp tác xã · chú Tám" onClose={onClose} className="max-w-2xl">
+    <ParchmentModal title="🏛️ Hợp tác xã · chú Tám" onClose={onClose} className="sm:max-w-4xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         <div role="tablist" aria-label="Hợp tác xã" className="flex flex-wrap gap-1">
           {TABS.filter(([id]) => id !== "dog" || dog !== null).map(([id, label]) => (

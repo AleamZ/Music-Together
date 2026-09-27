@@ -9,8 +9,23 @@ import {
 import { critterCount, heldBox, lowerFirst, visitsLeft } from "@/lib/game/farm/gather";
 import type { FarmMine } from "@/lib/game/farm/state";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
-import { baitCount, ownsItem, type FishingState, type Loadout } from "@/lib/game/fishing/state";
+import { baitCount, ownsItem, rodBroken, wearFor, type FishingState, type Loadout, type Wear } from "@/lib/game/fishing/state";
 import FishLine from "./FishLine";
+
+/** v18.2: a small durability bar (green → amber → red) with the count. */
+function WearBar({ wear }: { wear: Wear }) {
+  const f = wear.max > 0 ? Math.max(0, Math.min(1, wear.left / wear.max)) : 0;
+  const color = f > 0.5 ? "#4caf50" : f > 0.2 ? "#e0a431" : "#c0392b";
+  return (
+    <span className="mt-0.5 flex items-center gap-1 text-sm opacity-90">
+      <span className="relative h-1.5 w-16 overflow-hidden rounded-sm border border-ink/60 bg-parchment-300" role="meter"
+        aria-valuemin={0} aria-valuemax={wear.max} aria-valuenow={wear.left} aria-label="Độ bền">
+        <span className="absolute inset-y-0 left-0" style={{ width: `${f * 100}%`, background: color }} />
+      </span>
+      {wear.left}/{wear.max}
+    </span>
+  );
+}
 
 /** The field's side of the bag (v15.2 R29): my farm stock, the farm catalog's items and critter kinds (none before 0018),
  *  the server's clock, and Nạp thuốc. */
@@ -135,14 +150,19 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
 
   const gearRow = (item: ShopItem, slot: keyof Loadout, count?: number) => {
     const using = state.loadout[slot] === item.id;
+    const wear = wearFor(state, item.id);
+    const broken = slot === "rod" && rodBroken(state, item.id);
     return (
       <li key={item.id} className="flex items-center gap-2 py-0.5">
         <ItemIcon id={item.id} scale={2} />
         <span className="flex min-w-0 flex-1 flex-col leading-none">
           <span className="truncate">{item.name}{count !== undefined ? ` × ${count}` : ""}</span>
           <span className="truncate text-base opacity-75">{describeItem(item)}</span>
+          {wear && <WearBar wear={wear} />}
         </span>
-        {using ? (
+        {broken ? (
+          <span className="text-base text-burgundy">Gãy — sửa ở tiệm chú Tư</span>
+        ) : using ? (
           <span className="text-base text-burgundy">✓ Đang dùng</span>
         ) : (
           <button type="button" className="pch-btn" disabled={busy} onClick={() => onEquip({ ...state.loadout, [slot]: item.id })}>Dùng</button>
@@ -152,8 +172,8 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
   };
 
   return (
-    <ParchmentModal title="🎒 Giỏ đồ" onClose={onClose}>
-      <div className="flex flex-col gap-3 font-vt text-lg leading-tight">
+    <ParchmentModal title="🎒 Giỏ đồ" onClose={onClose} className="sm:max-w-4xl">
+      <div className="gap-6 font-vt text-lg leading-tight md:columns-2 [&>section]:mb-3 [&>section]:break-inside-avoid">
         <section>
           <h3 className="text-xl text-burgundy">Cá ({state.fish.length}/{state.fishCap})</h3>
           {state.fish.length === 0 && <p className="opacity-70">Chưa có con nào — ra cầu ao quăng cần nhé!</p>}
@@ -184,6 +204,26 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
           <h3 className="text-xl text-burgundy">Cần câu</h3>
           <ul>{owned("rod").map((i) => gearRow(i, "rod"))}</ul>
         </section>
+        {kind("net").some((i) => state.owned.includes(i.id)) && (
+          <section>
+            <h3 className="text-xl text-burgundy">Lưới</h3>
+            <ul>
+              {kind("net").filter((i) => state.owned.includes(i.id)).map((i) => {
+                const wear = wearFor(state, i.id);
+                return (
+                  <li key={i.id} className="flex items-center gap-2 py-0.5">
+                    <ItemIcon id={i.id} scale={2} />
+                    <span className="flex min-w-0 flex-1 flex-col leading-none">
+                      <span className="truncate">{i.name}{wear ? ` · còn ${wear.left} lần quăng` : ""}</span>
+                      <span className="truncate text-base opacity-75">Đứng ở bờ ao hoặc cầu ao, bấm “Quăng lưới”.</span>
+                      {wear && <WearBar wear={wear} />}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
         <section>
           <h3 className="text-xl text-burgundy">Phao</h3>
           <ul>{owned("bobber").map((i) => gearRow(i, "bobber"))}</ul>

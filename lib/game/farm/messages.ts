@@ -1,4 +1,6 @@
 import { durationVi, lockSeconds, lockText } from "@/lib/anticheat";
+import { vitalsErrorMessage } from "@/lib/game/vitals-rpc";
+import { STORM_TEXT } from "@/lib/game/weather/rpc";
 import { COAT_NAME, type DogCoat, type DogNameProblem, type DogStatus } from "../dog";
 import { AMMO_PELLET, TOOL_SLING, type CritterKind, type UplandCrop } from "./catalog";
 import { GATHER, lowerFirst } from "./gather";
@@ -336,6 +338,9 @@ const detailSec = (err: unknown): number | null => {
 export function farmErrorMessage(err: unknown, itemName?: string, action?: string): string {
   const e = (err && typeof err === "object" ? err : {}) as { message?: unknown };
   const msg = typeof e.message === "string" ? e.message : "";
+  const v = vitalsErrorMessage(msg);
+  if (v) return v;
+  if (msg === "storm") return STORM_TEXT;
   const round = action === "harvest_part", crab = action === "crab_finish", tp = action === "transplant";
   switch (msg) {
     case "not your plot":

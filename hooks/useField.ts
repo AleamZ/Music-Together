@@ -26,13 +26,14 @@ export interface FieldData {
   /** A land, farming or drying action; its answer replaces the state. On error: the refusal's text goes to `onError`
    *  (the harvest round shows it) or to the toast; then a refetch, and null. */
   run: (a: FieldAction, itemName?: string, onError?: (text: string) => void) => Promise<FieldAnswer | null>;
-  sellRice: (variety: string, dry: boolean, kg: number) => Promise<MineAnswer | null>;
+  /** `market` (v18.5): to Vựa nông sản Chợ Lớn, +20% (sell_rice_market). */
+  sellRice: (variety: string, dry: boolean, kg: number, market?: boolean) => Promise<MineAnswer | null>;
   buyItem: (itemId: string, qty: number, itemName?: string) => Promise<MineAnswer | null>;
   claimGift: () => Promise<(MineAnswer & { gifted: boolean }) | null>;
   /** Nạp thuốc: one bottle of the pesticide into the sprayer (v15.2 §7). */
   loadSprayer: (itemId: string, itemName?: string) => Promise<MineAnswer | null>;
   /** Sells kg of a hoa-màu crop to cô Út (v15.2 §9). */
-  sellProduce: (upland: string, kg: number) => Promise<MineAnswer | null>;
+  sellProduce: (upland: string, kg: number, market?: boolean) => Promise<MineAnswer | null>;
   /** Bắt cua (v15.3 §7.2): a visit to hole `hole` (R6), then its end with the hits, 0–3 (R7); a refusal's text goes to
    *  `onError` when given. `boxName` is the container held, which a `critters full` refusal names (§11.8). */
   crabStart: (hole: number, boxName?: string) => Promise<(MineAnswer & { visit: CrabVisit }) | null>;
@@ -215,15 +216,15 @@ export function useField(roomId: string, token: string, active: boolean, onError
         rpc: actionCall(a)[0], context: a.kind === "begin_work" && a.work === "transplant" ? "transplant" : undefined, itemName, onError,
       }),
     [call, apply, roomId, token]),
-    sellRice: useCallback((variety: string, dry: boolean, kg: number) =>
-      call(() => sellRice(token, variety, dry, kg), applyMine, { rpc: "sell_rice" }), [call, applyMine, token]),
+    sellRice: useCallback((variety: string, dry: boolean, kg: number, market = false) =>
+      call(() => (market ? sellRice(token, variety, dry, kg, true) : sellRice(token, variety, dry, kg)), applyMine, { rpc: "sell_rice" }), [call, applyMine, token]),
     buyItem: useCallback((itemId: string, qty: number, itemName?: string) =>
       call(() => buyFarmItem(token, itemId, qty), applyMine, { rpc: "buy_farm_item", itemName }), [call, applyMine, token]),
     claimGift: useCallback(() => call(() => claimFarmGift(token), applyMine, { rpc: "claim_farm_gift" }), [call, applyMine, token]),
     loadSprayer: useCallback((itemId: string, itemName?: string) =>
       call(() => loadSprayer(token, itemId), applyMine, { rpc: "load_sprayer", itemName }), [call, applyMine, token]),
-    sellProduce: useCallback((upland: string, kg: number) =>
-      call(() => sellProduce(token, upland, kg), applyMine, { rpc: "sell_produce" }), [call, applyMine, token]),
+    sellProduce: useCallback((upland: string, kg: number, market = false) =>
+      call(() => (market ? sellProduce(token, upland, kg, true) : sellProduce(token, upland, kg)), applyMine, { rpc: "sell_produce" }), [call, applyMine, token]),
     crabStart: useCallback((hole: number, boxName?: string) =>
       call(() => crabStart(roomId, token, hole), applyMine, { rpc: "crab_start", itemName: boxName }), [call, applyMine, roomId, token]),
     crabFinish: useCallback((visitId: string, hits: number, onError?: (text: string) => void) =>

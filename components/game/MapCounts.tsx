@@ -8,6 +8,8 @@ const LABEL: Record<MapId, { icon: string; name: string }> = {
   hall: { icon: "🎵", name: "Sảnh" },
   pond: { icon: "🎣", name: "Ao cá" },
   field: { icon: "🌾", name: "Đồng" },
+  market: { icon: "🏮", name: "Chợ Lớn" },
+  khu_nha: { icon: "🏘️", name: "Khu nhà" },
 };
 const MAPS = MAP_IDS.map((id) => ({ id, ...LABEL[id] }));
 

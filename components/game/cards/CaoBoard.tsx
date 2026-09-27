@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import type { Card } from "@/lib/game/cards/deck";
 import { CANCELLED, caoHandName, NO_DEALER, signedXu, xuNum } from "@/lib/game/cards/messages";
 import type { CardAction } from "@/lib/game/cards/rpc";
 import type { CaoState, CardSeat } from "@/lib/game/cards/state";
-import CardHand from "./CardHand";
+import CaoSqueezeView from "./CaoSqueezeView";
 import { CardRow } from "./PlayingCard";
 
 /** Cào's centre, my three cards and the dealer's button (spec §13.2): the dealer, nặn bài (local, one card at a time),
@@ -19,9 +18,6 @@ export default function CaoBoard({ state, cards, mine, busy, act, name }: {
   name: (seat: number) => string;
 }) {
   const pub = state.pub;
-  // nặn bài: how many of my cards I have turned, for this hand
-  const [turned, setTurned] = useState<{ hand: number; n: number }>({ hand: -1, n: 0 });
-  const shown = turned.hand === state.handNo ? turned.n : 0;
   const dealer = pub?.dealer ?? null;
   const iDeal = state.phase === "deal_wait" && mine !== null && dealer === mine.seat;
   const last = state.phase === "result" ? state.last : null;
@@ -48,16 +44,7 @@ export default function CaoBoard({ state, cards, mine, busy, act, name }: {
         </div>
       )}
       {cards.length > 0 && state.phase === "peek" && (
-        <>
-          <CardHand cards={cards} hidden={cards.slice(shown)} label="Bài của bạn" />
-          <div className="flex flex-wrap items-center gap-1">
-            {shown < cards.length ? (
-              <button type="button" className="pch-btn" onClick={() => setTurned({ hand: state.handNo, n: shown + 1 })}>Nặn bài</button>
-            ) : (
-              <span className="text-xl">{caoHandName(cards)}</span>
-            )}
-          </div>
-        </>
+        <CaoSqueezeView cards={cards} />
       )}
       {iDeal && (
         <div className="flex gap-1">

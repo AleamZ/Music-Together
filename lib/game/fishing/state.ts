@@ -28,7 +28,11 @@ export interface FishingState {
   /** The next Vietnam midnight, while no cast is left today. */
   dayResetsAt: string | null;
   lock: FishingLock | null;
+  /** v18.2: durability left and max of each owned rod and net that wears ({} before migration 0034). */
+  wear: Record<string, Wear>;
 }
+/** v18.2: [left, max]. */
+export interface Wear { left: number; max: number }
 export type CastBlocker = "no_bait" | "hands_full" | "bucket_full" | "cast_limit" | "daily_limit";
 
 const num = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
@@ -67,7 +71,44 @@ export function parseFishingState(json: unknown): FishingState | null {
     castsTodayLeft: num(j.casts_today_left, 300),
     dayResetsAt: strOrNull(j.day_resets_at),
     lock: lockOf(j.lock),
+    wear: wearOf(j.wear),
   };
+}
+
+function wearOf(v: unknown): Record<string, Wear> {
+  const out: Record<string, Wear> = {};
+  for (const [k, x] of Object.entries(obj(v))) {
+    if (Array.isArray(x) && typeof x[0] === "number" && typeof x[1] === "number") out[k] = { left: x[0], max: x[1] };
+  }
+  return out;
+}
+
+/** v18.2: the item's wear, or null when it does not wear (rod_wood, gear before 0034). */
+export function wearFor(s: FishingState, id: string): Wear | null {
+  return s.wear[id] ?? null;
+}
+
+/** v18.2: a rod at durability 0 stays in the bag but cannot be equipped or cast with. */
+export function rodBroken(s: FishingState, id: string): boolean {
+  const w = wearFor(s, id);
+  return w !== null && w.left <= 0;
+}
+
+/** v18.2: Sửa cần costs 30% of the rod's price, rounded up (SQL `_repair_price`). */
+export function repairPrice(item: ShopItem): number {
+  return Math.ceil((item.price ?? 0) * 0.3);
+}
+
+/** v18.2: a rod below its max durability that chú Tư can repair. */
+export function needsRepair(s: FishingState, item: ShopItem): boolean {
+  const w = wearFor(s, item.id);
+  return item.kind === "rod" && item.durability != null && w !== null && w.left < w.max;
+}
+
+/** v18.2: the net a throw uses — the widest owned one with throws left; null without one. */
+export function bestNet(s: FishingState, items: readonly ShopItem[]): ShopItem | null {
+  return items.filter((i) => i.kind === "net" && s.owned.includes(i.id) && (wearFor(s, i.id)?.left ?? 0) > 0)
+    .sort((a, b) => (b.radiusPx ?? 0) - (a.radiusPx ?? 0))[0] ?? null;
 }
 
 export function handFish(s: FishingState): FishRow | null {

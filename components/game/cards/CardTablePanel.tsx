@@ -12,14 +12,17 @@ import {
 import type { CardAction } from "@/lib/game/cards/rpc";
 import { inHand, mySeat, secondsLeft, type CardSeat, type CardState } from "@/lib/game/cards/state";
 import { serverNow } from "@/lib/game/farm/clock";
+import type { Look } from "@/lib/game/types";
 import CaoBoard from "./CaoBoard";
+import CardFirstPersonView from "./CardFirstPersonView";
 import { CardRow } from "./PlayingCard";
 import PokerBoard from "./PokerBoard";
 import SitDialog from "./SitDialog";
 import TienLenBoard from "./TienLenBoard";
+import XidachBoard from "./XidachBoard";
 
 /** A turn's length (§10), for the timer bar. */
-const TURN_S: Record<CardGame, number> = { tienlen: 20, cao: 15, poker: 30 };
+const TURN_S: Record<CardGame, number> = { tienlen: 20, cao: 15, poker: 30, xidach: 30 };
 
 /** The seats in drawing order from the bottom (spec §7.3, §13.2): mine first (seat 1 for a spectator), then counter-clockwise. */
 export function ringOrder(max: number, bottom: number): number[] {
@@ -29,7 +32,9 @@ export function ringOrder(max: number, bottom: number): number[] {
 /** Where the k-th seat of the ring sits around the oval, as percentages of the felt. */
 function ringSpot(k: number, max: number): CSSProperties {
   const a = Math.PI / 2 - (k * 2 * Math.PI) / max;
-  return { "--x": `${50 + 40 * Math.cos(a)}%`, "--y": `${50 + 36 * Math.sin(a)}%` } as CSSProperties;
+  const rx = max > 8 ? 44 : 40;
+  const ry = max > 8 ? 40 : 36;
+  return { "--x": `${50 + rx * Math.cos(a)}%`, "--y": `${50 + ry * Math.sin(a)}%` } as CSSProperties;
 }
 
 /** A seat's badges (§13.2): Bỏ lượt, Về nhất/nhì/ba/bét, Cóng, Xử thua; Cái; Úp bài, Tất tay, D. */
@@ -45,6 +50,14 @@ function badges(s: CardState, seat: CardSeat): string[] {
     if (p.out === "forfeit") out.push("Xử thua");
   } else if (s.game === "cao" && s.pub) {
     if (s.pub.dealer === seat.seat) out.push("Cái");
+  } else if (s.game === "xidach" && s.pub) {
+    if (s.pub.dealer === seat.seat) out.push("Cái");
+    const p = s.pub.players[seat.seat];
+    if (p) {
+      if (p.standing) out.push("Dằn");
+      if (p.busted) out.push("Quắc");
+      if (p.inspected) out.push("Đã xét");
+    }
   } else if (s.game === "poker" && s.pub) {
     if (s.pub.button === seat.seat) out.push("D");
     const p = s.pub.players[seat.seat];
@@ -65,6 +78,10 @@ function backs(s: CardState, seat: CardSeat): { count: number | null; backs: num
   if (s.game === "cao" && s.pub && s.phase === "peek") {
     return { count: null, backs: s.pub.order.includes(seat.seat) && !s.pub.left.includes(seat.seat) ? 3 : 0 };
   }
+  if (s.game === "xidach" && s.pub && s.phase === "playing") {
+    const p = s.pub.players[seat.seat];
+    return { count: null, backs: p ? p.n : 0 };
+  }
   if (s.game === "poker" && s.pub && s.phase === "playing") {
     const p = s.pub.players[seat.seat];
     return { count: null, backs: p && p.id === seat.id && !p.fold ? 2 : 0 };
@@ -74,7 +91,7 @@ function backs(s: CardState, seat: CardSeat): { count: number | null; backs: num
 
 /** A card table's panel (spec §13.2): the seats around the felt (mine at the bottom), the centre and my hand from the
  *  game's board, the status line and the timer; sitting and standing up. Esc closes it without standing up. */
-export default function CardTablePanel({ game, table, me, coins, act, onOpenRules, onClose }: {
+export default function CardTablePanel({ game, table, me, coins, act, onOpenRules, onClose, looks }: {
   game: CardGame;
   table: CardTable;
   me: string;
@@ -82,9 +99,11 @@ export default function CardTablePanel({ game, table, me, coins, act, onOpenRule
   act: (a: CardAction) => Promise<unknown>;
   onOpenRules: () => void;
   onClose: () => void;
+  looks?: Map<string, Look>;
 }) {
   const { state, hand, busy, failed, notOpen } = table;
   const [sitAt, setSitAt] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<"pov" | "topdown">("pov");
   // the countdowns move every second (the server's clock)
   const [now, setNow] = useState(() => serverNow());
   useEffect(() => {
@@ -95,7 +114,25 @@ export default function CardTablePanel({ game, table, me, coins, act, onOpenRule
 
   let body;
   if (notOpen) body = <p>{CARDS_NOT_OPEN}</p>;
-  else if (!state) body = <p>{failed ? CARDS_FAILED : CARDS_LOADING}</p>;
+  else if (!state) {
+    body = (
+      <div className="flex flex-col items-center justify-center gap-3 py-8 text-center font-vt">
+        <p className={`text-base ${failed ? "text-danger" : "opacity-80"}`}>
+          {failed ? CARDS_FAILED : CARDS_LOADING}
+        </p>
+        {failed && game === "xidach" && (
+          <div className="max-w-md bg-amber-500/10 border border-amber-500/30 rounded p-2 text-xs text-amber-200">
+            ⚠️ Sòng Xì Dách cần chạy migration <code className="bg-amber-900/40 px-1 py-0.5 rounded font-mono text-amber-300">0021_xidach.sql</code> trên Supabase SQL Editor để kích hoạt trên database.
+          </div>
+        )}
+        {failed && (
+          <button type="button" className="pch-btn text-sm px-3 py-1" onClick={() => void table.refetch()}>
+            🔄 Thử lại
+          </button>
+        )}
+      </div>
+    );
+  }
   else {
     const mine = mySeat(state, me);
     const sitting = mine !== null && !mine.leaving ? mine : null;
@@ -107,74 +144,128 @@ export default function CardTablePanel({ game, table, me, coins, act, onOpenRule
     const order = ringOrder(state.max, sitting?.seat ?? 1);
     const turn = state.turn !== null
       ? { mine: sitting !== null && state.turn === sitting.seat, name: name(state.turn) } : null;
-    body = (
-      <div className="flex flex-col gap-2">
-        <div className="relative flex gap-1 overflow-x-auto sm:mb-3 sm:block sm:h-80 sm:overflow-visible" aria-label="Các ghế">
-          <div className="hidden sm:absolute sm:inset-x-[16%] sm:inset-y-[18%] sm:block sm:rounded-[50%] sm:border-4 sm:border-[#6e4424] sm:bg-[#2f7d4f]" />
-          {order.map((seatNo, k) => {
-            const seat = state.seats.find((x) => x.seat === seatNo) ?? null;
-            const b = seat ? backs(state, seat) : null;
-            const isTurn = seat !== null && state.turn === seatNo && (state.phase === "playing" || state.phase === "deal_wait");
-            return (
-              <div key={seatNo} style={ringSpot(k, state.max)}
-                className="pch flex min-w-24 shrink-0 flex-col items-center gap-0.5 p-1 text-base sm:absolute sm:left-[var(--x)] sm:top-[var(--y)] sm:-translate-x-1/2 sm:-translate-y-1/2"
-                aria-label={`Ghế ${seatNo}`}>
-                {seat ? (
-                  <>
-                    <span className="max-w-24 truncate text-lg">{seat.name}</span>
-                    <span>{game === "poker" ? xuNum(seat.chips) : `giữ ${xuNum(seat.escrow)}`}</span>
-                    <span className="flex flex-wrap items-center justify-center gap-1">
-                      {b && b.count !== null && <span>{`${b.count} lá`}</span>}
-                      {b && b.backs > 0 && <CardRow cards={Array.from({ length: b.backs }, () => null)} size="tiny" />}
-                      {badges(state, seat).map((x) => <span key={x} className="rounded-sm bg-burgundy px-1 text-cream">{x}</span>)}
-                    </span>
-                    {seat.leaving && <span className="opacity-70">Đã rời</span>}
-                    {isTurn && (
-                      <div className="h-1.5 w-full overflow-hidden rounded-sm bg-ink/20" aria-hidden="true">
-                        <div className="h-full bg-burgundy" style={{ width: `${Math.min(100, (secs / TURN_S[game]) * 100)}%` }} />
-                      </div>
-                    )}
-                    {sitting && seat.id === me && (
-                      dealerBusy ? (
-                        <button type="button" className="pch-btn" disabled title={DEALER_WAIT}>{`${STAND_UP} · ${DEALER_WAIT}`}</button>
-                      ) : (
-                        <ConfirmButton warn={live ? LEAVE_CONFIRM : undefined} disabled={busy} onConfirm={() => run({ kind: "leave" })}>
-                          {STAND_UP}
-                        </ConfirmButton>
-                      )
-                    )}
-                  </>
-                ) : mine === null ? (
-                  <button type="button" className="pch-btn" disabled={busy} onClick={() => setSitAt(seatNo)}>{SIT_HERE}</button>
-                ) : (
-                  <span className="opacity-60">{`Ghế ${seatNo}`}</span>
-                )}
-              </div>
-            );
-          })}
+    if (sitting && viewMode === "pov") {
+      body = (
+        <div className="flex flex-col gap-2">
+          <CardFirstPersonView
+            game={game}
+            state={state}
+            cards={cards}
+            mine={sitting}
+            coins={coins}
+            busy={busy}
+            act={run}
+            name={name}
+            secs={secs}
+            turn={turn}
+            looks={looks}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-1">
+            <p className="text-xl" role="status">
+              {statusLine(state.phase, state.seats.filter((x) => !x.leaving).length, secs, turn)}
+            </p>
+            {dealerBusy ? (
+              <button type="button" className="pch-btn" disabled title={DEALER_WAIT}>
+                {`${STAND_UP} · ${DEALER_WAIT}`}
+              </button>
+            ) : (
+              <ConfirmButton
+                warn={live ? LEAVE_CONFIRM : undefined}
+                disabled={busy}
+                onConfirm={() => run({ kind: "leave" })}
+              >
+                {STAND_UP}
+              </ConfirmButton>
+            )}
+          </div>
         </div>
-        <p className="text-xl" role="status">{statusLine(state.phase, state.seats.filter((x) => !x.leaving).length, secs, turn)}</p>
-        {!sitting && <p>{WATCHING}</p>}
-        {state.game === "tienlen" && (
-          <TienLenBoard state={state} cards={cards} mine={sitting} busy={busy} act={run} name={name} />
-        )}
-        {state.game === "cao" && (
-          <CaoBoard state={state} cards={cards} mine={sitting} busy={busy} act={run} name={name} />
-        )}
-        {state.game === "poker" && (
-          <PokerBoard state={state} cards={cards} mine={sitting} coins={coins} busy={busy} act={run} name={name} />
-        )}
-        {sitAt !== null && (
-          <SitDialog game={game} seat={sitAt} stake={state.seats.length > 0 ? state.stake : null} coins={coins} busy={busy}
-            onSit={(stake, buyin) => {
-              setSitAt(null);
-              run({ kind: "sit", seat: sitAt, stake, buyin });
-            }}
-            onClose={() => setSitAt(null)} />
-        )}
-      </div>
-    );
+      );
+    } else {
+      body = (
+        <div className="flex flex-col gap-2">
+          <div
+            className={`relative flex gap-1 overflow-x-auto sm:mb-3 sm:block ${
+              state.max > 8 ? "sm:h-96" : "sm:h-80"
+            } sm:overflow-visible`}
+            aria-label="Các ghế"
+          >
+            <div className="hidden sm:absolute sm:inset-x-[16%] sm:inset-y-[18%] sm:block sm:rounded-[50%] sm:border-4 sm:border-[#6e4424] sm:bg-[#2f7d4f]" />
+            {order.map((seatNo, k) => {
+              const seat = state.seats.find((x) => x.seat === seatNo) ?? null;
+              const b = seat ? backs(state, seat) : null;
+              const isTurn = seat !== null && state.turn === seatNo && (state.phase === "playing" || state.phase === "deal_wait");
+              return (
+                <div
+                  key={seatNo}
+                  style={ringSpot(k, state.max)}
+                  className={`pch flex ${
+                    state.max > 8 ? "min-w-16 p-0.5 text-xs" : "min-w-24 p-1 text-base"
+                  } shrink-0 flex-col items-center gap-0.5 sm:absolute sm:left-[var(--x)] sm:top-[var(--y)] sm:-translate-x-1/2 sm:-translate-y-1/2`}
+                  aria-label={`Ghế ${seatNo}`}
+                >
+                  {seat ? (
+                    <>
+                      <span className="max-w-24 truncate text-lg">{seat.name}</span>
+                      <span>{game === "poker" ? xuNum(seat.chips) : `giữ ${xuNum(seat.escrow)}`}</span>
+                      <span className="flex flex-wrap items-center justify-center gap-1">
+                        {b && b.count !== null && <span>{`${b.count} lá`}</span>}
+                        {b && b.backs > 0 && <CardRow cards={Array.from({ length: b.backs }, () => null)} size="tiny" />}
+                        {badges(state, seat).map((x) => <span key={x} className="rounded-sm bg-burgundy px-1 text-cream">{x}</span>)}
+                      </span>
+                      {seat.leaving && <span className="opacity-70">Đã rời</span>}
+                      {isTurn && (
+                        <div className="h-1.5 w-full overflow-hidden rounded-sm bg-ink/20" aria-hidden="true">
+                          <div className="h-full bg-burgundy" style={{ width: `${Math.min(100, (secs / TURN_S[game]) * 100)}%` }} />
+                        </div>
+                      )}
+                      {sitting && seat.id === me && (
+                        dealerBusy ? (
+                          <button type="button" className="pch-btn" disabled title={DEALER_WAIT}>{`${STAND_UP} · ${DEALER_WAIT}`}</button>
+                        ) : (
+                          <ConfirmButton warn={live ? LEAVE_CONFIRM : undefined} disabled={busy} onConfirm={() => run({ kind: "leave" })}>
+                            {STAND_UP}
+                          </ConfirmButton>
+                        )
+                      )}
+                    </>
+                  ) : mine === null ? (
+                    <button type="button" className="pch-btn" disabled={busy} onClick={() => setSitAt(seatNo)}>{SIT_HERE}</button>
+                  ) : (
+                    <span className="opacity-60">{`Ghế ${seatNo}`}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xl" role="status">{statusLine(state.phase, state.seats.filter((x) => !x.leaving).length, secs, turn)}</p>
+          {!sitting && <p>{WATCHING}</p>}
+          {state.game === "tienlen" && (
+            <TienLenBoard state={state} cards={cards} mine={sitting} busy={busy} act={run} name={name} />
+          )}
+          {state.game === "cao" && (
+            <CaoBoard state={state} cards={cards} mine={sitting} busy={busy} act={run} name={name} />
+          )}
+          {state.game === "xidach" && (
+            <XidachBoard state={state} cards={cards} mine={sitting} busy={busy} act={run} name={name} />
+          )}
+          {state.game === "poker" && (
+            <PokerBoard state={state} cards={cards} mine={sitting} coins={coins} busy={busy} act={run} name={name} />
+          )}
+          {sitAt !== null && (
+            <SitDialog game={game} seat={sitAt} stake={state.seats.length > 0 ? state.stake : null} coins={coins} busy={busy}
+              onSit={(stake, buyin) => {
+                setSitAt(null);
+                run({ kind: "sit", seat: sitAt, stake, buyin });
+              }}
+              onClose={() => setSitAt(null)} />
+          )}
+        </div>
+      );
+    }
   }
+
+  const mine = state ? mySeat(state, me) : null;
+  const sitting = mine !== null && !mine.leaving ? mine : null;
 
   return (
     // sm:, because ParchmentModal's own max-w-lg comes later in Tailwind's output than a plain max-w-3xl
@@ -183,7 +274,16 @@ export default function CardTablePanel({ game, table, me, coins, act, onOpenRule
         <div className="flex flex-wrap items-center gap-2">
           {state?.stake !== null && state?.stake !== undefined && <span>{stakeLine(game, state.stake)}</span>}
           <span>{`🪙 ${coins === null ? "—" : xuNum(coins)}`}</span>
-          <button type="button" className="pch-btn ml-auto" onClick={onOpenRules}>📜 Sổ luật</button>
+          {sitting && (
+            <button
+              type="button"
+              className="pch-btn text-xs ml-auto"
+              onClick={() => setViewMode((v) => (v === "pov" ? "topdown" : "pov"))}
+            >
+              {viewMode === "pov" ? "📐 Nhìn từ trên xuống" : "👁️ Góc nhìn 1st Person"}
+            </button>
+          )}
+          <button type="button" className={`pch-btn ${sitting ? "" : "ml-auto"}`} onClick={onOpenRules}>📜 Sổ luật</button>
         </div>
         {body}
       </div>

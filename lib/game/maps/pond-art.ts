@@ -1,6 +1,6 @@
 import { DIG_MOUNDS, inDirtPatch, inPond, onPlatform, POND_CX, POND_CY, POND_H, POND_PLATFORM, POND_RX, POND_RY, POND_W, pondEdge } from "./pond";
 import { propSprite } from "./props";
-import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt } from "./scene-art";
+import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt, type SceneLight } from "./scene-art";
 import type { GameMap } from "./types";
 
 // Procedural painters for the pond ("Ao cá"). Browser only (canvas). Props live in props.ts, shared helpers in
@@ -243,5 +243,13 @@ export function paintPond(map: GameMap): SceneArt {
     rect(c, C.outline, rx + 20, ry, 92, 1);
   };
 
-  return { background, props, edge: C.grassDark, drawAnimated, drawOverhead };
+  return { background, props, edge: C.grassDark, drawAnimated, drawOverhead, lights: POND_LIGHTS, moon: { x: POND_CX + 70, y: POND_CY - 44, w: 22 } };
 }
+
+/** v18.8 night lights: a lamp under the depot's awning, the hut's doorway and the lanterns hung from both roofs. */
+const POND_LIGHTS: ReadonlyArray<SceneLight> = [
+  { x: 574, y: 74, r: 44, hue: "warm" },
+  { x: 520, y: 60, r: 14, hue: "lantern" }, { x: 628, y: 60, r: 14, hue: "lantern" },
+  { x: 574, y: 262, r: 40, hue: "warm" },
+  { x: 516, y: 234, r: 14, hue: "lantern" }, { x: 632, y: 234, r: 14, hue: "lantern" },
+];

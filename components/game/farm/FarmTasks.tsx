@@ -1,15 +1,18 @@
 "use client";
 
+import KeyBadge from "@/components/game/KeyBadge";
 import { ParchmentModal } from "@/components/game/Parchment";
 import type { FarmTask } from "@/lib/game/farm/actions";
 
 /** The HUD button "🌾 Việc đồng áng"; a dot counts the urgent tasks (spec §13.1). */
 export function FarmTasksButton({ urgent, onClick }: { urgent: number; onClick: () => void }) {
   return (
-    <button type="button" className="pch-btn relative" onClick={onClick} aria-label={urgent > 0 ? `🌾 Việc đồng áng (${urgent} việc gấp)` : undefined}>
-      🌾 Việc đồng áng
+    <button type="button" className="pch-btn relative" data-hotkey="farmTasks" onClick={onClick} title={urgent > 0 ? `Việc đồng áng (${urgent} việc gấp) (G)` : "Việc đồng áng (G)"}
+      aria-label={urgent > 0 ? `🌾 Việc đồng áng (${urgent} việc gấp)` : "🌾 Việc đồng áng"}>
+      🌾
+      <KeyBadge id="farmTasks" />
       {urgent > 0 && (
-        <span aria-hidden="true" className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-burgundy px-1 text-center text-sm leading-5 text-parchment">
+        <span aria-hidden="true" className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-burgundy px-0.5 text-center text-xs leading-4 text-parchment">
           {urgent}
         </span>
       )}
@@ -26,7 +29,7 @@ export default function FarmTasksPanel({ tasks, farming, onOpenHandbook, onClose
   onClose: () => void;
 }) {
   return (
-    <ParchmentModal title="🌾 Việc đồng áng" onClose={onClose}>
+    <ParchmentModal title="🌾 Việc đồng áng" onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         {tasks.length === 0 ? (
           <p>{farming ? "Ruộng đang ổn, chưa cần làm gì." : "Bạn chưa có ruộng — ghé chú Tám ở Hợp tác xã thuê một thửa nhé."}</p>
