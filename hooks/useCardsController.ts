@@ -9,6 +9,8 @@ import { CARDS_NOT_OPEN, hallLabel, turnToast } from "@/lib/game/cards/messages"
 import type { CardAction } from "@/lib/game/cards/rpc";
 import { mySeat, type CardAnswer, type CardLobby, type CardState } from "@/lib/game/cards/state";
 import type { Interactable, MapId } from "@/lib/game/maps/types";
+import { CARD_DECK } from "@/lib/game/maps/hall";
+import type { Vec } from "@/lib/game/types";
 
 export interface CardsControllerOptions {
   token: string;
@@ -43,6 +45,15 @@ export interface CardsController {
   act: (a: CardAction) => Promise<CardAnswer | null>;
   /** Handles the card corner's interactables; false for anything else. */
   interact: (it: Interactable) => boolean;
+}
+
+/** How far (px) outside the card deck still counts as at the table. */
+const CARD_CORNER_MARGIN = 40;
+export const AWAY_LEFT_TEXT = "Bạn đã rời Góc đánh bài — hết ván nên tự đứng dậy khỏi bàn.";
+/** Am I at the card corner (the deck plus a margin around it)? */
+export function nearCardCorner(p: Vec): boolean {
+  const d = CARD_DECK, m = CARD_CORNER_MARGIN;
+  return p.x >= d.x - m && p.x <= d.x + d.w + m && p.y >= d.y - m && p.y <= d.y + d.h + m;
 }
 
 /** My turn at this state, once per turn: the hand and the action count; null when it is not my turn. */
@@ -95,6 +106,29 @@ export function useCardsController({ token, roomId, accountId, mapId, canvas, to
     toasted.current = myTurn;
     toast(turnToast(seatGame));
   }, [myTurn, seatGame, panel, toast]);
+
+  // --- walked away from the card corner (or off the hall): the hand in play goes on, and once it is over I stand up
+  // by myself, since I am not playing any more (the owner's rule). Checked once a second; one leave per hand.
+  const seatPhase = seatState?.phase ?? null;
+  const seatHand = seatState?.handNo ?? null;
+  const autoLeft = useRef<string | null>(null);
+  useEffect(() => {
+    // a hand in play (dealt, being played, or cards being squeezed) always goes on to its end
+    if (!seatGame || seatPhase === null || seatPhase === "playing" || seatPhase === "deal_wait" || seatPhase === "peek") return;
+    const key = `${seatGame}:${seatHand}`;
+    const check = () => {
+      if (autoLeft.current === key) return;
+      const pos = mapId === "hall" ? canvas()?.localPos() ?? null : null;
+      if (mapId === "hall" && (pos === null || nearCardCorner(pos))) return;
+      autoLeft.current = key;
+      void first.act({ kind: "leave" }).then((r) => {
+        if (r) { toast(AWAY_LEFT_TEXT); void reload(); }
+      });
+    };
+    check();
+    const id = setInterval(check, 1000);
+    return () => clearInterval(id);
+  }, [seatGame, seatPhase, seatHand, mapId, canvas, first, toast, reload]);
 
   const act = useCallback(async (a: CardAction) => {
     const r = await table.act(a);
