@@ -36,6 +36,16 @@ describe("parseGameMessage", () => {
     expect(parseGameMessage("mv", { id: "a", x: 1, y: 2, d: "u", mv: true, vx: 0, vy: -1 }, B)).not.toHaveProperty("h");
     expect(parseGameMessage("pa", { id: "a", x: 1, y: 2, pts: [[3, 4]], h: "tom_cang" }, B)).toMatchObject({ t: "pa", h: "tom_cang" });
   });
+  it("carries the ridden vehicle (v18.7): a known id round-trips, an unknown one reads as null", () => {
+    const base = { id: "a", x: 1, y: 2, d: "u", mv: false, vx: 0, vy: 0 };
+    const sent: GameMessage = { t: "st", ...base, d: "u", vx: 0, vy: 0, v: "car" };
+    const { event, payload } = toPayload(sent);
+    expect(parseGameMessage(event, payload, B)).toEqual(sent);
+    expect(parseGameMessage("st", { ...base, v: "plane" }, B)).toMatchObject({ t: "st", v: null });
+    expect(parseGameMessage("mv", { ...base, mv: true, vx: 1, v: "bike" }, B)).toMatchObject({ t: "mv", v: "bike" });
+    expect(parseGameMessage("pa", { id: "a", x: 1, y: 2, pts: [[3, 4]], v: "moto" }, B)).toMatchObject({ t: "pa", v: "moto" });
+    expect(parseGameMessage("mv", { ...base, mv: true, vx: 1 }, B)).not.toHaveProperty("v");
+  });
   it("rejects malformed fishing fields", () => {
     const bad: Array<[string, unknown]> = [
       ["fs", { id: "a", f: 4, h: null }], ["fs", { id: "a", f: 1 }], ["fs", { id: "a", f: 1, h: "Cá Lóc" }],

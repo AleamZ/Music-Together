@@ -6,10 +6,13 @@ import { ICON_SIZE, iconMatrixFor, pixelIconMatrix, type PixelIcon } from "@/lib
 import { OUTLINE } from "@/lib/game/art/palettes";
 
 const sql = readFileSync("supabase/migrations/0012_v14_fishing.sql", "utf8");
+/** v18.2: chú Tư's new stock (rods, nets, bait_gold). */
+const sql34 = readFileSync("supabase/migrations/0034_rods_nets.sql", "utf8");
 /** Ids seeded by `insert into public.<table> … on conflict`. */
-const seededIds = (table: string): string[] => {
-  const start = sql.indexOf(`insert into public.${table}`);
-  const block = sql.slice(start, sql.indexOf("on conflict", start));
+const seededIds = (table: string, src = sql): string[] => {
+  const start = src.indexOf(`insert into public.${table}`);
+  if (start < 0) return [];
+  const block = src.slice(start, src.indexOf("on conflict", start));
   return [...block.matchAll(/^\s*\('([a-z_]+)',/gm)].map((m) => m[1]);
 };
 
@@ -26,7 +29,7 @@ describe("fish and gear icons", () => {
   });
   it("cover every seeded species and shop item", () => {
     expect(seededIds("fish_species").sort()).toEqual(Object.keys(FISH_ICONS).sort());
-    expect(seededIds("shop_items").sort()).toEqual(Object.keys(GEAR_ICONS).sort());
+    expect([...seededIds("shop_items"), ...seededIds("shop_items", sql34)].sort()).toEqual(Object.keys(GEAR_ICONS).sort());
   });
   it("map codes to colours", () => {
     const m = pixelIconMatrix({ rows: Array(16).fill(".o" + "b".repeat(14)), pal: { b: "#123456" } });

@@ -7,11 +7,12 @@ const TITLES = {
   tienlen: ["Mục tiêu", "Thứ tự bài", "Các bộ", "Lượt chơi", "Luật đặc biệt", "Tính tiền"],
   cao: ["Mục tiêu", "Tính điểm", "Bài đặc biệt", "So bằng", "Lượt chơi", "Tính tiền"],
   poker: ["Mục tiêu", "Thứ tự tay bài", "Lượt chơi", "Luật cược", "Tiền"],
+  xidach: ["Mục tiêu", "Tính điểm", "Bài đặc biệt", "Lượt chơi", "Đền làng", "Tính tiền"],
 } as const;
 
 describe("📜 Sổ luật (spec §14)", () => {
   it("has a tab per game with its sections, under the play-money header", () => {
-    expect(RULES_TABS.map((t) => t.label)).toEqual(["Tiến lên", "Cào", "Poker"]);
+    expect(RULES_TABS.map((t) => t.label)).toEqual(["Tiến lên", "Cào", "Poker", "Xì Dách"]);
     for (const { game } of RULES_TABS) {
       const page = rulesPage(game);
       expect(page.header).toBe(RULES_HEADER);

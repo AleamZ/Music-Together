@@ -87,7 +87,9 @@ describe("mapCounts", () => {
       hall: [{ accountId: "b", name: "Bee", classic: true }, { accountId: "c", name: "Cee", classic: false }],
       pond: [{ accountId: "a", name: "Ann", classic: false }],
       field: [{ accountId: "d", name: "Dee", classic: false }],
+      market: [],
+      khu_nha: [],
     });
-    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [] });
+    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [], market: [], khu_nha: [] });
   });
 });

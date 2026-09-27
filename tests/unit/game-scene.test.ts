@@ -15,6 +15,11 @@ describe("computeView", () => {
   it("never goes below scale 1", () => {
     expect(computeView(100, 60, 640, 400).scale).toBe(1);
   });
+  it("never lets camera view exceed map bounds even at extreme zoom out", () => {
+    const view = computeView(1920, 1080, 640, 400, 0.25);
+    expect(view.vw).toBeLessThanOrEqual(640);
+    expect(view.vh).toBeLessThanOrEqual(400);
+  });
 });
 
 describe("cameraFor", () => {

@@ -14,7 +14,7 @@ const SPOT: Interactable = {
 const STATE = parseFishingState({ loadout: { rod: "rod_wood", bobber: "bobber_lamp", bait: "bait_worm" } })!;
 const answer = (over: Partial<StartCast> = {}): StartCast => ({
   castId: "c1", biteMs: 4000, windowMs: 2500, difficulty: 38, minReelMs: 3520, zonePct: 25, rarity: 3, baitSwitched: false,
-  state: STATE, ...over,
+  spot: "dock", bites: true, state: STATE, ...over,
 });
 const FISH = { id: "f1", speciesId: "ca_loc", weightG: 1200, price: 72, rarity: 2 as const };
 const withHand = parseFishingState({ fish: [{ id: "f0", species_id: "ca_ro", weight_g: 100, price: 5, caught_at: "x" }] })!;
@@ -120,8 +120,34 @@ describe("useCastSession", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
     act(() => lost.result.current.hook());
     await act(async () => { lost.result.current.reelDone(false); await vi.advanceTimersByTimeAsync(0); });
-    expect(lost.finishCast).toHaveBeenCalledWith("c1", false);
+    expect(lost.finishCast).toHaveBeenCalledWith("c1", false, true); // v18.1: a lost reel was hooked
     expect(lost.toasts).toEqual(["Cá đã thoát!"]);
+  });
+
+  it("sends the cast's cell, and ends a shore cast nothing bites at its wait (v18.1)", async () => {
+    const s = setup(async () => answer({ spot: "shore", bites: false }), async () => ({ result: "lost", why: "no_bite", state: STATE }));
+    act(() => s.result.current.cast(SPOT));
+    expect(s.startCast).toHaveBeenCalledWith("r", { col: 31, row: 25 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3999); });
+    expect(s.result.current.view.phase).toBe("waiting");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(s.finishCast).toHaveBeenCalledWith("c1", false);
+    expect(s.toasts).toEqual(["Chẳng có cá nào cắn câu… ra cầu ao câu dễ hơn đó."]);
+    expect(phases(s.canvas.setFishing)).not.toContain("bite");
+  });
+
+  it("throws me into the pond when a big fish wins the reel (v18.1)", async () => {
+    const s = setup(async () => answer(), async () => ({
+      result: "lost", why: "overboard", state: STATE, anticheat: null, overboard: { rod: "rod_bamboo", rodLost: true, hunger: 10 },
+    }));
+    (s.canvas as unknown as { overboard: () => void }).overboard = vi.fn();
+    act(() => s.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    act(() => s.result.current.hook());
+    await act(async () => { s.result.current.reelDone(false); await vi.advanceTimersByTimeAsync(0); });
+    expect(s.finishCast).toHaveBeenCalledWith("c1", false, true);
+    expect((s.canvas as unknown as { overboard: ReturnType<typeof vi.fn> }).overboard).toHaveBeenCalledTimes(1);
+    expect(s.toasts).toEqual(["🌊 Cá lớn kéo bạn xuống ao! Mất cá, đói thêm 10. rod_bamboo trôi mất rồi…"]);
   });
 
   it("shows no lost toast when the reel came back as a strike (anti-cheat §12.1)", async () => {

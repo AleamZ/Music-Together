@@ -79,6 +79,16 @@ describe("DepotPanel", () => {
     render(<DepotPanel state={{ ...STATE, fish: [] }} catalog={CATALOG} busy={false} onSell={() => {}} onClose={() => {}} />);
     expect(screen.queryByRole("button", { name: /Bán hết/ })).toBeNull();
   });
+  it("shows Vựa cá Chợ Lớn's prices at ×1.2, rounded down, with the badge (v18.5)", () => {
+    const onSell = vi.fn();
+    render(<DepotPanel market state={STATE} catalog={CATALOG} busy={false} onSell={onSell} onClose={() => {}} />);
+    expect(screen.getByText("Giá chợ +20%")).toBeInTheDocument();
+    expect(screen.getByText("🐟 Vựa cá Chợ Lớn · chú Hai")).toBeInTheDocument();
+    expect(within(screen.getByText("Cá lóc").closest("li")!).getByText("86 xu")).toBeInTheDocument();
+    expect(within(screen.getByText("Cá rô đồng").closest("li")!).getByText("6 xu")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Bán hết (2 con · 92 xu)" }));
+    expect(onSell).toHaveBeenLastCalledWith(["f1", "f2"]);
+  });
 });
 
 describe("ShopPanel", () => {

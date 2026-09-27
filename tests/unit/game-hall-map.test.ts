@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { FIELD_WEST_ARRIVE, HALL_DOCK_ARRIVE, HALL_FIELD_ARRIVE, POND_ARRIVE } from "@/lib/game/maps/arrivals";
+import { FIELD_WEST_ARRIVE, HALL_DOCK_ARRIVE, HALL_FIELD_ARRIVE, HALL_MARKET_ARRIVE, MARKET_ARRIVE, POND_ARRIVE } from "@/lib/game/maps/arrivals";
 import { buildHallMap, CARD_DECK, CARD_SOLIDS, HALL_CELL, HALL_H, HALL_PROPS, HALL_SOLIDS, HALL_W, overlaps } from "@/lib/game/maps/hall";
 import { isBlockedAt } from "@/lib/game/movement";
 import { findPath } from "@/lib/game/pathfinding";
+import { PROMPT_RANGE } from "@/lib/game/scene";
 
 const hall = buildHallMap();
 
@@ -26,8 +27,18 @@ describe("hall map", () => {
   });
   it("has unique interactables: the three v13 ones, the v15 field sign and the v16 card corner", () => {
     expect(hall.interactables.map((i) => i.id).sort()).toEqual([
-      "cards_cao", "cards_poker", "cards_sign", "cards_tienlen", "dj_booth", "dock_sign", "field_sign", "notice_board",
+      "cards_cao", "cards_poker", "cards_sign", "cards_tienlen", "cards_xidach", "city_map", "dj_booth", "dock_sign", "field_sign", "hammock", "market_sign",
+      "news_stand", "notice_board",
     ]);
+  });
+  it("makes the market sign a portal to Chợ Lớn; the hall-side arrival is walkable, reachable and out of prompt range", () => {
+    const sign = hall.interactables.find((i) => i.id === "market_sign")!;
+    expect(sign).toMatchObject({ kind: "portal", to: { map: "market", arrive: MARKET_ARRIVE } });
+    expect(isBlockedAt(hall, HALL_MARKET_ARRIVE.x, HALL_MARKET_ARRIVE.y)).toBe(false);
+    expect(findPath(hall, hall.spawn, HALL_MARKET_ARRIVE)).not.toBeNull();
+    for (const i of hall.interactables) {
+      expect(Math.hypot(i.use.x - HALL_MARKET_ARRIVE.x, i.use.y - HALL_MARKET_ARRIVE.y), i.id).toBeGreaterThan(PROMPT_RANGE);
+    }
   });
   it("makes the field sign a portal to the field's west entrance", () => {
     const sign = hall.interactables.find((i) => i.id === "field_sign")!;
@@ -43,8 +54,9 @@ describe("hall map", () => {
     expect(pick("cards_tienlen")).toMatchObject({ kind: "card_table", game: "tienlen", label: "Bàn Tiến lên", prompt: "Vào bàn Tiến lên" });
     expect(pick("cards_cao")).toMatchObject({ kind: "card_table", game: "cao", label: "Chiếu Cào", prompt: "Vào chiếu Cào" });
     expect(pick("cards_poker")).toMatchObject({ kind: "card_table", game: "poker", label: "Bàn Poker", prompt: "Vào bàn Poker" });
+    expect(pick("cards_xidach")).toMatchObject({ kind: "card_table", game: "xidach", label: "Sòng Xì Dách", prompt: "Vào sòng Xì Dách" });
     expect(pick("cards_sign")).toMatchObject({ kind: "card_rules", label: "Góc đánh bài", prompt: "Đọc Sổ luật" });
-    for (const id of ["cards_tienlen", "cards_cao", "cards_poker", "cards_sign"]) {
+    for (const id of ["cards_tienlen", "cards_cao", "cards_poker", "cards_xidach", "cards_sign"]) {
       const it = pick(id);
       expect(overlaps(CARD_DECK, it.rect), id).toBe(true);
       expect(isBlockedAt(hall, it.use.x, it.use.y), id).toBe(false);
@@ -52,10 +64,10 @@ describe("hall map", () => {
         expect(findPath(hall, from, it.use), `${id} from ${JSON.stringify(from)}`).not.toBeNull();
       }
     }
-    expect(HALL_PROPS.filter((p) => p.kind === "card_table").map((p) => p.kind === "card_table" && p.game)).toEqual(["tienlen", "cao", "poker"]);
+    expect(HALL_PROPS.filter((p) => p.kind === "card_table").map((p) => p.kind === "card_table" && p.game)).toEqual(["tienlen", "cao", "poker", "xidach"]);
   });
   it("keeps the corner's tables off every other solid and off each other; the field sign stays reachable", () => {
-    const tables = CARD_SOLIDS.slice(0, 3);
+    const tables = CARD_SOLIDS.slice(0, 4);
     const others = HALL_SOLIDS.filter((s) => !CARD_SOLIDS.includes(s));
     for (const t of tables) {
       for (const s of others) expect(overlaps(t, s), JSON.stringify([t, s])).toBe(false);

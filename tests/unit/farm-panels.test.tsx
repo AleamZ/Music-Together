@@ -114,6 +114,19 @@ describe("RiceDepotPanel", () => {
     expect(screen.queryByRole("button", { name: /Bán/ })).toBeNull();
     expect(screen.getByText("“Chưa có lúa hay hoa màu hả con? Thu hoạch xong mang qua, cô trả giá cao!”")).toBeInTheDocument();
   });
+  it("pays ×1.2, rounded down, at Chợ Lớn's Vựa nông sản (v18.5)", () => {
+    const onSell = vi.fn();
+    render(<RiceDepotPanel market mine={STATE.mine} catalog={CATALOG} failed={false} busy={false} onSell={onSell} onSellProduce={noop}
+      onReload={noop} onClose={noop} />);
+    expect(screen.getByText("Giá chợ +20%")).toBeInTheDocument();
+    const dry = screen.getByText("Nếp khô · 50 kg").closest("li")!;
+    expect(within(dry).getByText("21,6 xu/kg")).toBeInTheDocument();
+    fireEvent.click(within(dry).getByRole("button", { name: "Bán · 216 xu" }));
+    expect(onSell).toHaveBeenLastCalledWith("nep", true, 10);
+    expect(within(dry).getByRole("button", { name: "Bán hết · 1.080 xu" })).toBeInTheDocument();
+    const wet = screen.getByText("Nếp ướt · 30 kg").closest("li")!;
+    expect(within(wet).getByRole("button", { name: "Bán hết · 453 xu" })).toBeInTheDocument();
+  });
 });
 
 describe("DryingPanel", () => {
