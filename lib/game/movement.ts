@@ -1,6 +1,9 @@
 import type { GameMap } from "@/lib/game/maps/types";
 import type { Facing, Vec } from "@/lib/game/types";
 
+/** What collision needs of a map: a walkable interior (v19.2) builds one from its furniture. */
+export type Grid = Pick<GameMap, "width" | "height" | "cell" | "cols" | "rows" | "blocked">;
+
 export const WALK_SPEED = 70; // px/s
 /** Feet collision box: x-3…x+3, y-3…y+1 (fits inside one 8-px cell when centred). */
 export const FOOT_HALF_W = 3;
@@ -10,13 +13,13 @@ const MAX_SUBSTEP = 4; // px — never tunnel through a thin wall on a slow fram
 
 export interface KeyState { up: boolean; down: boolean; left: boolean; right: boolean }
 
-export function cellBlocked(map: GameMap, c: number, r: number): boolean {
+export function cellBlocked(map: Grid, c: number, r: number): boolean {
   if (c < 0 || r < 0 || c >= map.cols || r >= map.rows) return true;
   return map.blocked[r * map.cols + c] === 1;
 }
 
 /** True if the feet box at (x, y) leaves the map or touches a blocked cell. */
-export function isBlockedAt(map: GameMap, x: number, y: number): boolean {
+export function isBlockedAt(map: Grid, x: number, y: number): boolean {
   const x0 = x - FOOT_HALF_W, x1 = x + FOOT_HALF_W, y0 = y - FOOT_UP, y1 = y + FOOT_DOWN;
   if (x0 < 0 || y0 < 0 || x1 > map.width || y1 > map.height) return true;
   const c0 = Math.floor(x0 / map.cell), c1 = Math.floor((x1 - 1e-6) / map.cell);
@@ -26,7 +29,7 @@ export function isBlockedAt(map: GameMap, x: number, y: number): boolean {
 }
 
 /** Move along `dir` (any length, normalized) for `dtSec`; x then y per sub-step so walls make you slide. */
-export function stepMove(map: GameMap, pos: Vec, dir: Vec, dtSec: number, speed = WALK_SPEED): Vec {
+export function stepMove(map: Grid, pos: Vec, dir: Vec, dtSec: number, speed = WALK_SPEED): Vec {
   const len = Math.hypot(dir.x, dir.y);
   if (len === 0 || dtSec <= 0) return { x: pos.x, y: pos.y };
   const total = speed * dtSec;

@@ -32,7 +32,7 @@ export default function DryingPanel({ state, catalog, failed, me, busy, now, onA
   // the server checks a full yard first, then my own batches (2 at a time)
   const limited = !full && (state?.drying.filter((d) => d.owner?.id === me).length ?? 0) >= DRYING_PER_ACCOUNT;
   return (
-    <ParchmentModal title="☀️ Sân phơi lúa" onClose={onClose}>
+    <ParchmentModal title="☀️ Sân phơi lúa" onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         {!state || !catalog ? (
           <FieldStatus failed={failed} onReload={onReload} />

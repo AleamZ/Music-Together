@@ -36,6 +36,7 @@ describe("the game and reaction budgets (anti-cheat spec §14)", () => {
     expect(GAME_LIMITS).toEqual({
       move: { rate: 5, burst: 5 }, hello: { rate: 0.1, burst: 1 }, bye: { rate: 0.1, burst: 1 },
       fs: { rate: 3, burst: 5 }, fa: { rate: 3, burst: 5 },
+      lift: { rate: 1, burst: 4 },                                          // v18.13 Đi nhờ xe
     });
     expect((["st", "mv", "pa", "hello", "bye", "fs", "fa", "lk", "fp"] as const).map(budgetKind))
       .toEqual(["move", "move", "move", "hello", "bye", "fs", "fa", null, null]);

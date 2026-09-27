@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
+import { UmbrellaShelf } from "@/components/game/rain/UmbrellaShelf";
 import { boxRow, describeFarmItem, ITEM_CAP, type FarmCatalog, type FarmItem } from "@/lib/game/farm/catalog";
 import { lowerFirst } from "@/lib/game/farm/gather";
 import { itemCount, type FarmMine } from "@/lib/game/farm/state";
@@ -160,7 +161,7 @@ export default function FarmShopPanel({ mine, catalog, failed, busy, onBuy, onRe
   onClose: () => void;
 }) {
   return (
-    <ParchmentModal title="🧺 Tiệm vật tư · anh Hai" onClose={onClose} className="max-w-2xl">
+    <ParchmentModal title="🧺 Tiệm vật tư · anh Hai" onClose={onClose} className="sm:max-w-5xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         {!mine || !catalog ? (
           <FieldStatus failed={failed} onReload={onReload} />
@@ -173,7 +174,7 @@ export default function FarmShopPanel({ mine, catalog, failed, busy, onBuy, onRe
               return (
                 <section key={id} className="flex flex-col gap-1">
                   <h3 className="text-xl text-burgundy">{title}</h3>
-                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {items.map((i) => (i.kind === "tool"
                       ? <ToolRow key={i.id} item={i} mine={mine} busy={busy} onBuy={onBuy} />
                       : i.kind === "critter_box"
@@ -185,6 +186,7 @@ export default function FarmShopPanel({ mine, catalog, failed, busy, onBuy, onRe
                 </section>
               );
             })}
+            <UmbrellaShelf />{/* v18.9 */}
           </>
         )}
       </div>

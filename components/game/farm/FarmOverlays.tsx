@@ -113,7 +113,13 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false, dog
         <FarmShopPanel mine={state?.mine ?? null} catalog={catalog} failed={failed} busy={busy}
           onBuy={(id, qty) => void farm.buy(id, qty)} onReload={onReload} onClose={closePanel} />
       )}
-      {panel?.kind === "depot" && (
+      {panel?.kind === "depot" && panel.market && (
+        // Vựa nông sản at Chợ Lớn (v18.5): rice and hoa màu at +20%; the crabs, snails and rats stay cô Út's
+        <RiceDepotPanel market mine={state?.mine ?? null} catalog={catalog} failed={failed} busy={busy}
+          onSell={(v, dry, kg) => void farm.sell(v, dry, kg, true)} onSellProduce={(u, kg) => void farm.sellProduce(u, kg, true)}
+          onReload={onReload} onClose={closePanel} />
+      )}
+      {panel?.kind === "depot" && !panel.market && (
         <RiceDepotPanel mine={state?.mine ?? null} catalog={catalog} failed={failed} busy={busy}
           onSell={(v, dry, kg) => void farm.sell(v, dry, kg)} onSellProduce={(u, kg) => void farm.sellProduce(u, kg)}
           critters={(catalog?.critters.length ?? 0) > 0

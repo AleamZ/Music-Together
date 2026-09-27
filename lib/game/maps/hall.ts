@@ -1,6 +1,10 @@
-import { FIELD_WEST_ARRIVE, HALL_FIELD_ARRIVE, POND_ARRIVE } from "./arrivals";
+import { FIELD_WEST_ARRIVE, HALL_FIELD_ARRIVE, MARKET_ARRIVE, POND_ARRIVE } from "./arrivals";
+import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, PropPlacement, Rect, Seating, Spot } from "./types";
+
+/** The city-map signpost near the way in (every map has one). */
+export const HALL_CITY_POST = cityMapPost(560, 296);
 
 export { overlaps };
 
@@ -14,7 +18,7 @@ export function hallShoreY(x: number): number {
 }
 
 /** Góc đánh bài (v16 spec §5): the plank deck in the south-west, between palm A and palm B. */
-export const CARD_DECK: Rect = { x: 62, y: 240, w: 182, h: 86 };
+export const CARD_DECK: Rect = { x: 62, y: 240, w: 236, h: 86 };
 
 /** Each card table's rect covers the table and its stools (west, east and south); the north side stays open for the use
  *  spot. Then the "Góc đánh bài" sign and the corner's light pole. */
@@ -22,11 +26,13 @@ export const CARD_SOLIDS: Rect[] = [
   { x: 78, y: 272, w: 40, h: 26 },    // Tiến lên table + 4 stools
   { x: 130, y: 296, w: 52, h: 26 },   // Cào mat + 6 cushions
   { x: 188, y: 272, w: 52, h: 27 },   // poker table + 6 stools
+  { x: 246, y: 272, w: 48, h: 24 },   // xidach table + 6 stools
   { x: 150, y: 242, w: 14, h: 10 },   // "Góc đánh bài" sign
-  { x: 238, y: 246, w: 4, h: 4 },     // light pole of the corner
+  { x: 296, y: 246, w: 4, h: 4 },     // light pole of the corner
 ];
 
 export const HALL_SOLIDS: Rect[] = [
+  HALL_CITY_POST.solid,               // the city-map signpost
   { x: 0, y: 0, w: 72, h: 150 },      // bamboo grove
   { x: 232, y: 0, w: 176, h: 140 },   // stage + backstage
   { x: 466, y: 0, w: 138, h: 106 },   // café counter "Quầy nước" + behind it
@@ -34,13 +40,14 @@ export const HALL_SOLIDS: Rect[] = [
   { x: 24, y: 322, w: 12, h: 8 },     // palm B trunk
   { x: 620, y: 120, w: 12, h: 8 },    // palm C trunk
   { x: 100, y: 188, w: 62, h: 14 },   // hammock
-  { x: 166, y: 196, w: 8, h: 8 },     // hammock post
   { x: 456, y: 192, w: 28, h: 12 },   // table 1
   { x: 546, y: 192, w: 28, h: 12 },   // table 2
   { x: 501, y: 250, w: 28, h: 12 },   // table 3
   { x: 584, y: 250, w: 24, h: 12 },   // notice board
+  { x: 408, y: 226, w: 24, h: 10 },   // Báo Làng news stand (v18.11)
   { x: 484, y: 314, w: 14, h: 10 },   // dock sign
   { x: 34, y: 222, w: 14, h: 10 },    // "Ra đồng" sign
+  { x: 614, y: 180, w: 14, h: 10 },   // "Chợ Lớn" sign (v18.4)
   { x: 204, y: 138, w: 12, h: 8 },    // banana plant west of the stage
   { x: 434, y: 132, w: 12, h: 8 },    // banana plant east of the stage
   { x: 158, y: 184, w: 4, h: 4 },     // light pole west
@@ -51,9 +58,17 @@ export const HALL_SOLIDS: Rect[] = [
 /** Walkable even over water. */
 export const HALL_WALKABLE: Rect[] = [{ x: 500, y: 316, w: 32, h: 84 }]; // wooden dock
 
+/** Võng: the fabric's box is the click target; you get in from the path south of it. */
+export const HALL_HAMMOCK: Interactable = {
+  id: "hammock", kind: "hammock", label: "Võng", prompt: "Nằm võng", rect: { x: 104, y: 172, w: 50, h: 24 }, use: { x: 128, y: 212 }, face: "up",
+};
+
 export const HALL_INTERACTABLES: Interactable[] = [
+  HALL_CITY_POST.interactable,
   { id: "dj_booth", kind: "dj_booth", label: "Quầy DJ", prompt: "Mở hàng đợi", rect: { x: 296, y: 106, w: 48, h: 34 }, use: { x: 320, y: 152 } },
   { id: "notice_board", kind: "notice_board", label: "Bảng tin", prompt: "Xem bảng tin", rect: { x: 582, y: 228, w: 28, h: 34 }, use: { x: 596, y: 270 } },
+  // v18.11: the village paper — dev blog and big events
+  { id: "news_stand", kind: "news_stand", label: "Báo Làng", prompt: "Đọc Báo Làng", rect: { x: 405, y: 200, w: 30, h: 36 }, use: { x: 420, y: 246 } },
   {
     id: "dock_sign", kind: "portal", label: "Bến câu cá", prompt: "Xuống ao câu cá", rect: { x: 482, y: 300, w: 18, h: 24 },
     use: { x: 516, y: 334 }, to: { map: "pond", arrive: POND_ARRIVE },
@@ -61,6 +76,10 @@ export const HALL_INTERACTABLES: Interactable[] = [
   {
     id: "field_sign", kind: "portal", label: "Ra đồng", prompt: "Ra đồng ruộng", rect: { x: 31, y: 206, w: 18, h: 26 },
     use: { x: HALL_FIELD_ARRIVE.x, y: HALL_FIELD_ARRIVE.y }, to: { map: "field", arrive: FIELD_WEST_ARRIVE },
+  },
+  {
+    id: "market_sign", kind: "portal", label: "Chợ Lớn", prompt: "Đi Chợ Lớn", rect: { x: 612, y: 170, w: 18, h: 24 },
+    use: { x: 604, y: 200 }, to: { map: "market", arrive: MARKET_ARRIVE },
   },
   {
     id: "cards_tienlen", kind: "card_table", game: "tienlen", label: "Bàn Tiến lên", prompt: "Vào bàn Tiến lên",
@@ -75,6 +94,12 @@ export const HALL_INTERACTABLES: Interactable[] = [
     rect: { x: 187, y: 268, w: 54, h: 31 }, use: { x: 214, y: 266 }, face: "down",
   },
   {
+    id: "cards_xidach", kind: "card_table", game: "xidach", label: "Sòng Xì Dách", prompt: "Vào sòng Xì Dách",
+    rect: { x: 245, y: 268, w: 50, h: 30 }, use: { x: 270, y: 266 }, face: "down",
+  },
+  // the hammock between palm A and the west light pole: lie down and swing (one at a time; the engine handles it)
+  HALL_HAMMOCK,
+  {
     id: "cards_sign", kind: "card_rules", label: "Góc đánh bài", prompt: "Đọc Sổ luật",
     rect: { x: 147, y: 226, w: 18, h: 26 }, use: { x: 156, y: 262 }, face: "up",
   },
@@ -88,7 +113,7 @@ export const HALL_SEATS: Spot[] = [
 ];
 export const HALL_STAND_SPOTS: Spot[] = [
   { x: 180, y: 172, dir: "down" }, { x: 452, y: 158, dir: "down" }, { x: 300, y: 300, dir: "left" },
-  { x: 430, y: 300, dir: "left" }, { x: 260, y: 306, dir: "up" }, { x: 380, y: 168, dir: "down" },
+  { x: 430, y: 300, dir: "left" }, { x: 340, y: 306, dir: "up" }, { x: 380, y: 168, dir: "down" },
 ];
 /** A classic-mode DJ is drawn on the stage behind the mixer. */
 export const HALL_DJ_SPOT: Spot = { x: 320, y: 124, dir: "down" };
@@ -97,18 +122,21 @@ export const HALL_SEATING: Seating = { djSpot: HALL_DJ_SPOT, seats: HALL_SEATS, 
 export const HALL_SPAWN: Spot = { x: 612, y: 300, dir: "left" };
 
 export const HALL_PROPS: PropPlacement[] = [
+  HALL_CITY_POST.prop,
   { kind: "palm", x: 90, y: 198, h: 72, lean: 0.35, seed: 3 },
   { kind: "palm", x: 30, y: 328, h: 64, lean: 0.45, seed: 7 },
   { kind: "palm", x: 626, y: 126, h: 70, lean: -0.5, seed: 11 },
-  { kind: "hammock", x: 96, y: 202, x2: 170 },
-  { kind: "post", x: 170, y: 204 },
+  // the hammock hangs from palm A to the west light pole (the pole is its east anchor)
+  { kind: "hammock", x: 96, y: 202, x2: 160 },
   { kind: "mixer", x: 320, y: 130 },
   { kind: "table", x: 470, y: 204 },
   { kind: "table", x: 560, y: 204 },
   { kind: "table", x: 515, y: 262 },
   { kind: "board", x: 596, y: 262 },
+  { kind: "news_stand", x: 420, y: 236 },
   { kind: "sign", x: 491, y: 324 },
   { kind: "sign", x: 40, y: 232, icon: "rice" },
+  { kind: "sign", x: 620, y: 190, icon: "market" },
   { kind: "banana", x: 210, y: 146 },
   { kind: "banana", x: 440, y: 140 },
   { kind: "lightpole", x: 160, y: 188 },
@@ -116,8 +144,9 @@ export const HALL_PROPS: PropPlacement[] = [
   { kind: "card_table", x: 98, y: 298, game: "tienlen" },
   { kind: "card_table", x: 156, y: 322, game: "cao" },
   { kind: "card_table", x: 214, y: 299, game: "poker" },
+  { kind: "card_table", x: 270, y: 298, game: "xidach" },
   { kind: "sign", x: 156, y: 252, icon: "cards" },
-  { kind: "lightpole", x: 240, y: 250 },
+  { kind: "lightpole", x: 298, y: 250 },
 ];
 
 /** Overhead string lights: [x1, y1, x2, y2, sag] in world px (drawn above everything). */
@@ -125,7 +154,7 @@ export const LIGHT_STRINGS: ReadonlyArray<readonly [number, number, number, numb
   [246, 24, 100, 128, 10],   // stage west pole → palm A crown
   [394, 24, 612, 58, 12],    // stage east pole → palm C crown
   [160, 152, 446, 134, 14],  // across the yard between the light poles
-  [100, 128, 240, 214, 10],  // palm A crown → the card corner's pole
+  [100, 128, 298, 209, 12],  // palm A crown → the card corner's pole (its lamp, since the deck grew east)
 ];
 
 export function buildHallMap(): GameMap {

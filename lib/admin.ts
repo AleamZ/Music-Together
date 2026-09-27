@@ -108,3 +108,12 @@ export async function adminAnticheatSetMode(token: string, mode: AnticheatMode):
   if (error) throw error;
   return data as { mode: AnticheatMode; mode_changed_at: string };
 }
+
+// v19.4: the real-estate sales between two accounts that had traded within 30 days before (the last 90 days).
+export interface EstateFlag { id: number; kind: "apt" | "lot"; no: number; price: number; appraisal: number; seller_name: string | null; buyer_name: string | null; sold_at: string }
+export async function adminEstateFlags(token: string): Promise<EstateFlag[]> {
+  const { data, error } = await supabase.rpc("admin_estate_flags", { p_session_token: token });
+  if (error) throw error;
+  const sales = (data as { sales?: unknown } | null)?.sales;
+  return Array.isArray(sales) ? (sales as EstateFlag[]) : [];
+}

@@ -5,6 +5,7 @@ import type { PlaybackController } from "@/hooks/usePlayback";
 import { formatClock } from "@/lib/format";
 import { computeElapsedMs } from "@/lib/identity";
 import type { QueueItem, Room } from "@/lib/supabase";
+import KeyBadge from "./KeyBadge";
 
 /** Top-right parchment card: what is playing, DJ transport (DJ only), volume, audio unlock, panel buttons.
  *  Under 640 px it collapses to a one-line chip (title, ▶/⏸ for the DJ, audio unlock) that expands on tap. */
@@ -106,8 +107,8 @@ export default function HudNowPlaying({ room, current, djName, canControl, playb
         )}
         {playback.playError && <p className="text-base text-burgundy-accent">{playback.playError}</p>}
         <div className="flex flex-wrap gap-1.5">
-          <button type="button" className="pch-btn" onClick={onOpenQueue}>📜 Hàng đợi</button>
-          <button type="button" className="pch-btn" onClick={onOpenBoard}>🏆 Bảng tin</button>
+          <button type="button" className="pch-btn relative" data-hotkey="queue" title="Hàng đợi (Q)" onClick={onOpenQueue}>📜 Hàng đợi<KeyBadge id="queue" /></button>
+          <button type="button" className="pch-btn relative" data-hotkey="board" title="Bảng tin (N)" onClick={onOpenBoard}>🏆 Bảng tin<KeyBadge id="board" /></button>
           {canOpenSettings && (
             <button type="button" className="pch-btn" onClick={onOpenSettings} aria-label="Cài đặt phòng">⚙️</button>
           )}

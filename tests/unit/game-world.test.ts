@@ -224,3 +224,27 @@ describe("RemoteWorld: farm animations", () => {
     expect(w.farmAnim("me", 20)).toBe(0);
   });
 });
+
+describe("RemoteWorld: riding (v18.7)", () => {
+  it("keeps the last vehicle from movement messages; a message without one is on foot; bye forgets it", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann")], 0);
+    expect(w.riding("ann")).toBeNull();
+    w.applyMessage({ ...st("ann", 100, 60), v: "car" } as GameMessage, 0);
+    expect(w.riding("ann")).toBe("car");
+    w.applyMessage(mv("ann", 100, 60), 100);
+    expect(w.riding("ann")).toBeNull();
+    w.applyMessage({ ...mv("ann", 100, 60), v: "bike" } as GameMessage, 200);
+    w.remove("ann");
+    expect(w.riding("ann")).toBeNull();
+  });
+  it("simulates a rider at the ride speed between messages", () => {
+    const w = new RemoteWorld(map, "me");
+    w.setRoster([walking("ann"), walking("bob")], 0);
+    w.applyMessage({ ...mv("ann", 40, 60), v: "car" } as GameMessage, 0);
+    w.applyMessage(mv("bob", 40, 100), 0);
+    w.tick(0.5, 500);
+    const ann = w.actors.get("ann")!.pos.x - 40, bob = w.actors.get("bob")!.pos.x - 40;
+    expect(ann / bob).toBeCloseTo(2.8, 5);
+  });
+});

@@ -1,8 +1,12 @@
 import { ANH_HAI_LOOK, CHU_TAM_LOOK, CO_UT_LOOK } from "@/lib/game/look";
 import type { Vec } from "@/lib/game/types";
 import { FIELD_EAST_ARRIVE, FIELD_WEST_ARRIVE, HALL_FIELD_ARRIVE, POND_FIELD_ARRIVE } from "./arrivals";
+import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, Npc, PlotGeom, PropPlacement, Rect } from "./types";
+
+/** The city-map signpost near the way in (every map has one). */
+export const FIELD_CITY_POST = cityMapPost(20, 144);
 
 // "Đồng ruộng": the room's rice field (spec §6.2). Pure layout + collision; the painter is field-art.ts.
 
@@ -58,6 +62,7 @@ export const DRYING_YARD: Rect = { x: 564, y: 384, w: 224, h: 72 };
 export const DRYING_SQUARES: Rect[] = [0, 1, 2, 3].map((i) => ({ x: 572 + i * 54, y: 392, w: 46, h: 56 }));
 
 export const FIELD_SOLIDS: Rect[] = [
+  FIELD_CITY_POST.solid,               // the city-map signpost
   { x: 0, y: 0, w: 800, h: 40 },      // bamboo and coconut palms along the north edge
   COOP, FARM_SHOP, RICE_DEPOT, PUMP_HOUSE,
   { x: 34, y: 94, w: 14, h: 10 },     // "Về sảnh" sign post
@@ -87,6 +92,7 @@ function gatherUse(kind: "crab_hole" | "snail_bed", rect: Rect, i: number): Inte
 }
 
 export const FIELD_INTERACTABLES: Interactable[] = [
+  FIELD_CITY_POST.interactable,
   {
     id: "field_to_hall", kind: "portal", label: "Về sảnh", prompt: "Về sảnh nhạc", rect: { x: 31, y: 78, w: 18, h: 26 },
     use: { x: FIELD_WEST_ARRIVE.x, y: FIELD_WEST_ARRIVE.y }, to: { map: "hall", arrive: HALL_FIELD_ARRIVE },
@@ -112,6 +118,7 @@ export const FIELD_NPCS: Npc[] = [
 ];
 
 export const FIELD_PROPS: PropPlacement[] = [
+  FIELD_CITY_POST.prop,
   { kind: "sign", x: 41, y: 104, icon: "note" },
   { kind: "sign", x: 784, y: 240, icon: "fish" },
   { kind: "coop_front", x: 736, y: 136 },

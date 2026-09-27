@@ -19,6 +19,7 @@ import {
 } from "@/lib/game/farm/messages";
 import type { CrabVisit, FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
 import { nearestRat } from "@/lib/game/farm/rats";
+import { marketPrice } from "@/lib/game/market/depots";
 import type { FieldState, PlotView } from "@/lib/game/farm/state";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId } from "@/lib/game/maps/types";
@@ -29,7 +30,8 @@ export type FarmPanel =
   | { kind: "plot"; plot: number }
   | { kind: "coop" }
   | { kind: "shop" }
-  | { kind: "depot" }
+  /** `market` (v18.5): Vựa nông sản at Chợ Lớn, rice and hoa màu only, +20%. */
+  | { kind: "depot"; market?: boolean }
   | { kind: "drying" }
   | { kind: "handbook"; tab: string | null }
   | { kind: "tasks" };
@@ -153,9 +155,10 @@ export interface FarmController {
    *  succeeds. */
   act: (a: PlotRun, done?: string) => Promise<boolean>;
   buy: (itemId: string, qty: number) => Promise<boolean>;
-  sell: (variety: string, dry: boolean, kg: number) => Promise<boolean>;
+  /** `market` (v18.5): to Vựa nông sản Chợ Lớn, +20%. */
+  sell: (variety: string, dry: boolean, kg: number, market?: boolean) => Promise<boolean>;
   loadSprayer: (itemId: string) => Promise<boolean>;
-  sellProduce: (upland: string, kg: number) => Promise<boolean>;
+  sellProduce: (upland: string, kg: number, market?: boolean) => Promise<boolean>;
   /** cô Út buys my critters of a kind, or all of them (null), at their stored prices (v15.3 §7.6). */
   sellCritters: (kind: string | null) => Promise<boolean>;
   /** cô Út buys my whole rat bag at the prices fixed at the catch (v17 §5.6). */
@@ -206,7 +209,9 @@ const ANIM: Partial<Record<FieldAction["kind"], FarmAnim>> = {
   prepare: FARM_ANIM.prepare, prepare_beds: FARM_ANIM.prepare, tend: FARM_ANIM.prepare, water: FARM_ANIM.pump, spray: FARM_ANIM.spray,
   fertilize: FARM_ANIM.fertilize, pick_snails: FARM_ANIM.snails,
 };
-const FIELD_KINDS: ReadonlySet<string> = new Set(["plot", "coop", "farm_shop", "rice_depot", "drying", "crab_hole", "snail_bed", "rat"]);
+const FIELD_KINDS: ReadonlySet<string> = new Set([
+  "plot", "coop", "farm_shop", "rice_depot", "drying", "crab_hole", "snail_bed", "rat", "market_farm_depot",
+]);
 /** A SlingGame re-sends its `fa 12` this often while it is open (§6.2, §11). */
 export const SLING_FA_MS = 2000;
 /** The auto-hunt looks for a rat this often (§7.2). */
@@ -260,7 +265,8 @@ function workLook(p: PlotView | undefined, catalog: FarmCatalog | null, plot: nu
  *  visits and the end of my harvesters. */
 export function useFarmController({ token, roomId, accountId, mapId, canvas, toast, onCoinsChanged }: FarmControllerOptions): FarmController {
   const active = mapId === "field";
-  const data = useField(roomId, token, active, toast);
+  // Chợ Lớn's Vựa nông sản (v18.5) needs my rice and hoa màu too: the field is fetched there as well
+  const data = useField(roomId, token, active || mapId === "market", toast);
   const { state, catalog, notOpen, run, claimGift, buyItem, sellRice, reload, crabStart, crabFinish, pickSnailBed, slingStart, slingShoot, dogHunt } = data;
   const [panel, setPanel] = useState<FarmPanel | null>(null);
   const [busy, setBusy] = useState(false);
@@ -819,16 +825,17 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       setBusy(false);
     }
   }, [buyItem]);
-  const sell = useCallback(async (variety: string, dry: boolean, kg: number): Promise<boolean> => {
+  const sell = useCallback(async (variety: string, dry: boolean, kg: number, market = false): Promise<boolean> => {
     setBusy(true);
     try {
       const before = live.current.state?.mine.coins ?? 0;
-      const r = await sellRice(variety, dry, kg);
+      const r = await sellRice(variety, dry, kg, market);
       const v = live.current.catalog?.varieties.find((x) => x.id === variety);
       const name = v?.name ?? variety;
       // What sell_rice paid, by its own arithmetic. The wallet is shared with fishing and moves without a field answer
       // (a song bonus, another tab's sale, a buyer of my plot), so its change is only the fallback for an unknown variety.
-      if (r) live.current.toast(riceSaleText(kg, name, dry, v ? ricePrice(kg, v.pricePerKg, dry) : r.mine.coins - before));
+      const paid = v ? ricePrice(kg, v.pricePerKg, dry) : null;
+      if (r) live.current.toast(riceSaleText(kg, name, dry, paid === null ? r.mine.coins - before : market ? marketPrice(paid) : paid));
       return r !== null;
     } finally {
       setBusy(false);
@@ -846,13 +853,14 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       setBusy(false);
     }
   }, [loadTank]);
-  const sellProduce = useCallback(async (upland: string, kg: number): Promise<boolean> => {
+  const sellProduce = useCallback(async (upland: string, kg: number, market = false): Promise<boolean> => {
     setBusy(true);
     try {
       const before = live.current.state?.mine.coins ?? 0;
       const u = live.current.catalog?.uplands.find((x) => x.id === upland);
-      const r = await sellCrop(upland, kg);
-      if (r) live.current.toast(produceSaleText(kg, u?.name ?? upland, u ? producePrice(kg, u) : r.mine.coins - before));
+      const r = await sellCrop(upland, kg, market);
+      const paid = u ? producePrice(kg, u) : null;
+      if (r) live.current.toast(produceSaleText(kg, u?.name ?? upland, paid === null ? r.mine.coins - before : market ? marketPrice(paid) : paid));
       return r !== null;
     } finally {
       setBusy(false);
@@ -901,6 +909,9 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
         break;
       case "rice_depot":
         setPanel({ kind: "depot" });
+        break;
+      case "market_farm_depot":
+        setPanel({ kind: "depot", market: true });
         break;
       case "drying":
         setPanel({ kind: "drying" });

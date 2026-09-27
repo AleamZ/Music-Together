@@ -11,11 +11,17 @@ export const PROMPT_RANGE = 26;
 
 export interface ViewSize { scale: number; vw: number; vh: number }
 
-/** Integer scale for a devW×devH (device px) canvas, plus the visible world size. Never shows past the map. */
-export function computeView(devW: number, devH: number, mapW: number, mapH: number): ViewSize {
-  let scale = Math.max(1, Math.floor(Math.min(devW / TARGET_W, devH / TARGET_H)));
-  // tall phone screens would otherwise see empty bands above and below the map
-  while (Math.ceil(devW / scale) > mapW || Math.ceil(devH / scale) > mapH) scale++;
+/** Integer scale for a devW×devH (device px) canvas, plus the visible world size. Never shows past the map.
+ *  `zoomLevel` (< 1 zooms out / wider view, > 1 zooms in). Defaults to 1. */
+export function computeView(devW: number, devH: number, mapW: number, mapH: number, zoomLevel = 1): ViewSize {
+  const safeZoom = Math.max(0.2, Math.min(2.5, zoomLevel));
+  const tw = TARGET_W / safeZoom;
+  const th = TARGET_H / safeZoom;
+  let scale = Math.max(1, Math.floor(Math.min(devW / tw, devH / th)));
+  // Never show past the map: ensure vw <= mapW and vh <= mapH on every map and zoom level
+  while (Math.ceil(devW / scale) > mapW || Math.ceil(devH / scale) > mapH) {
+    scale++;
+  }
   return { scale, vw: Math.ceil(devW / scale), vh: Math.ceil(devH / scale) };
 }
 

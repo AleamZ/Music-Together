@@ -36,12 +36,13 @@ describe("hall art (pure parts)", () => {
   it("draws the clickable things where their interaction rects are", () => {
     expect(contains(target("dj_booth"), box(prop("mixer")))).toBe(true);
     expect(box(prop("board"))).toEqual(target("notice_board"));
+    expect(box(prop("news_stand"))).toEqual(target("news_stand"));
     expect(contains(box(prop("sign")), target("dock_sign"))).toBe(true);
   });
 
   it("draws the card tables and the corner's sign where their interaction rects are (v16 spec §5)", () => {
     const tables = HALL_PROPS.filter((p) => p.kind === "card_table");
-    expect(tables.map(box)).toEqual(["cards_tienlen", "cards_cao", "cards_poker"].map(target));
+    expect(tables.map(box)).toEqual(["cards_tienlen", "cards_cao", "cards_poker", "cards_xidach"].map(target));
     const sign = HALL_PROPS.find((p) => p.kind === "sign" && p.icon === "cards")!;
     expect(box(sign)).toEqual(target("cards_sign"));
   });

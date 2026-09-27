@@ -20,7 +20,7 @@ describe("pond map", () => {
     expect(pond.seating).toBeNull();
     expect(pond.spawn).toEqual(POND_ARRIVE);
     expect(pond.interactables.map((i) => i.id).sort()).toEqual([
-      "depot", "dig_1", "dig_2", "dig_3", "dig_4", "field_bridge", "fish_1", "fish_2", "fish_3", "fish_4", "fish_5", "fish_6",
+      "city_map", "depot", "dig_1", "dig_2", "dig_3", "dig_4", "field_bridge", "fish_1", "fish_2", "fish_3", "fish_4", "fish_5", "fish_6",
       "pond_exit", "records", "shop",
     ]);
   });

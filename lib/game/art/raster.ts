@@ -1,11 +1,21 @@
 import type { Facing, Look } from "@/lib/game/types";
-import { composeMatrix, lookKey } from "./compose";
-import { SPRITE_H, SPRITE_W, type Frame } from "./layers";
+import type { Lower } from "./body";
+import { armColoursOf, composeMatrix, lookKey, lowerOf } from "./compose";
+import { FRAMES, SPRITE_H, SPRITE_W } from "./layers";
 
+// what each character frame wears below the hips (the seated rider needs it: legs, or a skirt over the lap)
+const lowers = new WeakMap<object, Lower>();
+export const tagLower = (frame: object, lower: Lower): void => { lowers.set(frame, lower); };
+export const lowerOfFrame = (frame: object): Lower | null => lowers.get(frame) ?? null;
+// and its arm colours (sleeve, skin), for the seated rider's redrawn arms
+const arms = new WeakMap<object, { sleeve: string; skin: string }>();
+export const tagArms = (frame: object, colours: { sleeve: string; skin: string }): void => { arms.set(frame, colours); };
+export const armsOfFrame = (frame: object): { sleeve: string; skin: string } | null => arms.get(frame) ?? null;
+
+/** Per facing, one canvas per pose frame (see `Frame`: idle, the four walk frames, idle breath). */
 export type CharacterFrames = Record<Facing, HTMLCanvasElement[]>;
 
 const FACINGS: Facing[] = ["down", "up", "left", "right"];
-const FRAMES: Frame[] = [0, 1, 2, 3];
 const MAX_CACHED = 64;
 const cache = new Map<string, CharacterFrames>();
 
@@ -23,7 +33,7 @@ export function matrixToCanvas(m: string[][]): HTMLCanvasElement {
   return cv;
 }
 
-/** Pre-rendered 24×48 canvases for every facing × walk frame, LRU-cached per look. */
+/** Pre-rendered 24×48 canvases for every facing × pose frame (4 × 6), LRU-cached per look. */
 export function getCharacterFrames(look: Look): CharacterFrames {
   const key = lookKey(look);
   const hit = cache.get(key);
@@ -33,7 +43,13 @@ export function getCharacterFrames(look: Look): CharacterFrames {
     return hit;
   }
   const frames = {} as CharacterFrames;
-  for (const f of FACINGS) frames[f] = FRAMES.map((fr) => matrixToCanvas(composeMatrix(look, f, fr)));
+  const lower = lowerOf(look), armCols = armColoursOf(look);
+  for (const f of FACINGS) frames[f] = FRAMES.map((fr) => {
+    const cv = matrixToCanvas(composeMatrix(look, f, fr));
+    tagLower(cv, lower);
+    tagArms(cv, armCols);
+    return cv;
+  });
   cache.set(key, frames);
   if (cache.size > MAX_CACHED) {
     const oldest = cache.keys().next().value;

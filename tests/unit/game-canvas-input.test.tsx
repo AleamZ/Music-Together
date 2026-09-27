@@ -11,6 +11,10 @@ type EngineRec = {
   hellos: string[]; removed: string[]; destroyed: boolean;
   // v17: what setLocal, setRats and the dog calls received
   locals: unknown[]; rats: unknown[]; pounces: number[]; recalls: number; pets: number;
+  // v18.7: what setRiding received
+  riding: unknown[];
+  // v18.13: what setLift received
+  lifts: unknown[];
   cb: { onLocalMove: (m: unknown) => void; onLocalPath: (m: unknown) => void; onInput?: () => void };
 };
 const { engines, channels, replies } = vi.hoisted(() => ({
@@ -25,7 +29,7 @@ vi.mock("@/lib/game/engine", () => ({
     constructor(_canvas: unknown, map: { id: string }, _art: unknown, cb: EngineRec["cb"]) {
       this.rec = {
         mapId: map.id, input: [], plots: [], cards: [], spots: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false,
-        locals: [], rats: [], pounces: [], recalls: 0, pets: 0, cb,
+        locals: [], rats: [], pounces: [], recalls: 0, pets: 0, riding: [], lifts: [], cb,
       };
       engines.push(this.rec);
     }
@@ -48,6 +52,26 @@ vi.mock("@/lib/game/engine", () => ({
     localPos() {
       return { x: 5, y: 6 };
     }
+    setSpeedFactor() {}
+    setWeather() {}
+    setWeatherFx() {}
+    setLift(l: { role: string; peer: string } | null) {
+      this.rec.lifts.push(l);
+      // like the real engine: the lift is announced at once
+      if (l) this.rec.cb.onLocalMove({ x: 5, y: 6, ...(l.role === "driver" ? { ps: l.peer } : { lf: l.peer }) });
+    }
+    liftCandidate() {
+      return { id: "dan", name: "Dan" };
+    }
+    nearForLift(id: string) {
+      return id === "dan";
+    }
+    setPet() {}
+    setRiding(v: unknown) {
+      this.rec.riding.push(v);
+      // like the real engine: mounting announces my state at once
+      if (v) this.rec.cb.onLocalMove({ x: 5, y: 6, v });
+    }
     setInputEnabled(enabled: boolean) {
       this.rec.input.push(enabled);
     }
@@ -57,6 +81,8 @@ vi.mock("@/lib/game/engine", () => ({
     setCardTables(labels: unknown) {
       this.rec.cards.push(labels);
     }
+    setNewsUnread() {}
+    setHouses() {}                                                                   // v19.3
     setGatherSpots(spots: unknown) {
       this.rec.spots.push(spots);
     }
@@ -158,6 +184,76 @@ describe("GameCanvas input lock across travel", () => {
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
     expect(engines.map((e) => e.mapId)).toEqual(["hall", "pond", "hall"]);
     expect(engines[2].input.at(-1)).toBe(true);
+  });
+});
+
+describe("GameCanvas riding across travel (v18.7)", () => {
+  it("passes the vehicle on at once and gives it to the next map's engine", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[0].riding.at(-1)).toBeNull();
+    ref.current!.setRiding("moto");
+    expect(engines[0].riding.at(-1)).toBe("moto");
+    // riding through a portal: the new map's engine gets the vehicle and announces it on the new channel (this used to
+    // throw — the announcement ran before the channel existed — and crash the game view)
+    rerender(<GameCanvas ref={ref} mapId="market" {...props} />);
+    expect(engines[1].riding.at(-1)).toBe("moto");
+    expect(channels.at(-1)!.sent).toContainEqual(expect.objectContaining({ t: "mv", v: "moto" }));
+    ref.current!.setRiding(null);
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[2].riding.at(-1)).toBeNull();
+  });
+});
+
+describe("GameCanvas lifts (v18.13)", () => {
+  it("keeps a passenger's lift through a portal: the new engine gets it after its channel exists and announces it there", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[0].lifts.at(-1)).toBeNull();
+    ref.current!.setLift({ role: "passenger", peer: "dan" });
+    expect(engines[0].lifts.at(-1)).toEqual({ role: "passenger", peer: "dan" });
+    // the driver rides on to the market: this used to be the crash spot for setRiding (announcing before the channel)
+    rerender(<GameCanvas ref={ref} mapId="market" {...props} />);
+    expect(engines[1].lifts.at(-1)).toEqual({ role: "passenger", peer: "dan" });
+    expect(channels.at(-1)!.sent).toContainEqual(expect.objectContaining({ t: "mv", lf: "dan" }));
+    ref.current!.setLift(null);
+    rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    expect(engines[2].lifts.at(-1)).toBeNull();
+  });
+  it("a driver keeps the vehicle and the passenger together in the next world", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    ref.current!.setRiding("moto");
+    ref.current!.setLift({ role: "driver", peer: "pia" });
+    rerender(<GameCanvas ref={ref} mapId="market" {...props} />);
+    expect(engines[1]).toMatchObject({ riding: ["moto"], lifts: [{ role: "driver", peer: "pia" }] });
+    expect(channels.at(-1)!.sent).toContainEqual(expect.objectContaining({ ps: "pia" }));
+  });
+  it("sends lift messages with my id and passes on only those addressed to me, within the budget", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const onLift = vi.fn();
+    render(<GameCanvas ref={ref} mapId="hall" {...props} onLift={onLift} />);
+    ref.current!.sendLift({ t: "rq", to: "dan" });
+    expect(channels[0].sent).toContainEqual({ t: "rq", to: "dan", id: "me" });
+    channels[0].onMessage({ t: "rq", id: "pia", to: "me" });
+    channels[0].onMessage({ t: "rq", id: "pia", to: "bob" });
+    channels[0].onMessage({ t: "lg", id: "dan", to: "me", m: "market" });
+    expect(onLift.mock.calls.map((c) => c[0].t)).toEqual(["rq", "lg"]);
+    for (let i = 0; i < 6; i++) channels[0].onMessage({ t: "rx", id: "zed", to: "me" });
+    expect(onLift.mock.calls.filter((c) => c[0].id === "zed")).toHaveLength(4);
+    expect(engines[0].applied).toEqual([]);
+    expect(ref.current!.liftCandidate()).toEqual({ id: "dan", name: "Dan" });
+    expect(ref.current!.nearForLift("dan")).toBe(true);
+  });
+  it("tells the shell when the engine ends the lift, and forgets it for the next world", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const onLiftLost = vi.fn();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} onLiftLost={onLiftLost} />);
+    ref.current!.setLift({ role: "passenger", peer: "dan" });
+    (engines[0].cb as unknown as { onLiftLost: () => void }).onLiftLost();
+    expect(onLiftLost).toHaveBeenCalled();
+    rerender(<GameCanvas ref={ref} mapId="pond" {...props} onLiftLost={onLiftLost} />);
+    expect(engines[1].lifts.at(-1)).toBeNull();
   });
 });
 

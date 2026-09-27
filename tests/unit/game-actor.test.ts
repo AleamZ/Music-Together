@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { applyPathMsg, applyStateMsg, createActor, setKeyboard, setPath, tickActor, walkFrame } from "@/lib/game/actor";
+import { WALK_SPEED } from "@/lib/game/movement";
 import { mapFromAscii } from "./helpers/ascii-map";
 
 const open = mapFromAscii(Array(10).fill(".........."));
@@ -23,6 +24,17 @@ describe("paths", () => {
     setKeyboard(a, { x: -1, y: 0 });
     expect(a.path).toBeNull();
     expect(a.facing).toBe("left");
+  });
+  it("walks slower with a lower speed", () => {
+    const start = { x: 20, y: 40 };
+    const a = createActor("a", start);
+    const b = createActor("b", start);
+    setKeyboard(a, { x: 1, y: 0 });
+    setKeyboard(b, { x: 1, y: 0 });
+    tickActor(open, a, 0.2, 0, false);
+    tickActor(open, b, 0.2, 0, false, WALK_SPEED * 0.6);
+    expect(Math.abs(b.pos.x - start.x)).toBeGreaterThan(0);
+    expect(Math.abs(b.pos.x - start.x)).toBeCloseTo(Math.abs(a.pos.x - start.x) * 0.6, 0);
   });
 });
 
@@ -59,11 +71,11 @@ describe("remote players", () => {
 });
 
 describe("walkFrame", () => {
-  it("is 0 when idle and cycles 0-3 at 8 fps while walking", () => {
+  it("is 0 when idle and walks the cycle 1-4 at 8 fps", () => {
     const a = createActor("a", { x: 40, y: 40 });
     expect(walkFrame(a)).toBe(0);
     setKeyboard(a, { x: 1, y: 0 });
     tickActor(open, a, 0.13, 130, false);
-    expect(walkFrame(a)).toBe(1);
+    expect(walkFrame(a)).toBe(2);
   });
 });

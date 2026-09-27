@@ -49,7 +49,12 @@ export type CardAction =
   | { kind: "tl_play"; seq: number; cards: number[] }
   | { kind: "tl_pass"; seq: number }
   | { kind: "cao_deal"; seq: number }
-  | { kind: "pk_act"; seq: number; action: "fold" | "check" | "call" | "bet" | "raise" | "allin"; amount: number | null };
+  | { kind: "pk_act"; seq: number; action: "fold" | "check" | "call" | "bet" | "raise" | "allin"; amount: number | null }
+  | { kind: "xidach_deal"; seq: number }
+  | { kind: "xidach_ready"; seq: number }
+  | { kind: "xidach_hit"; seq: number }
+  | { kind: "xidach_stand"; seq: number }
+  | { kind: "xidach_inspect"; seq: number; targetSeat: number | null };
 
 /** The RPC name and its own arguments for an action at `game`'s table. */
 export function cardActionCall(game: CardGame, a: CardAction): [string, Record<string, unknown>] {
@@ -61,6 +66,11 @@ export function cardActionCall(game: CardGame, a: CardAction): [string, Record<s
     case "tl_pass": return ["tl_pass", { p_seq: a.seq }];
     case "cao_deal": return ["cao_deal", { p_seq: a.seq }];
     case "pk_act": return ["pk_act", { p_seq: a.seq, p_action: a.action, p_amount: a.amount }];
+    case "xidach_deal": return ["xidach_deal", { p_seq: a.seq }];
+    case "xidach_ready": return ["xidach_ready", { p_seq: a.seq }];
+    case "xidach_hit": return ["xidach_hit", { p_seq: a.seq }];
+    case "xidach_stand": return ["xidach_stand", { p_seq: a.seq }];
+    case "xidach_inspect": return ["xidach_inspect", { p_seq: a.seq, p_seat: a.targetSeat }];
   }
 }
 

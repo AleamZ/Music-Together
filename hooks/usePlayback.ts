@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
+import { takeDucked } from "@/lib/game/housing/duck";
 import { computeElapsedMs } from "@/lib/identity";
 import { needsResync, shouldPlay, targetSeconds } from "@/lib/playback-sync";
 import { advanceQueue, seekPlayback, setPlayback, type QueueItem, type Room } from "@/lib/supabase";
@@ -107,6 +108,9 @@ export function usePlayback({
 
   // Restore saved volume once.
   useEffect(() => {
+    // v19.3: a tab closed while the apartment TV had ducked the room: back to the volume it ducked from
+    const ducked = takeDucked();
+    if (ducked !== null) localStorage.setItem(VOL_KEY, String(ducked));
     const raw = localStorage.getItem(VOL_KEY);
     const v = raw === null ? NaN : Number(raw);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from localStorage

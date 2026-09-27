@@ -1,10 +1,13 @@
 import { CARD_DECK, HALL_H, HALL_W, LIGHT_STRINGS, hallShoreY } from "./hall";
 import { propSprite } from "./props";
-import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt } from "./scene-art";
+import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type SceneArt, type SceneLight } from "./scene-art";
 import type { GameMap } from "./types";
 
 // Procedural painters for the hall ("quán cà phê võng ven sông"). Browser only (canvas). Props live in props.ts,
 // shared helpers in scene-art.ts. Original art in the approved Miền Tây style — no copied images.
+
+/** The card deck's floor lanterns (đèn lồng) at its corners — painted on the deck and lit at night from the same list. */
+const DECK_LANTERNS: ReadonlyArray<readonly [number, number]> = [[68, 246], [286, 246], [70, 312]];
 
 // ---------------------------------------------------------------- ground
 
@@ -191,7 +194,7 @@ function paintCardCorner(c: Ctx): void {
   for (let y = y0; y < bottom(x0); y++) rope(x0, y, y);
   for (let y = y0; y < bottom(x0 + w - 1); y++) rope(x0 + w - 1, y, y);
   // floor lanterns (đèn lồng) at the corners
-  for (const [lx, ly] of [[68, 246], [237, 246], [70, 312]] as const) {
+  for (const [lx, ly] of DECK_LANTERNS) {
     rect(c, C.outline, lx - 2, ly - 5, 5, 7);
     rect(c, C.red, lx - 1, ly - 4, 3, 5); rect(c, C.goldLight, lx, ly - 3, 1, 3);
     rect(c, C.gold, lx - 1, ly - 6, 3, 1); rect(c, C.gold, lx - 1, ly + 2, 3, 1);
@@ -256,5 +259,25 @@ export function paintHall(map: GameMap): SceneArt {
     });
   };
 
-  return { background, props, edge: C.waterDeep, drawAnimated, drawOverhead };
+  return { background, props, edge: C.waterDeep, drawAnimated, drawOverhead, lights: HALL_LIGHTS, moon: { x: 420, y: hallShoreY(420) + 30, w: 16 } };
 }
+
+/** v18.8 night lights: the light poles' lamps (with a pool on the ground), the card corner's floor lanterns, the stage,
+ *  the counter, and a small glow at every third bulb of the string lights. */
+const HALL_LIGHTS: ReadonlyArray<SceneLight> = [
+  ...[[160, 188], [446, 170], [298, 250]].flatMap(([x, y]): SceneLight[] => [
+    { x, y: y - 41, r: 16, hue: "warm" }, { x, y: y - 6, r: 46, hue: "warm" },
+  ]),
+  ...DECK_LANTERNS.map(([x, y]): SceneLight => ({ x, y: y - 1, r: 22, hue: "lantern" })),
+  { x: 320, y: 78, r: 54, hue: "cool" },
+  { x: 535, y: 100, r: 60, hue: "warm" },
+  ...LIGHT_STRINGS.flatMap(([x1, y1, x2, y2, sag]) => {
+    const n = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+    const out: SceneLight[] = [];
+    for (let i = 3; i <= n; i += 21) {
+      const f = i / n;
+      out.push({ x: Math.round(x1 + (x2 - x1) * f), y: Math.round(y1 + (y2 - y1) * f + sag * Math.sin(Math.PI * f)) + 2, r: 10, hue: "warm" });
+    }
+    return out;
+  }),
+];

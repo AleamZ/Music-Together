@@ -6,7 +6,8 @@ import type { FishingData } from "@/hooks/useFishing";
 import { canHook, reelParamsFor, type CastInfo } from "@/lib/game/fishing/cast";
 import { RARITY_COLOR } from "@/lib/game/fishing/catalog";
 import { SWING_MS } from "@/lib/game/fishing/geometry";
-import { BAIT_SWITCHED, lostText } from "@/lib/game/fishing/messages";
+import { BAIT_SWITCHED, lostText, overboardText, ROD_BROKE } from "@/lib/game/fishing/messages";
+import { cellOf } from "@/lib/game/fishing/shore";
 import type { ReelParams } from "@/lib/game/fishing/reel";
 import type { CaughtFish } from "@/lib/game/fishing/rpc";
 import { handFish } from "@/lib/game/fishing/state";
@@ -50,19 +51,23 @@ interface Live {
 }
 
 /** One cast at a time: start_cast → swing → wait → bite → hook → reel → finish_cast (spec §6.1). */
-export function useCastSession({ roomId, data, canvas, toast }: {
+export function useCastSession({ roomId, data, canvas, toast, itemName }: {
   roomId: string;
   data: Pick<FishingData, "startCast" | "finishCast">;
   canvas: () => GameCanvasHandle | null;
   toast: (text: string) => void;
+  /** v18.1: a shop item's display name (a rod lost in the pond); the id by default. */
+  itemName?: (id: string) => string;
 }): CastSession {
   const [view, setView] = useState<CastView>({ phase: "idle" });
   const [caught, setCaught] = useState<{ fish: CaughtFish; record: boolean } | null>(null);
   const live = useRef<Live | null>(null);
   const { startCast, finishCast } = data;
   const toastRef = useRef(toast);
+  const itemNameRef = useRef<(id: string) => string>((id) => id);
   useEffect(() => {
     toastRef.current = toast;
+    itemNameRef.current = itemName ?? ((id) => id);
   });
 
   const clearTimers = (l: Live) => {
@@ -70,13 +75,14 @@ export function useCastSession({ roomId, data, canvas, toast }: {
     l.timers = [];
   };
 
-  const end = useCallback(async (success: boolean, cause: "missed" | "reeled_in" | "reel") => {
+  const end = useCallback(async (success: boolean, cause: "missed" | "reeled_in" | "reel" | "nobite") => {
     const l = live.current;
     if (!l?.info) return;
     live.current = null;
     clearTimers(l);
     setView({ phase: "finishing" });
-    const r = await finishCast(l.info.castId, success);
+    // v18.1: a reel lost after the hook tells the server so (a big fish may pull me in)
+    const r = cause === "reel" && !success ? await finishCast(l.info.castId, false, true) : await finishCast(l.info.castId, success);
     setView({ phase: "idle" });
     if (!r) {
       canvas()?.setFishing({ phase: "idle" });
@@ -85,11 +91,17 @@ export function useCastSession({ roomId, data, canvas, toast }: {
     if (r.result === "caught") {
       canvas()?.landCatch(r.fish.speciesId, r.fish.weightG, handFish(r.state)?.speciesId ?? null);
       setCaught({ fish: r.fish, record: r.record });
+    } else if (r.overboard) {
+      // v18.1: into the pond — swim mode until I climb onto the bank
+      canvas()?.setFishing({ phase: "idle" });
+      canvas()?.overboard();
+      toastRef.current(overboardText(r.overboard.hunger, r.overboard.rodLost ? itemNameRef.current(r.overboard.rod) : null));
     } else {
       canvas()?.setFishing({ phase: "idle" });
       // a reel reported too fast as a strike: the warning or the ban modal shows instead (anti-cheat §12.1)
       if ((r.anticheat?.strike ?? 0) < 1) toastRef.current(lostText(cause, success ? r.why : null, r.state.fishCap));
     }
+    if (r.rodBroke) toastRef.current(ROD_BROKE);                                          // v18.2
   }, [canvas, finishCast]);
 
   const cast = useCallback((spot: Interactable) => {
@@ -100,7 +112,7 @@ export function useCastSession({ roomId, data, canvas, toast }: {
     canvas()?.plant(spot.use, spot.face ?? "up");
     canvas()?.setFishing({ phase: "casting" });
     setView({ phase: "casting" });
-    void startCast(roomId).then((r) => {
+    void startCast(roomId, cellOf(spot.use)).then((r) => {
       if (live.current !== l) return;
       if (!r) {
         // start_cast refused (the toast is shown): the rod comes back in
@@ -111,7 +123,7 @@ export function useCastSession({ roomId, data, canvas, toast }: {
       }
       const info: CastInfo = {
         castId: r.castId, biteMs: r.biteMs, windowMs: r.windowMs, difficulty: r.difficulty, minReelMs: r.minReelMs,
-        zonePct: r.zonePct, rarity: r.rarity,
+        zonePct: r.zonePct, rarity: r.rarity, bites: r.bites,
       };
       l.info = info;
       l.answeredAt = performance.now();
@@ -127,6 +139,11 @@ export function useCastSession({ roomId, data, canvas, toast }: {
         canvas()?.setFishing({ phase: "waiting" });
         setView({ phase: "waiting", info });
       }, swingLeft));
+      if (!r.bites) {
+        // v18.1: a shore cast nothing bites — the bobber just sits until the wait is over
+        l.timers.push(setTimeout(() => void end(false, "nobite"), Math.max(swingLeft, info.biteMs)));
+        return;
+      }
       l.timers.push(setTimeout(() => {
         canvas()?.setFishing({ phase: "bite", tint: info.rarity ? RARITY_COLOR[info.rarity] : null, glow: bobber === "bobber_lamp" });
         setView({ phase: "bite", info });

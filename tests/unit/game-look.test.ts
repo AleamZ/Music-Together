@@ -24,15 +24,16 @@ describe("validateLook", () => {
     expect(validateLook({ ...DEFAULT_LOOK, top: "nope" }, catalog)).toBe("slot");
     expect(validateLook({ ...DEFAULT_LOOK, top: "top_gold" }, catalog)).toBe("slot");
   });
-  it("requires top, bottom and shoes", () => {
-    expect(validateLook({ ...DEFAULT_LOOK, top: null as never }, catalog)).toBe("missing");
+  it("requires shoes; top and bottom may be empty (0029)", () => {
+    expect(validateLook({ ...DEFAULT_LOOK, shoes: null as never }, catalog)).toBe("missing");
+    expect(validateLook({ ...DEFAULT_LOOK, top: null, bottom: null }, catalog)).toBeNull();
   });
 });
 
 describe("lookFromRow", () => {
   it("maps snake_case columns", () => {
     expect(lookFromRow({ account_id: "a", skin: "tan", hair: "bob", hair_color: "pink", hat: null, top: "t", bottom: "b", shoes: "s", neck: null }))
-      .toEqual({ skin: "tan", hair: "bob", hairColor: "pink", hat: null, top: "t", bottom: "b", shoes: "s", neck: null });
+      .toEqual({ skin: "tan", hair: "bob", hairColor: "pink", hat: null, top: "t", bottom: "b", shoes: "s", neck: null, wrist: null, hairpin: null, gender: "nam", outfit: null });
   });
   it("falls back to defaults for unknown body options", () => {
     const look = lookFromRow({ account_id: "a", skin: "x", hair: "y", hair_color: "z", hat: null, top: "t", bottom: "b", shoes: "s", neck: null });

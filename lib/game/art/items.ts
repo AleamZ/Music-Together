@@ -1,3 +1,4 @@
+import type { HairpinKind, NeckStyle, WristKind } from "./accessories";
 import type { HatShape } from "./hats";
 
 export type ItemArt =
@@ -5,10 +6,15 @@ export type ItemArt =
   | { slot: "top"; kind: "baba" | "tee"; colors: readonly [main: string, shade: string, highlight: string, detail: string] }
   | { slot: "bottom"; kind: "shorts" | "long"; colors: readonly [main: string, shade: string, stripe: string] }
   | { slot: "shoes"; colors: readonly [strap: string, sole: string] }
-  | { slot: "neck"; colors: readonly [light: string, dark: string] };
+  /** A scarf when `style` is undefined; a necklace (v18.6) otherwise, with its pendant/accent colour. */
+  | { slot: "neck"; style?: undefined; colors: readonly [light: string, dark: string] }
+  | { slot: "neck"; style: NeckStyle; colors: readonly [main: string, shade: string, accent: string] }
+  | { slot: "wrist"; kind: WristKind; colors: readonly [main: string, shade: string, accent: string] }
+  | { slot: "hairpin"; kind: HairpinKind; colors: readonly [main: string, shade: string, accent: string] };
 
-/** Render data per catalog id. Must match the seed in supabase/migrations/0011_v13_game_mode.sql (tested). */
+/** Render data per catalog id. Covers 15 starters (0011) and 100 store fashion items (0022). */
 export const ITEM_ART: Record<string, ItemArt> = {
+  // --- 15 Starter Items (0011) ---
   hat_nonla: { slot: "hat", shape: "nonla", colors: { y: "#f3e3b0", Y: "#dcc587", Z: "#b89758" } },
   hat_taibeo_green: { slot: "hat", shape: "taibeo", colors: { x: "#5a9a44", X: "#3f7a30" } },
   top_baba_yellow: { slot: "top", kind: "baba", colors: ["#f2c23c", "#d19a24", "#fbe08a", "#b27d16"] },
@@ -24,4 +30,143 @@ export const ITEM_ART: Record<string, ItemArt> = {
   shoes_dep_red: { slot: "shoes", colors: ["#d9534f", "#a83c39"] },
   neck_khanran: { slot: "neck", colors: ["#f1ece0", "#2b2524"] },
   neck_khanran_red: { slot: "neck", colors: ["#f1ece0", "#c0392b"] },
+
+  // --- 100 Fashion Store Items (0022) ---
+  // Mũ (20 items)
+  hat_nonla_hue: { slot: "hat", shape: "nonla", colors: { y: "#fae8b6", Y: "#dfc788", Z: "#b59954" } },
+  hat_nonla_gold: { slot: "hat", shape: "nonla", colors: { y: "#ffe066", Y: "#f5b700", Z: "#c69200" } },
+  hat_nonquaitao: { slot: "hat", shape: "nonla", colors: { y: "#ede5d8", Y: "#d0be9b", Z: "#8b5a2b" } },
+  hat_taibeo_camo: { slot: "hat", shape: "taibeo", colors: { x: "#556b2f", X: "#3b4d1f" } },
+  hat_taibeo_blue: { slot: "hat", shape: "taibeo", colors: { x: "#2980b9", X: "#1f618d" } },
+  hat_taibeo_black: { slot: "hat", shape: "taibeo", colors: { x: "#2c3e50", X: "#1a252f" } },
+  hat_cap_red: { slot: "hat", shape: "taibeo", colors: { x: "#e74c3c", X: "#c0392b" } },
+  hat_cap_black: { slot: "hat", shape: "taibeo", colors: { x: "#212121", X: "#000000" } },
+  hat_cap_white: { slot: "hat", shape: "taibeo", colors: { x: "#ffffff", X: "#bdc3c7" } },
+  hat_cap_yellow: { slot: "hat", shape: "taibeo", colors: { x: "#f1c40f", X: "#d4ac0d" } },
+  hat_beret_brown: { slot: "hat", shape: "taibeo", colors: { x: "#795548", X: "#4e342e" } },
+  hat_beret_black: { slot: "hat", shape: "taibeo", colors: { x: "#37474f", X: "#263238" } },
+  hat_beanie_grey: { slot: "hat", shape: "taibeo", colors: { x: "#90a4ae", X: "#607d8b" } },
+  hat_beanie_orange: { slot: "hat", shape: "taibeo", colors: { x: "#ff7043", X: "#e64a19" } },
+  hat_straw_summer: { slot: "hat", shape: "nonla", colors: { y: "#fff3cd", Y: "#ffeeba", Z: "#d39e00" } },
+  hat_straw_ribbon: { slot: "hat", shape: "nonla", colors: { y: "#fce4ec", Y: "#f8bbd0", Z: "#ec407a" } },
+  hat_bandana_red: { slot: "hat", shape: "taibeo", colors: { x: "#d32f2f", X: "#b71c1c" } },
+  hat_crown_gold: { slot: "hat", shape: "nonla", colors: { y: "#ffd700", Y: "#ffae00", Z: "#b8860b" } },
+  hat_headband_ninja: { slot: "hat", shape: "taibeo", colors: { x: "#b71c1c", X: "#7f0000" } },
+  hat_flower_lotus: { slot: "hat", shape: "taibeo", colors: { x: "#f48fb1", X: "#ad1457" } },
+  // v18.6 (0029): 10 hats with their own shapes
+  hat_cap: { slot: "hat", shape: "cap", colors: { x: "#2e6fd1", X: "#1f4f9a", b: "#24589f", B: "#183d6e", g: "#ffffff" } },
+  hat_beanie: { slot: "hat", shape: "beanie", colors: { x: "#d9534f", X: "#b03a36", b: "#c9463f", B: "#9e3430", g: "#fff4e0" } },
+  hat_fedora: { slot: "hat", shape: "fedora", colors: { x: "#7a6552", X: "#56463a", b: "#2b2b2b", B: "#1a1a1a" } },
+  hat_sunhat: { slot: "hat", shape: "sunhat", colors: { x: "#f4e2b8", X: "#d8c08a", b: "#e86a92", B: "#c9406c", g: "#c9406c" } },
+  hat_helmet: { slot: "hat", shape: "helmet", colors: { x: "#f2c230", X: "#c99a18", g: "#fff6c8", b: "#8a8f99" } },
+  hat_coi: { slot: "hat", shape: "coi", colors: { x: "#6f7d3c", X: "#515c2a", b: "#f5c518", g: "#d62828" } },
+  hat_bucket: { slot: "hat", shape: "bucket", colors: { x: "#5b8fc7", X: "#3f6d9e", b: "#335a85", B: "#274868" } },
+  hat_crown: { slot: "hat", shape: "crown", colors: { y: "#ffd84a", Y: "#e0a800", Z: "#a87400", g: "#e0303a", b: "#2a7de0" } },
+  hat_antlers: { slot: "hat", shape: "antlers", colors: { x: "#9a6a3a", X: "#6e4a26", b: "#d63a3a" } },
+  hat_straw_cowboy: { slot: "hat", shape: "cowboy", colors: { y: "#e8c77a", Y: "#cfa653", Z: "#9e7a34", b: "#6b3f1f", B: "#4a2a12" } },
+
+  // Áo (25 items)
+  top_baba_blue: { slot: "top", kind: "baba", colors: ["#2980b9", "#1f618d", "#5dade2", "#154360"] },
+  top_baba_purple: { slot: "top", kind: "baba", colors: ["#8e44ad", "#6c3483", "#bb8fce", "#4a235a"] },
+  top_baba_red: { slot: "top", kind: "baba", colors: ["#c0392b", "#962d22", "#e74c3c", "#641e16"] },
+  top_baba_brown: { slot: "top", kind: "baba", colors: ["#795548", "#4e342e", "#a1887f", "#3e2723"] },
+  top_baba_black: { slot: "top", kind: "baba", colors: ["#263238", "#1a252f", "#455a64", "#0d1b2a"] },
+  top_baba_cyan: { slot: "top", kind: "baba", colors: ["#16a085", "#117864", "#48c9b0", "#0e6251"] },
+  top_tee_red: { slot: "top", kind: "tee", colors: ["#e74c3c", "#c0392b", "#f1948a", "#e74c3c"] },
+  top_tee_black: { slot: "top", kind: "tee", colors: ["#212121", "#121212", "#424242", "#212121"] },
+  top_tee_white: { slot: "top", kind: "tee", colors: ["#fdfefe", "#bdc3c7", "#ffffff", "#fdfefe"] },
+  top_tee_yellow: { slot: "top", kind: "tee", colors: ["#f1c40f", "#d4ac0d", "#f9e79f", "#f1c40f"] },
+  top_tee_orange: { slot: "top", kind: "tee", colors: ["#e67e22", "#b9770e", "#f39c12", "#e67e22"] },
+  top_tee_purple: { slot: "top", kind: "tee", colors: ["#9b59b6", "#7d3c98", "#c39bd3", "#9b59b6"] },
+  top_tee_striped: { slot: "top", kind: "tee", colors: ["#34495e", "#2c3e50", "#5dade2", "#34495e"] },
+  top_tee_camo: { slot: "top", kind: "tee", colors: ["#556b2f", "#3b4d1f", "#6b8e23", "#556b2f"] },
+  top_polo_navy: { slot: "top", kind: "baba", colors: ["#1b4f72", "#154360", "#2e86c1", "#ffffff"] },
+  top_polo_white: { slot: "top", kind: "baba", colors: ["#f8f9fa", "#dee2e6", "#ffffff", "#212529"] },
+  top_shirt_denim: { slot: "top", kind: "baba", colors: ["#2c3e50", "#1a252f", "#415b76", "#d4ac0d"] },
+  top_shirt_flannel: { slot: "top", kind: "baba", colors: ["#b71c1c", "#7f0000", "#d32f2f", "#212121"] },
+  top_school_boy: { slot: "top", kind: "baba", colors: ["#ffffff", "#cfd8dc", "#ffffff", "#1e88e5"] },
+  top_hoodie_grey: { slot: "top", kind: "tee", colors: ["#78909c", "#546e7a", "#b0bec5", "#78909c"] },
+  top_hoodie_pink: { slot: "top", kind: "tee", colors: ["#f48fb1", "#d81b60", "#f8bbd0", "#f48fb1"] },
+  top_vest_tuxedo: { slot: "top", kind: "baba", colors: ["#17202a", "#0b1016", "#2c3e50", "#f39c12"] },
+  top_aodai_tet: { slot: "top", kind: "baba", colors: ["#c0392b", "#781e17", "#e74c3c", "#f1c40f"] },
+  top_aodai_yellow: { slot: "top", kind: "baba", colors: ["#f39c12", "#b7770d", "#f8c471", "#c0392b"] },
+  top_jacket_leather: { slot: "top", kind: "baba", colors: ["#212121", "#0a0a0a", "#424242", "#b0bec5"] },
+
+  // Quần (25 items)
+  bottom_pants_white: { slot: "bottom", kind: "long", colors: ["#f8f9f9", "#d5d8dc", "#f8f9f9"] },
+  bottom_pants_grey: { slot: "bottom", kind: "long", colors: ["#7f8c8d", "#566573", "#7f8c8d"] },
+  bottom_pants_navy: { slot: "bottom", kind: "long", colors: ["#1a5276", "#154360", "#1a5276"] },
+  bottom_pants_brown: { slot: "bottom", kind: "long", colors: ["#6e2c00", "#4a1c00", "#6e2c00"] },
+  bottom_jeans_light: { slot: "bottom", kind: "long", colors: ["#5dade2", "#2e86c1", "#aed6f1"] },
+  bottom_jeans_black: { slot: "bottom", kind: "long", colors: ["#1c2833", "#111820", "#2c3e50"] },
+  bottom_cargo_green: { slot: "bottom", kind: "long", colors: ["#4d5645", "#383f32", "#5e6954"] },
+  bottom_cargo_sand: { slot: "bottom", kind: "long", colors: ["#c8b99c", "#a8997c", "#dbceb5"] },
+  bottom_pants_jogger: { slot: "bottom", kind: "long", colors: ["#616161", "#424242", "#ffffff"] },
+  bottom_pants_tet: { slot: "bottom", kind: "long", colors: ["#d4ac0d", "#9a7d0a", "#f9e79f"] },
+  bottom_shorts_blue: { slot: "bottom", kind: "shorts", colors: ["#2980b9", "#1a5276", "#ffffff"] },
+  bottom_shorts_black: { slot: "bottom", kind: "shorts", colors: ["#212121", "#121212", "#ffffff"] },
+  bottom_shorts_white: { slot: "bottom", kind: "shorts", colors: ["#fdfefe", "#bdc3c7", "#34495e"] },
+  bottom_shorts_yellow: { slot: "bottom", kind: "shorts", colors: ["#f4d03f", "#b7950b", "#f9e79f"] },
+  bottom_shorts_green: { slot: "bottom", kind: "shorts", colors: ["#58d68d", "#239b56", "#a9dfbf"] },
+  bottom_shorts_pink: { slot: "bottom", kind: "shorts", colors: ["#f78fb3", "#e66767", "#f8a5c2"] },
+  bottom_shorts_camo: { slot: "bottom", kind: "shorts", colors: ["#556b2f", "#3b4d1f", "#6b8e23"] },
+  bottom_swim_hawaii: { slot: "bottom", kind: "shorts", colors: ["#e67e22", "#ba4a00", "#f1c40f"] },
+  bottom_skirt_pleated: { slot: "bottom", kind: "shorts", colors: ["#2c3e50", "#1a252f", "#ffffff"] },
+  bottom_skirt_denim: { slot: "bottom", kind: "shorts", colors: ["#34495e", "#212f3d", "#5dade2"] },
+  bottom_skirt_black: { slot: "bottom", kind: "shorts", colors: ["#1c1c1c", "#0a0a0a", "#1c1c1c"] },
+  bottom_skirt_red: { slot: "bottom", kind: "shorts", colors: ["#b03a2e", "#78281f", "#e74c3c"] },
+  bottom_pants_silk_white: { slot: "bottom", kind: "long", colors: ["#ffffff", "#e5e7e9", "#ffffff"] },
+  bottom_pants_silk_black: { slot: "bottom", kind: "long", colors: ["#17202a", "#0e141a", "#17202a"] },
+  bottom_pants_royal: { slot: "bottom", kind: "long", colors: ["#4a235a", "#2c1537", "#f1c40f"] },
+
+  // Dép & Giày (15 items)
+  shoes_dep_toong: { slot: "shoes", colors: ["#fffde7", "#fff9c4"] },
+  shoes_dep_green: { slot: "shoes", colors: ["#27ae60", "#196f3d"] },
+  shoes_dep_yellow: { slot: "shoes", colors: ["#f39c12", "#b9770e"] },
+  shoes_dep_black: { slot: "shoes", colors: ["#2c3e50", "#1a252f"] },
+  shoes_dep_pink: { slot: "shoes", colors: ["#f06292", "#c2185b"] },
+  shoes_sandal_brown: { slot: "shoes", colors: ["#6e2c00", "#4a1c00"] },
+  shoes_sandal_black: { slot: "shoes", colors: ["#212121", "#000000"] },
+  shoes_sneaker_white: { slot: "shoes", colors: ["#fdfefe", "#bdc3c7"] },
+  shoes_sneaker_red: { slot: "shoes", colors: ["#c0392b", "#ffffff"] },
+  shoes_sneaker_black: { slot: "shoes", colors: ["#17202a", "#ffffff"] },
+  shoes_sneaker_neon: { slot: "shoes", colors: ["#00e676", "#1de9b6"] },
+  shoes_oxford_black: { slot: "shoes", colors: ["#0a0a0a", "#1a1a1a"] },
+  shoes_oxford_brown: { slot: "shoes", colors: ["#5d4037", "#3e2723"] },
+  shoes_boots_combat: { slot: "shoes", colors: ["#263238", "#102027"] },
+  shoes_boots_yellow: { slot: "shoes", colors: ["#fbc02d", "#f57f17"] },
+
+  // Khăn (15 items)
+  neck_khanran_blue: { slot: "neck", colors: ["#f1ece0", "#2980b9"] },
+  neck_khanran_green: { slot: "neck", colors: ["#f1ece0", "#27ae60"] },
+  neck_khanran_purple: { slot: "neck", colors: ["#f1ece0", "#8e44ad"] },
+  neck_khanran_yellow: { slot: "neck", colors: ["#f1ece0", "#d4ac0d"] },
+  neck_khanran_pink: { slot: "neck", colors: ["#f1ece0", "#e91e63"] },
+  neck_khanran_brown: { slot: "neck", colors: ["#f1ece0", "#795548"] },
+  neck_scarf_red: { slot: "neck", colors: ["#e74c3c", "#922b21"] },
+  neck_scarf_white: { slot: "neck", colors: ["#ffffff", "#bdc3c7"] },
+  neck_scarf_grey: { slot: "neck", colors: ["#90a4ae", "#546e7a"] },
+  neck_scarf_plaid: { slot: "neck", colors: ["#b71c1c", "#212121"] },
+  neck_tie_black: { slot: "neck", colors: ["#212121", "#000000"] },
+  neck_tie_red: { slot: "neck", colors: ["#c0392b", "#78281f"] },
+  neck_bowtie_black: { slot: "neck", colors: ["#1a1a1a", "#000000"] },
+  neck_choker_heart: { slot: "neck", colors: ["#e91e63", "#1a1a1a"] },
+  neck_gold_chain: { slot: "neck", colors: ["#ffd700", "#b8860b"] },
+
+  // --- 15 Accessories (0029) ---
+  acc_necklace_silver: { slot: "neck", style: "chain", colors: ["#e4e8ee", "#a4acb8", "#ffffff"] },
+  acc_necklace_gold: { slot: "neck", style: "chain", colors: ["#f5c842", "#c08a1c", "#ffe27a"] },
+  acc_necklace_pearl: { slot: "neck", style: "pearl", colors: ["#fbf7ee", "#cfc6b4", "#fbf7ee"] },
+  acc_necklace_jade: { slot: "neck", style: "jade", colors: ["#f0d070", "#b8903a", "#3fae6a"] },
+  acc_bracelet_wood: { slot: "wrist", kind: "band", colors: ["#a86a3a", "#6e4424", "#a86a3a"] },
+  acc_bracelet_silver: { slot: "wrist", kind: "band", colors: ["#e4e8ee", "#a4acb8", "#ffffff"] },
+  acc_bracelet_beads: { slot: "wrist", kind: "beads", colors: ["#e94f64", "#b8324a", "#3fa9e0"] },
+  acc_watch: { slot: "wrist", kind: "watch", colors: ["#3a3a44", "#24242c", "#e8f4ff"] },
+  acc_bracelet_jade: { slot: "wrist", kind: "band", colors: ["#5cc28a", "#2f8a58", "#9fe0b8"] },
+  acc_clip_star: { slot: "hairpin", kind: "star", colors: ["#ffd54a", "#d9a21a", "#fff4b0"] },
+  acc_bow_red: { slot: "hairpin", kind: "bow", colors: ["#e0343c", "#a81e28", "#ff8088"] },
+  acc_headband: { slot: "hairpin", kind: "headband", colors: ["#f07aa8", "#c4507e", "#f07aa8"] },
+  acc_bandana: { slot: "hairpin", kind: "bandana", colors: ["#3a78d0", "#27569e", "#f4f4f4"] },
+  acc_flower_clip: { slot: "hairpin", kind: "flower", colors: ["#fffaf0", "#f0d8c8", "#f5c030"] },
+  acc_hair_tie: { slot: "hairpin", kind: "tie", colors: ["#7a4bd0", "#553098", "#7a4bd0"] },
 };

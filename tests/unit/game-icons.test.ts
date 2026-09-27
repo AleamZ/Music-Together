@@ -4,11 +4,18 @@ import { ITEM_ART } from "@/lib/game/art/items";
 import { OUTLINE } from "@/lib/game/art/palettes";
 
 const CODES: Record<IconKind, string> = {
-  nonla: ".oyYZ", taibeo: ".oxX", baba: ".otTuK", tee: ".otTuK", shorts: ".opPl", long: ".opPl", dep: ".ofF", khanran: ".oqQ",
+  nonla: ".oyYZ", taibeo: ".oxX", baba: ".otTuK", tee: ".otTuK", shorts: ".opPl", long: ".opPl", dep: ".ofF", khanran: ".oqQ", skirt: ".opPl",
+  chain: ".ocCD", pearls: ".ocCD", bracelet: ".ocCD", watch: ".ocCD", star: ".ocCD", bow: ".ocCD", headband: ".ocCD", flower: ".ocCD", tie: ".ocCD",
+  cap: ".oxXbBg", beanie: ".oxXbBg", fedora: ".oxXbB", sunhat: ".oxXbBg", helmet: ".oxXg", coi: ".oxXbg", bucket: ".oxXbB",
+  crown: ".oyYZgb", antlers: ".oxXb", cowboy: ".oyYZbB",
 };
 /** The icon kind an item should use (the spec for icons.ts's own mapping). */
 const kindOf = (id: string): IconKind => {
   const a = ITEM_ART[id];
+  if (a.slot === "bottom" && a.kind === "shorts" && id.includes("skirt")) return "skirt";
+  if (a.slot === "neck" && a.style) return a.style === "pearl" ? "pearls" : "chain";
+  if (a.slot === "wrist") return a.kind === "watch" ? "watch" : "bracelet";
+  if (a.slot === "hairpin") return a.kind === "headband" || a.kind === "bandana" ? "headband" : a.kind;
   return a.slot === "hat" ? a.shape : a.slot === "top" || a.slot === "bottom" ? a.kind : a.slot === "shoes" ? "dep" : "khanran";
 };
 

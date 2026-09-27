@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import type { ShopItem } from "@/lib/game/fishing/catalog";
 import {
-  baitTotal, castBlocker, castWaitMin, dayCapped, digWaitSec, handFish, maxBuyQty, ownsItem, parseFishingState, type FishingState,
+  baitTotal, bestNet, castBlocker, castWaitMin, dayCapped, digWaitSec, handFish, maxBuyQty, needsRepair, ownsItem, parseFishingState,
+  repairPrice, rodBroken, type FishingState,
 } from "@/lib/game/fishing/state";
 
 const RAW = {
@@ -118,5 +119,36 @@ describe("timers", () => {
     expect(digWaitSec(withS({ digReadyAt: "2026-09-24T10:30:12.200Z" }), NOW)).toBe(13);
     expect(castWaitMin(S, NOW)).toBe(0);
     expect(castWaitMin(withS({ castsLeft: 0 }), NOW)).toBe(30);
+  });
+});
+
+describe("rod wear and nets (v18.2)", () => {
+  const W = parseFishingState({ ...RAW, owned: ["rod_bamboo", "net_small", "net_big"],
+    wear: { rod_bamboo: [0, 120], net_small: [5, 20], net_big: [0, 30], bad: "x" } })!;
+  it("parses the wear; none before 0034", () => {
+    expect(W.wear).toEqual({ rod_bamboo: { left: 0, max: 120 }, net_small: { left: 5, max: 20 }, net_big: { left: 0, max: 30 } });
+    expect(S.wear).toEqual({});
+  });
+  it("a rod at 0 is broken; rod_wood never", () => {
+    expect(rodBroken(W, "rod_bamboo")).toBe(true);
+    expect(rodBroken(W, "rod_wood")).toBe(false);
+    expect(rodBroken(withS({ wear: { rod_bamboo: { left: 3, max: 120 } } }), "rod_bamboo")).toBe(false);
+  });
+  it("repair costs 30% of the price, rounded up, and only for a worn rod", () => {
+    expect(repairPrice(item({ price: 300 }))).toBe(90);
+    expect(repairPrice(item({ price: 700 }))).toBe(210);
+    expect(repairPrice(item({ price: 5000 }))).toBe(1500);
+    expect(needsRepair(W, item({ id: "rod_bamboo", durability: 120 }))).toBe(true);
+    expect(needsRepair(W, item({ id: "rod_wood", durability: null }))).toBe(false);
+    expect(needsRepair(withS({ wear: { rod_bamboo: { left: 120, max: 120 } } }), item({ id: "rod_bamboo", durability: 120 }))).toBe(false);
+  });
+  it("the throw uses the widest net with throws left; an owned net is not bought again", () => {
+    const small = item({ id: "net_small", kind: "net", radiusPx: 24, durability: 20, price: 250 });
+    const big = item({ id: "net_big", kind: "net", radiusPx: 36, durability: 30, price: 600 });
+    expect(bestNet(W, [small, big])?.id).toBe("net_small");
+    expect(bestNet(withS({ owned: ["net_small", "net_big"], wear: { net_small: { left: 5, max: 20 }, net_big: { left: 9, max: 30 } } }), [small, big])?.id).toBe("net_big");
+    expect(bestNet(S, [small, big])).toBeNull();
+    expect(maxBuyQty(withS({ coins: 1000, owned: ["net_small"] }), small)).toBe(0);
+    expect(maxBuyQty(withS({ coins: 1000 }), small)).toBe(1);
   });
 });

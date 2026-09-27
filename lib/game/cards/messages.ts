@@ -4,14 +4,15 @@ import { caoName, caoEval } from "./cao";
 import { cardLabel, rankOf, type Card, type CardGame } from "./deck";
 import type { CardPhase, LobbyTable, TlLastLine } from "./state";
 import { tlThoi, type TlTrang } from "./tienlen";
+import { xidachEval } from "./xidach";
 
 // The card corner's Vietnamese texts (spec §5, §11.5, §13): names, the table and HUD lines, the results and the RPC
 // errors. Pure.
 
 export { isMissingRpc };
 
-export const GAME_NAME: Record<CardGame, string> = { tienlen: "Tiến lên", cao: "Cào", poker: "Poker" };
-export const TABLE_TITLE: Record<CardGame, string> = { tienlen: "🃏 Bàn Tiến lên", cao: "🃏 Chiếu Cào", poker: "🃏 Bàn Poker" };
+export const GAME_NAME: Record<CardGame, string> = { tienlen: "Tiến lên", cao: "Cào", poker: "Poker", xidach: "Xì Dách" };
+export const TABLE_TITLE: Record<CardGame, string> = { tienlen: "🃏 Bàn Tiến lên", cao: "🃏 Chiếu Cào", poker: "🃏 Bàn Poker", xidach: "🃏 Sòng Xì Dách" };
 
 export const CARDS_NOT_OPEN = "Góc đánh bài chưa mở — chủ phòng cần chạy migration 0017.";
 export const CARDS_LOADING = "Đang tải bàn…";
@@ -69,11 +70,15 @@ export function turnToast(game: CardGame): string {
   return `🃏 Đến lượt bạn ở bàn ${GAME_NAME[game]}!`;
 }
 
-/** The sit dialog's requirement line (§13.2) for Tiến lên and Cào. */
-export function holdLine(game: "tienlen" | "cao", stake: number): string {
-  return game === "tienlen"
-    ? `Mỗi ván giữ tạm ${xuNum(10 * stake)} để trả thua — hết ván trả lại phần dư.`
-    : `Mỗi ván giữ tạm ${xuNum(stake)}; khi làm cái giữ ${xuNum(stake)} × số nhà con.`;
+/** The sit dialog's requirement line (§13.2) for Tiến lên, Cào and Xì Dách. */
+export function holdLine(game: "tienlen" | "cao" | "xidach", stake: number): string {
+  if (game === "tienlen") {
+    return `Mỗi ván giữ tạm ${xuNum(10 * stake)} để trả thua — hết ván trả lại phần dư.`;
+  }
+  if (game === "xidach") {
+    return `Mỗi ván giữ tạm ${xuNum(2 * stake)} để trả thua (Xì bàng/Ngũ linh x2) — hết ván trả lại phần dư.`;
+  }
+  return `Mỗi ván giữ tạm ${xuNum(stake)}; khi làm cái giữ ${xuNum(stake)} × số nhà con.`;
 }
 
 export const PLACE_NAME: readonly string[] = ["", "Về nhất", "Về nhì", "Về ba", "Về bét"];
@@ -130,6 +135,23 @@ export function caoHandName(cards: readonly Card[]): string {
   return caoName(caoEval(cards));
 }
 
+/** A Xì Dách hand's name: "Xì Bàng (Ăn x2)", "Xì Dách", "Ngũ Linh (Ăn x2)", "20 điểm", "Quắc (Bù)". */
+export function xidachHandName(cards: readonly Card[]): string {
+  const h = xidachEval(cards);
+  switch (h.kind) {
+    case "xi_bang":
+      return "Xì Bàng (Ăn x2)";
+    case "xi_dach":
+      return "Xì Dách";
+    case "ngu_linh":
+      return `Ngũ Linh (${h.points} điểm · Ăn x2)`;
+    case "quac":
+      return `${h.points} điểm · Quắc (Bù)`;
+    case "du_tuoi":
+      return h.points < 16 ? `${h.points} điểm (Dằn non)` : `${h.points} điểm`;
+  }
+}
+
 /** "💣 C chặt B!" */
 export function cutBanner(cutter: string, victim: string): string {
   return `💣 ${cutter} chặt ${victim}!`;
@@ -146,6 +168,7 @@ export function cardErrorMessage(err: unknown, must?: Card | null): string {
   const e = (err && typeof err === "object" ? err : {}) as { message?: unknown };
   const msg = typeof e.message === "string" ? e.message : "";
   switch (msg) {
+    case "exhausted": return "Bạn đã kiệt sức hôm nay — mai quay lại ngồi bàn nhé."; // 0045
     case "invalid game": return "Bàn bài không hợp lệ.";
     case "invalid seat": return "Ghế không hợp lệ.";
     case "invalid stake": return "Mức cược của bàn không hợp lệ.";
@@ -171,6 +194,14 @@ export function cardErrorMessage(err: unknown, must?: Card | null): string {
     case "not dealer": return "Chỉ nhà cái được chia bài.";
     case "dealer busy": return "Nhà cái chờ lật bài xong rồi hãy rời bàn.";
     case "wrong phase": return "Chưa tới lúc làm việc này.";
+    case "cannot hit": return "Không thể rút thêm bài (đã đủ 5 lá hoặc bị quắc).";
+    case "cannot stand": return "Chưa đủ điểm dằn bài (cần tối thiểu 16 điểm).";
+    case "already stand": return "Bạn đã dằn bài rồi.";
+    case "already standing": return "Bạn đã dằn bài rồi.";
+    case "too few points": return "Chưa đủ điểm — nhà con cần từ 16 điểm, nhà cái từ 15 điểm.";
+    case "max cards reached": return "Đã đủ 5 lá, không rút thêm được.";
+    case "deck empty": return "Nọc đã hết bài.";
+    case "over 28": return "Cái đã quá 28 điểm — dằn bài để đền làng.";
     case "account locked": return lockText(lockSeconds(err) ?? 300);
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";

@@ -54,6 +54,8 @@ export const GAME_LIMITS = {
   bye: { rate: 0.1, burst: 1 },
   fs: { rate: 3, burst: 5 },
   fa: { rate: 3, burst: 5 },
+  /** v18.13: rq / ra / rx / lg together. */
+  lift: { rate: 1, burst: 4 },
 } as const satisfies Record<string, Bucket>;
 
 /** The budget a game message counts against; null for `lk` and `fp`, which are capped where they are handled. */
@@ -68,6 +70,11 @@ export function budgetKind(t: GameEvent): keyof typeof GAME_LIMITS | null {
     case "fs":
     case "fa":
       return t;
+    case "rq":
+    case "ra":
+    case "rx":
+    case "lg":
+      return "lift";
     default:
       return null;
   }

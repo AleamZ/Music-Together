@@ -1,6 +1,6 @@
 import { C, ctx2d, makeCanvas, px, rect, rng, type Ctx, type PropFrame, type PropSprite } from "./scene-art";
 import type { CardGame } from "@/lib/game/cards/deck";
-import type { PropPlacement, SignIcon } from "./types";
+import type { PropPlacement, SignIcon, StallGoods } from "./types";
 
 // Every depth-sorted prop of every map: its sprite frame (pure) and its painter (browser only).
 
@@ -12,6 +12,7 @@ export function propFrame(p: PropPlacement): PropFrame {
     case "mixer": return { w: 44, h: 22, ox: 22, oy: 22 };
     case "table": return { w: 32, h: 30, ox: 16, oy: 30 };
     case "board": return { w: 28, h: 34, ox: 14, oy: 34 };
+    case "news_stand": return { w: 30, h: 36, ox: 15, oy: 36 };
     case "sign": return { w: 18, h: 26, ox: 9, oy: 26 };
     case "banana": return { w: 40, h: 36, ox: 20, oy: 35 };
     case "lightpole": return { w: 6, h: 42, ox: 3, oy: 42 };
@@ -26,6 +27,11 @@ export function propFrame(p: PropPlacement): PropFrame {
     case "haystack": return { w: 30, h: 26, ox: 15, oy: 25 };
     case "scarecrow": return { w: 20, h: 34, ox: 10, oy: 34 };
     case "card_table": return CARD_TABLE_FRAMES[p.game];
+    case "market_stall": return { w: 84, h: 30, ox: 42, oy: 30 };
+    case "eat_table": return { w: 40, h: 22, ox: 20, oy: 22 };
+    case "lantern_post": return { w: 12, h: 46, ox: 6, oy: 46 };
+    case "shop_counter": return { w: 84, h: 18, ox: 42, oy: 18 };
+    case "city_map_post": return CITY_MAP_POST_FRAME;
   }
 }
 
@@ -34,6 +40,7 @@ const CARD_TABLE_FRAMES: Record<CardGame, PropFrame> = {
   tienlen: { w: 44, h: 30, ox: 22, oy: 30 },
   cao: { w: 56, h: 28, ox: 28, oy: 28 },
   poker: { w: 54, h: 31, ox: 27, oy: 31 },
+  xidach: { w: 50, h: 30, ox: 25, oy: 30 },
 };
 
 function drawPalm(c: Ctx, h: number, lean: number, seed: number): void {
@@ -119,7 +126,41 @@ function drawBoard(c: Ctx): void {
   rect(c, "#b5566f", 7, 6, 3, 1); rect(c, "#3d86a8", 17, 5, 5, 1); rect(c, "#3d86a8", 17, 13, 4, 1);
 }
 
-type SignGlyph = { rows: string[]; color: string; x: number; y: number };
+/** Báo Làng (v18.11): a little wooden kiosk under a red-and-cream striped awning, the day's papers clipped along its front
+ *  and a stack of them on the counter. 30 × 36, base at the bottom of its legs. */
+function drawNewsStand(c: Ctx): void {
+  // the awning: outline, stripes, a scalloped edge
+  rect(c, C.outline, 0, 0, 30, 8);
+  for (let i = 0; i < 7; i++) rect(c, i % 2 === 0 ? C.red : C.paper, 1 + i * 4, 1, 4, 6);
+  rect(c, C.red, 25, 1, 4, 6);
+  for (let i = 0; i < 7; i++) { px(c, C.outline, 2 + i * 4, 8); px(c, C.outline, 3 + i * 4, 8); }
+  // the posts
+  rect(c, C.outline, 1, 8, 3, 28); rect(c, C.woodDark, 2, 8, 1, 28);
+  rect(c, C.outline, 26, 8, 3, 28); rect(c, C.woodDark, 27, 8, 1, 28);
+  // the back board with three papers clipped on a string
+  rect(c, C.wood, 4, 9, 22, 11);
+  rect(c, C.woodDark, 4, 11, 22, 1);
+  for (const x of [5, 12, 19]) {
+    rect(c, C.outline, x, 11, 6, 8); rect(c, C.paper, x + 1, 12, 4, 6);
+    rect(c, C.outline, x + 1, 13, 4, 1);                          // the masthead rule
+    px(c, "#7a6a58", x + 1, 15); px(c, "#7a6a58", x + 3, 15); px(c, "#7a6a58", x + 2, 16); px(c, "#7a6a58", x + 4, 16);
+    px(c, C.gold, x + 2, 11);                                      // the clip
+  }
+  px(c, C.red, 8, 12); px(c, "#3d86a8", 15, 12);                    // a red and a blue headline
+  // the counter with a stack of papers
+  rect(c, C.outline, 3, 20, 24, 5); rect(c, C.woodLight, 4, 21, 22, 3);
+  rect(c, C.outline, 6, 17, 9, 4); rect(c, C.paper, 7, 18, 7, 2); rect(c, "#e6dcc6", 7, 19, 7, 1);
+  rect(c, C.outline, 17, 18, 7, 3); rect(c, C.paper, 18, 19, 5, 1);
+  // the cabinet front with the stand's little sign
+  rect(c, C.outline, 3, 25, 24, 9); rect(c, C.wood, 4, 26, 22, 7);
+  rect(c, C.woodDark, 4, 29, 22, 1);
+  rect(c, C.outline, 10, 26, 10, 5); rect(c, C.gold, 11, 27, 8, 3);
+  rect(c, C.outline, 12, 28, 6, 1);
+  // the feet
+  rect(c, C.outline, 4, 34, 3, 2); rect(c, C.outline, 23, 34, 3, 2);
+}
+
+type SignGlyph ={ rows: string[]; color: string; x: number; y: number };
 const SIGN_ICONS: Record<SignIcon, SignGlyph[]> = {
   fish: [{ rows: ["..####...", ".######.#", "########.", ".######.#", "..####..."], color: "#3d86a8", x: 4, y: 3 }],
   note: [{ rows: ["...##.", "...#.#", "...#..", ".###..", "####..", ".##..."], color: C.red, x: 6, y: 2 }],
@@ -127,6 +168,16 @@ const SIGN_ICONS: Record<SignIcon, SignGlyph[]> = {
   cards: [
     { rows: ["..#..", ".###.", "#####", "#####", "..#..", ".###."], color: C.outline, x: 3, y: 2 },
     { rows: [".#.#.", "#####", "#####", ".###.", "..#.."], color: C.red, x: 10, y: 3 },
+  ],
+  // a red lantern with gold caps and tassel (to Chợ Lớn)
+  market: [
+    { rows: [".###.", "#####", "#####", "#####", ".###."], color: C.red, x: 7, y: 3 },
+    { rows: ["#####", ".....", ".....", ".....", ".....", ".....", "#####", "..#.."], color: C.gold, x: 7, y: 2 },
+  ],
+  // v19.2: a little house with a red roof (to Khu nhà)
+  home: [
+    { rows: ["...#...", "..###..", ".#####.", "#######"], color: C.red, x: 5, y: 1 },
+    { rows: [".#####.", ".##.##.", ".##.##.", ".#####."], color: C.paper, x: 5, y: 5 },
   ],
 };
 
@@ -223,9 +274,26 @@ function drawPokerTable(c: Ctx): void {
   for (const x of [11, 19, 27, 35]) drawStool(c, x, 23);
 }
 
+/** Xì Dách: an oval table with burgundy felt, cards and stools. */
+function drawXidachTable(c: Ctx): void {
+  drawStool(c, 2, 11); drawStool(c, 42, 11);
+  rect(c, C.outline, 22, 20, 6, 6); rect(c, C.woodDeep, 23, 20, 4, 5);
+  const cx = 25, cy = 13, rx = 16, ry = 7;
+  for (let y = cy - ry - 1; y <= cy + ry + 1; y++) for (let x = cx - rx - 1; x <= cx + rx + 1; x++) {
+    const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+    if (d > 1.14) continue;
+    if (d > 1.0) px(c, C.outline, x, y);
+    else if (d > 0.72) px(c, y > cy ? C.woodDark : C.wood, x, y);
+    else px(c, d < 0.25 && y < cy ? "#9a3f3f" : "#7d2f2f", x, y);
+  }
+  drawTinyCard(c, 16, 9, "back"); drawTinyCard(c, 24, 9, "back"); drawTinyCard(c, 32, 9, "back");
+  for (const x of [10, 18, 26, 34]) drawStool(c, x, 22);
+}
+
 function drawCardTable(c: Ctx, game: CardGame): void {
   if (game === "tienlen") drawTienLenTable(c);
   else if (game === "cao") drawCaoMat(c);
+  else if (game === "xidach") drawXidachTable(c);
   else drawPokerTable(c);
 }
 
@@ -386,6 +454,255 @@ function drawScarecrow(c: Ctx): void {
   for (let j = 0; j < 5; j++) rect(c, j === 4 ? "#b89758" : "#f3e3b0", 10 - j * 2, 2 + j, j * 4 + 1, 1);
 }
 
+// ---------------------------------------------------------------- Chợ Lớn (v18.4)
+
+const STRIPES: Record<StallGoods, [string, string]> = {
+  fruit: ["#e07a2e", "#f4e2b8"], flower: ["#d4758f", "#f4efe0"], lantern: ["#c0392b", "#e0b33c"],
+  fish: ["#2e9a94", "#f4efe0"], produce: ["#5caa4a", "#f4e2b8"], umbrella: ["#2f5fa8", "#f4efe0"],
+};
+
+/** A fish on its side, head right: a silver or red body, a darker back, an eye and a forked tail. */
+function drawLyingFish(c: Ctx, x: number, y: number, len: number, body: string, back: string): void {
+  rect(c, C.outline, x + 2, y - 1, len - 3, 5); rect(c, C.outline, x, y - 1, 2, 1); rect(c, C.outline, x, y + 3, 2, 1);
+  rect(c, C.outline, x + 1, y, 1, 3);
+  rect(c, body, x + 3, y, len - 5, 3); rect(c, back, x + 3, y, len - 5, 1);
+  px(c, body, x + len - 2, y + 1);
+  px(c, C.outline, x + len - 4, y + 1);
+  px(c, back, x + 1, y); px(c, back, x + 1, y + 2);
+}
+
+/** A burlap sack of rice, tied at the neck, grains showing at the open top. */
+function drawSack(c: Ctx, x: number, y: number): void {
+  rect(c, C.outline, x, y + 2, 14, 11); rect(c, C.outline, x + 1, y + 1, 12, 1);
+  rect(c, "#c8a468", x + 1, y + 3, 12, 9); rect(c, "#d8b87c", x + 2, y + 3, 4, 8); rect(c, "#a8844c", x + 11, y + 4, 1, 8);
+  rect(c, "#f4ecd0", x + 2, y + 1, 10, 2); px(c, "#e0d4b0", x + 4, y + 1); px(c, "#e0d4b0", x + 8, y + 2);
+  rect(c, "#a8844c", x + 1, y + 4, 12, 1);
+  // a printed band and a red mark
+  rect(c, "#3d6fd1", x + 1, y + 9, 12, 1); rect(c, C.red, x + 5, y + 6, 4, 2);
+}
+
+/** A market stall's front: a plank counter with its goods heaped on top (the striped awning is drawn overhead). */
+function drawMarketStall(c: Ctx, goods: StallGoods): void {
+  const [a] = STRIPES[goods];
+  // the counter
+  rect(c, C.outline, 2, 12, 80, 18);
+  rect(c, C.wood, 3, 13, 78, 16);
+  for (let y = 16; y < 29; y += 4) rect(c, C.woodDark, 3, y, 78, 1);
+  rect(c, C.woodLight, 3, 13, 78, 2);
+  rect(c, a, 3, 20, 78, 2); // a painted band
+  rect(c, C.woodDeep, 6, 29, 4, 1); rect(c, C.woodDeep, 74, 29, 4, 1);
+  if (goods === "fish") {
+    // Vựa cá: trays of crushed ice with the day's fish laid out, a price slate on a stick
+    const kinds: ReadonlyArray<readonly [string, string]> = [["#c3c8d4", "#6d7a86"], ["#e0704e", "#a83a2a"], ["#b8b08a", "#6e6a4a"]];
+    kinds.forEach(([body, back], k) => {
+      const bx = 3 + k * 26;
+      rect(c, C.outline, bx, 5, 25, 9); rect(c, "#8e9ba8", bx + 1, 6, 23, 7);
+      rect(c, "#dcecf0", bx + 2, 6, 21, 6);
+      for (let i = 0; i < 9; i++) px(c, i % 2 ? C.white : "#b8d4dc", bx + 3 + ((i * 7) % 19), 7 + ((i * 5) % 5));
+      drawLyingFish(c, bx + 2, 7, 11, body, back);
+      drawLyingFish(c, bx + 11, 9, 11, body, back);
+    });
+    // water drips down the front of the counter
+    for (const x of [14, 40, 66]) { px(c, "#8fc2d8", x, 23); px(c, "#8fc2d8", x, 25); }
+    rect(c, C.outline, 76, 0, 1, 6); rect(c, C.outline, 72, 0, 8, 5); rect(c, "#2f3a36", 73, 1, 6, 3); rect(c, C.white, 74, 2, 4, 1);
+  } else if (goods === "produce") {
+    // Vựa nông sản: sacks of rice, then baskets of cabbages, pumpkins, carrots and chillies
+    drawSack(c, 3, 0); drawSack(c, 18, 1);
+    const baskets: ReadonlyArray<readonly [number, string, string]> = [[34, "#5caa4a", "#86c95c"], [50, "#e07a2e", "#f2b233"], [66, C.red, "#e85a47"]];
+    baskets.forEach(([bx, col, hi], k) => {
+      rect(c, C.outline, bx, 7, 15, 7); rect(c, "#b5874a", bx + 1, 8, 13, 5);
+      for (let x = bx + 2; x < bx + 14; x += 3) px(c, "#8a6038", x, 10);
+      const n = k === 0 ? 3 : 4;
+      for (let i = 0; i < n; i++) {
+        const x = bx + 1 + i * (k === 0 ? 4 : 3), y = 3 + (i % 2);
+        if (k === 0) { rect(c, C.outline, x - 1, y - 1, 6, 6); rect(c, col, x, y, 4, 4); px(c, hi, x + 1, y + 1); rect(c, C.leafDark, x + 1, y + 3, 2, 1); }
+        else if (k === 1) { rect(c, C.outline, x - 1, y, 5, 5); rect(c, col, x, y + 1, 3, 3); px(c, hi, x, y + 1); px(c, C.leafDark, x + 1, y - 1); }
+        else { rect(c, C.outline, x, y - 1, 3, 6); rect(c, col, x + 1, y, 1, 4); px(c, hi, x + 1, y); px(c, C.leafLight, x + 1, y - 2); }
+      }
+    });
+  } else if (goods === "fruit") {
+    // baskets of mangoes and dragon fruit
+    for (const bx of [6, 30, 54]) {
+      rect(c, C.outline, bx, 7, 24, 7); rect(c, "#b5874a", bx + 1, 8, 22, 5);
+      for (let x = bx + 2; x < bx + 22; x += 3) px(c, "#8a6038", x, 10);
+    }
+    for (let i = 0; i < 6; i++) { // mangoes
+      const x = 8 + i * 3 + (i % 2), y = 3 + (i % 2) * 2;
+      rect(c, C.outline, x - 1, y - 1, 5, 5); rect(c, "#f2b233", x, y, 3, 3); px(c, "#f7d36a", x, y); px(c, "#7aa83a", x + 2, y - 1);
+    }
+    for (let i = 0; i < 5; i++) { // dragon fruit
+      const x = 32 + i * 4, y = 3 + (i % 2) * 2;
+      rect(c, C.outline, x - 1, y - 1, 5, 6); rect(c, "#d6336c", x, y, 3, 4); px(c, "#f06595", x, y); px(c, "#6fbf4a", x - 1, y + 1); px(c, "#6fbf4a", x + 3, y + 2);
+    }
+    for (let i = 0; i < 5; i++) { // bananas
+      const x = 56 + i * 4, y = 4;
+      rect(c, C.outline, x - 1, y - 1, 4, 6); rect(c, "#f6d845", x, y, 2, 4); px(c, "#8a6a3f", x, y - 1);
+    }
+  } else if (goods === "umbrella") {
+    // v18.9 sạp ô dù: two umbrellas open on display, a row of furled ones standing in a bucket, a price slate
+    const open: ReadonlyArray<readonly [number, string, string, string]> = [[13, "#e8a13a", "#f6cf7a", "#b86a22"], [38, "#7a2344", "#a8406a", "#4e1229"]];
+    for (const [cx, main, light, dark] of open) {
+      [1, 4, 7, 9, 10].forEach((hw, r) => {
+        rect(c, C.outline, cx - hw - 1, r, hw * 2 + 3, 1);
+        rect(c, main, cx - hw, r, hw * 2 + 1, 1);
+        rect(c, light, cx - hw, r, Math.max(1, Math.round(hw * 0.6)), 1);
+        rect(c, dark, cx + Math.round(hw / 2), r, Math.max(1, hw - Math.round(hw / 2) + 1), 1);
+      });
+      for (let x = -10; x <= 10; x += 5) px(c, C.outline, cx + x, 5);
+      rect(c, C.outline, cx, 5, 1, 8);
+    }
+    // furled umbrellas in a bucket
+    rect(c, C.outline, 58, 7, 22, 7); rect(c, "#6d7a86", 59, 8, 20, 5); rect(c, "#8e9ba8", 59, 8, 20, 1);
+    const furled = ["#2f5fa8", "#c0392b", "#5caa4a", "#e0b33c", "#7a2344", "#2e9a94"];
+    furled.forEach((col, i) => {
+      const x = 60 + i * 3;
+      rect(c, C.outline, x - 1, 0, 3, 8); rect(c, col, x, 1, 1, 7);
+    });
+    rect(c, C.outline, 54, 0, 1, 6); rect(c, C.outline, 51, 1, 7, 5); rect(c, "#2f3a36", 52, 2, 5, 3); rect(c, C.white, 53, 3, 3, 1);
+  } else if (goods === "flower") {
+    // buckets of flowers: marigolds, roses, lotus
+    const cols = ["#f6c945", "#e04a5f", "#f29bb5", "#f4f1ea", "#e07a2e"];
+    for (let b = 0; b < 5; b++) {
+      const bx = 5 + b * 15;
+      rect(c, C.outline, bx, 7, 12, 7); rect(c, "#6d7a86", bx + 1, 8, 10, 5); rect(c, "#8e9ba8", bx + 1, 8, 10, 1);
+      for (let k = 0; k < 4; k++) {
+        const fx = bx + 2 + k * 2 + (k % 2), fy = 1 + ((k + b) % 3);
+        rect(c, C.leafDark, fx + 1, fy + 2, 1, 6 - fy);
+        rect(c, C.outline, fx - 1, fy - 1, 4, 4); rect(c, cols[(b + k) % cols.length], fx, fy, 2, 2);
+      }
+    }
+  } else {
+    // round paper lanterns lined up on the counter
+    const cols = ["#c0392b", "#e0b33c", "#d4758f", "#c0392b", "#e07a2e", "#3d6fd1"];
+    cols.forEach((col, i) => {
+      const x = 5 + i * 13;
+      rect(c, C.outline, x + 1, 2, 9, 11); rect(c, C.outline, x, 3, 11, 9);
+      rect(c, col, x + 1, 3, 9, 9); rect(c, col, x + 2, 2, 7, 1);
+      rect(c, "#f6d8a8", x + 2, 4, 1, 6);
+      for (let y = 5; y < 12; y += 3) rect(c, C.outline, x + 1, y, 9, 1);
+      rect(c, C.gold, x + 4, 1, 3, 1); rect(c, C.gold, x + 4, 12, 3, 1);
+    });
+  }
+}
+
+/** A low street-food table with two blue plastic stools. */
+function drawEatTable(c: Ctx): void {
+  drawStool(c, 0, 12); drawStool(c, 32, 12);
+  rect(c, C.outline, 8, 4, 24, 10);
+  rect(c, "#d8d4c8", 9, 5, 22, 6); rect(c, "#b8b4a8", 9, 11, 22, 2);
+  rect(c, C.outline, 11, 14, 2, 8); rect(c, C.outline, 27, 14, 2, 8);
+  // a bowl with chopsticks and a glass of trà đá
+  rect(c, C.outline, 12, 5, 7, 4); rect(c, C.white, 13, 5, 5, 3); rect(c, "#c9803a", 14, 5, 3, 1);
+  rect(c, C.woodDark, 17, 3, 5, 1);
+  rect(c, C.outline, 24, 3, 4, 6); rect(c, "#c98a3a", 25, 5, 2, 3); rect(c, "#e8e4d8", 25, 4, 2, 1);
+}
+
+/** A wooden post with a red lantern hanging from its arm. */
+function drawLanternPost(c: Ctx): void {
+  rect(c, C.outline, 4, 6, 4, 40); rect(c, C.woodDark, 5, 6, 2, 40); rect(c, C.wood, 5, 6, 1, 40);
+  rect(c, C.outline, 2, 44, 8, 2);
+  rect(c, C.outline, 4, 4, 8, 2);
+  rect(c, C.outline, 9, 6, 1, 3);
+  rect(c, C.outline, 7, 9, 5, 9); rect(c, C.outline, 6, 10, 7, 7);
+  rect(c, C.red, 7, 10, 5, 7); rect(c, "#e85a47", 8, 11, 2, 4); rect(c, C.redDark, 7, 16, 5, 1);
+  rect(c, C.gold, 8, 18, 3, 1); rect(c, C.gold, 9, 19, 1, 3);
+}
+
+/** A shop's counter: a glossy wooden top over a panelled front. */
+function drawShopCounter(c: Ctx): void {
+  rect(c, C.outline, 0, 2, 84, 16);
+  rect(c, C.woodLight, 1, 3, 82, 3); rect(c, C.woodPale, 1, 3, 82, 1);
+  rect(c, C.wood, 1, 6, 82, 11);
+  for (let x = 4; x < 80; x += 16) { rect(c, C.woodDark, x, 8, 12, 7); rect(c, C.wood, x + 1, 9, 10, 5); }
+  rect(c, C.woodDeep, 1, 16, 82, 1);
+}
+
+// ---------------------------------------------------------------- ông Tám's vehicle stall (v18.5)
+
+function line(c: Ctx, col: string, x0: number, y0: number, x1: number, y1: number): void {
+  const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+  for (let i = 0; i <= n; i++) px(c, col, Math.round(x0 + ((x1 - x0) * i) / n), Math.round(y0 + ((y1 - y0) * i) / n));
+}
+
+/** A wheel seen from the side: a dark tyre ring, a grey rim and a hub; `spokes` adds four spokes (a bicycle's). */
+function wheel(c: Ctx, cx: number, cy: number, r: number, spokes: boolean): void {
+  for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
+    const d = Math.hypot(x, y);
+    if (d > r + 0.3 || (spokes && d <= r - 1.3)) continue;
+    px(c, d > r - 1.3 ? "#1e1a1a" : d > r - 2.2 ? "#8e9ba8" : "#4a4648", cx + x, cy + y);
+  }
+  if (spokes) {
+    line(c, C.silver, cx - r + 2, cy, cx + r - 2, cy); line(c, C.silver, cx, cy - r + 2, cx, cy + r - 2);
+    line(c, "#8e9ba8", cx - r + 3, cy - r + 3, cx + r - 3, cy + r - 3); line(c, "#8e9ba8", cx - r + 3, cy + r - 3, cx + r - 3, cy - r + 3);
+  }
+  px(c, C.silver, cx, cy);
+}
+
+/** A small price tag on a string. */
+export function drawPriceTag(c: Ctx, x: number, y: number): void {
+  px(c, C.outline, x + 2, y - 1);
+  rect(c, C.outline, x, y, 6, 4); rect(c, C.white, x + 1, y + 1, 4, 2); px(c, C.red, x + 2, y + 1);
+}
+
+// The display vehicles of ông Tám's showroom (market-art.ts draws them in its windows), side views standing on y = 28.
+
+/** Xe đạp (x 4–32): a red frame, a flower basket, spoked wheels. */
+export function drawBikeDisplay(c: Ctx): void {
+  wheel(c, 9, 23, 5, true); wheel(c, 27, 23, 5, true);
+  line(c, C.red, 9, 23, 15, 16); line(c, C.red, 15, 16, 24, 16); line(c, C.red, 15, 16, 18, 23); line(c, C.red, 9, 23, 18, 23);
+  line(c, C.red, 24, 16, 18, 23); line(c, C.red, 24, 15, 27, 23);
+  line(c, C.outline, 13, 14, 17, 14); rect(c, "#2b2020", 13, 13, 5, 1);
+  line(c, C.outline, 23, 12, 25, 15); rect(c, C.outline, 21, 12, 5, 1);
+  rect(c, C.outline, 25, 9, 7, 5); rect(c, "#b5874a", 26, 10, 5, 3); px(c, "#e04a5f", 27, 9); px(c, C.gold, 29, 9);
+  px(c, C.silver, 18, 23); px(c, C.silver, 19, 24);
+}
+
+/** Xe máy (x 33–62): a teal scooter with a cream seat, a front shield and a headlight. */
+export function drawScooterDisplay(c: Ctx): void {
+  wheel(c, 39, 24, 4, false); wheel(c, 58, 24, 4, false);
+  rect(c, C.outline, 35, 15, 17, 8); rect(c, "#2e9a94", 36, 16, 15, 6); rect(c, "#52bcb4", 37, 16, 8, 2);
+  rect(c, C.outline, 37, 12, 12, 4); rect(c, "#e8d6b0", 38, 13, 10, 2);
+  rect(c, C.outline, 46, 21, 10, 3); rect(c, "#8e9ba8", 47, 22, 8, 1);
+  rect(c, C.outline, 54, 9, 5, 15); rect(c, "#2e9a94", 55, 10, 3, 13); px(c, "#52bcb4", 55, 11);
+  rect(c, C.outline, 52, 7, 9, 2); rect(c, C.outline, 59, 9, 3, 3); rect(c, C.goldLight, 60, 10, 1, 1);
+  rect(c, C.outline, 33, 22, 4, 2); rect(c, C.silver, 34, 22, 2, 1);
+  rect(c, C.outline, 56, 17, 5, 3); rect(c, "#1f6e6a", 57, 18, 3, 1);
+}
+
+/** Xe hơi (x 64–115): a little red hatchback, light windows, chrome bumpers. */
+export function drawCarDisplay(c: Ctx): void {
+  rect(c, C.outline, 65, 13, 49, 11); rect(c, C.red, 66, 14, 47, 9); rect(c, "#e85a47", 66, 14, 47, 2); rect(c, C.redDark, 66, 21, 47, 2);
+  rect(c, C.outline, 71, 5, 32, 9); rect(c, C.red, 72, 6, 30, 8);
+  rect(c, C.outline, 72, 6, 30, 1);
+  rect(c, "#bcd6e0", 74, 7, 12, 6); rect(c, "#bcd6e0", 88, 7, 12, 6); rect(c, C.white, 75, 8, 3, 1); rect(c, C.white, 89, 8, 3, 1);
+  rect(c, C.redDark, 86, 7, 2, 6);
+  rect(c, C.redDark, 87, 15, 1, 6); rect(c, C.outline, 83, 17, 3, 1);
+  rect(c, C.silver, 64, 20, 3, 2); rect(c, C.silver, 112, 20, 3, 2);
+  rect(c, C.goldLight, 111, 15, 2, 2); rect(c, C.redDark, 66, 15, 2, 2);
+  wheel(c, 75, 23, 5, false); wheel(c, 104, 23, 5, false);
+}
+
+/** The city-map signpost's sprite: base point at the bottom of the post. */
+export const CITY_MAP_POST_FRAME: PropFrame = { w: 22, h: 32, ox: 11, oy: 32 };
+
+/** A wooden post with a little painted town map on its board: water, green blocks, a road cross and a red pin. */
+function drawCityMapPost(c: Ctx): void {
+  // the post and its foot
+  rect(c, C.outline, 9, 16, 4, 16); rect(c, C.wood, 10, 16, 2, 15); rect(c, C.woodLight, 10, 16, 1, 15);
+  rect(c, C.outline, 6, 30, 10, 2); rect(c, C.woodDark, 7, 30, 8, 1);
+  // the board with a little roof
+  rect(c, C.outline, 1, 0, 20, 2); rect(c, C.woodDark, 2, 0, 18, 1);
+  rect(c, C.outline, 0, 2, 22, 16); rect(c, C.wood, 1, 3, 20, 14);
+  // the painted map
+  rect(c, C.paper, 2, 4, 18, 12);
+  rect(c, C.water, 2, 13, 18, 3); rect(c, C.waterLight, 4, 14, 3, 1);           // the river along the south
+  rect(c, C.grassLight, 3, 5, 5, 3); rect(c, C.gold, 14, 5, 5, 3);               // the pond side, the field
+  rect(c, "#c9a8d8", 14, 9, 5, 3); rect(c, C.leafLight, 3, 9, 5, 3);            // the market, the pond
+  rect(c, C.dirt, 2, 8, 18, 1); rect(c, C.dirt, 10, 4, 1, 9);                    // the roads
+  rect(c, C.outline, 9, 6, 3, 3); rect(c, C.red, 10, 7, 1, 1);                   // the "you are here" pin
+  px(c, C.woodLight, 1, 3); px(c, C.woodLight, 20, 3);                           // nails
+}
+
 export function drawProp(c: Ctx, p: PropPlacement): void {
   switch (p.kind) {
     case "palm": return drawPalm(c, p.h, p.lean, p.seed);
@@ -394,6 +711,7 @@ export function drawProp(c: Ctx, p: PropPlacement): void {
     case "mixer": return drawMixer(c);
     case "table": return drawTable(c);
     case "board": return drawBoard(c);
+    case "news_stand": return drawNewsStand(c);
     case "sign": return drawSign(c, p.icon ?? "fish");
     case "banana": return drawBanana(c);
     case "lightpole": return drawLightPole(c);
@@ -408,6 +726,11 @@ export function drawProp(c: Ctx, p: PropPlacement): void {
     case "haystack": return drawHaystack(c);
     case "scarecrow": return drawScarecrow(c);
     case "card_table": return drawCardTable(c, p.game);
+    case "market_stall": return drawMarketStall(c, p.goods);
+    case "eat_table": return drawEatTable(c);
+    case "lantern_post": return drawLanternPost(c);
+    case "shop_counter": return drawShopCounter(c);
+    case "city_map_post": return drawCityMapPost(c);
   }
 }
 

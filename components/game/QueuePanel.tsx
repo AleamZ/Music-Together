@@ -19,7 +19,7 @@ export default function QueuePanel({ room, derived, role, token, onClose }: {
 }) {
   const { approved, pending, myPending, rules, willPend, orderLimit } = derived;
   return (
-    <ParchmentModal title="📜 Quầy DJ — Hàng đợi" onClose={onClose}>
+    <ParchmentModal title="📜 Quầy DJ — Hàng đợi" onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2">
         <AddSong roomId={room.id} token={token} rules={rules} willPend={willPend} orderLimit={orderLimit} />
         <MyPending items={myPending} roomId={room.id} token={token} />

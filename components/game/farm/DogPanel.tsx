@@ -56,7 +56,7 @@ export default function DogPanel({ dog, food, busy, onFeed, onRename, onPet, onC
   const s = dogStatus(dog, now);
   const refusal = feedRefusal(dog, food, now);
   return (
-    <ParchmentModal title={`🐕 ${dog.name}`} onClose={onClose}>
+    <ParchmentModal title={`🐕 ${dog.name}`} onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         <p>{dogCoatLine(dog.coat, dog.adoptedAt)}</p>
         <p>{dogFoodLine(s)}</p>
