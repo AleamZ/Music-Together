@@ -9,8 +9,59 @@ import type { CardSeat, XidachState } from "@/lib/game/cards/state";
 import { xidachEval } from "@/lib/game/cards/xidach";
 import PlayingCard, { CardRow } from "./PlayingCard";
 
-/** Clicks to peel one card fully open (nặn bài). */
+/** A card's peel state counts to this when it is fully open (nặn bài). */
 const PEEL_STEPS = 3;
+/** Dragging the back this far (px) and letting go opens the card; less springs it back. */
+const PEEL_OPEN_PX = 56;
+
+/**
+ * Nặn bài by hand: the card lies face up under its back; dragging the back slides it off (tilting as it goes) and shows
+ * the corner underneath, and letting go past PEEL_OPEN_PX flicks it away. Enter/Space or a double click opens it too.
+ */
+export function PeelCard({ card, index, open, onOpen }: { card: Card; index: number; open: boolean; onOpen: () => void }) {
+  const [drag, setDrag] = useState<{ x: number; y: number; from: { x: number; y: number } } | null>(null);
+  const dx = drag?.x ?? 0, dy = drag?.y ?? 0;
+  const far = Math.hypot(dx, dy);
+  const end = (e: React.PointerEvent) => {
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+    if (far >= PEEL_OPEN_PX) onOpen();
+    setDrag(null);
+  };
+  return (
+    <div className="relative rounded-sm" aria-label={open ? `Lá ${index + 1}` : undefined}>
+      <PlayingCard card={card} faceDown={false} size="large" />
+      {!open && (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label={`Nặn lá ${index + 1} (kéo lưng bài ra)`}
+          title="Kéo để nặn"
+          className={`absolute inset-0 cursor-grab touch-none active:cursor-grabbing ${drag ? "" : "transition-transform duration-200"}`}
+          style={{ transform: `translate(${dx}px, ${dy}px) rotate(${dx * 0.12}deg)`, boxShadow: far > 4 ? "4px 6px 10px rgba(0,0,0,0.45)" : undefined }}
+          onPointerDown={(e) => {
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* old browser */ }
+            setDrag({ x: 0, y: 0, from: { x: e.clientX, y: e.clientY } });
+          }}
+          onPointerMove={(e) => {
+            if (!drag) return;
+            setDrag({ ...drag, x: e.clientX - drag.from.x, y: e.clientY - drag.from.y });
+          }}
+          onPointerUp={end}
+          onPointerCancel={() => setDrag(null)}
+          onDoubleClick={onOpen}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+        >
+          <PlayingCard card={null} faceDown size="large" />
+          {drag && far < PEEL_OPEN_PX && (
+            <span className="pointer-events-none absolute inset-x-0 -bottom-5 text-center text-[11px] text-gold-200">
+              {Math.round((far / PEEL_OPEN_PX) * 100)}%
+            </span>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
 /** A turn lasts this long on the server (0021's deadlines). */
 const XIDACH_TURN_S = 30;
 
@@ -186,31 +237,9 @@ export default function XidachBoard({
       {cards.length > 0 && state.phase === "playing" && (
         <div className="flex flex-col items-center gap-1.5 rounded-lg border border-gold-400/40 bg-black/50 p-2 text-cream shadow-md">
           <div className="flex items-center gap-1.5">
-            {cards.map((c, i) => {
-              const o = openOf(i);
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  className="relative overflow-hidden rounded-sm transition-transform hover:-translate-y-1"
-                  onClick={() => peelCard(i)}
-                  disabled={o >= PEEL_STEPS}
-                  aria-label={o >= PEEL_STEPS ? `Lá ${i + 1}` : `Nặn lá ${i + 1}`}
-                  title={o >= PEEL_STEPS ? undefined : "Bấm để nặn"}
-                >
-                  <PlayingCard card={c} faceDown={false} size="large" />
-                  {o < PEEL_STEPS && (
-                    <span
-                      className="pointer-events-none absolute inset-0 transition-transform duration-300"
-                      style={{ transform: `translate(${o * 18}%, ${o * 22}%) rotate(${o * 6}deg)` }}
-                      aria-hidden="true"
-                    >
-                      <PlayingCard card={null} faceDown size="large" />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            {cards.map((c, i) => (
+              <PeelCard key={i} card={c} index={i} open={openOf(i) >= PEEL_STEPS} onOpen={() => peelCard(i, PEEL_STEPS)} />
+            ))}
           </div>
           {allOpen && myEval ? (
             <div className="flex items-center gap-2 text-sm">
@@ -220,7 +249,7 @@ export default function XidachBoard({
             </div>
           ) : (
             <div className="flex items-center gap-2 text-xs">
-              <span className="opacity-80">👆 Bấm vào lá bài để nặn</span>
+              <span className="opacity-80">🤏 Kéo lưng bài ra để nặn</span>
               <button type="button" className="pch-btn px-2 py-0.5 text-xs" onClick={openAll}>Lật hết</button>
             </div>
           )}

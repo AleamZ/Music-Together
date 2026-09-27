@@ -6,6 +6,8 @@ import { caoHandName } from "@/lib/game/cards/messages";
 import PlayingCard from "./PlayingCard";
 
 type DragPoint = { x: number; y: number };
+/** How far (px) a card must slide off the one under it before that one counts as seen (a large card is ~64–80 px). */
+const REVEAL_PX = 64;
 
 export default function CaoSqueezeView({
   cards,
@@ -35,13 +37,13 @@ export default function CaoSqueezeView({
     setBtnClicks(nextClicks);
 
     if (nextClicks === 1) {
-      // Step 1: partially drag card 1 away to reveal card 2
-      setDrag1({ x: 45, y: 12 });
+      // Step 1: slide card 1 a little (a corner of card 2 peeks out; it is not seen yet)
+      setDrag1({ x: 40, y: 10 });
       setDrag2({ x: 0, y: 0 });
     } else if (nextClicks === 2) {
-      // Step 2: drag card 1 further and drag card 2 away to reveal card 3
-      setDrag1({ x: 85, y: 22 });
-      setDrag2({ x: 45, y: 12 });
+      // Step 2: card 1 off card 2 (card 2 seen), card 2 nudged so card 3's corner peeks out
+      setDrag1({ x: 110, y: 26 });
+      setDrag2({ x: 36, y: 10 });
     } else if (nextClicks >= 3) {
       // Step 3: reveal all cards and display result
       setDrag1({ x: 120, y: 30 });
@@ -95,10 +97,6 @@ export default function CaoSqueezeView({
         });
       }
 
-      // If dragged very far (> 140px), auto-complete squeeze
-      if (dist1 > 140) {
-        setBtnClicks(3);
-      }
     } else if (activeDrag.current === "card2") {
       const newX2 = initialOffset.current.x + dx;
       const newY2 = initialOffset.current.y + dy;
@@ -111,6 +109,7 @@ export default function CaoSqueezeView({
     }
   }, [drag1.x, drag1.y]);
 
+  // letting go never finishes the squeeze by itself: a card counts as seen only once the card over it is really off it
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     activeDrag.current = null;
     try {
@@ -118,14 +117,7 @@ export default function CaoSqueezeView({
     } catch {
       // ignore
     }
-
-    const dist1 = Math.hypot(drag1.x, drag1.y);
-    const dist2 = Math.hypot(drag2.x, drag2.y);
-
-    if (dist1 > 120 || (dist1 > 60 && dist2 > 40)) {
-      setBtnClicks(3);
-    }
-  }, [drag1, drag2]);
+  }, []);
 
   if (cards.length < 3) return null;
 
@@ -137,8 +129,9 @@ export default function CaoSqueezeView({
 
   const dist1 = Math.hypot(drag1.x, drag1.y);
   const dist2 = Math.hypot(drag2.x, drag2.y);
-  const card2Revealed = dist1 > 25 || btnClicks >= 2;
-  const card3Revealed = dist2 > 25 || (dist1 > 75 && dist2 > 15) || btnClicks >= 3;
+  // a card is seen once the one over it has slid about a card's width off (REVEAL_PX), not at the first nudge
+  const card2Revealed = dist1 >= REVEAL_PX || btnClicks >= 2;
+  const card3Revealed = (card2Revealed && dist2 >= REVEAL_PX) || btnClicks >= 3;
 
   return (
     <div className="flex flex-col items-center gap-2.5 rounded-lg border-2 border-gold-200 bg-[#16432b]/90 p-3 sm:p-4 font-vt text-cream shadow-2xl select-none max-w-full">
@@ -218,9 +211,6 @@ export default function CaoSqueezeView({
               <div className="rounded-sm shadow-md ring-1 ring-black/40">
                 <PlayingCard card={card3} faceDown={false} size="large" />
               </div>
-              <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[11px] opacity-70 text-cream whitespace-nowrap">
-                Lá 3 (Đáy)
-              </span>
             </div>
 
             {/* Card 2: Middle card (stacked directly on Card 3, draggable or drags with Card 1) */}
@@ -234,9 +224,6 @@ export default function CaoSqueezeView({
               <div className="rounded-sm shadow-lg ring-1 ring-gold-400/40">
                 <PlayingCard card={card2} faceDown={false} size="large" />
               </div>
-              <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[11px] opacity-70 text-cream whitespace-nowrap">
-                Lá 2 (Giữa)
-              </span>
             </div>
 
             {/* Card 1: Top card (flipped first, stacked on top, dragged to reveal Card 2 & 3) */}
@@ -250,9 +237,6 @@ export default function CaoSqueezeView({
               <div className="rounded-sm ring-2 ring-gold-300 shadow-2xl">
                 <PlayingCard card={card1} faceDown={false} size="large" />
               </div>
-              <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[11px] font-bold text-gold-200 whitespace-nowrap">
-                Lá 1 (Kéo lá này)
-              </span>
             </div>
           </div>
 
