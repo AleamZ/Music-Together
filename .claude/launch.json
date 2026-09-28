@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "dev-preview",
+      "runtimeExecutable": "pwsh",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:NEXT_PUBLIC_APP_MODE='dev'; pnpm exec next dev --webpack -p 3007"],
+      "port": 3007
     }
   ]
 }

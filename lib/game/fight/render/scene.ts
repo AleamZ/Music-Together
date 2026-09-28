@@ -7,6 +7,8 @@ import {
 } from "../engine";
 import { K_DODGE, K_GRAB, K_PARRY, K_THROW, M_A, M_GMAX, M_KIND, M_NEAR, M_REACH, M_S, M_YHI, M_YLO, mv } from "../moves";
 import { paintArena, type ArenaKind } from "./arena-art";
+import { chibiSprite, paintChibiFighter } from "./chibi";
+import type { FighterArt } from "./fighter-art";
 import { GROUND_Y, isFlashing, paintEffects, type EffectTracker } from "./fx";
 import { paintHud, type TrailTracker } from "./hud";
 import { RIG_H, RIG_W, poseData, poseFor } from "./poses";
@@ -24,6 +26,8 @@ export interface SceneView {
   reduced: boolean;
   /** Practice's frame-data toggle: hurtboxes and active hitboxes. */
   boxes: boolean;
+  /** Which painter draws the fighters (fighter-art.ts): the rig, or the chibi prototype. Absent: the rig. */
+  art?: FighterArt;
 }
 
 /** Where a fighter's 48 × 64 box goes on the arena. */
@@ -73,8 +77,10 @@ export function paintScene(c: SceneCtx, s: State, v: SceneView): void {
     // a soft shadow on the ground
     c.fillStyle = "#00000055";
     c.fillRect(ox + 12, GROUND_Y - 1, 24, 2);
-    const sprite = c.drawImage ? fighterSprite(fl, pose, flip, flash) : null;
+    const chibi = v.art === "chibi";
+    const sprite = c.drawImage ? (chibi ? chibiSprite : fighterSprite)(fl, pose, flip, flash) : null;
     if (sprite && c.drawImage) c.drawImage(sprite, ox, oy);
+    else if (chibi) paintChibiFighter(c, pose, fl, ox, oy, flip, flash);
     else paintFighter(c, poseData(pose, fl.style), fl, ox, oy, flip, flash);
   }
   paintEffects(c, v.fx.active(), f, v.reduced);

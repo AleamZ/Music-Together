@@ -5,6 +5,7 @@ import { G_PHASE, PH_OVER, type State } from "@/lib/game/fight/engine";
 import { BUTTONS, KEY_BITS, maskFromKeys, padDirAt, padMask, type PadDir } from "@/lib/game/fight/input";
 import type { ArenaKind } from "@/lib/game/fight/render/arena-art";
 import { EffectTracker } from "@/lib/game/fight/render/fx";
+import { readFighterArt } from "@/lib/game/fight/render/fighter-art";
 import { ARENA_H, ARENA_W, TrailTracker, hudText, type HudText } from "@/lib/game/fight/render/hud";
 import type { FighterLook } from "@/lib/game/fight/render/rig";
 import { paintScene } from "@/lib/game/fight/render/scene";
@@ -104,7 +105,7 @@ export default function Arena({ driver, arena, fighters, names, paused, boxes = 
     const fx = new EffectTracker();
     const trail = new TrailTracker();
     const reduced = prefersReduced();
-    const view = { arena, fighters, fx, trail, reduced, boxes };
+    const view = { arena, fighters, fx, trail, reduced, boxes, art: readFighterArt() };
     const raf: (cb: FrameRequestCallback) => number = typeof window.requestAnimationFrame === "function"
       ? (cb) => window.requestAnimationFrame(cb)
       : (cb) => window.setTimeout(() => cb(performance.now()), 16);

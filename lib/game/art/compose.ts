@@ -281,7 +281,28 @@ export function composeMatrix(look: Look, facing: Facing, frame: Frame): string[
   traceSilhouette(m);
   paintGarments(m, layers, wear, "behind", pose, true);
   traceSilhouette(m);
+  paintHeadwear(m, look, dir, gender, pal, pose);
+  if (facing === "right") for (const row of m) row.reverse();
+  return m;
+}
 
+/** v20 fight prototype (the chibi fighter, lib/game/fight/render/chibi.ts): the head alone — the bald head and face,
+ *  the hair, the hairpin (or nữ's clip) and the hat — exactly as `composeMatrix` draws them in frame 0, for a painter
+ *  that poses its own body. The chin line stays on row 20 (ROW.torso − 1); long hair keeps its tips below it. */
+export function composeHeadMatrix(look: Look, facing: Facing): string[][] {
+  const dir: Dir3 = facing === "right" ? "left" : facing;
+  const gender = genderOf(look);
+  const wear = resolveWear(look);
+  const m = blank();
+  paintRows(m, buildBodyParts(dir, 0, gender, wear.opts).base.slice(0, ROW.torso), 0, wear.pal);
+  traceSilhouette(m);
+  paintHeadwear(m, look, dir, gender, wear.pal, POSES[0]);
+  if (facing === "right") for (const row of m) row.reverse();
+  return m;
+}
+
+/** The hair (its loose tips lagging), the hairpin or nữ's clip and the hat over a painted body, then the silhouette. */
+function paintHeadwear(m: M, look: Look, dir: Dir3, gender: Gender, pal: Palette, pose: Pose): void {
   const hair = (HAIR[look.hair] ?? HAIR.short)[dir];
   const hairRows = [...hair.rows];
   // only long hair, the ponytail and the braids have loose tips; the rest move stiffly with the head
@@ -306,6 +327,4 @@ export function composeMatrix(look: Look, facing: Facing, frame: Frame): string[
     paintOutlined(m, hat.layer.rows, (i) => hat.layer.top + i + pose.dy, hat.palette);
   }
   traceSilhouette(m);
-  if (facing === "right") for (const row of m) row.reverse();
-  return m;
 }
