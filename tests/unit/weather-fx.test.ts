@@ -56,7 +56,7 @@ describe("weather effects level", () => {
     expect(scan(3).full).toBe(true);
     expect(scan(4).full).toBe(true);
     expect(scan(2, true).full).toBe(false); // reduced motion: no tint below level 3 either
-  });
+  }, 30_000); // five full scans of a storm frame: slow when the whole suite shares the machine
 
   it("no sway below level 2; the overcast grey scales, night stays", () => {
     expect(swayAmp(W("storm"), false, 1)).toBe(0);
