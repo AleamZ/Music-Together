@@ -53,5 +53,5 @@ export const LEGEND: readonly [string, string][] = [
   ["L", "đỡ"],
   ["U + J", "quật (ôm vật)"],
   ["O", "chiêu (+100 nội lực) · O+← O+↓ O+→ O+L"],
-  ["↓ ↘ → + đấm", "Cú đấm bụi đời"],
+  ["↓ → + đấm", "Cú đấm bụi đời"],
 ];

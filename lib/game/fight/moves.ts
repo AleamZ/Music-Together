@@ -292,7 +292,7 @@ const STYLE_DEFS: readonly StyleDef[] = [
   },
 ];
 
-const MOTION_TEXT = ["", "↓↘→", "↓↙←", "→↓↘", "↓↓", "↓↘→↓↘→"];
+const MOTION_TEXT = ["", "↓→", "↓←", "→↓", "↓↓", "↓→↓→"];
 const BTN_TEXT = ["", "P", "K", "HP", "HK"];
 
 function flatten(m: Move | null): number[] {

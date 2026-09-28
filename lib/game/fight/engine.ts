@@ -415,25 +415,27 @@ function blocks(s: State, o: number, height: number, air: boolean): boolean {
   return true;
 }
 
+// No diagonals needed (owner 2026-09-29: a keyboard has only ↑↓←→): QCF is ↓ then →, QCB ↓ then ←, DP → then ↓
+// (a ↘ in between still counts, and ends the DP), QCF×2 ↓→↓→. Mirrored by 0068's _fx_motion.
 function motionDone(s: State, b: number, mo: number, pf: number): boolean {
-  const l1 = s[b + F_LD], l2 = s[b + F_LD + 1], l3 = s[b + F_LD + 2], l4 = s[b + F_LD + 3], l6 = s[b + F_LD + 5];
+  const l2 = s[b + F_LD + 1], l3 = s[b + F_LD + 2], l4 = s[b + F_LD + 3], l6 = s[b + F_LD + 5];
   let t: number;
   if (mo === MO_QCF) {
-    if (!(l2 < l3 && l3 < l6 && l6 - l2 <= 12)) return false;
+    if (!(l2 < l6 && l6 - l2 <= 12)) return false;
     t = l6;
   } else if (mo === MO_QCB) {
-    if (!(l2 < l1 && l1 < l4 && l4 - l2 <= 12)) return false;
+    if (!(l2 < l4 && l4 - l2 <= 12)) return false;
     t = l4;
   } else if (mo === MO_DP) {
-    if (!(l6 < l2 && l2 < l3 && l3 - l6 <= 14)) return false;
-    t = l3;
+    if (!(l6 < l2 && l2 - l6 <= 14)) return false;
+    t = l3 > l2 ? l3 : l2;
   } else if (mo === MO_DD) {
     const p2 = s[b + F_PD2];
     if (!(p2 < l2 && l2 - p2 <= 14)) return false;
     t = l2;
   } else {
-    const p2 = s[b + F_PD2], p3 = s[b + F_PD3], p6 = s[b + F_PD6];
-    if (!(p2 < p3 && p3 < p6 && p6 < l2 && l2 < l3 && l3 < l6 && l6 - p2 <= 24)) return false;
+    const p2 = s[b + F_PD2], p6 = s[b + F_PD6];
+    if (!(p2 < p6 && p6 < l2 && l2 < l6 && l6 - p2 <= 24)) return false;
     t = l6;
   }
   return pf >= t && pf - t <= PRESS_WINDOW;

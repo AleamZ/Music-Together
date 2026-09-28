@@ -175,6 +175,22 @@ describe("fight engine: motions, buffer and the shortcut", () => {
     expect(s[P1 + F_MOVE]).toBe(moveId(0, MV_LP) + 1);
   });
 
+  it("no diagonal needed: ↓→ is QCF, →↓ is DP, ↓→↓→ is QCF×2, ↓← is QCB", () => {
+    let s = place(fightStart(), 40);
+    s = play(s, seq([IN_DOWN, IN_RIGHT | IN_LP]), hold(0), 2);
+    expect(s[P1 + F_MOVE]).toBe(s1);
+    const karate = fighterParams(3, 4, { en0: 1000 });
+    s = play(place(fightStart(karate), 40), seq([IN_RIGHT, IN_DOWN, IN_DOWN | IN_LP]), hold(0), 3);
+    expect(s[P1 + F_MOVE]).toBe(moveId(3, MV_S3) + 1);
+    s = play(place(fightStart(karate), 40), seq([IN_DOWN, IN_RIGHT, IN_DOWN, IN_RIGHT | IN_HP]), hold(0), 4);
+    expect(s[P1 + F_MOVE]).toBe(moveId(3, MV_TK) + 1);
+    s = play(place(fightStart(karate), 40), seq([IN_DOWN, IN_LEFT | IN_LK]), hold(0), 2);
+    expect(s[P1 + F_MOVE]).toBe(moveId(3, MV_S2) + 1);
+    // holding ↓ long before the punch is a crouching punch, not a DP
+    s = play(place(fightStart(karate), 40), seq([IN_RIGHT, ...Array(10).fill(IN_DOWN), IN_DOWN | IN_LP]), hold(0), 12);
+    expect(s[P1 + F_MOVE]).toBe(moveId(3, 4) + 1);
+  });
+
   it("priority: QCF×2 over QCF, DP over QCF; an unaffordable special gives the normal", () => {
     const karate = (en0: number) => fighterParams(3, 4, { en0 });
     let s = place(fightStart(karate(1000)), 40);
