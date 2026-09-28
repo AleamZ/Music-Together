@@ -60,6 +60,8 @@ export const FISH_DEPOT_STALL: Rect = stallOf("fish");
 export const FARM_DEPOT_STALL: Rect = stallOf("produce");
 /** cô Chín's umbrella stall (v18.9). */
 export const UMBRELLA_STALL: Rect = stallOf("umbrella");
+/** v21 economy: chú Bảy's lantern stall, the desk of the rented player stalls. */
+export const PLAYER_STALLS_DESK: Rect = stallOf("lantern");
 /** Where a customer stands at a served stall: on the pavement south of its counter, facing it. */
 const counterUse = (r: Rect) => ({ x: r.x + r.w / 2, y: r.y + r.h + 20 });
 
@@ -156,6 +158,11 @@ export const MARKET_INTERACTABLES: Interactable[] = [
   {
     id: "umbrella_stall", kind: "umbrella_stall", label: "Sạp ô dù", prompt: "Mua ô · cô Chín", rect: UMBRELLA_STALL,
     use: counterUse(UMBRELLA_STALL), face: "up",
+  },
+  {
+    // v21 economy: chú Bảy's lantern stall also rents out the player stalls (0073 claims its counter, (560, 360))
+    id: "player_stalls", kind: "player_stalls", label: "Sạp cho thuê", prompt: "Thuê sạp, mua hàng người chơi · chú Bảy",
+    rect: PLAYER_STALLS_DESK, use: counterUse(PLAYER_STALLS_DESK), face: "up",
   },
   {
     id: "motel", kind: "motel", label: "Nhà nghỉ Hoa Sen", prompt: "Thuê phòng, ngủ · cô Hồng", rect: shopCounter(MOTEL_FRONT),

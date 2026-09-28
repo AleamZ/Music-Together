@@ -29,6 +29,8 @@ export type InteractKind =
   | "lot"
   // v19.4: the Sàn bất động sản office on Khu nhà (players sell flats and lots to each other)
   | "estate"
+  // v21 economy: chú Bảy's row of rented player stalls at Chợ Lớn
+  | "player_stalls"
   // v20.1: the punching bag on Chợ Lớn's south pavement (fight practice)
   | "punch_bag"
   // v20.2: the Võ đường's gate on Chợ Lớn (thầy Lâm: the dojo panel)

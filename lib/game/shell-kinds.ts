@@ -3,7 +3,7 @@ import type { InteractKind } from "./maps/types";
 // The interactables GameShell handles itself (before the farm, cards and fishing controllers get the rest), and the panel
 // each one opens. Pinned by tests/unit/game-shell-kinds.test.ts: concurrent edits have lost cases before.
 
-export type ShellPanel = "queue" | "board" | "restaurant" | "vehicle_shop" | "fashion_store" | "salon" | "city_map" | "news" | "pet_shop" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "quests";
+export type ShellPanel = "queue" | "board" | "restaurant" | "vehicle_shop" | "fashion_store" | "salon" | "city_map" | "news" | "pet_shop" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "quests" | "player_stalls";
 
 /** kind → the GameShell panel it opens (the portal travels instead, so it has none). */
 export const SHELL_PANEL_OF = {
@@ -30,6 +30,7 @@ export const SHELL_PANEL_OF = {
   ug_door: "underground",                           // v20.4: Tầng hầm
   cage_watch: "ug_watch",                           // v20.4: watching the cage
   quest_giver: "quests",                            // v21: bác Ba Làng (the quest log)
+  player_stalls: "player_stalls",                   // v21 economy: chú Bảy's rented stalls
 } as const satisfies Partial<Record<InteractKind, ShellPanel>>;
 
 /** Every kind with its own `case` in GameShell's onInteract. */

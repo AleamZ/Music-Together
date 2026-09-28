@@ -108,6 +108,10 @@ import HouseBuilder from "./housing/HouseBuilder";
 import HouseView from "./housing/HouseView";
 import LotModal from "./housing/LotModal";
 import EstateModal from "./housing/EstateModal";
+import PlayerMarketModal from "./economy/PlayerMarketModal";                                // v21 economy
+import StallModal from "./economy/StallModal";                                            // v21 economy
+import TradeWindow from "./economy/TradeWindow";                                          // v21 economy
+import { useTrade } from "@/lib/game/economy/useTrade";                                   // v21 economy
 import { petSpeed } from "@/lib/game/pets/model";
 import { followingPet, lookOf, myPetCode } from "@/lib/game/pets/rpc";
 import SalonModal from "./SalonModal";
@@ -330,6 +334,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   // v20.4 Hầm đấu ngầm: the hatch (hidden until unlocked), the queue, the ladder, the cup, the cage's spectators
   const ug = useUnderground({ token, roomId: room.id, accountId, mapId: travel.mapId, toast: gameToast, onCoins: () => void fishing.data.reload() });
   const { enter: ugEnter } = ug;
+  const trade = useTrade(token, room.id, showToast);                                     // v21 economy: the trade window
   const [ugTab, setUgTab] = useState<UgTab>("queue");
   const [knocking, setKnocking] = useState<Interactable | null>(null);   // the hatch's knock (3 long, 2 short)
   const [ugResult, setUgResult] = useState<MatchResult | null>(null);
@@ -543,7 +548,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const [helpOpen, setHelpOpen] = useState(false); // the "⌨️ Phím tắt" overlay (H / ?)
   const openOverlays = {
     panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen || rings.active !== null
-      || ug.active !== null || ugResult !== null || knocking !== null || isCalled(ug.state),                    // v20.4
+      || ug.active !== null || ugResult !== null || knocking !== null || isCalled(ug.state)                     // v20.4
+      || trade.state?.trade != null,                                                                            // v21 economy
     fishingPanel: fishing.panel !== null || fishing.net !== null, creating, anticheatModal: anticheat.modal !== null,
     farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
     slingGame: farm.sling !== null,
@@ -696,6 +702,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         break;
       case "estate":                                                        // v19.4
         setPanel("estate");
+        break;
+      case "player_stalls":                                                 // v21 economy: chú Bảy's rented stalls
+        setPanel("player_stalls");
         break;
       case "punch_bag":                                                     // v20.1
         setPanel("fight_practice");
@@ -889,6 +898,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               <button type="button" className="pch-btn relative" data-hotkey="bag" title="Giỏ đồ (B)" onClick={() => fishing.openPanel("bag")}>
                 🎒<span className="sr-only"> Giỏ đồ</span><KeyBadge id="bag" />
               </button>
+              <button type="button" className="pch-btn" title="Chợ người chơi · đấu giá" data-testid="player-market-hud" onClick={() => setPanel("player_market")}>
+                🏪<span className="sr-only"> Chợ người chơi</span>
+              </button>
               {fishing.handFish !== null && (
                 <button
                   type="button" className="pch-btn relative" data-hotkey="fish" aria-pressed={!fishing.fishStowed}
@@ -972,6 +984,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             {card === roles.adminAccountId && <span>👑 Chủ phòng</span>}
             {card === roles.djAccountId && <span>🎧 DJ</span>}
             <span className="opacity-80">{cardWhere}</span>
+            {card !== accountId && cardMember && (                                   // v21 economy
+              <button type="button" className="pch-btn mt-1 self-start" data-testid="trade-start"
+                onClick={() => { const who = card; setCard(null); void trade.start(who).then((err) => { if (err) showToast(err); }); }}>
+                🤝 Giao dịch
+              </button>
+            )}
           </div>
           <button type="button" className="pch-btn self-start" onClick={() => setCard(null)} aria-label="Đóng">✕</button>
         </div>
@@ -1213,6 +1231,16 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           }}
           onClose={close}
         />
+      )}
+      {panel === "player_market" && (                                      // v21 economy
+        <PlayerMarketModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} />
+      )}
+      {panel === "player_stalls" && (                                      // v21 economy
+        <StallModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} />
+      )}
+      {trade.state?.trade && (                                              // v21 economy
+        <TradeWindow key={trade.state.trade.id} token={token} trade={trade.state.trade} onState={trade.apply}
+          onChanged={() => void fishing.data.reload()} />
       )}
       {panel === "lot" && lotNo !== null && !building && (
         <LotModal
