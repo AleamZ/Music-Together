@@ -33,7 +33,8 @@ export interface LiveExam {
   style: string;
   targetRank: number;
   fee: number;
-  kataSeed: number;
+  /** 0060: the chart's end tick (the seed stays on the server; the notes come with dojoKataNotes). */
+  kataLength: number;
   status: "kata" | "spar";
   startedAtMs: number;
   expiresAtMs: number;
@@ -77,7 +78,7 @@ export function parseDojoState(data: unknown): DojoState | null {
   let exam: LiveExam | null = null;
   if (x && str(x.id) && str(x.style) && (x.status === "kata" || x.status === "spar")) {
     exam = {
-      id: str(x.id)!, style: str(x.style)!, targetRank: num(x.target_rank) ?? 1, fee: num(x.fee) ?? 0, kataSeed: num(x.kata_seed) ?? 0,
+      id: str(x.id)!, style: str(x.style)!, targetRank: num(x.target_rank) ?? 1, fee: num(x.fee) ?? 0, kataLength: num(x.kata_length) ?? 0,
       status: x.status, startedAtMs: num(x.started_at_ms) ?? 0, expiresAtMs: num(x.expires_at_ms) ?? 0, match: parseMatch(x.match),
     };
   }
@@ -101,7 +102,9 @@ const parseAc = (v: unknown): AnticheatEnvelope | null => {
 
 export interface ExamStart {
   examId: string;
-  kataSeed: number;
+  /** 0060: the chart's end tick, and its first notes (flat [tick, lane, …]); the rest come with dojoKataNotes. */
+  kataLength: number;
+  chart: number[];
   notes: number;
   tpb: number;
   half: boolean;
@@ -114,12 +117,22 @@ export interface ExamStart {
 
 export function parseExamStart(data: unknown): ExamStart | null {
   const r = obj(data);
-  const id = str(r?.exam_id), seed = num(r?.kata_seed), now = num(r?.server_now_ms);
-  if (!r || !id || seed === null || now === null) return null;
+  const id = str(r?.exam_id), len = num(r?.kata_length), now = num(r?.server_now_ms);
+  if (!r || !id || len === null || now === null) return null;
   return {
-    examId: id, kataSeed: seed, notes: num(r.notes) ?? 0, tpb: num(r.ticks_per_beat) ?? 40, half: r.half === true,
+    examId: id, kataLength: len, chart: ints(r.chart), notes: num(r.notes) ?? 0, tpb: num(r.ticks_per_beat) ?? 40, half: r.half === true,
     passPct: num(r.pass_pct) ?? 60, expiresAtMs: num(r.expires_at_ms) ?? 0, coins: num(r.coins), state: parseDojoState(r.state), serverNowMs: now,
   };
+}
+
+/** 0060: the kata's notes revealed so far (up to the server's elapsed ticks + 240); `status` other than "kata": the
+ *  exam ended. */
+export interface KataNotes { status: string; chart: number[]; upto: number; length: number; total: number; serverNowMs: number }
+export function parseKataNotes(data: unknown): KataNotes | null {
+  const r = obj(data);
+  const now = num(r?.server_now_ms);
+  if (!r || now === null || typeof r.status !== "string") return null;
+  return { status: r.status, chart: ints(r.chart), upto: num(r.upto) ?? -1, length: num(r.length) ?? 0, total: num(r.total) ?? 0, serverNowMs: now };
 }
 
 export interface KataResult {
@@ -247,6 +260,8 @@ export interface PushAnswer {
   /** v20.3 fight_claim: whether the claim won, else how long to wait (ms). */
   claimed?: boolean;
   waitMs?: number | null;
+  /** 0060 a secret-bot match: the server's public sim at simFrame, on every push (the client resyncs from it). */
+  sim?: State;
 }
 
 export function parsePushAnswer(data: unknown): PushAnswer | null {
@@ -263,6 +278,7 @@ export function parsePushAnswer(data: unknown): PushAnswer | null {
     out.claimed = r.claimed;
     out.waitMs = num(r.wait_ms);
   }
+  if (Array.isArray(r.sim) && r.sim.length > 0 && !("params" in r)) out.sim = ints(r.sim);
   return out;
 }
 
@@ -299,6 +315,7 @@ async function call<T>(fn: string, args: Record<string, unknown>, parse: (d: unk
 export const dojoState = (token: string) => call("dojo_state", { p_session_token: token }, parseDojoState);
 export const dojoEnroll = (token: string, style: string) => call("dojo_enroll", { p_session_token: token, p_style: style }, parseDojoState);
 export const dojoExamStart = (token: string, style: string) => call("dojo_exam_start", { p_session_token: token, p_style: style }, parseExamStart);
+export const dojoKataNotes = (token: string, exam: string) => call("dojo_kata_notes", { p_session_token: token, p_exam: exam }, parseKataNotes);
 export const dojoKataSubmit = (token: string, exam: string, presses: number[]) =>
   call("dojo_kata_submit", { p_session_token: token, p_exam: exam, p_presses: presses }, parseKataResult);
 export const fightPush = (token: string, match: string, from: number, runs: number[], hashFrame: number | null, hash: number | null) =>

@@ -4,7 +4,7 @@
 // of the clock, every mask passes the rate limiter, and the inputs are pushed in 60-frame steps with the hash of the
 // state at the step's end. Pure: the overlay drives it with the clock and the keys.
 
-import { stepWithBots } from "./bot";
+import { SecretBotStream, stepWithBots } from "./bot";
 import { G_PHASE, PH_OVER, createMatch, hash, type MatchParams, type State } from "./engine";
 import { RateLimiter, RunRecorder } from "./log";
 
@@ -22,6 +22,9 @@ export const PUSH_EVERY = 60;
 export const CATCH_UP_MAX = 240;
 
 const FPS = 60;
+
+/** A decoy stream's seed: any int32 (the real one never leaves the server). */
+const randomSeed = (): number => (Math.random() * 4294967296) | 0;
 
 /** The server clock from the `server_now_ms` of RPC answers: the median of the last 5 offsets (answer − half the trip). */
 export class ServerClock {
@@ -61,9 +64,19 @@ export class RefereedMatch {
   private readonly lim = new RateLimiter();
   private readonly hashes = new Map<number, number>();
   private inFlight = false;
+  /** 0060 a secret-bot match: the bot plays a decoy stream here (display only); no hash is sent, every push resyncs. */
+  readonly secret: boolean;
+  private decoy: SecretBotStream | null;
 
-  constructor(readonly params: MatchParams, readonly startedAtMs: number) {
+  constructor(readonly params: MatchParams, readonly startedAtMs: number, decoySeed: (round: number) => number = randomSeed) {
     this.state = createMatch(params);
+    this.secret = params.secretBot === true;
+    this.decoy = this.secret ? new SecretBotStream(decoySeed) : null;
+  }
+
+  /** One frame: the server's deterministic bots, or a secret match's decoy. */
+  private stepOne(s: State, m: number): State {
+    return this.decoy ? this.decoy.step(s, m, 0) : stepWithBots(s, m, 0);
   }
 
   get over(): boolean {
@@ -87,10 +100,10 @@ export class RefereedMatch {
     while (this.frame < due && n < max && !this.over) {
       const m = this.lim.limit(mask);
       this.rec.push(m);
-      this.state = stepWithBots(this.state, m, 0);
+      this.state = this.stepOne(this.state, m);
       this.frame += 1;
       n += 1;
-      if (this.frame % PUSH_EVERY === 0 || this.over) this.hashes.set(this.frame, hash(this.state));
+      if (!this.secret && (this.frame % PUSH_EVERY === 0 || this.over)) this.hashes.set(this.frame, hash(this.state));
     }
     return n;
   }
@@ -121,7 +134,7 @@ export class RefereedMatch {
   /** Procedure R for a bot match: take the server's sim at `simFrame` and re-apply my own recorded frames past it. */
   resync(sim: State, simFrame: number): void {
     let s = sim.slice();
-    for (let k = simFrame; k < this.frame; k++) s = stepWithBots(s, this.rec.maskAt(k), 0);
+    for (let k = simFrame; k < this.frame; k++) s = this.stepOne(s, this.rec.maskAt(k));
     this.state = s;
   }
 
@@ -131,9 +144,9 @@ export class RefereedMatch {
       for (let k = 0; k < runs[i + 1]; k++) {
         const m = this.lim.limit(runs[i]);
         this.rec.push(m);
-        this.state = stepWithBots(this.state, m, 0);
+        this.state = this.stepOne(this.state, m);
         this.frame += 1;
-        if (this.frame % PUSH_EVERY === 0 || this.over) this.hashes.set(this.frame, hash(this.state));
+        if (!this.secret && (this.frame % PUSH_EVERY === 0 || this.over)) this.hashes.set(this.frame, hash(this.state));
       }
     }
     this.pushed = this.frame;

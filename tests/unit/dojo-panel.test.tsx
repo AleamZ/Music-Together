@@ -47,7 +47,7 @@ describe("dojo gates", () => {
   });
 
   it("resumes a live exam of the style and blocks the others", () => {
-    const exam = { id: "e", style: VX.key, targetRank: 1, fee: 1000, kataSeed: 7, status: "spar" as const, startedAtMs: NOW, expiresAtMs: NOW + 1, match: null };
+    const exam = { id: "e", style: VX.key, targetRank: 1, fee: 1000, kataLength: 900, status: "spar" as const, startedAtMs: NOW, expiresAtMs: NOW + 1, match: null };
     expect(examGate(st({ exam }), VX.key, 0, NOW)).toMatchObject({ enabled: true, resume: "spar", label: "Vào sàn tập với thầy" });
     const other = MARTIAL.find((m) => m.key !== VX.key)!;
     const s2 = st({ exam, enrollments: [enr(), enr({ style: other.key })], wearing: other.uniform });

@@ -109,6 +109,32 @@ describe("0059: start_cast, start_net and finish_cast are their newest bodies pl
   });
 });
 
+describe("0060: the dojo's and the hầm's functions are their newest bodies plus the marked lines", () => {
+  const M60 = M("0060_fight_secrets");
+  const M50 = M("0050_dojo"), M52 = M("0052_underground");
+  const after = (from: string) => ["0051_bai_dat", "0052_underground", "0055_blacklist", "0056_net_replay", "0057_server_position",
+    "0058_pos_tabs", "0059_reel_hook"].filter((f) => f.slice(0, 4) > from);
+  const cases: Array<[string, string, string]> = [
+    ["_dojo_json(", M50, "0050"], ["dojo_exam_start(", M50, "0050"], ["dojo_kata_submit(", M50, "0050"],
+    ["ug_ladder_start(", M52, "0052"], ["fight_push(", M52, "0052"],
+  ];
+  for (const [sig, src, from] of cases) {
+    it(sig, () => {
+      const name = sig.slice(0, sig.indexOf("("));
+      for (const f of after(from)) expect(M(f).includes(`function public.${name}(`), `${name} in ${f}`).toBe(false);
+      expect(unmarked(body(M60, sig), "0060")).toBe(body(src, sig));
+      expect(body(M60, sig)).toContain("-- 0060");
+    });
+  }
+  it("no kata seed and no bot seed leaves the server", () => {
+    for (const sig of ["_dojo_json(", "dojo_exam_start("]) {
+      expect(body(M60, sig).split("\n").filter((l) => l.includes("'kata_seed'") && !l.includes("-- 0060 was:"))).toEqual([]);
+    }
+    expect(body(M60, "dojo_kata_submit(")).toContain("jsonb_build_object('seed', 0, 'secretBot', true,");
+    expect(body(M60, "ug_ladder_start(")).toContain("jsonb_build_object('seed', 0, 'secretBot', true,");
+  });
+});
+
 describe("0056 mirrors lib/game/fishing/net.ts's constants", () => {
   it("the throw: the flight, the sink, the release limit, the aim and the ellipse", () => {
     expect(M56).toContain(`lt bigint := p_release + ${NETX.flightTicks}`);

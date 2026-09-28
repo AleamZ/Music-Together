@@ -232,6 +232,8 @@ export interface MatchParams {
   p2: FighterParams;
   /** v20.3 PvP: the input delay N both clients use (2–6); not part of the sim. */
   delay?: number;
+  /** 0060: a bot match whose bots roll from the server's secret stream (seed 0; bot.ts stepWithSecretBots). */
+  secretBot?: boolean;
 }
 
 export const BOT_DUMMY = 9;

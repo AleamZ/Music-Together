@@ -130,6 +130,49 @@ export const kataPassed = (s: KataScore, passPct: number): boolean => s.points *
 export const kataSuspect = (chart: KataChart, s: KataScore): boolean =>
   chart.notes.length >= KATA_PERFECT_NOTES && s.miss === 0 && s.worst <= KATA_SUSPECT_TICKS;
 
+/** 0060: the chart is revealed as it plays — the notes up to the server's elapsed ticks + KATA_REVEAL (4 s ahead). */
+export const KATA_REVEAL = 240;
+/** The client asks for more when its known notes end within this many ticks of its clock. */
+export const KATA_REFILL = 150;
+/** 0060 kata_robotic: at least this many judged presses whose Δ spread under 0.75 tick (16·var < 9). */
+export const KATA_ROBOTIC_NOTES = 24;
+
+/** The notes of a flat chart [tick, lane, …] up to tick `upto` (public._kata_reveal). */
+export function kataReveal(flat: readonly number[], upto: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i + 1 < flat.length; i += 2) if (flat[i] <= upto) out.push(flat[i], flat[i + 1]);
+  return out;
+}
+
+/** The signed Δ (press − note) of every judged press, in press order (public._kata_offsets: kataScore's matching). */
+export function kataOffsets(chart: KataChart, presses: readonly number[]): number[] {
+  const n = chart.notes.length;
+  const judged = new Array<boolean>(n).fill(false);
+  const out: number[] = [];
+  for (let i = 0; i < presses.length; i += 2) {
+    const t = presses[i], l = presses[i + 1];
+    let best = -1, bestD = KATA_GOOD + 1;
+    for (let k = 0; k < n; k++) {
+      if (judged[k] || chart.notes[k][1] !== l) continue;
+      const d = Math.abs(chart.notes[k][0] - t);
+      if (d < bestD) { best = k; bestD = d; }
+    }
+    if (best < 0) continue;
+    judged[best] = true;
+    out.push(t - chart.notes[best][0]);
+  }
+  return out;
+}
+
+/** Timing without a hand's noise (public._kata_robotic): ≥ 24 judged presses, sd < 0.75 tick. */
+export function kataRobotic(offsets: readonly number[]): boolean {
+  const n = offsets.length;
+  if (n < KATA_ROBOTIC_NOTES) return false;
+  let sm = 0, sq = 0;
+  for (const d of offsets) { sm += d; sq += d * d; }
+  return 16 * (n * sq - sm * sm) < 9 * n * n;
+}
+
 export type KataJudgement = "perfect" | "good" | "miss";
 
 /** The judgement a single press would get right now (the overlay's live feedback; the server re-scores everything). */

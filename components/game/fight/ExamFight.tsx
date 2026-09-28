@@ -74,7 +74,9 @@ export default function ExamFight({ token, match, resume, clock, look, name, mas
         clock.sample(value.serverNowMs, sentAt, receivedAt);
         ref.pushDone(value.frontier);
         if (value.anticheat) onFlagRef.current?.(value.anticheat.code);
-        if (value.resync) {
+        // 0060 a secret-bot match: the server's sim on every push (the local bot is a decoy)
+        if (value.sim && value.status === "live") ref.resync(value.sim, value.simFrame);
+        else if (value.resync) {
           const st = await fightState(token, match.id);
           ref.resync(st.value.sim, st.value.simFrame);
         }

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { KATA_REVEAL, KATA_ROBOTIC_NOTES } from "@/lib/game/fight/kata";
 import { REEL_TIMING, reelTiming, reelTimingSuspect } from "@/lib/game/fishing/reel";
 
 // Anti-cheat v2, part 2 (docs/superpowers/plans/2026-09-28-anticheat-v2-part2.md): the TS halves of 0058–0063 and their
@@ -26,5 +27,19 @@ describe("0059: the reel's toggle timing", () => {
     expect(m).toContain(`(p_t->>'n')::int >= ${REEL_TIMING.fastMin} and ${REEL_TIMING.fastShare} * (p_t->>'fast')::int >= (p_t->>'n')::int`);
     expect(m).toContain(`(p_t->>'n')::int >= ${REEL_TIMING.metronomeMin} and (p_t->>'var')::numeric < ${REEL_TIMING.metronomeVar}`);
     expect(m).toContain("count(*) filter (where g <= 2)");
+  });
+});
+
+describe("0060: the kata's reveal and noise, the bots' secret", () => {
+  const m = M("0060_fight_secrets");
+  it("the constants are kata.ts's", () => {
+    expect(m).toContain(`floor(extract(epoch from now() - ex.started_at) * 60)::integer + ${KATA_REVEAL};`);
+    expect(m).toContain(`to_jsonb(public._kata_reveal(v_chart, ${KATA_REVEAL}))`);
+    expect(m).toContain(`select n >= ${KATA_ROBOTIC_NOTES} and 16 * (n * sq - sm * sm) < 9 * n * n`);
+  });
+  it("the secret never reaches a client", () => {
+    expect(m).toContain("revoke all on public.ac_secrets from anon, authenticated;");
+    expect(m).toContain("revoke all on function public._fx_bot_seed(uuid, integer) from public, anon, authenticated;");
+    expect(m).toContain("s[5 + 1] := 0;");
   });
 });

@@ -6,7 +6,7 @@
 import { rand32 } from "@/lib/game/fishing/reel";
 import {
   A_ATTACK, A_BLOCKSTUN, A_JATTACK, A_JUMP, A_THROWN, BOT_DUMMY, ENERGY_MAX, F_ACT, F_AF, F_BOT, F_BOTMEM, F_EN, F_FACE,
-  F_HITS, F_MASK, F_STYLE, F_X, G_FRAME, G_PHASE, G_RNG, IN_DOWN, IN_HK, IN_HP, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_UP,
+  F_HITS, F_MASK, F_STYLE, F_X, G_FRAME, G_PHASE, G_RNG, G_ROUND, IN_DOWN, IN_HK, IN_HP, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_UP,
   PH_FIGHT, PH_OVER, SUB, curMove, fb, isAirborne, isFree, step, type State,
 } from "./engine";
 import {
@@ -240,6 +240,36 @@ export function stepWithBots(s0: State, a: number, b: number): State {
   const ma = s[fb(0) + F_BOT] > 0 ? botInput(s, 0) : a;
   const mb = s[fb(1) + F_BOT] > 0 ? botInput(s, 1) : b;
   return step(s, ma, mb);
+}
+
+/** 0060 a secret-bot match (`params.secretBot`): the bots' rolls come from a stream outside the state, which stays on
+ *  the server (public._fx_step_secret); G_RNG is 0 in every state. One frame: the stream goes into G_RNG for the bots'
+ *  decisions and comes out again. */
+export function stepWithSecretBots(s0: State, a: number, b: number, rng: number): { state: State; rng: number } {
+  const s = s0.slice();
+  s[G_RNG] = rng | 0;
+  const ma = s[fb(0) + F_BOT] > 0 ? botInput(s, 0) : a;
+  const mb = s[fb(1) + F_BOT] > 0 ? botInput(s, 1) : b;
+  const out = s[G_RNG] | 0;
+  s[G_RNG] = 0;
+  return { state: step(s, ma, mb), rng: out };
+}
+
+/** The stream of a secret-bot match: re-seeded with `seedOf(round)` whenever the round changes (the server's
+ *  _fx_bot_seed; a client, which never learns it, plays a decoy stream for the display only). */
+export class SecretBotStream {
+  private round = 0;
+  private rng = 0;
+  constructor(private readonly seedOf: (round: number) => number) {}
+  step(s: State, a: number, b: number): State {
+    if (s[G_ROUND] !== this.round) {
+      this.round = s[G_ROUND];
+      this.rng = this.seedOf(this.round) | 0;
+    }
+    const r = stepWithSecretBots(s, a, b, this.rng);
+    this.rng = r.rng;
+    return r.state;
+  }
 }
 
 /** The masks a bot match produced, frame by frame (fixtures record bots as plain logs). */
