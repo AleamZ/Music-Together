@@ -69,6 +69,10 @@ export function freshChatBubbles(messages: ChatMessage[], shown: ReadonlySet<str
   return messages.filter((m) => !shown.has(m.id) && m.account_id !== null && now - Date.parse(m.created_at) <= maxAgeMs);
 }
 
-/** v20.4: a name tag with its season title ("Lan «Thủy quái mùa 1»"). */
-export const nameTag = (name: string, look: Pick<Look, "ugTitle"> | null | undefined): string =>
-  look?.ugTitle ? `${name} «${look.ugTitle}»` : name;
+/** v20.4: a name tag with its season title ("Lan «Thủy quái mùa 1»"); v21: the level first and the worn achievement title
+ *  over the season one ("Lv12 Lan «Lão ngư»"). */
+export const nameTag = (name: string, look: Pick<Look, "ugTitle" | "pgLevel" | "pgTitle"> | null | undefined): string => {
+  const title = look?.pgTitle || look?.ugTitle;
+  const base = look?.pgLevel ? `Lv${look.pgLevel} ${name}` : name;
+  return title ? `${base} «${title}»` : base;
+};

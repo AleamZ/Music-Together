@@ -47,6 +47,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'estate_state(text)', 'news_feed(uuid,text)', 'news_mark_read(uuid,text,text)', 'dojo_state(text)', 'ring_board(uuid,text)',
      'ring_state(uuid,text)', 'fight_state(text,uuid)', 'ug_board(uuid,text)', 'ug_status(uuid,text)', 'ug_cup_state(uuid,text)',
      'dojo_kata_notes(text,uuid)',
+     'progress_state(text)', 'progress_leaderboard(text,text)',   -- v21 progression (0070)
      -- the position and the heartbeat: they run during a lock by design (0057), and judge every claim themselves
      'pos_report(text,text,integer,integer)', 'vitals_tick(text,uuid,text,integer,integer)',
      'jump_in(uuid,text,integer,integer)', 'rescue_swimmer(uuid,text,uuid,integer,integer)', 'leave_water(uuid,text)',

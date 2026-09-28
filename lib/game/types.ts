@@ -48,4 +48,7 @@ export interface Look {
   belt?: number | null;
   /** v20.4: the newest underground season title ("Thủy quái mùa 1"), shown on the name tag (0052's characters.ug_title). */
   ugTitle?: string | null;
+  /** v21: the character level and the worn achievement title (0070's characters.pg_level / pg_title; server-written). */
+  pgLevel?: number | null;
+  pgTitle?: string | null;
 }

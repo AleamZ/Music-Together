@@ -131,6 +131,10 @@ import PersonalSettings from "./PersonalSettings";
 import { loadWeatherFx, saveWeatherFx } from "@/lib/game/weather/fx";
 import type { WeatherFx } from "@/lib/game/art/weather";
 import WeatherLocationDialog from "./WeatherLocationDialog";
+import ProfileModal from "./progression/ProfileModal";                        // v21 progression
+import { useProgress } from "@/hooks/useProgress";
+import { mapMinLevel, mapUnlocked } from "@/lib/game/progression/model";
+import { titleText } from "@/lib/game/progression/rpc";
 
 export interface GameShellProps {
   view: RoomView;
@@ -143,7 +147,7 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
@@ -310,6 +314,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const getCanvas = useCallback(() => canvasRef.current, []);
   const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: gameToast });
   const { interact: fishingInteract, promptText, cancelCast, onFishingInput } = fishing;
+  // v21 progression (0070): my level, title, Fishdex and waypoints; a level-up is toasted and my name tag re-announced
+  const progress = useProgress(token, { toast: showToast, onLevelUp: (l) => showToast(`🎉 Lên cấp ${l}! Mở Hồ sơ (⭐) để xem phần thưởng.`) });
+  const myLevel = progress.state?.level ?? 1;
+  const myTitle = titleText(progress.state);
   // v20.3 Bãi đất trống: the rings (labels, my corner, my live match)
   const rings = useRings({ token, roomId: room.id, accountId, mapId: travel.mapId, canvas: getCanvas, toast: gameToast });
   const { takeCorner } = rings;
@@ -341,9 +349,17 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const dogName = dog.dog?.name ?? null, dogCoat = dog.dog?.coat ?? null, dogHungry = dog.hungry;
   useEffect(() => {
     canvasRef.current?.setLocal({
-      name: nameTag(myName, myLook), badges: myBadges, look: myLook, dog: dogName !== null && dogCoat !== null ? { name: dogName, coat: dogCoat } : null, dogHungry,
+      name: nameTag(myName, { ...myLook, pgLevel: myLevel, pgTitle: myTitle }), badges: myBadges, look: myLook, dog: dogName !== null && dogCoat !== null ? { name: dogName, coat: dogCoat } : null, dogHungry,
     });
-  }, [myName, myBadges, myLook, dogName, dogCoat, dogHungry]);
+  }, [myName, myBadges, myLook, dogName, dogCoat, dogHungry, myLevel, myTitle]);
+  // v21: the others re-read my characters row (pg_level / pg_title) when my level or title changes
+  const tagKey = `${myLevel}|${myTitle ?? ""}`;
+  const lastTag = useRef<string | null>(null);
+  useEffect(() => {
+    if (progress.state === null) return;
+    if (lastTag.current !== null && lastTag.current !== tagKey) canvasRef.current?.announceLook();
+    lastTag.current = tagKey;
+  }, [tagKey, progress.state]);
   const { closePanel: closeFarmPanel } = farm;
   const coopDog = { dog: dog.dog, busy: dog.busy, onAdopt: dog.adopt, onOpenDog: () => { closeFarmPanel(); setPanel("dog"); } };
 
@@ -585,6 +601,17 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     else mount(v);
   }, [liftAboard, mount, showToast]);
 
+  // v21 #93: a waypoint fast travel — the server checks where I stand, charges, and moves its position; then I arrive
+  const progressTravel = progress.travel;
+  const teleport = useCallback(async (id: string) => {
+    const r = await progressTravel(id);
+    if (!r) return;
+    setPanel(null);
+    cancelCast();
+    travelTo({ map: r.to.map, arrive: { x: r.to.x, y: r.to.y, dir: r.to.dir } });
+    reloadCoins();
+  }, [progressTravel, cancelCast, travelTo, reloadCoins]);
+
   const onInteract = useCallback((it: Interactable) => {
     if (interactBlocked(riding, it.kind)) {
       showToast(dismountText(it.prompt));
@@ -599,6 +626,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         break;
       case "portal":
         if (!it.to) break;
+        if (!mapUnlocked(it.to.map, myLevel, progress.state?.mapLevels)) {                    // v21 #92: the map's level
+          showToast(`🔒 Cần đạt cấp ${mapMinLevel(it.to.map, progress.state?.mapLevels)} mới vào được khu này.`);
+          break;
+        }
         cancelCast();
         liftPortal(it.to.map);                                              // v18.13: my passenger comes along
         if (isRoadTrip(mapId, it.to.map)) {
@@ -697,7 +728,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       default:
         if (!farmInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner, myLevel, progress.state?.mapLevels]);
 
   // v20.4 the knock on the hatch: ug_enter checks the unlock again, then down the ladder (the refs keep a re-render
   // from cancelling the knock)
@@ -835,6 +866,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             </div>
             {/* row 3: the icon buttons (labels in the tooltips and for screen readers) */}
             <div className="flex flex-wrap items-center gap-1 [&_.pch-btn]:px-1.5 [&_.pch-btn]:py-0.5 [&_.pch-btn]:text-sm [&_.pch-btn]:leading-none">
+              <button type="button" className="pch-btn relative tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng" data-testid="profile-hud"
+                onClick={() => { setPanel("profile"); void progress.reload(); }}>
+                ⭐{myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span>
+              </button>
               <button type="button" className="pch-btn relative" data-hotkey="wardrobe" title="Tủ đồ (I)" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
                 👕<span className="sr-only"> Tủ đồ</span><KeyBadge id="wardrobe" />
               </button>
@@ -1356,6 +1391,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           />
         );
       })()}
+      {panel === "profile" && token && (                                   // v21 progression
+        <ProfileModal token={token} state={progress.state} busy={progress.busy} onSetTitle={(id) => void progress.setTitle(id)}
+          onTravel={(id) => void teleport(id)} onClose={close} />
+      )}
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}

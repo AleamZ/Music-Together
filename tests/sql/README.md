@@ -52,6 +52,8 @@ them the privilege checks prove nothing. Afterwards: `pg_ctl -D $D stop -m fast`
 
 Every smoke above is re-runnable on the same cluster.
 
+v21: `v21-progression-smoke.sql` (0070; re-applies 0070 itself, run after the full chain; its writes are ordinary rows).
+
 ## The staged smokes
 
 The version smokes `v14`, `v15`, `v15-2`, `v15-gather`, `v16`, `v17`, `v18-1`, `v18-2`, `v18-2b`, `v18-4`, `v18-5`,
