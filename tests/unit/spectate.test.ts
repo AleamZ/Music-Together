@@ -65,7 +65,7 @@ describe("SpectatorFeed", () => {
   }, 60_000);
 
   it("a late joiner (mid-round) with lost packets catches up from fight_state", () => {
-    const { r, last, rolledBack } = watch(7, 20_000, 4);
+    const { r, last, rolledBack } = watch(7, 10_000, 4);
     expect(hash(last)).toBe(hash(replay(r.params, r.server.runs, r.server.simFrame)));
     expect(rolledBack).toBe(false);
   }, 60_000);

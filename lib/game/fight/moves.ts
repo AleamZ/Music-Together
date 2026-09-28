@@ -1,6 +1,6 @@
 // v20 Võ đài: the move tables (spec §v20.1 "Frame data", "Styles, stats and traits", "Specials per style").
-// Flattened to MOVE_TABLE (plain ints) for the engine and for the SQL mirror: 0048_fight_engine.sql's _fx_moves() is the
-// same literal, pinned by tests/unit/fight-sql-mirror.test.ts. Any change here is a change of the engine: regenerate
+// Flattened to MOVE_TABLE (plain ints) for the engine and for the SQL mirror: 0048_fight_engine.sql's _fx_moves() (newest:
+// 0079_chibi_boxes.sql) is the same literal, pinned by tests/unit/fight-sql-mirror.test.ts. Any change here is a change of the engine: regenerate
 // tests/fixtures/fight-cases.json and re-create _fx_moves() in the same commit (ruling R1).
 
 /** Ints per move record. */
@@ -140,27 +140,28 @@ interface Move {
 /** Display data of a special (UI and legend). */
 export interface SpecialInfo { slot: number; name: string; input: string }
 
-// Tự do's normals (every style starts from these; traits adjust them).
+// Tự do's normals (every style starts from these; traits adjust them). A reach is the chibi's (render/chibi.ts) limb
+// on the move's active frame: its front pixel's distance from the fighter's x, ±2 px (0079).
 const NORMALS: readonly Move[] = [
-  { kind: K_STAND, s: 5, a: 3, r: 8, dmg: 30, hitstun: 14, blockstun: 10, reach: 34, ylo: 40, yhi: 50, height: H_HIGH, flags: F_CANCEL, pb: 6 },
-  { kind: K_STAND, s: 9, a: 4, r: 16, dmg: 70, hitstun: 20, blockstun: 14, reach: 40, ylo: 38, yhi: 50, height: H_HIGH, flags: F_CANCEL | F_HEAVY, pb: 10 },
-  { kind: K_STAND, s: 6, a: 3, r: 10, dmg: 40, hitstun: 15, blockstun: 11, reach: 38, ylo: 20, yhi: 32, flags: F_CANCEL, pb: 6 },
-  { kind: K_STAND, s: 11, a: 4, r: 19, dmg: 80, hitstun: 22, blockstun: 15, reach: 46, ylo: 28, yhi: 44, flags: F_HEAVY, pb: 10 },
-  { kind: K_CROUCH, s: 4, a: 3, r: 7, dmg: 25, hitstun: 13, blockstun: 9, reach: 32, ylo: 22, yhi: 32, flags: F_CANCEL, pb: 6 },
-  { kind: K_CROUCH, s: 8, a: 4, r: 18, dmg: 65, hitstun: 20, blockstun: 14, reach: 30, ylo: 30, yhi: 58, flags: F_CANCEL | F_AAINV | F_HEAVY, win: [4, 10], pb: 10 },
-  { kind: K_CROUCH, s: 5, a: 3, r: 9, dmg: 30, hitstun: 13, blockstun: 10, reach: 38, ylo: 0, yhi: 10, height: H_LOW, flags: F_CANCEL, pb: 6 },
-  { kind: K_CROUCH, s: 10, a: 3, r: 24, dmg: 70, hitstun: 0, blockstun: 14, reach: 48, ylo: 0, yhi: 10, height: H_LOW, flags: F_KD | F_HEAVY, pb: 10 },
-  { kind: K_JUMP, s: 5, a: 8, r: 0, dmg: 35, hitstun: 16, blockstun: 10, reach: 30, ylo: 30, yhi: 44, height: H_OVERHEAD, pb: 4 },
-  { kind: K_JUMP, s: 8, a: 6, r: 0, dmg: 70, hitstun: 20, blockstun: 13, reach: 36, ylo: 24, yhi: 44, height: H_OVERHEAD, flags: F_HEAVY, pb: 4 },
-  { kind: K_JUMP, s: 6, a: 10, r: 0, dmg: 40, hitstun: 16, blockstun: 10, reach: 34, ylo: 14, yhi: 30, height: H_OVERHEAD, pb: 4 },
-  { kind: K_JUMP, s: 9, a: 6, r: 0, dmg: 80, hitstun: 21, blockstun: 13, reach: 40, ylo: 14, yhi: 34, height: H_OVERHEAD, flags: F_HEAVY, pb: 4 },
-  { kind: K_THROW, s: 5, a: 2, r: 20, dmg: 110, hitstun: 0, blockstun: 0, reach: 28, ylo: 0, yhi: 0, flags: F_KD | F_HEAVY, pb: 30, tech: 8 },
+  { kind: K_STAND, s: 5, a: 3, r: 8, dmg: 30, hitstun: 14, blockstun: 10, reach: 16, ylo: 44, yhi: 50, height: H_HIGH, flags: F_CANCEL, pb: 3 },
+  { kind: K_STAND, s: 9, a: 4, r: 16, dmg: 70, hitstun: 20, blockstun: 14, reach: 19, ylo: 42, yhi: 50, height: H_HIGH, flags: F_CANCEL | F_HEAVY, pb: 5 },
+  { kind: K_STAND, s: 6, a: 3, r: 10, dmg: 40, hitstun: 15, blockstun: 11, reach: 18, ylo: 20, yhi: 32, flags: F_CANCEL, pb: 3 },
+  { kind: K_STAND, s: 11, a: 4, r: 19, dmg: 80, hitstun: 22, blockstun: 15, reach: 20, ylo: 28, yhi: 44, flags: F_HEAVY, pb: 5 },
+  { kind: K_CROUCH, s: 4, a: 3, r: 7, dmg: 25, hitstun: 13, blockstun: 9, reach: 15, ylo: 22, yhi: 32, flags: F_CANCEL, pb: 3 },
+  { kind: K_CROUCH, s: 8, a: 4, r: 18, dmg: 65, hitstun: 20, blockstun: 14, reach: 12, ylo: 30, yhi: 58, flags: F_CANCEL | F_AAINV | F_HEAVY, win: [4, 10], pb: 5 },
+  { kind: K_CROUCH, s: 5, a: 3, r: 9, dmg: 30, hitstun: 13, blockstun: 10, reach: 18, ylo: 0, yhi: 10, height: H_LOW, flags: F_CANCEL, pb: 3 },
+  { kind: K_CROUCH, s: 10, a: 3, r: 24, dmg: 70, hitstun: 0, blockstun: 14, reach: 21, ylo: 0, yhi: 10, height: H_LOW, flags: F_KD | F_HEAVY, pb: 5 },
+  { kind: K_JUMP, s: 5, a: 8, r: 0, dmg: 35, hitstun: 16, blockstun: 10, reach: 14, ylo: 30, yhi: 44, height: H_OVERHEAD, pb: 2 },
+  { kind: K_JUMP, s: 8, a: 6, r: 0, dmg: 70, hitstun: 20, blockstun: 13, reach: 17, ylo: 24, yhi: 44, height: H_OVERHEAD, flags: F_HEAVY, pb: 2 },
+  { kind: K_JUMP, s: 6, a: 10, r: 0, dmg: 40, hitstun: 16, blockstun: 10, reach: 16, ylo: 14, yhi: 30, height: H_OVERHEAD, pb: 2 },
+  { kind: K_JUMP, s: 9, a: 6, r: 0, dmg: 80, hitstun: 21, blockstun: 13, reach: 20, ylo: 14, yhi: 34, height: H_OVERHEAD, flags: F_HEAVY, pb: 2 },
+  { kind: K_THROW, s: 5, a: 2, r: 20, dmg: 110, hitstun: 0, blockstun: 0, reach: 25, ylo: 0, yhi: 0, flags: F_KD | F_HEAVY, pb: 30, tech: 8 },
 ];
 
-// A special's defaults: reach 40, hitbox y 20–50, hitstun 20, blockstun 14, pushback 12, chip 1/8.
+// A special's defaults: reach 20, hitbox y 20–50, hitstun 20, blockstun 14, pushback 6 (1 a hit for a multi-hit), chip 1/8.
 const sp = (slot: number, motion: number, btn: number, s: number, a: number, r: number, dmg: number, more: Partial<Move> = {}): Move => ({
-  kind: K_STRIKE, slot, motion, btn, s, a, r, dmg, hits: 1, hitstun: 20, blockstun: 14, reach: 40, ylo: 20, yhi: 50,
-  pb: (more.hits ?? 1) > 1 ? 2 : 12, chip: 1, cost: SLOT_COST[slot],
+  kind: K_STRIKE, slot, motion, btn, s, a, r, dmg, hits: 1, hitstun: 20, blockstun: 14, reach: 20, ylo: 20, yhi: 50,
+  pb: (more.hits ?? 1) > 1 ? 1 : 6, chip: 1, cost: SLOT_COST[slot],
   ...more,
   flags: (slot === 5 || dmg >= 100 ? F_HEAVY : 0) | (more.flags ?? 0),
 });
@@ -168,8 +169,8 @@ const grab = (slot: number, motion: number, btn: number, s: number, a: number, r
   sp(slot, motion, btn, s, a, r, dmg, { kind: K_GRAB, grab: range, reach: range[1], ylo: 0, yhi: 0, pb: 30, chip: 0, ...more });
 const parry = (slot: number, motion: number, btn: number, win: [number, number], r: number, dmg: number, hits: number, more: Partial<Move> = {}): Move =>
   sp(slot, motion, btn, win[1], 0, r, dmg, { kind: K_PARRY, hits, win, reach: 0, ylo: 0, yhi: 0, pb: 20, chip: 0, ...more });
-// the anti-air specials reach high
-const AA = { ylo: 20, yhi: 80, reach: 36 };
+// the anti-air specials reach high (the chibi's rising fist is 8–12 px ahead)
+const AA = { ylo: 20, yhi: 80, reach: 11 };
 
 interface StyleDef {
   atk: number; def: number; walk: number; jump: number; energy: number;
@@ -186,33 +187,33 @@ const STYLE_DEFS: readonly StyleDef[] = [
     specials: [sp(1, MO_QCF, B_P, 10, 4, 18, 90)],
     names: ["Cú đấm bụi đời"],
   },
-  // 1 Vovinam: j.HK reach +10 (flying kick)
+  // 1 Vovinam: j.HK reach +2 (flying kick)
   {
     atk: 100, def: 100, walk: 105, jump: 110, energy: 100,
-    normals: (n) => { n[MV_JHK].reach += 10; },
+    normals: (n) => { n[MV_JHK].reach += 2; },
     specials: [
-      sp(1, MO_QCF, B_P, 10, 4, 16, 90, { trav: 48 }),
+      sp(1, MO_QCF, B_P, 10, 4, 16, 90, { trav: 48, reach: 22 }),
       sp(2, MO_QCB, B_K, 13, 5, 18, 100, { trav: 24 }),
       sp(3, MO_DP, B_P, 5, 6, 24, 110, { inv: [1, 7], flags: F_KD, ...AA }),
-      grab(4, MO_QCF, B_K, 16, 3, 28, 160, [40, 90], { flags: F_KD | F_NOCROUCH }),
-      sp(5, MO_QCF2, B_HK, 8, 12, 30, 60, { hits: 5, inv: [1, 8], flags: F_KD, reach: 50 }),
+      grab(4, MO_QCF, B_K, 16, 3, 28, 160, [24, 32], { flags: F_KD | F_NOCROUCH }),
+      sp(5, MO_QCF2, B_HK, 8, 12, 30, 60, { hits: 5, inv: [1, 8], flags: F_KD }),
     ],
     names: ["Đấm thẳng lao", "Đá lái xoay", "Chém tay đỡ trời", "Đòn chân kẹp cổ", "Song phi cước"],
   },
-  // 2 Muay Thai: clinch throw range +6; HK has one hit of armour on frames 4–10
+  // 2 Muay Thai: clinch throw range +2; HK has one hit of armour on frames 4–10
   {
     atk: 110, def: 95, walk: 95, jump: 95, energy: 100,
     normals: (n) => {
-      n[MV_THROW].reach += 6;
+      n[MV_THROW].reach += 2;
       n[MV_HK].flags = (n[MV_HK].flags ?? 0) | F_ARMOR;
       n[MV_HK].win = [4, 10];
     },
     specials: [
-      sp(1, MO_QCF, B_P, 14, 3, 18, 110, { height: H_OVERHEAD }),
-      sp(2, MO_QCB, B_K, 12, 6, 20, 120, { trav: 56, flags: F_AIRBORNE, win: [6, 18] }),
-      sp(3, MO_DP, B_P, 5, 5, 26, 120, { inv: [1, 6], flags: F_KD, ...AA }),
-      grab(4, MO_QCF, B_K, 6, 2, 30, 60, [0, 32], { hits: 3 }),
-      sp(5, MO_QCF2, B_HP, 7, 6, 34, 55, { hits: 6, inv: [1, 7], flags: F_KD, reach: 50 }),
+      sp(1, MO_QCF, B_P, 14, 3, 18, 110, { height: H_OVERHEAD, reach: 12 }),
+      sp(2, MO_QCB, B_K, 12, 6, 20, 120, { trav: 56, flags: F_AIRBORNE, win: [6, 18], reach: 12 }),
+      sp(3, MO_DP, B_P, 5, 5, 26, 120, { inv: [1, 6], flags: F_KD, ...AA, reach: 10 }),
+      grab(4, MO_QCF, B_K, 6, 2, 30, 60, [0, 28], { hits: 3 }),
+      sp(5, MO_QCF2, B_HP, 7, 6, 34, 55, { hits: 6, inv: [1, 7], flags: F_KD, reach: 14 }),
     ],
     names: ["Chỏ bổ", "Gối bay", "Chỏ ngược", "Ôm ghì gối", "Mưa chỏ gối"],
   },
@@ -220,24 +221,24 @@ const STYLE_DEFS: readonly StyleDef[] = [
   {
     atk: 105, def: 100, walk: 100, jump: 100, energy: 100, chain: [MV_LP, MV_HP, 1], normals: () => {},
     specials: [
-      sp(1, MO_QCF, B_P, 11, 4, 17, 100, { trav: 64 }),
+      sp(1, MO_QCF, B_P, 11, 4, 17, 100, { trav: 64, reach: 22 }),
       sp(2, MO_QCB, B_K, 12, 4, 20, 110, { flags: F_KD }),
       sp(3, MO_DP, B_P, 4, 6, 25, 110, { inv: [1, 6], flags: F_KD, ...AA }),
-      sp(4, MO_DD, B_P, 18, 3, 20, 140, { flags: F_ARMOR, win: [6, 17], blockstun: 26, chip: 2 }),
-      sp(5, MO_QCF2, B_HP, 6, 3, 40, 350, { inv: [1, 6], flags: F_KD, reach: 44 }),
+      sp(4, MO_DD, B_P, 18, 3, 20, 140, { flags: F_ARMOR, win: [6, 17], blockstun: 26, chip: 2, reach: 14 }),
+      sp(5, MO_QCF2, B_HP, 6, 3, 40, 350, { inv: [1, 6], flags: F_KD }),
     ],
     names: ["Tsuki trượt", "Mawashi xoay", "Chưởng thượng", "Chặt gạch", "Nhất kích"],
   },
-  // 4 Taekwondo: every kick reaches 8 px further
+  // 4 Taekwondo: every kick reaches 2 px further
   {
     atk: 100, def: 95, walk: 105, jump: 105, energy: 100,
-    normals: (n) => { for (const i of [MV_LK, MV_HK, MV_CLK, MV_CHK, MV_JLK, MV_JHK]) n[i].reach += 8; },
+    normals: (n) => { for (const i of [MV_LK, MV_HK, MV_CLK, MV_CHK, MV_JLK, MV_JHK]) n[i].reach += 2; },
     specials: [
-      sp(1, MO_QCF, B_K, 9, 4, 16, 90, { pb: 60 }),
+      sp(1, MO_QCF, B_K, 9, 4, 16, 90, { pb: 30 }),
       sp(2, MO_QCB, B_K, 13, 5, 20, 120, { trav: 32, flags: F_KD }),
       sp(3, MO_DP, B_K, 5, 7, 24, 110, { inv: [1, 6], flags: F_KD, ...AA }),
       sp(4, MO_DD, B_K, 10, 12, 20, 45, { hits: 3, trav: 40 }),
-      sp(5, MO_QCF2, B_HK, 7, 20, 30, 55, { hits: 6, inv: [1, 7], flags: F_KD, reach: 50 }),
+      sp(5, MO_QCF2, B_HK, 7, 20, 30, 55, { hits: 6, inv: [1, 7], flags: F_KD }),
     ],
     names: ["Đá tống trước", "Đá xoay 360", "Đá móc lên", "Đá liên hoàn", "Phi long cước"],
   },
@@ -249,31 +250,32 @@ const STYLE_DEFS: readonly StyleDef[] = [
       n[MV_JHP].dmg = 84;
       n[MV_JLK] = { ...n[MV_JLP] };
       n[MV_JHK] = { ...n[MV_JHP] };
+      n[MV_HK].reach = 15; // the body hook is a short arm
     },
     specials: [
       sp(1, MO_QCF, B_P, 9, 4, 16, 100, { trav: 56 }),
       { kind: K_DODGE, slot: 2, motion: MO_QCB, btn: B_P, s: 1, a: 0, r: 20, dmg: 0, hitstun: 0, blockstun: 0, reach: 0, ylo: 0, yhi: 0,
         flags: F_DODGE, win: [1, 14], free: 10, pb: 0, cost: SLOT_COST[2] },
       sp(3, MO_DP, B_P, 4, 5, 26, 120, { inv: [1, 5], flags: F_KD, ...AA }),
-      sp(4, MO_DD, B_P, 8, 14, 18, 50, { hits: 3 }),
-      sp(5, MO_QCF2, B_HP, 10, 4, 36, 380, { flags: F_KD | F_ARMOR, win: [1, 10], reach: 44 }),
+      sp(4, MO_DD, B_P, 8, 14, 18, 50, { hits: 3, reach: 13 }),
+      sp(5, MO_QCF2, B_HP, 10, 4, 36, 380, { flags: F_KD | F_ARMOR, win: [1, 10] }),
     ],
     names: ["Đấm lao", "Lách né", "Móc ngược", "Móc liên hoàn", "Cú đấm định mệnh"],
   },
-  // 6 Judo: throw damage ×1.3, range +6, tech window +3
+  // 6 Judo: throw damage ×1.3, range +2, tech window +3
   {
     atk: 95, def: 110, walk: 90, jump: 90, energy: 100,
     normals: (n) => {
       n[MV_THROW].dmg = 143;
-      n[MV_THROW].reach += 6;
+      n[MV_THROW].reach += 2;
       n[MV_THROW].tech = (n[MV_THROW].tech ?? 0) + 3;
     },
     specials: [
-      grab(1, MO_QCF, B_P, 5, 2, 26, 150, [0, 34], { flags: F_KD }),
+      grab(1, MO_QCF, B_P, 5, 2, 26, 150, [0, 27], { flags: F_KD }),
       sp(2, MO_QCB, B_K, 8, 4, 20, 80, { height: H_LOW, flags: F_KD, ylo: 0, yhi: 12 }),
       parry(3, MO_DP, B_P, [2, 14], 22, 130, 1, { flags: F_KD }),
-      grab(4, MO_DD, B_K, 12, 3, 28, 180, [0, 50], { flags: F_KD }),
-      grab(5, MO_QCF2, B_HP, 3, 2, 40, 120, [0, 40], { hits: 3, flags: F_KD }),
+      grab(4, MO_DD, B_K, 12, 3, 28, 180, [0, 34], { flags: F_KD }),
+      grab(5, MO_QCF2, B_HP, 3, 2, 40, 120, [0, 27], { hits: 3, flags: F_KD }),
     ],
     names: ["Quật vai", "Gạt chân", "Phản đòn", "Quật ngược", "Liên hoàn quật"],
   },
@@ -283,10 +285,10 @@ const STYLE_DEFS: readonly StyleDef[] = [
     normals: (n) => { n[MV_LP].s = 4; },
     specials: [
       sp(1, MO_QCF, B_P, 7, 15, 16, 22, { hits: 5, trav: 30 }),
-      sp(2, MO_QCB, B_K, 6, 3, 16, 70, { height: H_LOW, pb: 50, ylo: 0, yhi: 12 }),
+      sp(2, MO_QCB, B_K, 6, 3, 16, 70, { height: H_LOW, pb: 25, ylo: 0, yhi: 12 }),
       parry(3, MO_DP, B_P, [1, 12], 20, 40, 3),
-      sp(4, MO_DD, B_P, 14, 3, 22, 130, { flags: F_KD, pb: 80 }),
-      sp(5, MO_QCF2, B_HP, 6, 30, 30, 32, { hits: 10, inv: [1, 6], reach: 50 }),
+      sp(4, MO_DD, B_P, 14, 3, 22, 130, { flags: F_KD, pb: 40 }),
+      sp(5, MO_QCF2, B_HP, 6, 30, 30, 32, { hits: 10, inv: [1, 6] }),
     ],
     names: ["Liên hoàn quyền", "Đá trụ", "Phục thủ", "Thốn quyền", "Mộc nhân trận"],
   },

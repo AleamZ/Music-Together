@@ -154,14 +154,14 @@ function decide(s: State, b: number, o: number, lv: BotLevel, level: number, f: 
     return;
   }
   const r2 = roll(s);
-  if (dist > 44) {
+  if (dist > 30) {
     const s1 = specialScript(s, b, 1);
     if (r2 < lv.special && s1 !== 0) startScript(s, b, s1);
     else if (r2 < lv.special + 20 && level >= 2) startScript(s, b, 8);
     else startHold(s, b, RF, lv.d);
     return;
   }
-  if (dist < 30 && r2 < 15 && level >= 2) {
+  if (dist < 26 && r2 < 15 && level >= 2) {
     startScript(s, b, 1);
     return;
   }

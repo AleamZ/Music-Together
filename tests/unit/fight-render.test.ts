@@ -87,8 +87,8 @@ describe("fight effects and HUD", () => {
   /** A jab on a standing fighter; returns every state. */
   function jab(): State[] {
     let s = start();
-    s[fb(0) + F_X] = 177 * SUB;
-    s[fb(1) + F_X] = 207 * SUB;
+    s[fb(0) + F_X] = 182 * SUB;
+    s[fb(1) + F_X] = 202 * SUB;
     const out = [s];
     for (let k = 0; k < 20; k++) {
       s = step(s, k === 0 ? IN_LP : 0, 0);
@@ -150,8 +150,8 @@ describe("fight effects and HUD", () => {
 
   it("shows the combo counter on the attacker's side", () => {
     let s = start();
-    s[fb(0) + F_X] = 177 * SUB;
-    s[fb(1) + F_X] = 207 * SUB;
+    s[fb(0) + F_X] = 182 * SUB;
+    s[fb(1) + F_X] = 202 * SUB;
     const masks = [IN_LP, 0, 0, 0, 0, 8, 8 | 2, 2 | IN_HP];
     let seen: string | null = null;
     for (let k = 0; k < 30; k++) {

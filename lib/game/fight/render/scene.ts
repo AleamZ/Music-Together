@@ -24,7 +24,7 @@ export interface SceneView {
   fx: EffectTracker;
   trail: TrailTracker;
   reduced: boolean;
-  /** Practice's frame-data toggle: hurtboxes and active hitboxes. */
+  /** Practice's frame-data toggle: hurtboxes and active hitboxes (the engine's, fitted to the chibi since 0079). */
   boxes: boolean;
   /** Which painter draws the fighters (fighter-art.ts): the rig, or the chibi prototype. Absent: the rig. */
   art?: FighterArt;
@@ -48,7 +48,9 @@ function paintBoxes(c: PixelCtx, s: State, side: number): void {
   const b = fb(side);
   const x = Math.trunc(s[b + F_X] / SUB), y = Math.trunc(s[b + F_Y] / SUB);
   const hb = isAirborne(s, b) ? HURT_AIR : isCrouching(s, b) ? HURT_CROUCH : HURT_STAND;
-  outline(c, x - hb[0] / 2, GROUND_Y - y - hb[1], x + hb[0] / 2, GROUND_Y - y, "#47e36a");
+  // the feet stand on GROUND_Y (fighterOrigin puts the box's last row there): a box h px tall covers the h rows up to it
+  const g = GROUND_Y + 1 - y;
+  outline(c, x - hb[0] / 2, g - hb[1], x + hb[0] / 2, g, "#47e36a");
   const a = s[b + F_ACT];
   if (a !== A_ATTACK && a !== A_JATTACK) return;
   const id = s[b + F_MOVE] - 1, kind = mv(id, M_KIND);
@@ -59,8 +61,8 @@ function paintBoxes(c: PixelCtx, s: State, side: number): void {
   const reach = kind === K_GRAB ? mv(id, M_GMAX) : mv(id, M_REACH);
   const near = kind === K_THROW ? 0 : mv(id, M_NEAR);
   const lo = face > 0 ? x + near : x - reach, hi = face > 0 ? x + reach : x - near;
-  const ylo = kind === K_THROW || kind === K_GRAB ? 0 : mv(id, M_YLO), yhi = kind === K_THROW || kind === K_GRAB ? 50 : mv(id, M_YHI);
-  outline(c, lo, GROUND_Y - y - yhi, hi, GROUND_Y - y - ylo, "#ff4a3d");
+  const ylo = kind === K_THROW || kind === K_GRAB ? 0 : mv(id, M_YLO), yhi = kind === K_THROW || kind === K_GRAB ? HURT_STAND[1] : mv(id, M_YHI);
+  outline(c, lo, g - yhi, hi, g - ylo, "#ff4a3d");
 }
 
 export function paintScene(c: SceneCtx, s: State, v: SceneView): void {

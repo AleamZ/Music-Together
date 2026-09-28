@@ -4,7 +4,7 @@ import {
   F_MOVE, F_STUN, F_X, G_FRAME, G_PHASE, G_RESULT, G_ROUND, IN_BL, IN_DOWN, IN_HK, IN_HP, IN_LEFT, IN_LK, IN_LP, IN_RIGHT,
   IN_SK, INTRO_FRAMES, PH_END, PH_FIGHT, PH_INTRO, PH_OVER, RESULT_DRAW, ROUND_FRAMES, STATE_LEN, SUB, createMatch,
   fb, fighterParams, hash, isFree, makeParams, roundResults, runFrames, step, type FighterParams, type State,
-  F_ATK, F_DEF, F_ENP, F_JUMP, F_STYLE, F_WALK, G_SBR,
+  F_ATK, F_DEF, F_ENP, F_JUMP, F_STYLE, F_WALK, G_SBR, STAGE_MAX,
 } from "@/lib/game/fight/engine";
 import { styleStats } from "@/lib/game/fight/styles";
 import { MV_HK, MV_HP, MV_LK, MV_LP, MV_S1, MV_S2, MV_S3, MV_TK, moveId } from "@/lib/game/fight/moves";
@@ -27,6 +27,14 @@ function place(s: State, gap: number): State {
   n[P2 + F_X] = n[P1 + F_X] + gap * SUB;
   return n;
 }
+/** Puts P2 against the right wall, `gap` px from P1: holding back blocks in place (the reaches are the chibi's
+ *  short limbs since 0079 — a defender walking back from point blank outwalks a heavy's startup). */
+function atWall(s: State, gap: number): State {
+  const n = s.slice();
+  n[P2 + F_X] = STAGE_MAX;
+  n[P1 + F_X] = STAGE_MAX - gap * SUB;
+  return n;
+}
 type Script = (k: number, s: State) => number;
 const seq = (masks: number[], after = 0): Script => (k) => (k < masks.length ? masks[k] : after);
 const hold = (m: number): Script => () => m;
@@ -40,7 +48,7 @@ function play(s: State, a: Script, b: Script, n: number, each?: (s: State, k: nu
 }
 /** Advantage of a normal on hit or block: (defender's first free frame) − (attacker's). */
 function advantage(btn: number, blocked: boolean): number {
-  const s = place(fightStart(), 30);
+  const s = blocked ? atWall(fightStart(), 20) : place(fightStart(), 20);
   let att = -1, def = -1, hit = false;
   play(s, seq([btn]), hold(blocked ? IN_RIGHT : 0), 80, (st, k) => {
     if (!hit && st[P2 + F_HITF] === st[G_FRAME]) hit = true;
@@ -99,7 +107,7 @@ describe("fight engine: layout and determinism", () => {
 
 describe("fight engine: frame data", () => {
   it("LP is active on its 6th frame (startup 5)", () => {
-    const s = place(fightStart(), 30);
+    const s = place(fightStart(), 20);
     const t0 = s[G_FRAME] + 1;
     const end = play(s, seq([IN_LP]), hold(0), 10);
     expect(end[P2 + F_HITF]).toBe(t0 + 5);
@@ -120,14 +128,14 @@ describe("fight engine: frame data", () => {
   });
 
   it("blocked normals chip nothing; blocked specials chip 1/8; chip never KOs", () => {
-    let s = place(fightStart(), 30);
+    let s = atWall(fightStart(), 20);
     s = play(s, seq([IN_HP]), hold(IN_RIGHT), 40);
     expect(s[P2 + F_HP]).toBe(1000);
     // Tự do S1 (90) by the shortcut: chip 11
-    s = place(fightStart(tudo({ en0: 1000 })), 30);
+    s = atWall(fightStart(tudo({ en0: 1000 })), 20);
     s = play(s, seq([IN_SK]), hold(IN_RIGHT), 40);
     expect(s[P2 + F_HP]).toBe(1000 - 11);
-    s = place(fightStart(tudo({ en0: 1000 }), tudo({ hpPct: 1 })), 30);
+    s = atWall(fightStart(tudo({ en0: 1000 }), tudo({ hpPct: 1 })), 20);
     s[P2 + F_HP] = 5;
     s = play(s, seq([IN_SK]), hold(IN_RIGHT), 40);
     expect(s[P2 + F_HP]).toBe(1);
@@ -135,20 +143,20 @@ describe("fight engine: frame data", () => {
 
   it("damage is base × ATK / DEF with combo scaling", () => {
     // Muay Thai (ATK 110) LP on Judo (DEF 110): 30
-    let s = place(fightStart(fighterParams(2, 0), fighterParams(6, 0)), 30);
+    let s = place(fightStart(fighterParams(2, 0), fighterParams(6, 0)), 20);
     s = play(s, seq([IN_LP]), hold(0), 30);
     expect(s[P2 + F_HP]).toBe(1000 - 30);
     // LP, then S1 cancelled on contact: 30 + 90 × 90 %
-    s = place(fightStart(), 30);
+    s = place(fightStart(), 20);
     s = play(s, seq([IN_LP, 0, 0, 0, 0, IN_DOWN, IN_DOWN | IN_RIGHT, IN_RIGHT | IN_HP]), hold(0), 60);
     expect(s[P2 + F_HP]).toBe(1000 - 30 - 81);
   });
 
   it("a crouching block stops lows; a standing one does not", () => {
-    let s = place(fightStart(), 30);
+    let s = place(fightStart(), 20);
     s = play(s, seq([IN_DOWN | IN_LK, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN]), hold(IN_RIGHT | IN_DOWN), 30);
     expect(s[P2 + F_HP]).toBe(1000);
-    s = place(fightStart(), 30);
+    s = place(fightStart(), 20);
     s = play(s, seq([IN_DOWN | IN_LK, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN]), hold(IN_RIGHT), 30);
     expect(s[P2 + F_HP]).toBe(1000 - 30);
   });
@@ -226,20 +234,20 @@ describe("fight engine: motions, buffer and the shortcut", () => {
   });
 
   it("the shortcut costs +100 energy and +2 startup, even for S1", () => {
-    let s = place(fightStart(fighterParams(3, 4, { en0: 300 })), 30);
+    let s = place(fightStart(fighterParams(3, 4, { en0: 300 })), 20);
     const t0 = s[G_FRAME] + 1;
     s = play(s, seq([IN_SK | IN_DOWN, IN_DOWN]), hold(0), 12);
     expect(s[P1 + F_EN]).toBe(0 + 50);                       // spent 300, then +50 for the hit
     expect(s[P2 + F_HITF]).toBe(t0 + 4 + 2);                  // Karate S3: startup 4 (+2)
-    s = place(fightStart(tudo({ en0: 99 })), 30);
+    s = place(fightStart(tudo({ en0: 99 })), 20);
     s = play(s, seq([IN_SK]), hold(0), 3);
     expect(s[P1 + F_MOVE]).toBe(0);
-    s = place(fightStart(tudo({ en0: 100 })), 30);
+    s = place(fightStart(tudo({ en0: 100 })), 20);
     s = play(s, seq([IN_SK]), hold(0), 3);
     expect(s[P1 + F_MOVE]).toBe(s1);
     expect(s[P1 + F_EN]).toBe(0);
     // O + Đỡ is the Tuyệt kỹ: 1000 + 100
-    s = place(fightStart(fighterParams(3, 4, { en0: 1000 })), 30);
+    s = place(fightStart(fighterParams(3, 4, { en0: 1000 })), 20);
     s = play(s, seq([IN_SK | IN_BL]), hold(0), 2);
     expect(s[P1 + F_MOVE]).not.toBe(moveId(3, MV_TK) + 1);
   });
@@ -253,8 +261,8 @@ describe("fight engine: motions, buffer and the shortcut", () => {
 });
 
 describe("fight engine: throws, knockdowns, energy", () => {
-  it("LP+LK within 28 px throws: 110 damage after the tech window, then a knockdown", () => {
-    let s = place(fightStart(), 24);
+  it("LP+LK within 23 px throws: 110 damage after the tech window, then a knockdown", () => {
+    let s = place(fightStart(), 20);
     s = play(s, seq([IN_LP | IN_LK]), hold(0), 7);
     expect(s[P2 + F_ACT]).toBe(A_THROWN);
     s = play(s, hold(0), hold(0), 8);
@@ -263,21 +271,21 @@ describe("fight engine: throws, knockdowns, energy", () => {
   });
 
   it("the defender techs with LP+LK within 8 frames: pushed 40 px apart, no damage", () => {
-    let s = place(fightStart(), 24);
+    let s = place(fightStart(), 20);
     s = play(s, seq([IN_LP | IN_LK]), seq([0, 0, 0, 0, 0, 0, 0, 0, IN_LP | IN_LK]), 12);
     expect(s[P1 + F_ACT]).toBe(A_TECHED);
     expect(s[P2 + F_ACT]).toBe(A_TECHED);
     expect(s[P2 + F_HP]).toBe(1000);
-    expect((s[P2 + F_X] - s[P1 + F_X]) / SUB).toBeGreaterThanOrEqual(24 + 40 - 1);
+    expect((s[P2 + F_X] - s[P1 + F_X]) / SUB).toBeGreaterThanOrEqual(20 + 40 - 1);
   });
 
   it("a throw cannot grab a fighter in hitstun, blockstun or the air", () => {
-    let s = place(fightStart(), 24);
+    let s = place(fightStart(), 20);
     s[P2 + F_ACT] = A_BLOCKSTUN;
     s[P2 + F_STUN] = 30;
     s = play(s, seq([IN_LP | IN_LK]), hold(IN_RIGHT), 8);
     expect(s[P2 + F_ACT]).not.toBe(A_THROWN);
-    s = place(fightStart(), 24);
+    s = place(fightStart(), 20);
     s[P2 + F_ACT] = A_HITSTUN;
     s[P2 + F_STUN] = 30;
     s = play(s, seq([IN_LP | IN_LK]), hold(0), 8);
@@ -285,7 +293,7 @@ describe("fight engine: throws, knockdowns, energy", () => {
   });
 
   it("a knocked-down fighter is invulnerable until it is up", () => {
-    let s = place(fightStart(), 30);
+    let s = place(fightStart(), 20);
     s = play(s, seq([IN_DOWN | IN_HK, IN_DOWN]), hold(0), 30);
     expect(s[P2 + F_ACT]).toBe(A_KNOCKDOWN);
     const hp = s[P2 + F_HP];
@@ -294,13 +302,13 @@ describe("fight engine: throws, knockdowns, energy", () => {
   });
 
   it("energy: +50 / +30 on a hit, +25 / +10 on a block, scaled by the style", () => {
-    let s = place(fightStart(), 30);
+    let s = place(fightStart(), 20);
     s = play(s, seq([IN_LP]), hold(0), 20);
     expect([s[P1 + F_EN], s[P2 + F_EN]]).toEqual([50, 30]);
-    s = place(fightStart(), 30);
+    s = place(fightStart(), 20);
     s = play(s, seq([IN_LP]), hold(IN_RIGHT), 20);
     expect([s[P1 + F_EN], s[P2 + F_EN]]).toEqual([25, 10]);
-    s = place(fightStart(fighterParams(7, 0)), 30);   // Vịnh Xuân 115 %
+    s = place(fightStart(fighterParams(7, 0)), 20);   // Vịnh Xuân 115 %
     s = play(s, seq([IN_LP]), hold(0), 20);
     expect(s[P1 + F_EN]).toBe(57);
   });
@@ -320,7 +328,7 @@ describe("fight engine: rounds, the timer and the draw rules", () => {
   });
 
   it("time-up goes to the higher HP‰; the next round starts after the pause", () => {
-    let s = place(fightStart(), 30);
+    let s = place(fightStart(), 20);
     s = play(s, seq([IN_LP]), hold(0), ROUND_FRAMES);
     expect(s[G_PHASE]).toBe(PH_END);
     expect(roundResults(s)[0]).toMatchObject({ reason: 2, winner: 1, hp2: 970 });
@@ -332,7 +340,7 @@ describe("fight engine: rounds, the timer and the draw rules", () => {
   });
 
   it("a double KO is a draw round", () => {
-    let s = place(fightStart(tudo({ hpPct: 2 }), tudo({ hpPct: 2 })), 30);
+    let s = place(fightStart(tudo({ hpPct: 2 }), tudo({ hpPct: 2 })), 20);
     s = play(s, seq([IN_LP]), seq([IN_LP]), 8);
     expect(s[G_PHASE]).toBe(PH_END);
     expect(roundResults(s)[0]).toMatchObject({ reason: 1, winner: 0 });
@@ -342,7 +350,7 @@ describe("fight engine: rounds, the timer and the draw rules", () => {
 
   it("two KO wins take a best-of-3; one takes a 1-round match", () => {
     const koRound = (s: State) => {
-      s = place(s, 30);
+      s = place(s, 20);
       s = play(s, seq([IN_LP]), hold(0), 30);
       return play(s, hold(0), hold(0), END_FRAMES + INTRO_FRAMES);
     };
@@ -368,7 +376,7 @@ describe("fight engine: rounds, the timer and the draw rules", () => {
 
 describe("styleByRound (v20.4: Trùm Hầm changes style each round)", () => {
   const koRound = (s: State) => {
-    s = place(s, 30);
+    s = place(s, 20);
     s = play(s, seq([IN_LP]), hold(0), 30);
     return play(s, hold(0), hold(0), END_FRAMES + INTRO_FRAMES);
   };

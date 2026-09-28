@@ -71,9 +71,11 @@ export const BUFFER_FRAMES = 4;
 export const PRESS_WINDOW = 6;
 export const THROW_GAP = 2;
 export const NEVER = -1000;
-export const HURT_STAND: readonly [number, number] = [22, 60];
-export const HURT_CROUCH: readonly [number, number] = [24, 38];
-export const HURT_AIR: readonly [number, number] = [20, 50];
+// the hurtboxes (width, height in px) hug the chibi fighter (render/chibi.ts), its big head included: ~22 px across
+// from the hair behind to the guard in front (0079)
+export const HURT_STAND: readonly [number, number] = [24, 52];
+export const HURT_CROUCH: readonly [number, number] = [24, 42];
+export const HURT_AIR: readonly [number, number] = [22, 54];
 export const ENGINE_VERSION = 1;
 
 // ---------- phases, actions, results ----------
