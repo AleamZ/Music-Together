@@ -17,14 +17,19 @@ const LABEL: Record<MapId, { icon: string; name: string }> = {
 };
 // v20.4: the hầm is a secret: nobody is counted there
 const MAPS = VISIBLE_MAP_IDS.map((id) => ({ id, ...LABEL[id] }));
+// two rows so the chip stays narrow as maps are added
+const HALF = Math.ceil(MAPS.length / 2);
+const ROWS = [MAPS.slice(0, HALF), MAPS.slice(HALF)].filter((r) => r.length > 0);
 
 /** Top-centre chip: how many members are on each map; tap for the names (classic-view members marked 🖥️). */
 export default function MapCounts({ counts }: { counts: Record<MapId, MapMember[]> }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="pointer-events-auto flex flex-col items-center gap-1 font-vt text-lg leading-none">
-      <button type="button" className="pch-btn" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        {MAPS.map((m) => `${m.icon} ${m.name} ${counts[m.id].length}`).join(" · ")}
+      <button type="button" className="pch-btn flex flex-col items-center gap-1" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {ROWS.map((row, i) => (
+          <span key={i} className="whitespace-nowrap">{row.map((m) => `${m.icon} ${m.name} ${counts[m.id].length}`).join(" · ")}</span>
+        ))}
       </button>
       {open && (
         <div className="pch flex max-w-[calc(100vw-1rem)] flex-col gap-1.5 p-2 text-base">
