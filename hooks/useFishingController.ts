@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { useCastSession, type CastSession, type CastView } from "@/hooks/useCastSession";
 import { useFishing, type FishingData } from "@/hooks/useFishing";
+import { useFishingExtras, type FishingExtras } from "@/hooks/useFishingExtras";
+import { BOAT_DECK_SPOT } from "@/lib/game/maps/pond";
 import { serverNow } from "@/lib/game/farm/clock";
 import {
   abandonedText, BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NET_EXPIRED, netLostText, netText, NO_NET, NOT_LOADED,
@@ -18,7 +20,9 @@ import type { Interactable } from "@/lib/game/maps/types";
 import type { QueueItem } from "@/lib/supabase";
 
 /** `market_depot` (v18.5): Vựa cá Chợ Lớn, the depot panel at +20%. */
-export type FishingPanel = "bag" | "depot" | "market_depot" | "shop" | "records";
+export type FishingPanel = "bag" | "depot" | "market_depot" | "shop" | "records"
+  /** v21 (0076): Bến ghe, the battles' board, the treasure maps. */
+  | "boat" | "battle" | "treasure";
 
 export interface FishingController {
   data: FishingData;
@@ -73,6 +77,10 @@ export interface FishingController {
   interact: (it: Interactable) => boolean;
   /** The HUD prompt: dig spots and fishing spots show their wait. */
   promptText: (it: Interactable) => string;
+  /** v21 (0076): the boat, the battles and the treasure maps. */
+  extras: FishingExtras;
+  /** v21 (0076): cast from the boat's deck (aboard only). */
+  boatCast: () => void;
 }
 
 export interface FishingControllerOptions {
@@ -125,9 +133,15 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   const data = useFishing(token, toast);
   const itemCatalog = data.catalog;
   const itemName = useCallback((id: string) => itemCatalog?.items.find((i) => i.id === id)?.name ?? id, [itemCatalog]);
-  const session = useCastSession({ roomId, data, canvas, toast, itemName });
+  // v21 (0076): a cast from the boat goes to start_boat_cast; the rest of the cast (hook, reel, finish) is the same
+  const boatCasting = useRef(false);
+  const castData = useMemo(() => ({
+    ...data, startCast: (r: string, cell?: { col: number; row: number }) => (boatCasting.current ? data.startBoatCast(r) : data.startCast(r, cell)),
+  }), [data]);
+  const session = useCastSession({ roomId, data: castData, canvas, toast, itemName });
   const { state, failed, catalog, reload, claimDaily, dig, sell: sellFish, release: releaseFish, buy: buyItem, equip: setLoadout, repair: repairRod } = data;
   const [panel, setPanel] = useState<FishingPanel | null>(null);
+  const extras = useFishingExtras({ token, roomId, canvas, toast, watching: panel === "battle", onCoins: () => void reload() });   // v21
   const stateRef = useRef(state);
   const failedRef = useRef(failed);
   const toastRef = useRef(toast);
@@ -393,6 +407,23 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   }, []);
   const loadBoard = useCallback(() => fetchFishingBoard(roomId, token), [roomId, token]);
 
+  // v21 (0076): a cast from the boat's deck — the same checks, then start_boat_cast
+  const boatCast = useCallback(() => {
+    const refusal = castRefusal(stateRef.current, failedRef.current, false);
+    if (refusal) {
+      toastRef.current(refusal);
+      return;
+    }
+    boatCasting.current = true;
+    try {
+      castAt(BOAT_DECK_SPOT);
+    } finally {
+      boatCasting.current = false;
+    }
+  }, [castAt]);
+  const aboard = extras.state?.boat.aboard ?? false;
+  const reloadExtras = extras.reload;
+
   const interact = useCallback((it: Interactable): boolean => {
     switch (it.kind) {
       case "dig_spot":
@@ -409,10 +440,20 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       case "market_fish_depot":
         setPanel("market_depot");
         return true;
+      case "boat":                                                         // v21 (0076)
+        if (it.id === BOAT_DECK_SPOT.id && aboard) boatCast();
+        else {
+          setPanel("boat");
+          reloadExtras();
+        }
+        return true;
+      case "fish_battle":                                                  // v21 (0076)
+        setPanel("battle");
+        return true;
       default:
         return false;
     }
-  }, [digAt, fishAt]);
+  }, [digAt, fishAt, aboard, boatCast, reloadExtras]);
 
   return {
     data,
@@ -447,5 +488,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     loadBoard,
     interact,
     promptText,
+    extras,
+    boatCast,
   };
 }

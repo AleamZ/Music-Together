@@ -13,6 +13,7 @@ import FarmShopPanel from "./FarmShopPanel";
 import FarmTasksPanel from "./FarmTasks";
 import Handbook from "./Handbook";
 import HarvestGame from "./HarvestGame";
+import MachinePanel, { SprinklerAuto } from "./MachinePanel";
 import PlotPanel from "./PlotPanel";
 import RiceDepotPanel from "./RiceDepotPanel";
 import SlingGame from "./SlingGame";
@@ -101,6 +102,8 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false, dog
           panelOpen={panelOpen || panel !== null} onShot={(hit, shot) => void farm.slingShot(hit, shot)} onReaim={() => void farm.slingReaim()}
           onClose={farm.closeSling} />
       )}
+      {onField && farm.session && <SprinklerAuto farm={farm} session={farm.session} me={me} />}{/* v21 (0076) */}
+      {panel?.kind === "machines" && farm.session && <MachinePanel farm={farm} session={farm.session} me={me} onClose={closePanel} />}{/* v21 (0076) */}
       {panel?.kind === "plot" && (
         <PlotPanel no={panel.plot} state={state} catalog={catalog} failed={failed} me={me} busy={busy} now={now} onAct={act}
           onOpenHandbook={(tab) => openPanel({ kind: "handbook", tab })} onReload={onReload} onClose={closePanel} />

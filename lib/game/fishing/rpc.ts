@@ -7,6 +7,7 @@ import {
   FISHING_KINDS, isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow,
 } from "./catalog";
 import { BAD_SPOT, DAILY_LIMIT_TEXT } from "./messages";
+import { extrasErrorText } from "./extras";
 import { parseFishPrices, type FishPrices } from "./prices";
 import { parseFishingState, type FishingState, type Loadout } from "./state";
 
@@ -308,6 +309,8 @@ export function fishingErrorMessage(err: unknown): string {
   const pos = positionErrorText(msg);                                          // 0057: a refused position claim
   if (pos) return pos;
   if (msg === "bad spot") return BAD_SPOT;
+  const extra = extrasErrorText(msg);                                          // v21 (0076)
+  if (extra) return extra;
   // PostgREST's "function not found" (a migration not yet run on the server): say so instead of blaming the network
   if ((e as { code?: unknown }).code === "PGRST202" || msg.includes("Could not find the function")) {
     return "Máy chủ chưa cập nhật tính năng này (thiếu migration).";

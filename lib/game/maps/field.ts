@@ -71,6 +71,7 @@ export const FIELD_SOLIDS: Rect[] = [
   { x: 514, y: 466, w: 12, h: 8 },    // palm trunk S
   { x: 542, y: 346, w: 12, h: 8 },    // banana plant
   { x: 528, y: 424, w: 24, h: 10 },   // haystack
+  { x: 405, y: 430, w: 54, h: 26 },   // v21 (0076): anh Hai's machine shed
 ];
 
 function plotUse(g: PlotGeom): Interactable {
@@ -105,6 +106,7 @@ export const FIELD_INTERACTABLES: Interactable[] = [
   { id: "farm_shop", kind: "farm_shop", label: "Tiệm vật tư nông nghiệp", prompt: "Tiệm vật tư · anh Hai", rect: { x: 588, y: 288, w: 84, h: 40 }, use: { x: 630, y: 344 } },
   { id: "rice_depot", kind: "rice_depot", label: "Vựa lúa", prompt: "Vựa lúa · cô Út", rect: { x: 700, y: 288, w: 88, h: 40 }, use: { x: 744, y: 344 } },
   { id: "drying", kind: "drying", label: "Sân phơi", prompt: "Sân phơi lúa", rect: DRYING_YARD, use: { x: 676, y: 372 } },
+  { id: "machine_shed", kind: "machine_shed", label: "Kho máy", prompt: "Kho máy nông nghiệp · anh Hai", rect: { x: 404, y: 414, w: 56, h: 42 }, use: { x: 432, y: 468 } },   // v21 (0076)
   ...FIELD_PLOTS.map(plotUse),
   ...CRAB_HOLES.map((r, i) => gatherUse("crab_hole", r, i)),
   ...SNAIL_BEDS.map((r, i) => gatherUse("snail_bed", r, i)),
@@ -130,6 +132,7 @@ export const FIELD_PROPS: PropPlacement[] = [
   { kind: "banana", x: 548, y: 354 },
   { kind: "haystack", x: 540, y: 434 },
   { kind: "scarecrow", x: 212, y: 318 },
+  { kind: "machine_shed", x: 432, y: 456 },                // v21 (0076)
   ...FIELD_PLOTS.map((g): PropPlacement => ({ kind: "namepost", x: g.post.x, y: g.post.y })),
 ];
 

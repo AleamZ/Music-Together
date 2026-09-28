@@ -60,6 +60,7 @@ describe("pond art (pure parts)", () => {
   const target = (id: string) => pond.interactables.find((i) => i.id === id)!.rect;
   it("anchors every pond prop at the bottom of its sprite frame", () => {
     for (const p of POND_PROPS) {
+      if (p.kind === "ghe") continue;   // v21 (0076): the moored ghe's base is its deck, so whoever stands aboard is drawn over it
       const f = propFrame(p);
       expect(f.ox).toBeGreaterThanOrEqual(0);
       expect(f.ox).toBeLessThanOrEqual(f.w);

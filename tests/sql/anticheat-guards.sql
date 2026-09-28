@@ -51,6 +51,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'quest_state(text)', 'login_state(text)', 'arena_state(text)', 'photo_list(text)', 'photo_get(text,bigint)',
      'photo_delete(text,bigint)',                                 -- v21 quests (0071): reads, and deleting one's own photo
      'profession_state(text)',                                    -- v21 professions (0077): a read
+     'fb_state(uuid,text)', 'fishing_extras_state(text)',         -- v21 fishing (0076): reads (fb_state settles lazily)
      -- the position and the heartbeat: they run during a lock by design (0057), and judge every claim themselves
      'pos_report(text,text,integer,integer)', 'vitals_tick(text,uuid,text,integer,integer)',
      'jump_in(uuid,text,integer,integer)', 'rescue_swimmer(uuid,text,uuid,integer,integer)', 'leave_water(uuid,text)',

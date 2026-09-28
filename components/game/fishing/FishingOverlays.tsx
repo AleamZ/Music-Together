@@ -2,6 +2,9 @@
 
 import type { FishingController } from "@/hooks/useFishingController";
 import BagPanel, { type BagFarm } from "./BagPanel";
+import BattlePanel, { BattleChip } from "./BattlePanel";
+import BoatPanel from "./BoatPanel";
+import TreasurePanel from "./TreasurePanel";
 import CatchCard from "./CatchCard";
 import DepotPanel from "./DepotPanel";
 import NetOverlay from "./NetOverlay";
@@ -9,12 +12,15 @@ import RecordsPanel from "./RecordsPanel";
 import ReelOverlay from "./ReelOverlay";
 import ShopPanel from "./ShopPanel";
 
+
 /** Fishing on top of the world (spec §6.1, §10): "🎣 Thu cần" while waiting, "❗ Giật cần!" at the bite, the reel, the
  *  catch card and the four fishing panels; the bag shows the farm tools once the field has loaded (v15.2 R29). */
 export default function FishingOverlays({ fishing, farm = null }: { fishing: FishingController; farm?: BagFarm | null }) {
   const { cast, caught, panel, busy, closePanel } = fishing;
   const { state, catalog } = fishing.data;
   const name = caught ? catalog?.species.find((s) => s.id === caught.fish.speciesId)?.name ?? caught.fish.speciesId : "";
+  const x = fishing.extras;                                                          // v21 (0076)
+  const speciesName = (id: string) => catalog?.species.find((s) => s.id === id)?.name ?? id;
   return (
     <>
       {cast.phase === "waiting" && (
@@ -54,6 +60,32 @@ export default function FishingOverlays({ fishing, farm = null }: { fishing: Fis
       )}
       {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onRepair={fishing.repair} onClose={closePanel} />}
       {panel === "records" && <RecordsPanel catalog={catalog} load={fishing.loadBoard} onClose={closePanel} />}
+      {/* v21 (0076): the boat, the battles, the treasure maps */}
+      <BattleChip board={x.board} speciesName={speciesName} onOpen={() => fishing.openPanel("battle")} />
+      {(x.state?.maps.length ?? 0) > 0 && panel === null && (
+        <button type="button" className="pch-btn absolute right-2 top-28 z-10 text-lg" title="Bản đồ kho báu"
+          onClick={() => { x.syncMap(); fishing.openPanel("treasure"); }}>
+          🗺️ {x.state?.maps.length}
+        </button>
+      )}
+      {x.state?.boat.aboard && panel === null && cast.phase === "idle" && (
+        <div className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 gap-2">
+          <button type="button" className="pch-btn pch-btn-primary text-xl" onClick={fishing.boatCast}>🎣 Quăng cần (E)</button>
+          <button type="button" className="pch-btn text-xl" disabled={x.busy} onClick={x.leave}>⚓ Về bến</button>
+        </div>
+      )}
+      {panel === "boat" && (
+        <BoatPanel state={x.state} catalog={catalog} coins={state?.coins ?? null} busy={x.busy} onBuy={x.buyBoat}
+          onBoard={() => { x.boardBoat(); closePanel(); }} onLeave={() => { x.leave(); closePanel(); }}
+          onCast={() => { closePanel(); fishing.boatCast(); }} onClose={closePanel} />
+      )}
+      {panel === "battle" && (
+        <BattlePanel board={x.board} busy={x.busy} speciesName={speciesName} onCreate={x.createBattle} onJoin={x.joinBattle}
+          onLeave={x.leaveBattle} onStart={x.startBattle} onClose={closePanel} />
+      )}
+      {panel === "treasure" && (
+        <TreasurePanel state={x.state} mapId={x.mapNow} busy={x.busy} notes={x.digNote} onDig={x.dig} onClose={closePanel} />
+      )}
     </>
   );
 }

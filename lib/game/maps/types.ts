@@ -51,7 +51,9 @@ export type InteractKind =
   // the hall's hammock: lie down in it (handled by the engine itself, never reaches the shell)
   | "hammock"
   // v17: a live rat, offered by the engine when no map interactable is in range (never in a map's list)
-  | "rat";
+  | "rat"
+  // v21 (0076): Bến ghe and the boat's deck, the fishing battles' board (the pond), anh Hai's machine shed (the field)
+  | "boat" | "fish_battle" | "machine_shed";
 
 export interface Interactable {
   /** Unique per map: "dock_sign", "fish_3", … */
@@ -121,7 +123,10 @@ export type PropPlacement =
   // every map: a wooden post carrying a small painted map of the town
   | { kind: "city_map_post"; x: number; y: number }
   // v20.1: Chợ Lớn's punching bag on its stand
-  | { kind: "punch_bag"; x: number; y: number };
+  | { kind: "punch_bag"; x: number; y: number }
+  // v21 (0076): the moored ghe in the pond's deep water, anh Hai's machine shed
+  | { kind: "ghe"; x: number; y: number }
+  | { kind: "machine_shed"; x: number; y: number };
 
 /** What a Chợ Lớn stall sells: fruit, flowers and lanterns are decoration; the fish depot and the produce depot are
  *  served (v18.5). */

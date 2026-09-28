@@ -71,3 +71,4 @@ ledger reasons, shop kinds or function overloads predate later rows and migratio
 - `v21-quests-smoke.sql` (0071: daily/weekly/NPC/explore quests from game_events, the company quest, the login calendar, the photo album, the 2v2 tag team series): chain-level, re-runs 0071 with `\i`; run after the full chain.
 - `v21-economy-smoke.sql` (0073: player trading, the Chợ người chơi board, the auction house, rented stalls, the collusion guard): chain-level, re-runs 0073 with `\i`; run after the full chain.
 - `v21-crafting-smoke.sql` (0072: Mỏ đá mining with the replayed dig, herbs, ore selling, pickaxes, potions and buffs, item upgrades; `-v mine=…/mine-cases.json`): chain-level, re-runs 0072 with `\i`; run after the full chain.
+- `v21-world-smoke.sql` (0075, v21 world: snow, wild animals, party, bosses, dungeon): re-runs 0075 twice, owns its rows (truncates them first); run after the chain 0004 … 0069 + 0075.

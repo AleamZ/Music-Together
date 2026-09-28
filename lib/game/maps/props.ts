@@ -1,6 +1,7 @@
 import { C, ctx2d, makeCanvas, px, rect, rng, type Ctx, type PropFrame, type PropSprite } from "./scene-art";
 import type { CardGame } from "@/lib/game/cards/deck";
 import type { PropPlacement, SignIcon, StallGoods } from "./types";
+import { drawGhe, drawMachineShed, GHE_FRAME, MACHINE_SHED_FRAME } from "@/lib/game/fishing/extras-art";
 
 // Every depth-sorted prop of every map: its sprite frame (pure) and its painter (browser only).
 
@@ -33,6 +34,8 @@ export function propFrame(p: PropPlacement): PropFrame {
     case "shop_counter": return { w: 84, h: 18, ox: 42, oy: 18 };
     case "city_map_post": return CITY_MAP_POST_FRAME;
     case "punch_bag": return PUNCH_BAG_FRAME;
+    case "ghe": return GHE_FRAME;                                                // v21 (0076)
+    case "machine_shed": return MACHINE_SHED_FRAME;                              // v21 (0076)
   }
 }
 
@@ -752,6 +755,8 @@ export function drawProp(c: Ctx, p: PropPlacement): void {
     case "shop_counter": return drawShopCounter(c);
     case "city_map_post": return drawCityMapPost(c);
     case "punch_bag": return drawPunchBag(c);
+    case "ghe": return drawGhe(c);                                               // v21 (0076)
+    case "machine_shed": return drawMachineShed(c);                              // v21 (0076)
   }
 }
 

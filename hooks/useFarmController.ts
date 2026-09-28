@@ -34,7 +34,9 @@ export type FarmPanel =
   | { kind: "depot"; market?: boolean }
   | { kind: "drying" }
   | { kind: "handbook"; tab: string | null }
-  | { kind: "tasks" };
+  | { kind: "tasks" }
+  /** v21 (0076): anh Hai's machine shed — Máy tưới, Máy gặt riêng, Máy chế biến. */
+  | { kind: "machines" };
 
 /** A 3-second hoa-màu picking in progress: movement is locked until it is sent or cancelled (spec §16). `text` is the
  *  bar's line. */
@@ -174,7 +176,12 @@ export interface FarmController {
   /** A plot's prompt names my next job there, a hole's or a bed's its state for me (v15.3 §13.1); the field's other
    *  interactables keep theirs; null = not the field's. */
   promptText: (it: Interactable) => string | null;
+  /** v21 (0076): the session the machine panel calls with, and the controller's toast. */
+  session?: FarmSession;
 }
+
+/** v21 (0076): what the machine panel calls with. */
+export interface FarmSession { token: string; roomId: string; toast: (text: string) => void; onCoinsChanged: () => void }
 
 export interface FarmControllerOptions {
   token: string;
@@ -217,6 +224,7 @@ const ANIM: Partial<Record<FieldAction["kind"], FarmAnim>> = {
 };
 const FIELD_KINDS: ReadonlySet<string> = new Set([
   "plot", "coop", "farm_shop", "rice_depot", "drying", "crab_hole", "snail_bed", "rat", "market_farm_depot",
+  "machine_shed",                                                                   // v21 (0076)
 ]);
 /** A SlingGame re-sends its `fa 12` this often while it is open (§6.2, §11). */
 export const SLING_FA_MS = 2000;
@@ -924,6 +932,9 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       case "drying":
         setPanel({ kind: "drying" });
         break;
+      case "machine_shed":                                                // v21 (0076)
+        setPanel({ kind: "machines" });
+        break;
       case "crab_hole":
       case "snail_bed": {
         const why = gatherRefusal(it, live.current.state, live.current.catalog, serverNow());
@@ -955,6 +966,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     if (!p || !state || !catalog) return it.prompt;
     return plotPrompt(p, accountId, catalog.varieties.find((v) => v.id === p.crop?.variety) ?? null, catalog, state.mine, now);
   }, [state, catalog, accountId, now]);
+  const session = useMemo(() => ({ token, roomId, toast, onCoinsChanged }), [token, roomId, toast, onCoinsChanged]);   // v21 (0076)
 
   return {
     data,
@@ -990,5 +1002,6 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     sellRats,
     interact,
     promptText,
+    session,                                                                // v21 (0076)
   };
 }

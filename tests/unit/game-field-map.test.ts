@@ -24,7 +24,7 @@ describe("field map", () => {
     expect(field.spawn).toEqual(FIELD_WEST_ARRIVE);
     expect(field.interactables.map((i) => i.id).sort()).toEqual([
       "bed_1", "bed_2", "bed_3", "bed_4", "city_map", "coop", "crab_1", "crab_2", "crab_3", "crab_4", "crab_5", "crab_6", "drying", "farm_shop",
-      "field_to_hall", "field_to_pond",
+      "field_to_hall", "field_to_pond", "machine_shed",
       "plot_1", "plot_10", "plot_2", "plot_3", "plot_4", "plot_5", "plot_6", "plot_7", "plot_8", "plot_9", "rice_depot",
     ]);
   });

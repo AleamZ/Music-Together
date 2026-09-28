@@ -2,6 +2,7 @@ import { CHU_TU_LOOK, CO_BA_LOOK } from "@/lib/game/look";
 import type { Vec } from "@/lib/game/types";
 import { FIELD_EAST_ARRIVE, HALL_DOCK_ARRIVE, POND_ARRIVE, POND_FIELD_ARRIVE } from "./arrivals";
 import { cityMapPost } from "./city-post";
+import { BOAT } from "@/lib/game/fishing/extras";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, Npc, PropPlacement, Rect, Spot } from "./types";
 
@@ -73,6 +74,12 @@ export const POND_FISH_SPOTS: Spot[] = [
 /** Worm mounds on the dirt patch (walkable; you dig standing just below one). */
 export const DIG_MOUNDS: Vec[] = [{ x: 56, y: 172 }, { x: 84, y: 208 }, { x: 50, y: 246 }, { x: 82, y: 282 }];
 
+/** v21 (0076): the boat's deck in the deep water — E there casts (aboard); the pier on Cầu ao opens Bến ghe. */
+export const BOAT_DECK_SPOT: Interactable = {
+  id: "boat_deck", kind: "boat", label: "Ghe", prompt: "Câu vùng nước sâu",
+  rect: { x: BOAT.deck.x - 30, y: BOAT.deck.y - 14, w: 60, h: 22 }, use: { x: BOAT.deck.x, y: BOAT.deck.y }, face: "up",
+};
+
 /** A fishing spot's click rect: the water in front of it, so tapping near the spot walks there and casts. */
 function waterRect(s: Spot): Rect {
   switch (s.dir) {
@@ -103,6 +110,10 @@ export const POND_INTERACTABLES: Interactable[] = [
   { id: "depot", kind: "depot", label: "Vựa cá", prompt: "Bán cá · cô Ba", rect: { x: 522, y: 64, w: 104, h: 62 }, use: { x: 570, y: 140 } },
   { id: "shop", kind: "shop", label: "Tiệm đồ câu", prompt: "Tiệm đồ câu · chú Tư", rect: { x: 522, y: 228, w: 104, h: 66 }, use: { x: 576, y: 308 } },
   { id: "records", kind: "records", label: "Bảng kỷ lục", prompt: "Xem bảng kỷ lục", rect: { x: 494, y: 134, w: 28, h: 34 }, use: { x: 508, y: 182 } },
+  // v21 (0076): Bến ghe on Cầu ao, the moored ghe, and the fishing battles' board
+  { id: "boat_pier", kind: "boat", label: "Bến ghe", prompt: "Bến ghe · ra vùng nước sâu", rect: { x: 366, y: 168, w: 28, h: 30 }, use: { x: BOAT.pier.x, y: BOAT.pier.y }, face: "up" },
+  BOAT_DECK_SPOT,
+  { id: "fish_battle", kind: "fish_battle", label: "Đấu câu", prompt: "Bảng đấu câu cá", rect: { x: 426, y: 266, w: 28, h: 34 }, use: { x: 440, y: 314 } },
 ];
 
 /** The shopkeepers stand behind their counters (inside blocked cells), facing the customers. */
@@ -121,6 +132,8 @@ export const POND_PROPS: PropPlacement[] = [
   { kind: "stall_front", x: 574, y: 126 },
   { kind: "hut_front", x: 576, y: 294 },
   { kind: "records", x: 508, y: 168 },
+  { kind: "board", x: 440, y: 300 },                    // v21: the fishing battles' board
+  { kind: "ghe", x: BOAT.deck.x, y: BOAT.deck.y - 2 },   // v21: the moored ghe (drawn under whoever stands aboard)
   { kind: "sign", x: 352, y: 360, icon: "note" },
   { kind: "sign", x: 190, y: 380, icon: "rice" },
 ];

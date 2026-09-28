@@ -10,6 +10,7 @@ import {
   type StartCast, type StartNet,
 } from "@/lib/game/fishing/rpc";
 import type { FishingState, Loadout } from "@/lib/game/fishing/state";
+import { startBoatCast } from "@/lib/game/fishing/extras-rpc";
 
 export interface FishingData {
   /** null until the first fishing_state answer. */
@@ -28,6 +29,8 @@ export interface FishingData {
   release: (id: string) => Promise<boolean>;
   /** `cell` (v18.1): the pond cell the cast starts from. */
   startCast: (roomId: string, cell?: { col: number; row: number }) => Promise<StartCast | null>;
+  /** v21 (0076): a cast from the boat's deck (the deep water); it goes on through hookCast / finishCast. */
+  startBoatCast: (roomId: string) => Promise<StartCast | null>;
   /** `hooked` (v18.1): the reel was lost after the hook (a big fish may pull me in). */
   /** `reel` (0046): the reel's input, replayed by the server. */
   finishCast: (castId: string, success: boolean, hooked?: boolean, reel?: ReelInput) => Promise<FinishCast | null>;
@@ -139,6 +142,7 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     }, [act, token]),
     release: useCallback(async (id: string) => (await act(() => releaseFish(token, id), (s) => s)) !== null, [act, token]),
     startCast: useCallback((roomId: string, cell?: { col: number; row: number }) => act(() => startCast(roomId, token, cell), (x) => x.state), [act, token]),
+    startBoatCast: useCallback((roomId: string) => act(() => startBoatCast(roomId, token), (x) => x.state), [act, token]),   // v21 (0076)
     finishCast: useCallback((castId: string, success: boolean, hooked = false, reel?: ReelInput) => act(() => finishCast(token, castId, success, hooked, reel), (x) => x.state, lostConnection), [act, token]),
     hookCast: useCallback((castId: string) => act(() => hookCast(token, castId), (x) => x.state, lostConnection), [act, token]),
     repair: useCallback(async (itemId: string) => {
