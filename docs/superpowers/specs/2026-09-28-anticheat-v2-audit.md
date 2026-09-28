@@ -31,3 +31,5 @@ win-rate statistical flags feeding the anti-cheat tab and optional auto-blacklis
 enforcement; secrets (seeds) never sent before the outcome window; hard flags on replay mismatches everywhere.
 
 Order: #1–#2 → #3/#11/#14/#15 (server position) → #4/#5/#7 (secret seeds) → #8–#10 → #12–#13 → #6 → statistics.
+
+**Status (2026-09-28, part 1, plan `docs/superpowers/plans/2026-09-28-anticheat-v2-part1.md`):** #1, #2 → R (0056: the throw and kéo lưới are replayed from server seeds; hard `net_bad_input` / `net_mismatch` / `net_too_fast`). #3, #11, #14, #15 → server position (0057: `player_pos`, every position a claim checked for speed and portals; soft `pos_teleport`, the 30th in an hour hard `pos_teleport_repeat`; the vitals drain by real time up to 30 min a gap).

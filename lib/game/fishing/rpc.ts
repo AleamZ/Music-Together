@@ -1,5 +1,6 @@
 import { AnticheatError, lockSeconds, lockText, parseAnticheat, screenAnswer, type AnticheatInfo } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
+import { positionErrorText } from "@/lib/game/position";
 import { publishVitals, vitalsErrorMessage } from "@/lib/game/vitals-rpc";
 import { STORM_TEXT } from "@/lib/game/weather/rpc";
 import {
@@ -270,6 +271,8 @@ export function fishingErrorMessage(err: unknown): string {
   const v = vitalsErrorMessage(msg);
   if (v) return v;
   if (msg === "storm") return STORM_TEXT;
+  const pos = positionErrorText(msg);                                          // 0057: a refused position claim
+  if (pos) return pos;
   if (msg === "bad spot") return BAD_SPOT;
   // PostgREST's "function not found" (a migration not yet run on the server): say so instead of blaming the network
   if ((e as { code?: unknown }).code === "PGRST202" || msg.includes("Could not find the function")) {

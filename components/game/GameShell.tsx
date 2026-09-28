@@ -37,6 +37,7 @@ import { DEFAULT_LOOK } from "@/lib/game/look";
 import { HALL_SPAWN } from "@/lib/game/maps/hall";
 import { CITY_PLACES } from "@/lib/game/maps/city";
 import { getMap } from "@/lib/game/maps/registry";
+import { posReport } from "@/lib/game/position";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import { overlayLocks } from "@/lib/game/overlays";
 import { skipTrip } from "@/lib/game/travel/rpc";
@@ -207,6 +208,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   useEffect(() => {
     setPresenceMap(travel.mapId);
   }, [travel.mapId, setPresenceMap]);
+  // 0057: where I arrive is a position claim (the server checks each claim against the last one it accepted)
+  useEffect(() => {
+    if (!token) return;
+    const at = travel.arrive ?? getMap(travel.mapId).spawn;
+    void posReport(token, travel.mapId, at.x, at.y);
+  }, [token, travel]);
   useEffect(() => () => {
     if (fadeTimer.current) clearTimeout(fadeTimer.current);
   }, []);

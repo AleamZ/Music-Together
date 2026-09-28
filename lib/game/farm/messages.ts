@@ -1,4 +1,5 @@
 import { durationVi, lockSeconds, lockText } from "@/lib/anticheat";
+import { positionErrorText } from "@/lib/game/position";
 import { vitalsErrorMessage } from "@/lib/game/vitals-rpc";
 import { STORM_TEXT } from "@/lib/game/weather/rpc";
 import { COAT_NAME, type DogCoat, type DogNameProblem, type DogStatus } from "../dog";
@@ -341,6 +342,8 @@ export function farmErrorMessage(err: unknown, itemName?: string, action?: strin
   const v = vitalsErrorMessage(msg);
   if (v) return v;
   if (msg === "storm") return STORM_TEXT;
+  const pos = positionErrorText(msg);                                          // 0057: a refused position claim
+  if (pos) return pos;
   const round = action === "harvest_part", crab = action === "crab_finish", tp = action === "transplant";
   switch (msg) {
     case "not your plot":
