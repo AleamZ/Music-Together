@@ -96,6 +96,12 @@ export interface GameCanvasHandle {
   setHouses: (houses: ReadonlyArray<HouseDraw>) => void;
   /** v18.11: the unread dot on the Báo Làng stand. */
   setNewsUnread: (unread: boolean) => void;
+  /** v20.3: the labels over Bãi đất trống's rings (index = ring − 1). */
+  setRingLabels: (labels: ReadonlyArray<string | null>) => void;
+  /** v20.4: interactables hidden from prompts and clicks (the hatch, the cage's watch spots). */
+  setHidden: (ids: readonly string[]) => void;
+  /** v20.3: tell the others on this map that ring `r` changed (`rg`): they fetch ring_state. */
+  ringChanged: (r: number, v: number) => void;
   /** The map whose world the canvas shows now, or null while it shows none: an answer that lands after I left a map is
    *  dropped (v15.3 §7.2). */
   mapId: () => MapId | null;
@@ -148,6 +154,8 @@ export interface GameCanvasProps {
   onFishingInput: (kind: "tap" | "cancel") => void;
   /** Someone (or my other tab) changed plot `p` on this map (`fp`). */
   onPlotChanged?: (p: number) => void;
+  /** v20.3: someone (or my other tab) changed ring `r` on Bãi đất trống (`rg`). */
+  onRingHint?: (r: number) => void;
   /** I started walking or set off on a path (a stop or a jump is not a move): a snail bed's bar stops (v15.3 §7.3). */
   onLocalMove?: () => void;
   /** A new world drew its first frame. */
@@ -187,6 +195,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
   const housesRef = useRef<ReadonlyArray<HouseDraw>>([]);                           // v19.3
   const newsUnreadRef = useRef(false);
+  const ringLabelsRef = useRef<ReadonlyArray<string | null>>([]);
+  const hiddenRef = useRef<readonly string[]>([]);
   const gatherRef = useRef<ReadonlyArray<{ id: string; ready: boolean }>>([]);
   // v17: my dog (from the latest setLocal), the field's rats and my last input, kept across worlds
   const dogRef = useRef<Pick<LocalInfo, "dog" | "dogHungry">>({});
@@ -342,6 +352,15 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         housesRef.current = houses;
         engineRef.current?.setHouses(houses);
       },
+      setRingLabels: (labels) => {
+        ringLabelsRef.current = labels;
+        engineRef.current?.setRingLabels(labels);
+      },
+      setHidden: (ids) => {
+        hiddenRef.current = ids;
+        engineRef.current?.setHidden(ids);
+      },
+      ringChanged: (r, v) => sendRef.current?.({ t: "rg", id: localId, r, v }),
       setNewsUnread: (unread) => {
         newsUnreadRef.current = unread;
         engineRef.current?.setNewsUnread(unread);
@@ -437,6 +456,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setCardTables(cardTablesRef.current);
     engine.setHouses(housesRef.current);
     engine.setNewsUnread(newsUnreadRef.current);
+    engine.setRingLabels(ringLabelsRef.current);
+    engine.setHidden(hiddenRef.current);
     engine.setGatherSpots(gatherRef.current);
     engine.setLocal({ name: init.name, badges: init.badges, look: init.look, ...dogRef.current });
     if (zoomRef.current !== 1) engine.setZoom(zoomRef.current);
@@ -459,6 +480,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
           if (msg.t === "bye") channel.send(engine.snapshot());
           // …or it changed a plot: this tab fetches the field again too
           else if (msg.t === "fp") propsRef.current.onPlotChanged?.(msg.p);
+          else if (msg.t === "rg") propsRef.current.onRingHint?.(msg.r);                     // v20.3
           return;
         }
         const p = propsRef.current;
@@ -479,6 +501,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
             break;
           case "fp":
             propsRef.current.onPlotChanged?.(msg.p);
+            break;
+          case "rg":                                                                          // v20.3
+            propsRef.current.onRingHint?.(msg.r);
             break;
           case "bye":
             engine.removeActor(msg.id);

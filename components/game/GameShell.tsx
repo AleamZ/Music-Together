@@ -59,6 +59,26 @@ import CharacterEditor from "./CharacterEditor";
 import DogPanel from "./farm/DogPanel";
 import FarmOverlays from "./farm/FarmOverlays";
 import FaintOverlay from "./FaintOverlay";
+import FightOverlay from "./fight/FightOverlay";
+import Dojo from "./fight/Dojo";
+import { useDojo } from "@/hooks/useDojo";
+import { useRings } from "@/hooks/useRings";
+import RingReady from "./fight/RingReady";
+import RingBoard from "./fight/RingBoard";
+import PvpFight from "./fight/PvpFight";
+import { isCalled, useUnderground } from "@/hooks/useUnderground";                 // v20.4
+import UndergroundPanel, { type UgTab } from "./fight/UndergroundPanel";
+import UgCall from "./fight/UgCall";
+import SpectatorView from "./fight/SpectatorView";
+import ExamFight from "./fight/ExamFight";
+import ResultCard from "./fight/ResultCard";
+import { matchTopic } from "@/lib/game/fight/transport";
+import { bossOf } from "@/lib/game/fight/underground";
+import { MARTIAL, martialById, martialByKey } from "@/lib/game/fight/dojo";
+import type { MatchResult } from "@/lib/game/fight/rpc";
+import { nameTag } from "@/lib/game/social";
+import type { ServerClock } from "@/lib/game/fight/referee";
+import { practiceFighter } from "@/lib/game/fight/dojo-gates";
 import FashionStoreModal from "./FashionStoreModal";
 import RestaurantModal from "./RestaurantModal";
 import RideButton from "./RideButton";
@@ -122,13 +142,27 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
 
 /** A portal fades to dark in FADE_MS, the new map starts, and it fades back in after the map's first frame. */
 const FADE_MS = 250;
+
+/** v20.4 the hatch's knock (3 long, 2 short) before it opens; none under reduced motion. */
+const KNOCK_MS = 1800;
+
+/** v20.4 the server's now, ticking every second while the underground panel or a called match is on screen. */
+function useUgNow(clock: ServerClock, on: boolean): number {
+  const [nowMs, setNowMs] = useState(() => clock.now(Date.now()));
+  useEffect(() => {
+    if (!on) return;
+    const id = window.setInterval(() => setNowMs(clock.now(Date.now())), 1000);
+    return () => window.clearInterval(id);
+  }, [clock, on]);
+  return nowMs;
+}
 
 /** Game mode: the room world (hall, pond and field) and the parchment HUD. Music, queue, chat and roles are the same as the
  *  classic view. */
@@ -257,6 +291,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const vitalsWhere = useCallback(() => heatWhere(canvasRef.current), []);
   const vitals = useVitals(token, room.id, vitalsWhere);
   const { reload: reloadVitals } = vitals;
+  // v20.2 the dojo: fetched when the dojo or the punching bag opens
+  const dojo = useDojo(token);
+  const { reload: reloadDojo } = dojo;
   const gameToast = useCallback((text: string) => {
     showToast(text);
     if (VITALS_TEXTS.has(text)) void reloadVitals();
@@ -266,6 +303,20 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const getCanvas = useCallback(() => canvasRef.current, []);
   const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: gameToast });
   const { interact: fishingInteract, promptText, cancelCast, onFishingInput } = fishing;
+  // v20.3 Bãi đất trống: the rings (labels, my corner, my live match)
+  const rings = useRings({ token, roomId: room.id, accountId, mapId: travel.mapId, canvas: getCanvas, toast: gameToast });
+  const { takeCorner } = rings;
+  // v20.4 Hầm đấu ngầm: the hatch (hidden until unlocked), the queue, the ladder, the cup, the cage's spectators
+  const ug = useUnderground({ token, roomId: room.id, accountId, mapId: travel.mapId, toast: gameToast, onCoins: () => void fishing.data.reload() });
+  const { enter: ugEnter } = ug;
+  const [ugTab, setUgTab] = useState<UgTab>("queue");
+  const [knocking, setKnocking] = useState<Interactable | null>(null);   // the hatch's knock (3 long, 2 short)
+  const [ugResult, setUgResult] = useState<MatchResult | null>(null);
+  const ugNowMs = useUgNow(ug.clock, panel === "underground" || isCalled(ug.state));
+  const ugHidden = ug.hidden;
+  useEffect(() => {
+    canvasRef.current?.setHidden(ugHidden);
+  }, [ugHidden, travel.mapId]);
 
   // --- farming: the field of this room, its panels, the due tasks, the plots on the canvas and the work progress
   const farm = useFarmController({
@@ -283,7 +334,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const dogName = dog.dog?.name ?? null, dogCoat = dog.dog?.coat ?? null, dogHungry = dog.hungry;
   useEffect(() => {
     canvasRef.current?.setLocal({
-      name: myName, badges: myBadges, look: myLook, dog: dogName !== null && dogCoat !== null ? { name: dogName, coat: dogCoat } : null, dogHungry,
+      name: nameTag(myName, myLook), badges: myBadges, look: myLook, dog: dogName !== null && dogCoat !== null ? { name: dogName, coat: dogCoat } : null, dogHungry,
     });
   }, [myName, myBadges, myLook, dogName, dogCoat, dogHungry]);
   const { closePanel: closeFarmPanel } = farm;
@@ -461,7 +512,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   //     an open overlay outside the field's own, not to the farm work
   const [helpOpen, setHelpOpen] = useState(false); // the "⌨️ Phím tắt" overlay (H / ?)
   const openOverlays = {
-    panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen,fishingPanel: fishing.panel !== null || fishing.net !== null, creating, anticheatModal: anticheat.modal !== null,
+    panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen || rings.active !== null
+      || ug.active !== null || ugResult !== null || knocking !== null || isCalled(ug.state),                    // v20.4
+    fishingPanel: fishing.panel !== null || fishing.net !== null, creating, anticheatModal: anticheat.modal !== null,
     farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
     slingGame: farm.sling !== null,
     cardPanel: cards.panel !== null, rulesBook: cards.rules !== null, dogPanel: panel === "dog",
@@ -599,10 +652,64 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       case "estate":                                                        // v19.4
         setPanel("estate");
         break;
+      case "punch_bag":                                                     // v20.1
+        setPanel("fight_practice");
+        void reloadDojo();
+        break;
+      case "dojo":                                                          // v20.2
+        setPanel("dojo");
+        void reloadDojo();
+        break;
+      case "ring_corner":                                                   // v20.3: take the corner, the ready screen
+        setPanel("ring");
+        void takeCorner(it.ring ?? 1, it.corner ?? "red");
+        break;
+      case "ring_board":                                                    // v20.3
+        setPanel("ring_board");
+        break;
+      case "ug_hatch":                                                      // v20.4: knock 3 long 2 short, then down
+        if (!it.to) break;
+        cancelCast();
+        setKnocking(it);
+        break;
+      case "ug_organizer":                                                  // v20.4: anh Tư Sẹo
+        setUgTab("queue");
+        setPanel("underground");
+        break;
+      case "ug_board":                                                      // v20.4
+        setUgTab("board");
+        setPanel("underground");
+        break;
+      case "ug_door":                                                       // v20.4: the ladder's door
+        setUgTab("ladder");
+        setPanel("underground");
+        break;
+      case "cage_watch":                                                    // v20.4: watch the live match
+        setPanel("ug_watch");
+        break;
       default:
         if (!farmInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner]);
+
+  // v20.4 the knock on the hatch: ug_enter checks the unlock again, then down the ladder (the refs keep a re-render
+  // from cancelling the knock)
+  const knockRef = useRef({ enter: ugEnter, travelTo });
+  useEffect(() => {
+    knockRef.current = { enter: ugEnter, travelTo };
+  }, [ugEnter, travelTo]);
+  useEffect(() => {
+    if (!knocking?.to) return;
+    const to = knocking.to;
+    const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const id = window.setTimeout(() => {
+      void knockRef.current.enter().then((ok) => {
+        setKnocking(null);
+        if (ok) knockRef.current.travelTo(to);
+      });
+    }, reduced ? 0 : KNOCK_MS);
+    return () => window.clearTimeout(id);
+  }, [knocking]);
 
   const leaveBroken = useCallback((message: string) => {
     window.alert(message);
@@ -624,12 +731,13 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const cardWhere = cardPresence?.mode === "classic" ? "🖥️ Đang ở giao diện cũ"
     : cardPresence?.map === "pond" ? "🎣 Đang ở ao câu cá"
     : cardPresence?.map === "field" ? "🌾 Đang ở đồng ruộng"
-    : cardPresence?.map === "market" ? "🏮 Đang đi Chợ Lớn"
-    : cardPresence?.map === "khu_nha" ? "🏘️ Đang ở Khu nhà" : "🎮 Đang dạo quanh sảnh";
+    : cardPresence?.map === "market" || cardPresence?.map === "ham_ngam" ? "🏮 Đang đi Chợ Lớn"   // v20.4: the hầm stays a secret
+    : cardPresence?.map === "khu_nha" ? "🏘️ Đang ở Khu nhà"
+    : cardPresence?.map === "bai_dat" ? "🥊 Đang ở Bãi đất trống" : "🎮 Đang dạo quanh sảnh";
 
   return (
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : "bg-[#5a8f32]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
@@ -646,6 +754,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         onLookChanged={refresh}
         onFishingInput={onFishingInput}
         onPlotChanged={farm.data.plotChanged}
+        onRingHint={rings.hint}
         onLocalMove={farm.moved}
         onFirstFrame={onFirstFrame}
         onUnsupported={onUnsupported}
@@ -1101,10 +1210,149 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         />
       )}
       {(panel === "umbrella_stall" || panel === "umbrellas") && <UmbrellaModal shop={panel === "umbrella_stall"} onClose={close} />}
+      {panel === "fight_practice" && <FightOverlay look={myLook} name={myName} onClose={close} {...practiceFighter(myLook, dojo.state)} />}{/* v20.1 */}
+      {panel === "dojo" && token && (                                     // v20.2
+        <Dojo
+          token={token}
+          look={myLook}
+          name={myName}
+          coins={fishing.data.state?.coins ?? null}
+          dojo={dojo}
+          onLook={(newLook) => {
+            setSaved(newLook);
+            canvasRef.current?.announceLook();
+          }}
+          onCoins={() => void fishing.data.reload()}
+          onVitals={() => void reloadVitals()}
+          onToast={showToast}
+          onClose={close}
+        />
+      )}
+      {panel === "ring" && !rings.active && (                              // v20.3: my corner's ready screen
+        <RingReady
+          rings={rings}
+          roomId={room.id}
+          accountId={accountId}
+          myLook={myLook}
+          lookOf={(id) => looks.get(id) ?? null}
+          onClose={close}
+        />
+      )}
+      {panel === "ring_board" && token && <RingBoard token={token} roomId={room.id} onClose={close} />}{/* v20.3 */}
+      {rings.active && token && (() => {                                  // v20.3: a ring match (also after a reload)
+        const act = rings.active;
+        const foe = act.foe;
+        const foeLook = (foe && looks.get(foe.id)) || DEFAULT_LOOK;
+        const foeName = foe?.name ?? "Đối thủ";
+        return (
+          <PvpFight
+            key={act.id}
+            token={token}
+            roomId={room.id}
+            ring={act.ring}
+            match={act}
+            me={accountId}
+            foeId={foe?.id ?? ""}
+            names={act.side === 1 ? [myName, foeName] : [foeName, myName]}
+            looks={act.side === 1 ? [myLook, foeLook] : [foeLook, myLook]}
+            clock={rings.clock}
+            resume={act.resumed}
+            onDone={() => {
+              rings.finish();
+              setPanel(null);
+              void fishing.data.reload();
+              void reloadVitals();
+            }}
+            onRematch={(stake) => void rings.offer(act.ring, stake, act.params.delay ?? 3).then(() => setPanel("ring"))}
+            onLeave={() => void rings.leave(act.ring)}
+            onToast={showToast}
+          />
+        );
+      })()}
+      {panel === "underground" && !ug.active && (                         // v20.4 anh Tư Sẹo's panel
+        <UndergroundPanel ug={ug} accountId={accountId} tab={ugTab} onTab={setUgTab} nowMs={ugNowMs} onClose={close} />
+      )}
+      {isCalled(ug.state) && !ug.active && ug.state?.mine && (            // v20.4 a called match: Sẵn sàng
+        <UgCall ug={ug} mine={ug.state.mine} roomId={room.id} accountId={accountId} nowMs={ugNowMs} />
+      )}
+      {knocking && (                                                      // v20.4 the knock on the hatch
+        <div className="pointer-events-none fixed inset-x-0 top-1/3 z-40 flex justify-center" role="status">
+          <p className="pch px-3 py-1 font-vt text-xl motion-safe:animate-pulse">Cộc… cộc… cộc… cốc cốc</p>
+        </div>
+      )}
+      {ug.active && token && ug.active.kind === "ug_ladder" && (() => {   // v20.4 a ladder match against the floor's boss
+        const act = ug.active;
+        const boss = bossOf(Number(act.ref ?? 0));
+        const bossStyle = boss ? martialByKey(boss.style) : null;
+        const mine = martialById(act.params.p1.style) ?? MARTIAL[0];
+        const done = () => {
+          setUgResult(null);
+          ug.finish();
+          void fishing.data.reload();
+          void reloadVitals();
+        };
+        return ugResult ? (
+          <div className="game-ui fixed inset-0 z-50">
+            <ResultCard result={ugResult} side={1} onRematch={null} onLeave={() => { done(); setPanel(null); }} onClose={() => { done(); setPanel("underground"); }} />
+          </div>
+        ) : (
+          <ExamFight
+            key={act.id}
+            token={token} match={act} clock={ug.clock} look={myLook} name={myName} master={mine} myRank={act.params.p1.rank}
+            arena="ham_ngam"
+            foe={{ name: boss?.name ?? "Trùm", look: (bossStyle ?? mine).masterLook, style: act.params.p2.style }}
+            onResult={setUgResult}
+            onFlag={() => showToast("Trận không hợp lệ — hệ thống đã ghi nhận.")}
+          />
+        );
+      })()}
+      {ug.active && token && ug.active.kind !== "ug_ladder" && (() => {   // v20.4 a rated or cup match in the cage
+        const act = ug.active;
+        const foe = act.foe;
+        const foeLook = (foe && looks.get(foe.id)) || DEFAULT_LOOK;
+        const foeName = foe?.name ?? "Đối thủ";
+        return (
+          <PvpFight
+            key={act.id}
+            token={token}
+            roomId={room.id}
+            ring={0}
+            match={{ id: act.id, params: act.params, startedAtMs: act.startedAtMs, side: act.side, stake: act.entry }}
+            me={accountId}
+            foeId={foe?.id ?? ""}
+            names={act.side === 1 ? [myName, foeName] : [foeName, myName]}
+            looks={act.side === 1 ? [myLook, foeLook] : [foeLook, myLook]}
+            clock={ug.clock}
+            resume={act.resumed}
+            topic={matchTopic(room.id, act.id)}
+            arena="ham_ngam"
+            onDone={() => {
+              ug.finish();
+              void fishing.data.reload();
+              void reloadVitals();
+            }}
+            onRematch={null}
+            onLeave={() => setPanel(null)}
+            onToast={showToast}
+          />
+        );
+      })()}
+      {panel === "ug_watch" && token && !ug.active && (() => {            // v20.4 watching the cage
+        const live = (ug.state?.live ?? []).find((m) => m.ready === 3);
+        if (!live) return null;
+        return (
+          <SpectatorView
+            key={live.id}
+            token={token} roomId={room.id} me={accountId} match={live}
+            looks={[looks.get(live.p1) ?? DEFAULT_LOOK, looks.get(live.p2) ?? DEFAULT_LOOK]}
+            onClose={close}
+          />
+        );
+      })()}
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}
-          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length }}
+          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0 }}
           onClose={close}
         />
       )}

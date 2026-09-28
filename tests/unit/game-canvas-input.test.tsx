@@ -15,6 +15,8 @@ type EngineRec = {
   riding: unknown[];
   // v18.13: what setLift received
   lifts: unknown[];
+  // v20.3: what setRingLabels received
+  rings: unknown[];
   cb: { onLocalMove: (m: unknown) => void; onLocalPath: (m: unknown) => void; onInput?: () => void };
 };
 const { engines, channels, replies } = vi.hoisted(() => ({
@@ -29,7 +31,7 @@ vi.mock("@/lib/game/engine", () => ({
     constructor(_canvas: unknown, map: { id: string }, _art: unknown, cb: EngineRec["cb"]) {
       this.rec = {
         mapId: map.id, input: [], plots: [], cards: [], spots: [], anims: [], applied: [], hellos: [], removed: [], destroyed: false,
-        locals: [], rats: [], pounces: [], recalls: 0, pets: 0, riding: [], lifts: [], cb,
+        locals: [], rats: [], pounces: [], recalls: 0, pets: 0, riding: [], lifts: [], rings: [], cb,
       };
       engines.push(this.rec);
     }
@@ -85,8 +87,12 @@ vi.mock("@/lib/game/engine", () => ({
     setCardTables(labels: unknown) {
       this.rec.cards.push(labels);
     }
+    setRingLabels(labels: unknown) {                                                 // v20.3
+      this.rec.rings.push(labels);
+    }
     setNewsUnread() {}
-    setHouses() {}                                                                   // v19.3
+    setHidden() {}                                                                 // v20.4
+    setHouses() {}                                                                 // v19.3
     setGatherSpots(spots: unknown) {
       this.rec.spots.push(spots);
     }
@@ -294,6 +300,24 @@ describe("GameCanvas card-table labels across travel", () => {
     rerender(<GameCanvas ref={ref} mapId="pond" {...props} />);
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
     expect(engines[2].cards.at(-1)).toBe(labels);
+  });
+});
+
+describe("GameCanvas rings on Bãi đất trống (v20.3)", () => {
+  it("passes the ring labels on and to the next map's engine, sends rg and turns rg (also my other tab's) into a hint", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const onRingHint = vi.fn();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="bai_dat" {...props} onRingHint={onRingHint} />);
+    const labels = ["Tèo ⚔ Tí · 1.000 xu?", null, null, null];
+    ref.current!.setRingLabels(labels);
+    expect(engines[0].rings.at(-1)).toBe(labels);
+    ref.current!.ringChanged(2, 5);
+    expect(channels[0].sent).toContainEqual({ t: "rg", id: "me", r: 2, v: 5 });
+    channels[0].onMessage({ t: "rg", id: "ann", r: 3, v: 1 });
+    channels[0].onMessage({ t: "rg", id: "me", r: 1, v: 9 });
+    expect(onRingHint.mock.calls).toEqual([[3], [1]]);
+    rerender(<GameCanvas ref={ref} mapId="market" {...props} onRingHint={onRingHint} />);
+    expect(engines[1].rings.at(-1)).toBe(labels);
   });
 });
 

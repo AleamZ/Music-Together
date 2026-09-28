@@ -7,6 +7,7 @@ import {
 } from "@/lib/admin";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import EstateFlags from "./EstateFlags";
+import FightReplays from "./FightReplays";
 
 // /admin "Chống gian lận" (anti-cheat spec §12.5): the mode, the cases, their evidence, the wipe and the pardon.
 
@@ -202,6 +203,7 @@ export default function AnticheatTab({ token }: { token: string }) {
         </>
       )}
       <EstateFlags token={token} />
+      <FightReplays token={token} />
       <p className="text-xs opacity-70">{FOOTNOTE}</p>
     </section>
   );

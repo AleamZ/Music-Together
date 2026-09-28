@@ -56,6 +56,8 @@ export const GAME_LIMITS = {
   fa: { rate: 3, burst: 5 },
   /** v18.13: rq / ra / rx / lg together. */
   lift: { rate: 1, burst: 4 },
+  /** v20.3: the Bãi đất trống ring hint. */
+  rg: { rate: 2, burst: 4 },
 } as const satisfies Record<string, Bucket>;
 
 /** The budget a game message counts against; null for `lk` and `fp`, which are capped where they are handled. */
@@ -75,10 +77,21 @@ export function budgetKind(t: GameEvent): keyof typeof GAME_LIMITS | null {
     case "rx":
     case "lg":
       return "lift";
+    case "rg":
+      return "rg";
     default:
       return null;
   }
 }
+
+/** v20.3 the fight topic `fight:{roomId}:r{ring}` (spec §v20.3 "Client modules"): inputs `fi` 15 a second, burst 20;
+ *  the ready screen's ping and pong `fp` / `fq` 2 a second, burst 6; a resync notice `fr` 1 a second, burst 3. */
+export const FIGHT_LIMITS = {
+  fi: { rate: 15, burst: 20 },
+  fp: { rate: 2, burst: 6 },
+  fq: { rate: 2, burst: 6 },
+  fr: { rate: 1, burst: 3 },
+} as const satisfies Record<string, Bucket>;
 
 /** The card tables' channel (v16 spec §12): a `cv` hint 5 a second per sender, burst 5. */
 export const CARD_LIMITS = { cv: { rate: 5, burst: 5 } } as const satisfies Record<string, Bucket>;

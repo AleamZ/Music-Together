@@ -56,8 +56,10 @@ describe("MapCounts", () => {
       field: [{ accountId: "d", name: "Dũng", classic: false }],
       market: [],
       khu_nha: [{ accountId: "e", name: "Én", classic: false }],
+      bai_dat: [],
+      ham_ngam: [{ accountId: "f", name: "Phúc", classic: false }],
     }} />);
-    const chip = screen.getByRole("button", { name: "🎵 Sảnh 2 · 🎣 Ao cá 1 · 🌾 Đồng 1 · 🏮 Chợ Lớn 0 · 🏘️ Khu nhà 1" });
+    const chip = screen.getByRole("button", { name: "🎵 Sảnh 2 · 🎣 Ao cá 1 · 🌾 Đồng 1 · 🏮 Chợ Lớn 0 · 🏘️ Khu nhà 1 · 🥊 Bãi đất 0" });
     expect(screen.queryByText("🖥️ An")).toBeNull();
     fireEvent.click(chip);
     expect(screen.getByText("🖥️ An")).toBeInTheDocument();

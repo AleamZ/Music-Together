@@ -32,7 +32,27 @@ export function propFrame(p: PropPlacement): PropFrame {
     case "lantern_post": return { w: 12, h: 46, ox: 6, oy: 46 };
     case "shop_counter": return { w: 84, h: 18, ox: 42, oy: 18 };
     case "city_map_post": return CITY_MAP_POST_FRAME;
+    case "punch_bag": return PUNCH_BAG_FRAME;
   }
+}
+
+/** v20.1: the punching bag's sprite; the base point is the foot of its stand. */
+export const PUNCH_BAG_FRAME: PropFrame = { w: 26, h: 36, ox: 13, oy: 36 };
+
+/** A red leather bag on a chain, hanging from a wooden gallows on a small stone base. Original pixel art. */
+function drawPunchBag(c: Ctx): void {
+  // the post and the arm
+  rect(c, C.outline, 19, 0, 5, 34); rect(c, C.wood, 20, 1, 3, 32); rect(c, C.woodLight, 20, 1, 1, 32);
+  rect(c, C.outline, 6, 0, 16, 4); rect(c, C.woodDark, 7, 1, 14, 2);
+  // the base
+  rect(c, C.outline, 15, 32, 11, 4); rect(c, "#8d8a86", 16, 33, 9, 2);
+  // the chain
+  for (let y = 4; y < 9; y++) px(c, y % 2 ? "#9aa0a6" : "#5d6166", 10, y);
+  // the bag
+  rect(c, C.outline, 5, 8, 11, 24); rect(c, "#9c3a26", 6, 9, 9, 22);
+  rect(c, "#c0543a", 7, 10, 3, 20); rect(c, "#6d2518", 13, 10, 2, 20);
+  rect(c, "#3a2a24", 6, 13, 9, 1); rect(c, "#3a2a24", 6, 26, 9, 1);
+  rect(c, C.outline, 7, 31, 7, 2);
 }
 
 /** The card tables' sprites (v16 spec §15): the base point is the bottom of the south stools. */
@@ -731,6 +751,7 @@ export function drawProp(c: Ctx, p: PropPlacement): void {
     case "lantern_post": return drawLanternPost(c);
     case "shop_counter": return drawShopCounter(c);
     case "city_map_post": return drawCityMapPost(c);
+    case "punch_bag": return drawPunchBag(c);
   }
 }
 

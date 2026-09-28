@@ -4,8 +4,8 @@ import type { Facing, Look, Vec } from "@/lib/game/types";
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Spot { x: number; y: number; dir: Facing }
 
-export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha";
-export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha"];
+export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat" | "ham_ngam";
+export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam"];
 
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
@@ -29,6 +29,15 @@ export type InteractKind =
   | "lot"
   // v19.4: the Sàn bất động sản office on Khu nhà (players sell flats and lots to each other)
   | "estate"
+  // v20.1: the punching bag on Chợ Lớn's south pavement (fight practice)
+  | "punch_bag"
+  // v20.2: the Võ đường's gate on Chợ Lớn (thầy Lâm: the dojo panel)
+  | "dojo"
+  // v20.3: Bãi đất trống — a ring's corner (Góc Đỏ / Góc Xanh: take it, the ready screen) and the PvP records board
+  | "ring_corner" | "ring_board"
+  // v20.4 the underground: the hatch in Chợ Lớn (unlocked players only), anh Tư Sẹo, the ranking board, the bot ladder's
+  // door (each opens the underground panel) and the cage's watch spots (while a match is live)
+  | "ug_hatch" | "ug_organizer" | "ug_board" | "ug_door" | "cage_watch"
   // every map: the city-map signpost (a view-only overview of the town)
   | "city_map"
   // v18.11: the hall's Báo Làng news stand (dev blog + village news)
@@ -64,6 +73,9 @@ export interface Interactable {
   rat?: number;
   /** lot (v19.3): its number (1–8). */
   lot?: number;
+  /** ring_corner (v20.3): the ring (1–4) and the corner. */
+  ring?: number;
+  corner?: "red" | "blue";
 }
 
 /** A rice plot on the field (v15): its number, its land and where its name post stands. */
@@ -101,7 +113,9 @@ export type PropPlacement =
   | { kind: "lantern_post"; x: number; y: number }
   | { kind: "shop_counter"; x: number; y: number }
   // every map: a wooden post carrying a small painted map of the town
-  | { kind: "city_map_post"; x: number; y: number };
+  | { kind: "city_map_post"; x: number; y: number }
+  // v20.1: Chợ Lớn's punching bag on its stand
+  | { kind: "punch_bag"; x: number; y: number };
 
 /** What a Chợ Lớn stall sells: fruit, flowers and lanterns are decoration; the fish depot and the produce depot are
  *  served (v18.5). */

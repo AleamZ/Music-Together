@@ -1,7 +1,8 @@
-import { CLOTHES_FRONT, FURNITURE_FRONT, LANTERN_POSTS, MARKET_H, MARKET_W, MOTEL_FRONT, PET_SHOP_FRONT, RESTAURANT_FRONT, SALON_FRONT, SHOWROOM_DOOR, SHOWROOM_FRONT, STALLS } from "./market";
+import { BRIDGE_GAP, CLOTHES_FRONT, FURNITURE_FRONT, LANTERN_POSTS, MARKET_H, MARKET_W, MOTEL_FRONT, PET_SHOP_FRONT, RESTAURANT_FRONT, SALON_FRONT, SHOWROOM_DOOR, SHOWROOM_FRONT, STALLS, UG_HATCH } from "./market";
 import { drawPetTankBubbles, paintPetShopFront } from "@/lib/game/art/pet-shop";
 import { drawMotelNeon, paintMotelFront } from "@/lib/game/art/motel";
 import { paintFurnitureFront } from "@/lib/game/art/furniture-shop";
+import { paintDojoFront } from "@/lib/game/art/dojo";
 import { awning, glare, M, roof, text, textW, windowGlow } from "./market-kit";
 import { drawBikeDisplay, drawCarDisplay, drawPriceTag, drawScooterDisplay, propSprite } from "./props";
 import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type PropSprite, type SceneArt, type SceneLight } from "./scene-art";
@@ -33,6 +34,7 @@ const LIGHTS: ReadonlyArray<readonly [number, number, number]> = [
   ...[FURNITURE_FRONT, MOTEL_FRONT, PET_SHOP_FRONT].map((r) => [r.x + r.w / 2, r.y + r.h + 16, 60] as const),
   ...STALLS.map((s) => [s.rect.x + s.rect.w / 2, s.rect.y + s.rect.h + 6, 44] as const),
   [320, 200, 70],
+  [920, 268, 56],                                                               // v20.2: the Võ đường's gate
 ];
 
 function lightAt(x: number, y: number): number {
@@ -97,6 +99,11 @@ function paintGround(c: Ctx): void {
     rect(c, M.stoneLight, x, 384, 11, 3); rect(c, M.stoneDark, x, 387, 11, 4); rect(c, M.stoneDeep, x + 11, 384, 1, 8);
   }
   rect(c, C.outline, 0, 391, MARKET_W, 1);
+  // v20.3: the little plank bridge to Bãi đất trống, in the wall's gap (x 1160–1200)
+  rect(c, C.woodDark, BRIDGE_GAP.x, 383, BRIDGE_GAP.w, MARKET_H - 383);
+  for (let y = 384; y < MARKET_H; y += 4) rect(c, C.wood, BRIDGE_GAP.x + 3, y, BRIDGE_GAP.w - 6, 3);
+  rect(c, C.outline, BRIDGE_GAP.x + 2, 383, 1, MARKET_H - 383); rect(c, C.outline, BRIDGE_GAP.x + BRIDGE_GAP.w - 3, 383, 1, MARKET_H - 383);
+  for (const bx of [BRIDGE_GAP.x, BRIDGE_GAP.x + BRIDGE_GAP.w - 3]) { rect(c, C.outline, bx, 376, 3, 8); rect(c, C.woodLight, bx + 1, 377, 1, 6); }
   // a xuồng floating in the canal
   for (let by = 0; by < 5; by++) {
     const inset = Math.abs(2 - by) * 3;
@@ -391,6 +398,8 @@ export function paintMarket(map: GameMap): SceneArt {
   paintFurnitureFront(g);
   paintMotelFront(g);
   paintPetShopFront(g);
+  paintDojoFront(g);                                                           // v20.2
+  paintManhole(g);                                                             // v20.4
   const props = [...map.props.map(propSprite), ...stallSprites()];
 
   const drawAnimated = (c: Ctx, t: number, camX: number, camY: number, reducedMotion: boolean) => {
@@ -451,3 +460,21 @@ const MARKET_LIGHTS: ReadonlyArray<SceneLight> = [
     return out;
   }),
 ];
+/** v20.4: the rusty manhole in the pavement between the lantern stall and Vựa nông sản (the hầm's hatch). Everyone sees
+ *  it; only the unlocked get its prompt. */
+function paintManhole(c: Ctx): void {
+  const { x, y } = UG_HATCH;
+  for (let dy = -6; dy <= 6; dy++) {
+    const w = Math.round(Math.sqrt(49 - dy * dy) * 1.5);
+    rect(c, C.outline, x - w - 1, y + dy, 2 * w + 2, 1);
+  }
+  for (let dy = -5; dy <= 5; dy++) {
+    const w = Math.round(Math.sqrt(36 - dy * dy) * 1.5);
+    rect(c, dy < 0 ? "#6a5a4a" : "#56483a", x - w, y + dy, 2 * w, 1);
+  }
+  // the cast grid, rust streaks and the two lifting holes
+  for (let k = -6; k <= 6; k += 3) rect(c, "#3e342a", x + k, y - 4, 1, 9);
+  rect(c, "#3e342a", x - 8, y, 17, 1);
+  rect(c, "#9a5a32", x - 5, y + 2, 3, 1); rect(c, "#9a5a32", x + 3, y - 3, 2, 1);
+  px(c, "#1a1612", x - 6, y - 1); px(c, "#1a1612", x + 6, y - 1);
+}

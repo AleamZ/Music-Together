@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { MapMember } from "@/lib/presence-modes";
-import { MAP_IDS, type MapId } from "@/lib/game/maps/types";
+import { VISIBLE_MAP_IDS } from "@/lib/game/maps/city";
+import type { MapId } from "@/lib/game/maps/types";
 
 const LABEL: Record<MapId, { icon: string; name: string }> = {
   hall: { icon: "🎵", name: "Sảnh" },
@@ -10,8 +11,11 @@ const LABEL: Record<MapId, { icon: string; name: string }> = {
   field: { icon: "🌾", name: "Đồng" },
   market: { icon: "🏮", name: "Chợ Lớn" },
   khu_nha: { icon: "🏘️", name: "Khu nhà" },
+  bai_dat: { icon: "🥊", name: "Bãi đất" },
+  ham_ngam: { icon: "🕳️", name: "Hầm" },
 };
-const MAPS = MAP_IDS.map((id) => ({ id, ...LABEL[id] }));
+// v20.4: the hầm is a secret: nobody is counted there
+const MAPS = VISIBLE_MAP_IDS.map((id) => ({ id, ...LABEL[id] }));
 
 /** Top-centre chip: how many members are on each map; tap for the names (classic-view members marked 🖥️). */
 export default function MapCounts({ counts }: { counts: Record<MapId, MapMember[]> }) {
