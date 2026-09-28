@@ -366,7 +366,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     showToast(`🐿️ Sóc lượm được ${xu} xu!`);
     void fishing.data.reload();
   }, [showToast, fishing.data]);
-  const pets = usePets(token, onPetFound);
+  const pets = usePets(token, room.id, onPetFound);
   const { reload: reloadPets } = pets;
   const petCode = myPetCode(pets.state);
   const following = followingPet(pets.state);

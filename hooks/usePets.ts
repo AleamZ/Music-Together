@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PET_TICK_MS } from "@/lib/game/pets/model";
 import { petsState, petTick, type PetsState } from "@/lib/game/pets/rpc";
 
-/** My pets (v18.12): fetched on mount, then a pet_tick every minute (the sóc's forage; `onFound` hears the xu). Before
- *  0036 (or on an error) the state stays null: no pet follows. `apply` takes the state an action RPC returned. */
-export function usePets(token: string | null, onFound?: (xu: number) => void): {
+/** My pets (v18.12): fetched on mount, then a pet_tick every minute for this room (the sóc's forage; `onFound` hears the
+ *  xu). Before 0036 (or on an error) the state stays null: no pet follows. `apply` takes the state an action RPC
+ *  returned. */
+export function usePets(token: string | null, roomId: string, onFound?: (xu: number) => void): {
   state: PetsState | null; apply: (s: PetsState) => void; reload: () => Promise<void>;
 } {
   const [held, setHeld] = useState<{ token: string; state: PetsState } | null>(null);
@@ -20,12 +21,12 @@ export function usePets(token: string | null, onFound?: (xu: number) => void): {
     if (!token) return;
     const mine = ++seq.current;
     try {
-      const s = tick ? await petTick(token) : await petsState(token);
+      const s = tick ? await petTick(token, roomId) : await petsState(token);
       if (mine !== seq.current) return;
       setHeld({ token, state: s });
       if (s.found && s.found > 0) found.current?.(s.found);
     } catch { /* keep what we had */ }
-  }, [token]);
+  }, [token, roomId]);
   const reload = useCallback(() => load(false), [load]);
   useEffect(() => {
     if (!token) return;
