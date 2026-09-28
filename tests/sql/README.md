@@ -62,3 +62,6 @@ ledger reasons, shop kinds or function overloads predate later rows and migratio
 `shop_items_kind_check`, "finish_cast … is not unique"), or they test a client-trusted RPC a later migration replaced
 (`v18-2`, `v18-2b`: the net before 0056). `v15-2`, `v15-gather`, `v16`, `v17` and `anticheat-smoke` end with
 `\i tests/sql/anticheat-guards.sql`, which checks the newest chain's list; at their own stage the list is older.
+
+- `v21-fishing-smoke.sql` (0076: boat + deep water, fishing battles, treasure maps, farm machines): chain-level, re-runs 0076 with `\i`; run after the full chain.
+- `v21-pets-smoke.sql` (0074: pet gacha, care/levels/evolution, fighter training, PvE/PvP pet & fish battles, the aquarium, house knocks): chain-level, re-runs 0074 with `\i`; run after the full chain.
