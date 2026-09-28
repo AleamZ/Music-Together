@@ -80,6 +80,7 @@ describe("GameShell's own interactables", () => {
       dojo: "dojo",                                                                        // v20.2
       ring_corner: "ring", ring_board: "ring_board",                                       // v20.3
       ug_organizer: "underground", ug_board: "underground", ug_door: "underground", cage_watch: "ug_watch", // v20.4
+      quest_giver: "quests",                                                              // v21
     });
   });
   it("keeps a case for every one of them in onInteract, before the default", () => {

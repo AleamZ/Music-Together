@@ -1,7 +1,8 @@
 import { FIELD_WEST_ARRIVE, HALL_FIELD_ARRIVE, MARKET_ARRIVE, POND_ARRIVE } from "./arrivals";
 import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
-import type { GameMap, Interactable, PropPlacement, Rect, Seating, Spot } from "./types";
+import { BAC_BA_LANG_LOOK, QUEST_GIVER } from "@/lib/game/quests/model";
+import type { GameMap, Interactable, Npc, PropPlacement, Rect, Seating, Spot } from "./types";
 
 /** The city-map signpost near the way in (every map has one). */
 export const HALL_CITY_POST = cityMapPost(560, 296);
@@ -45,6 +46,7 @@ export const HALL_SOLIDS: Rect[] = [
   { x: 501, y: 250, w: 28, h: 12 },   // table 3
   { x: 584, y: 250, w: 24, h: 12 },   // notice board
   { x: 408, y: 226, w: 24, h: 10 },   // Báo Làng news stand (v18.11)
+  { x: 362, y: 200, w: 12, h: 8 },    // bác Ba Làng, the quest giver (v21)
   { x: 484, y: 314, w: 14, h: 10 },   // dock sign
   { x: 34, y: 222, w: 14, h: 10 },    // "Ra đồng" sign
   { x: 614, y: 180, w: 14, h: 10 },   // "Chợ Lớn" sign (v18.4)
@@ -65,6 +67,8 @@ export const HALL_HAMMOCK: Interactable = {
 
 export const HALL_INTERACTABLES: Interactable[] = [
   HALL_CITY_POST.interactable,
+  // v21: bác Ba Làng gives the quests (his use point is 0071's _quest_giver, give or take)
+  { id: "quest_giver", kind: "quest_giver", label: "Bác Ba Làng", prompt: "Nhiệm vụ · bác Ba Làng", rect: { x: 356, y: 176, w: 24, h: 32 }, use: { x: QUEST_GIVER.x, y: QUEST_GIVER.y + 6 }, face: "up" },
   { id: "dj_booth", kind: "dj_booth", label: "Quầy DJ", prompt: "Mở hàng đợi", rect: { x: 296, y: 106, w: 48, h: 34 }, use: { x: 320, y: 152 } },
   { id: "notice_board", kind: "notice_board", label: "Bảng tin", prompt: "Xem bảng tin", rect: { x: 582, y: 228, w: 28, h: 34 }, use: { x: 596, y: 270 } },
   // v18.11: the village paper — dev blog and big events
@@ -104,6 +108,9 @@ export const HALL_INTERACTABLES: Interactable[] = [
     rect: { x: 147, y: 226, w: 18, h: 26 }, use: { x: 156, y: 262 }, face: "up",
   },
 ];
+
+/** v21: bác Ba Làng stands by the yard between the stage and the news stand. */
+export const HALL_NPCS: Npc[] = [{ id: "bac_ba_lang", name: "bác Ba Làng", look: BAC_BA_LANG_LOOK, spot: { x: QUEST_GIVER.x, y: 204, dir: "down" } }];
 
 /** Classic-mode members stand behind the café tables (the table sprite hides their legs). */
 export const HALL_SEATS: Spot[] = [
@@ -169,6 +176,6 @@ export function buildHallMap(): GameMap {
   }
   return {
     id: "hall", width: HALL_W, height: HALL_H, cell: HALL_CELL, cols, rows, blocked,
-    spawn: HALL_SPAWN, seating: HALL_SEATING, interactables: HALL_INTERACTABLES, props: HALL_PROPS, npcs: [], plots: [],
+    spawn: HALL_SPAWN, seating: HALL_SEATING, interactables: HALL_INTERACTABLES, props: HALL_PROPS, npcs: HALL_NPCS, plots: [],
   };
 }

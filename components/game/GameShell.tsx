@@ -91,6 +91,7 @@ import { useLift } from "@/hooks/useLift";
 import RoadTripOverlay from "./RoadTripOverlay";
 import VehicleShopModal from "./VehicleShopModal";
 import PetShopModal from "./PetShopModal";
+import { QuestHudButtons, QuestPanels, type QuestPanel } from "./quests/QuestPanels";
 import { usePets } from "@/hooks/usePets";
 import MotelModal from "./MotelModal";
 import { useMotel } from "@/hooks/useMotel";
@@ -147,7 +148,7 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | QuestPanel | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
@@ -178,6 +179,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const { admin_member_id, dj_member_id } = room;
   const canvasRef = useRef<GameCanvasHandle | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
+  const [questAt, setQuestAt] = useState<{ x: number; y: number } | null>(null);   // v21: the log opened at bác Ba Làng
+  const openQuestPanel = useCallback((p: QuestPanel) => { setQuestAt(null); setPanel(p); }, []);
   const [prompt, setPrompt] = useState<Interactable | null>(null);
   const [connected, setConnected] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -722,6 +725,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         setUgTab("ladder");
         setPanel("underground");
         break;
+      case "quest_giver":                                                  // v21: bác Ba Làng
+        setQuestAt({ x: it.use.x, y: it.use.y });
+        setPanel("quests");
+        break;
       case "cage_watch":                                                    // v20.4: watch the live match
         setPanel("ug_watch");
         break;
@@ -908,6 +915,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                 onDismount={dismount}
               />
               {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
+              <QuestHudButtons token={token} canPopup={!blocking} onOpen={openQuestPanel} />
               <PersonalSettings weatherFx={weatherFx} onWeatherFx={changeWeatherFx} />
               <CameraZoomControl
                 mapWidth={map.width}
@@ -1111,6 +1119,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         <NewsModal key={news.popup.map((p) => p.id).join()} feed={news.feed} popup={news.popup} onClose={news.dismissPopup} />
       )}
       {changelogOpen && <ChangelogModal onClose={changelog.dismiss} />}
+      <QuestPanels panel={panel} token={token} mapId={map.id} at={questAt} onOpen={(p) => setPanel(p)} onCoins={reloadCoins} onClose={close} />
       {panel === "pet_shop" && (
         <PetShopModal
           token={token}

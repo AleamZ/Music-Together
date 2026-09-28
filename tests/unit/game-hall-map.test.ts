@@ -28,7 +28,7 @@ describe("hall map", () => {
   it("has unique interactables: the three v13 ones, the v15 field sign and the v16 card corner", () => {
     expect(hall.interactables.map((i) => i.id).sort()).toEqual([
       "cards_cao", "cards_poker", "cards_sign", "cards_tienlen", "cards_xidach", "city_map", "dj_booth", "dock_sign", "field_sign", "hammock", "market_sign",
-      "news_stand", "notice_board",
+      "news_stand", "notice_board", "quest_giver",
     ]);
   });
   it("makes the market sign a portal to Chợ Lớn; the hall-side arrival is walkable, reachable and out of prompt range", () => {
@@ -78,8 +78,8 @@ describe("hall map", () => {
     expect(hall.seating!.standSpots).toContainEqual({ x: 300, y: 300, dir: "left" });
     expect(hall.seating!.standSpots.some((s) => overlaps(CARD_DECK, { x: s.x, y: s.y, w: 1, h: 1 }))).toBe(false);
   });
-  it("has six café seats and no shopkeepers", () => {
+  it("has six café seats and one NPC, bác Ba Làng (v21 quests)", () => {
     expect(hall.seating!.seats).toHaveLength(6);
-    expect(hall.npcs).toEqual([]);
+    expect(hall.npcs.map((n) => n.id)).toEqual(["bac_ba_lang"]);
   });
 });

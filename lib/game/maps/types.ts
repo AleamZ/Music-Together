@@ -38,6 +38,8 @@ export type InteractKind =
   // v20.4 the underground: the hatch in Chợ Lớn (unlocked players only), anh Tư Sẹo, the ranking board, the bot ladder's
   // door (each opens the underground panel) and the cage's watch spots (while a match is live)
   | "ug_hatch" | "ug_organizer" | "ug_board" | "ug_door" | "cage_watch"
+  // v21: bác Ba Làng, the quest giver on the hall (the quest log, NPC quests)
+  | "quest_giver"
   // every map: the city-map signpost (a view-only overview of the town)
   | "city_map"
   // v18.11: the hall's Báo Làng news stand (dev blog + village news)
