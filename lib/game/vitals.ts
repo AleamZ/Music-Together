@@ -3,7 +3,8 @@
 
 export const HUNGER_PER_S = 100 / 86400; // 0 after 24 h online
 export const THIRST_PER_S = 100 / 57600; // 0 after 16 h online
-export const TICK_CAP_S = 120;
+/** 0057: the real seconds of a gap are drained, up to 30 min (a longer gap is a logout); was 120 s per heartbeat. */
+export const TICK_CAP_S = 1800;
 export const STARVE_FAINT_S = 600;
 export const FAINT_MS = 10000;
 export const REVIVE_VALUE = 30;
@@ -19,7 +20,7 @@ function zeroPart(v: number, rate: number, dt: number): number {
   return Math.max(0, dt - v / rate);
 }
 
-/** One heartbeat: `dtSec` online seconds (capped at TICK_CAP_S); no drain while fainted. */
+/** One heartbeat: `dtSec` seconds since the last (capped at TICK_CAP_S); no drain while fainted. */
 export function drainVitals(v: Vitals, dtSec: number): Vitals {
   if (v.faintedUntil !== null) return v;
   const dt = Math.min(TICK_CAP_S, Math.max(0, dtSec));

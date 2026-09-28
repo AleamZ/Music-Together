@@ -1,10 +1,11 @@
 import type { NextConfig } from "next";
 
-/** The client build sent in X-Client-Info (anti-cheat spec §12.6): the host's commit, else the build time (UTC). */
+/** The client build sent in X-Client-Info (anti-cheat spec §12.6): the build time (UTC, YYYYMMDDHHmm — orderable, so
+ *  the server can refuse a page older than its minimum build, anti-cheat v2 part 3), then the host's commit. */
 function clientBuild(): string {
+  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 12);
   const sha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.CF_PAGES_COMMIT_SHA;
-  if (sha) return sha.slice(0, 7);
-  return new Date().toISOString().replace(/\D/g, "").slice(0, 12);
+  return sha ? `${stamp}-${sha.slice(0, 7)}` : stamp;
 }
 
 /** NEXT_PUBLIC_APP_MODE (lib/app-mode.ts): unset = prod for a production build. */

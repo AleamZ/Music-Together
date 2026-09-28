@@ -5,6 +5,8 @@ import type { FarmSling } from "@/hooks/useFarmController";
 import { drawSlingScene } from "@/lib/game/art/sling-art";
 import { SLING_CANCEL, SLING_HELP, slingStatus, slingTitle } from "@/lib/game/farm/messages";
 import { createSling, SLING, SLING_MISS, slingAnswered, slingSent, stepSling, type SlingMark, type SlingState } from "@/lib/game/farm/sling";
+import type { SlingShotInput } from "@/lib/game/farm/rpc";
+import { TickClock } from "@/lib/game/fishing/net";
 import { isTyping } from "@/lib/game/keys";
 
 /** The scene on a 320 × 180 canvas that CSS scales to the overlay's width; the lines below it say the same in words. */
@@ -25,14 +27,15 @@ function Scene({ s }: { s: SlingState }) {
   );
 }
 
-/** The game (§6.2): a seeded SlingState stepped every frame. A finished flight goes to `onShot` (sling_shoot), a shot
+/** The game (§6.2): a SlingState on the server's seed, on a 60 Hz tick clock from the start answer (0063: the server
+ *  replays each shot from its press, release and aim). A finished flight goes to `onShot` (sling_shoot), a shot
  *  ready too late to `onReaim` (sling_start); each new answer (`answers`) starts the 2.2 s reload. Holding is Space, a
  *  mouse button or a finger; the aim follows the pointer (a finger drags it while holding) or ←/→. */
 function Playing({ sling, pellets, panelOpen, onShot, onReaim, onClose }: {
   sling: FarmSling;
   pellets: number;
   panelOpen: boolean;
-  onShot: (hit: boolean) => void;
+  onShot: (hit: boolean, shot: SlingShotInput) => void;
   onReaim: () => void;
   onClose: () => void;
 }) {
@@ -56,22 +59,23 @@ function Playing({ sling, pellets, panelOpen, onShot, onReaim, onClose }: {
   }, [sling.answers]);
 
   useEffect(() => {
-    let last = performance.now();
+    const clock = new TickClock(performance.now());
     let raf = requestAnimationFrame(function loop(t: number) {
-      const i = input.current;
-      let next = stepSling(cur.current, Math.max(0, t - last) / 1000, {
-        holding: i.key || i.pointer, aimTo: i.aimTo, left: i.left, right: i.right,
-      });
-      last = t;
-      if (next.stage === "send") {
-        const m = next.mark;
-        next = slingSent(next);
-        setMark(m);
-        cb.current.onShot(m === "hit");
-      } else if (next.stage === "reaim") {
-        next = slingSent(next);
-        setMark(null);
-        cb.current.onReaim();
+      const due = clock.advance(t);
+      let next = cur.current;
+      while (next.tick < due) {
+        const i = input.current;
+        next = stepSling(next, { holding: i.key || i.pointer, aimTo: i.aimTo, left: i.left, right: i.right });
+        if (next.stage === "send") {
+          const m = next.mark, shot = next.shot;
+          next = slingSent(next);
+          setMark(m);
+          if (shot) cb.current.onShot(m === "hit", shot);
+        } else if (next.stage === "reaim") {
+          next = slingSent(next);
+          setMark(null);
+          cb.current.onReaim();
+        }
       }
       cur.current = next;
       setS(next);
@@ -146,7 +150,7 @@ export default function SlingGame({ sling, pellets, message, panelOpen, onShot, 
   pellets: number;
   message: string | null;
   panelOpen: boolean;
-  onShot: (hit: boolean) => void;
+  onShot: (hit: boolean, shot: SlingShotInput) => void;
   onReaim: () => void;
   onClose: () => void;
 }) {

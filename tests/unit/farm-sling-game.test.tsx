@@ -37,7 +37,7 @@ describe("drawSlingScene (v17 §12.2)", () => {
     };
     let s = createSling(4);
     for (let i = 0; i < 200; i++) {
-      s = stepSling(s, 0.03, { holding: i > 80, aimTo: null, left: false, right: i % 2 === 0 });
+      s = stepSling(s, { holding: i > 80, aimTo: null, left: false, right: i % 2 === 0 });
       drawSlingScene(c as unknown as CanvasRenderingContext2D, s, i * 30, i % 2 === 0);
     }
     const bad = rects.filter(([x, y, w, h]) => x < 0 || y < 0 || x + w > SLING.width || y + h > SLING.height);
@@ -65,7 +65,9 @@ describe("SlingGame (v17 §12.2)", () => {
     expect(p.onShot).not.toHaveBeenCalled();
     run(150);
     expect(p.onShot).toHaveBeenCalledTimes(1);
-    expect(p.onShot).toHaveBeenCalledWith(false);
+    expect(p.onShot).toHaveBeenCalledWith(false, { press: expect.any(Number), release: expect.any(Number), aim: expect.any(Number) });
+    const shot = p.onShot.mock.calls[0][1];
+    expect(shot.release - shot.press).toBe(SLING.fillTicks);                   // the input the server replays (0063)
     expect(screen.getByText("Hụt — căng quá, đạn bay qua.")).toBeInTheDocument();
     // the answer came: the reload starts again
     release();
@@ -81,7 +83,7 @@ describe("SlingGame (v17 §12.2)", () => {
     run(300);
     fireEvent.pointerUp(screen.getByRole("group", { name: "Ná" }));
     run(400);
-    expect(p.onShot).toHaveBeenCalledWith(false);
+    expect(p.onShot).toHaveBeenCalledWith(false, expect.objectContaining({ press: expect.any(Number) }));
     expect(screen.getByText("Hụt — đạn rơi trước.")).toBeInTheDocument();
   });
 

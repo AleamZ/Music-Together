@@ -12,6 +12,8 @@ export interface CastInfo {
   bites?: boolean;
   /** 0046: the server's reel seed (u32); the reel is replayed server-side from it. null/absent = a server before 0046. */
   reelSeed?: number | null;
+  /** 0059: the server times the hook (hook_cast answers the seed). */
+  serverHook?: boolean;
 }
 
 export type CastPhase = "waiting" | "bite" | "missed";

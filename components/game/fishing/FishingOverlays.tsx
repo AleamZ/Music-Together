@@ -36,10 +36,10 @@ export default function FishingOverlays({ fishing, farm = null }: { fishing: Fis
         <NetOverlay
           view={fishing.net}
           speciesName={(id) => catalog?.species.find((s) => s.id === id)?.name ?? id}
-          onThrow={fishing.netThrow}
           onHaul={fishing.netHaul}
           onFinish={fishing.netFinish}
           onClose={fishing.netClose}
+          onExpire={fishing.netLapse}
           onPhase={fishing.netPhase}
         />
       )}

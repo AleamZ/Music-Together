@@ -4,7 +4,7 @@ import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import CatchCard from "@/components/game/fishing/CatchCard";
 import ReelOverlay from "@/components/game/fishing/ReelOverlay";
 import { useCastSession } from "@/hooks/useCastSession";
-import type { FinishCast, StartCast } from "@/lib/game/fishing/rpc";
+import type { FinishCast, HookCast, StartCast } from "@/lib/game/fishing/rpc";
 import { parseFishingState } from "@/lib/game/fishing/state";
 import type { Interactable } from "@/lib/game/maps/types";
 
@@ -14,7 +14,7 @@ const SPOT: Interactable = {
 const STATE = parseFishingState({ loadout: { rod: "rod_wood", bobber: "bobber_lamp", bait: "bait_worm" } })!;
 const answer = (over: Partial<StartCast> = {}): StartCast => ({
   castId: "c1", biteMs: 4000, windowMs: 2500, difficulty: 38, minReelMs: 3520, zonePct: 25, rarity: 3, baitSwitched: false,
-  spot: "dock", bites: true, reelSeed: 9, state: STATE, ...over,
+  spot: "dock", bites: true, reelSeed: 9, serverHook: false, abandoned: null, state: STATE, ...over,
 });
 /** A reel's result as the overlay hands it back (0046: toggles + ticks go to finish_cast). */
 const R = (caught: boolean) => ({ caught, toggles: [0, 30], ticks: 240 });
@@ -22,15 +22,18 @@ const IN = { toggles: [0, 30], ticks: 240 };
 const FISH = { id: "f1", speciesId: "ca_loc", weightG: 1200, price: 72, rarity: 2 as const };
 const withHand = parseFishingState({ fish: [{ id: "f0", species_id: "ca_ro", weight_g: 100, price: 5, caught_at: "x" }] })!;
 
-function setup(start: () => Promise<StartCast | null>, finish: (id: string, ok: boolean) => Promise<FinishCast | null>) {
+function setup(start: () => Promise<StartCast | null>, finish: (id: string, ok: boolean) => Promise<FinishCast | null>,
+  hookFn?: (id: string) => Promise<HookCast | null>) {
   const canvas = {
     plant: vi.fn(), setFishing: vi.fn(), landCatch: vi.fn(),
   } as unknown as GameCanvasHandle & { plant: ReturnType<typeof vi.fn>; setFishing: ReturnType<typeof vi.fn>; landCatch: ReturnType<typeof vi.fn> };
   const toasts: string[] = [];
   const startCast = vi.fn(start);
   const finishCast = vi.fn(finish);
-  const hook = renderHook(() => useCastSession({ roomId: "r", data: { startCast, finishCast }, canvas: () => canvas, toast: (t) => toasts.push(t) }));
-  return { ...hook, canvas, toasts, startCast, finishCast };
+  const hookCast = vi.fn(hookFn ?? (async () => null));
+  const data = hookFn ? { startCast, finishCast, hookCast } : { startCast, finishCast };
+  const hook = renderHook(() => useCastSession({ roomId: "r", data, canvas: () => canvas, toast: (t) => toasts.push(t) }));
+  return { ...hook, canvas, toasts, startCast, finishCast, hookCast };
 }
 const phases = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls.map((c) => (c[0] as { phase: string }).phase);
 
@@ -206,6 +209,47 @@ describe("useCastSession", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     s.unmount();
     expect(s.finishCast).toHaveBeenCalledWith("c1", false);
+  });
+});
+
+describe("useCastSession with the server's hook (0059)", () => {
+  const hooked = (seed: number): HookCast => ({ result: "hooked", seed, state: STATE });
+  it("asks hook_cast at the bite, reels with the seed it answers and sends the input", async () => {
+    let answerHook!: (h: HookCast) => void;
+    const s = setup(async () => answer({ reelSeed: null, serverHook: true }),
+      async () => ({ result: "caught", fish: FISH, record: false, state: withHand }), () => new Promise((r) => { answerHook = r; }));
+    act(() => s.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    act(() => s.result.current.hook());
+    expect(s.hookCast).toHaveBeenCalledWith("c1");
+    expect(s.result.current.view.phase).toBe("bite");                          // the bite stays until the answer
+    act(() => s.result.current.hook());                                          // a double tap asks once
+    expect(s.hookCast).toHaveBeenCalledTimes(1);
+    await act(async () => { answerHook(hooked(77)); await vi.advanceTimersByTimeAsync(0); });
+    expect(s.result.current.view).toMatchObject({ phase: "reeling", params: { seed: 77 } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });          // the miss timer is gone
+    expect(s.finishCast).not.toHaveBeenCalled();
+    await act(async () => { s.result.current.reelDone(R(true)); await vi.advanceTimersByTimeAsync(0); });
+    expect(s.finishCast).toHaveBeenCalledWith("c1", true, false, IN);
+  });
+
+  it("ends the cast as a miss when the hook is refused", async () => {
+    const s = setup(async () => answer({ reelSeed: null, serverHook: true }),
+      async () => ({ result: "lost", why: "gave_up", state: STATE }), async () => ({ result: "lost", why: "missed", state: STATE, anticheat: null }));
+    act(() => s.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    await act(async () => { s.result.current.hook(); await vi.advanceTimersByTimeAsync(0); });
+    expect(s.finishCast).toHaveBeenCalledWith("c1", false);
+    expect(s.toasts).toEqual(["Cá ăn mồi rồi chạy mất!"]);
+    expect(phases(s.canvas.setFishing)).not.toContain("reeling");
+  });
+
+  it("says what a hooked cast given up by casting again cost", async () => {
+    const s = setup(async () => answer({ reelSeed: null, serverHook: true, abandoned: { rod: "rod_bamboo", big: true, rodLost: true, hunger: 10, rodBroke: false } }),
+      async () => null, async () => null);
+    act(() => s.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(s.toasts).toEqual(["🌊 Con cá lớn lần trước giật mất rod_bamboo! Đói thêm 10."]);
   });
 });
 

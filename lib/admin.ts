@@ -109,6 +109,67 @@ export async function adminAnticheatSetMode(token: string, mode: AnticheatMode):
   return data as { mode: AnticheatMode; mode_changed_at: string };
 }
 
+// Anti-cheat v2 part 3 (0064, 0065): the switches, the statistics flags and the blacklist.
+export interface AnticheatConfig {
+  mode: AnticheatMode;
+  /** 0 = off; else a page whose build number is lower earns nothing ("Cập nhật trang"). */
+  min_client_build: number;
+  auto_blacklist: boolean;
+  auto_blacklist_hard: number;
+  stats_enabled: boolean;
+  stats_every_min: number;
+  /** The build number of the page that asked (the admin's own). */
+  server_build: number;
+}
+export interface StatFlag {
+  kind: "stat_win_rate" | "stat_exact_rate" | "stat_earnings" | "stat_marathon" | string;
+  key: string; value: number; baseline: number | null; n: number; detail: Record<string, unknown>;
+  first_at: string; last_at: string; hits: number;
+}
+export interface StatAccount {
+  account_id: string; username: string; is_root: boolean; is_banned: boolean;
+  blacklisted: boolean; blacklist_note: string | null; blacklisted_at: string | null;
+  flags: StatFlag[];
+  games: Array<{ game: string; plays: number; wins: number; exact: number }>;
+  income: Record<string, number>;
+  hard_30d: number;
+}
+export interface AnticheatStats { config: AnticheatConfig; run_at: string | null; took_ms: number | null; server_now: string; accounts: StatAccount[]; }
+
+/** The statistics answer, or an error when it is not one (an older database, a wrong answer). */
+function statsOf(data: unknown): AnticheatStats {
+  const s = data as Partial<AnticheatStats> | null;
+  if (!s || typeof s !== "object" || !s.config || typeof s.config !== "object" || !Array.isArray(s.accounts)) {
+    throw new Error("bad stats answer");
+  }
+  return s as AnticheatStats;
+}
+export async function adminAnticheatStats(token: string): Promise<AnticheatStats> {
+  const { data, error } = await supabase.rpc("admin_anticheat_stats", { p_session_token: token });
+  if (error) throw error;
+  return statsOf(data);
+}
+export async function adminAnticheatStatsRun(token: string): Promise<AnticheatStats> {
+  const { data, error } = await supabase.rpc("admin_anticheat_stats_run", { p_session_token: token });
+  if (error) throw error;
+  return statsOf(data);
+}
+export async function adminAnticheatConfig(token: string, patch: Partial<Omit<AnticheatConfig, "mode" | "server_build">>): Promise<AnticheatConfig> {
+  const { data, error } = await supabase.rpc("admin_anticheat_config", { p_session_token: token, p_patch: patch });
+  if (error) throw error;
+  return data as AnticheatConfig;
+}
+export async function adminBlacklistSet(token: string, accountId: string, on: boolean, note?: string): Promise<{ account_id: string; blacklisted: boolean }> {
+  const { data, error } = await supabase.rpc("admin_blacklist_set", { p_session_token: token, p_account_id: accountId, p_on: on, p_note: note ?? null });
+  if (error) throw error;
+  return data as { account_id: string; blacklisted: boolean };
+}
+export async function adminStatReview(token: string, accountId: string): Promise<{ account_id: string; reviewed: number }> {
+  const { data, error } = await supabase.rpc("admin_stat_review", { p_session_token: token, p_account_id: accountId });
+  if (error) throw error;
+  return data as { account_id: string; reviewed: number };
+}
+
 // v19.4: the real-estate sales between two accounts that had traded within 30 days before (the last 90 days).
 export interface EstateFlag { id: number; kind: "apt" | "lot"; no: number; price: number; appraisal: number; seller_name: string | null; buyer_name: string | null; sold_at: string }
 export async function adminEstateFlags(token: string): Promise<EstateFlag[]> {

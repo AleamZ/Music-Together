@@ -4,13 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ParchmentModal } from "../Parchment";
 import { beltOf, examFor, martialByKey, uniformStyle, unlockSlotOf, type MartialStyle } from "@/lib/game/fight/dojo";
 import { enrollmentOf, waitText, type Gate } from "@/lib/game/fight/dojo-gates";
-import { kataChart, type KataChart } from "@/lib/game/fight/kata";
+import { KATA_REVEAL } from "@/lib/game/fight/kata";
 import type { MatchParams } from "@/lib/game/fight/engine";
 import { fightErrorMessage } from "@/lib/game/fight/messages";
 import { STYLE_SPECIALS } from "@/lib/game/fight/moves";
 import type { ServerClock } from "@/lib/game/fight/referee";
 import {
-  dojoEnroll, dojoExamStart, dojoKataSubmit, fightState, fightUnwearUniform, fightWearUniform, type DojoState, type KataResult,
+  dojoEnroll, dojoExamStart, dojoKataNotes, dojoKataSubmit, fightState, fightUnwearUniform, fightWearUniform, type DojoState, type KataResult,
   type MatchResult,
 } from "@/lib/game/fight/rpc";
 import { formatXu } from "@/lib/game/fishing/catalog";
@@ -23,7 +23,8 @@ import KataOverlay from "./KataOverlay";
 type View =
   | { kind: "panel" }
   | { kind: "confirm"; style: MartialStyle; target: number }
-  | { kind: "kata"; style: MartialStyle; examId: string; chart: KataChart; passPct: number }
+  /** 0060: the chart comes as it plays — its first notes (known up to `upto`), its end tick and its note count. */
+  | { kind: "kata"; style: MartialStyle; examId: string; first: number[]; upto: number; length: number; total: number; passPct: number }
   | { kind: "scoring"; style: MartialStyle }
   | { kind: "kataResult"; style: MartialStyle; res: KataResult }
   | { kind: "fight"; style: MartialStyle; match: { id: string; params: MatchParams; startedAtMs: number }; resume: number[] | null }
@@ -126,7 +127,11 @@ export default function Dojo({ token, look, name, coins, dojo, onLook, onCoins, 
       return;
     }
     if (gate.resume === "kata" && state?.exam) {
-      setView({ kind: "kata", style, examId: state.exam.id, chart: kataChart(state.exam.kataSeed, state.exam.targetRank), passPct: examFor(state.exam.targetRank)?.passPct ?? 60 });
+      const x = examFor(state.exam.targetRank);
+      setView({
+        kind: "kata", style, examId: state.exam.id, first: [], upto: -1, length: state.exam.kataLength, total: x?.notes ?? 0,
+        passPct: x?.passPct ?? 60,
+      });
       return;
     }
     setView({ kind: "confirm", style, target: e.rank + 1 });
@@ -139,9 +144,11 @@ export default function Dojo({ token, look, name, coins, dojo, onLook, onCoins, 
       clock.sample(value.serverNowMs, sentAt, receivedAt);
       if (value.state) apply(value.state, sentAt, receivedAt);
       onCoins();
-      const target = (enrollmentOf(value.state, style.key)?.rank ?? 0) + 1;
       setBusy(false);
-      setView({ kind: "kata", style, examId: value.examId, chart: kataChart(value.kataSeed, target), passPct: value.passPct });
+      setView({
+        kind: "kata", style, examId: value.examId, first: value.chart, upto: KATA_REVEAL, length: value.kataLength, total: value.notes,
+        passPct: value.passPct,
+      });
     }, (e: unknown) => {
       fail(e);
       setView({ kind: "panel" });
@@ -192,7 +199,13 @@ export default function Dojo({ token, look, name, coins, dojo, onLook, onCoins, 
   }
   if (view.kind === "kata") {
     const v = view;
-    return <KataOverlay style={v.style} chart={v.chart} passPct={v.passPct} onDone={(p) => submitKata(v.style, v.examId, p)} />;
+    return (
+      <KataOverlay
+        style={v.style} first={v.first} upto={v.upto} length={v.length} total={v.total} passPct={v.passPct}
+        more={() => dojoKataNotes(token, v.examId).then(({ value }) => (value.status === "kata" ? { chart: value.chart, upto: value.upto } : null))}
+        onDone={(p) => submitKata(v.style, v.examId, p)}
+      />
+    );
   }
   if (view.kind === "fight") {
     const v = view;

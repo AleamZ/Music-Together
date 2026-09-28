@@ -1,127 +1,157 @@
 import { describe, it, expect } from "vitest";
 import {
-  crabClosed, CRAB, CRAB_MARK, createCrabRound, createHarvestRound, createTransplantRound, HARVEST, HARVEST_MARK, scoreHill, scoreRelease,
-  scoreText, stepCrabRound, stepHarvestRound, stepTransplantRound, TRANSPLANT, transplantMarkText, type CrabRound, type HarvestRound,
+  crabClosed, CRAB, CRAB_MARK, crabInputError, createCrabRound, createHarvestRound, createTransplantRound, HARVEST, HARVEST_MARK,
+  harvestInputError, replayCrab, replayHarvest, scoreHill, scoreRelease, scoreText, stepCrabRound, stepHarvestRound,
+  stepTransplantRound, ToggleRecorder, togglesError, TRANSPLANT, transplantMarkText, type CrabRound, type HarvestRound,
   type TransplantRound,
 } from "@/lib/game/farm/minigames";
 
-/** Plays a round at `dt` seconds a frame: holds until the bar reaches `aim(centre, bundle)`, lets go, and presses again
- *  once the cut beat is over. */
-function play(seed: number, aim: (c: number, i: number) => number, dt = 1 / 60): HarvestRound {
+/** Plays a round tick by tick: holds until the bar reaches `aim(centre, bundle)` ‰, lets go, and presses again once the
+ *  cut beat is over. Records the hold as the server takes it. */
+function play(seed: number, aim: (c: number, i: number) => number): HarvestRound & { toggles: number[] } {
   let s = createHarvestRound(seed);
-  for (let f = 0; f < 60 * 120 && !s.outcome; f++) {
-    const holding = s.beatMs > 0 ? false : !(s.charging && s.level >= aim(s.centres[s.bundle], s.bundle));
-    s = stepHarvestRound(s, dt, holding);
+  const rec = new ToggleRecorder();
+  while (!s.outcome) {
+    const holding = s.beat > 0 ? false : !(s.charging && s.level >= aim(s.centres[s.bundle], s.bundle));
+    rec.hold(s.tick, holding);
+    s = stepHarvestRound(s, holding);
   }
-  return s;
+  return { ...s, toggles: rec.toggles };
 }
+const hold = (s: HarvestRound, n: number, holding: boolean) => {
+  for (let i = 0; i < n; i++) s = stepHarvestRound(s, holding);
+  return s;
+};
 
 describe("createHarvestRound", () => {
-  it("seeds 8 sweet bands centred in [0.62, 0.78]", () => {
+  it("seeds 8 sweet bands centred in [620, 780] ‰", () => {
     const s = createHarvestRound(7);
-    expect(s).toMatchObject({ bundle: 0, level: 0, charging: false, beatMs: 0, cuts: [], score: 0, elapsedMs: 0, outcome: null });
+    expect(s).toMatchObject({ bundle: 0, level: 0, charging: false, beat: 0, cuts: [], score2: 0, tick: 0, outcome: null });
     expect(s.centres).toHaveLength(HARVEST.bundles);
     for (const c of s.centres) {
-      expect(c).toBeGreaterThanOrEqual(0.62);
-      expect(c).toBeLessThanOrEqual(0.78);
+      expect(Number.isInteger(c)).toBe(true);
+      expect(c).toBeGreaterThanOrEqual(620);
+      expect(c).toBeLessThanOrEqual(780);
     }
     expect(createHarvestRound(7)).toEqual(s);
     expect(createHarvestRound(8).centres).not.toEqual(s.centres);
+    expect(createHarvestRound(2 ** 32 + 7)).toEqual(s);                        // the seed is a u32
   });
 });
 
 describe("scoreRelease", () => {
-  it("scores chuẩn within 0.07 of the centre, được within 0.17, and says which way a miss went", () => {
-    expect(scoreRelease(0.7, 0.7)).toEqual({ mark: "chuan", score: 1 });
-    expect(scoreRelease(0.77, 0.7)).toEqual({ mark: "chuan", score: 1 });
-    expect(scoreRelease(0.63, 0.7)).toEqual({ mark: "chuan", score: 1 });
-    expect(scoreRelease(0.78, 0.7)).toEqual({ mark: "duoc", score: 0.5 });
-    expect(scoreRelease(0.87, 0.7)).toEqual({ mark: "duoc", score: 0.5 });
-    expect(scoreRelease(0.53, 0.7)).toEqual({ mark: "duoc", score: 0.5 });
-    expect(scoreRelease(0.52, 0.7)).toEqual({ mark: "sot", score: 0 });
-    expect(scoreRelease(0.88, 0.7)).toEqual({ mark: "rung", score: 0 });
-    expect(scoreRelease(1, 0.78)).toEqual({ mark: "rung", score: 0 });
+  it("scores chuẩn within 70 ‰ of the centre, được within 170, and says which way a miss went", () => {
+    expect(scoreRelease(700, 700)).toEqual({ mark: "chuan", score2: 2 });
+    expect(scoreRelease(770, 700)).toEqual({ mark: "chuan", score2: 2 });
+    expect(scoreRelease(630, 700)).toEqual({ mark: "chuan", score2: 2 });
+    expect(scoreRelease(771, 700)).toEqual({ mark: "duoc", score2: 1 });
+    expect(scoreRelease(870, 700)).toEqual({ mark: "duoc", score2: 1 });
+    expect(scoreRelease(530, 700)).toEqual({ mark: "duoc", score2: 1 });
+    expect(scoreRelease(529, 700)).toEqual({ mark: "sot", score2: 0 });
+    expect(scoreRelease(871, 700)).toEqual({ mark: "rung", score2: 0 });
+    expect(scoreRelease(1000, 780)).toEqual({ mark: "rung", score2: 0 });
     expect(HARVEST_MARK).toEqual({ chuan: "Chuẩn!", duoc: "Được", sot: "Lệch — sót hạt", rung: "Lệch — rụng hạt" });
   });
 });
 
-describe("stepHarvestRound", () => {
-  it("raises the bar from 0 to 1 in 1.2 s while held, and auto-releases it at 1 as rụng hạt", () => {
-    let s = createHarvestRound(1);
-    s = stepHarvestRound(s, 0.05, true);
-    expect(s).toMatchObject({ charging: true, level: 0 });
-    for (let i = 0; i < 12; i++) s = stepHarvestRound(s, 0.05, true);
-    expect(s.level).toBeCloseTo(0.5, 9);
-    for (let i = 0; i < 12; i++) s = stepHarvestRound(s, 0.05, true);
-    expect(s).toMatchObject({ bundle: 1, level: 0, charging: false, beatMs: HARVEST.beatMs, score: 0 });
-    expect(s.cuts).toEqual([{ level: 1, centre: s.centres[0], mark: "rung", score: 0 }]);
+describe("stepHarvestRound (0061: 60 Hz integer ticks)", () => {
+  it("raises the bar from 0 to 1000 ‰ in 72 ticks while held, and auto-releases it at 1000 as rụng hạt", () => {
+    let s = stepHarvestRound(createHarvestRound(1), true);
+    expect(s).toMatchObject({ charging: true, level: 0, tick: 1 });
+    s = hold(s, 36, true);
+    expect(s.level).toBe(500);
+    s = hold(s, 36, true);
+    expect(s).toMatchObject({ bundle: 1, level: 0, charging: false, beat: HARVEST.beatTicks, score2: 0 });
+    expect(s.cuts).toEqual([{ level: 1000, centre: s.centres[0], mark: "rung", score2: 0 }]);
     // still held after the beat: nothing happens until the sickle is let go and pressed again
-    for (let i = 0; i < 40; i++) s = stepHarvestRound(s, 0.05, true);
-    expect(s).toMatchObject({ bundle: 1, charging: false, level: 0, beatMs: 0 });
-    s = stepHarvestRound(stepHarvestRound(s, 0.05, false), 0.05, true);
+    s = hold(s, 40, true);
+    expect(s).toMatchObject({ bundle: 1, charging: false, level: 0, beat: 0 });
+    s = stepHarvestRound(stepHarvestRound(s, false), true);
     expect(s.charging).toBe(true);
   });
 
-  it("ignores input for 0.35 s after a cut, and starts the next charge once the beat is over", () => {
-    let s = createHarvestRound(2);
-    s = stepHarvestRound(s, 0.05, true);
-    for (let i = 0; i < 10; i++) s = stepHarvestRound(s, 0.05, true);
-    s = stepHarvestRound(s, 0.05, false);
+  it("ignores input for the 21-tick beat after a cut, and starts the next charge once it is over", () => {
+    let s = stepHarvestRound(createHarvestRound(2), true);
+    s = hold(s, 10, true);
+    s = stepHarvestRound(s, false);
     expect(s.cuts).toHaveLength(1);
-    expect(s.cuts[0].level).toBeCloseTo(10 * 0.05 / 1.2, 9);
-    for (let i = 0; i < 6; i++) s = stepHarvestRound(s, 0.05, true);
-    expect(s).toMatchObject({ charging: false, level: 0 });
-    expect(s.beatMs).toBeCloseTo(50, 6);
-    s = stepHarvestRound(s, 0.05, true);
-    expect(s.beatMs).toBe(0);
-    s = stepHarvestRound(s, 0.05, true);
+    expect(s.cuts[0].level).toBe(Math.trunc(10_000 / 72));
+    s = hold(s, 20, true);
+    expect(s).toMatchObject({ charging: false, level: 0, beat: 1 });
+    s = stepHarvestRound(s, true);
+    expect(s.beat).toBe(0);
+    s = stepHarvestRound(s, true);
     expect(s.charging).toBe(true);
   });
 
-  it("clamps a long frame to 50 ms and ignores a negative one", () => {
-    let s = stepHarvestRound(createHarvestRound(3), 0.05, true);
-    s = stepHarvestRound(s, 2, true);
-    expect(s.level).toBeCloseTo(0.05 / 1.2, 9);
-    expect(s.elapsedMs).toBeCloseTo(100, 6);
-    expect(stepHarvestRound(s, -1, true).level).toBeCloseTo(s.level, 9);
-  });
-
-  it("passes a clean round with 8 points in about 10 s, at 60 and at 20 frames a second", () => {
-    for (const dt of [1 / 60, 0.05]) {
-      for (let seed = 1; seed <= 20; seed++) {
-        const s = play(seed, (c) => c, dt);
-        expect(s.outcome).toBe("pass");
-        expect(s.score).toBe(8);
-        expect(s.cuts.map((x) => x.mark)).toEqual(Array(8).fill("chuan"));
-        expect(s.elapsedMs).toBeGreaterThan(8_000);
-        expect(s.elapsedMs).toBeLessThan(12_000);
-      }
+  it("passes a clean round with 16 half points in about 10 s", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const s = play(seed, (c) => c);
+      expect(s.outcome).toBe("pass");
+      expect(s.score2).toBe(16);
+      expect(s.cuts.map((x) => x.mark)).toEqual(Array(8).fill("chuan"));
+      expect(s.tick).toBeGreaterThan(480);
+      expect(s.tick).toBeLessThan(720);
     }
   });
 
-  it("needs 4 points of 8: 3.5 fails, 4 passes", () => {
-    const four = play(5, (c, i) => (i < 4 ? c : 0.2));
-    expect([four.score, four.outcome]).toEqual([4, "pass"]);
-    const threeAndHalf = play(5, (c, i) => (i < 3 ? c : i === 3 ? c + 0.12 : 0.2));
-    expect(threeAndHalf.cuts.map((x) => x.mark)).toEqual(["chuan", "chuan", "chuan", "duoc", "sot", "sot", "sot", "sot"]);
-    expect([threeAndHalf.score, threeAndHalf.outcome]).toEqual([3.5, "fail"]);
-    const late = play(6, () => 1);
+  it("needs 8 half points: 7 fails, 8 passes", () => {
+    const four = play(5, (c, i) => (i < 4 ? c : 200));
+    expect([four.score2, four.outcome]).toEqual([8, "pass"]);
+    const seven = play(5, (c, i) => (i < 3 ? c : i === 3 ? c + 120 : 200));
+    expect(seven.cuts.map((x) => x.mark)).toEqual(["chuan", "chuan", "chuan", "duoc", "sot", "sot", "sot", "sot"]);
+    expect([seven.score2, seven.outcome]).toEqual([7, "fail"]);
+    const late = play(6, () => 1000);
     expect(late.cuts.every((x) => x.mark === "rung")).toBe(true);
     expect(late.outcome).toBe("fail");
   });
 
-  it("ends after the last cut's beat, and then stays put", () => {
+  it("ends after the last cut's beat, and then stays put; a round still going at 7 200 ticks fails", () => {
     let s = createHarvestRound(9);
     let beforeEnd: HarvestRound | null = null;
-    for (let f = 0; f < 10_000 && !s.outcome; f++) {
-      const holding = s.beatMs > 0 ? false : !(s.charging && s.level >= s.centres[s.bundle]);
-      const next = stepHarvestRound(s, 1 / 60, holding);
+    while (!s.outcome) {
+      const holding = s.beat > 0 ? false : !(s.charging && s.level >= s.centres[s.bundle]);
+      const next = stepHarvestRound(s, holding);
       if (next.outcome && !beforeEnd) beforeEnd = s;
       s = next;
     }
-    expect(beforeEnd).toMatchObject({ bundle: 8, outcome: null });
-    expect(beforeEnd!.beatMs).toBeGreaterThan(0);
-    expect(stepHarvestRound(s, 1 / 60, true)).toBe(s);
+    expect(beforeEnd).toMatchObject({ bundle: 8, outcome: null, beat: 1 });
+    expect(stepHarvestRound(s, true)).toBe(s);
+    const idle = hold(createHarvestRound(9), 7200, false);
+    expect([idle.outcome, idle.tick]).toEqual(["fail", HARVEST.maxTicks]);
+  });
+});
+
+describe("the harvest's replay (0061)", () => {
+  it("replays a played round from its recorded toggles to the same outcome, end tick and half points", () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      for (const aim of [(c: number) => c, (c: number, i: number) => (i % 2 ? c + 120 : 300)]) {
+        const s = play(seed, aim);
+        expect(replayHarvest(seed, s.toggles)).toEqual({ outcome: s.outcome, ticks: s.tick, score2: s.score2 });
+        expect(harvestInputError(s.toggles, s.tick)).toBeNull();
+      }
+    }
+    expect(replayHarvest(3, [])).toEqual({ outcome: "fail", ticks: 7200, score2: 0 });
+  });
+
+  it("records only the hold's flips, each before the tick it is stepped in", () => {
+    const rec = new ToggleRecorder();
+    [false, true, true, false, false, true].forEach((h, t) => rec.hold(t, h));
+    expect(rec.toggles).toEqual([1, 3, 5]);
+  });
+
+  it("refuses a list no round makes: its end, its size, its range, its order, its rate", () => {
+    expect(togglesError([], 0, 7200, 400, 45)).toBe("ticks");
+    expect(togglesError([], 7201, 7200, 400, 45)).toBe("ticks");
+    expect(togglesError([], 1.5, 7200, 400, 45)).toBe("ticks");
+    expect(harvestInputError(Array.from({ length: 401 }, (_, i) => i * 10), 7200)).toBe("too_many");
+    expect(harvestInputError([100], 100)).toBe("range");
+    expect(harvestInputError([-1], 100)).toBe("range");
+    expect(harvestInputError([5, 5], 100)).toBe("order");
+    expect(harvestInputError(Array.from({ length: 46 }, (_, i) => i), 300)).toBe("rate");
+    expect(harvestInputError(Array.from({ length: 45 }, (_, i) => i), 300)).toBeNull();
+    expect(crabInputError(Array.from({ length: 21 }, (_, i) => i * 2), 300)).toBe("rate");
+    expect(crabInputError(Array.from({ length: 61 }, (_, i) => i * 60), 7200)).toBe("too_many");
   });
 });
 
@@ -131,45 +161,51 @@ describe("scoreText", () => {
   });
 });
 
-/** Plays a crab game at `dt` seconds a frame, grabbing when `grab(state)` says so (only a frame in the claws matters). */
-function crab(seed: number, grab: (s: CrabRound) => boolean, dt = 0.05, start?: Partial<CrabRound>): CrabRound {
+/** Plays a crab game tick by tick, grabbing when `grab(state)` says so; records the grabs in the claws. */
+function crab(seed: number, grab: (s: CrabRound) => boolean, start?: Partial<CrabRound>): CrabRound & { grabs: number[] } {
   let s: CrabRound = { ...createCrabRound(seed), ...start };
-  for (let f = 0; f < 100_000 && !s.outcome; f++) s = stepCrabRound(s, dt, grab(s));
-  return s;
+  const grabs: number[] = [];
+  while (!s.outcome) {
+    const g = grab(s);
+    if (g && s.stage === "claws") grabs.push(s.tick);
+    s = stepCrabRound(s, g);
+  }
+  return { ...s, grabs };
 }
-/** The claws' state in the frame after this one, when a grab would be judged. */
-const nextClosed = (s: CrabRound, dt = 0.05) => crabClosed(CRAB.periodsMs[s.tries.length], s.phases[s.tries.length], s.stageMs + dt * 1000);
+/** The claws' state in the tick after this one, when a grab would be judged. */
+const nextClosed = (s: CrabRound) => crabClosed(CRAB.periods[s.tries.length], s.phases[s.tries.length], s.t + 1);
 
-describe("CrabRound (v15.3 §7.2, R17)", () => {
+describe("CrabRound (v15.3 §7.2, R17; 0062: 60 Hz integer ticks)", () => {
   it("seeds a phase in [0, P) for each of the 3 tries", () => {
     const s = createCrabRound(4);
-    expect(s).toMatchObject({ tries: [], hits: 0, stage: "lead", stageMs: 0, elapsedMs: 0, outcome: null });
-    expect(CRAB.periodsMs).toEqual([1200, 950, 750]);
+    expect(s).toMatchObject({ tries: [], hits: 0, stage: "lead", t: 0, tick: 0, outcome: null });
+    expect(CRAB.periods).toEqual([72, 57, 45]);
     s.phases.forEach((p, i) => {
+      expect(Number.isInteger(p)).toBe(true);
       expect(p).toBeGreaterThanOrEqual(0);
-      expect(p).toBeLessThan(CRAB.periodsMs[i]);
+      expect(p).toBeLessThan(CRAB.periods[i]);
     });
     expect(createCrabRound(4)).toEqual(s);
     expect(createCrabRound(5).phases).not.toEqual(s.phases);
   });
   it("opens the claws for the first 60 % of each cycle and closes them for the last 40 %", () => {
-    expect([0, 719, 720, 1199, 1200, 1920].map((t) => crabClosed(1200, 0, t))).toEqual([false, false, true, true, false, true]);
-    expect([219, 220, 699, 700].map((t) => crabClosed(1200, 500, t))).toEqual([false, true, true, false]);
-    expect([569, 570, 749].map((t) => crabClosed(950, 0, t))).toEqual([false, true, true]);
-    expect([449, 450].map((t) => crabClosed(750, 0, t))).toEqual([false, true]);
+    expect([0, 43, 44, 71, 72, 116].map((t) => crabClosed(72, 0, t))).toEqual([false, false, true, true, false, true]);
+    expect([13, 14, 41, 42].map((t) => crabClosed(72, 30, t))).toEqual([false, true, true, false]);
+    expect([34, 35, 56].map((t) => crabClosed(57, 0, t))).toEqual([false, true, true]);
+    expect([26, 27].map((t) => crabClosed(45, 0, t))).toEqual([false, true]);
   });
-  it("ignores a grab in the 0.6 s lead-in and in the 0.5 s beat", () => {
+  it("ignores a grab in the 36-tick lead-in and in the 30-tick beat", () => {
     let s = createCrabRound(1);
-    for (let i = 0; i < 11; i++) s = stepCrabRound(s, 0.05, true);
+    for (let i = 0; i < 35; i++) s = stepCrabRound(s, true);
     expect(s).toMatchObject({ stage: "lead", tries: [] });
-    s = stepCrabRound(s, 0.05, true);
-    expect(s).toMatchObject({ stage: "claws", stageMs: 0, tries: [] });
-    s = stepCrabRound(s, 0.05, true);
+    s = stepCrabRound(s, true);
+    expect(s).toMatchObject({ stage: "claws", t: 0, tries: [] });
+    s = stepCrabRound(s, true);
     expect(s.tries).toHaveLength(1);
     expect(s).toMatchObject({ stage: "beat" });
-    for (let i = 0; i < 9; i++) s = stepCrabRound(s, 0.05, true);
+    for (let i = 0; i < 29; i++) s = stepCrabRound(s, true);
     expect(s).toMatchObject({ stage: "beat", tries: [expect.anything()] });
-    s = stepCrabRound(s, 0.05, true);
+    s = stepCrabRound(s, true);
     expect(s).toMatchObject({ stage: "lead", tries: [expect.anything()] });
   });
   it("scores a grab: a hit while closed, a pinch while open; no grab in 4 cycles is a slip", () => {
@@ -183,34 +219,36 @@ describe("CrabRound (v15.3 §7.2, R17)", () => {
     expect(CRAB_MARK).toEqual({ hit: "Bắt được!", pinch: "Á! Bị cua kẹp", slip: "Cua chui mất" });
   });
   it("judges a grab at the open/closed edge on the claws' clock", () => {
-    const at = (ms: number) => crab(0, (s) => s.stage === "claws" && s.stageMs + 1 >= ms && s.tries.length === 0, 0.001,
-      { phases: [0, 0, 0] }).tries[0];
-    expect([at(719), at(720)]).toEqual(["pinch", "hit"]);
+    const at = (t: number) => crab(0, (s) => s.stage === "claws" && s.t + 1 >= t && s.tries.length === 0, { phases: [0, 0, 0] }).tries[0];
+    expect([at(43), at(44)]).toEqual(["pinch", "hit"]);
   });
-  it("counts 0–3 hits whatever the input", () => {
+  it("counts 0–3 hits whatever the input, and the replay of its grabs agrees", () => {
     let rng = 7;
     for (let game = 0; game < 200; game++) {
       const s = crab(game, () => {
         rng = (rng * 1103515245 + 12345) % 2147483648;
-        return rng % 7 === 0;
-      }, 0.01 + (game % 5) * 0.01);
+        return rng % (7 + (game % 5) * 5) === 0;
+      });
       expect(s.outcome).toBe("done");
       expect(s.hits).toBe(s.tries.filter((t) => t === "hit").length);
       expect(s.hits).toBeGreaterThanOrEqual(0);
       expect(s.hits).toBeLessThanOrEqual(3);
+      expect(replayCrab(game, s.grabs, s.tick)).toEqual({ hits: s.hits, tries: 3, ticks: s.tick });
+      expect(crabInputError(s.grabs, s.tick)).toBeNull();
     }
   });
-  it("takes 3.3 s at the least and 14.9 s at the most", () => {
-    const fast = crab(3, (s) => s.stage === "claws", 0.001);
-    expect(fast.elapsedMs).toBeGreaterThanOrEqual(3300);
-    expect(fast.elapsedMs).toBeLessThan(3310);
-    expect(crab(3, () => false).elapsedMs).toBeCloseTo(14_900, 6);
+  it("replays a game stopped after a try up to its end tick", () => {
+    const s = crab(3, (x) => x.stage === "claws" && nextClosed(x));
+    const first = s.grabs[0] + 1;
+    expect(replayCrab(3, s.grabs, first)).toEqual({ hits: 1, tries: 1, ticks: first });
   });
-  it("clamps a long frame to 50 ms, and stays put once done", () => {
-    const s = stepCrabRound(createCrabRound(1), 3, false);
-    expect(s.elapsedMs).toBeCloseTo(50, 6);
+  it("takes 201 ticks (3.35 s) at the least and 894 (14.9 s) at the most", () => {
+    expect(crab(3, (s) => s.stage === "claws").tick).toBe(3 * (CRAB.leadTicks + 1 + CRAB.beatTicks));
+    expect(crab(3, () => false).tick).toBe(894);
+  });
+  it("stays put once done", () => {
     const done = crab(1, () => false);
-    expect(stepCrabRound(done, 0.05, true)).toBe(done);
+    expect(stepCrabRound(done, true)).toBe(done);
   });
 });
 

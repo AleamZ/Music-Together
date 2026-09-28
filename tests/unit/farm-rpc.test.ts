@@ -109,6 +109,9 @@ describe("field RPCs", () => {
     expect(actionCall({ kind: "plant", plot: 6, item: "seed_ot" })).toEqual(["plant_crop", { p_plot: 6, p_item_id: "seed_ot" }]);
     expect(actionCall({ kind: "tend", plot: 6, act: "vun_goc" })).toEqual(["tend_crop", { p_plot: 6, p_act: "vun_goc" }]);
     expect(actionCall({ kind: "harvest_part", plot: 3, success: false })).toEqual(["harvest_part", { p_plot: 3, p_success: false }]);
+    // 0061: a round on the server's seed sends its input for the replay, and its pass as p_pass
+    expect(actionCall({ kind: "harvest_part", plot: 3, success: true, input: { toggles: [0, 56], ticks: 591 } }))
+      .toEqual(["harvest_part", { p_plot: 3, p_toggles: [0, 56], p_ticks: 591, p_pass: true }]);
     expect(actionCall({ kind: "rent_harvester", plot: 3 })).toEqual(["rent_harvester", { p_plot: 3 }]);
     expect([...RPCS_152].sort()).toEqual([
       "harvest_part", "load_sprayer", "plant_crop", "prepare_beds", "rent_harvester", "sell_produce", "tend_crop",
@@ -125,8 +128,11 @@ describe("field RPCs", () => {
     });
     h.rpc.mockResolvedValue({ data: FIELD, error: null });
     expect(await fieldAction("r", "tok", { kind: "harvest_part", plot: 3, success: false })).toMatchObject({
-      harvest: null, harvestPart: null, picking: null,
+      harvest: null, harvestPart: null, picking: null, workSeed: null,
     });
+    // 0061: begin_work's seed
+    h.rpc.mockResolvedValue({ data: { ...FIELD, work_seed: 2654435761 }, error: null });
+    expect((await fieldAction("r", "tok", { kind: "begin_work", plot: 3, work: "harvest" })).workSeed).toBe(2654435761);
   });
   it("sends an action with the room and the token, and reads a harvest", async () => {
     h.rpc.mockResolvedValue({ data: { ...FIELD, harvest: { variety: "nep", kg: 70 } }, error: null });
@@ -177,12 +183,20 @@ describe("v15.3 (§11.4)", () => {
     h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, visit: { id: "v1", hole: 3, started_at: NOW } }, error: null });
     const s = await crabStart("r", "tok", 3);
     expect(h.rpc).toHaveBeenLastCalledWith("crab_start", { p_room_id: "r", p_session_token: "tok", p_hole: 3 });
-    expect(s.visit).toEqual({ id: "v1", hole: 3, startedAt: Date.parse(NOW) });
+    expect(s.visit.seed).toBeNull();
+    expect(s.visit).toEqual({ id: "v1", hole: 3, startedAt: Date.parse(NOW), seed: null });
+    h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, visit: { id: "v2", hole: 3, started_at: NOW, seed: 4294967295 } }, error: null });
+    expect((await crabStart("r", "tok", 3)).visit.seed).toBe(4294967295);                  // 0062's seed
     expect(s.mine).toMatchObject({ critterCap: 18, gather: { leftToday: 199 } });
     const crab = { hits: 3, caught: [{ kind: "cua_gach", price: 100 }, { kind: "cua_dong", price: 26 }], escaped: 1 };
     h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, crab }, error: null });
     expect((await crabFinish("r", "tok", "v1", 3)).crab).toEqual(crab);
     expect(h.rpc).toHaveBeenLastCalledWith("crab_finish", { p_room_id: "r", p_session_token: "tok", p_visit_id: "v1", p_hits: 3 });
+    h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, crab }, error: null });
+    await crabFinish("r", "tok", "v1", 3, { toggles: [69, 140, 207], ticks: 208 });
+    expect(h.rpc).toHaveBeenLastCalledWith("crab_finish", {
+      p_room_id: "r", p_session_token: "tok", p_visit_id: "v1", p_hits: 3, p_grabs: [69, 140, 207], p_ticks: 208,
+    });
     h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine }, error: null });
     await expect(crabStart("r", "tok", 3)).rejects.toThrow("bad crab visit");
   });
@@ -243,13 +257,21 @@ describe("v17 (§10.4)", () => {
     h.rpc.mockResolvedValueOnce({ data: { ...FIELD, aim: { rat: 812, started_at: NOW } }, error: null });
     const a = await slingStart("r", "tok", 812);
     expect(h.rpc).toHaveBeenLastCalledWith("sling_start", { p_room_id: "r", p_session_token: "tok", p_rat_id: 812 });
-    expect(a.aim).toEqual({ rat: 812, startedAt: Date.parse(NOW) });
+    expect(a.aim).toEqual({ rat: 812, startedAt: Date.parse(NOW), seed: null });
+    h.rpc.mockResolvedValueOnce({ data: { ...FIELD, aim: { rat: 812, started_at: NOW, seed: 77 } }, error: null });
+    expect((await slingStart("r", "tok", 812, { x: 136.4, y: 209.6 })).aim.seed).toBe(77);  // 0063's seed
+    expect(h.rpc).toHaveBeenLastCalledWith("sling_start", { p_room_id: "r", p_session_token: "tok", p_rat_id: 812, p_x: 136, p_y: 210 });
     expect(a.state.plots[0].no).toBe(5);
     h.rpc.mockResolvedValueOnce({ data: { ...FIELD, shot: { hit: true, price: 336, pellets: 11 } }, error: null });
     expect((await slingShoot("r", "tok", 812, true)).shot).toEqual({ hit: true, price: 336, pellets: 11 });
     expect(h.rpc).toHaveBeenLastCalledWith("sling_shoot", { p_room_id: "r", p_session_token: "tok", p_rat_id: 812, p_hit: true });
     h.rpc.mockResolvedValueOnce({ data: { ...FIELD, shot: { hit: false, price: null, pellets: 10 } }, error: null });
     expect((await slingShoot("r", "tok", 812, false)).shot).toEqual({ hit: false, price: null, pellets: 10 });
+    h.rpc.mockResolvedValueOnce({ data: { ...FIELD, shot: { hit: false, price: null, pellets: 9 } }, error: null });
+    await slingShoot("r", "tok", 812, false, { press: 202, release: 246, aim: 171223 });
+    expect(h.rpc).toHaveBeenLastCalledWith("sling_shoot", {
+      p_room_id: "r", p_session_token: "tok", p_rat_id: 812, p_hit: false, p_press: 202, p_release: 246, p_aim: 171223,
+    });
     h.rpc.mockResolvedValueOnce({ data: { ...FIELD, dog_hunt: { price: 169 } }, error: null });
     expect((await dogHunt("r", "tok", 813)).price).toBe(169);
     expect(h.rpc).toHaveBeenLastCalledWith("dog_hunt", { p_room_id: "r", p_session_token: "tok", p_rat_id: 813 });

@@ -77,6 +77,7 @@ export const isCrampLeft = (v: unknown): v is number => typeof v === "number" &&
 /** The text of a heat RPC refusal (null: nothing to show). */
 export function heatErrorMessage(err: unknown): string | null {
   const msg = err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string" ? (err as { message: string }).message : "";
+  if (msg.includes("too far")) return "Xa quá — lại gần hơn đã!";                     // 0057: the server's position
   if (msg.includes("bad spot")) return "Phải đứng sát mép ao mới được.";
   if (msg.includes("warm up")) return "Khởi động chưa xong — làm lại nhé.";
   if (msg.includes("not cramping")) return "Bạn ấy đã ổn rồi.";

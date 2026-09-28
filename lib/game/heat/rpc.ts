@@ -1,11 +1,15 @@
+import { AnticheatError, screenAnswer } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
 import { parseHeat, type HeatState } from "./model";
 
-// v18.10: the heat and swim RPCs of 0033_heat_swim.sql. Cells are 8-px pond cells (the caller's own claim).
+// v18.10: the heat and swim RPCs of 0033_heat_swim.sql. Cells are 8-px pond cells, a position claim since 0057: a refused
+// one answers with the anti-cheat envelope (`too far`), thrown here as an AnticheatError.
 
 async function call(fn: string, args: Record<string, unknown>): Promise<unknown> {
   const { data, error } = await supabase.rpc(fn, args);
+  const flagged = screenAnswer(data, error);
   if (error) throw error;
+  if (flagged) throw new AnticheatError(flagged);
   return data;
 }
 

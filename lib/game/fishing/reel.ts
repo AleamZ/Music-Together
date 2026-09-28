@@ -156,6 +156,24 @@ export function replayReel(p: ReelParams, toggles: readonly number[]): ReelRepla
   return { outcome: s.outcome, ticks: s.tick, progress: s.progress };
 }
 
+/** 0059's toggle statistics (public._reel_timing): the flips, the gaps of 2 ticks or less, the gaps' variance (4 dp). */
+export interface ReelTiming { n: number; fast: number; variance: number }
+export function reelTiming(toggles: readonly number[]): ReelTiming {
+  const gaps: number[] = [];
+  for (let i = 1; i < toggles.length; i++) gaps.push(toggles[i] - toggles[i - 1]);
+  if (gaps.length === 0) return { n: toggles.length, fast: 0, variance: 0 };
+  const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const v = gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length;
+  return { n: toggles.length, fast: gaps.filter((g) => g <= 2).length, variance: Math.round(v * 10_000) / 10_000 };
+}
+/** 0059's soft reel_timing (public._reel_timing_suspect): a quarter of ≥ 10 flips within 2 ticks (faster than a finger),
+ *  or ≥ 12 flips whose gaps spread less than half a tick (a metronome). */
+export const REEL_TIMING = { fastMin: 10, fastShare: 4, metronomeMin: 12, metronomeVar: 0.25 } as const;
+export function reelTimingSuspect(t: ReelTiming): boolean {
+  return (t.n >= REEL_TIMING.fastMin && REEL_TIMING.fastShare * t.fast >= t.n)
+    || (t.n >= REEL_TIMING.metronomeMin && t.variance < REEL_TIMING.metronomeVar);
+}
+
 /** What the overlay hands back: the local outcome plus what finish_cast replays. */
 export interface ReelResult { caught: boolean; toggles: number[]; ticks: number }
 

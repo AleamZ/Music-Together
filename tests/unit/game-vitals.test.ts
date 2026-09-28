@@ -13,7 +13,8 @@ describe("vitals drain", () => {
     expect(v.thirst).toBeCloseTo(100 - 100 * THIRST_PER_S);
     expect(v.starveS).toBe(0);
   });
-  it("credits at most TICK_CAP_S per call (offline gaps never drain)", () => {
+  it("credits at most TICK_CAP_S per call (0057: 30 min; a longer gap is a logout)", () => {
+    expect(TICK_CAP_S).toBe(1800);
     expect(drainVitals(full, 99999)).toEqual(drainVitals(full, TICK_CAP_S));
     expect(drainVitals(full, -5)).toEqual(full);
   });

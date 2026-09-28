@@ -279,11 +279,17 @@ describe("useField, v17", () => {
     await flush();
     rpc.slingStart.mockResolvedValueOnce({ state: field(40), aim: { rat: 1, startedAt: 5 } });
     await act(async () => { expect(await result.current.slingStart(1)).toMatchObject({ aim: { rat: 1 } }); });
-    expect(rpc.slingStart).toHaveBeenCalledWith("r", "tok", 1);
+    expect(rpc.slingStart).toHaveBeenCalledWith("r", "tok", 1, undefined);
+    rpc.slingStart.mockResolvedValueOnce({ state: field(40), aim: { rat: 1, startedAt: 5, seed: 9 } });
+    await act(async () => { await result.current.slingStart(1, undefined, { x: 130, y: 200 }); });
+    expect(rpc.slingStart).toHaveBeenLastCalledWith("r", "tok", 1, { x: 130, y: 200 });           // 0063: where I stand
     expect(result.current.state?.mine.coins).toBe(40);
     rpc.slingShoot.mockResolvedValueOnce({ state: field(41), shot: { hit: true, price: 336, pellets: 9 } });
     await act(async () => { await result.current.slingShoot(1, true); });
-    expect(rpc.slingShoot).toHaveBeenCalledWith("r", "tok", 1, true);
+    expect(rpc.slingShoot).toHaveBeenCalledWith("r", "tok", 1, true, undefined);
+    rpc.slingShoot.mockResolvedValueOnce({ state: field(41), shot: { hit: false, price: null, pellets: 8 } });
+    await act(async () => { await result.current.slingShoot(1, false, undefined, { press: 5, release: 40, aim: 100_000 }); });
+    expect(rpc.slingShoot).toHaveBeenLastCalledWith("r", "tok", 1, false, { press: 5, release: 40, aim: 100_000 });  // 0063: the shot
     expect(result.current.state?.mine.coins).toBe(41);
     rpc.dogHunt.mockResolvedValueOnce({ state: field(42), price: 169 });
     await act(async () => { expect(await result.current.dogHunt(1)).toMatchObject({ price: 169 }); });

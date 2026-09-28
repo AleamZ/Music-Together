@@ -74,9 +74,9 @@ const field = (over: {
 /** The canvas, its world on the field (a test may move it on with `mapId.mockReturnValue`). */
 const handle = () => ({
   setPlots: vi.fn(), farmAnim: vi.fn(), plotChanged: vi.fn(), plant: vi.fn(), setGatherSpots: vi.fn(), mapId: vi.fn(() => "field"),
-  setRats: vi.fn(),
+  setRats: vi.fn(), localPos: vi.fn(() => null),
 }) as unknown as GameCanvasHandle
-  & Record<"setPlots" | "farmAnim" | "plotChanged" | "plant" | "setGatherSpots" | "mapId" | "setRats", ReturnType<typeof vi.fn>>;
+  & Record<"setPlots" | "farmAnim" | "plotChanged" | "plant" | "setGatherSpots" | "mapId" | "setRats" | "localPos", ReturnType<typeof vi.fn>>;
 const spot = (id: string): Interactable => getMap("field").interactables.find((i) => i.id === id)!;
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
@@ -299,6 +299,24 @@ describe("useFarmController, v15.2", () => {
     await act(async () => { result.current.nextRound(); await vi.advanceTimersByTimeAsync(0); });
     expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "begin_work", plot: 5, work: "harvest" });
     expect(result.current.round).toMatchObject({ phase: "playing", score: null });
+  });
+
+  it("plays a round on begin_work's seed (0061) and sends its input with the claim and the lost report", async () => {
+    const { result } = setup();
+    await flush();
+    rpc.fieldAction.mockResolvedValue(answer(field(), { workSeed: 2654435761 }));
+    await act(async () => { await result.current.act({ kind: "round", plot: 5, game: "harvest" }); });
+    expect(result.current.round).toMatchObject({ seed: 2654435761, serverSeed: true, input: null });
+    const won = { toggles: [0, 56, 78, 128], ticks: 591 };
+    act(() => result.current.endRound(true, 8, won));
+    rpc.fieldAction.mockResolvedValueOnce(answer(field(), { harvestPart: part(1, 12) }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(PART_WAIT_MS); });
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "harvest_part", plot: 5, success: true, input: won });
+    await act(async () => { result.current.nextRound(); await vi.advanceTimersByTimeAsync(0); });
+    const lost = { toggles: [3], ticks: 7200 };
+    act(() => result.current.endRound(false, 0, lost));
+    await flush();
+    expect(rpc.fieldAction).toHaveBeenLastCalledWith("r", "tok", { kind: "harvest_part", plot: 5, success: false, input: lost });
   });
 
   it("sends nothing on Esc, and shows a refused claim in the round's own words", async () => {
@@ -631,11 +649,27 @@ describe("useFarmController, v15.3 crab holes", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(CRAB_FINISH_WAIT_MS - 2000 - 1); });
     expect(rpc.crabFinish).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v3", 2);
+    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v3", 2, undefined);
     expect(result.current.crab).toMatchObject({ phase: "done", message: "🦀 Bắt được 2 con: 1 cua đồng, 1 cua gạch!" });
     act(() => result.current.closeCrab());
     expect(result.current.crab).toBeNull();
     expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("plays on the visit's seed (0062) and sends the grabs with the catch", async () => {
+    const { result } = setup();
+    await flush();
+    rpc.crabStart.mockResolvedValueOnce({ ...visit(3), visit: { ...visit(3).visit, seed: 4242 } });
+    await act(async () => {
+      result.current.interact(spot("crab_3"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.crab).toMatchObject({ seed: 4242 });
+    const input = { toggles: [69, 140, 207], ticks: 208 };
+    act(() => result.current.endCrab(3, input));
+    rpc.crabFinish.mockResolvedValueOnce(caught([["cua_dong", 26], ["cua_dong", 26], ["cua_dong", 26]]));
+    await act(async () => { await vi.advanceTimersByTimeAsync(CRAB_FINISH_WAIT_MS); });
+    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v3", 3, input);
   });
 
   it("sends hits 0 at once", async () => {
@@ -647,7 +681,7 @@ describe("useFarmController, v15.3 crab holes", () => {
       result.current.endCrab(0);
       await Promise.resolve();
     });
-    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v1", 0);
+    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v1", 0, undefined);
     await flush();
     expect(result.current.crab).toMatchObject({ phase: "done", hits: 0, message: "🦀 Cua chui hết vào hang rồi — 20 phút nữa quay lại nhé." });
   });
@@ -670,7 +704,7 @@ describe("useFarmController, v15.3 crab holes", () => {
     expect(toast).toHaveBeenCalledTimes(1);
     rpc.crabFinish.mockResolvedValueOnce(caught([["cua_dong", 26]]));
     await act(async () => { await vi.advanceTimersByTimeAsync(CRAB_FINISH_WAIT_MS); });
-    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v4", 1);
+    expect(rpc.crabFinish).toHaveBeenCalledWith("r", "tok", "v4", 1, undefined);
     expect(toast).toHaveBeenLastCalledWith("🦀 Bắt được 1 con: 1 cua đồng!");
     expect(result.current.crab).toBeNull();
   });
@@ -1028,7 +1062,7 @@ describe("useFarmController, v17 the ná", () => {
     const { result, canvas } = setup();
     await flush();
     await open(result);
-    expect(rpc.slingStart).toHaveBeenCalledWith("r", "tok", 7);
+    expect(rpc.slingStart).toHaveBeenCalledWith("r", "tok", 7, undefined);
     expect(result.current.sling).toMatchObject({ rat: 7, plot: 6, answers: 0, phase: "playing" });
     expect(fa(canvas, FARM_ANIM.aim)).toBe(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(SLING_FA_MS * 3); });
@@ -1058,7 +1092,7 @@ describe("useFarmController, v17 the ná", () => {
     await open(result);
     rpc.slingShoot.mockResolvedValueOnce({ state: ratField(), shot: { hit: false, price: null, pellets: 11 } });
     await act(async () => { await result.current.slingShot(false); });
-    expect(rpc.slingShoot).toHaveBeenCalledWith("r", "tok", 7, false);
+    expect(rpc.slingShoot).toHaveBeenCalledWith("r", "tok", 7, false, undefined);
     expect(result.current.sling).toMatchObject({ answers: 1, phase: "playing" });
     expect(canvas.plotChanged).not.toHaveBeenCalled();
     rpc.slingShoot.mockResolvedValueOnce({ state: ratField({ live: [] }), shot: { hit: true, price: 336, pellets: 10 } });
@@ -1087,6 +1121,27 @@ describe("useFarmController, v17 the ná", () => {
     rpc.slingShoot.mockRejectedValueOnce({ message: "rat limit", details: "600" });
     await act(async () => { await result.current.slingShot(true); });
     expect(result.current.sling).toMatchObject({ phase: "refused", message: "Bạn bắt đủ 6 con chuột trong giờ này rồi — nghỉ 10 phút nhé.", gone: false });
+  });
+
+  it("aims from where I stand, plays the aim's seed (0063) and sends each shot's input", async () => {
+    const { result, canvas } = setup();
+    await flush();
+    canvas.localPos.mockReturnValue({ x: 290, y: 200 });
+    rpc.slingStart.mockResolvedValueOnce({ state: ratField(), aim: { rat: 7, startedAt: NOW, seed: 99 } });
+    await act(async () => {
+      result.current.interact(ratSpot());
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(rpc.slingStart).toHaveBeenCalledWith("r", "tok", 7, { x: 290, y: 200 });
+    expect(result.current.sling).toMatchObject({ seed: 99 });
+    const shot = { press: 202, release: 246, aim: 171223 };
+    rpc.slingShoot.mockResolvedValueOnce({ state: ratField(), shot: { hit: false, price: null, pellets: 11 } });
+    await act(async () => { await result.current.slingShot(false, shot); });
+    expect(rpc.slingShoot).toHaveBeenCalledWith("r", "tok", 7, false, shot);
+    // a re-aim brings a new seed: the game starts over on it
+    rpc.slingStart.mockResolvedValueOnce({ state: ratField(), aim: { rat: 7, startedAt: NOW, seed: 100 } });
+    await act(async () => { await result.current.slingReaim(); });
+    expect(result.current.sling).toMatchObject({ seed: 100, answers: 2 });
   });
 
   it("re-aims with a new sling_start, which counts an answer", async () => {

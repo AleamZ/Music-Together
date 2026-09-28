@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MartialStyle } from "@/lib/game/fight/dojo";
-import { KATA_GOOD, KATA_LANES, LANE_LABELS, judge, type KataChart, type KataJudgement } from "@/lib/game/fight/kata";
+import { KATA_GOOD, KATA_LANES, KATA_REFILL, KATA_START, LANE_LABELS, judge, type KataChart, type KataJudgement } from "@/lib/game/fight/kata";
 import { specialPoseIds, stancePoseIds } from "@/lib/game/fight/render/poses";
 import RigPreview from "./RigPreview";
 
@@ -17,13 +17,32 @@ const JUDGE_TEXT: Record<KataJudgement, string> = { perfect: "Hoàn hảo!", goo
 
 /** v20.2 Bài quyền (spec §v20.2 "Kata minigame"): eight lanes on the left, the master performing the form on the right,
  *  Hoàn hảo / Tốt / Trượt, a score meter with the pass line. The presses go to the server, which scores them; the
- *  judgements here are only feedback. */
-export default function KataOverlay({ style, chart, passPct, onDone }: {
+ *  judgements here are only feedback. 0060: the chart arrives as it plays — `first` (flat [tick, lane, …]) known up to
+ *  tick `upto`, the rest asked of `more` whenever the known notes end within KATA_REFILL ticks; `length` ends it and
+ *  `total` notes make the score's maximum. */
+export default function KataOverlay({ style, first, upto, length, total, more, passPct, onDone }: {
   style: MartialStyle;
-  chart: KataChart;
+  first: readonly number[];
+  upto: number;
+  length: number;
+  total: number;
+  more: () => Promise<{ chart: number[]; upto: number } | null>;
   passPct: number;
   onDone: (presses: number[]) => void;
 }) {
+  const [known, setKnown] = useState<{ flat: readonly number[]; upto: number }>({ flat: first, upto });
+  const chart = useMemo((): KataChart => {
+    const notes: [number, number][] = [];
+    for (let i = 0; i + 1 < known.flat.length; i += 2) notes.push([known.flat[i], known.flat[i + 1]]);
+    return { notes, tpb: 0, length };
+  }, [known.flat, length]);
+  const chartRef = useRef(chart);
+  useEffect(() => { chartRef.current = chart; }, [chart]);
+  const knownRef = useRef(known);
+  useEffect(() => { knownRef.current = known; }, [known]);
+  const fetching = useRef(false);
+  const moreRef = useRef(more);
+  useEffect(() => { moreRef.current = more; }, [more]);
   const [tick, setTick] = useState(0);
   const [flash, setFlash] = useState<{ text: KataJudgement; at: number } | null>(null);
   const [points, setPoints] = useState(0);
@@ -51,6 +70,16 @@ export default function KataOverlay({ style, chart, passPct, onDone }: {
       const t = Math.floor(((now - t0.current) * 60) / 1000);
       tickRef.current = t;
       setTick(t);
+      const chart = chartRef.current;
+      // 0060: more of the chart before the known notes run out
+      const k = knownRef.current;
+      if (!fetching.current && k.flat.length / 2 < total && k.upto - t < KATA_REFILL) {
+        fetching.current = true;
+        void moreRef.current().then((r) => {
+          fetching.current = false;
+          if (r && r.upto > knownRef.current.upto) setKnown({ flat: r.chart, upto: r.upto });
+        }, () => { fetching.current = false; });
+      }
       // notes gone past their window unjudged are misses
       chart.notes.forEach(([nt], i) => {
         if (!judged.current.has(i) && !missed.current.has(i) && t > nt + KATA_GOOD) {
@@ -59,7 +88,7 @@ export default function KataOverlay({ style, chart, passPct, onDone }: {
           setFlash({ text: "miss", at: t });
         }
       });
-      if (t > chart.length) {
+      if (t > length) {
         if (!done.current) {
           done.current = true;
           onDoneRef.current(presses.current.slice());
@@ -70,13 +99,13 @@ export default function KataOverlay({ style, chart, passPct, onDone }: {
     };
     id = raf(loop);
     return () => (typeof window.cancelAnimationFrame === "function" ? window.cancelAnimationFrame(id) : window.clearTimeout(id));
-  }, [chart]);
+  }, [length, total]);
 
   const press = (lane: number) => {
     const t = tickRef.current;
     const p = presses.current;
     const n = p.length / 2;
-    if (done.current || t > chart.length || n >= 3 * chart.notes.length) return;
+    if (done.current || t > length || n >= 3 * total) return;
     if (n >= 2 && p[p.length - 2] === t && p[p.length - 4] === t) return;
     p.push(t, lane);
     // live feedback (kata.ts's rule: the nearest unjudged note of the lane within 9 ticks)
@@ -112,10 +141,10 @@ export default function KataOverlay({ style, chart, passPct, onDone }: {
     return () => window.removeEventListener("keydown", down, true);
   }, []);
 
-  const max = 2 * chart.notes.length;
+  const max = 2 * total;
   const shown = Math.max(0, points);
   const hits = marks.judged.size;
-  const lead = chart.notes.length > 0 ? chart.notes[0][0] - tick : 0;
+  const lead = chart.notes.length > 0 ? chart.notes[0][0] - tick : Math.max(0, KATA_START - tick);
   return (
     <div className="game-ui fixed inset-0 z-50 flex items-center justify-center bg-[#1a120c]/95 p-2 text-ink" role="dialog" aria-modal="true" aria-label={`Bài quyền ${style.kata}`}>
       <div className="pch flex w-full max-w-2xl flex-col gap-2 p-3 font-vt text-lg sm:flex-row">

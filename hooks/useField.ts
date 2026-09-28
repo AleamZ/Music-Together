@@ -9,6 +9,7 @@ import {
   actionCall, buyFarmItem, claimFarmGift, crabFinish, crabStart, dogHunt, fetchFarmCatalog, fetchFieldState, fieldAction,
   loadSprayer, pickSnailBed, RPCS_152, RPCS_153, RPCS_17, sellCritters, sellProduce, sellRats, sellRice, slingShoot, slingStart,
   type CatchAnswer, type CrabVisit, type FieldAction, type FieldAnswer, type MineAnswer, type ShotAnswer, type SlingAim,
+  type SlingShotInput, type ToggleInput,
 } from "@/lib/game/farm/rpc";
 import { ratSeason } from "@/lib/game/farm/season";
 import { withMine, type FarmMine, type FieldState } from "@/lib/game/farm/state";
@@ -37,16 +38,16 @@ export interface FieldData {
   /** Bắt cua (v15.3 §7.2): a visit to hole `hole` (R6), then its end with the hits, 0–3 (R7); a refusal's text goes to
    *  `onError` when given. `boxName` is the container held, which a `critters full` refusal names (§11.8). */
   crabStart: (hole: number, boxName?: string) => Promise<(MineAnswer & { visit: CrabVisit }) | null>;
-  crabFinish: (visitId: string, hits: number, onError?: (text: string) => void) =>
+  crabFinish: (visitId: string, hits: number, onError?: (text: string) => void, input?: ToggleInput) =>
     Promise<(MineAnswer & { crab: CatchAnswer & { hits: number } }) | null>;
   /** Mò ốc (v15.3 §7.3): 1–3 snails from bed `bed`; `boxName` as for crabStart. */
   pickSnailBed: (bed: number, boxName?: string) => Promise<(MineAnswer & { snails: CatchAnswer }) | null>;
   /** Sells every critter of a kind to cô Út, or all of them (null), at their stored prices (v15.3 R15). */
   sellCritters: (kind: string | null) => Promise<(MineAnswer & { sold: { n: number; xu: number } }) | null>;
   /** v17 (§6.1): aim the ná at a live rat. A refusal's text goes to `onError` when given (the SlingGame shows it). */
-  slingStart: (rat: number, onError?: (text: string) => void) => Promise<{ state: FieldState; aim: SlingAim } | null>;
+  slingStart: (rat: number, onError?: (text: string) => void, at?: { x: number; y: number }) => Promise<{ state: FieldState; aim: SlingAim } | null>;
   /** A shot; a hit catches. Refusals read in the SlingGame's context ("too fast" is "Đang nạp đạn…"). */
-  slingShoot: (rat: number, hit: boolean, onError?: (text: string) => void) => Promise<{ state: FieldState; shot: ShotAnswer } | null>;
+  slingShoot: (rat: number, hit: boolean, onError?: (text: string) => void, input?: SlingShotInput) => Promise<{ state: FieldState; shot: ShotAnswer } | null>;
   /** My dog's pounce (§7.2); a refusal's text goes to `onError` when given (the auto-hunt shows none). */
   dogHunt: (rat: number, onError?: (text: string) => void) => Promise<{ state: FieldState; price: number } | null>;
   /** cô Út buys every rat in the bag at the prices fixed at each catch (§5.6). */
@@ -227,17 +228,17 @@ export function useField(roomId: string, token: string, active: boolean, onError
       call(() => (market ? sellProduce(token, upland, kg, true) : sellProduce(token, upland, kg)), applyMine, { rpc: "sell_produce" }), [call, applyMine, token]),
     crabStart: useCallback((hole: number, boxName?: string) =>
       call(() => crabStart(roomId, token, hole), applyMine, { rpc: "crab_start", itemName: boxName }), [call, applyMine, roomId, token]),
-    crabFinish: useCallback((visitId: string, hits: number, onError?: (text: string) => void) =>
-      call(() => crabFinish(roomId, token, visitId, hits), applyMine, { rpc: "crab_finish", onError }), [call, applyMine, roomId, token]),
+    crabFinish: useCallback((visitId: string, hits: number, onError?: (text: string) => void, input?: ToggleInput) =>
+      call(() => crabFinish(roomId, token, visitId, hits, input), applyMine, { rpc: "crab_finish", onError }), [call, applyMine, roomId, token]),
     pickSnailBed: useCallback((bed: number, boxName?: string) =>
       call(() => pickSnailBed(roomId, token, bed), applyMine, { rpc: "pick_snail_bed", itemName: boxName }), [call, applyMine, roomId, token]),
     sellCritters: useCallback((kind: string | null) =>
       call(() => sellCritters(token, kind), applyMine, { rpc: "sell_critters" }), [call, applyMine, token]),
-    slingStart: useCallback((rat: number, onError?: (text: string) => void) =>
-      call(() => slingStart(roomId, token, rat), (n, r) => apply(n, r.state), { rpc: "sling_start", context: "sling", onError }),
+    slingStart: useCallback((rat: number, onError?: (text: string) => void, at?: { x: number; y: number }) =>
+      call(() => slingStart(roomId, token, rat, at), (n, r) => apply(n, r.state), { rpc: "sling_start", context: "sling", onError }),
     [call, apply, roomId, token]),
-    slingShoot: useCallback((rat: number, hit: boolean, onError?: (text: string) => void) =>
-      call(() => slingShoot(roomId, token, rat, hit), (n, r) => apply(n, r.state), { rpc: "sling_shoot", context: "sling", onError }),
+    slingShoot: useCallback((rat: number, hit: boolean, onError?: (text: string) => void, input?: SlingShotInput) =>
+      call(() => slingShoot(roomId, token, rat, hit, input), (n, r) => apply(n, r.state), { rpc: "sling_shoot", context: "sling", onError }),
     [call, apply, roomId, token]),
     dogHunt: useCallback((rat: number, onError?: (text: string) => void) =>
       call(() => dogHunt(roomId, token, rat), (n, r) => apply(n, r.state), { rpc: "dog_hunt", onError }), [call, apply, roomId, token]),

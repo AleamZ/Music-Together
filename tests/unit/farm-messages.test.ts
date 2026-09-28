@@ -151,6 +151,11 @@ describe("v15.3 texts (§11.8, §13.2, §13.4)", () => {
     expect(m("visit expired")).toBe("Lâu quá, cua chui mất rồi — lát nữa quay lại nhé.");
     expect(m("no critters")).toBe("Không có cua ốc để bán.");
     expect([m("invalid spot"), m("invalid kind")]).toEqual(["Có lỗi, thử lại nhé.", "Có lỗi, thử lại nhé."]);
+    // 0061–0063: an old page, an input the replay refused, a claim far from the spot
+    expect([m("outdated"), m("invalid harvest"), m("invalid catch"), m("invalid shot"), m("too far")]).toEqual([
+      "Cập nhật trang để chơi tiếp.", "Lượt gặt không hợp lệ — gặt lại nhé.", "Lượt bắt cua không hợp lệ.", "Phát bắn không hợp lệ.",
+      "Bạn đứng xa chỗ đó quá — lại gần rồi thử lại nhé.",
+    ]);
     expect([crittersFullText("Xô nhựa"), GATHER_LIMIT_TEXT]).toEqual([
       "Xô nhựa đầy rồi — ra vựa cô Út bán bớt nhé.", "Hôm nay bạn bắt cua, mò ốc đủ 200 lượt rồi — mai quay lại nhé!",
     ]);

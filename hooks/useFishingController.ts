@@ -6,13 +6,12 @@ import { useCastSession, type CastSession, type CastView } from "@/hooks/useCast
 import { useFishing, type FishingData } from "@/hooks/useFishing";
 import { serverNow } from "@/lib/game/farm/clock";
 import {
-  BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NET_EXPIRED, NET_TOO_EARLY, netText, NO_NET, NOT_LOADED,
+  abandonedText, BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NET_EXPIRED, netLostText, netText, NO_NET, NOT_LOADED,
   promptText as promptFor, repairText, saleText, SONG_BONUS,
 } from "@/lib/game/fishing/messages";
-import { pullWaitMs } from "@/lib/game/fishing/net";
 import { NET_WON_MS, type NetInput } from "@/lib/game/fishing/netcast";
 import { nearestWater } from "@/lib/game/fishing/shore";
-import { fetchFishingBoard, type CaughtFish, type FishingBoard } from "@/lib/game/fishing/rpc";
+import { fetchFishingBoard, type CaughtFish, type FishingBoard, type NetLostWhy, type NetPull, type NetThrow } from "@/lib/game/fishing/rpc";
 import { baitTotal, bestNet, digWaitSec, handFish, type Loadout } from "@/lib/game/fishing/state";
 import type { ReelResult } from "@/lib/game/fishing/reel";
 import type { Interactable } from "@/lib/game/maps/types";
@@ -52,16 +51,16 @@ export interface FishingController {
   net: NetView | null;
   /** v18.2: the net a throw would use, or null (none owned / not loaded). */
   netReady: string | null;
-  /** v18.2: open the net minigame at this pond cell (aiming costs nothing). */
+  /** v18.2: open the net minigame at this pond cell: start_net rolls the school (0056: nothing is spent until the haul). */
   throwNet: (cell: { col: number; row: number }) => void;
-  /** v18.2: the net left the hands (start_net: the throw is spent). */
-  netThrow: (chargeMs: number) => void;
-  /** v18.2: the net sank (net_haul) with the shadows it covered as offsets. */
-  netHaul: (chargeMs: number, offsets: number[]) => void;
-  /** v18.2: kéo lưới ended (finish_net) with this many mistakes: 0 all the fish, 1–3 one escapes each, 4 = into the pond. */
-  netFinish: (mistakes: number) => void;
+  /** v18.2: the net sank (net_haul, 0056: the throw's input, replayed by the server; the throw is spent there). */
+  netHaul: (input: NetThrow) => void;
+  /** v18.2: kéo lưới ended (finish_net, 0056: the keys, replayed): 0 mistakes all the fish, 1–3 one escapes each, 4 = into the pond. */
+  netFinish: (pull: NetPull) => void;
   /** v18.2: close the minigame (Esc before the throw, or the result card). */
   netClose: () => void;
+  /** 0056: the aim ran too long (NETX.aimTicks): the open throw lapses, nothing spent. */
+  netLapse: () => void;
   /** v18.2: the net minigame's phase, drawn on my character for everyone. */
   netPhase: (inp: NetInput) => void;
   /** The fish shown in my hands (species id), or null: none in the bag, or put away. */
@@ -87,8 +86,8 @@ export interface FishingControllerOptions {
   toast: (text: string) => void;
 }
 
-/** v18.2: the net minigame. `throwId` once start_net answered; `readyAt` (performance.now) the earliest pull the server
- *  accepts; `result` after finish_net. */
+/** v18.2: the net minigame. `throwId`, `seed` and `openedAt` (performance.now: the school's tick 0) once start_net answered;
+ *  `haul`, `arrowSeed` and `haulAt` (kéo lưới's tick 0) once net_haul answered; `result` after finish_net. */
 export interface NetView {
   cell: { col: number; row: number };
   net: string;
@@ -98,11 +97,16 @@ export interface NetView {
   left: number;
   max: number;
   throwId: string | null;
-  readyAt: number | null;
+  /** The school's seed (0056). */
+  seed: number;
+  openedAt: number | null;
   busy: boolean;
   /** The fish under the net (net_haul), for kéo lưới; null before. */
   haul: CaughtFish[] | null;
-  result: { count: number; fish: CaughtFish[]; escaped: number } | { lost: "expired" | "too_early" } | null;
+  /** Kéo lưới's seed, answered with the haul (0056). */
+  arrowSeed: number;
+  haulAt: number | null;
+  result: { count: number; fish: CaughtFish[]; escaped: number } | { lost: NetLostWhy } | null;
 }
 
 /** The worm dig's dust puff, before dig_worms is called. */
@@ -274,7 +278,8 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     if (r) toastRef.current(repairText(itemName(itemId), r.cost));
   }), [run, repairRod, itemName]);
 
-  // --- v18.2 the net: aim + charge (free, Esc cancels) → release: start_net → sink → Kéo lưới: finish_net → result card
+  // --- v18.2 the net: open: start_net (the school; 0056: nothing spent, Esc cancels) → aim + charge + release → sink:
+  //     net_haul (the throw's input; spent there) → Kéo lưới: finish_net (the keys) → result card
   const [net, setNet] = useState<NetView | null>(null);
   /** A won pull's bundle stays up NET_WON_MS even when the result card is closed sooner. */
   const wonRef = useRef(false);
@@ -296,9 +301,19 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     wonRef.current = false;
     setNet({
       cell, net: netItem.id, name: netItem.name, radiusPx: netItem.radiusPx ?? 24, left: w?.left ?? 0, max: w?.max ?? 0,
-      throwId: null, readyAt: null, busy: false, haul: null, result: null,
+      throwId: null, seed: 0, openedAt: null, busy: true, haul: null, arrowSeed: 0, haulAt: null, result: null,
     });
-  }, [net, session.view.phase, netItem, canvas]);
+    // 0056: the school (and the power bar's period) come from the server's seed, so the throw opens with the aim
+    void startNet(roomId, cell, netItem.id).then((r) => {
+      if (!r) {
+        setNet(null);                                                                     // refused: the toast says why
+        return;
+      }
+      if (r.abandoned) toastRef.current(abandonedText(r.abandoned, itemName(r.abandoned.rod)));   // 0059: a hooked cast given up
+      setNet((cur) => cur && !cur.throwId
+        ? { ...cur, busy: false, throwId: r.throwId, seed: r.seed, radiusPx: r.radiusPx, openedAt: performance.now() } : cur);
+    });
+  }, [net, session.view.phase, netItem, canvas, startNet, roomId, itemName]);
   /** v18.2: the minigame's phase, shown on my character to everyone. */
   const netPhase = useCallback((inp: NetInput) => canvas()?.setNet(inp), [canvas]);
   const showWon = useCallback((k: number) => {
@@ -321,43 +336,34 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       if (!wonRef.current) canvas()?.setNet(null);
     }
   }, [netOpen, canvas]);
-  const netThrow = useCallback(() => {
-    if (!net || net.throwId || net.busy) return;
-    const at = net;
-    setNet({ ...at, busy: true });
-    void startNet(roomId, at.cell, at.net).then((r) => {
-      if (!r) {
-        setNet(null);                                                                     // refused: the toast says why
-        return;
-      }
-      setNet((cur) => cur && { ...cur, busy: false, throwId: r.throwId, readyAt: performance.now() + pullWaitMs(r.beatMs) });
-    });
-  }, [net, startNet, roomId]);
-  const netHaul = useCallback((chargeMs: number, offsets: number[]) => {
+  /** A lost throw or pull: its text (none when a strike's modal shows instead) and the card. */
+  const netLost = useCallback((why: NetLostWhy, strike: number) => {
+    if (strike < 1) toastRef.current(netLostText(why));
+    setNet((cur) => cur && { ...cur, busy: false, result: { lost: why } });
+    canvas()?.setNet(null);
+  }, [canvas]);
+  const netHaul = useCallback((input: NetThrow) => {
     if (!net?.throwId || net.busy || net.haul || net.result) return;
     const at = net;
     setNet({ ...at, busy: true });
-    void haulNet(at.throwId!, chargeMs, offsets).then((r) => {
+    void haulNet(at.throwId!, input).then((r) => {
       if (!r) {
         setNet(null);
         return;
       }
-      if (r.result === "haul") setNet((cur) => cur && { ...cur, busy: false, haul: r.fish });
-      else if (r.result === "empty") {
+      if (r.result === "haul") {
+        setNet((cur) => cur && { ...cur, busy: false, haul: r.fish, arrowSeed: r.arrowSeed, haulAt: performance.now() });
+      } else if (r.result === "empty") {
         setNet((cur) => cur && { ...cur, busy: false, result: { count: 0, fish: [], escaped: 0 } });
         showWon(0);
-      } else {
-        toastRef.current(r.why === "expired" ? NET_EXPIRED : NET_TOO_EARLY);
-        setNet((cur) => cur && { ...cur, busy: false, result: { lost: r.why } });
-        canvas()?.setNet(null);
-      }
+      } else netLost(r.why, r.anticheat?.strike ?? 0);
     });
-  }, [net, haulNet, showWon, canvas]);
-  const netFinish = useCallback((mistakes: number) => {
+  }, [net, haulNet, showWon, netLost]);
+  const netFinish = useCallback((pull: NetPull) => {
     if (!net?.throwId || !net.haul || net.busy || net.result) return;
     const at = net;
     setNet({ ...at, busy: true });
-    void finishNet(at.throwId!, mistakes).then((r) => {
+    void finishNet(at.throwId!, pull).then((r) => {
       if (!r) {
         setNet(null);
         return;
@@ -374,16 +380,16 @@ export function useFishingController({ token, roomId, accountId, canvas, current
         canvas()?.setNet(null);
         canvas()?.overboard();
         toastRef.current(`🌊 Kéo hụt — bạn bị lôi xuống ao! (−${r.overboard?.hunger ?? 10} no)`);
-      } else {
-        toastRef.current(r.why === "expired" ? NET_EXPIRED : NET_TOO_EARLY);
-        setNet((cur) => cur && { ...cur, busy: false, result: { lost: r.why === "expired" ? "expired" : "too_early" } });
-        canvas()?.setNet(null);
-      }
+      } else netLost(r.why, r.anticheat?.strike ?? 0);
     });
-  }, [net, finishNet, canvas, showWon]);
+  }, [net, finishNet, canvas, showWon, netLost]);
   const netClose = useCallback(() => {
-    // before the throw nothing is spent; a throw in the water is given up (its use is already spent)
-    setNet((cur) => (cur && cur.busy ? cur : null));
+    // 0056: before the haul nothing is spent (the next start_net replaces the open throw); a call in flight finishes first
+    setNet((cur) => (cur && cur.busy && cur.throwId ? cur : null));
+  }, []);
+  const netLapse = useCallback(() => {
+    toastRef.current(NET_EXPIRED);
+    setNet(null);
   }, []);
   const loadBoard = useCallback(() => fetchFishingBoard(roomId, token), [roomId, token]);
 
@@ -433,10 +439,10 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     net,
     netReady,
     throwNet,
-    netThrow,
     netHaul,
     netFinish,
     netClose,
+    netLapse,
     netPhase,
     loadBoard,
     interact,

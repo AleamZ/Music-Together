@@ -1,14 +1,27 @@
 import { createClient, type SupabaseClient, type RealtimeChannel } from "@supabase/supabase-js";
+import { outdatedFetch } from "@/lib/client-build";
 export type { RealtimeChannel };
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
+/** This page's tab id (anti-cheat v2, 0058): the server keeps where each tab of an account stands, and only the newest
+ *  tab's position counts — a second game window never looks like a teleport. A new one on every page load. */
+export const TAB_ID: string = (() => {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+})();
+
 export const supabase: SupabaseClient = createClient(url, publishableKey, {
   auth: { persistSession: false },
   realtime: { params: { eventsPerSecond: 5 } },
-  // the anti-cheat evidence reads the client build from this header (anti-cheat spec §12.6)
-  global: { headers: { "X-Client-Info": `music-together/${process.env.NEXT_PUBLIC_CLIENT_BUILD ?? "dev"}` } },
+  // the anti-cheat evidence reads the client build from this header (anti-cheat spec §12.6); 0058 reads the tab's;
+  // 0064 refuses a game RPC from a build older than the minimum, and outdatedFetch tells the page to reload
+  global: {
+    headers: { "X-Client-Info": `music-together/${process.env.NEXT_PUBLIC_CLIENT_BUILD ?? "dev"}`, "X-Tab-Id": TAB_ID },
+    fetch: outdatedFetch(),
+  },
 });
 
 export type PlayMode = "order" | "shuffle";
