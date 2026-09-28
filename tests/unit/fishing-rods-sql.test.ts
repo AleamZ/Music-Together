@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const SQL = readFileSync("supabase/migrations/0034_rods_nets.sql", "utf8");
-const PREV = readFileSync("supabase/migrations/0029_fashion2.sql", "utf8");
+const SQL = readFileSync("supabase/migrations/0034_rods_nets.sql", "utf8").replace(/\r\n/g, "\n");
+const PREV = readFileSync("supabase/migrations/0029_fashion2.sql", "utf8").replace(/\r\n/g, "\n");
 
 describe("0034_rods_nets.sql (v18.2)", () => {
   it("adds the new stock with its prices and durability", () => {
