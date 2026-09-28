@@ -2,7 +2,7 @@ import { ANH_BA_TOC_LOOK, BEP_LOOK, CHU_HAI_CA_LOOK, CHU_TU_LOOK, CO_BA_LOOK, CO
 import { CO_MUOI_LOOK } from "@/lib/game/pets/npc";
 import { CO_HONG_LOOK, CO_NAM_LOOK } from "@/lib/game/housing/npc";
 import { THAY_LAM_LOOK } from "@/lib/game/fight/npc";
-import { BAI_DAT_ARRIVE, HALL_MARKET_ARRIVE, KHU_NHA_ARRIVE, MARKET_ARRIVE } from "./arrivals";
+import { BAI_DAT_ARRIVE, HALL_MARKET_ARRIVE, HAM_ARRIVE, KHU_NHA_ARRIVE, MARKET_ARRIVE } from "./arrivals";
 import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, Npc, PropPlacement, Rect, StallGoods } from "./types";
@@ -85,6 +85,11 @@ export const VO_DUONG_USE = { x: 920, y: 262 } as const;
  *  gap, used from its head on the pavement (1180, 358) facing down. */
 export const BRIDGE_GAP = { x: 1160, w: 40 } as const;
 export const BRIDGE_PORTAL: Rect = { x: 1164, y: 372, w: 32, h: 24 };
+
+/** v20.4: the rusty manhole between the lantern stall and Vựa nông sản (the underground's hatch), used from the pavement
+ *  just north of it, facing down. Decoration for everyone; its prompt only for the unlocked (GameEngine.setHidden). */
+export const UG_HATCH = { x: 640, y: 368 } as const;
+export const UG_HATCH_USE = { x: 640, y: 352 } as const;
 
 /** Outdoor tables of the nhà hàng (a table and two stools each), west of the door. */
 export const EAT_TABLES: ReadonlyArray<{ x: number; y: number }> = [{ x: 64, y: 200 }, { x: 106, y: 222 }];
@@ -175,6 +180,12 @@ export const MARKET_INTERACTABLES: Interactable[] = [
   {
     id: "market_to_bai_dat", kind: "portal", label: "Bãi đất trống", prompt: "Qua cầu ra Bãi đất trống (sàn đấu)",
     rect: BRIDGE_PORTAL, use: { x: 1180, y: 358 }, face: "down", to: { map: "bai_dat", arrive: BAI_DAT_ARRIVE },
+  },
+  {
+    // v20.4: not a portal (the knock and ug_enter come first); hidden unless ug_status says unlocked
+    id: "ug_hatch", kind: "ug_hatch", label: "Nắp cống", prompt: "Gõ cửa",
+    rect: { x: UG_HATCH.x - 12, y: UG_HATCH.y - 8, w: 24, h: 16 }, use: { ...UG_HATCH_USE }, face: "down",
+    to: { map: "ham_ngam", arrive: HAM_ARRIVE },
   },
 ];
 

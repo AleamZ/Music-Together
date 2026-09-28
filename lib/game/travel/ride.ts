@@ -7,7 +7,7 @@ export const RIDE_SPEED: Record<VehicleId, number> = { bike: 1.6, moto: 2.2, car
 export const RIDE_KEY = "r";
 
 export const isVehicleId = (v: unknown): v is VehicleId => v === "bike" || v === "moto" || v === "car";
-export const canRide = (map: MapId, v: VehicleId): boolean => !(map === "pond" && v === "car");
+export const canRide = (map: MapId, v: VehicleId): boolean => !(map === "pond" && v === "car") && map !== "ham_ngam";   // v20.4: no vehicle down a manhole
 export const rideSpeed = (v: VehicleId | null): number => (v ? RIDE_SPEED[v] : 1);
 export const interactBlocked = (riding: VehicleId | null, kind: InteractKind): boolean => riding !== null && kind !== "portal";
 
@@ -22,12 +22,13 @@ export const pickMount = (owned: readonly string[], last: VehicleId | null): Veh
 export const CAR_POND_TEXT = "Xe hơi không chạy vào ao được!";
 export const STARVING_RIDE_TEXT = "Đói/khát quá, không lái xe nổi!";
 export const CAR_LEFT_TEXT = "Đã xuống xe — xe hơi để ngoài ao.";
+export const HAM_RIDE_TEXT = "Dưới hầm chật lắm, không đi xe được!";
 
 /** Why mounting `v` is refused: a toast, "" for a silent refusal (busy: fishing, farm work, a card seat, the road, a
  *  faint), or null when it is allowed. */
 export function mountRefusal(o: { map: MapId; v: VehicleId; starving: boolean; busy: boolean }): string | null {
   if (o.busy) return "";
-  if (!canRide(o.map, o.v)) return CAR_POND_TEXT;
+  if (!canRide(o.map, o.v)) return o.map === "ham_ngam" ? HAM_RIDE_TEXT : CAR_POND_TEXT;
   if (o.starving) return STARVING_RIDE_TEXT;
   return null;
 }

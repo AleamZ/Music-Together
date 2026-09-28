@@ -13,7 +13,7 @@ import {
   M_INV_A, M_INV_B, M_KIND, M_MOTION, M_NEAR, M_PB, M_R, M_REACH, M_S, M_SLOT, M_TECH, M_TRAV, M_WIN_A, M_WIN_B,
   M_YHI, M_YLO, MO_DD, MO_DP, MO_QCB, MO_QCF, MO_QCF2, MOVES_PER_STYLE, MV_CHK, MV_CHP, MV_CLK, MV_CLP, MV_HK, MV_HP,
   MV_JHK, MV_JHP, MV_JLK, MV_JLP, MV_LK, MV_LP, MV_THROW, S_CHAIN_FROM, S_CHAIN_MAX, S_CHAIN_TO, SHORTCUT_COST,
-  SHORTCUT_STARTUP, mv, styleField,
+  SHORTCUT_STARTUP, S_ATK, S_DEF, S_ENERGY, S_JUMP, S_WALK, mv, styleField,
 } from "./moves";
 import { movesMaskForRank, styleStats } from "./styles";
 
@@ -140,6 +140,8 @@ export const G_SEED = 10;
 export const G_VER = 11;
 /** 5 rounds × (code, hp1, hp2, frame). */
 export const G_ROUNDS = 12;
+/** v20.4 styleByRound: per side, 5 rounds × (style + 1; 0 = unchanged), P1 at 32–36, P2 at 37–41. */
+export const G_SBR = 32;
 export const G_LEN = 48;
 
 export const F_X = 0;
@@ -211,6 +213,9 @@ export interface FighterParams {
   bot: number;
   /** Starting energy (fixtures, training, bosses). */
   en0: number;
+  /** v20.4: the style of each round (≤ 5; a boss that changes style), with that style's stats; rounds past the list keep
+   *  the last one it set. Absent: the style above for every round. */
+  styleByRound?: number[];
   atk: number;
   def: number;
   walk: number;
@@ -280,6 +285,17 @@ function resetFighter(s: State, side: number): void {
   s[b + F_HITX] = 0;
   s[b + F_HITY] = 0;
   s[b + F_KDF] = 0;
+  // v20.4: a style change at the round's start (styleByRound), with the style row's stats
+  const sbr = s[G_SBR + side * 5 + s[G_ROUND] - 1];
+  if (sbr > 0) {
+    const st = sbr - 1;
+    s[b + F_STYLE] = st;
+    s[b + F_ATK] = styleField(st, S_ATK);
+    s[b + F_DEF] = styleField(st, S_DEF);
+    s[b + F_WALK] = styleField(st, S_WALK);
+    s[b + F_JUMP] = styleField(st, S_JUMP);
+    s[b + F_ENP] = styleField(st, S_ENERGY);
+  }
 }
 
 export function createMatch(p: MatchParams): State {
@@ -309,6 +325,8 @@ export function createMatch(p: MatchParams): State {
     s[b + F_BOT] = clamp(T(f.bot), 0, 9);
     s[b + F_EN] = clamp(T(f.en0), 0, ENERGY_MAX);
     s[b + F_PREV] = 0;
+    const sbr = f.styleByRound ?? [];
+    for (let k = 0; k < 5 && k < sbr.length; k++) s[G_SBR + side * 5 + k] = clamp(T(sbr[k]), 0, 7) + 1;
     resetFighter(s, side);
   }
   return s;

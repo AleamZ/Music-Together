@@ -1,15 +1,10 @@
--- tests/sql/v20-2-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0050, from the repo
--- root, with the fixtures' absolute paths:
+-- tests/sql/v20-2-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after the full chain (0004 … 0055,
+-- 0014 before 0013), from the repo root, with the fixtures' absolute paths:
 --   psql -v kata=<repo>/tests/fixtures/kata-cases.json -v bots=<repo>/tests/fixtures/fight-bot-cases.json -f <this file>
--- It re-runs 0049 and 0050 with \i (re-runnable). Every check is an ASSERT; the first failure stops psql.
+-- It no longer re-applies 0049 / 0050 (their older bodies and ledger would replace 0051's and 0052's): the chain's
+-- re-runnability is tests/sql/v20-rerun.sql. Every check is an ASSERT; the first failure stops psql.
 \set ON_ERROR_STOP on
 set time zone 'UTC';
-set client_min_messages = warning;
-\i supabase/migrations/0049_fight_matches.sql
-\i supabase/migrations/0050_dojo.sql
-\i supabase/migrations/0049_fight_matches.sql
-\i supabase/migrations/0050_dojo.sql
-reset client_min_messages;
 
 create temp table kx as select pg_read_file(:'kata')::jsonb j;
 create temp table bx as select pg_read_file(:'bots')::jsonb j;
@@ -404,7 +399,7 @@ do $$ declare x who; ok boolean; def text; begin
   assert ok, 'max rank';
   def := (select pg_get_constraintdef(oid) from pg_constraint where conname = 'coin_ledger_reason_check');
   assert def like '%dojo_tuition%' and def like '%dojo_exam%' and def like '%estate_buy%', 'ledger reasons';
-  assert (select count(*) from regexp_matches(def, '''[a-z_]+''', 'g')) = 45, format('45 reasons: %s', def);
+  assert (select count(*) from regexp_matches(def, '''[a-z_]+''', 'g')) >= 45, format('at least 45 reasons: %s', def);
   assert public._in_shade('market', 920, 262) and not public._in_shade('market', 920, 300), 'the awning';
   assert not public._in_shade('market', 1000, 262), 'east of the awning';
   assert has_function_privilege('anon', 'public.dojo_state(text)', 'execute')

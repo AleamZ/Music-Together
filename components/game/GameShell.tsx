@@ -1194,7 +1194,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}
-          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length }}
+          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0 }}
           onClose={close}
         />
       )}

@@ -12,6 +12,8 @@ export interface CityPlace {
   places: readonly string[];
   /** The map's centre on the overview, in percent of its width and height. */
   at: { x: number; y: number };
+  /** v20.4: a secret place — not on the overview, no road to it, not in the map counts. */
+  hidden?: boolean;
 }
 
 export const CITY_PLACES: Readonly<Record<MapId, CityPlace>> = {
@@ -41,15 +43,23 @@ export const CITY_PLACES: Readonly<Record<MapId, CityPlace>> = {
     id: "bai_dat", icon: "🥊", name: "Bãi đất trống", at: { x: 86, y: 70 },
     places: ["4 sàn đấu", "Bảng thành tích", "Bao cát"],
   },
+  // v20.4: under Chợ Lớn's manhole — never shown
+  ham_ngam: {
+    id: "ham_ngam", icon: "🕳️", name: "Hầm đấu ngầm", at: { x: 72, y: 46 }, hidden: true,
+    places: ["Anh Tư Sẹo", "Lồng đấu", "Cửa thách đấu", "Bảng xếp hạng ngầm"],
+  },
 };
+
+/** The maps the town overview shows (a hidden one is a secret). */
+export const VISIBLE_MAP_IDS: readonly MapId[] = MAP_IDS.filter((id) => !CITY_PLACES[id].hidden);
 
 /** Every road between two maps: one per pair linked by a portal, whichever side it is read from (sorted, stable). */
 export function cityRoads(): Array<readonly [MapId, MapId]> {
   const seen = new Set<string>();
   const out: Array<readonly [MapId, MapId]> = [];
-  for (const id of MAP_IDS) {
+  for (const id of VISIBLE_MAP_IDS) {
     for (const it of getMap(id).interactables) {
-      if (it.kind !== "portal" || !it.to || it.to.map === id) continue;
+      if (it.kind !== "portal" || !it.to || it.to.map === id || CITY_PLACES[it.to.map].hidden) continue;
       const pair = [id, it.to.map].sort((a, b) => MAP_IDS.indexOf(a) - MAP_IDS.indexOf(b)) as [MapId, MapId];
       const key = pair.join("-");
       if (seen.has(key)) continue;

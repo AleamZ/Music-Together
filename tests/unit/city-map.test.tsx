@@ -47,9 +47,12 @@ describe("city overview", () => {
   });
   it("shows every map with its count, marks where I am, lists the key places, Khu nhà included (v19.2)", () => {
     const onClose = vi.fn();
-    render(<CityMapModal current="market" counts={{ hall: 3, pond: 1, field: 0, market: 2, khu_nha: 4, bai_dat: 2 }} onClose={onClose} />);
+    render(<CityMapModal current="market" counts={{ hall: 3, pond: 1, field: 0, market: 2, khu_nha: 4, bai_dat: 2, ham_ngam: 1 }} onClose={onClose} />);
     const dialog = screen.getByRole("dialog", { name: "🗺️ Bản đồ thành phố" });
-    for (const id of MAP_IDS) expect(within(dialog).getByTestId(`city-map-${id}`)).toHaveTextContent(CITY_PLACES[id].name);
+    for (const id of MAP_IDS.filter((m) => !CITY_PLACES[m].hidden)) expect(within(dialog).getByTestId(`city-map-${id}`)).toHaveTextContent(CITY_PLACES[id].name);
+    // v20.4: the hầm is a secret
+    expect(within(dialog).queryByTestId("city-map-ham_ngam")).toBeNull();
+    expect(dialog.textContent).not.toContain("Hầm");
     expect(screen.getByTestId("city-map-hall")).toHaveTextContent("👥 3");
     expect(screen.getByTestId("city-map-market")).toHaveTextContent("📍 Bạn đang ở đây");
     expect(screen.getByTestId("city-map-hall")).not.toHaveTextContent("Bạn đang ở đây");

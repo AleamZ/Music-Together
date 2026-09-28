@@ -160,6 +160,38 @@ export interface MatchResult {
   void?: boolean;
   /** v20.3 a ring match's money: the stake, the pot, the burned fee, what the winner took, the records (by side). */
   pvp?: { stake: number; pot: number; fee: number; won: number; records: Record<"1" | "2", { wins: number; losses: number; draws: number }> | null };
+  /** v20.4 an underground match: what moved (entry, prize, fee, refund), the ratings by side, the ladder's floor, the cup. */
+  ug?: UgResult;
+  /** v20.4: a called match nobody (or only one) showed up for. */
+  noshow?: boolean;
+}
+
+export interface UgResult {
+  kind: string; entry: number; pot: number; fee: number; won: number; refund: number; requeued: boolean;
+  floor: number | null; boss: string | null; first: boolean;
+  rating: { factor: number; bySide: Partial<Record<"1" | "2", { rating: number; delta: number; tier: string }>> } | null;
+  round: string | null; champion: string | null; championWon: number; runnerUpWon: number; cupVoid: boolean;
+}
+
+function parseUg(v: unknown): UgResult | null {
+  const u = obj(v);
+  if (!u) return null;
+  const rt = obj(u.rating);
+  const side = (k: "1" | "2") => {
+    const o = obj(rt?.[k]);
+    return o ? { rating: num(o.rating) ?? 0, delta: num(o.delta) ?? 0, tier: str(o.tier) ?? "" } : undefined;
+  };
+  const bySide: Partial<Record<"1" | "2", { rating: number; delta: number; tier: string }>> = {};
+  const s1 = side("1"), s2 = side("2");
+  if (s1) bySide["1"] = s1;
+  if (s2) bySide["2"] = s2;
+  return {
+    kind: str(u.kind) ?? "", entry: num(u.entry) ?? 0, pot: num(u.pot) ?? 0, fee: num(u.fee) ?? 0, won: num(u.won) ?? 0, refund: num(u.refund) ?? 0,
+    requeued: u.requeued === true, floor: num(u.floor), boss: str(u.boss), first: u.first === true,
+    rating: rt ? { factor: num(rt.factor) ?? 1, bySide } : null,
+    round: str(u.round), champion: str(u.champion), championWon: num(u.champion_won) ?? 0, runnerUpWon: num(u.runner_up_won) ?? 0,
+    cupVoid: u.cup_void === true,
+  };
 }
 
 function parseResult(v: unknown): MatchResult | null {
@@ -174,8 +206,11 @@ function parseResult(v: unknown): MatchResult | null {
     const o = obj(recs?.[k]);
     return { wins: num(o?.wins) ?? 0, losses: num(o?.losses) ?? 0, draws: num(o?.draws) ?? 0 };
   };
-  const extra: Pick<MatchResult, "void" | "pvp"> = {};
+  const extra: Pick<MatchResult, "void" | "pvp" | "ug" | "noshow"> = {};
   if (r.void === true) extra.void = true;
+  const ug = parseUg(r.ug);
+  if (ug) extra.ug = ug;
+  if (r.noshow === true) extra.noshow = true;
   if (pvp) {
     extra.pvp = {
       stake: num(pvp.stake) ?? 0, pot: num(pvp.pot) ?? 0, fee: num(pvp.fee) ?? 0, won: num(pvp.won) ?? 0,

@@ -1,13 +1,10 @@
--- tests/sql/v20-3-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0051 (and 0055), from
--- the repo root, with the fight fixtures' absolute path:
+-- tests/sql/v20-3-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after the full chain (0004 … 0055,
+-- 0014 before 0013), from the repo root, with the fight fixtures' absolute path:
 --   psql -v cases=<repo>/tests/fixtures/fight-cases.json -f <this file>
--- It re-runs 0051 with \i (re-runnable). Every check is an ASSERT; the first failure stops psql.
+-- It no longer re-applies 0051 (that would put back 0051's bodies over 0052's): the chain's re-runnability is
+-- tests/sql/v20-rerun.sql. Every check is an ASSERT; the first failure stops psql.
 \set ON_ERROR_STOP on
 set time zone 'UTC';
-set client_min_messages = warning;
-\i supabase/migrations/0051_bai_dat.sql
-\i supabase/migrations/0051_bai_dat.sql
-reset client_min_messages;
 
 create temp table fx as select pg_read_file(:'cases')::jsonb j;
 create or replace function pg_temp.ints(a jsonb) returns integer[] language sql immutable as $$

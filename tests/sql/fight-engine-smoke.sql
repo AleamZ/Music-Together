@@ -1,11 +1,9 @@
--- tests/sql/fight-engine-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0048, from the
--- repo root, with the fixture's absolute path:  psql -v fixtures=<repo>/tests/fixtures/fight-cases.json -f <this file>
--- It re-runs 0048 with \i (re-runnable). Every check is an ASSERT; the first failure stops psql.
+-- tests/sql/fight-engine-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after the full chain (0004 …
+-- 0055, 0014 before 0013), from the repo root, with the fixture's absolute path:
+--   psql -v fixtures=<repo>/tests/fixtures/fight-cases.json -f <this file>
+-- It no longer re-applies 0048 (that would put back 0048's _fx_new / _fx_reset over 0052's): the chain's re-runnability is
+-- tests/sql/v20-rerun.sql. Every check is an ASSERT; the first failure stops psql.
 \set ON_ERROR_STOP on
-set client_min_messages = warning;
-\i supabase/migrations/0048_fight_engine.sql
-\i supabase/migrations/0048_fight_engine.sql
-reset client_min_messages;
 
 -- ---------- 1. The shared fixtures: _fx_run = runFrames (tests/unit/fight-fixtures.test.ts) ----------
 -- Each case is replayed in 300-frame chunks, as fight_push's streamed replay does (ruling R3), checking the hash at

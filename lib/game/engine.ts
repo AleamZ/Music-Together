@@ -46,6 +46,7 @@ import { EXT_W, paintHouseExterior, paintLotYard, paintSoldFlag } from "@/lib/ga
 import type { HouseDraw } from "@/lib/game/housing/lot";
 import { LOTS } from "@/lib/game/maps/khu-nha";
 import { RING_RECTS } from "@/lib/game/maps/bai-dat";                                                    // v20.3
+import { INDOOR_MAPS } from "@/lib/game/heat/shade";                                                     // v20.4
 import { ctx2d, makeCanvas } from "@/lib/game/maps/scene-art";
 import { PetFollowers, petPose, type OwnerState } from "@/lib/game/pets/follow";
 import { PARROT_ECHO_MS, parrotEchoes } from "@/lib/game/pets/model";
@@ -213,6 +214,10 @@ export class GameEngine {
   private newsUnread = false;
   /** v20.3: the label over each Bãi đất trống ring (index = ring − 1; null = none). */
   private ringLabels: ReadonlyArray<string | null> = [];
+  /** v20.4: interactables with no prompt and no click (the hatch for the locked, the cage's watch spots while empty),
+   *  and the map as E and clicks see it without them. */
+  private hidden = new Set<string>();
+  private interactMap: GameMap | null = null;
   /** v18.8: the room's weather, the ambient light (recomputed about once a second) and which props sway in the wind. */
   private weather: RoomWeather | null = null;
   private lighting: Lighting = { tint: "rgb(0, 0, 0)", alpha: 0, night: 0, shade: "rgb(255, 255, 255)" };
@@ -740,6 +745,24 @@ export class GameEngine {
     this.ringLabels = [...labels];
   }
 
+  /** v20.4: hide these interactables (by id) from prompts and clicks; they stay drawn as decoration. */
+  setHidden(ids: Iterable<string>): void {
+    const next = new Set(ids);
+    if (next.size === this.hidden.size && [...next].every((id) => this.hidden.has(id))) return;
+    this.hidden = next;
+    this.interactMap = null;
+    if (this.prompt && this.hidden.has(this.prompt.id)) {
+      this.prompt = null;
+      this.cb.onPromptChange(null);
+    }
+  }
+
+  private usable(): GameMap {
+    if (this.hidden.size === 0) return this.map;
+    this.interactMap ??= { ...this.map, interactables: this.map.interactables.filter((i) => !this.hidden.has(i.id)) };
+    return this.interactMap;
+  }
+
   /** The card tables' labels from card_lobby (v16 spec §5): one line over each table of the hall. */
   setCardTables(labels: Readonly<Partial<Record<CardGame, string>>>): void {
     this.cardTables = { ...labels };
@@ -1046,7 +1069,7 @@ export class GameEngine {
       return;
     }
     // Interactables win over people: the DJ stands right behind the booth.
-    const it = interactableAt(this.map, w);
+    const it = interactableAt(this.usable(), w);
     if (it) {
       if (inUseRange(it, this.local.pos)) {
         this.trigger(it);
@@ -1206,7 +1229,7 @@ export class GameEngine {
     // a map interactable in range always wins E; else, on the field, a rat within 40 px (v17 §12.1). The same rat keeps
     // its prompt object while it runs.
     // v18.1: …else, on the pond, a cast from the bank or the platform edge I stand on (the same cell keeps its prompt)
-    let near = this.rodOut || this.swimming || locked ? null : promptTarget(this.map, this.local.pos, this.pack.liveRats, serverNow());
+    let near = this.rodOut || this.swimming || locked ? null : promptTarget(this.usable(), this.local.pos, this.pack.liveRats, serverNow());
     if (!near && !this.rodOut && !this.swimming && !locked && this.map.id === "pond") {
       const bank = shoreInteractable(this.map, this.local.pos, this.local.facing);
       near = bank && this.prompt?.id === bank.id && this.prompt.face === bank.face ? this.prompt : bank;
@@ -1340,7 +1363,7 @@ export class GameEngine {
     }
 
     const items: Array<{ y: number; draw: () => void }> = [];
-    const amp = swayAmp(this.weather, reduced, this.weatherFx);
+    const amp = swayAmp(INDOOR_MAPS.has(this.map.id) ? null : this.weather, reduced, this.weatherFx);
     // the hammock's sleeper (me, or the member keeping it) is drawn in it, not standing on its use spot
     const lyingId = this.hammockSince !== null ? this.opts.localId : this.hammockTaken(t);
     this.art.props.forEach((p, i) => {
@@ -1561,7 +1584,10 @@ export class GameEngine {
     // v18.8: the ambient light, the scene's night lights, then the weather's particles and lightning
     const wallNow = Date.now();
     if (wallNow - this.lightingAt > 1000) {
-      this.lighting = lightingFor(wallNow, this.weather, this.weatherFx);
+      // v20.4: indoors (the hầm) there is no weather and no daylight: a dim cellar where the bulbs always burn
+      this.lighting = INDOOR_MAPS.has(this.map.id)
+        ? { tint: "rgb(24, 18, 34)", alpha: 0.28, night: 1, shade: "rgb(210, 200, 190)" }
+        : lightingFor(wallNow, this.weather, this.weatherFx);
       this.lightingAt = wallNow;
     }
     // clipped to the map: the off-map edge stays the colour of the page around the canvas
@@ -1571,7 +1597,7 @@ export class GameEngine {
     b.clip();
     drawLighting(b, this.vw, this.vh, this.lighting);
     drawNightLights(b, this.art, camX, camY, this.vw, this.vh, this.lighting.night, t, reduced);
-    drawWeather(b, this.vw, this.vh, this.cam, t, this.weather, this.map.id, reduced, this.lighting.night, this.weatherFx);
+    drawWeather(b, this.vw, this.vh, this.cam, t, INDOOR_MAPS.has(this.map.id) ? null : this.weather, this.map.id, reduced, this.lighting.night, this.weatherFx);
     // v18.9: a lightning strike here flashes the screen (by the viewer's weather-effects level; never under reduced motion)
     let flashAge = this.struck(t) ? t - this.strikeAt : Infinity;
     for (const id of this.world.actors.keys()) {

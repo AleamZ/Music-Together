@@ -100,7 +100,7 @@ type Agent = (s: State) => number;
 
 /** A "player" that plays like bot `level` from its own memory and PRNG kept outside the match (so the match's PRNG is
  *  the opponent's alone, as on the server). */
-function shadowBot(side: number, level: number, seed: number): Agent {
+export function shadowBot(side: number, level: number, seed: number): Agent {
   const mem = new Array<number>(6).fill(0);
   let rng = seed | 0;
   return (s) => {
@@ -117,7 +117,7 @@ function shadowBot(side: number, level: number, seed: number): Agent {
 }
 const idle: Agent = () => 0;
 
-function botCase(name: string, params: MatchParams, player: "p1" | "p2", agent: Agent, limit = 30_900): BotCase {
+export function botCase(name: string, params: MatchParams, player: "p1" | "p2", agent: Agent, limit = 30_900): BotCase {
   const lim = new RateLimiter();
   let s = createMatch(params);
   const masks: number[] = [];

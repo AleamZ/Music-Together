@@ -4,7 +4,9 @@ import {
   F_MOVE, F_STUN, F_X, G_FRAME, G_PHASE, G_RESULT, G_ROUND, IN_BL, IN_DOWN, IN_HK, IN_HP, IN_LEFT, IN_LK, IN_LP, IN_RIGHT,
   IN_SK, INTRO_FRAMES, PH_END, PH_FIGHT, PH_INTRO, PH_OVER, RESULT_DRAW, ROUND_FRAMES, STATE_LEN, SUB, createMatch,
   fb, fighterParams, hash, isFree, makeParams, roundResults, runFrames, step, type FighterParams, type State,
+  F_ATK, F_DEF, F_ENP, F_JUMP, F_STYLE, F_WALK, G_SBR,
 } from "@/lib/game/fight/engine";
+import { styleStats } from "@/lib/game/fight/styles";
 import { MV_HK, MV_HP, MV_LK, MV_LP, MV_S1, MV_S2, MV_S3, MV_TK, moveId } from "@/lib/game/fight/moves";
 import { rand32 } from "@/lib/game/fishing/reel";
 
@@ -345,5 +347,42 @@ describe("fight engine: rounds, the timer and the draw rules", () => {
     s = play(s, hold(0), hold(0), 2);
     expect(s[P1 + F_FACE]).toBe(-1);
     expect(s[P2 + F_FACE]).toBe(1);
+  });
+});
+
+describe("styleByRound (v20.4: Trùm Hầm changes style each round)", () => {
+  const koRound = (s: State) => {
+    s = place(s, 30);
+    s = play(s, seq([IN_LP]), hold(0), 30);
+    return play(s, hold(0), hold(0), END_FRAMES + INTRO_FRAMES);
+  };
+  it("switches the fighter's style and the style row's stats at the start of each round", () => {
+    const boss = fighterParams(2, 4, { hpPct: 3, styleByRound: [2, 6, 7] });
+    let s = createMatch(makeParams(tudo(), boss));
+    expect(s[P2 + F_STYLE]).toBe(2);
+    expect(s[P2 + F_ATK]).toBe(styleStats(2).atk);
+    for (let i = 0; i < INTRO_FRAMES; i++) s = step(s, 0, 0);
+    s = koRound(s);
+    expect(s[G_ROUND]).toBe(2);
+    expect(s[P2 + F_STYLE]).toBe(6);
+    expect([s[P2 + F_ATK], s[P2 + F_DEF], s[P2 + F_WALK], s[P2 + F_JUMP], s[P2 + F_ENP]])
+      .toEqual([styleStats(6).atk, styleStats(6).def, styleStats(6).walk, styleStats(6).jump, styleStats(6).energy]);
+    expect(s[P1 + F_STYLE]).toBe(0);
+  });
+  it("round 1 takes the list's first style; rounds past the list keep the last one", () => {
+    let s = createMatch(makeParams(tudo(), fighterParams(1, 4, { hpPct: 3, styleByRound: [5] })));
+    expect(s[P2 + F_STYLE]).toBe(5);
+    expect(s[P2 + F_ATK]).toBe(styleStats(5).atk);
+    for (let i = 0; i < INTRO_FRAMES; i++) s = step(s, 0, 0);
+    s = koRound(s);
+    expect(s[P2 + F_STYLE]).toBe(5);
+  });
+  it("leaves a match without it untouched (its slots stay 0: the old hashes hold)", () => {
+    const a = createMatch(makeParams(tudo(), fighterParams(3, 2)));
+    const b = createMatch(makeParams(tudo(), fighterParams(3, 2, { styleByRound: [] })));
+    expect(b).toEqual(a);
+    expect(a.slice(G_SBR, G_SBR + 10).every((v) => v === 0)).toBe(true);
+    const c = createMatch(makeParams(tudo(), fighterParams(3, 2, { styleByRound: [3, 3] })));
+    expect(c.slice(G_SBR + 5, G_SBR + 7)).toEqual([4, 4]);
   });
 });

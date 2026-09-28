@@ -153,6 +153,8 @@ export interface DuelOptions {
   /** Reload side 0's page at this time: a new client resumes from fight_state and its stored log (none: server runs). */
   reloadAt?: number;
   reloadStorage?: boolean;
+  /** v20.4: every packet that made it onto the wire (a spectator on the topic hears them too). */
+  tap?: (t: number, side: 0 | 1, p: FiBody) => void;
 }
 
 export interface DuelResult {
@@ -247,6 +249,7 @@ export function runDuel(o: DuelOptions): DuelResult {
       if (p) {
         const lost = (o.drops ?? []).some(([lo, hi]) => t >= lo && t < hi);
         if (!lost) wire.push({ at: t + o.latency[0] + Math.floor(rnd() * (o.latency[1] - o.latency[0] + 1)), to: (1 - side) as 0 | 1, p });
+        if (!lost) o.tap?.(t, side, p);
       }
       const push = c.nextPush(t);
       if (push) {

@@ -236,6 +236,8 @@ function waterPoint(map: MapId, u: number, v: number, out: Vec): boolean {
       out.x = u * (map === "market" ? MARKET_W : 800); out.y = 395 + v * 4; return true;
     case "bai_dat":                              // v20.3: the canal runs along the north (the bridge from Chợ Lớn)
       out.x = u * 800; out.y = 3 + v * 16; return true;
+    case "ham_ngam":                             // v20.4: indoors — no water, no weather
+      return false;
   }
 }
 

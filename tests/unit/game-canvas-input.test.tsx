@@ -91,6 +91,7 @@ vi.mock("@/lib/game/engine", () => ({
       this.rec.rings.push(labels);
     }
     setNewsUnread() {}
+    setHidden() {}                                                                 // v20.4
     setHouses() {}                                                                 // v19.3
     setGatherSpots(spots: unknown) {
       this.rec.spots.push(spots);

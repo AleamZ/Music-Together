@@ -37,3 +37,9 @@ export const BAI_DAT_ARRIVE: Spot = { x: 400, y: 48, dir: "down" };
 
 /** At Chợ Lớn's south-east canal wall, on the bridge's head, facing the street (v20.3). */
 export const MARKET_BRIDGE_ARRIVE: Spot = { x: 1180, y: 356, dir: "up" };
+
+/** v20.4: at the foot of the ladder down from Chợ Lớn's manhole, facing into the hầm. */
+export const HAM_ARRIVE: Spot = { x: 48, y: 84, dir: "down" };
+
+/** v20.4: on the pavement over the manhole, facing it (back up the ladder). */
+export const MARKET_HATCH_ARRIVE: Spot = { x: 640, y: 350, dir: "down" };

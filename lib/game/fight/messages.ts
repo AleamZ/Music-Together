@@ -40,6 +40,16 @@ const TEXT: readonly [string, string][] = [
   ["bad stake", "Mức cược không hợp lệ."],
   ["bad ring", "Không có sàn hay góc này."],
   ["bad delay", "Độ trễ mạng không hợp lệ."],
+  // v20.4 the underground (limits and busy states are answers; a few malformed calls raise)
+  ["underground locked", "Ở đây không có gì cho bạn cả…"],
+  ["daily ug limit", "Hôm nay đã chơi đủ lượt ở hầm rồi — mai quay lại nhé."],
+  ["floor locked", "Phải hạ tầng dưới trong mùa này trước đã."],
+  ["already queued", "Bạn đang chờ kèo rồi."],
+  ["already in a cup", "Bạn đang đăng ký một giải khác."],
+  ["cup running", "Giải đã bắt đầu — không rút tên được nữa."],
+  ["not a called match", "Trận này không phải trận được gọi tên."],
+  ["bad tier", "Mức phí vào không hợp lệ."],
+  ["bad floor", "Không có tầng này."],
   ["account locked", "Tài khoản đang bị khóa tạm thời."],
   ["locked", "Tài khoản đang bị khóa tạm thời."],
 ];

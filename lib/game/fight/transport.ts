@@ -7,6 +7,8 @@ import { supabase, type RealtimeChannel } from "@/lib/supabase";
 import { markLeaving, whenTopicFree } from "@/lib/channel-lifecycle";
 import { FIGHT_LIMITS, createBudget } from "@/lib/game/net/budget";
 import { FIGHT_EVENTS, parseFi, parseFr, parsePing, type FiPacket, type FightEvent, type FrPacket, type PingPacket } from "./packets";
+import type { FiBody } from "./rollback";
+import { SPECTATOR_CAP } from "./underground";
 
 export type FightPacket =
   | ({ t: "fi" } & FiPacket)
@@ -22,6 +24,8 @@ export interface FightTransport {
 }
 
 export const fightTopic = (roomId: string, ring: number): string => `fight:${roomId}:r${ring}`;
+/** v20.4 an underground match's topic (spec §v20.4 'Kèo ngầm'): its id's first 8 hex. */
+export const matchTopic = (roomId: string, matchId: string): string => `fight:${roomId}:m${matchId.slice(0, 8)}`;
 
 /** Parse one incoming packet of `event`; null when malformed. */
 export function parseFightPacket(event: FightEvent, payload: unknown): FightPacket | null {
@@ -44,7 +48,11 @@ export function packetGate(foe: string): (p: FightPacket, now: number) => boolea
 }
 
 export function broadcastTransport(roomId: string, ring: number, foe: string, onStatus?: (connected: boolean) => void): FightTransport {
-  const topic = fightTopic(roomId, ring);
+  return topicTransport(fightTopic(roomId, ring), foe, onStatus);
+}
+
+/** The transport on any fight topic (a ring's, or an underground match's: v20.4). */
+export function topicTransport(topic: string, foe: string, onStatus?: (connected: boolean) => void): FightTransport {
   let channel: RealtimeChannel | null = null;
   let subscribed = false;
   let closed = false;
@@ -83,6 +91,52 @@ export function broadcastTransport(roomId: string, ring: number, foe: string, on
         subscribed = false;
         return supabase.removeChannel(channel);
       }));
+    },
+  };
+}
+
+/** v20.4 a spectator's side of a match topic (plan ruling U13): receive-only (it sends nothing but its presence), the
+ *  two fighters' `fi` packets by side, budgeted per sender. It counts the spectators already there on joining and stays
+ *  out (`onFull`) when the soft cap is reached, which keeps the delivery count low. */
+export interface SpectatorHandle { close(): void }
+export function spectatorTransport(topic: string, me: string, fighters: readonly [string, string], cb: {
+  onPacket: (side: 0 | 1, p: FiBody) => void;
+  onFull: () => void;
+  onStatus?: (connected: boolean) => void;
+}): SpectatorHandle {
+  let channel: RealtimeChannel | null = null;
+  let closed = false;
+  let decided = false;
+  const gates = [packetGate(fighters[0]), packetGate(fighters[1])] as const;
+  const joined = whenTopicFree(topic).then(() => {
+    if (closed) return;
+    const ch = supabase.channel(topic, { config: { presence: { key: me }, broadcast: { self: false } } });
+    ch.on("broadcast", { event: "fi" }, (m: { payload?: unknown }) => {
+      const p = parseFightPacket("fi", m.payload);
+      if (!p || p.t !== "fi") return;
+      const side: 0 | 1 | null = p.id === fighters[0] ? 0 : p.id === fighters[1] ? 1 : null;
+      if (side === null || !gates[side](p, performance.now())) return;
+      const { id: _id, t: _t, ...body } = p;
+      void _id;
+      void _t;
+      cb.onPacket(side, body);
+    });
+    ch.on("presence", { event: "sync" }, () => {
+      if (decided) return;
+      decided = true;
+      const others = Object.entries(ch.presenceState<{ spectator?: unknown }>())
+        .filter(([id, metas]) => id !== me && (metas ?? []).some((x) => x.spectator === true)).length;
+      if (others >= SPECTATOR_CAP) cb.onFull();
+      else void ch.track({ spectator: true });
+    });
+    channel = ch;
+    ch.subscribe((status) => cb.onStatus?.(status === "SUBSCRIBED"));
+  });
+  return {
+    close() {
+      if (closed) return;
+      closed = true;
+      markLeaving(topic, joined.then(() => (channel ? supabase.removeChannel(channel) : undefined)));
     },
   };
 }

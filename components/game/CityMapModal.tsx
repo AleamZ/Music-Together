@@ -1,8 +1,8 @@
 "use client";
 
 import { ParchmentModal } from "@/components/game/Parchment";
-import { CITY_PLACES, cityRoads } from "@/lib/game/maps/city";
-import { MAP_IDS, type MapId } from "@/lib/game/maps/types";
+import { CITY_PLACES, VISIBLE_MAP_IDS, cityRoads } from "@/lib/game/maps/city";
+import type { MapId } from "@/lib/game/maps/types";
 
 const ROADS = cityRoads();
 
@@ -76,7 +76,7 @@ export default function CityMapModal({ current, counts, onClose }: {
           </svg>
           <span className="absolute right-[4%] top-[1%] text-sm text-ink/70" aria-hidden="true">B</span>
 
-          {MAP_IDS.map((id) => {
+          {VISIBLE_MAP_IDS.map((id) => {
             const p = CITY_PLACES[id];
             const here = id === current;
             return (
@@ -106,7 +106,7 @@ export default function CityMapModal({ current, counts, onClose }: {
         </div>
 
         <ul className="grid grid-cols-1 gap-2 text-base sm:grid-cols-2">
-          {MAP_IDS.map((id) => {
+          {VISIBLE_MAP_IDS.map((id) => {
             const p = CITY_PLACES[id];
             return (
               <li key={id} className={`rounded-sm border p-2 ${id === current ? "border-burgundy bg-[#fff4d6]" : "border-ink/30"}`}>

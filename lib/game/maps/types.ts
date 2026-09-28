@@ -4,8 +4,8 @@ import type { Facing, Look, Vec } from "@/lib/game/types";
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Spot { x: number; y: number; dir: Facing }
 
-export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat";
-export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat"];
+export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat" | "ham_ngam";
+export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam"];
 
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
@@ -35,6 +35,9 @@ export type InteractKind =
   | "dojo"
   // v20.3: Bãi đất trống — a ring's corner (Góc Đỏ / Góc Xanh: take it, the ready screen) and the PvP records board
   | "ring_corner" | "ring_board"
+  // v20.4 the underground: the hatch in Chợ Lớn (unlocked players only), anh Tư Sẹo, the ranking board, the bot ladder's
+  // door (each opens the underground panel) and the cage's watch spots (while a match is live)
+  | "ug_hatch" | "ug_organizer" | "ug_board" | "ug_door" | "cage_watch"
   // every map: the city-map signpost (a view-only overview of the town)
   | "city_map"
   // v18.11: the hall's Báo Làng news stand (dev blog + village news)

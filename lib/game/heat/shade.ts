@@ -20,10 +20,15 @@ export const SHADE_RECTS: Readonly<Record<MapId, readonly Rect[]>> = {
     { x: 100, y: 100, w: 200, h: 100 }, { x: 500, y: 100, w: 200, h: 100 },
     { x: 100, y: 260, w: 200, h: 100 }, { x: 500, y: 260, w: 200, h: 100 },
   ],
+  ham_ngam: [],                              // v20.4: indoors as a whole (INDOOR_MAPS)
 };
+
+/** v20.4: maps that are indoors everywhere (0041's _in_shade: a map not in its outdoor list): no heat, rain or weather. */
+export const INDOOR_MAPS: ReadonlySet<MapId> = new Set<MapId>(["ham_ngam"]);
 
 /** Is `p` (world px, rounded like the heartbeat sends it) in the shade of map `map`? */
 export function inShade(map: MapId, p: Vec): boolean {
+  if (INDOOR_MAPS.has(map)) return true;
   const x = Math.round(p.x), y = Math.round(p.y);
   return SHADE_RECTS[map].some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
 }
