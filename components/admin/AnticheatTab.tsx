@@ -8,6 +8,7 @@ import {
 import { formatXu } from "@/lib/game/fishing/catalog";
 import EstateFlags from "./EstateFlags";
 import FightReplays from "./FightReplays";
+import StatsPanel from "./StatsPanel";
 
 // /admin "Chống gian lận" (anti-cheat spec §12.5): the mode, the cases, their evidence, the wipe and the pardon.
 
@@ -43,6 +44,18 @@ export const CODE_LABEL: Record<string, string> = {
   bad_cards: "Lá bài sai",
   bad_bet: "Tiền cược sai",
   bad_move: "Nước đi sai",
+  // anti-cheat v2 part 3
+  harvest_timing: "Gặt lúa chuẩn từng nhịp (máy?)",
+  harvest_timing_repeat: "Gặt lúa như máy lặp lại",
+  crab_timing: "Bắt cua đúng khoảnh khắc mở càng",
+  crab_timing_repeat: "Bắt cua như máy lặp lại",
+  sling_timing: "Bắn ná trúng tâm bất thường",
+  sling_timing_repeat: "Bắn ná như máy lặp lại",
+  song_duration_mismatch: "Khai sai độ dài bài hát",
+  song_duration_short: "Khai bài hát ngắn hơn thật",
+  fight_lookahead: "Phản xạ đấu võ nhanh hơn người (thấy trước)",
+  stat_outlier: "Thống kê bất thường",
+  auto_blacklist: "Tự động vào danh sách đen",
 };
 const OUTCOME_LABEL: Record<string, string> = {
   soft: "Tín hiệu mềm",
@@ -202,6 +215,7 @@ export default function AnticheatTab({ token }: { token: string }) {
           )}
         </>
       )}
+      <StatsPanel token={token} />
       <EstateFlags token={token} />
       <FightReplays token={token} />
       <p className="text-xs opacity-70">{FOOTNOTE}</p>
