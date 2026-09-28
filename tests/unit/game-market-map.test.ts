@@ -28,6 +28,7 @@ describe("market map (Chợ Lớn)", () => {
       ["motel", "motel"],                                                           // v19.1
       ["furniture_shop", "furniture_shop"], ["market_to_khu_nha", "portal"],        // v19.2
       ["punch_bag", "punch_bag"],                                                   // v20.1
+      ["dojo", "dojo"],                                                             // v20.2
     ]);
   });
   it("puts ông Tám in his showroom's door on the north row, served from the street (v18.5)", () => {

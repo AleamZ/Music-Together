@@ -125,6 +125,20 @@ export class RefereedMatch {
     this.state = s;
   }
 
+  /** Resume after a reload: replay the runs the server holds (my pushed frames are final) and continue after them. */
+  restore(runs: readonly number[]): void {
+    for (let i = 0; i + 1 < runs.length; i += 2) {
+      for (let k = 0; k < runs[i + 1]; k++) {
+        const m = this.lim.limit(runs[i]);
+        this.rec.push(m);
+        this.state = stepWithBots(this.state, m, 0);
+        this.frame += 1;
+        if (this.frame % PUSH_EVERY === 0 || this.over) this.hashes.set(this.frame, hash(this.state));
+      }
+    }
+    this.pushed = this.frame;
+  }
+
   /** My recorded runs (for tests and a reload). */
   runs(): number[] {
     return this.rec.runs();

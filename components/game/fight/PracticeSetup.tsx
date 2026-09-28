@@ -1,6 +1,7 @@
 "use client";
 
 import { LEGEND } from "@/lib/game/fight/input";
+import { STYLE_SPECIALS } from "@/lib/game/fight/moves";
 import { ParchmentModal } from "../Parchment";
 
 export interface PracticeOptions {
@@ -17,11 +18,13 @@ export interface PracticeOptions {
 export const DEFAULT_PRACTICE: PracticeOptions = { level: 2, rounds: 3, dummy: false, boxes: false };
 export const PRACTICE_LEVELS = [1, 2, 3, 4, 5] as const;
 
-/** The key legend (shared by the setup and the arena). */
-export function KeyLegend({ className = "" }: { className?: string }) {
+/** The key legend (shared by the setup and the arena); v20.2: the specials of the style fought. */
+export function KeyLegend({ className = "", style = 0 }: { className?: string; style?: number }) {
+  const specials = (STYLE_SPECIALS[style] ?? []).map((s): [string, string] => [s.input.trim(), s.name]);
+  const rows = [...LEGEND.slice(0, -1), ...specials];
   return (
     <dl className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-vt text-base leading-tight ${className}`} data-testid="fight-legend">
-      {LEGEND.map(([k, v]) => (
+      {rows.map(([k, v]) => (
         <div key={k} className="contents">
           <dt className="whitespace-nowrap font-bold">{k}</dt>
           <dd>{v}</dd>
@@ -32,18 +35,23 @@ export function KeyLegend({ className = "" }: { className?: string }) {
 }
 
 /** v20.1 practice at the punching bag: the options before a fight (spec §v20.1 "Practice options"). */
-export default function PracticeSetup({ value, onChange, onStart, onClose }: {
+export default function PracticeSetup({ value, onChange, onStart, onClose, styleName = "Tự do", title = "🥊 Bao cát · Luyện võ", style = 0 }: {
   value: PracticeOptions;
   onChange: (v: PracticeOptions) => void;
   onStart: () => void;
   onClose: () => void;
+  /** v20.2: the style practised (the worn uniform's, else Tự do) with its belt. */
+  styleName?: string;
+  title?: string;
+  style?: number;
 }) {
   const set = (more: Partial<PracticeOptions>) => onChange({ ...value, ...more });
   return (
-    <ParchmentModal title="🥊 Bao cát · Luyện võ" onClose={onClose} className="sm:max-w-md">
+    <ParchmentModal title={title} onClose={onClose} className="sm:max-w-md">
       <div className="flex flex-col gap-3 font-vt text-lg leading-tight">
-        <p className="text-base opacity-80">
-          Luyện tập miễn phí: không tốn xu, không có thưởng. Võ phái: <b>Tự do</b> (các võ đường mở ở bản sau).
+        <p className="text-base opacity-80" data-testid="practice-style">
+          Luyện tập miễn phí: không tốn xu, không có thưởng. Võ phái: <b>{styleName}</b>
+          {styleName === "Tự do" ? " (mặc võ phục của võ phái đã nhập môn để luyện võ phái đó)." : "."}
         </p>
         <fieldset className="flex flex-col gap-1" disabled={value.dummy}>
           <legend className="mb-1 font-bold">Đối thủ</legend>
@@ -83,7 +91,7 @@ export default function PracticeSetup({ value, onChange, onStart, onClose }: {
         </label>
         <details className="text-base">
           <summary className="cursor-pointer">⌨️ Phím</summary>
-          <KeyLegend className="mt-1" />
+          <KeyLegend className="mt-1" style={style} />
         </details>
         <div className="flex justify-end gap-2">
           <button type="button" className="pch-btn" onClick={onClose}>Để sau</button>

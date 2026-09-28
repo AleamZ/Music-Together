@@ -2,6 +2,7 @@ import { CLOTHES_FRONT, FURNITURE_FRONT, LANTERN_POSTS, MARKET_H, MARKET_W, MOTE
 import { drawPetTankBubbles, paintPetShopFront } from "@/lib/game/art/pet-shop";
 import { drawMotelNeon, paintMotelFront } from "@/lib/game/art/motel";
 import { paintFurnitureFront } from "@/lib/game/art/furniture-shop";
+import { paintDojoFront } from "@/lib/game/art/dojo";
 import { awning, glare, M, roof, text, textW, windowGlow } from "./market-kit";
 import { drawBikeDisplay, drawCarDisplay, drawPriceTag, drawScooterDisplay, propSprite } from "./props";
 import { C, ctx2d, hexToRgb, makeCanvas, px, rect, rng, type Ctx, type PropSprite, type SceneArt, type SceneLight } from "./scene-art";
@@ -33,6 +34,7 @@ const LIGHTS: ReadonlyArray<readonly [number, number, number]> = [
   ...[FURNITURE_FRONT, MOTEL_FRONT, PET_SHOP_FRONT].map((r) => [r.x + r.w / 2, r.y + r.h + 16, 60] as const),
   ...STALLS.map((s) => [s.rect.x + s.rect.w / 2, s.rect.y + s.rect.h + 6, 44] as const),
   [320, 200, 70],
+  [920, 268, 56],                                                               // v20.2: the Võ đường's gate
 ];
 
 function lightAt(x: number, y: number): number {
@@ -391,6 +393,7 @@ export function paintMarket(map: GameMap): SceneArt {
   paintFurnitureFront(g);
   paintMotelFront(g);
   paintPetShopFront(g);
+  paintDojoFront(g);                                                           // v20.2
   const props = [...map.props.map(propSprite), ...stallSprites()];
 
   const drawAnimated = (c: Ctx, t: number, camX: number, camY: number, reducedMotion: boolean) => {

@@ -14,10 +14,11 @@ import { parseVitals } from "@/lib/game/vitals-rpc";
 import { RemoteWorld } from "@/lib/game/world";
 
 const SQL = readFileSync("supabase/migrations/0033_heat_swim.sql", "utf8");
-// v19.2: 0041 re-creates _in_shade with the Khu nhà map known (no porches there)
-const SHADE_SQL = readFileSync("supabase/migrations/0041_apartments.sql", "utf8");
+// v19.2: 0041 re-creates _in_shade with the Khu nhà map known (no porches there); v20.2: 0050 adds the dojo gate
+const SHADE_SQL = readFileSync("supabase/migrations/0050_dojo.sql", "utf8");
 const SHADE_KINDS = new Set([
   "shop", "depot", "farm_shop", "rice_depot", "restaurant", "clothes_shop", "vehicle_shop", "salon", "market_fish_depot", "market_farm_depot",
+  "dojo",                                        // v20.2
 ]);
 
 describe("the shade (mirror of _in_shade)", () => {

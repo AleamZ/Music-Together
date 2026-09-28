@@ -141,8 +141,22 @@ export function paintFighter(c: PixelCtx, pose: Pose, fl: FighterLook, ox: numbe
     if (u.belt === "sash") { px(hx - 4, hy, rankCol); px(hx - 5, hy + 1, rankCol); px(hx - 5, hy + 2, rankCol); }
   }
   leg(J.knF, J.ftF, false);
+  // v20.2: the champion's belt buckle (Quyền Anh, rank 4)
+  if (fl.style === 5 && fl.rank >= 4) {
+    const [hx, hy] = p(J.hip);
+    blob(hx, hy - 2, 4, OUTLINE);
+    blob(hx, hy - 2, 2, "#f6d26a");
+  }
   line(p(J.neck), p(J.chest), 3, skin.S);
   paintHead(px, p(J.head), fl.look);
+  // v20.2: the mongkol, Muay Thai's headband at rank 4 (a braided ring, white and red)
+  if (fl.style === 2 && fl.rank >= 4) {
+    const [cx, cy] = p(J.head);
+    for (let x = cx - 8; x <= cx + 7; x++) px(x, cy - 4, x % 2 === 0 ? "#f2efe6" : "#c9302c");
+    for (let x = cx - 8; x <= cx + 7; x++) px(x, cy - 5, OUTLINE);
+    px(cx - 9, cy - 3, "#f2efe6");
+    px(cx - 10, cy - 2, "#c9302c");
+  }
   arm(J.shF, J.elF, J.hnF, false);
 }
 

@@ -31,6 +31,8 @@ export type InteractKind =
   | "estate"
   // v20.1: the punching bag on Chợ Lớn's south pavement (fight practice)
   | "punch_bag"
+  // v20.2: the Võ đường's gate on Chợ Lớn (thầy Lâm: the dojo panel)
+  | "dojo"
   // every map: the city-map signpost (a view-only overview of the town)
   | "city_map"
   // v18.11: the hall's Báo Làng news stand (dev blog + village news)

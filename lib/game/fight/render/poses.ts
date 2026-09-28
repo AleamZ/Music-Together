@@ -1,79 +1,21 @@
 // v20 Võ đài: the fighter's poses (spec §v20.1 "Rendering"). A pose is 14 integer joints in a 48 × 64 box, facing
 // right, the feet on row 63. `poseFor(state, side)` is a pure function of the state — (action, move, action frame) —
-// so a rollback redraws correctly with no bookkeeping. Tự do's shared poses ship in v20.1; a style's own stance and
-// special keyframes (v20.2) plug in through STYLE_POSES and fall back to these.
+// so a rollback redraws correctly with no bookkeeping. The shared poses below are every style's; v20.2 adds each
+// style's own stance and special keyframes (style-poses.ts), picked here the same way.
 
 import {
   A_ATTACK, A_BLOCKSTUN, A_CGUARD, A_CROUCH, A_FALL, A_GUARD, A_HITSTUN, A_IDLE, A_JATTACK, A_JUMP, A_KNOCKDOWN, A_LAND,
-  A_PREJUMP, A_TECHED, A_THROW, A_THROWN, A_WALKB, A_WALKF, F_ACT, F_AF, F_HITMV, F_KDOWN, F_MOVE, F_SC, F_STUNK, F_VY,
-  G_FRAME, G_LAST, G_PHASE, PH_END, PH_OVER, G_RESULT, fb, type State,
+  A_PREJUMP, A_TECHED, A_THROW, A_THROWN, A_WALKB, A_WALKF, F_ACT, F_AF, F_HITMV, F_KDOWN, F_MOVE, F_SC, F_STUNK, F_STYLE,
+  F_VY, G_FRAME, G_LAST, G_PHASE, PH_END, PH_OVER, G_RESULT, fb, type State,
 } from "../engine";
 import {
-  B_HK, B_K, H_HIGH, K_DODGE, K_GRAB, K_PARRY, M_A, M_BTN, M_HEIGHT, M_KIND, M_MOTION, M_S, MO_DP, MOVES_PER_STYLE,
-  MV_CHK, MV_CHP, MV_CLK, MV_CLP, MV_HK, MV_HP, MV_JHK, MV_JHP, MV_JLK, MV_JLP, MV_LK, MV_LP, MV_THROW, mv,
+  B_HK, B_K, H_HIGH, K_DODGE, K_GRAB, K_PARRY, M_A, M_BTN, M_HEIGHT, M_KIND, M_MOTION, M_R, M_S, M_SLOT, MO_DP,
+  MOVES_PER_STYLE, MV_CHK, MV_CHP, MV_CLK, MV_CLP, MV_HK, MV_HP, MV_JHK, MV_JHP, MV_JLK, MV_JLP, MV_LK, MV_LP, MV_THROW, mv,
 } from "../moves";
+import { air, build, crouchBase, std, type Pose, type Spec } from "./pose-kit";
+import { STYLE_ART, styleRef, type SpecialKeys } from "./style-poses";
 
-export const RIG_W = 48;
-export const RIG_H = 64;
-
-/** Joint order. "F" is the near side (toward the viewer when facing right), "B" the far side. */
-export const J = {
-  head: 0, neck: 1, chest: 2, hip: 3, shF: 4, elF: 5, hnF: 6, shB: 7, elB: 8, hnB: 9, knF: 10, ftF: 11, knB: 12, ftB: 13,
-} as const;
-export const JOINTS = 14;
-export type Pose = readonly (readonly [number, number])[];
-
-type Pt = [number, number];
-interface Spec {
-  /** Hip position. */
-  hip: Pt;
-  /** Chest (shoulder line) relative to the hip. */
-  chest: Pt;
-  /** Head centre relative to the chest. */
-  head?: Pt;
-  /** Near arm: elbow and hand relative to the near shoulder. */
-  aF: [number, number, number, number];
-  aB: [number, number, number, number];
-  /** Near leg: knee and foot relative to the hip. */
-  lF: [number, number, number, number];
-  lB: [number, number, number, number];
-}
-
-function build(p: Spec): Pose {
-  const fit = (pt: Pt): Pt => [Math.max(1, Math.min(RIG_W - 2, pt[0])), Math.max(1, Math.min(RIG_H - 1, pt[1]))];
-  return raw(p).map(fit);
-}
-
-function raw(p: Spec): Pt[] {
-  const [hx, hy] = p.hip;
-  const cx = hx + p.chest[0], cy = hy + p.chest[1];
-  const [hdx, hdy] = p.head ?? [1, -9];
-  const shF: Pt = [cx + 1, cy + 1], shB: Pt = [cx - 1, cy + 1];
-  return [
-    [cx + hdx, cy + hdy],
-    [cx, cy - 2],
-    [cx, cy],
-    [hx, hy],
-    shF, [shF[0] + p.aF[0], shF[1] + p.aF[1]], [shF[0] + p.aF[2], shF[1] + p.aF[3]],
-    shB, [shB[0] + p.aB[0], shB[1] + p.aB[1]], [shB[0] + p.aB[2], shB[1] + p.aB[3]],
-    [hx + 1 + p.lF[0], hy + p.lF[1]], [hx + 1 + p.lF[2], hy + p.lF[3]],
-    [hx - 1 + p.lB[0], hy + p.lB[1]], [hx - 1 + p.lB[2], hy + p.lB[3]],
-  ];
-}
-
-// stances: the fists up by the chin; legs apart
-const GUARD_F: [number, number, number, number] = [4, 6, 8, -1];
-const GUARD_B: [number, number, number, number] = [3, 7, 6, 1];
-const STANCE_F: [number, number, number, number] = [4, 11, 5, 23];
-const STANCE_B: [number, number, number, number] = [-4, 11, -6, 23];
-const std = (more: Partial<Spec> = {}): Spec => ({ hip: [23, 40], chest: [1, -15], aF: GUARD_F, aB: GUARD_B, lF: STANCE_F, lB: STANCE_B, ...more });
-const crouchBase = (more: Partial<Spec> = {}): Spec => ({
-  hip: [22, 50], chest: [3, -13], aF: GUARD_F, aB: GUARD_B, lF: [8, 4, 6, 13], lB: [-3, 6, -7, 13], ...more,
-});
-const air = (more: Partial<Spec> = {}): Spec => ({
-  hip: [23, 34], chest: [1, -15], aF: GUARD_F, aB: GUARD_B, lF: [6, 7, 2, 16], lB: [-2, 9, -7, 15], ...more,
-});
-
+export { J, JOINTS, RIG_H, RIG_W, type Pose } from "./pose-kit";
 const SPECS = {
   idle0: std(),
   idle1: std({ hip: [23, 41], chest: [1, -15] }),
@@ -143,16 +85,21 @@ const SPECS = {
   super0: std({ aF: [-2, 6, -1, 12], aB: [-3, 6, -2, 12], chest: [0, -16], lF: [6, 10, 9, 23], lB: [-6, 10, -9, 23] }),
 } satisfies Record<string, Spec>;
 
-export type PoseId = keyof typeof SPECS;
-export const POSE_IDS = Object.keys(SPECS) as PoseId[];
-export const POSES: Readonly<Record<PoseId, Pose>> = Object.fromEntries(
-  POSE_IDS.map((k) => [k, build(SPECS[k])]),
-) as Record<PoseId, Pose>;
+/** A pose's id: a shared pose ("idle0", "hk1", …) or a style's own ("s3.s4b": Karate's brick chop). */
+export type PoseId = string;
+type SharedId = keyof typeof SPECS;
+/** Every pose: the shared ones, then each style's (v20.2). */
+export const POSE_IDS: readonly PoseId[] = [
+  ...Object.keys(SPECS),
+  ...Object.entries(STYLE_ART).flatMap(([style, art]) => Object.keys(art?.poses ?? {}).map((n) => styleRef(Number(style), n))),
+];
+export const POSES: Readonly<Record<PoseId, Pose>> = Object.fromEntries([
+  ...Object.entries(SPECS).map(([k, sp]): [string, Pose] => [k, build(sp)]),
+  ...Object.entries(STYLE_ART).flatMap(([style, art]) =>
+    Object.entries(art?.poses ?? {}).map(([n, sp]: [string, Spec]): [string, Pose] => [styleRef(Number(style), n), build(sp)])),
+]);
 
-/** v20.2: a style's own stance and special keyframes, keyed "idle0", "sp_punch1", … (missing ones use the shared). */
-export const STYLE_POSES: Partial<Record<number, Partial<Record<PoseId, Pose>>>> = {};
-
-const NORMAL_KEYS: Record<number, [PoseId, PoseId, PoseId]> = {
+const NORMAL_KEYS: Record<number, [SharedId, SharedId, SharedId]> = {
   [MV_LP]: ["lp0", "lp1", "lp0"],
   [MV_HP]: ["hp0", "hp1", "hp2"],
   [MV_LK]: ["lk0", "lk1", "lk0"],
@@ -170,6 +117,9 @@ const NORMAL_KEYS: Record<number, [PoseId, PoseId, PoseId]> = {
 
 /** The three keyframes (startup, active, recovery) of a move record. */
 export function moveKeys(id: number): [PoseId, PoseId, PoseId] {
+  const style = Math.trunc(id / MOVES_PER_STYLE);
+  const own = STYLE_ART[style]?.normals?.[id % MOVES_PER_STYLE];
+  if (own) return [styleRef(style, own[0]), styleRef(style, own[1]), styleRef(style, own[2])];
   const idx = id % MOVES_PER_STYLE;
   const n = NORMAL_KEYS[idx];
   if (n) return n;
@@ -194,7 +144,11 @@ export function poseFor(s: State, side: number): PoseId {
     if (last !== 0) return "lose";
   }
   switch (a) {
-    case A_IDLE: return (["idle0", "idle1", "idle2", "idle3"] as const)[Math.trunc(f / 12) % 4];
+    case A_IDLE: {
+      const st = STYLE_ART[s[b + F_STYLE]]?.stance;
+      if (st) return styleRef(s[b + F_STYLE], st[Math.trunc(f / 16) % 2]);
+      return (["idle0", "idle1", "idle2", "idle3"] as const)[Math.trunc(f / 12) % 4];
+    }
     case A_WALKF:
     case A_WALKB: return (["walk0", "walk1", "walk2", "walk3"] as const)[Math.trunc(af / 7) % 4];
     case A_CROUCH: return "crouch";
@@ -210,8 +164,10 @@ export function poseFor(s: State, side: number): PoseId {
     case A_JATTACK: {
       const id = s[b + F_MOVE] - 1;
       if (id < 0) return "idle0";
-      const keys = moveKeys(id);
       const st = mv(id, M_S) + 2 * s[b + F_SC], act = mv(id, M_A);
+      const own = specialKeysOf(id);
+      if (own) return pickSpecial(Math.trunc(id / MOVES_PER_STYLE), own, af, st, act, mv(id, M_R));
+      const keys = moveKeys(id);
       if (id % MOVES_PER_STYLE === 17 && af <= st) return "super0";
       if (af <= st) return keys[0];
       if (af <= st + act || act === 0) return keys[1];
@@ -236,7 +192,43 @@ export function poseFor(s: State, side: number): PoseId {
   }
 }
 
-/** The pose itself, with a style's own keyframe when it has one. */
+/** A style's own keyframes of special move `id` (null: the shared ones). */
+function specialKeysOf(id: number): SpecialKeys | null {
+  const slot = mv(id, M_SLOT);
+  return slot > 0 ? STYLE_ART[Math.trunc(id / MOVES_PER_STYLE)]?.specials[slot] ?? null : null;
+}
+
+const spread = (keys: readonly string[], i: number, len: number): string =>
+  keys[Math.max(0, Math.min(keys.length - 1, Math.trunc((i * keys.length) / Math.max(1, len))))];
+
+/** Startup keys over the startup, active keys over the active frames (or looping every `cycle` frames — a move with no
+ *  active frames, like the slip, loops them through its recovery), recovery keys over the recovery. */
+function pickSpecial(style: number, k: SpecialKeys, af: number, st: number, act: number, rec: number): PoseId {
+  let name: string;
+  if (af <= st) name = spread(k.s, af - 1, st);
+  else if (af <= st + act || act === 0) {
+    const i = af - st - 1;
+    name = k.cycle ? k.a[Math.trunc(i / k.cycle) % k.a.length] : spread(k.a, i, act);
+  } else name = spread(k.r, af - st - act - 1, rec);
+  return styleRef(style, name);
+}
+
+/** The keyframes a special shows, in order (the dojo panel's looping preview). */
+export function specialPoseIds(style: number, slot: number): PoseId[] {
+  const k = STYLE_ART[style]?.specials[slot];
+  if (k) return [...k.s, ...k.a, ...(k.cycle ? k.a : []), ...k.r].map((n) => styleRef(style, n));
+  const id = style * MOVES_PER_STYLE + 12 + slot;
+  return [...moveKeys(id)];
+}
+
+/** A style's stance frames (shared idle for Tự do). */
+export function stancePoseIds(style: number): PoseId[] {
+  const st = STYLE_ART[style]?.stance;
+  return st ? st.map((n) => styleRef(style, n)) : ["idle0", "idle1", "idle2", "idle3"];
+}
+
+/** The pose itself (an unknown id draws the idle pose). */
 export function poseData(id: PoseId, style: number): Pose {
-  return STYLE_POSES[style]?.[id] ?? POSES[id];
+  void style;
+  return POSES[id] ?? POSES.idle0;
 }

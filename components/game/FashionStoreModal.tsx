@@ -15,6 +15,7 @@ import {
   filterStoreItems,
   genderTag,
   sellFashionItem,
+  isUniformItem,
   storeErrorMessage,
   unequipItem,
   type StoreCategory,
@@ -362,6 +363,11 @@ export default function FashionStoreModal({
                                 {isBusy ? "…" : `Mua (${item.price}x)`}
                               </button>
                             )
+                          ) : isUniformItem(item.id) ? (
+                            // v20.2: the dojo's võ phục — worn from the dojo or the wardrobe, never sold or given
+                            <span className="flex flex-1 items-center justify-center whitespace-nowrap rounded border border-gold-200 px-1 text-sm">
+                              🥋 Võ đường cấp
+                            </span>
                           ) : (
                             <>
                               <button

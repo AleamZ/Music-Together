@@ -42,7 +42,7 @@ export interface GarmentArt {
 
 // ---- helpers (front/back columns come from the body type's geometry; the side view's torso is columns 8–15) ----
 
-function span(c: GarmentCtx, y: number): [number, number] {
+export function span(c: GarmentCtx, y: number): [number, number] {
   if (c.dir === "left") return [8, 15];
   const g = c.g;
   if (y <= ROW.torso + 2) return [g.tL, g.tR];

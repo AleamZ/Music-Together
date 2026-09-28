@@ -5,6 +5,7 @@ import { GARMENT_ART, drawGarment, type GarmentArt, type GarmentLayers } from ".
 import { HAIR, SWAYING_HAIR } from "./hair";
 import { HATS, HAT_CLIP } from "./hats";
 import { ITEM_ART, type ItemArt } from "./items";
+import { UNIFORM_ART } from "./uniforms";
 import { EYE, EYE_SHINE, HAIR_COLOR, OUTLINE, SKIN, SOCK } from "./palettes";
 import { R, SPRITE_H, SPRITE_W, type Dir3, type Frame, type Layer } from "./layers";
 
@@ -28,7 +29,7 @@ function artFor<S extends ItemArt["slot"]>(id: string | null | undefined, slot: 
 }
 function garmentFor(id: string | null | undefined, slot: GarmentArt["slot"]): GarmentArt | null {
   if (!id) return null;
-  const a = GARMENT_ART[id];
+  const a = GARMENT_ART[id] ?? UNIFORM_ART[id];                           // v20.2: the võ phục
   return a && a.slot === slot ? a : null;
 }
 

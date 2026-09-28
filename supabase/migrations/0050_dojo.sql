@@ -13,7 +13,7 @@
 --      _dojo_exam_settle (0049's _fx_settle calls it: a win ties the next belt, a loss sets the cooldown).
 --   E. buy_fashion_item (latest 0022), sell_fashion_item and transfer_fashion_item (latest 0029) refuse uniforms
 --      with 'uniform' (the marked lines).
---   F. _in_shade (0041's body) plus the dojo gate's awning ('market', 860, 248, 120, 36) (R7).
+--   F. _in_shade (0041's body) plus the dojo gate's awning (market x 860, y 248, 120 x 36) (R7).
 --   G. The ledger: 0043's 43 reasons plus dojo_tuition and dojo_exam: 45.
 -- Anti-cheat: hard kata_bad_input (malformed presses) and kata_too_fast (sooner than 0.95 × the chart's length after
 -- the exam started) fail the attempt; soft kata_perfect (every note within ±1 tick, ≥ 24 notes).

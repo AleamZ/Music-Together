@@ -60,6 +60,9 @@ import DogPanel from "./farm/DogPanel";
 import FarmOverlays from "./farm/FarmOverlays";
 import FaintOverlay from "./FaintOverlay";
 import FightOverlay from "./fight/FightOverlay";
+import Dojo from "./fight/Dojo";
+import { useDojo } from "@/hooks/useDojo";
+import { practiceFighter } from "@/lib/game/fight/dojo-gates";
 import FashionStoreModal from "./FashionStoreModal";
 import RestaurantModal from "./RestaurantModal";
 import RideButton from "./RideButton";
@@ -123,7 +126,7 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
@@ -258,6 +261,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const vitalsWhere = useCallback(() => heatWhere(canvasRef.current), []);
   const vitals = useVitals(token, room.id, vitalsWhere);
   const { reload: reloadVitals } = vitals;
+  // v20.2 the dojo: fetched when the dojo or the punching bag opens
+  const dojo = useDojo(token);
+  const { reload: reloadDojo } = dojo;
   const gameToast = useCallback((text: string) => {
     showToast(text);
     if (VITALS_TEXTS.has(text)) void reloadVitals();
@@ -602,11 +608,16 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         break;
       case "punch_bag":                                                     // v20.1
         setPanel("fight_practice");
+        void reloadDojo();
+        break;
+      case "dojo":                                                          // v20.2
+        setPanel("dojo");
+        void reloadDojo();
         break;
       default:
         if (!farmInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo]);
 
   const leaveBroken = useCallback((message: string) => {
     window.alert(message);
@@ -1105,7 +1116,24 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         />
       )}
       {(panel === "umbrella_stall" || panel === "umbrellas") && <UmbrellaModal shop={panel === "umbrella_stall"} onClose={close} />}
-      {panel === "fight_practice" && <FightOverlay look={myLook} name={myName} onClose={close} />}{/* v20.1 */}
+      {panel === "fight_practice" && <FightOverlay look={myLook} name={myName} onClose={close} {...practiceFighter(myLook, dojo.state)} />}{/* v20.1 */}
+      {panel === "dojo" && token && (                                     // v20.2
+        <Dojo
+          token={token}
+          look={myLook}
+          name={myName}
+          coins={fishing.data.state?.coins ?? null}
+          dojo={dojo}
+          onLook={(newLook) => {
+            setSaved(newLook);
+            canvasRef.current?.announceLook();
+          }}
+          onCoins={() => void fishing.data.reload()}
+          onVitals={() => void reloadVitals()}
+          onToast={showToast}
+          onClose={close}
+        />
+      )}
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}

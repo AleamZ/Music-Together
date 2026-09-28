@@ -7,6 +7,7 @@ import { DEFAULT_LOOK } from "@/lib/game/look";
 import type { Look } from "@/lib/game/types";
 import { composeMatrix } from "./compose";
 import { GARMENT_ART, type GarmentSlot } from "./garments";
+import { UNIFORM_ART } from "./uniforms";
 import { SPRITE_H, SPRITE_W } from "./layers";
 
 export const ICON_SIZE = 16;
@@ -357,7 +358,7 @@ const garmentIcons = new Map<string, string[][] | null>();
  *  shrunk (nearest pixel) to fit 16×16, centred. Cached. */
 export function garmentIconMatrix(id: string): string[][] | null {
   if (garmentIcons.has(id)) return garmentIcons.get(id)!;
-  const art = GARMENT_ART[id];
+  const art = GARMENT_ART[id] ?? UNIFORM_ART[id];                         // v20.2: the võ phục
   let out: string[][] | null = null;
   if (art) {
     const look: Look = {
