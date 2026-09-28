@@ -1,7 +1,7 @@
 // v18.8 weather: the pure model. The SQL (_room_weather) is authoritative for
 // gameplay; this copy is display-only and a test pins it to the plan's table.
 
-export type WeatherKind = "clear" | "cloudy" | "fog" | "rain" | "thunder" | "storm";
+export type WeatherKind = "clear" | "cloudy" | "fog" | "rain" | "thunder" | "storm" | "snow";
 
 export interface WeatherEffects {
   bite: number;
@@ -38,7 +38,7 @@ function baseKind(code: number): WeatherKind | null {
   if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "rain";
   if (code === 95) return "thunder";
   if (code === 96 || code === 99) return "storm";
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "cloudy";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow"; // v21 (0075): was cloudy
   return null;
 }
 
@@ -58,6 +58,8 @@ const TABLE: Record<WeatherKind, WeatherEffects> = {
   thunder: { bite: 0.5, bigRare: 2.0, dockOpen: true, growth: 1.0, drying: 0, pests: 1.8, ripeLossPct: 10, thirst: 0.8, rideSpeed: 0.8 },
   // storm: casting is refused, so bigRare is moot ("—" in the plan); kept at 1.
   storm: { bite: 0, bigRare: 1.0, dockOpen: false, growth: 0.8, drying: 0, pests: 2.0, ripeLossPct: 25, thirst: 0.8, rideSpeed: 0.6 },
+  // v21 (0075): real snow codes, or the room owner's "Tuyết" event
+  snow: { bite: 0.8, bigRare: 1.3, dockOpen: true, growth: 0.5, drying: 0.3, pests: 0.5, ripeLossPct: 0, thirst: 0.7, rideSpeed: 0.7 },
 };
 
 /** The effects row for a kind; at night crops don't grow. */
@@ -74,6 +76,7 @@ export const WEATHER_LABEL: Record<WeatherKind, string> = {
   rain: "Mưa",
   thunder: "Giông",
   storm: "Bão",
+  snow: "Tuyết",
 };
 
 export const WEATHER_ICON: Record<WeatherKind, string> = {
@@ -83,4 +86,5 @@ export const WEATHER_ICON: Record<WeatherKind, string> = {
   rain: "\u{1F327}️",
   thunder: "⛈️",
   storm: "\u{1F300}",
+  snow: "❄️",
 };

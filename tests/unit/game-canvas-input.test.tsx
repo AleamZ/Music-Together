@@ -73,6 +73,7 @@ vi.mock("@/lib/game/engine", () => ({
       return id === "dan";
     }
     setPet() {}
+    setExtras() {}
     setRiding(v: unknown) {
       this.rec.riding.push(v);
       // like the real engine: mounting announces my state at once

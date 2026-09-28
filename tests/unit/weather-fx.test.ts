@@ -3,7 +3,7 @@ import { drawLighting, drawWeather, lightingFor, swayAmp, type WeatherFx } from 
 import { FX_DEFAULT, FX_KEY, loadWeatherFx, parseFx, saveWeatherFx } from "@/lib/game/weather/fx";
 import type { RoomWeather, WeatherKind } from "@/lib/game/weather/model";
 
-const KINDS: WeatherKind[] = ["clear", "cloudy", "fog", "rain", "thunder", "storm"];
+const KINDS: WeatherKind[] = ["clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
 
 function recorder() {
   const calls: string[] = [];

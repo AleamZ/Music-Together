@@ -128,6 +128,7 @@ import HudChatBar from "./HudChatBar";
 import HudNowPlaying from "./HudNowPlaying";
 import MapCounts from "./MapCounts";
 import MiniMap from "./MiniMap";
+import WorldHud from "./realm/WorldHud";                                  // v21 world (0075)
 import NewsModal from "./NewsModal";
 import ChangelogModal from "./news/ChangelogCarousel";
 import { useChangelogPopup } from "@/lib/game/news/changelog-seen";
@@ -557,9 +558,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   // --- input is off while any panel, the farm work, the create editor or an anti-cheat modal is open; an Esc belongs to
   //     an open overlay outside the field's own, not to the farm work
   const [helpOpen, setHelpOpen] = useState(false); // the "⌨️ Phím tắt" overlay (H / ?)
+  const [worldOpen, setWorldOpen] = useState(false); // v21 world (0075): the 🌍 panel
   const openOverlays = {
     panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen || rings.active !== null
       || ug.active !== null || ugResult !== null || knocking !== null || isCalled(ug.state)                     // v20.4
+      || worldOpen                                                                                             // v21 world
       || trade.state?.trade != null                                                                             // v21 economy
       || mining.open,                                                                                           // v21 Mỏ đá
     fishingPanel: fishing.panel !== null || fishing.net !== null, creating, anticheatModal: anticheat.modal !== null,
@@ -1012,6 +1015,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         </div>
       )}
 
+      <WorldHud token={token} roomId={room.id} accountId={accountId} isOwner={isOwner} mapId={map.id} canvas={getCanvas}
+        blocked={blocking || faint !== null || trip !== null} toast={showToast} onCoins={reloadCoins}
+        onWeather={() => void roomWeather.reload()} onPanel={setWorldOpen} />{/* v21 world (0075) */}
       <HeatActions heat={heat} hidden={blocking || faint !== null || trip !== null || fishing.net !== null}
         onNet={fishing.netReady && fishing.cast.phase === "idle" ? fishing.throwNet : null} />
       {prompt && !blocking && (

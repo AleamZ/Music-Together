@@ -47,6 +47,7 @@ const GREY: Record<WeatherKind, { rgb: readonly [number, number, number]; a: num
   rain: { rgb: [58, 68, 86], a: 0.22 },
   thunder: { rgb: [44, 50, 70], a: 0.27 },
   storm: { rgb: [38, 44, 60], a: 0.3 },
+  snow: { rgb: [200, 214, 236], a: 0.2 },                   // v21 (0075): a pale, cold sky
 };
 
 const mod = (a: number, n: number) => ((a % n) + n) % n;
@@ -254,6 +255,8 @@ const FIREFLY = "#e4ff8a";
 const FLASH = "#ffffff";
 const BOLT_GLOW = "#b9ccff";
 const DIM = "rgb(40, 44, 58)";
+const SNOW = "#f6faff";
+const SNOW_FAR = "#cfdcf0";
 
 /** A scratch point for the water sampler (module scope: no per-frame allocation). */
 const pt: Vec = { x: 0, y: 0 };
@@ -413,6 +416,26 @@ export function drawWeather(c: Ctx, w: number, h: number, cam: Vec, t: number, w
         else c.fillRect(x, y, 1, 2);
       }
     }
+  }
+
+  // v21 (0075) snow: flakes at three depths drifting down with a sway, and a thin white veil (a 2×2 flake up close)
+  if (kind === "snow") {
+    c.globalAlpha = 0.08 * dens;
+    c.fillStyle = SNOW;
+    c.fillRect(0, 0, w, h);
+    const n = cnt(220);
+    for (let k = 0; k < n; k++) {
+      const depth = k % 3;                                    // 0 far … 2 near
+      const par = 0.4 + depth * 0.35, speed = 0.018 + depth * 0.012;
+      const sway = Math.sin(tt / (900 + depth * 300) + k * 1.7) * (4 + depth * 3);
+      const x = Math.round(mod(hash(k * 3.7) * (w + 20) + sway - cam.x * par, w + 20) - 10);
+      const y = Math.round(mod(hash(k * 6.1) * (h + 10) + tt * speed - cam.y * par, h + 10) - 5);
+      c.globalAlpha = depth === 0 ? 0.55 : depth === 1 ? 0.75 : 0.95;
+      c.fillStyle = depth === 0 ? SNOW_FAR : SNOW;
+      if (depth === 2) c.fillRect(x, y, 2, 2);
+      else c.fillRect(x, y, 1, 1);
+    }
+    c.globalAlpha = 1;
   }
 
   // lightning (thunder and storm)

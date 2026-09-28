@@ -4,7 +4,7 @@ import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
 import type { HouseDraw } from "@/lib/game/housing/lot";
-import { GameEngine, type HeatProbe, type LocalFishing, type LocalInfo, type RosterEntry } from "@/lib/game/engine";
+import { GameEngine, type WorldExtras, type HeatProbe, type LocalFishing, type LocalInfo, type RosterEntry } from "@/lib/game/engine";
 import type { UmbrellaKind } from "@/lib/game/rain/model";
 import type { FieldRats } from "@/lib/game/farm/rats";
 import { phaseCode } from "@/lib/game/fishing/cast";
@@ -45,6 +45,8 @@ export interface GameCanvasHandle {
   setRiding: (v: VehicleId | null) => void;
   /** v18.12: my following pet's `pt` code (null = none) and its walk-speed factor; the others see it. Kept across worlds. */
   setPet: (code: string | null, speed: number) => void;
+  /** v21 world (0075): extra sprites — wild animals, bosses, the gate (null = none). Kept across worlds. */
+  setExtras: (fn: WorldExtras | null) => void;
   /** v18.8: the room's weather (drawn on every map; null = none). Kept across worlds. */
   setWeather: (w: RoomWeather | null) => void;
   /** v18.8: the viewer's weather-effects level (a personal setting). Kept across worlds. */
@@ -194,6 +196,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const speedRef = useRef(1);
   const ridingRef = useRef<VehicleId | null>(null);
   const liftRef = useRef<LocalLift | null>(null);                                   // v18.13
+  const extrasRef = useRef<WorldExtras | null>(null);                              // v21 world (0075)
   const sprintRef = useRef({ ok: false, boost: 1 });                                  // v21 (0077)
   const weatherRef = useRef<RoomWeather | null>(null);
   const weatherFxRef = useRef<WeatherFx>(3);
@@ -272,6 +275,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       setPet: (code, speed) => {
         petRef.current = { code, speed };
         engineRef.current?.setPet(code, speed);
+      },
+      setExtras: (fn) => {                                                            // v21 world (0075)
+        extrasRef.current = fn;
+        engineRef.current?.setExtras(fn);
       },
       setWeather: (w) => {
         weatherRef.current = w;
@@ -458,6 +465,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       return;
     }
     engine.setLocalHand(handRef.current);
+    engine.setExtras(extrasRef.current);                                            // v21 world (0075)
     engine.setSpecies(speciesRef.current);
     engine.setBottomInset(insetRef.current);
     engine.setInputEnabled(inputRef.current);

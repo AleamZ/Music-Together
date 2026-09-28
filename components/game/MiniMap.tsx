@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getMap, paintMap } from "@/lib/game/maps/registry";
 import type { MapId } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
+import { partyDotsOn } from "@/lib/game/realm/party-dots";
 
 const MAP_NAMES: Record<MapId, string> = {
   hall: "Hội trường",
@@ -139,6 +140,20 @@ export default function MiniMap({
         ctx.fill();
       }
 
+      // v21 world (0075): my party members on this map (their server positions), green with an outline
+      for (const d of partyDotsOn(mapId)) {
+        const dx = d.x * (miniW / mapW), dy = (d.y - 12) * (miniH / mapH);
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(dx, dy, dotR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = "#22c55e";
+        ctx.beginPath();
+        ctx.arc(dx, dy, dotR - 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       // Draw player position
       const pos = getLocalPos();
       if (pos) {
@@ -178,7 +193,7 @@ export default function MiniMap({
 
     rafRef.current = requestAnimationFrame(render);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [map, mapW, mapH, miniW, miniH, minimized, getLocalPos, currentSize]);
+  }, [map, mapId, mapW, mapH, miniW, miniH, minimized, getLocalPos, currentSize]);
 
   return (
     <div className="pointer-events-auto font-vt select-none">

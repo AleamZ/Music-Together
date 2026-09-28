@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { drawWeather, lightingFor, NIGHT_ALPHA, swayAmp, swayAt } from "@/lib/game/art/weather";
 import type { RoomWeather, WeatherKind } from "@/lib/game/weather/model";
 
-const KINDS: WeatherKind[] = ["clear", "cloudy", "fog", "rain", "thunder", "storm"];
+const KINDS: WeatherKind[] = ["clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
 
 /** A 2D context that records every call and style change. */
 function recorder() {

@@ -58,8 +58,12 @@ import type { Facing, Look, Vec } from "@/lib/game/types";
 import { CATCH_LABEL_MS, FARM_ANIM_MS, RemoteWorld, type RosterEntry } from "@/lib/game/world";
 import type { PresenceDog } from "@/lib/presence-modes";
 import type { RoomWeather } from "@/lib/game/weather/model";
+import type { MapId } from "@/lib/game/maps/types";
 
 export type { RosterEntry } from "@/lib/game/world";
+
+/** v21 world: the extra sprites of map `map` at t — each drawn at its feet (x, y) in world px, sorted by y. */
+export type WorldExtras = (map: MapId, t: number, reduced: boolean) => ReadonlyArray<{ x: number; y: number; draw: (b: CanvasRenderingContext2D, camX: number, camY: number) => void }>;
 
 /** Me as the engine draws me; `dog` (v17) walks with me, drooping while `dogHungry`. */
 export interface LocalInfo { name: string; badges: string; look: Look; dog?: PresenceDog | null; dogHungry?: boolean }
@@ -307,6 +311,12 @@ export class GameEngine {
   }
 
   // ------------------------------------------------------------ data in
+
+  /** v21 world: extra sprites (wild animals, bosses, the gate) sorted with the props and people; null = none. */
+  private extras: WorldExtras | null = null;
+  setExtras(fn: WorldExtras | null): void {
+    this.extras = fn;
+  }
 
   /** v18.8: the room's weather (null = unknown: no effects, lighting by the local clock). */
   setWeather(w: RoomWeather | null): void {
@@ -1592,6 +1602,11 @@ export class GameEngine {
         rainOver(rl, me.display, me.facing, sAge, this.strikeSeed, true);
       },
     });
+    if (this.extras) {                                                       // v21 world
+      for (const s of this.extras(this.map.id, t, reduced)) {
+        if (onScreen(s)) items.push({ y: s.y, draw: () => s.draw(b, camX, camY) });
+      }
+    }
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.draw();
     for (const p of this.puffs) {

@@ -16,7 +16,7 @@ export interface WeatherReport {
   tempC?: number | null;
 }
 
-const KINDS: readonly WeatherKind[] = ["clear", "cloudy", "fog", "rain", "thunder", "storm"];
+const KINDS: readonly WeatherKind[] = ["clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
 
 /** The server's _weather_json → RoomWeather (null when malformed or stale: stale means no live weather). */
 export function parseRoomWeather(raw: unknown): RoomWeather | null {

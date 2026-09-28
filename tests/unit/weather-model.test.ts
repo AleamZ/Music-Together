@@ -11,7 +11,7 @@ describe("kindOf", () => {
     [[...range(51, 67), ...range(80, 82)], "rain"],
     [[95], "thunder"],
     [[96, 99], "storm"],
-    [[...range(71, 77), 85, 86], "cloudy"],
+    [[...range(71, 77), 85, 86], "snow"],   // v21 (0075): was cloudy
   ];
   it.each(cases)("maps %j to %s", (codes, kind) => {
     for (const c of codes) expect(kindOf(c, 0)).toBe(kind);
@@ -40,7 +40,7 @@ describe("effects", () => {
     expect(effects("storm", true)).toEqual({ bite: 0, bigRare: 1.0, dockOpen: false, growth: 0.8, drying: 0, pests: 2.0, ripeLossPct: 25, thirst: 0.8, rideSpeed: 0.6 });
   });
   it("night sets growth to 0 and leaves the rest", () => {
-    const kinds: WeatherKind[] = ["clear", "cloudy", "fog", "rain", "thunder", "storm"];
+    const kinds: WeatherKind[] = ["clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
     for (const k of kinds) {
       expect(effects(k, false)).toEqual({ ...effects(k, true), growth: 0 });
     }
@@ -53,7 +53,7 @@ describe("effects", () => {
 
 describe("labels", () => {
   it("has Vietnamese labels and icons", () => {
-    expect(WEATHER_LABEL).toEqual({ clear: "Nắng", cloudy: "Nhiều mây", fog: "Sương mù", rain: "Mưa", thunder: "Giông", storm: "Bão" });
-    expect(Object.values(WEATHER_ICON)).toEqual(["☀️", "☁️", "🌫️", "🌧️", "⛈️", "🌀"]);
+    expect(WEATHER_LABEL).toEqual({ clear: "Nắng", cloudy: "Nhiều mây", fog: "Sương mù", rain: "Mưa", thunder: "Giông", storm: "Bão", snow: "Tuyết" });
+    expect(Object.values(WEATHER_ICON)).toEqual(["☀️", "☁️", "🌫️", "🌧️", "⛈️", "🌀", "❄️"]);
   });
 });
