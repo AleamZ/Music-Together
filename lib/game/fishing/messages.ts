@@ -90,6 +90,13 @@ export function overboardText(hunger: number, lostRod: string | null): string {
   return lostRod ? `${base} ${lostRod} trôi mất rồi…` : `${base} Bơi vào bờ nhé!`;
 }
 
+/** 0059: a hooked cast left unfinished was given up when I cast again (the rod's name when it was lost). */
+export function abandonedText(a: { big: boolean; hunger: number; rodLost: boolean }, rodName: string): string {
+  if (!a.big) return "🎣 Con cá đã cắn câu lần trước thoát mất rồi.";
+  return a.rodLost ? `🌊 Con cá lớn lần trước giật mất ${rodName}! Đói thêm ${a.hunger}.`
+    : `🌊 Con cá lớn lần trước giật cần một phen — đói thêm ${a.hunger}.`;
+}
+
 /** Why a cast may not start here and now (null = go): the state, the server's checks, then the spot (spec §6.1). */
 export function castRefusal(s: FishingState | null, failed: boolean, spotTaken: boolean): string | null {
   if (!s) return failed ? NOT_LOADED : LOADING;

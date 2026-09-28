@@ -6,7 +6,7 @@ import type { FishingData } from "@/hooks/useFishing";
 import { canHook, reelParamsFor, type CastInfo } from "@/lib/game/fishing/cast";
 import { RARITY_COLOR } from "@/lib/game/fishing/catalog";
 import { SWING_MS } from "@/lib/game/fishing/geometry";
-import { BAIT_SWITCHED, lostText, overboardText, ROD_BROKE } from "@/lib/game/fishing/messages";
+import { abandonedText, BAIT_SWITCHED, lostText, overboardText, ROD_BROKE } from "@/lib/game/fishing/messages";
 import { cellOf } from "@/lib/game/fishing/shore";
 import type { ReelParams, ReelResult } from "@/lib/game/fishing/reel";
 import type { CaughtFish } from "@/lib/game/fishing/rpc";
@@ -53,7 +53,8 @@ interface Live {
 /** One cast at a time: start_cast → swing → wait → bite → hook → reel → finish_cast (spec §6.1). */
 export function useCastSession({ roomId, data, canvas, toast, itemName }: {
   roomId: string;
-  data: Pick<FishingData, "startCast" | "finishCast">;
+  /** `hookCast` (0059): the server-timed hook; without it a cast with no seed plays as before 0046. */
+  data: Pick<FishingData, "startCast" | "finishCast"> & Partial<Pick<FishingData, "hookCast">>;
   canvas: () => GameCanvasHandle | null;
   toast: (text: string) => void;
   /** v18.1: a shop item's display name (a rod lost in the pond); the id by default. */
@@ -62,7 +63,7 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
   const [view, setView] = useState<CastView>({ phase: "idle" });
   const [caught, setCaught] = useState<{ fish: CaughtFish; record: boolean } | null>(null);
   const live = useRef<Live | null>(null);
-  const { startCast, finishCast } = data;
+  const { startCast, finishCast, hookCast } = data;
   const toastRef = useRef(toast);
   const itemNameRef = useRef<(id: string) => string>((id) => id);
   useEffect(() => {
@@ -127,7 +128,7 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
       }
       const info: CastInfo = {
         castId: r.castId, biteMs: r.biteMs, windowMs: r.windowMs, difficulty: r.difficulty, minReelMs: r.minReelMs,
-        zonePct: r.zonePct, rarity: r.rarity, bites: r.bites, reelSeed: r.reelSeed,
+        zonePct: r.zonePct, rarity: r.rarity, bites: r.bites, reelSeed: r.reelSeed, serverHook: r.serverHook,
       };
       l.info = info;
       l.answeredAt = performance.now();
@@ -137,6 +138,7 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
         return;
       }
       if (r.baitSwitched) toastRef.current(BAIT_SWITCHED);
+      if (r.abandoned) toastRef.current(abandonedText(r.abandoned, itemNameRef.current(r.abandoned.rod)));   // 0059
       const bobber = r.state.loadout.bobber;
       const swingLeft = Math.max(0, SWING_MS - (l.answeredAt - startedAt));
       l.timers.push(setTimeout(() => {
@@ -160,12 +162,29 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
     const l = live.current;
     if (!l?.info || l.hooked || !canHook(l.info, performance.now() - l.answeredAt)) return;
     l.hooked = true;
-    clearTimers(l);
+    const info = l.info;
+    const reel = (seed: number) => {
+      clearTimers(l);
+      canvas()?.setFishing({ phase: "reeling" });
+      setView({ phase: "reeling", info, params: reelParamsFor(info, seed) });
+    };
+    // 0059: the server times the hook and answers the seed; the reel starts with its answer (the bite stays on screen
+    // meanwhile). A refusal ends the cast as a miss.
+    if (info.reelSeed == null && info.serverHook && hookCast) {
+      void hookCast(info.castId).then((r) => {
+        if (live.current !== l) return;
+        if (r?.result === "hooked") {
+          l.info = { ...info, reelSeed: r.seed };
+          reel(r.seed);
+        } else {
+          void end(false, "missed");
+        }
+      });
+      return;
+    }
     // 0046: the server's seed (a server before 0046 sends none: any seed will do, it trusts the outcome)
-    const params = reelParamsFor(l.info, l.info.reelSeed ?? crypto.getRandomValues(new Uint32Array(1))[0]);
-    canvas()?.setFishing({ phase: "reeling" });
-    setView({ phase: "reeling", info: l.info, params });
-  }, [canvas]);
+    reel(info.reelSeed ?? crypto.getRandomValues(new Uint32Array(1))[0]);
+  }, [canvas, hookCast, end]);
 
   const reelIn = useCallback(() => {
     const l = live.current;

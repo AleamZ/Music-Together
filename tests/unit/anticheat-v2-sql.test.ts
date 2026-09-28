@@ -88,6 +88,27 @@ describe("0058: _pos_claim is 0057's plus the marked lines", () => {
   });
 });
 
+describe("0059: start_cast, start_net and finish_cast are their newest bodies plus the marked lines", () => {
+  const M59 = M("0059_reel_hook");
+  const M46 = M("0046_reel_verify");
+  for (const [sig, src] of [["start_cast(", M57], ["start_net(", M57], ["finish_cast(", M46]] as const) {
+    it(sig, () => {
+      expect(unmarked(body(M59, sig), "0059")).toBe(body(src, sig));
+      expect(body(M59, sig)).toContain("-- 0059");
+    });
+  }
+  it("0047–0058 do not re-create finish_cast", () => {
+    for (const f of ["0047_fishing_hunger", ...BETWEEN, "0056_net_replay", "0057_server_position", "0058_pos_tabs"]) {
+      expect(M(f).includes("function public.finish_cast("), f).toBe(false);
+    }
+  });
+  it("the seed is no longer answered by start_cast, only by hook_cast", () => {
+    expect(unmarked(body(M59, "start_cast("), "0059")).toContain("'reel_seed', v_seed");
+    expect(body(M59, "start_cast(").split("\n").filter((l) => l.includes("'reel_seed'") && !l.includes("-- 0059 was:"))).toEqual([]);
+    expect(body(M59, "hook_cast(")).toContain("'reel_seed', c.reel_seed");
+  });
+});
+
 describe("0056 mirrors lib/game/fishing/net.ts's constants", () => {
   it("the throw: the flight, the sink, the release limit, the aim and the ellipse", () => {
     expect(M56).toContain(`lt bigint := p_release + ${NETX.flightTicks}`);

@@ -6,7 +6,7 @@ import { useCastSession, type CastSession, type CastView } from "@/hooks/useCast
 import { useFishing, type FishingData } from "@/hooks/useFishing";
 import { serverNow } from "@/lib/game/farm/clock";
 import {
-  BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NET_EXPIRED, netLostText, netText, NO_NET, NOT_LOADED,
+  abandonedText, BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NET_EXPIRED, netLostText, netText, NO_NET, NOT_LOADED,
   promptText as promptFor, repairText, saleText, SONG_BONUS,
 } from "@/lib/game/fishing/messages";
 import { NET_WON_MS, type NetInput } from "@/lib/game/fishing/netcast";
@@ -309,10 +309,11 @@ export function useFishingController({ token, roomId, accountId, canvas, current
         setNet(null);                                                                     // refused: the toast says why
         return;
       }
+      if (r.abandoned) toastRef.current(abandonedText(r.abandoned, itemName(r.abandoned.rod)));   // 0059: a hooked cast given up
       setNet((cur) => cur && !cur.throwId
         ? { ...cur, busy: false, throwId: r.throwId, seed: r.seed, radiusPx: r.radiusPx, openedAt: performance.now() } : cur);
     });
-  }, [net, session.view.phase, netItem, canvas, startNet, roomId]);
+  }, [net, session.view.phase, netItem, canvas, startNet, roomId, itemName]);
   /** v18.2: the minigame's phase, shown on my character to everyone. */
   const netPhase = useCallback((inp: NetInput) => canvas()?.setNet(inp), [canvas]);
   const showWon = useCallback((k: number) => {

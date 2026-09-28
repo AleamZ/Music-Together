@@ -40,7 +40,7 @@ export function fetchFishingCatalog(): Promise<FishingCatalog> {
 
 /** An RPC's answer. A flagged answer (anti-cheat §9.1) throws an AnticheatError, except those of the replayed minigames
  *  (finish_cast, and from 0056 net_haul and finish_net): their envelope rides on the lost answer. */
-const ENVELOPE_ON_ANSWER = new Set(["finish_cast", "net_haul", "finish_net"]);
+const ENVELOPE_ON_ANSWER = new Set(["finish_cast", "net_haul", "finish_net", "hook_cast"]);
 async function call(fn: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await supabase.rpc(fn, args);
   const flagged = screenAnswer(data, error);
@@ -80,12 +80,15 @@ export async function repairRod(token: string, itemId: string): Promise<{ cost: 
 }
 
 /** v18.2: a net throw opened (0056: when the aim starts; nothing is spent yet) — the school's seed and the net's radius. */
-export interface StartNet { throwId: string; seed: number; radiusPx: number; state: FishingState }
+export interface StartNet { throwId: string; seed: number; radiusPx: number; state: FishingState; abandoned?: Abandoned | null }
 
 export async function startNet(roomId: string, token: string, cell: { col: number; row: number }, net: string): Promise<StartNet> {
   const r = await call("start_net", { p_room_id: roomId, p_session_token: token, p_col: cell.col, p_row: cell.row, p_net: net });
   publishVitals(r.vitals);                                                     // a server before 0056 spent the effort here
-  return { throwId: String(r.throw_id), seed: Number(r.seed ?? 0) >>> 0, radiusPx: Number(r.radius_px ?? 24), state: stateOf(r.state) };
+  return {
+    throwId: String(r.throw_id), seed: Number(r.seed ?? 0) >>> 0, radiusPx: Number(r.radius_px ?? 24), state: stateOf(r.state),
+    abandoned: parseAbandoned(r.abandoned),                                    // 0059
+  };
 }
 
 const netFish = (v: unknown): CaughtFish[] => (Array.isArray(v) ? v : []).map((x) => {
@@ -162,9 +165,39 @@ export interface StartCast {
   spot: "dock" | "shore";
   /** v18.1: false = nothing will bite this cast (a shore cast; absent from an older server = true). */
   bites: boolean;
-  /** 0046: the server-chosen reel seed (u32) finish_cast replays the reel with; null from a server before 0046. */
+  /** 0046: the server-chosen reel seed (u32) finish_cast replays the reel with; null from a server before 0046, and
+   *  from 0059 on (the seed comes with the hook: hookCast). */
   reelSeed: number | null;
+  /** 0059: the server times the hook (hook_cast answers the seed). */
+  serverHook: boolean;
+  /** 0059: a hooked cast this one replaced, given up: what it cost (null: none). */
+  abandoned: Abandoned | null;
   state: FishingState;
+}
+
+/** 0059: a hooked cast given up by casting again — the hook's wear, or a big fish's overboard cost without the fall. */
+export interface Abandoned { rod: string; big: boolean; rodLost: boolean; hunger: number; rodBroke: boolean }
+function parseAbandoned(v: unknown): Abandoned | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  return {
+    rod: String(o.rod ?? "rod_wood"), big: o.big === true, rodLost: o.rod_lost === true, hunger: Number(o.hunger ?? 0),
+    rodBroke: o.rod_broke === true,
+  };
+}
+
+/** 0059's server-timed hook: the reel's seed, or why not (the cast then ends as a miss). */
+export type HookCast =
+  | { result: "hooked"; seed: number; state: FishingState }
+  | { result: "lost"; why: "too_early" | "missed" | "no_bite" | "outdated"; state: FishingState; anticheat: AnticheatInfo | null };
+const HOOK_WHYS = ["too_early", "missed", "no_bite", "outdated"] as const;
+
+export async function hookCast(token: string, castId: string): Promise<HookCast> {
+  const r = await call("hook_cast", { p_session_token: token, p_cast_id: castId });
+  const state = stateOf(r.state);
+  if (r.result === "hooked" && r.reel_seed != null) return { result: "hooked", seed: Number(r.reel_seed) >>> 0, state };
+  const why = (HOOK_WHYS as readonly unknown[]).includes(r.why) ? (r.why as (typeof HOOK_WHYS)[number]) : "missed";
+  return { result: "lost", why, state, anticheat: parseAnticheat(r) };
 }
 
 /** `cell` (v18.1): the 8-px cell of the pond map the cast starts from; the server checks it is a dock or shore cell. */
@@ -180,7 +213,8 @@ export async function startCast(roomId: string, token: string, cell?: { col: num
     castId: String(r.cast_id), biteMs: Number(r.bite_ms), windowMs: Number(r.window_ms), difficulty: Number(r.difficulty),
     minReelMs: Number(r.min_reel_ms), zonePct: Number(r.zone_pct), rarity: isRarity(r.rarity) ? r.rarity : null,
     baitSwitched: r.bait_switched === true, spot: r.spot === "shore" ? "shore" : "dock", bites: r.bites !== false,
-    reelSeed: r.reel_seed == null ? null : Number(r.reel_seed) >>> 0, state: stateOf(r.state),
+    reelSeed: r.reel_seed == null ? null : Number(r.reel_seed) >>> 0, serverHook: "abandoned" in r,
+    abandoned: parseAbandoned(r.abandoned), state: stateOf(r.state),
   };
 }
 
