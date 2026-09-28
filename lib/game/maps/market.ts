@@ -2,7 +2,7 @@ import { ANH_BA_TOC_LOOK, BEP_LOOK, CHU_HAI_CA_LOOK, CHU_TU_LOOK, CO_BA_LOOK, CO
 import { CO_MUOI_LOOK } from "@/lib/game/pets/npc";
 import { CO_HONG_LOOK, CO_NAM_LOOK } from "@/lib/game/housing/npc";
 import { THAY_LAM_LOOK } from "@/lib/game/fight/npc";
-import { HALL_MARKET_ARRIVE, KHU_NHA_ARRIVE, MARKET_ARRIVE } from "./arrivals";
+import { BAI_DAT_ARRIVE, HALL_MARKET_ARRIVE, KHU_NHA_ARRIVE, MARKET_ARRIVE } from "./arrivals";
 import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, Npc, PropPlacement, Rect, StallGoods } from "./types";
@@ -81,6 +81,11 @@ export const VO_DUONG_AWNING: Rect = { x: 860, y: 248, w: 120, h: 36 };
 export const THAY_LAM_SPOT = { x: 920, y: 296, dir: "down" as const };
 export const VO_DUONG_USE = { x: 920, y: 262 } as const;
 
+/** v20.3: the little bridge over the canal to Bãi đất trống — the canal wall opens at x 1160–1200; the portal sits in the
+ *  gap, used from its head on the pavement (1180, 358) facing down. */
+export const BRIDGE_GAP = { x: 1160, w: 40 } as const;
+export const BRIDGE_PORTAL: Rect = { x: 1164, y: 372, w: 32, h: 24 };
+
 /** Outdoor tables of the nhà hàng (a table and two stools each), west of the door. */
 export const EAT_TABLES: ReadonlyArray<{ x: number; y: number }> = [{ x: 64, y: 200 }, { x: 106, y: 222 }];
 
@@ -98,7 +103,8 @@ export const MARKET_SOLIDS: Rect[] = [
   { x: 0, y: 40, w: 40, h: 120 },       // alley wall west of the nhà hàng
   { x: MARKET_W - 40, y: 40, w: 40, h: 120 },   // alley wall east of the pet shop
   ...STALLS.map((s) => s.rect),
-  { x: 0, y: 384, w: MARKET_W, h: 16 }, // the low canal wall along the south
+  { x: 0, y: 384, w: BRIDGE_GAP.x, h: 16 },                                            // the low canal wall along the south…
+  { x: BRIDGE_GAP.x + BRIDGE_GAP.w, y: 384, w: MARKET_W - BRIDGE_GAP.x - BRIDGE_GAP.w, h: 16 },   // …open for the bridge (v20.3)
   { x: 10, y: 242, w: 14, h: 10 },      // "Về sảnh" sign post
   ...LANTERN_POSTS.map((p) => ({ x: p.x - 2, y: p.y - 4, w: 4, h: 4 })),
   ...EAT_TABLES.map((t) => ({ x: t.x - 18, y: t.y - 10, w: 36, h: 10 })),
@@ -165,6 +171,10 @@ export const MARKET_INTERACTABLES: Interactable[] = [
   {
     id: "dojo", kind: "dojo", label: "Võ đường · thầy Lâm", prompt: "Học võ, thi lên đai · thầy Lâm",
     rect: { x: THAY_LAM_SPOT.x - 20, y: VO_DUONG_FRONT.y, w: 40, h: 32 }, use: { ...VO_DUONG_USE }, face: "down",
+  },
+  {
+    id: "market_to_bai_dat", kind: "portal", label: "Bãi đất trống", prompt: "Qua cầu ra Bãi đất trống (sàn đấu)",
+    rect: BRIDGE_PORTAL, use: { x: 1180, y: 358 }, face: "down", to: { map: "bai_dat", arrive: BAI_DAT_ARRIVE },
   },
 ];
 

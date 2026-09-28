@@ -14,19 +14,21 @@ import { parseVitals } from "@/lib/game/vitals-rpc";
 import { RemoteWorld } from "@/lib/game/world";
 
 const SQL = readFileSync("supabase/migrations/0033_heat_swim.sql", "utf8");
-// v19.2: 0041 re-creates _in_shade with the Khu nhà map known (no porches there); v20.2: 0050 adds the dojo gate
-const SHADE_SQL = readFileSync("supabase/migrations/0050_dojo.sql", "utf8");
+// v19.2: 0041 re-creates _in_shade with the Khu nhà map known (no porches there); v20.2: 0050 adds the dojo gate;
+// v20.3: 0051 adds Bãi đất trống and its four ring roofs
+const SHADE_SQL = readFileSync("supabase/migrations/0051_bai_dat.sql", "utf8");
 const SHADE_KINDS = new Set([
   "shop", "depot", "farm_shop", "rice_depot", "restaurant", "clothes_shop", "vehicle_shop", "salon", "market_fish_depot", "market_farm_depot",
   "dojo",                                        // v20.2
+  "ring_corner",                                 // v20.3: two corners under each ring's roof
 ]);
 
 describe("the shade (mirror of _in_shade)", () => {
   it("the SQL lists exactly the TS rects", () => {
-    const rows = [...SHADE_SQL.matchAll(/\('(hall|pond|field|market|khu_nha)', (\d+), (\d+), (\d+), (\d+)\)/g)].map((m) => m.slice(1).join(","));
+    const rows = [...SHADE_SQL.matchAll(/\('(hall|pond|field|market|khu_nha|bai_dat)', (\d+), (\d+), (\d+), (\d+)\)/g)].map((m) => m.slice(1).join(","));
     const ts = MAP_IDS.flatMap((m) => SHADE_RECTS[m].map((r) => [m, r.x, r.y, r.w, r.h].join(",")));
     expect(rows.sort()).toEqual(ts.sort());
-    expect(SHADE_SQL).toContain("p_map not in ('hall', 'pond', 'field', 'market', 'khu_nha')");
+    expect(SHADE_SQL).toContain("p_map not in ('hall', 'pond', 'field', 'market', 'khu_nha', 'bai_dat')");
   });
 
   it("every shop, depot and the restaurant has a porch over its use point, and nothing else is shaded", () => {
@@ -38,7 +40,8 @@ describe("the shade (mirror of _in_shade)", () => {
         expect(inShade(id, it.use), `${id}/${it.id}`).toBe(true);
       }
     }
-    expect(n).toBe(MAP_IDS.reduce((s, m) => s + SHADE_RECTS[m].length, 0));
+    // one porch per shop; a ring's roof covers both its corners
+    expect(n).toBe(MAP_IDS.reduce((s, m) => s + SHADE_RECTS[m].length, 0) + SHADE_RECTS.bai_dat.length);
     expect(inShade("pond", { x: 100, y: 300 })).toBe(false);
     expect(inShade("hall", { x: 320, y: 200 })).toBe(false);
   });

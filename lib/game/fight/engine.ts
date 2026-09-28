@@ -225,6 +225,8 @@ export interface MatchParams {
   maxRounds: number;
   p1: FighterParams;
   p2: FighterParams;
+  /** v20.3 PvP: the input delay N both clients use (2–6); not part of the sim. */
+  delay?: number;
 }
 
 export const BOT_DUMMY = 9;

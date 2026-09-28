@@ -5,12 +5,21 @@ import { span, type GarmentArt, type GarmentCtx, type GarmentLayers } from "./ga
 // waistband is drawn in the style's first belt colour (plan ruling P13); the fight rig draws the real rank.
 // Codes: 1 the belt colour, 2 a darker line (lapels, the belt's knot), 3 a collar, 4 a lighter trim.
 
-/** Each style's first belt colour (lib/game/fight/dojo.ts; pinned by tests/unit/uniforms.test.ts). Kept here so the world
- *  painter does not load the fight engine. */
-export const FIRST_BELT: Readonly<Record<string, string>> = {
-  vovinam: "#9fd3f0", muaythai: "#f6f6f2", karate: "#f6f6f2", taekwondo: "#f6f6f2", boxing: "#f6f6f2", judo: "#f6f6f2", vinhxuan: "#f6f6f2",
+/** Each style's belt colours by rank 0–4 (lib/game/fight/dojo.ts and 0050's seeds; pinned by tests/unit/uniforms.test.ts).
+ *  Kept here so the world painter does not load the fight engine. v20.3: the look carries the wearer's rank
+ *  (`Look.belt`), so the chibi's belt, sash, armband or waistband shows the current belt (plan ruling P23). */
+export const BELT_COLORS: Readonly<Record<string, readonly string[]>> = {
+  vovinam: ["#9fd3f0", "#2d62c9", "#e8c43a", "#d0342c", "#f6f6f2"],
+  muaythai: ["#f6f6f2", "#e8c43a", "#3f9b43", "#d0342c", "#1b1b1f"],
+  karate: ["#f6f6f2", "#e8c43a", "#3f9b43", "#7a4a26", "#1b1b1f"],
+  taekwondo: ["#f6f6f2", "#e8c43a", "#3f9b43", "#d0342c", "#1b1b1f"],
+  boxing: ["#f6f6f2", "#2d62c9", "#d0342c", "#e8c43a", "#d9a92a"],
+  judo: ["#f6f6f2", "#e8c43a", "#e8862e", "#3f9b43", "#1b1b1f"],
+  vinhxuan: ["#f6f6f2", "#2d62c9", "#d0342c", "#e8c43a", "#1b1b1f"],
 };
-const beltColor = (key: string): string => FIRST_BELT[key] ?? "#f6f6f2";
+/** Each style's first belt colour (a look without a rank). */
+export const FIRST_BELT: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(BELT_COLORS).map(([k, v]) => [k, v[0]]));
+const beltColor = (key: string, rank = 0): string => BELT_COLORS[key]?.[rank] ?? FIRST_BELT[key] ?? "#f6f6f2";
 
 /** A belt across the waist (rows 29–30) tied in front, its two tails hanging over the hips. */
 function belt(c: GarmentCtx, L: GarmentLayers, tails = true): void {
@@ -118,3 +127,18 @@ export const UNIFORM_ART: Record<string, GarmentArt> = {
 };
 
 export const UNIFORM_ART_IDS: readonly string[] = Object.keys(UNIFORM_ART);
+
+const ranked = new Map<string, GarmentArt>();
+/** A uniform's art with its belt code in the wearer's rank colour (rank 0 or none: the art as drawn); undefined for an
+ *  id that is not a uniform. Cached per (uniform, rank). */
+export function uniformArtFor(id: string, rank?: number | null): GarmentArt | undefined {
+  const base = UNIFORM_ART[id];
+  if (!base || rank === null || rank === undefined || !Number.isInteger(rank) || rank <= 0 || rank > 4) return base;
+  const key = `${id}|${rank}`;
+  let a = ranked.get(key);
+  if (!a) {
+    a = { ...base, colors: { ...base.colors, 1: beltColor(id.slice(3), rank) } };
+    ranked.set(key, a);
+  }
+  return a;
+}

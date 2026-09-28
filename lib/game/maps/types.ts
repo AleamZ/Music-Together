@@ -4,8 +4,8 @@ import type { Facing, Look, Vec } from "@/lib/game/types";
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Spot { x: number; y: number; dir: Facing }
 
-export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha";
-export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha"];
+export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat";
+export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat"];
 
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
@@ -33,6 +33,8 @@ export type InteractKind =
   | "punch_bag"
   // v20.2: the Võ đường's gate on Chợ Lớn (thầy Lâm: the dojo panel)
   | "dojo"
+  // v20.3: Bãi đất trống — a ring's corner (Góc Đỏ / Góc Xanh: take it, the ready screen) and the PvP records board
+  | "ring_corner" | "ring_board"
   // every map: the city-map signpost (a view-only overview of the town)
   | "city_map"
   // v18.11: the hall's Báo Làng news stand (dev blog + village news)
@@ -68,6 +70,9 @@ export interface Interactable {
   rat?: number;
   /** lot (v19.3): its number (1–8). */
   lot?: number;
+  /** ring_corner (v20.3): the ring (1–4) and the corner. */
+  ring?: number;
+  corner?: "red" | "blue";
 }
 
 /** A rice plot on the field (v15): its number, its land and where its name post stands. */

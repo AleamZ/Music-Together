@@ -10,6 +10,7 @@ const LABEL: Record<MapId, { icon: string; name: string }> = {
   field: { icon: "🌾", name: "Đồng" },
   market: { icon: "🏮", name: "Chợ Lớn" },
   khu_nha: { icon: "🏘️", name: "Khu nhà" },
+  bai_dat: { icon: "🥊", name: "Bãi đất" },
 };
 const MAPS = MAP_IDS.map((id) => ({ id, ...LABEL[id] }));
 

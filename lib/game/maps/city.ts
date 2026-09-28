@@ -36,6 +36,11 @@ export const CITY_PLACES: Readonly<Record<MapId, CityPlace>> = {
     id: "khu_nha", icon: "🏘️", name: "Khu nhà", at: { x: 50, y: 14 },
     places: ["Chung cư Phú Mỹ · chú Sáu", "Đất xây nhà (sắp mở)", "Sàn bất động sản (sắp mở)"],
   },
+  // v20.3: across the little bridge from Chợ Lớn's south-east canal wall
+  bai_dat: {
+    id: "bai_dat", icon: "🥊", name: "Bãi đất trống", at: { x: 86, y: 70 },
+    places: ["4 sàn đấu", "Bảng thành tích", "Bao cát"],
+  },
 };
 
 /** Every road between two maps: one per pair linked by a portal, whichever side it is read from (sorted, stable). */

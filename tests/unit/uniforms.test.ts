@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { composeMatrix, resolveWear } from "@/lib/game/art/compose";
+import { composeMatrix, lookKey, resolveWear } from "@/lib/game/art/compose";
 import { drawGarment } from "@/lib/game/art/garments";
 import { garmentIconMatrix } from "@/lib/game/art/icons";
 import { FRAMES, type Dir3 } from "@/lib/game/art/layers";
 import { POSES } from "@/lib/game/art/body";
-import { FIRST_BELT, UNIFORM_ART, UNIFORM_ART_IDS } from "@/lib/game/art/uniforms";
+import { BELT_COLORS, FIRST_BELT, UNIFORM_ART, UNIFORM_ART_IDS, uniformArtFor } from "@/lib/game/art/uniforms";
 import { MARTIAL, UNIFORM_IDS } from "@/lib/game/fight/dojo";
 import { filterStoreItems } from "@/lib/game/store";
 import { DEFAULT_LOOK } from "@/lib/game/look";
@@ -21,6 +21,22 @@ describe("the võ phục on the world chibi (v20.2)", () => {
     expect([...UNIFORM_ART_IDS]).toEqual([...UNIFORM_IDS]);
     for (const id of UNIFORM_ART_IDS) expect(UNIFORM_ART[id]).toMatchObject({ slot: "outfit", gender: "unisex" });
     for (const m of MARTIAL) expect(FIRST_BELT[m.key]).toBe(m.belts[0].color);
+  });
+
+  it("v20.3: the belt is drawn in the wearer's current rank colour", () => {
+    for (const m of MARTIAL) expect(BELT_COLORS[m.key]).toEqual(m.belts.map((b) => b.color));
+    const hex = (c: string) => c.toLowerCase();
+    for (const m of MARTIAL) {
+      const colours = (rank: number | null) => new Set(composeMatrix({ ...BASE, outfit: m.uniform, belt: rank }, "down", 0).flat().map(hex));
+      for (let rank = 1; rank <= 4; rank++) {
+        expect(uniformArtFor(m.uniform, rank)!.colors[1]).toBe(m.belts[rank].color);
+        if (m.belts[rank].color !== m.belts[0].color) expect(colours(rank).has(hex(m.belts[rank].color)), `${m.key} ${rank}`).toBe(true);
+      }
+      expect(uniformArtFor(m.uniform, null)).toBe(UNIFORM_ART[m.uniform]);
+      expect(uniformArtFor(m.uniform, 2)).toBe(uniformArtFor(m.uniform, 2));
+    }
+    expect(uniformArtFor("top_ao_thun", 3)).toBeUndefined();
+    expect(lookKey({ ...BASE, outfit: "vp_karate", belt: 2 })).not.toBe(lookKey({ ...BASE, outfit: "vp_karate", belt: 3 }));
   });
 
   it("composes on both bodies in every facing and frame with no unknown codes", () => {

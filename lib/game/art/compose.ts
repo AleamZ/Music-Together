@@ -5,7 +5,7 @@ import { GARMENT_ART, drawGarment, type GarmentArt, type GarmentLayers } from ".
 import { HAIR, SWAYING_HAIR } from "./hair";
 import { HATS, HAT_CLIP } from "./hats";
 import { ITEM_ART, type ItemArt } from "./items";
-import { UNIFORM_ART } from "./uniforms";
+import { uniformArtFor } from "./uniforms";
 import { EYE, EYE_SHINE, HAIR_COLOR, OUTLINE, SKIN, SOCK } from "./palettes";
 import { R, SPRITE_H, SPRITE_W, type Dir3, type Frame, type Layer } from "./layers";
 
@@ -27,9 +27,9 @@ function artFor<S extends ItemArt["slot"]>(id: string | null | undefined, slot: 
   const a = ITEM_ART[id];
   return a && a.slot === slot ? (a as Extract<ItemArt, { slot: S }>) : null;
 }
-function garmentFor(id: string | null | undefined, slot: GarmentArt["slot"]): GarmentArt | null {
+function garmentFor(id: string | null | undefined, slot: GarmentArt["slot"], belt?: number | null): GarmentArt | null {
   if (!id) return null;
-  const a = GARMENT_ART[id] ?? UNIFORM_ART[id];                           // v20.2: the võ phục
+  const a = GARMENT_ART[id] ?? uniformArtFor(id, belt);                   // v20.2: the võ phục (v20.3: in the rank's belt)
   return a && a.slot === slot ? a : null;
 }
 
@@ -50,7 +50,7 @@ export const HAIR_CLIP: Record<Dir3, Layer> = {
 /** Stable cache key for a look. */
 export function lookKey(look: Look): string {
   return [look.skin, look.hair, look.hairColor, look.hat ?? "-", look.top ?? "-", look.bottom ?? "-", look.shoes, look.neck ?? "-", genderOf(look), look.outfit ?? "-",
-    look.wrist ?? "-", look.hairpin ?? "-"].join("|");
+    look.wrist ?? "-", look.hairpin ?? "-", look.belt ?? "-"].join("|");
 }
 
 /** The old shoe items' shapes, by name (their art only has colours). */
@@ -128,7 +128,7 @@ export function armColoursOf(look: Look): { sleeve: string; skin: string } {
 export function resolveWear(look: Look): Wear {
   const pal = bodyPalette(look);
   const gender = genderOf(look);
-  const outfit = garmentFor(look.outfit, "outfit");
+  const outfit = garmentFor(look.outfit, "outfit", look.belt);
   const top = outfit ? null : garmentFor(look.top, "top");
   const bottom = outfit ? null : garmentFor(look.bottom, "bottom");
   const shoes = garmentFor(look.shoes, "shoes");

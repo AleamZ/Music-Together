@@ -85,17 +85,18 @@ export default function Dojo({ token, look, name, coins, dojo, onLook, onCoins, 
     setBusy(true);
     setError(null);
     fightWearUniform(token, key).then(({ value }) => {
-      onLook({ ...look, outfit: value.outfit });
+      // v20.3: the chibi's belt shows my rank in that style (0051's characters.belt keeps it for the others)
+      onLook({ ...look, outfit: value.outfit, belt: enrollmentOf(state, key)?.rank ?? null });
       void reload();
       setBusy(false);
     }, fail);
-  }, [token, look, onLook, reload, fail]);
+  }, [token, look, state, onLook, reload, fail]);
 
   const unwear = useCallback(() => {
     setBusy(true);
     setError(null);
     fightUnwearUniform(token).then(({ value }) => {
-      onLook({ ...look, outfit: value.outfit });
+      onLook({ ...look, outfit: value.outfit, belt: null });
       void reload();
       setBusy(false);
     }, fail);
@@ -161,7 +162,9 @@ export default function Dojo({ token, look, name, coins, dojo, onLook, onCoins, 
     setView({ kind: "result", style, result });
     onVitals();
     void reload();
-  }, [onVitals, reload]);
+    // v20.3: a new belt shows on the chibi at once (the others see it at my next look refresh)
+    if (result.exam?.passed && look.outfit === style.uniform) onLook({ ...look, belt: result.exam.rank });
+  }, [onVitals, reload, look, onLook]);
 
   // the kata result: frame 0 of the sparring match comes 8 s after the pass; enter 3 s before it
   const pending = view.kind === "kataResult" && view.res.passed && view.res.match ? view : null;

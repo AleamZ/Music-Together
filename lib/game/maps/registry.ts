@@ -1,3 +1,5 @@
+import { buildBaiDatMap } from "./bai-dat";
+import { paintBaiDat } from "./bai-dat-art";
 import { buildFieldMap } from "./field";
 import { paintField } from "./field-art";
 import { buildHallMap } from "./hall";
@@ -23,6 +25,7 @@ function build(id: MapId): GameMap {
     case "field": return buildFieldMap();
     case "market": return buildMarketMap();
     case "khu_nha": return buildKhuNhaMap();
+    case "bai_dat": return buildBaiDatMap();
   }
 }
 
@@ -33,6 +36,7 @@ function paint(map: GameMap): SceneArt {
     case "field": return paintField(map);
     case "market": return paintMarket(map);
     case "khu_nha": return paintKhuNha(map);
+    case "bai_dat": return paintBaiDat(map);
   }
 }
 

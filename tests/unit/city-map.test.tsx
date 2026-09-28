@@ -43,11 +43,11 @@ describe("city-map signposts", () => {
 
 describe("city overview", () => {
   it("has a road for every pair of maps a portal links, both ways once", () => {
-    expect(cityRoads().map(([a, b]) => `${a}-${b}`).sort()).toEqual(["hall-field", "hall-market", "hall-pond", "market-khu_nha", "pond-field"]);
+    expect(cityRoads().map(([a, b]) => `${a}-${b}`).sort()).toEqual(["hall-field", "hall-market", "hall-pond", "market-bai_dat", "market-khu_nha", "pond-field"]);
   });
   it("shows every map with its count, marks where I am, lists the key places, Khu nhà included (v19.2)", () => {
     const onClose = vi.fn();
-    render(<CityMapModal current="market" counts={{ hall: 3, pond: 1, field: 0, market: 2, khu_nha: 4 }} onClose={onClose} />);
+    render(<CityMapModal current="market" counts={{ hall: 3, pond: 1, field: 0, market: 2, khu_nha: 4, bai_dat: 2 }} onClose={onClose} />);
     const dialog = screen.getByRole("dialog", { name: "🗺️ Bản đồ thành phố" });
     for (const id of MAP_IDS) expect(within(dialog).getByTestId(`city-map-${id}`)).toHaveTextContent(CITY_PLACES[id].name);
     expect(screen.getByTestId("city-map-hall")).toHaveTextContent("👥 3");

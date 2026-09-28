@@ -40,6 +40,8 @@ export type GameMessage =
   | { t: "fa"; id: string; a: FarmAnim }
   | { t: "lk"; id: string }
   | { t: "bye"; id: string }
+  // v20.3 Bãi đất trống: "ring r changed (version v), fetch ring_state" — a hint only, nothing in it is trusted
+  | { t: "rg"; id: string; r: number; v: number }
   | LiftMessage;
 export type GameEvent = GameMessage["t"];
 
@@ -61,7 +63,7 @@ export type LiftMessage =
   | { t: "rx"; id: string; to: string }
   | { t: "lg"; id: string; to: string; m: MapId };
 
-export const GAME_EVENTS: readonly GameEvent[] = ["hello", "st", "mv", "pa", "fs", "fp", "fa", "lk", "bye", "rq", "ra", "rx", "lg"];
+export const GAME_EVENTS: readonly GameEvent[] = ["hello", "st", "mv", "pa", "fs", "fp", "fa", "lk", "bye", "rq", "ra", "rx", "lg", "rg"];
 
 const TO_CODE: Record<Facing, FacingCode> = { up: "u", down: "d", left: "l", right: "r" };
 const FROM_CODE: Record<FacingCode, Facing> = { u: "up", d: "down", l: "left", r: "right" };
@@ -165,6 +167,8 @@ export function parseGameMessage(event: string, payload: unknown, bounds: { widt
       return isInt(p.p) && p.p >= 0 && p.p <= MAX_PLOT ? { t: "fp", id: p.id, p: p.p } : null;
     case "fa":
       return isFarmAnim(p.a) ? { t: "fa", id: p.id, a: p.a } : null;
+    case "rg":                                                               // v20.3
+      return isInt(p.r) && p.r >= 1 && p.r <= 4 && isInt(p.v) && p.v >= 0 ? { t: "rg", id: p.id, r: p.r, v: p.v } : null;
     default:
       return null;
   }

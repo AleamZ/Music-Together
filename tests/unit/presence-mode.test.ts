@@ -89,7 +89,8 @@ describe("mapCounts", () => {
       field: [{ accountId: "d", name: "Dee", classic: false }],
       market: [],
       khu_nha: [],
+      bai_dat: [],
     });
-    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [], market: [], khu_nha: [] });
+    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [] });
   });
 });

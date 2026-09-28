@@ -11,6 +11,7 @@ const MAP_NAMES: Record<MapId, string> = {
   field: "Đồng lúa",
   market: "Chợ Lớn",
   khu_nha: "Khu nhà",
+  bai_dat: "Bãi đất trống",
 };
 
 type MiniMapSize = "sm" | "md" | "lg";

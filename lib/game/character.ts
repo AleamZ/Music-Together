@@ -29,6 +29,8 @@ export interface CharacterRow {
   gender?: string | null;
   /** Added by 0024; absent reads as no outfit. */
   outfit?: string | null;
+  /** Added by 0051 (v20.3): the worn uniform's rank; absent reads as none. */
+  belt?: number | null;
 }
 
 export { DEFAULT_LOOK };
@@ -64,6 +66,7 @@ export function lookFromRow(row: CharacterRow): Look {
     hairpin: row.hairpin ?? null,
     gender: pick(GENDERS, row.gender ?? "", "nam" as Gender),
     outfit: row.outfit ?? null,
+    ...(typeof row.belt === "number" && row.belt >= 0 && row.belt <= 4 ? { belt: row.belt } : {}),
   };
 }
 
@@ -108,14 +111,21 @@ export function fetchCatalog(): Promise<CatalogItem[]> {
 }
 
 const LOOK_COLUMNS = "account_id, skin, hair, hair_color, hat, top, bottom, shoes, neck, gender, outfit, wrist, hairpin";
+/** v20.3: the belt column (0051); a database without it yet is read without it, once and for all this page. */
+let beltColumn = true;
 
 /** Looks of the given accounts; accounts without a character are simply absent from the map. */
 export async function fetchCharacters(accountIds: string[]): Promise<Map<string, Look>> {
   const out = new Map<string, Look>();
   if (accountIds.length === 0) return out;
-  const { data, error } = await supabase.from("characters").select(LOOK_COLUMNS).in("account_id", accountIds);
-  if (error) throw error;
-  for (const row of (data ?? []) as CharacterRow[]) out.set(row.account_id, lookFromRow(row));
+  const run = (cols: string) => supabase.from("characters").select(cols).in("account_id", accountIds);
+  let res = await run(beltColumn ? `${LOOK_COLUMNS}, belt` : LOOK_COLUMNS);
+  if (res.error && beltColumn && (res.error.code === "42703" || /belt/.test(res.error.message ?? ""))) {
+    beltColumn = false;
+    res = await run(LOOK_COLUMNS);
+  }
+  if (res.error) throw res.error;
+  for (const row of (res.data ?? []) as unknown as CharacterRow[]) out.set(row.account_id, lookFromRow(row));
   return out;
 }
 

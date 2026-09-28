@@ -31,3 +31,9 @@ export const KHU_NHA_ARRIVE: Spot = { x: 68, y: 208, dir: "right" };
 
 /** At Chợ Lớn's east alley, by the "Khu nhà" sign (v19.2). */
 export const MARKET_EAST_ARRIVE: Spot = { x: 1206, y: 204, dir: "left" };   // the market is 1280 wide
+
+/** On Bãi đất trống, just south of the bridge from Chợ Lớn, facing into the lot (v20.3). */
+export const BAI_DAT_ARRIVE: Spot = { x: 400, y: 48, dir: "down" };
+
+/** At Chợ Lớn's south-east canal wall, on the bridge's head, facing the street (v20.3). */
+export const MARKET_BRIDGE_ARRIVE: Spot = { x: 1180, y: 356, dir: "up" };

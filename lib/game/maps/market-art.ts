@@ -1,4 +1,4 @@
-import { CLOTHES_FRONT, FURNITURE_FRONT, LANTERN_POSTS, MARKET_H, MARKET_W, MOTEL_FRONT, PET_SHOP_FRONT, RESTAURANT_FRONT, SALON_FRONT, SHOWROOM_DOOR, SHOWROOM_FRONT, STALLS } from "./market";
+import { BRIDGE_GAP, CLOTHES_FRONT, FURNITURE_FRONT, LANTERN_POSTS, MARKET_H, MARKET_W, MOTEL_FRONT, PET_SHOP_FRONT, RESTAURANT_FRONT, SALON_FRONT, SHOWROOM_DOOR, SHOWROOM_FRONT, STALLS } from "./market";
 import { drawPetTankBubbles, paintPetShopFront } from "@/lib/game/art/pet-shop";
 import { drawMotelNeon, paintMotelFront } from "@/lib/game/art/motel";
 import { paintFurnitureFront } from "@/lib/game/art/furniture-shop";
@@ -99,6 +99,11 @@ function paintGround(c: Ctx): void {
     rect(c, M.stoneLight, x, 384, 11, 3); rect(c, M.stoneDark, x, 387, 11, 4); rect(c, M.stoneDeep, x + 11, 384, 1, 8);
   }
   rect(c, C.outline, 0, 391, MARKET_W, 1);
+  // v20.3: the little plank bridge to Bãi đất trống, in the wall's gap (x 1160–1200)
+  rect(c, C.woodDark, BRIDGE_GAP.x, 383, BRIDGE_GAP.w, MARKET_H - 383);
+  for (let y = 384; y < MARKET_H; y += 4) rect(c, C.wood, BRIDGE_GAP.x + 3, y, BRIDGE_GAP.w - 6, 3);
+  rect(c, C.outline, BRIDGE_GAP.x + 2, 383, 1, MARKET_H - 383); rect(c, C.outline, BRIDGE_GAP.x + BRIDGE_GAP.w - 3, 383, 1, MARKET_H - 383);
+  for (const bx of [BRIDGE_GAP.x, BRIDGE_GAP.x + BRIDGE_GAP.w - 3]) { rect(c, C.outline, bx, 376, 3, 8); rect(c, C.woodLight, bx + 1, 377, 1, 6); }
   // a xuồng floating in the canal
   for (let by = 0; by < 5; by++) {
     const inset = Math.abs(2 - by) * 3;

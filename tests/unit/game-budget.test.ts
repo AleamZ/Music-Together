@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { budgetKind, CARD_LIMITS, createBudget, createReactionBudget, GAME_LIMITS } from "@/lib/game/net/budget";
+import { budgetKind, CARD_LIMITS, createBudget, createReactionBudget, FIGHT_LIMITS, GAME_LIMITS } from "@/lib/game/net/budget";
 import { isHereOn } from "@/lib/game/social";
 import type { PresenceEntry } from "@/lib/presence-modes";
 
@@ -37,9 +37,20 @@ describe("the game and reaction budgets (anti-cheat spec §14)", () => {
       move: { rate: 5, burst: 5 }, hello: { rate: 0.1, burst: 1 }, bye: { rate: 0.1, burst: 1 },
       fs: { rate: 3, burst: 5 }, fa: { rate: 3, burst: 5 },
       lift: { rate: 1, burst: 4 },                                          // v18.13 Đi nhờ xe
+      rg: { rate: 2, burst: 4 },                                            // v20.3 the ring hint
     });
-    expect((["st", "mv", "pa", "hello", "bye", "fs", "fa", "lk", "fp"] as const).map(budgetKind))
-      .toEqual(["move", "move", "move", "hello", "bye", "fs", "fa", null, null]);
+    expect((["st", "mv", "pa", "hello", "bye", "fs", "fa", "lk", "fp", "rg"] as const).map(budgetKind))
+      .toEqual(["move", "move", "move", "hello", "bye", "fs", "fa", null, null, "rg"]);
+  });
+
+  it("gives the fight topic its own budgets (v20.3 spec 'Client modules')", () => {
+    expect(FIGHT_LIMITS).toEqual({
+      fi: { rate: 15, burst: 20 }, fp: { rate: 2, burst: 6 }, fq: { rate: 2, burst: 6 }, fr: { rate: 1, burst: 3 },
+    });
+    const b = createBudget(FIGHT_LIMITS);
+    expect(Array.from({ length: 22 }, () => b.take("ann", "fi", 0)).filter(Boolean)).toHaveLength(20);
+    expect(b.take("ann", "fi", 1000)).toBe(true);
+    expect(Array.from({ length: 4 }, () => b.take("ann", "fr", 0)).filter(Boolean)).toHaveLength(3);
   });
 
   it("gives the card tables' hint its own budget: cv 5 a second per sender, burst 5 (v16 spec §12)", () => {

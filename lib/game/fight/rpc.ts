@@ -3,6 +3,7 @@
 
 import { supabase } from "@/lib/supabase";
 import type { MatchParams, State } from "./engine";
+import { parseRingState } from "./rings";
 
 const num = (v: unknown): number | null =>
   typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
@@ -148,22 +149,42 @@ export function parseKataResult(data: unknown): KataResult | null {
 }
 
 export interface MatchResult {
+  /** 1 or 2, 0 a draw (and 0 for a void). */
   winner: number;
   endReason: string;
   rounds: { reason: number; winner: number; hp1: number; hp2: number; frame: number }[];
   roundsPlayed: number;
   vitals: { hunger: number; thirst: number };
   exam: { passed: boolean; style: string; rank: number; belt: string | null; cooldownUntilMs: number | null } | null;
+  /** v20.3: a void (both absent) or a disputed match (a conflict): nobody won, the stakes came back. */
+  void?: boolean;
+  /** v20.3 a ring match's money: the stake, the pot, the burned fee, what the winner took, the records (by side). */
+  pvp?: { stake: number; pot: number; fee: number; won: number; records: Record<"1" | "2", { wins: number; losses: number; draws: number }> | null };
 }
 
 function parseResult(v: unknown): MatchResult | null {
   const r = obj(v);
   const w = num(r?.winner);
-  if (!r || w === null) return null;
+  if (!r || (w === null && r.void !== true)) return null;
   const vit = obj(r.vitals);
   const ex = obj(r.exam);
+  const pvp = obj(r.pvp);
+  const recs = obj(pvp?.records);
+  const rec = (k: string) => {
+    const o = obj(recs?.[k]);
+    return { wins: num(o?.wins) ?? 0, losses: num(o?.losses) ?? 0, draws: num(o?.draws) ?? 0 };
+  };
+  const extra: Pick<MatchResult, "void" | "pvp"> = {};
+  if (r.void === true) extra.void = true;
+  if (pvp) {
+    extra.pvp = {
+      stake: num(pvp.stake) ?? 0, pot: num(pvp.pot) ?? 0, fee: num(pvp.fee) ?? 0, won: num(pvp.won) ?? 0,
+      records: recs ? { "1": rec("1"), "2": rec("2") } : null,
+    };
+  }
   return {
-    winner: w, endReason: str(r.end_reason) ?? "",
+    ...extra,
+    winner: w ?? 0, endReason: str(r.end_reason) ?? "",
     rounds: (Array.isArray(r.rounds) ? r.rounds : []).map((x) => {
       const o = obj(x) ?? {};
       return { reason: num(o.reason) ?? 0, winner: num(o.winner) ?? 0, hp1: num(o.hp1) ?? 0, hp2: num(o.hp2) ?? 0, frame: num(o.frame) ?? 0 };
@@ -179,10 +200,15 @@ export interface PushAnswer {
   simFrame: number;
   /** My frontier (−1: none). */
   frontier: number | null;
+  /** v20.3: the frontier of my `seen` log (the opponent's inputs as I received them; −1 none). */
+  seenFrontier: number | null;
   result: MatchResult | null;
   resync: boolean;
   anticheat: AnticheatEnvelope | null;
   serverNowMs: number;
+  /** v20.3 fight_claim: whether the claim won, else how long to wait (ms). */
+  claimed?: boolean;
+  waitMs?: number | null;
 }
 
 export function parsePushAnswer(data: unknown): PushAnswer | null {
@@ -190,10 +216,16 @@ export function parsePushAnswer(data: unknown): PushAnswer | null {
   const now = num(r?.server_now_ms), side = num(r?.side) ?? 1;
   if (!r || now === null || typeof r.status !== "string") return null;
   const fr = Array.isArray(r.frontiers) ? num(r.frontiers[side - 1]) : null;
-  return {
-    status: r.status, simFrame: num(r.sim_frame) ?? 0, frontier: fr, result: parseResult(r.result), resync: r.resync === true,
+  const seen = Array.isArray(r.seen) ? num(r.seen[side - 1]) : null;
+  const out: PushAnswer = {
+    status: r.status, simFrame: num(r.sim_frame) ?? 0, frontier: fr, seenFrontier: seen, result: parseResult(r.result), resync: r.resync === true,
     anticheat: parseAc(r), serverNowMs: now,
   };
+  if (typeof r.claimed === "boolean") {
+    out.claimed = r.claimed;
+    out.waitMs = num(r.wait_ms);
+  }
+  return out;
 }
 
 export interface FightStateAnswer extends PushAnswer {
@@ -201,13 +233,18 @@ export interface FightStateAnswer extends PushAnswer {
   startedAtMs: number;
   runs: number[];
   sim: State;
+  /** v20.3 PvP: the opponent's canonical runs from frame 0 up to both frontiers (procedure R). */
+  oppRuns: number[];
 }
 
 export function parseFightState(data: unknown): FightStateAnswer | null {
   const p = parsePushAnswer(data);
   const r = obj(data);
   if (!p || !r) return null;
-  return { ...p, params: (obj(r.params) as unknown as MatchParams) ?? null, startedAtMs: num(r.started_at_ms) ?? 0, runs: ints(r.runs), sim: ints(r.sim) };
+  return {
+    ...p, params: (obj(r.params) as unknown as MatchParams) ?? null, startedAtMs: num(r.started_at_ms) ?? 0, runs: ints(r.runs), sim: ints(r.sim),
+    oppRuns: ints(r.opp_runs),
+  };
 }
 
 /** An RPC call with its round trip (for the server clock). */
@@ -230,6 +267,15 @@ export const fightPush = (token: string, match: string, from: number, runs: numb
   call("fight_push", {
     p_session_token: token, p_match: match, p_from: from, p_runs: runs, p_hash_frame: hashFrame, p_hash: hash,
   }, parsePushAnswer);
+/** v20.3 a ring match's push: my runs, what I saw of the opponent, my newest confirmed checkpoint, my stall frames. */
+export const fightPushPvp = (token: string, match: string, p: {
+  from: number; runs: number[]; seenFrom: number; seenRuns: number[]; hashFrame: number | null; hash: number | null; stall: number;
+}) =>
+  call("fight_push", {
+    p_session_token: token, p_match: match, p_from: p.from, p_runs: p.runs, p_seen_from: p.seenFrom, p_seen_runs: p.seenRuns,
+    p_hash_frame: p.hashFrame, p_hash: p.hash, p_stall: p.stall,
+  }, parsePushAnswer);
+export const fightClaim = (token: string, match: string) => call("fight_claim", { p_session_token: token, p_match: match }, parsePushAnswer);
 export const fightState = (token: string, match: string) => call("fight_state", { p_session_token: token, p_match: match }, parseFightState);
 export const fightForfeit = (token: string, match: string) => call("fight_forfeit", { p_session_token: token, p_match: match }, parsePushAnswer);
 
@@ -240,3 +286,82 @@ const parseWear = (d: unknown): WearAnswer | null => {
 };
 export const fightWearUniform = (token: string, style: string) => call("fight_wear_uniform", { p_session_token: token, p_style: style }, parseWear);
 export const fightUnwearUniform = (token: string) => call("fight_unwear_uniform", { p_session_token: token }, parseWear);
+
+// ---------- v20.3 the rings (0051_bai_dat.sql) ----------
+const ringCall = (fn: string, args: Record<string, unknown>) => call(fn, args, parseRingState);
+export const ringState = (roomId: string, token: string) => ringCall("ring_state", { p_room_id: roomId, p_session_token: token });
+export const ringTake = (roomId: string, token: string, ring: number, corner: "red" | "blue") =>
+  ringCall("ring_take", { p_room_id: roomId, p_session_token: token, p_ring: ring, p_corner: corner });
+export const ringLeave = (roomId: string, token: string, ring: number) =>
+  ringCall("ring_leave", { p_room_id: roomId, p_session_token: token, p_ring: ring });
+export const ringOffer = (roomId: string, token: string, ring: number, stake: number, n: number) =>
+  ringCall("ring_offer", { p_room_id: roomId, p_session_token: token, p_ring: ring, p_stake: stake, p_n: n });
+export const ringAccept = (roomId: string, token: string, ring: number, v: number, n: number) =>
+  ringCall("ring_accept", { p_room_id: roomId, p_session_token: token, p_ring: ring, p_v: v, p_n: n });
+
+export interface BoardRow { name: string; wins: number; losses: number; draws: number }
+export function parseBoard(data: unknown): BoardRow[] | null {
+  const r = obj(data);
+  if (!r || !Array.isArray(r.rows)) return null;
+  return r.rows.map((x) => {
+    const o = obj(x) ?? {};
+    return { name: str(o.name) ?? "?", wins: num(o.wins) ?? 0, losses: num(o.losses) ?? 0, draws: num(o.draws) ?? 0 };
+  });
+}
+export const ringBoard = (roomId: string, token: string) => call("ring_board", { p_room_id: roomId, p_session_token: token }, parseBoard);
+
+// ---------- v20.3 admin: "Xem lại trận" ----------
+export interface AdminFightRow {
+  id: string; status: string; endReason: string | null; winner: number | null; stake: number; ring: number | null;
+  p1: string; p2: string; createdAt: string; endedAt: string | null; resyncs: number; simFrame: number;
+}
+export interface AdminConflictRow { id: number; matchId: string; reporter: string; reported: string; fromFrame: number; toFrame: number; createdAt: string }
+export interface AdminFightList { matches: AdminFightRow[]; conflicts: AdminConflictRow[] }
+export function parseAdminFightList(data: unknown): AdminFightList | null {
+  const r = obj(data);
+  if (!r) return null;
+  return {
+    matches: (Array.isArray(r.matches) ? r.matches : []).map((x) => {
+      const o = obj(x) ?? {};
+      return {
+        id: str(o.id) ?? "", status: str(o.status) ?? "", endReason: str(o.end_reason), winner: num(o.winner), stake: num(o.stake) ?? 0,
+        ring: num(o.ring), p1: str(o.p1) ?? "?", p2: str(o.p2) ?? "?", createdAt: str(o.created_at) ?? "", endedAt: str(o.ended_at),
+        resyncs: num(o.resyncs) ?? 0, simFrame: num(o.sim_frame) ?? 0,
+      };
+    }),
+    conflicts: (Array.isArray(r.conflicts) ? r.conflicts : []).map((x) => {
+      const o = obj(x) ?? {};
+      return {
+        id: num(o.id) ?? 0, matchId: str(o.match_id) ?? "", reporter: str(o.reporter) ?? "?", reported: str(o.reported) ?? "?",
+        fromFrame: num(o.from_frame) ?? 0, toFrame: num(o.to_frame) ?? 0, createdAt: str(o.created_at) ?? "",
+      };
+    }),
+  };
+}
+export interface AdminFightLog {
+  id: string; status: string; params: MatchParams; p1: string; p2: string | null; simFrame: number; result: MatchResult | null;
+  logs: { side: number; runs: number[]; frontier: number; seenRuns: number[]; seenFrontier: number | null; stallFrames: number; badHashes: number }[];
+  conflicts: { reporter: string; reported: string; fromFrame: number; toFrame: number }[];
+}
+export function parseAdminFightLog(data: unknown): AdminFightLog | null {
+  const r = obj(data);
+  const id = str(r?.id), params = obj(r?.params);
+  if (!r || !id || !params) return null;
+  return {
+    id, status: str(r.status) ?? "", params: params as unknown as MatchParams, p1: str(r.p1) ?? "?", p2: str(r.p2),
+    simFrame: num(r.sim_frame) ?? 0, result: parseResult(r.result),
+    logs: (Array.isArray(r.logs) ? r.logs : []).map((x) => {
+      const o = obj(x) ?? {};
+      return {
+        side: num(o.side) ?? 1, runs: ints(o.runs), frontier: num(o.frontier) ?? -1, seenRuns: ints(o.seen_runs),
+        seenFrontier: num(o.seen_frontier), stallFrames: num(o.stall_frames) ?? 0, badHashes: num(o.bad_hashes) ?? 0,
+      };
+    }),
+    conflicts: (Array.isArray(r.conflicts) ? r.conflicts : []).map((x) => {
+      const o = obj(x) ?? {};
+      return { reporter: str(o.reporter) ?? "?", reported: str(o.reported) ?? "?", fromFrame: num(o.from_frame) ?? 0, toFrame: num(o.to_frame) ?? 0 };
+    }),
+  };
+}
+export const adminFightList = (token: string) => call("admin_fight_list", { p_session_token: token }, parseAdminFightList);
+export const adminFightLog = (token: string, match: string) => call("admin_fight_log", { p_session_token: token, p_match: match }, parseAdminFightLog);
