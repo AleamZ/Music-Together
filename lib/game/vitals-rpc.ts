@@ -45,6 +45,7 @@ export function vitalsErrorMessage(msg: string): string | null {
   if (msg.includes("too hungry")) return "Bạn đói lả rồi — ra Chợ Lớn ăn gì đi đã!";
   if (msg.includes("too thirsty")) return "Bạn khát khô cổ — ra Chợ Lớn uống nước đi đã!";
   if (msg.includes("fainted")) return "Bạn đang ngất, chờ hồi sinh…";
+  if (msg.includes("too tired")) return "Bạn mệt quá — nghỉ một chút (nằm võng hồi nhanh) cho lại thể lực nhé."; // v21 (0077)
   return null;
 }
 

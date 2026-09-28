@@ -36,6 +36,11 @@ export interface GameCanvasHandle {
   setInputEnabled: (enabled: boolean) => void;
   /** v18: scale my walk speed (hunger/thirst), clamped by the engine to [0.1, 1]. */
   setSpeedFactor: (f: number) => void;
+  /** v21 (0077): may I sprint (Shift, stamina left) and the food speed buff's factor; kept across worlds. */
+  setSprint: (ok: boolean, boost: number) => void;
+  /** v21 (0077): the sprint ms since the last call, and whether I lie in the hammock (the stamina heartbeat). */
+  takeSprintMs: () => number;
+  inHammock: () => boolean;
   /** v18.7: ride vehicle `v` (null = on foot): faster walking, and the others see it. Kept across worlds. */
   setRiding: (v: VehicleId | null) => void;
   /** v18.12: my following pet's `pt` code (null = none) and its walk-speed factor; the others see it. Kept across worlds. */
@@ -189,6 +194,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const speedRef = useRef(1);
   const ridingRef = useRef<VehicleId | null>(null);
   const liftRef = useRef<LocalLift | null>(null);                                   // v18.13
+  const sprintRef = useRef({ ok: false, boost: 1 });                                  // v21 (0077)
   const weatherRef = useRef<RoomWeather | null>(null);
   const weatherFxRef = useRef<WeatherFx>(3);
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
@@ -256,6 +262,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       setRiding: (v) => {
         ridingRef.current = v;
         engineRef.current?.setRiding(v);
+      setSprint: (ok, boost) => {                                                     // v21 (0077)
+        sprintRef.current = { ok, boost };
+        engineRef.current?.setSprint(ok, boost);
+      },
+      takeSprintMs: () => engineRef.current?.takeSprintMs() ?? 0,
+      inHammock: () => engineRef.current?.inHammock() ?? false,
       },
       setPet: (code, speed) => {
         petRef.current = { code, speed };
@@ -458,6 +470,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setNewsUnread(newsUnreadRef.current);
     engine.setRingLabels(ringLabelsRef.current);
     engine.setHidden(hiddenRef.current);
+    engine.setSprint(sprintRef.current.ok, sprintRef.current.boost);                    // v21 (0077)
     engine.setGatherSpots(gatherRef.current);
     engine.setLocal({ name: init.name, badges: init.badges, look: init.look, ...dogRef.current });
     if (zoomRef.current !== 1) engine.setZoom(zoomRef.current);

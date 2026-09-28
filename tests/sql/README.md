@@ -67,4 +67,5 @@ ledger reasons, shop kinds or function overloads predate later rows and migratio
 
 - `v21-fishing-smoke.sql` (0076: boat + deep water, fishing battles, treasure maps, farm machines): chain-level, re-runs 0076 with `\i`; run after the full chain.
 - `v21-pets-smoke.sql` (0074: pet gacha, care/levels/evolution, fighter training, PvE/PvP pet & fish battles, the aquarium, house knocks): chain-level, re-runs 0074 with `\i`; run after the full chain.
+- `v21-professions-smoke.sql` (0077: professions, skill trees, perks via the ledger, stamina, food buffs; needs 0072's `player_buffs` shape): chain-level, re-runs 0077 with `\i`; run after the full chain.
 - `v21-quests-smoke.sql` (0071: daily/weekly/NPC/explore quests from game_events, the company quest, the login calendar, the photo album, the 2v2 tag team series): chain-level, re-runs 0071 with `\i`; run after the full chain.

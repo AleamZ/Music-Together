@@ -21,6 +21,9 @@ begin
     insert into public.inventory (account_id, item_id, qty) values (a, 'bait_worm', 20)
     on conflict (account_id, item_id) do update set qty = 20;
     update public.vitals set hunger = 100, thirst = 100, last_tick = now() where account_id = a;
+    if to_regclass('public.player_stamina') is not null then                   -- v21 (0077): a cast costs stamina
+      execute 'delete from public.player_stamina where account_id = $1' using a;
+    end if;
     c := public.start_cast(room, t);
     assert c ? 'cast_id', format('cast %s: %s', i, c);
   end loop;

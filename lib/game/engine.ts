@@ -34,6 +34,7 @@ import { bobberPoint, SWING_MS } from "@/lib/game/fishing/geometry";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap, Interactable, Spot } from "@/lib/game/maps/types";
 import { inputDir, isBlockedAt, WALK_SPEED, type KeyState } from "@/lib/game/movement";
+import { SPRINT_SPEED } from "@/lib/game/professions/catalog";
 import { FARM_ANIM, facingToCode, MAX_PATH_POINTS, type FacingCode, type FarmAnim, type GameMessage, type Unit } from "@/lib/game/net/protocol";
 import { Pack, type DogWalker } from "@/lib/game/pack";
 import { unseenGraceMs } from "@/lib/game/net/replies";
@@ -522,7 +523,28 @@ export class GameEngine {
 
   /** My walk speed now (px/s): the vitals factor times the ride factor (none while swimming) times the swim factor. */
   localSpeed(): number {
-    return WALK_SPEED * this.speedFactor * rideSpeed(this.swimming ? null : this.ridingV) * swimSpeed(this.swimming) * this.petSpeedF;
+    return WALK_SPEED * this.speedFactor * rideSpeed(this.swimming ? null : this.ridingV) * swimSpeed(this.swimming) * this.petSpeedF
+      * this.boostF * (this.sprinting() ? SPRINT_SPEED : 1);                                        // v21 (0077)
+  }
+
+  // v21 (0077): sprinting (hold Shift on foot, while the stamina bar has some) and the food speed buff.
+  private sprintHeld = false;
+  private sprintOk = false;
+  private boostF = 1;
+  private sprintMs = 0;
+  private sprinting(): boolean {
+    return this.sprintHeld && this.sprintOk && this.ridingV === null && !this.swimming && this.local.moving;
+  }
+  /** May I sprint (stamina left), and the speed buff's factor (clamped to [1, 1.1]). */
+  setSprint(ok: boolean, boost: number): void {
+    this.sprintOk = ok;
+    this.boostF = Math.min(1.1, Math.max(1, boost));
+  }
+  /** The sprint milliseconds since the last call (the stamina heartbeat reports them). */
+  takeSprintMs(): number {
+    const ms = this.sprintMs;
+    this.sprintMs = 0;
+    return ms;
   }
 
   /** v18.12: my following pet's `pt` code (null: none) and its walk-speed factor; the others are told at once.
@@ -1001,6 +1023,7 @@ export class GameEngine {
         this.cb.onFishingInput?.("cancel");
       }
       return;
+    if (e.key === "Shift") this.sprintHeld = true;                                                // v21 (0077)
     }
     // v18.10: E next to a cramping member pulls them out (it wins over any prompt)
     if (e.code === "KeyE" && this.rescueTarget) {
@@ -1034,6 +1057,7 @@ export class GameEngine {
 
   private readonly onVisibilityChange = (): void => {
     if (document.visibilityState === "hidden") this.halt();
+    if (e.key === "Shift") this.sprintHeld = false;                                               // v21 (0077)
   };
 
   /** Focus left the page or the tab was hidden: stop keyboard walking and send the stop now — a hidden tab may not
@@ -1050,6 +1074,7 @@ export class GameEngine {
     if (this.rodOut) {
       this.cb.onFishingInput?.("tap");
       return;
+    this.sprintHeld = false;                                                                      // v21 (0077)
     }
     const r = this.canvas.getBoundingClientRect();
     const w: Vec = {
@@ -1228,6 +1253,7 @@ export class GameEngine {
     this.announceMove(now);
     // a map interactable in range always wins E; else, on the field, a rat within 40 px (v17 §12.1). The same rat keeps
     // its prompt object while it runs.
+    if (this.sprinting()) this.sprintMs += dt * 1000;                                             // v21 (0077)
     // v18.1: …else, on the pond, a cast from the bank or the platform edge I stand on (the same cell keeps its prompt)
     let near = this.rodOut || this.swimming || locked ? null : promptTarget(this.usable(), this.local.pos, this.pack.liveRats, serverNow());
     if (!near && !this.rodOut && !this.swimming && !locked && this.map.id === "pond") {

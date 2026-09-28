@@ -133,6 +133,9 @@ import { loadWeatherFx, saveWeatherFx } from "@/lib/game/weather/fx";
 import type { WeatherFx } from "@/lib/game/art/weather";
 import WeatherLocationDialog from "./WeatherLocationDialog";
 import ProfileModal from "./progression/ProfileModal";                        // v21 progression
+import StaminaHud from "./professions/StaminaHud";                                  // v21 (0077)
+import ProfessionModal from "./professions/ProfessionModal";                        // v21 (0077)
+import { useProfessions } from "@/hooks/useProfessions";                            // v21 (0077)
 import { useProgress } from "@/hooks/useProgress";
 import { mapMinLevel, mapUnlocked } from "@/lib/game/progression/model";
 import { titleText } from "@/lib/game/progression/rpc";
@@ -148,7 +151,7 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | QuestPanel | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | QuestPanel | "player_market" | "player_stalls" | "professions" | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
@@ -519,6 +522,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   if (starving !== wasStarving) {
     setWasStarving(starving);
     if (starving) setRiding(null);
+  const profs = useProfessions(token, canvasRef);                                     // v21 (0077): stamina, nghề
   }
 
   // mounting: refused while busy (fishing, farm work, a card seat, the road, a faint), with the car at the pond, or starving
@@ -874,6 +878,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             {/* row 3: the icon buttons (labels in the tooltips and for screen readers) */}
             <div className="flex flex-wrap items-center gap-1 [&_.pch-btn]:px-1.5 [&_.pch-btn]:py-0.5 [&_.pch-btn]:text-sm [&_.pch-btn]:leading-none">
               <button type="button" className="pch-btn relative tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng" data-testid="profile-hud"
+              <StaminaHud stamina={profs.stamina} value={profs.staminaValue} state={profs.state} nowMs={profs.nowMs}
+                onOpen={() => setPanel("professions")} />{/* v21 (0077) */}
                 onClick={() => { setPanel("profile"); void progress.reload(); }}>
                 ⭐{myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span>
               </button>
@@ -1148,6 +1154,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {panel === "apartment" && (
         <ApartmentModal
           token={token}
+      {panel === "professions" && token && (                                   // v21 (0077)
+        <ProfessionModal token={token} state={profs.state} nowMs={profs.nowMs} onState={profs.apply} onCoins={reloadCoins} onClose={close} />
+      )}
           roomId={room.id}
           state={apt.state}
           coins={fishing.data.state?.coins ?? null}
