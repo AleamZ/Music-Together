@@ -9,6 +9,7 @@ import type { QueueItem } from "@/lib/supabase";
 const rpc = vi.hoisted(() => ({
   fetchFishingState: vi.fn(), fetchFishingCatalog: vi.fn(), claimDaily: vi.fn(), digWorms: vi.fn(), buyItem: vi.fn(),
   setLoadout: vi.fn(), sellFish: vi.fn(), releaseFish: vi.fn(), startCast: vi.fn(), finishCast: vi.fn(),
+  startNet: vi.fn(), netHaul: vi.fn(), finishNet: vi.fn(),
 }));
 vi.mock("@/lib/game/fishing/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/game/fishing/rpc")>()),
@@ -263,5 +264,75 @@ describe("useFishingController", () => {
     expect(toasts).toEqual(["Hộp mồi đầy rồi."]);
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     expect(rpc.digWorms).not.toHaveBeenCalled();
+  });
+
+  it("0056: the net opens with start_net at once, hauls and pulls with the inputs, and a strike shows no toast", async () => {
+    const netState = state({ owned: ["net_big"], wear: { net_big: [29, 30] } });
+    rpc.fetchFishingState.mockResolvedValue(netState);
+    rpc.claimDaily.mockResolvedValue({ claimed: false, amount: 0, state: netState });
+    rpc.fetchFishingCatalog.mockResolvedValue({
+      ...CATALOG,
+      items: [{ id: "net_big", kind: "net", name: "Lưới lớn", price: 600, starter: false, sortOrder: 20, zonePct: null, weightK: null,
+        rareMult: 1, windowMs: null, biteMinMs: null, biteMaxMs: null, showsRarity: false, multHiem: 1, multQuy: 1, multLegend: 1,
+        capacity: null, durability: 30, radiusPx: 36 }],
+    });
+    const netSpies = { ...spies, setNet: vi.fn(), localPos: vi.fn(() => ({ x: 300, y: 200 })) };
+    const toasts: string[] = [];
+    const { result } = renderHook(() => useFishingController({
+      token: "tok", roomId: "r", accountId: "me", canvas: () => netSpies as unknown as GameCanvasHandle, current: null,
+      toast: (t) => toasts.push(t),
+    }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.netReady).toBe("net_big");
+    rpc.startNet.mockResolvedValue({ throwId: "th1", seed: 42, radiusPx: 36, state: netState });
+    await act(async () => { result.current.throwNet({ col: 31, row: 25 }); await flush(); });
+    expect(rpc.startNet).toHaveBeenCalledWith("r", "tok", { col: 31, row: 25 }, "net_big");
+    expect(result.current.net).toMatchObject({ throwId: "th1", seed: 42, busy: false });
+    expect(result.current.net?.openedAt).not.toBeNull();
+    const fish = [{ id: "", speciesId: "ca_ro", weightG: 120, price: 5, rarity: 1 }];
+    rpc.netHaul.mockResolvedValue({ result: "haul", fish, arrowSeed: 7, state: netState });
+    const input = { press: 10, release: 46, aimX: 80_000, aimY: 40_000, hits: 1 };
+    await act(async () => { result.current.netHaul(input); await flush(); });
+    expect(rpc.netHaul).toHaveBeenCalledWith("tok", "th1", input);
+    expect(result.current.net).toMatchObject({ haul: fish, arrowSeed: 7 });
+    const info: AnticheatInfo = { code: "net_mismatch", strike: 1, error: null, lockedUntil: null, banned: false, serverNow: null };
+    rpc.finishNet.mockResolvedValue({ result: "lost", why: "net_invalid", state: netState, anticheat: info });
+    const pull = { keys: [80, 121], ticks: 30, mistakes: 0 };
+    await act(async () => { result.current.netFinish(pull); await flush(); });
+    expect(rpc.finishNet).toHaveBeenCalledWith("tok", "th1", pull);
+    expect(result.current.net?.result).toEqual({ lost: "net_invalid" });
+    expect(toasts).toEqual([]);                                             // the strike's modal shows instead
+  });
+
+  it("0056: a lost throw says why; closing before the haul spends nothing", async () => {
+    const netState = state({ owned: ["net_big"], wear: { net_big: [29, 30] } });
+    rpc.fetchFishingState.mockResolvedValue(netState);
+    rpc.claimDaily.mockResolvedValue({ claimed: false, amount: 0, state: netState });
+    rpc.fetchFishingCatalog.mockResolvedValue({
+      ...CATALOG,
+      items: [{ id: "net_big", kind: "net", name: "Lưới lớn", price: 600, starter: false, sortOrder: 20, zonePct: null, weightK: null,
+        rareMult: 1, windowMs: null, biteMinMs: null, biteMaxMs: null, showsRarity: false, multHiem: 1, multQuy: 1, multLegend: 1,
+        capacity: null, durability: 30, radiusPx: 36 }],
+    });
+    const netSpies = { ...spies, setNet: vi.fn(), localPos: vi.fn(() => ({ x: 300, y: 200 })) };
+    const toasts: string[] = [];
+    const { result } = renderHook(() => useFishingController({
+      token: "tok", roomId: "r", accountId: "me", canvas: () => netSpies as unknown as GameCanvasHandle, current: null,
+      toast: (t) => toasts.push(t),
+    }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rpc.startNet.mockResolvedValue({ throwId: "th1", seed: 42, radiusPx: 36, state: netState });
+    await act(async () => { result.current.throwNet({ col: 31, row: 25 }); await flush(); });
+    rpc.netHaul.mockResolvedValue({ result: "lost", why: "outdated", state: netState, anticheat: null });
+    await act(async () => { result.current.netHaul({ press: 0, release: 10, aimX: 80_000, aimY: 40_000, hits: 0 }); await flush(); });
+    expect(toasts).toEqual(["Cập nhật trang để quăng lưới tiếp."]);
+    act(() => { result.current.netClose(); });
+    expect(result.current.net).toBeNull();
+    await act(async () => { result.current.throwNet({ col: 31, row: 25 }); await flush(); });
+    act(() => { result.current.netClose(); });
+    expect(result.current.net).toBeNull();
+    act(() => { result.current.netLapse(); });
+    expect(toasts.at(-1)).toBe("Lưới trôi mất rồi.");
+    expect(rpc.netHaul).toHaveBeenCalledTimes(1);
   });
 });

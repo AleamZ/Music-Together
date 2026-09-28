@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { drawArrowRow, drawNetBundle, drawNetScene, type NetPhase } from "@/lib/game/art/net";
 import { formatWeight } from "@/lib/game/fishing/catalog";
+import { netLostText } from "@/lib/game/fishing/messages";
 import {
-  ARROW_GLYPH, ARROWS, arrowForKey, arrowPlan, arrowSequence, chargeQuality, clampAim, createRound, insideNet, landingPoint,
-  makeSchool, MAX_MISTAKES, NET, netRadius, offsetsFor, pressArrow, ringSize, roundGrade, roundMistakes, SCENE, shadowsAt,
-  type Arrow, type ArrowPlan, type ArrowRound, type Pt, type Shadow,
+  ARROW_GLYPH, ARROWS, arrowAdvance, arrowForKey, arrowGame, arrowPress, clampAimInt, MAX_MISTAKES, NETX, netArrowPlan,
+  netHaulReplay, netQuality, netRadiusMilli, netSchool, netShadowsAt, roundGrade, SCENE, TickClock,
+  type Arrow, type ArrowGame, type NetHaulReplay, type NetSchool, type NetShadow, type Pt,
 } from "@/lib/game/fishing/net";
 import { isTyping } from "@/lib/game/keys";
 import type { NetInput } from "@/lib/game/fishing/netcast";
+import type { NetPull, NetThrow } from "@/lib/game/fishing/rpc";
 import type { NetView } from "@/hooks/useFishingController";
 
 /** The net rising to the hands after kéo lưới. */
@@ -30,32 +32,33 @@ export const NET_PANEL =
 /** The pond scene: compact in the phone sheet (at most 24vh high, 16:10), full panel width beside the world. */
 export const NET_CANVAS = "mx-auto w-full touch-none rounded-sm border-2 border-ink max-sm:max-w-[38.4vh]";
 
-type Step = NetPhase | "wait" | "result";
+type Step = "load" | NetPhase | "wait" | "result";
 type Grade = "perfect" | "good" | "miss";
+
+/** Scene px from the replay's milli-px. */
+const px = (s: NetShadow) => ({ x: s.x / 1000, y: s.y / 1000, dir: s.dir, size: s.size });
 
 interface Machine {
   step: Step;
   aim: Pt;
-  holdAt: number;
-  chargeMs: number;
-  q: number;
-  landing: Pt;
-  r: number;
-  thrownAt: number;
-  sinkAt: number;
-  pullAt: number;
-  caught: boolean[];
-  /** Where the caught shadows were when the net closed over them. */
-  frozen: Shadow[];
   keys: Set<string>;
-  plan: ArrowPlan;
-  roundNo: number;
-  round: ArrowRound;
-  roundAt: number;
-  /** Mistakes of the finished rounds. */
-  mistakes: number;
-  seed: number;
+  /** The school's clock (tick 0 = the start_net answer) and the school; null until the answer. */
+  clock: TickClock | null;
+  school: NetSchool | null;
+  press: number;
+  release: number;
+  /** The throw as the server will replay it (at the release). */
+  throw: NetHaulReplay | null;
+  aimI: Pt;
+  /** Where the shadows were when the net closed over them (scene px). */
+  frozen: ReturnType<typeof px>[];
   hauled: boolean;
+  pullAt: number;
+  /** Kéo lưới: its clock (tick 0 = the haul answer), the game and the keys it took. */
+  aclock: TickClock | null;
+  game: ArrowGame | null;
+  sent: number[];
+  finished: boolean;
   grade: { grade: Grade; at: number } | null;
   shakeAt: number;
 }
@@ -74,6 +77,7 @@ interface ArrowsView {
 }
 
 const TEXT: Record<Step, string> = {
+  load: "Đang chuẩn bị lưới…",
   aim: "Di chuột chọn chỗ – giữ chuột/Space để lấy đà",
   charge: "Thả ra khi thanh lực vào vùng xanh!",
   flight: "Lưới bay…",
@@ -86,139 +90,139 @@ const TEXT: Record<Step, string> = {
 const GRADE_TEXT: Record<Grade, string> = { perfect: "Perfect!", good: "Good", miss: "Miss" };
 
 /**
- * v18.2 Quăng lưới (spec §18.2, the owner's redesign): fish shadows swim in front of me; a ring follows the mouse (or
- * the arrow keys) within the throw's range; holding fills a power bar whose top is green; the release throws the net in
- * an arc and it opens into a circle (short and small without the green); it sinks 1.5 s and the shadows under it are
- * caught (net_haul); then kéo lưới: rounds of arrow sequences typed with the arrow keys / WASD / the on-screen buttons
- * before each round's timer runs out (more, heavier, rarer fish: more rounds, longer, faster). Each wrong key and each
- * timed-out round is a mistake: one fish escapes per mistake, the 4th pulls me into the pond. Esc gives up before the
- * throw.
+ * v18.2 Quăng lưới (spec §18.2, the owner's redesign; server-replayed since 0056): fish shadows swim in front of me —
+ * where, from the server's seed; a ring follows the mouse (or the arrow keys) within the throw's range; holding fills a
+ * power bar whose top is green; the release throws the net in an arc and it opens into a circle (short and small without
+ * the green); it sinks 1.5 s and the shadows under it are caught (net_haul sends the press and release ticks with the
+ * aim); then kéo lưới: rounds of arrow sequences — from the server's second seed — typed with the arrow keys / WASD /
+ * the on-screen buttons before each round's timer runs out (finish_net sends every key with its tick). Each wrong key
+ * and each timed-out round is a mistake: one fish escapes per mistake, the 4th pulls me into the pond. Everything runs on
+ * 60 Hz ticks, never ahead of real time. Esc gives up before the throw (nothing is spent).
  */
-export default function NetOverlay({ view, speciesName, onThrow, onHaul, onFinish, onClose, onPhase }: {
+export default function NetOverlay({ view, speciesName, onHaul, onFinish, onClose, onExpire, onPhase }: {
   view: NetView;
   speciesName: (id: string) => string;
-  onThrow: (chargeMs: number) => void;
-  onHaul: (chargeMs: number, offsets: number[]) => void;
-  onFinish: (mistakes: number) => void;
+  onHaul: (input: NetThrow) => void;
+  onFinish: (pull: NetPull) => void;
   onClose: () => void;
+  /** The aim ran past NETX.aimTicks: the throw lapses (nothing spent). */
+  onExpire?: () => void;
   /** v18.2: each phase, for the others to see (the throw carries where the net lands). */
   onPhase?: (inp: NetInput) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rowRef = useRef<HTMLCanvasElement>(null);
-  const [step, setStep] = useState<Step>("aim");
+  const [step, setStep] = useState<Step>("load");
   const [arrows, setArrows] = useState<ArrowsView | null>(null);
+  const [released, setReleased] = useState(false);
   const m = useRef<Machine>({
-    step: "aim", aim: { x: SCENE.hands.x, y: 40 }, holdAt: 0, chargeMs: 0, q: 0, landing: { x: 0, y: 0 }, r: 0,
-    thrownAt: 0, sinkAt: 0, pullAt: 0, caught: [], frozen: [], keys: new Set(), plan: { rounds: 0, keys: 0, timerMs: 1 },
-    roundNo: 0, round: createRound([]), roundAt: 0, mistakes: 0, seed: 0, hauled: false, grade: null, shakeAt: 0,
+    step: "load", aim: { x: SCENE.hands.x, y: 40 }, keys: new Set(), clock: null, school: null, press: 0, release: 0,
+    throw: null, aimI: { x: 0, y: 0 }, frozen: [], hauled: false, pullAt: 0, aclock: null, game: null, sent: [],
+    finished: false, grade: null, shakeAt: 0,
   });
-  const props = useRef({ view, onThrow, onHaul, onFinish, onClose, onPhase });
+  const props = useRef({ view, onHaul, onFinish, onClose, onExpire, onPhase });
   useEffect(() => {
-    props.current = { view, onThrow, onHaul, onFinish, onClose, onPhase };
+    props.current = { view, onHaul, onFinish, onClose, onExpire, onPhase };
   });
   const actions = useRef<{ press: () => void; release: () => void; aimAt: (p: Pt) => void; arrow: (a: Arrow) => void } | null>(null);
 
-  // the server's answers move the game on: the haul starts kéo lưới, a result shows the card
+  // the server's answers move the game on: start_net's seed starts the aim, the haul starts kéo lưới, a result the card
+  const { throwId, seed, openedAt, haulAt, arrowSeed } = view;
   const haulN = view.haul?.length ?? null;
   const hasResult = view.result !== null;
   useEffect(() => {
     const M = m.current;
     let next: Step | null = null;
     if (hasResult) next = "result";
-    else if (haulN !== null && (M.step === "sink" || M.step === "wait")) {
-      M.plan = arrowPlan((props.current.view.haul ?? []).map((f) => ({ weightG: f.weightG, rarity: f.rarity })));
-      M.seed = crypto.getRandomValues(new Uint32Array(1))[0] | 0;
-      M.roundNo = 0;
-      M.round = createRound(arrowSequence(M.seed, M.plan.keys));
-      M.roundAt = performance.now();
-      M.mistakes = 0;
+    else if (haulN !== null && haulAt !== null && (M.step === "sink" || M.step === "wait")) {
+      const plan = netArrowPlan((props.current.view.haul ?? []).map((f) => ({ weightG: f.weightG, rarity: f.rarity })));
+      M.aclock = new TickClock(haulAt);
+      M.game = arrowGame(arrowSeed, plan);
+      M.sent = [];
       next = "arrows";
       props.current.onPhase?.({ show: "pull" });
+    } else if (throwId && openedAt !== null && M.step === "load") {
+      M.clock = new TickClock(openedAt);
+      M.school = netSchool(seed);
+      next = "aim";
     }
     if (!next) return;
     M.step = next;
     const t = setTimeout(() => setStep(next), 0);
     return () => clearTimeout(t);
-  }, [hasResult, haulN]);
+  }, [hasResult, haulN, haulAt, arrowSeed, throwId, openedAt, seed]);
 
   useEffect(() => {
     const M = m.current;
-    const school = makeSchool(crypto.getRandomValues(new Uint32Array(1))[0]);
     const go = (s: Step) => {
       M.step = s;
       setStep(s);
     };
     const press = () => {
-      if (M.step !== "aim") return;
-      M.holdAt = performance.now();
+      if (M.step !== "aim" || !M.clock) return;
+      M.press = M.clock.advance(performance.now());
       go("charge");
       props.current.onPhase?.({ show: "charge" });
     };
     const release = () => {
-      if (M.step !== "charge") return;
-      const now = performance.now();
-      M.chargeMs = now - M.holdAt;
-      M.q = chargeQuality(M.chargeMs);
-      M.landing = landingPoint(M.aim, M.q);
-      M.r = netRadius(props.current.view.radiusPx, M.q);
-      M.thrownAt = now;
+      if (M.step !== "charge" || !M.clock || !M.school) return;
+      M.release = M.clock.advance(performance.now());
+      M.aimI = clampAimInt(M.aim);
+      M.throw = netHaulReplay(props.current.view.seed, props.current.view.radiusPx,
+        { press: M.press, release: M.release, aimX: M.aimI.x, aimY: M.aimI.y });
       go("flight");
-      props.current.onPhase?.({ show: "throw", scene: M.landing, sceneR: M.r });
-      props.current.onThrow(M.chargeMs);
+      setReleased(true);
+      props.current.onPhase?.({ show: "throw", scene: { x: M.throw.landX / 1000, y: M.throw.landY / 1000 }, sceneR: M.throw.r / 1000 });
     };
     const aimAt = (p: Pt) => {
-      if (M.step === "aim" || M.step === "charge") M.aim = clampAim(p);
+      if (M.step !== "aim" && M.step !== "charge") return;
+      const a = clampAimInt(p);                                                       // on the water, within range
+      M.aim = { x: a.x / 1000, y: a.y / 1000 };
     };
 
     // --- kéo lưới
-    const publish = (now: number) => {
-      const r = M.round;
+    const publish = (tick: number, now: number) => {
+      const g = M.game;
+      if (!g) return;
       setArrows({
-        seq: r.seq, at: r.at, round: Math.min(M.roundNo + 1, M.plan.rounds), rounds: M.plan.rounds,
-        left: Math.max(0, 1 - (now - M.roundAt) / M.plan.timerMs),
-        mistakes: Math.min(MAX_MISTAKES + 1, M.mistakes + (r.done ? 0 : r.wrongs)), shake: now - M.shakeAt < 250,
+        seq: g.seq, at: g.at, round: Math.min(g.round + 1, g.plan.rounds), rounds: g.plan.rounds,
+        left: g.done ? 0 : Math.max(0, 1 - (tick - g.start) / g.plan.timer),
+        mistakes: Math.min(MAX_MISTAKES + 1, g.mistakes + (g.done ? 0 : g.wrongs)), shake: now - M.shakeAt < 250,
         grade: M.grade && now - M.grade.at < 900 ? M.grade.grade : null,
       });
     };
     const end = (now: number) => {
-      const mistakes = Math.min(MAX_MISTAKES + 1, M.mistakes);
+      const g = M.game;
+      if (!g || M.finished) return;
+      M.finished = true;
+      const mistakes = Math.min(MAX_MISTAKES + 1, g.mistakes);
       if (mistakes <= MAX_MISTAKES) {
         M.pullAt = now;
         go("pull");
       } else go("wait");
-      props.current.onFinish(mistakes);
+      props.current.onFinish({ keys: M.sent.slice(), ticks: g.end, mistakes });
     };
-    const nextRound = (now: number, grade: Grade) => {
-      M.mistakes += roundMistakes(M.round);
-      M.roundNo++;
-      M.grade = { grade, at: now };
-      if (M.mistakes > MAX_MISTAKES || M.roundNo >= M.plan.rounds) {
-        publish(now);
-        end(now);
-        return;
+    /** The game moved from `before` to `after`: flash a finished round's grade, and end it once done. */
+    const moved = (before: ArrowGame, after: ArrowGame, tick: number, now: number) => {
+      if (after.round > before.round || (after.done && !before.done)) {
+        const clean = after.mistakes === before.mistakes && after.round > before.round && after.wrongs === 0;
+        M.grade = { grade: roundGrade(clean, tick - before.start, before.plan.timer), at: now };
       }
-      M.round = createRound(arrowSequence(M.seed + M.roundNo * 7919, M.plan.keys));
-      M.roundAt = now;
-      publish(now);
+      M.game = after;
+      publish(tick, now);
+      if (after.done) end(now);
     };
     const arrow = (a: Arrow) => {
-      if (M.step !== "arrows") return;
+      if (M.step !== "arrows" || !M.game || !M.aclock) return;
       const now = performance.now();
-      const before = M.round.wrongs;
-      M.round = pressArrow(M.round, a);
-      if (M.round.wrongs > before) {
-        M.shakeAt = now;
-        if (M.mistakes + M.round.wrongs > MAX_MISTAKES) {                                 // the 4th: kéo hụt
-          M.mistakes += M.round.wrongs;
-          M.grade = { grade: "miss", at: now };
-          publish(now);
-          end(now);
-          return;
-        }
-      }
-      if (M.round.done) nextRound(now, roundGrade(M.round, now - M.roundAt, M.plan.timerMs));
-      else publish(now);
+      const tick = M.aclock.advance(now);
+      const due = arrowAdvance(M.game, tick);                                         // time-outs up to this key first
+      if (due !== M.game) moved(M.game, due, tick, now);
+      if (due.done) return;
+      M.sent.push(tick * 4 + ARROWS.indexOf(a));
+      const after = arrowPress(due, tick, a);
+      if (after.wrongs > due.wrongs) M.shakeAt = now;                                     // a wrong key (the 4th ends it)
+      moved(due, after, tick, now);
     };
     actions.current = { press, release, aimAt, arrow };
 
@@ -230,47 +234,55 @@ export default function NetOverlay({ view, speciesName, onThrow, onHaul, onFinis
           y: M.aim.y + (k.has("ArrowDown") ? AIM_STEP : 0) - (k.has("ArrowUp") ? AIM_STEP : 0),
         });
       }
-      if (M.step === "flight" && now - M.thrownAt >= NET.flightMs) {
-        M.sinkAt = now;
-        const all = shadowsAt(school, now);
-        M.caught = all.map((s) => insideNet(s, M.landing, M.r));
-        M.frozen = all;
+      const tick = M.clock ? M.clock.advance(now) : 0;
+      const v = props.current.view;
+      if (M.step === "aim" && tick >= NETX.aimTicks) {
+        M.step = "result";                                                               // lapsed: nothing was spent
+        props.current.onExpire?.();
+      }
+      if (M.step === "charge" && tick >= NETX.maxRelease) release();
+      const T = M.throw;
+      if (M.step === "flight" && T && tick >= T.landTick && M.school) {
+        M.frozen = netShadowsAt(M.school, T.landTick).map(px);
         go("sink");
         props.current.onPhase?.({ show: "sunk" });
       }
-      // the net has sunk (and the server's pace allows it): haul it — once
-      const v = props.current.view;
-      if (M.step === "sink" && now - M.sinkAt >= NET.sinkMs) go("wait");
-      if (M.step === "wait" && !M.hauled && v.throwId && v.readyAt !== null && now >= v.readyAt && !v.busy) {
+      // the net has sunk: haul it — once, with the throw's input
+      if (M.step === "sink" && T && tick >= T.landTick + NETX.sinkTicks) go("wait");
+      if (M.step === "wait" && T && !M.hauled && v.throwId && !v.busy) {
         M.hauled = true;
-        props.current.onHaul(M.chargeMs, offsetsFor(M.caught));
+        props.current.onHaul({ press: M.press, release: M.release, aimX: M.aimI.x, aimY: M.aimI.y, hits: T.hits });
       }
-      if (M.step === "arrows") {
-        if (now - M.roundAt >= M.plan.timerMs) nextRound(now, "miss");                   // out of time: 1 mistake
-        else publish(now);
+      if (M.step === "arrows" && M.game && M.aclock) {
+        const at = M.aclock.advance(now);
+        const due = arrowAdvance(M.game, at);
+        if (due !== M.game) moved(M.game, due, at, now);
+        else publish(at, now);
       }
 
-      const live = shadowsAt(school, now);
-      const shadows = M.step === "aim" || M.step === "charge" || M.step === "flight"
-        ? live : live.map((s, i) => (M.caught[i] ? M.frozen[i] : s));
-      const power = M.step === "charge" ? ringSize(now - M.holdAt) : M.q;
+      const school = M.school;
+      const live = school ? netShadowsAt(school, tick).map(px) : [];
+      const caught = T && M.step !== "aim" && M.step !== "charge" && M.step !== "flight" ? T.caught : [];
+      const shadows = caught.length ? live.map((s, i) => (caught[i] ? M.frozen[i] ?? s : s)) : live;
+      const power = M.step === "charge" && school ? netQuality(tick - M.press, school.period) / 1000 : (T?.quality ?? 0) / 1000;
       const c = canvasRef.current?.getContext("2d");
       if (c && M.step !== "result") {
-        const phase: NetPhase = M.step === "wait" ? (M.plan.rounds > 0 ? "arrows" : "sink") : M.step;
+        const phase: NetPhase = M.step === "load" ? "aim" : M.step === "wait" ? (M.game ? "arrows" : "sink") : M.step;
         c.clearRect(0, 0, SCENE.w, SCENE.h);
         drawNetScene(c, {
           phase, t: now, shadows, aim: M.aim, power,
-          r: M.step === "aim" || M.step === "charge" ? netRadius(v.radiusPx, M.step === "charge" ? power : 1) : M.r,
-          landing: M.landing,
-          k: M.step === "flight" ? (now - M.thrownAt) / NET.flightMs : M.step === "pull" ? (now - M.pullAt) / PULL_MS : 1,
-          caught: M.caught, sweet: NET.sweet, w: SCENE.w, h: SCENE.h, shore: SCENE.shore, hands: SCENE.hands,
+          r: M.step === "aim" || M.step === "charge" || M.step === "load"
+            ? netRadiusMilli(v.radiusPx, M.step === "charge" ? Math.round(power * 1000) : 1000) / 1000 : (T?.r ?? 0) / 1000,
+          landing: T ? { x: T.landX / 1000, y: T.landY / 1000 } : { x: 0, y: 0 },
+          k: M.step === "flight" && T ? Math.min(1, (tick - M.release) / NETX.flightTicks) : M.step === "pull" ? (now - M.pullAt) / PULL_MS : 1,
+          caught, sweet: NETX.sweet / 1000, w: SCENE.w, h: SCENE.h, shore: SCENE.shore, hands: SCENE.hands,
           squash: SCENE.squash,
         });
       }
       const row = rowRef.current?.getContext("2d");
-      if (row && M.step === "arrows") {
+      if (row && M.step === "arrows" && M.game) {
         row.clearRect(0, 0, ROW_W, ROW_H);
-        drawArrowRow(row, Math.floor((ROW_W - M.round.seq.length * 13 + 2) / 2), 0, M.round.seq, M.round.at, now - M.shakeAt < 250);
+        drawArrowRow(row, Math.floor((ROW_W - M.game.seq.length * 13 + 2) / 2), 0, M.game.seq, M.game.at, now - M.shakeAt < 250);
       }
       raf = requestAnimationFrame(loop);
     });
@@ -278,7 +290,7 @@ export default function NetOverlay({ view, speciesName, onThrow, onHaul, onFinis
     const down = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
       if (e.code === "Escape") {
-        if (M.step === "aim" || M.step === "charge" || M.step === "result") {
+        if (M.step === "load" || M.step === "aim" || M.step === "charge" || M.step === "result") {
           e.preventDefault();
           props.current.onClose();
         }
@@ -335,7 +347,7 @@ export default function NetOverlay({ view, speciesName, onThrow, onHaul, onFinis
       <div className={NET_PANEL}>
         <div className="flex items-baseline justify-between gap-2 text-lg">
           <span>🕸️ {view.name}</span>
-          <span className="opacity-80">còn {Math.max(0, view.left - (view.throwId ? 1 : 0))}/{view.max} lần quăng</span>
+          <span className="opacity-80">còn {Math.max(0, view.left - (released ? 1 : 0))}/{view.max} lần quăng</span>
         </div>
         {step !== "result" ? (
           <canvas
@@ -392,7 +404,7 @@ export default function NetOverlay({ view, speciesName, onThrow, onHaul, onFinis
           {step === "charge" ? " (vùng xanh = lưới bung đủ, rơi đúng chỗ)" : ""}
         </p>
         <div className="flex justify-end gap-2 text-lg">
-          {(step === "aim" || step === "charge" || step === "result") && (
+          {(step === "load" || step === "aim" || step === "charge" || step === "result") && (
             <button type="button" className="pch-btn" onClick={onClose}>{step === "result" ? "Đóng" : "Thôi (Esc)"}</button>
           )}
         </div>
@@ -403,7 +415,7 @@ export default function NetOverlay({ view, speciesName, onThrow, onHaul, onFinis
 
 function resultLine(result: NetView["result"]): string {
   if (!result) return "";
-  if ("lost" in result) return result.lost === "expired" ? "Lưới trôi mất rồi." : "Kéo vội quá, cá thoát hết rồi.";
+  if ("lost" in result) return netLostText(result.lost);
   const escaped = result.escaped > 0 ? ` (sót ${result.escaped} con)` : "";
   return result.count > 0 ? `Kéo lưới được ${result.count} con cá!${escaped}` : `Lưới rỗng — không còn con nào.${escaped}`;
 }

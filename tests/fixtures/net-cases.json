@@ -1,0 +1,1838 @@
+[
+ {
+  "kind": "haul",
+  "name": "full-0",
+  "seed": 1,
+  "radiusPx": 36,
+  "input": {
+   "press": 21,
+   "release": 60,
+   "aimX": 121798,
+   "aimY": 32420
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 102,
+   "caught": [
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "hits": 5,
+   "count": 5
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "full-1",
+  "seed": 4,
+  "radiusPx": 36,
+  "input": {
+   "press": 952,
+   "release": 990,
+   "aimX": 88701,
+   "aimY": 29196
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 1032,
+   "caught": [
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "hits": 5,
+   "count": 5
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "full-2",
+  "seed": 5,
+  "radiusPx": 36,
+  "input": {
+   "press": 2331,
+   "release": 2370,
+   "aimX": 48383,
+   "aimY": 53749
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 2412,
+   "caught": [
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "hits": 5,
+   "count": 5
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "full-0-small-net",
+  "seed": 1,
+  "radiusPx": 24,
+  "input": {
+   "press": 21,
+   "release": 60,
+   "aimX": 121798,
+   "aimY": 32420
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 102,
+   "caught": [
+    false,
+    false,
+    true,
+    true,
+    true
+   ],
+   "hits": 3,
+   "count": 3
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "full-0-weak",
+  "seed": 1,
+  "radiusPx": 36,
+  "input": {
+   "press": 51,
+   "release": 60,
+   "aimX": 121798,
+   "aimY": 32420
+  },
+  "expected": {
+   "quality": 408,
+   "landTick": 102,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "full-1-small-net",
+  "seed": 4,
+  "radiusPx": 24,
+  "input": {
+   "press": 952,
+   "release": 990,
+   "aimX": 88701,
+   "aimY": 29196
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 1032,
+   "caught": [
+    true,
+    true,
+    false,
+    false,
+    false
+   ],
+   "hits": 2,
+   "count": 2
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "full-1-weak",
+  "seed": 4,
+  "radiusPx": 36,
+  "input": {
+   "press": 981,
+   "release": 990,
+   "aimX": 88701,
+   "aimY": 29196
+  },
+  "expected": {
+   "quality": 417,
+   "landTick": 1032,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "full-2-small-net",
+  "seed": 5,
+  "radiusPx": 24,
+  "input": {
+   "press": 2331,
+   "release": 2370,
+   "aimX": 48383,
+   "aimY": 53749
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 2412,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    true
+   ],
+   "hits": 1,
+   "count": 1
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "full-2-weak",
+  "seed": 5,
+  "radiusPx": 36,
+  "input": {
+   "press": 2361,
+   "release": 2370,
+   "aimX": 48383,
+   "aimY": 53749
+  },
+  "expected": {
+   "quality": 408,
+   "landTick": 2412,
+   "caught": [
+    false,
+    false,
+    false,
+    true,
+    false
+   ],
+   "hits": 1,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-0",
+  "seed": 2020905693,
+  "radiusPx": 24,
+  "input": {
+   "press": 2138,
+   "release": 2177,
+   "aimX": 90537,
+   "aimY": 52988
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 2219,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    true
+   ],
+   "hits": 1,
+   "count": 1
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-1",
+  "seed": 1458432070,
+  "radiusPx": 36,
+  "input": {
+   "press": 1978,
+   "release": 2011,
+   "aimX": 66521,
+   "aimY": 30071
+  },
+  "expected": {
+   "quality": 993,
+   "landTick": 2053,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-2",
+  "seed": 669563860,
+  "radiusPx": 24,
+  "input": {
+   "press": 710,
+   "release": 717,
+   "aimX": 75000,
+   "aimY": 59000
+  },
+  "expected": {
+   "quality": 334,
+   "landTick": 759,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-3",
+  "seed": 1462945938,
+  "radiusPx": 36,
+  "input": {
+   "press": 105,
+   "release": 105,
+   "aimX": 55795,
+   "aimY": 28658
+  },
+  "expected": {
+   "quality": 0,
+   "landTick": 147,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-4",
+  "seed": 1057710711,
+  "radiusPx": 24,
+  "input": {
+   "press": 2037,
+   "release": 2120,
+   "aimX": 14492,
+   "aimY": 59331
+  },
+  "expected": {
+   "quality": 239,
+   "landTick": 2162,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-5",
+  "seed": 1303503254,
+  "radiusPx": 36,
+  "input": {
+   "press": 66,
+   "release": 311,
+   "aimX": 92000,
+   "aimY": 23000
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 353,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-6",
+  "seed": 1028961508,
+  "radiusPx": 24,
+  "input": {
+   "press": 1061,
+   "release": 1094,
+   "aimX": 118867,
+   "aimY": 42778
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 1136,
+   "caught": [
+    false,
+    false,
+    false,
+    true,
+    false
+   ],
+   "hits": 1,
+   "count": 1
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-7",
+  "seed": 742229013,
+  "radiusPx": 36,
+  "input": {
+   "press": 476,
+   "release": 509,
+   "aimX": 116954,
+   "aimY": 39343
+  },
+  "expected": {
+   "quality": 993,
+   "landTick": 551,
+   "caught": [
+    true,
+    true,
+    true,
+    false,
+    false
+   ],
+   "hits": 3,
+   "count": 3
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-8",
+  "seed": 1886450570,
+  "radiusPx": 24,
+  "input": {
+   "press": 452,
+   "release": 459,
+   "aimX": 69000,
+   "aimY": 67000
+  },
+  "expected": {
+   "quality": 334,
+   "landTick": 501,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-9",
+  "seed": 1008498970,
+  "radiusPx": 36,
+  "input": {
+   "press": 2704,
+   "release": 2704,
+   "aimX": 64177,
+   "aimY": 38004
+  },
+  "expected": {
+   "quality": 0,
+   "landTick": 2746,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-10",
+  "seed": 1984247236,
+  "radiusPx": 24,
+  "input": {
+   "press": 2348,
+   "release": 2429,
+   "aimX": 50887,
+   "aimY": 43199
+  },
+  "expected": {
+   "quality": 245,
+   "landTick": 2471,
+   "caught": [
+    false,
+    false,
+    true,
+    false,
+    false
+   ],
+   "hits": 1,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-11",
+  "seed": 1782080911,
+  "radiusPx": 36,
+  "input": {
+   "press": 1901,
+   "release": 2146,
+   "aimX": 136611,
+   "aimY": 42828
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 2188,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-12",
+  "seed": 1439382767,
+  "radiusPx": 24,
+  "input": {
+   "press": 1785,
+   "release": 1820,
+   "aimX": 60043,
+   "aimY": 37527
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 1862,
+   "caught": [
+    true,
+    false,
+    false,
+    false,
+    true
+   ],
+   "hits": 2,
+   "count": 2
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-13",
+  "seed": 501132719,
+  "radiusPx": 36,
+  "input": {
+   "press": 2003,
+   "release": 2038,
+   "aimX": 35231,
+   "aimY": 44051
+  },
+  "expected": {
+   "quality": 993,
+   "landTick": 2080,
+   "caught": [
+    false,
+    true,
+    true,
+    false,
+    true
+   ],
+   "hits": 3,
+   "count": 3
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-14",
+  "seed": 889392796,
+  "radiusPx": 24,
+  "input": {
+   "press": 1852,
+   "release": 1859,
+   "aimX": 111304,
+   "aimY": 21391
+  },
+  "expected": {
+   "quality": 369,
+   "landTick": 1901,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "mix-15",
+  "seed": 495260125,
+  "radiusPx": 36,
+  "input": {
+   "press": 2809,
+   "release": 2809,
+   "aimX": 114398,
+   "aimY": 26618
+  },
+  "expected": {
+   "quality": 0,
+   "landTick": 2851,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "release-at-0",
+  "seed": 5,
+  "radiusPx": 24,
+  "input": {
+   "press": 0,
+   "release": 0,
+   "aimX": 80000,
+   "aimY": 40000
+  },
+  "expected": {
+   "quality": 0,
+   "landTick": 42,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "haul",
+  "name": "aim-rim",
+  "seed": 77,
+  "radiusPx": 36,
+  "input": {
+   "press": 3564,
+   "release": 3600,
+   "aimX": 30503,
+   "aimY": 34503
+  },
+  "expected": {
+   "quality": 1000,
+   "landTick": 3642,
+   "caught": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "hits": 0,
+   "count": 0
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "clean-0",
+  "seed": 1304527448,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   }
+  ],
+  "plan": {
+   "rounds": 2,
+   "keys": 4,
+   "timer": 246
+  },
+  "keys": [
+   102,
+   146,
+   188,
+   232,
+   277,
+   321,
+   364,
+   408
+  ],
+  "expected": {
+   "mistakes": 0,
+   "ticks": 102
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "fast-0",
+  "seed": 1263373719,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   }
+  ],
+  "plan": {
+   "rounds": 2,
+   "keys": 4,
+   "timer": 246
+  },
+  "keys": [
+   51,
+   65,
+   80,
+   98,
+   115,
+   128,
+   147,
+   163
+  ],
+  "expected": {
+   "mistakes": 0,
+   "ticks": 40
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "one-wrong-0",
+  "seed": 2030971726,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   }
+  ],
+  "plan": {
+   "rounds": 2,
+   "keys": 4,
+   "timer": 246
+  },
+  "keys": [
+   123,
+   177,
+   235,
+   290,
+   344,
+   401,
+   456,
+   513,
+   568,
+   624
+  ],
+  "expected": {
+   "mistakes": 2,
+   "ticks": 156
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "slow-0",
+  "seed": 1928081878,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   }
+  ],
+  "plan": {
+   "rounds": 2,
+   "keys": 4,
+   "timer": 246
+  },
+  "keys": [
+   160,
+   441,
+   721,
+   1003,
+   1283,
+   1563,
+   1840
+  ],
+  "expected": {
+   "mistakes": 1,
+   "ticks": 460
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "gives-up-0",
+  "seed": 19578731,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   }
+  ],
+  "plan": {
+   "rounds": 2,
+   "keys": 4,
+   "timer": 246
+  },
+  "keys": [
+   83,
+   128,
+   177,
+   224,
+   274
+  ],
+  "expected": {
+   "mistakes": 1,
+   "ticks": 302
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "sloppy-0",
+  "seed": 1640358441,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   }
+  ],
+  "plan": {
+   "rounds": 2,
+   "keys": 4,
+   "timer": 246
+  },
+  "keys": [
+   73,
+   108,
+   147,
+   180,
+   216,
+   254,
+   289,
+   326,
+   360,
+   398
+  ],
+  "expected": {
+   "mistakes": 2,
+   "ticks": 99
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "clean-1",
+  "seed": 21288610,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   },
+   {
+    "weightG": 820,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 3,
+   "keys": 5,
+   "timer": 233
+  },
+  "keys": [
+   103,
+   144,
+   190,
+   234,
+   278,
+   320,
+   366,
+   409,
+   453,
+   499,
+   541,
+   585,
+   628,
+   672,
+   717
+  ],
+  "expected": {
+   "mistakes": 0,
+   "ticks": 179
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "fast-1",
+  "seed": 2085560226,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   },
+   {
+    "weightG": 820,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 3,
+   "keys": 5,
+   "timer": 233
+  },
+  "keys": [
+   51,
+   67,
+   80,
+   97,
+   115,
+   131,
+   144,
+   163,
+   176,
+   192,
+   210,
+   225,
+   242,
+   258,
+   272
+  ],
+  "expected": {
+   "mistakes": 0,
+   "ticks": 68
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "one-wrong-1",
+  "seed": 1882371293,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   },
+   {
+    "weightG": 820,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 3,
+   "keys": 5,
+   "timer": 233
+  },
+  "keys": [
+   122,
+   179,
+   232,
+   291,
+   346,
+   400,
+   458,
+   512,
+   571,
+   626,
+   680,
+   737,
+   794,
+   850,
+   905,
+   960,
+   1017,
+   1075
+  ],
+  "expected": {
+   "mistakes": 3,
+   "ticks": 268
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "slow-1",
+  "seed": 1443255532,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   },
+   {
+    "weightG": 820,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 3,
+   "keys": 5,
+   "timer": 233
+  },
+  "keys": [
+   161,
+   440,
+   723,
+   1003,
+   1282,
+   1561,
+   1843,
+   2122,
+   2403,
+   2681
+  ],
+  "expected": {
+   "mistakes": 3,
+   "ticks": 699
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "gives-up-1",
+  "seed": 556527782,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   },
+   {
+    "weightG": 820,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 3,
+   "keys": 5,
+   "timer": 233
+  },
+  "keys": [
+   82,
+   129,
+   178,
+   225,
+   273
+  ],
+  "expected": {
+   "mistakes": 2,
+   "ticks": 534
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "sloppy-1",
+  "seed": 1343575303,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   },
+   {
+    "weightG": 820,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 3,
+   "keys": 5,
+   "timer": 233
+  },
+  "keys": [
+   72,
+   111,
+   146,
+   183,
+   217,
+   252,
+   291,
+   326,
+   361,
+   399,
+   432,
+   469,
+   506,
+   541,
+   578,
+   614,
+   649,
+   687
+  ],
+  "expected": {
+   "mistakes": 3,
+   "ticks": 171
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "clean-2",
+  "seed": 1615883122,
+  "fish": [
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 5,
+   "keys": 9,
+   "timer": 180
+  },
+  "keys": [
+   100,
+   144,
+   190,
+   234,
+   278,
+   323,
+   366,
+   408,
+   452,
+   499,
+   543,
+   584,
+   628,
+   673,
+   716,
+   761,
+   804,
+   848,
+   894,
+   938,
+   980,
+   1024,
+   1068,
+   1112,
+   1157,
+   1201,
+   1247,
+   1291,
+   1334,
+   1377,
+   1423,
+   1466,
+   1511,
+   1554,
+   1598,
+   1641,
+   1685,
+   1729,
+   1773,
+   1818,
+   1862,
+   1904,
+   1948,
+   1994,
+   2036
+  ],
+  "expected": {
+   "mistakes": 0,
+   "ticks": 509
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "fast-2",
+  "seed": 60161223,
+  "fish": [
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 5,
+   "keys": 9,
+   "timer": 180
+  },
+  "keys": [
+   49,
+   66,
+   80,
+   97,
+   112,
+   129,
+   146,
+   162,
+   176,
+   194,
+   210,
+   226,
+   240,
+   258,
+   272,
+   288,
+   307,
+   323,
+   339,
+   352,
+   370,
+   387,
+   403,
+   416,
+   432,
+   450,
+   466,
+   480,
+   499,
+   513,
+   528,
+   545,
+   560,
+   578,
+   592,
+   609,
+   625,
+   643,
+   656,
+   673,
+   689,
+   705,
+   720,
+   737,
+   752
+  ],
+  "expected": {
+   "mistakes": 0,
+   "ticks": 188
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "one-wrong-2",
+  "seed": 798539905,
+  "fish": [
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 5,
+   "keys": 9,
+   "timer": 180
+  },
+  "keys": [
+   122,
+   176,
+   232,
+   291,
+   345,
+   403,
+   459,
+   512,
+   568,
+   627,
+   680,
+   736,
+   795,
+   850,
+   904,
+   963,
+   1018,
+   1075,
+   1131,
+   1187,
+   1242,
+   1297,
+   1354,
+   1409,
+   1464,
+   1521,
+   1576,
+   1633,
+   1689,
+   1747,
+   1802,
+   1858,
+   1914
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 478
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "slow-2",
+  "seed": 1244213810,
+  "fish": [
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 5,
+   "keys": 9,
+   "timer": 180
+  },
+  "keys": [
+   163,
+   443,
+   722,
+   1001,
+   1280,
+   1560,
+   1840,
+   2120,
+   2403,
+   2681
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 720
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "gives-up-2",
+  "seed": 1619452058,
+  "fish": [
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 5,
+   "keys": 9,
+   "timer": 180
+  },
+  "keys": [
+   83,
+   131,
+   179,
+   226,
+   275
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 720
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "sloppy-2",
+  "seed": 1663359324,
+  "fish": [
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   },
+   {
+    "weightG": 1500,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 5,
+   "keys": 9,
+   "timer": 180
+  },
+  "keys": [
+   74,
+   109,
+   145,
+   181,
+   219,
+   254,
+   288,
+   327,
+   362,
+   396,
+   434,
+   469,
+   506,
+   540,
+   577,
+   614,
+   649,
+   685,
+   721,
+   759,
+   794,
+   829,
+   865,
+   902,
+   938,
+   974,
+   1010,
+   1045,
+   1082,
+   1116,
+   1155
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 288
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "clean-3",
+  "seed": 1009402755,
+  "fish": [
+   {
+    "weightG": 450,
+    "rarity": 1
+   },
+   {
+    "weightG": 600,
+    "rarity": 1
+   },
+   {
+    "weightG": 999,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 4,
+   "keys": 6,
+   "timer": 223
+  },
+  "keys": [
+   102,
+   147,
+   189,
+   234,
+   278,
+   322,
+   367,
+   409,
+   454,
+   497,
+   542,
+   586,
+   628,
+   675,
+   716,
+   762,
+   804,
+   849,
+   893,
+   936,
+   983,
+   1027,
+   1069,
+   1114
+  ],
+  "expected": {
+   "mistakes": 0,
+   "ticks": 278
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "fast-3",
+  "seed": 1419573066,
+  "fish": [
+   {
+    "weightG": 450,
+    "rarity": 1
+   },
+   {
+    "weightG": 600,
+    "rarity": 1
+   },
+   {
+    "weightG": 999,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 4,
+   "keys": 6,
+   "timer": 223
+  },
+  "keys": [
+   50,
+   65,
+   83,
+   98,
+   114,
+   131,
+   145,
+   161,
+   177,
+   195,
+   209,
+   224,
+   240,
+   256,
+   273,
+   289,
+   305,
+   322,
+   339,
+   354,
+   368,
+   386,
+   402,
+   418
+  ],
+  "expected": {
+   "mistakes": 0,
+   "ticks": 104
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "one-wrong-3",
+  "seed": 1179350902,
+  "fish": [
+   {
+    "weightG": 450,
+    "rarity": 1
+   },
+   {
+    "weightG": 600,
+    "rarity": 1
+   },
+   {
+    "weightG": 999,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 4,
+   "keys": 6,
+   "timer": 223
+  },
+  "keys": [
+   121,
+   178,
+   235,
+   290,
+   347,
+   400,
+   457,
+   515,
+   569,
+   627,
+   682,
+   739,
+   795,
+   848,
+   906,
+   962,
+   1019,
+   1074,
+   1131,
+   1185,
+   1240,
+   1299,
+   1355,
+   1410
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 352
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "slow-3",
+  "seed": 973608101,
+  "fish": [
+   {
+    "weightG": 450,
+    "rarity": 1
+   },
+   {
+    "weightG": 600,
+    "rarity": 1
+   },
+   {
+    "weightG": 999,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 4,
+   "keys": 6,
+   "timer": 223
+  },
+  "keys": [
+   160,
+   442,
+   721,
+   1000,
+   1283,
+   1562,
+   1840,
+   2122,
+   2402,
+   2681,
+   2963,
+   3242,
+   3522
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 892
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "gives-up-3",
+  "seed": 532234764,
+  "fish": [
+   {
+    "weightG": 450,
+    "rarity": 1
+   },
+   {
+    "weightG": 600,
+    "rarity": 1
+   },
+   {
+    "weightG": 999,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 4,
+   "keys": 6,
+   "timer": 223
+  },
+  "keys": [
+   83,
+   130,
+   176,
+   224,
+   274
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 892
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "sloppy-3",
+  "seed": 2083261164,
+  "fish": [
+   {
+    "weightG": 450,
+    "rarity": 1
+   },
+   {
+    "weightG": 600,
+    "rarity": 1
+   },
+   {
+    "weightG": 999,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 4,
+   "keys": 6,
+   "timer": 223
+  },
+  "keys": [
+   72,
+   111,
+   147,
+   180,
+   217,
+   253,
+   289,
+   327,
+   362,
+   399,
+   432,
+   468,
+   507,
+   542,
+   577,
+   612,
+   648,
+   686,
+   722,
+   759,
+   794,
+   831
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 207
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "no-keys",
+  "seed": 42,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   },
+   {
+    "weightG": 820,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 3,
+   "keys": 5,
+   "timer": 233
+  },
+  "keys": [],
+  "expected": {
+   "mistakes": 3,
+   "ticks": 699
+  }
+ },
+ {
+  "kind": "arrows",
+  "name": "four-wrong",
+  "seed": 42,
+  "fish": [
+   {
+    "weightG": 300,
+    "rarity": 1
+   },
+   {
+    "weightG": 820,
+    "rarity": 2
+   }
+  ],
+  "plan": {
+   "rounds": 3,
+   "keys": 5,
+   "timer": 233
+  },
+  "keys": [
+   120,
+   124,
+   128,
+   132
+  ],
+  "expected": {
+   "mistakes": 4,
+   "ticks": 33
+  }
+ }
+]

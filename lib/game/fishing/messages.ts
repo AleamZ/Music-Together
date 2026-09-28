@@ -19,6 +19,15 @@ export const ROD_BROKE = "💥 Cần câu gãy rồi — đã đổi sang cần 
 export const NO_NET = "Bạn chưa có lưới — tiệm chú Tư có bán.";
 export const NET_TOO_EARLY = "Kéo lưới vội quá, cá thoát hết rồi.";
 export const NET_EXPIRED = "Lưới trôi mất rồi.";
+/** 0056: the server's replay refused the throw or the pull. */
+export const NET_INVALID = "Lưới vướng rồi — quăng lại nhé.";
+/** 0056: a page from before the net replay (the server answered 'outdated'). */
+export const NET_OUTDATED = "Cập nhật trang để quăng lưới tiếp.";
+
+/** A lost throw or pull (net_haul / finish_net). */
+export function netLostText(why: "expired" | "too_early" | "net_invalid" | "outdated"): string {
+  return why === "expired" ? NET_EXPIRED : why === "net_invalid" ? NET_INVALID : why === "outdated" ? NET_OUTDATED : NET_TOO_EARLY;
+}
 
 export function netText(count: number): string {
   return count > 0 ? `🕸️ Kéo lưới được ${count} con cá!` : "🕸️ Lưới rỗng — cá thoát hết rồi.";

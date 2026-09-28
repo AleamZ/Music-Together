@@ -6,7 +6,8 @@ import { syncClock } from "@/lib/game/farm/clock";
 import type { FishingCatalog } from "@/lib/game/fishing/catalog";
 import {
   buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, finishCast, finishNet, fishingErrorMessage, netHaul, releaseFish,
-  repairRod, sellFish, setLoadout, startCast, startNet, type FinishCast, type FinishNet, type ReelInput, type NetHaul, type StartCast, type StartNet,
+  repairRod, sellFish, setLoadout, startCast, startNet, type FinishCast, type FinishNet, type ReelInput, type NetHaul, type NetPull, type NetThrow,
+  type StartCast, type StartNet,
 } from "@/lib/game/fishing/rpc";
 import type { FishingState, Loadout } from "@/lib/game/fishing/state";
 
@@ -32,10 +33,10 @@ export interface FishingData {
   finishCast: (castId: string, success: boolean, hooked?: boolean, reel?: ReelInput) => Promise<FinishCast | null>;
   /** v18.2 Sửa cần. */
   repair: (itemId: string) => Promise<{ cost: number } | null>;
-  /** v18.2: throw a net from a pond cell; score it. */
+  /** v18.2: open a net throw at a pond cell (0056: when the aim starts); the server replays the throw and kéo lưới. */
   startNet: (roomId: string, cell: { col: number; row: number }, net: string) => Promise<StartNet | null>;
-  netHaul: (throwId: string, chargeMs: number, offsets: number[]) => Promise<NetHaul | null>;
-  finishNet: (throwId: string, mistakes: number) => Promise<FinishNet | null>;
+  netHaul: (throwId: string, input: NetThrow) => Promise<NetHaul | null>;
+  finishNet: (throwId: string, pull: NetPull) => Promise<FinishNet | null>;
 }
 
 /** A network failure while a cast ends: the fish is gone either way. */
@@ -142,7 +143,7 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
       return r && { cost: r.cost };
     }, [act, token]),
     startNet: useCallback((roomId: string, cell: { col: number; row: number }, net: string) => act(() => startNet(roomId, token, cell, net), (x) => x.state), [act, token]),
-    netHaul: useCallback((throwId: string, chargeMs: number, offsets: number[]) => act(() => netHaul(token, throwId, chargeMs, offsets), (x) => x.state, lostConnection), [act, token]),
-    finishNet: useCallback((throwId: string, mistakes: number) => act(() => finishNet(token, throwId, mistakes), (x) => x.state, lostConnection), [act, token]),
+    netHaul: useCallback((throwId: string, input: NetThrow) => act(() => netHaul(token, throwId, input), (x) => x.state, lostConnection), [act, token]),
+    finishNet: useCallback((throwId: string, pull: NetPull) => act(() => finishNet(token, throwId, pull), (x) => x.state, lostConnection), [act, token]),
   };
 }
