@@ -10,6 +10,8 @@ import { paintKhuNha } from "./khu-nha-art";
 import { paintHall } from "./hall-art";
 import { buildMarketMap } from "./market";
 import { paintMarket } from "./market-art";
+import { buildMoDaMap } from "./mo-da";
+import { paintMoDa } from "./mo-da-art";
 import { buildPondMap } from "./pond";
 import { paintPond } from "./pond-art";
 import type { SceneArt } from "./scene-art";
@@ -29,6 +31,7 @@ function build(id: MapId): GameMap {
     case "khu_nha": return buildKhuNhaMap();
     case "bai_dat": return buildBaiDatMap();
     case "ham_ngam": return buildHamNgamMap();
+    case "mo_da": return buildMoDaMap();
   }
 }
 
@@ -41,6 +44,7 @@ function paint(map: GameMap): SceneArt {
     case "khu_nha": return paintKhuNha(map);
     case "bai_dat": return paintBaiDat(map);
     case "ham_ngam": return paintHamNgam(map);
+    case "mo_da": return paintMoDa(map);
   }
 }
 

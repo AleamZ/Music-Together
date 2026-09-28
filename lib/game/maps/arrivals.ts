@@ -43,3 +43,9 @@ export const HAM_ARRIVE: Spot = { x: 48, y: 84, dir: "down" };
 
 /** v20.4: on the pavement over the manhole, facing it (back up the ladder). */
 export const MARKET_HATCH_ARRIVE: Spot = { x: 640, y: 350, dir: "down" };
+
+/** v21 #19: just inside Mỏ đá's gate (from Bãi đất trống), facing into the cave. */
+export const MO_DA_ARRIVE: Spot = { x: 44, y: 200, dir: "right" };
+
+/** v21 #19: on Bãi đất trống, in the gap of the broken east wall, back from the mine. */
+export const BAI_MINE_ARRIVE: Spot = { x: 736, y: 268, dir: "left" };

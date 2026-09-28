@@ -13,6 +13,7 @@ const LABEL: Record<MapId, { icon: string; name: string }> = {
   khu_nha: { icon: "🏘️", name: "Khu nhà" },
   bai_dat: { icon: "🥊", name: "Bãi đất" },
   ham_ngam: { icon: "🕳️", name: "Hầm" },
+  mo_da: { icon: "⛏️", name: "Mỏ đá" },
 };
 // v20.4: the hầm is a secret: nobody is counted there
 const MAPS = VISIBLE_MAP_IDS.map((id) => ({ id, ...LABEL[id] }));

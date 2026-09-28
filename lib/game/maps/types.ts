@@ -4,8 +4,8 @@ import type { Facing, Look, Vec } from "@/lib/game/types";
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Spot { x: number; y: number; dir: Facing }
 
-export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat" | "ham_ngam";
-export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam"];
+export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat" | "ham_ngam" | "mo_da";
+export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam", "mo_da"];
 
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
@@ -42,6 +42,8 @@ export type InteractKind =
   | "ug_hatch" | "ug_organizer" | "ug_board" | "ug_door" | "cage_watch"
   // v21: bác Ba Làng, the quest giver on the hall (the quest log, NPC quests)
   | "quest_giver"
+  // v21 #19 Mỏ đá: an ore rock, a herb patch, chú Tám's shed, the anvil (upgrades), bà Sáu's cauldron (potions)
+  | "mine_node" | "herb_node" | "mine_shop" | "anvil" | "cauldron"
   // every map: the city-map signpost (a view-only overview of the town)
   | "city_map"
   // v18.11: the hall's Báo Làng news stand (dev blog + village news)

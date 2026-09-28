@@ -23,7 +23,7 @@ export function presenceDog(v: unknown): PresenceDog | null {
 const onlineAt = (m: PresenceMeta): number => (typeof m.online_at === "string" ? Date.parse(m.online_at) || 0 : 0);
 
 /** Every map id (a new one is a type error until it is listed). */
-const KNOWN_MAPS: Record<MapId, true> = { hall: true, pond: true, field: true, market: true, khu_nha: true, bai_dat: true, ham_ngam: true };
+const KNOWN_MAPS: Record<MapId, true> = { hall: true, pond: true, field: true, market: true, khu_nha: true, bai_dat: true, ham_ngam: true, mo_da: true };
 
 /** A presence `map` value; anything unknown (an old client) is the hall. */
 export function presenceMap(v: unknown): MapId {
@@ -53,7 +53,7 @@ export interface MapMember { accountId: string; name: string; classic: boolean }
 
 /** Who is on which map (me included): classic-view members count in the hall. */
 export function mapCounts(presence: readonly PresenceEntry[]): Record<MapId, MapMember[]> {
-  const out: Record<MapId, MapMember[]> = { hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [], ham_ngam: [] };
+  const out: Record<MapId, MapMember[]> = { hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [], ham_ngam: [], mo_da: [] };
   for (const p of presence) {
     const classic = p.mode === "classic";
     out[classic ? "hall" : p.map ?? "hall"].push({ accountId: p.accountId, name: p.name, classic });

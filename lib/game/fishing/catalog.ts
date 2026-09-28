@@ -1,8 +1,12 @@
 // Client side of the fishing config tables (spec §7): types, rarity names and colours, number formats. Pure.
 
+import { rarityInfo } from "@/lib/game/rarity";
+
 export type Rarity = 1 | 2 | 3 | 4 | 5;
-export const RARITY_NAME: Record<Rarity, string> = { 1: "Thường", 2: "Khá", 3: "Hiếm", 4: "Quý", 5: "Huyền thoại" };
-export const RARITY_COLOR: Record<Rarity, string> = { 1: "#9aa0a6", 2: "#4caf50", 3: "#2f80ed", 4: "#9b51e0", 5: "#f2994a" };
+// v21 #88: the names and colours are the shared rarity scale's first five tiers (lib/game/rarity.ts).
+const tier = (r: Rarity) => rarityInfo(r);
+export const RARITY_NAME: Record<Rarity, string> = { 1: tier(1).label, 2: tier(2).label, 3: tier(3).label, 4: tier(4).label, 5: tier(5).label };
+export const RARITY_COLOR: Record<Rarity, string> = { 1: tier(1).color, 2: tier(2).color, 3: tier(3).color, 4: tier(4).color, 5: tier(5).color };
 
 export function isRarity(v: unknown): v is Rarity {
   return v === 1 || v === 2 || v === 3 || v === 4 || v === 5;

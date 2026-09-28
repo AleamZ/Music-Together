@@ -33,7 +33,7 @@ export type XpBucket = keyof typeof XP_CAPS;
 /** #92: the level a map opens at (0070 map_levels). Every existing map is open at level 1; a map missing here is open.
  *  A NEW MAP: add it here AND in your migration's `insert into public.map_levels`. */
 export const MAP_MIN_LEVEL: Readonly<Record<string, number>> = {
-  hall: 1, pond: 1, field: 1, market: 1, khu_nha: 1, bai_dat: 1, ham_ngam: 1,
+  hall: 1, pond: 1, field: 1, market: 1, khu_nha: 1, bai_dat: 1, ham_ngam: 1, mo_da: 5,   // mo_da: v21 #19 (0072)
 };
 
 /** The level `map` needs: the server's table when known, else the mirror. */

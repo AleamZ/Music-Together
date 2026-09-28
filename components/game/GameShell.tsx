@@ -59,6 +59,8 @@ import CardSeatChip from "./cards/CardSeatChip";
 import CharacterEditor from "./CharacterEditor";
 import DogPanel from "./farm/DogPanel";
 import FarmOverlays from "./farm/FarmOverlays";
+import MiningOverlays from "./mining/MiningOverlays";
+import { useMining } from "@/hooks/useMining";
 import FaintOverlay from "./FaintOverlay";
 import FightOverlay from "./fight/FightOverlay";
 import Dojo from "./fight/Dojo";
@@ -351,6 +353,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     onCoinsChanged: () => void fishing.data.reload(),
   });
   const { interact: farmInteract, promptText: farmPrompt } = farm;
+  // --- v21 #19/#26/#89 Mỏ đá: the dig, herbs, chú Tám, the anvil, bà Sáu's cauldron and the potion bag
+  const mining = useMining({
+    token, roomId: room.id, mapId: travel.mapId, toast: gameToast,
+    onCoins: () => void fishing.data.reload(), onVitals: () => void reloadVitals(),
+  });
+  const { interact: miningInteract, promptText: miningPrompt } = mining;
 
   // --- my dog (v17 §7.3, §12.3): learned on entering game mode, on the canvas behind me and in presence
   const petDog = useCallback(() => canvasRef.current?.petDog(), []);
@@ -549,7 +557,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const openOverlays = {
     panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen || rings.active !== null
       || ug.active !== null || ugResult !== null || knocking !== null || isCalled(ug.state)                     // v20.4
-      || trade.state?.trade != null,                                                                            // v21 economy
+      || trade.state?.trade != null                                                                             // v21 economy
+      || mining.open,                                                                                           // v21 Mỏ đá
     fishingPanel: fishing.panel !== null || fishing.net !== null, creating, anticheatModal: anticheat.modal !== null,
     farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
     slingGame: farm.sling !== null,
@@ -746,9 +755,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         setPanel("ug_watch");
         break;
       default:
-        if (!farmInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
+        if (!farmInteract(it) && !miningInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner, myLevel, progress.state?.mapLevels]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, miningInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner, myLevel, progress.state?.mapLevels]);
 
   // v20.4 the knock on the hatch: ug_enter checks the unlock again, then down the ladder (the refs keep a re-render
   // from cancelling the knock)
@@ -795,7 +804,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
 
   return (
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : "bg-[#5a8f32]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
@@ -1004,7 +1013,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           className="pch-btn pch-btn-primary absolute bottom-24 left-1/2 z-10 -translate-x-1/2 text-xl"
         >
           <span className="pointer-coarse:hidden">E · </span>
-          {riding && interactBlocked(riding, prompt.kind) ? dismountText(prompt.prompt) : farmPrompt(prompt) ?? promptText(prompt)}
+          {riding && interactBlocked(riding, prompt.kind) ? dismountText(prompt.prompt) : farmPrompt(prompt) ?? miningPrompt(prompt) ?? promptText(prompt)}
         </button>
       )}
       <LiftHud lift={lift} keyEnabled={!blocking && faint === null && trip === null} promptShown={prompt !== null} />{/* v18.13 */}
@@ -1020,6 +1029,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           : null}
       />
       <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} dog={coopDog} />
+      <MiningOverlays m={mining} showChip={map.id === "mo_da" || Object.keys(mining.state?.bag ?? {}).some((k) => k.startsWith("pot_")) || (mining.state?.buffs.length ?? 0) > 0} />{/* v21 Mỏ đá */}
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
 
       <div className="pointer-events-none absolute bottom-18 right-3 z-10 hidden sm:block">
@@ -1444,7 +1454,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}
-          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0 }}
+          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length }}
           onClose={close}
         />
       )}

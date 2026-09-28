@@ -1,4 +1,4 @@
-import { BAI_DAT_ARRIVE, MARKET_BRIDGE_ARRIVE } from "./arrivals";
+import { BAI_DAT_ARRIVE, MARKET_BRIDGE_ARRIVE, MO_DA_ARRIVE } from "./arrivals";
 import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, PropPlacement, Rect } from "./types";
@@ -67,6 +67,11 @@ export const BAI_INTERACTABLES: Interactable[] = [
     id: "bai_dat_exit", kind: "portal", label: "Về Chợ Lớn", prompt: "Qua cầu về Chợ Lớn", rect: { x: 388, y: 0, w: 24, h: 24 },
     use: { x: 400, y: 36 }, face: "up", to: { map: "market", arrive: MARKET_BRIDGE_ARRIVE },
   },
+  // v21 #19: the gap in the broken east wall leads into Mỏ đá
+  {
+    id: "mo_da_gate", kind: "portal", label: "Mỏ đá", prompt: "Vào Mỏ đá", rect: { x: 762, y: 248, w: 22, h: 40 },
+    use: { x: 748, y: 268 }, face: "right", to: { map: "mo_da", arrive: MO_DA_ARRIVE },
+  },
   ...RING_RECTS.flatMap((_, i): Interactable[] => (["red", "blue"] as const).map((corner) => {
     const s = cornerSpot(i + 1, corner);
     return {
@@ -90,6 +95,7 @@ export const BAI_PROPS: PropPlacement[] = [
   { kind: "board", x: RECORDS_BOARD.x, y: RECORDS_BOARD.y },
   { kind: "punch_bag", x: BAI_BAG.x, y: BAI_BAG.y },
   { kind: "sign", x: 426, y: 32, icon: "market" },
+  { kind: "sign", x: 772, y: 246 },                                     // v21 #19: "Mỏ đá"
 ];
 
 export { BAI_DAT_ARRIVE };

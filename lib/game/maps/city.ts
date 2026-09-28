@@ -48,6 +48,11 @@ export const CITY_PLACES: Readonly<Record<MapId, CityPlace>> = {
     id: "ham_ngam", icon: "🕳️", name: "Hầm đấu ngầm", at: { x: 72, y: 46 }, hidden: true,
     places: ["Anh Tư Sẹo", "Lồng đấu", "Cửa thách đấu", "Bảng xếp hạng ngầm"],
   },
+  // v21 #19: through the gap in Bãi đất trống's broken east wall
+  mo_da: {
+    id: "mo_da", icon: "⛏️", name: "Mỏ đá", at: { x: 94, y: 86 },
+    places: ["10 mỏ quặng", "Bãi thảo dược", "Lán chú Tám (quặng, cuốc)", "Đe rèn", "Vạc thuốc bà Sáu"],
+  },
 };
 
 /** The maps the town overview shows (a hidden one is a secret). */

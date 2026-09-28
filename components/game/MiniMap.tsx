@@ -13,6 +13,7 @@ const MAP_NAMES: Record<MapId, string> = {
   khu_nha: "Khu nhà",
   bai_dat: "Bãi đất trống",
   ham_ngam: "Hầm đấu ngầm",
+  mo_da: "Mỏ đá",
 };
 
 type MiniMapSize = "sm" | "md" | "lg";
