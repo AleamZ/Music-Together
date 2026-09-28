@@ -52,7 +52,12 @@ them the privilege checks prove nothing. Afterwards: `pg_ctl -D $D stop -m fast`
 
 Every smoke above is re-runnable on the same cluster.
 
-v21: `v21-progression-smoke.sql` (0070; re-applies 0070 itself, run after the full chain; its writes are ordinary rows).
+6. v21, after steps 1–5 on the same cluster: each group smoke re-applies its own migration with `\i` (putting that
+   migration's bodies back over 0078's), so run them **in migration order** — `v21-progression-smoke.sql` (0070),
+   `v21-quests-smoke.sql` (0071), `v21-crafting-smoke.sql` (0072; `-v mine=…/mine-cases.json`), `v21-economy-smoke.sql`
+   (0073), `v21-pets-smoke.sql` (0074), `v21-world-smoke.sql` (0075), `v21-fishing-smoke.sql` (0076),
+   `v21-professions-smoke.sql` (0077) — then **re-apply 0078**, then `v21-fixes-smoke.sql` (0078, re-applies it itself;
+   `-v fixtures=…/reel-cases.json`) and `anticheat-guards.sql` once more. The group smokes are listed below too.
 
 ## The staged smokes
 
@@ -72,3 +77,4 @@ ledger reasons, shop kinds or function overloads predate later rows and migratio
 - `v21-economy-smoke.sql` (0073: player trading, the Chợ người chơi board, the auction house, rented stalls, the collusion guard): chain-level, re-runs 0073 with `\i`; run after the full chain.
 - `v21-crafting-smoke.sql` (0072: Mỏ đá mining with the replayed dig, herbs, ore selling, pickaxes, potions and buffs, item upgrades; `-v mine=…/mine-cases.json`): chain-level, re-runs 0072 with `\i`; run after the full chain.
 - `v21-world-smoke.sql` (0075, v21 world: snow, wild animals, party, bosses, dungeon): re-runs 0075 twice, owns its rows (truncates them first); run after the chain 0004 … 0069 + 0075.
+- `v21-fixes-smoke.sql` (0078: only finish_cast / finish_net emit 'fish_catch' and score a fishing battle; the locked map on ordinary travel; the leaderboard; the company quest's daily cap, arena membership, the photo log and the quest wipe; the dig's timing flag and the pickaxe at the finish; PvP pet XP caps and the knock; the fishing-battle wipe; boss room / dungeon party checks; stamina-short fights and the hammock; `-v fixtures=…/reel-cases.json`): chain-level, re-runs 0078 with `\i`; run after the v21 group smokes and a re-apply of 0078 (step 6).
