@@ -1,6 +1,6 @@
 import { AnticheatError, lockSeconds, lockText, parseAnticheat, screenAnswer, type AnticheatInfo } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
-import { vitalsErrorMessage } from "@/lib/game/vitals-rpc";
+import { publishVitals, vitalsErrorMessage } from "@/lib/game/vitals-rpc";
 import { STORM_TEXT } from "@/lib/game/weather/rpc";
 import {
   FISHING_KINDS, isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow,
@@ -82,6 +82,7 @@ export interface StartNet { throwId: string; seed: number; beatMs: number; radiu
 
 export async function startNet(roomId: string, token: string, cell: { col: number; row: number }, net: string): Promise<StartNet> {
   const r = await call("start_net", { p_room_id: roomId, p_session_token: token, p_col: cell.col, p_row: cell.row, p_net: net });
+  publishVitals(r.vitals);                                                     // 0047: the throw's hunger/thirst cost
   return {
     throwId: String(r.throw_id), seed: Number(r.seed ?? 0), beatMs: Number(r.beat_ms ?? 600), radiusPx: Number(r.radius_px ?? 24),
     state: stateOf(r.state),
@@ -163,6 +164,7 @@ export async function startCast(roomId: string, token: string, cell?: { col: num
     args.p_row = cell.row;
   }
   const r = await call("start_cast", args);
+  publishVitals(r.vitals);                                                     // 0047: the cast's hunger/thirst cost
   return {
     castId: String(r.cast_id), biteMs: Number(r.bite_ms), windowMs: Number(r.window_ms), difficulty: Number(r.difficulty),
     minReelMs: Number(r.min_reel_ms), zonePct: Number(r.zone_pct), rarity: isRarity(r.rarity) ? r.rarity : null,
@@ -274,7 +276,8 @@ export function fishingErrorMessage(err: unknown): string {
     case "hands full": return "Tay đang cầm cá — ra vựa bán hoặc sắm xô nhé!";
     case "bucket full": return "Xô đầy rồi — ra vựa bán bớt nhé!";
     case "cast limit":
-      return `Câu nhiều quá rồi, nghỉ tay chút nhé (còn ${Number.isFinite(secs) ? Math.max(1, Math.ceil(secs / 60)) : 60} phút).`;
+      // an old server's hourly cap (0047 removed it)
+      return `Câu mệt rồi — nghỉ chút nhé (còn ${Number.isFinite(secs) ? Math.max(1, Math.ceil(secs / 60)) : 60} phút).`;
     case "dig cooldown": return `Đất còn cứng, chờ ${Number.isFinite(secs) ? Math.max(1, secs) : 45} giây nữa nhé.`;
     case "cast not found": return "Cá đã thoát mất rồi.";
     case "fish not found": return "Con cá này không còn nữa.";

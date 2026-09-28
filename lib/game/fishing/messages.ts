@@ -1,7 +1,7 @@
 import type { Interactable } from "@/lib/game/maps/types";
 import { formatXu } from "./catalog";
 import type { LostWhy } from "./rpc";
-import { castBlocker, castWaitMin, dayCapped, digWaitSec, type CastBlocker, type FishingState } from "./state";
+import { castBlocker, digWaitSec, type CastBlocker, type FishingState } from "./state";
 
 // The fishing HUD's Vietnamese texts (spec §6, §10.1, §13). Pure.
 
@@ -10,8 +10,8 @@ export const NOT_LOADED = "Chưa tải được giỏ đồ — bấm “Tải l
 export const LOADING = "Đang tải giỏ đồ…";
 export const BAIT_FULL = "Hộp mồi đầy rồi.";
 export const SONG_BONUS = "🎵 Bài bạn gọi đã phát xong: +10 xu";
-/** The daily cast cap (anti-cheat spec §12.4). */
-export const DAILY_LIMIT_TEXT = "Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!";
+/** An old server's daily cast cap error (0047 removed the cap; casts now cost hunger and thirst). */
+export const DAILY_LIMIT_TEXT = "Câu mệt rồi — nghỉ chút rồi câu tiếp nhé!";
 
 /** v18.2: the rod wore down to 0 on this cast. */
 export const ROD_BROKE = "💥 Cần câu gãy rồi — đã đổi sang cần gỗ. Mang tới tiệm chú Tư sửa nhé!";
@@ -50,7 +50,7 @@ export function blockerText(b: CastBlocker, waitMin: number): string {
     case "no_bait": return "Hết mồi — đào trùn hoặc mua mồi ở tiệm nhé.";
     case "hands_full": return "Tay đang cầm cá — ra vựa bán hoặc sắm xô nhé!";
     case "bucket_full": return "Xô đầy rồi — ra vựa bán bớt nhé!";
-    case "cast_limit": return `Câu nhiều quá rồi, nghỉ tay chút nhé (còn ${Math.max(1, waitMin)} phút).`;
+    case "cast_limit": return waitMin > 0 ? `Câu mệt rồi — nghỉ chút nhé (còn ${waitMin} phút).` : DAILY_LIMIT_TEXT;
     case "daily_limit": return DAILY_LIMIT_TEXT;
   }
 }
@@ -63,12 +63,7 @@ export function promptText(it: Interactable, s: FishingState | null, now: number
     const sec = digWaitSec(s, now);
     return sec > 0 ? `${it.prompt} (còn ${sec} giây)` : it.prompt;
   }
-  if (it.kind === "fish_spot") {
-    const min = castWaitMin(s, now);
-    if (min > 0) return `Nghỉ tay — còn ${min} phút`;
-    return dayCapped(s, now) ? "Hết lượt câu hôm nay" : it.prompt;
-  }
-  return it.prompt;
+  return it.prompt;                                               // 0047: no cast caps to count down
 }
 
 export const MISSED = "Cá ăn mồi rồi chạy mất!";
@@ -87,10 +82,10 @@ export function overboardText(hunger: number, lostRod: string | null): string {
 }
 
 /** Why a cast may not start here and now (null = go): the state, the server's checks, then the spot (spec §6.1). */
-export function castRefusal(s: FishingState | null, failed: boolean, now: number, spotTaken: boolean): string | null {
+export function castRefusal(s: FishingState | null, failed: boolean, spotTaken: boolean): string | null {
   if (!s) return failed ? NOT_LOADED : LOADING;
-  const b = castBlocker(s, now);
-  if (b) return blockerText(b, castWaitMin(s, now));
+  const b = castBlocker(s);
+  if (b) return blockerText(b, 0);
   return spotTaken ? SPOT_TAKEN : null;
 }
 
