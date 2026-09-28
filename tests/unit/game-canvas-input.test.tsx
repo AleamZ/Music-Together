@@ -55,6 +55,10 @@ vi.mock("@/lib/game/engine", () => ({
     setSpeedFactor() {}
     setWeather() {}
     setWeatherFx() {}
+    setRain(l: { wet: boolean }) {
+      // like the real engine: my rain look is announced at once
+      this.rec.cb.onLocalMove({ x: 5, y: 6, rn: l.wet ? 1 : 0 });
+    }
     setLift(l: { role: string; peer: string } | null) {
       this.rec.lifts.push(l);
       // like the real engine: the lift is announced at once
@@ -202,6 +206,16 @@ describe("GameCanvas riding across travel (v18.7)", () => {
     ref.current!.setRiding(null);
     rerender(<GameCanvas ref={ref} mapId="hall" {...props} />);
     expect(engines[2].riding.at(-1)).toBeNull();
+  });
+});
+
+describe("GameCanvas rain through a portal (v18.9)", () => {
+  it("a soaked player changing map announces the rain look on the new channel instead of crashing", () => {
+    const ref = createRef<GameCanvasHandle>();
+    const { rerender } = render(<GameCanvas ref={ref} mapId="hall" {...props} />);
+    ref.current!.setRain?.({ wet: true, cold: false, umbrella: null });
+    rerender(<GameCanvas ref={ref} mapId="market" {...props} />);
+    expect(channels.at(-1)!.sent).toContainEqual(expect.objectContaining({ t: "mv", rn: 1 }));
   });
 });
 

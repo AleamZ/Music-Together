@@ -438,8 +438,6 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setHouses(housesRef.current);
     engine.setNewsUnread(newsUnreadRef.current);
     engine.setGatherSpots(gatherRef.current);
-    if (shockedRef.current) engine.setHeat({ shocked: true, crampLeftMs: null });
-    if (rainRef.current) engine.setRain(rainRef.current);
     engine.setLocal({ name: init.name, badges: init.badges, look: init.look, ...dogRef.current });
     if (zoomRef.current !== 1) engine.setZoom(zoomRef.current);
     if (map.id === "field") engine.setRats(ratsRef.current);
@@ -514,6 +512,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setPet(petRef.current.code, petRef.current.speed);                           // v18.12
     // v18.13: a lift through a portal goes on in the new world (it announces too, so it waits for the channel as well)
     engine.setLift(liftRef.current);
+    // v18.9/v18.10: soaked, the umbrella or the heat announce my state too — after the channel exists (walking through
+    // a portal in the rain rebuilt the engine and crashed on `channel` here)
+    if (shockedRef.current) engine.setHeat({ shocked: true, crampLeftMs: null });
+    if (rainRef.current) engine.setRain(rainRef.current);
     engine.start();
     return () => {
       replies.dispose();
