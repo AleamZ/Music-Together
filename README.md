@@ -261,7 +261,7 @@ Each map has its own Broadcast channel `game:{roomId}:{mapId}`, so a room split 
 
 ### DB migration
 
-`supabase/migrations/0014_lyrics_lockdown.sql` is **additive and re-runnable** (`drop policy/function if exists`, `revoke`, `create or replace`, explicit grants): run it in the Supabase SQL Editor after `0011_v13_video_lyrics.sql`. It does not need `0012` or later.
+`supabase/migrations/0014_lyrics_lockdown.sql` is **additive and re-runnable** (`drop policy/function if exists`, `revoke`, `create or replace`, explicit grants): run it in the Supabase SQL Editor after `00111_v13_video_lyrics.sql`. It does not need `0012` or later.
 
 What it closes — until now anyone holding the public key, even logged out, could overwrite the lyrics, names, offset and "updated by" of any video in the shared `video_lyrics` cache, or fill it with invented ids:
 
