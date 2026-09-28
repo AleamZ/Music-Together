@@ -21,7 +21,7 @@ export class SpectatorFeed {
   /** The engine over confirmed inputs; its frame is `lead[0]`. */
   lead: State;
   private readonly snaps = new Map<number, State>();
-  private shown = -1;
+  private shownFrame = -1;
   /** The state shown last (a gap or a jump keeps it frozen rather than show a frame inside the buffer). */
   private last: State;
 
@@ -29,6 +29,11 @@ export class SpectatorFeed {
     this.lead = createMatch(params);
     this.snaps.set(0, this.lead);
     this.last = this.lead;
+  }
+
+  /** The state shown last (the HUD reads it: never a frame inside the buffer). */
+  get shown(): State {
+    return this.last;
   }
 
   /** The newest frame both sides' inputs cover (frames below it are confirmed). */
@@ -79,9 +84,9 @@ export class SpectatorFeed {
     const lead = this.lead[0];
     const want = isOver(this.lead) ? lead : lead - SPECTATE_BUFFER;
     const oldest = lead - KEEP + 1;
-    if (this.shown < oldest) this.shown = Math.max(oldest, Math.min(want, oldest + 2));
-    if (this.shown < want) this.shown = Math.min(want, this.shown + 2);
-    const s = this.snaps.get(this.shown);
+    if (this.shownFrame < oldest) this.shownFrame = Math.max(oldest, Math.min(want, oldest + 2));
+    if (this.shownFrame < want) this.shownFrame = Math.min(want, this.shownFrame + 2);
+    const s = this.snaps.get(this.shownFrame);
     if (s && s[0] >= this.last[0]) this.last = s;
     return this.last;                                       // never backwards, never inside the buffer
   }

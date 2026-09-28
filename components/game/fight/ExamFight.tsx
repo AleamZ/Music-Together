@@ -5,6 +5,7 @@ import type { MartialStyle } from "@/lib/game/fight/dojo";
 import { type MatchParams, type State } from "@/lib/game/fight/engine";
 import { fightErrorMessage } from "@/lib/game/fight/messages";
 import { RefereedMatch, type ServerClock } from "@/lib/game/fight/referee";
+import type { ArenaKind } from "@/lib/game/fight/render/arena-art";
 import type { FighterLook } from "@/lib/game/fight/render/rig";
 import { fightForfeit, fightPush, fightState, type MatchResult } from "@/lib/game/fight/rpc";
 import type { Look } from "@/lib/game/types";
@@ -14,7 +15,7 @@ import { KeyLegend } from "./PracticeSetup";
 /** v20.2 the exam's sparring match against the master's bot, refereed by the server (spec §v20.2 "The refereed-match
  *  pipeline"): the local sim follows the server clock from frame 0 (never ahead of it), pushes every 60 frames with its
  *  hash, resyncs when asked, and shows the result the server settled. Leaving mid-match is a loss ("Thoát = xử thua"). */
-export default function ExamFight({ token, match, resume, clock, look, name, master, myRank, onResult, onFlag }: {
+export default function ExamFight({ token, match, resume, clock, look, name, master, myRank, onResult, onFlag, arena = "dojo", foe }: {
   token: string;
   match: { id: string; params: MatchParams; startedAtMs: number };
   /** Resuming after a reload: the runs the server already holds. */
@@ -26,6 +27,9 @@ export default function ExamFight({ token, match, resume, clock, look, name, mas
   myRank: number;
   onResult: (r: MatchResult) => void;
   onFlag?: (code: string) => void;
+  /** v20.4 the bot ladder: the hầm's arena and the boss (its name, look and style) instead of the master. */
+  arena?: ArenaKind;
+  foe?: { name: string; look: Look; style: number };
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
   const [waiting, setWaiting] = useState(false);
@@ -87,8 +91,9 @@ export default function ExamFight({ token, match, resume, clock, look, name, mas
   }, [ref, token, match.id, clock, finish]);
 
   const fighters = useMemo((): readonly [FighterLook, FighterLook] => [
-    { look, style: match.params.p1.style, rank: myRank }, { look: master.masterLook, style: master.id, rank: match.params.p2.rank },
-  ], [look, match, myRank, master]);
+    { look, style: match.params.p1.style, rank: myRank },
+    foe ? { look: foe.look, style: foe.style, rank: match.params.p2.rank } : { look: master.masterLook, style: master.id, rank: match.params.p2.rank },
+  ], [look, match, myRank, master, foe]);
 
   const forfeit = useCallback(() => {
     setConfirmExit(false);
@@ -101,12 +106,12 @@ export default function ExamFight({ token, match, resume, clock, look, name, mas
   }, []);
 
   return (
-    <div className="game-ui fixed inset-0 z-50 flex flex-col items-center justify-center gap-2 bg-[#120c14]/95 p-2 text-ink" role="dialog" aria-modal="true" aria-label="Thi đấu với thầy">
+    <div className="game-ui fixed inset-0 z-50 flex flex-col items-center justify-center gap-2 bg-[#120c14]/95 p-2 text-ink" role="dialog" aria-modal="true" aria-label={foe ? `Thách đấu ${foe.name}` : "Thi đấu với thầy"}>
       <Arena
         driver={driver}
-        arena="dojo"
+        arena={arena}
         fighters={fighters}
-        names={[name, master.master]}
+        names={[name, foe?.name ?? master.master]}
         paused={false}
         onEsc={() => setConfirmExit(true)}
         onOver={onOver}
@@ -115,7 +120,7 @@ export default function ExamFight({ token, match, resume, clock, look, name, mas
         <button type="button" className="pch-btn" onClick={() => setConfirmExit(true)}>🏳️ Đầu hàng (Esc)</button>
         <details className="pch hidden px-2 py-1 pointer-fine:block">
           <summary className="cursor-pointer font-vt text-lg">⌨️ Phím</summary>
-          <KeyLegend className="mt-1" style={master.id} />
+          <KeyLegend className="mt-1" style={foe ? match.params.p1.style : master.id} />
         </details>
       </div>
       {waiting && <p className="font-vt text-xl text-[#fff4d8]" role="status">Trọng tài đang chấm trận…</p>}

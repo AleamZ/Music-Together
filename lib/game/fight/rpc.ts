@@ -48,6 +48,8 @@ export interface DojoState {
   exam: LiveExam | null;
   serverNowMs: number;
   coins?: number;
+  /** v20.4: thầy Lâm's line about the hatch (once, the first visit after the unlock). */
+  ugHint?: boolean;
 }
 
 function parseMatch(v: unknown): LiveMatch | null {
@@ -86,6 +88,7 @@ export function parseDojoState(data: unknown): DojoState | null {
   };
   const coins = num(r.coins);
   if (coins !== null) out.coins = coins;
+  if (r.ug_hint === true) out.ugHint = true;
   return out;
 }
 

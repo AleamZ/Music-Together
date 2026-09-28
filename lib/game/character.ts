@@ -31,6 +31,8 @@ export interface CharacterRow {
   outfit?: string | null;
   /** Added by 0051 (v20.3): the worn uniform's rank; absent reads as none. */
   belt?: number | null;
+  /** Added by 0052 (v20.4): the newest underground season title (the name tag). */
+  ug_title?: string | null;
 }
 
 export { DEFAULT_LOOK };
@@ -67,6 +69,7 @@ export function lookFromRow(row: CharacterRow): Look {
     gender: pick(GENDERS, row.gender ?? "", "nam" as Gender),
     outfit: row.outfit ?? null,
     ...(typeof row.belt === "number" && row.belt >= 0 && row.belt <= 4 ? { belt: row.belt } : {}),
+    ...(typeof row.ug_title === "string" && row.ug_title.length > 0 && row.ug_title.length <= 40 ? { ugTitle: row.ug_title } : {}),
   };
 }
 
@@ -111,18 +114,22 @@ export function fetchCatalog(): Promise<CatalogItem[]> {
 }
 
 const LOOK_COLUMNS = "account_id, skin, hair, hair_color, hat, top, bottom, shoes, neck, gender, outfit, wrist, hairpin";
-/** v20.3: the belt column (0051); a database without it yet is read without it, once and for all this page. */
-let beltColumn = true;
+/** v20.3 / v20.4: the extra columns (0051's belt, 0052's ug_title); a database without them yet is read without them, once
+ *  and for all this page. */
+const EXTRA_COLUMNS = ["belt, ug_title", "belt", ""] as const;
+let extra = 0;
 
 /** Looks of the given accounts; accounts without a character are simply absent from the map. */
 export async function fetchCharacters(accountIds: string[]): Promise<Map<string, Look>> {
   const out = new Map<string, Look>();
   if (accountIds.length === 0) return out;
   const run = (cols: string) => supabase.from("characters").select(cols).in("account_id", accountIds);
-  let res = await run(beltColumn ? `${LOOK_COLUMNS}, belt` : LOOK_COLUMNS);
-  if (res.error && beltColumn && (res.error.code === "42703" || /belt/.test(res.error.message ?? ""))) {
-    beltColumn = false;
-    res = await run(LOOK_COLUMNS);
+  const cols = () => (EXTRA_COLUMNS[extra] ? `${LOOK_COLUMNS}, ${EXTRA_COLUMNS[extra]}` : LOOK_COLUMNS);
+  let res = await run(cols());
+  while (res.error && extra < EXTRA_COLUMNS.length - 1 && (res.error.code === "42703" || /belt|ug_title/.test(res.error.message ?? ""))) {
+    // no belt means no 0051, so no 0052 either: straight to the plain columns; no ug_title: drop only that
+    extra = /belt/.test(res.error.message ?? "") ? EXTRA_COLUMNS.length - 1 : extra + 1;
+    res = await run(cols());
   }
   if (res.error) throw res.error;
   for (const row of (res.data ?? []) as unknown as CharacterRow[]) out.set(row.account_id, lookFromRow(row));

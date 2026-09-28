@@ -7,7 +7,7 @@ import { GROUND_Y } from "./fx";
 import { drawText, textWidth } from "./font";
 import type { PixelCtx } from "./rig";
 
-export type ArenaKind = "practice" | "dojo" | "bai_dat";
+export type ArenaKind = "practice" | "dojo" | "bai_dat" | "ham_ngam";
 
 const SKY = ["#2b2150", "#3d2a5e", "#5a3468", "#7d3f67", "#a8515f", "#d06f55", "#e99a5a"];
 const HOUSE = ["#241a2c", "#2c2034", "#221828"];
@@ -28,6 +28,10 @@ export function paintArena(c: PixelCtx, kind: ArenaKind, frame: number, reduced:
   }
   if (kind === "bai_dat") {
     paintBaiDat(c, frame, reduced);
+    return;
+  }
+  if (kind === "ham_ngam") {
+    paintHam(c, frame, reduced);
     return;
   }
   c.fillStyle = SKY[SKY.length - 1];
@@ -284,4 +288,73 @@ export function paintBaiDat(c: PixelCtx, frame: number, reduced: boolean, night 
   c.fillRect(0, GROUND_Y + 5, ARENA_W, ARENA_H - GROUND_Y - 5);
   c.fillStyle = "#b99468";
   for (let k = 0; k < 90; k++) c.fillRect(h(k * 13) % ARENA_W, GROUND_Y + 6 + (h(k * 7) % (ARENA_H - GROUND_Y - 7)), 2, 1);
+}
+
+// ---------------------------------------------------------------- v20.4: the hầm's cage
+/** Inside the cage of the Hầm đấu ngầm: a raw concrete wall with a pipe run and caged bulbs, a crowd in silhouette behind
+ *  the chain-link (heads bob a little; still under reduced motion), a padded red floor with a worn circle, and the cage's
+ *  posts at the edges. */
+export function paintHam(c: PixelCtx, frame: number, reduced: boolean): void {
+  const floor = GROUND_Y - 18;
+  // the wall: poured concrete bands, stains
+  c.fillStyle = "#3e3b38";
+  c.fillRect(0, 0, ARENA_W, floor);
+  for (let y = 8; y < floor; y += 22) {
+    c.fillStyle = "#34312e";
+    c.fillRect(0, y, ARENA_W, 2);
+  }
+  for (let k = 0; k < 40; k++) {
+    c.fillStyle = h(k * 17) % 2 ? "#47433f" : "#2f2c2a";
+    c.fillRect(h(k * 31) % ARENA_W, h(k * 7) % floor, 3 + (h(k) % 5), 2);
+  }
+  c.fillStyle = "#5a4430";
+  c.fillRect(0, 16, ARENA_W, 4);
+  c.fillStyle = "#7a5a3a";
+  c.fillRect(0, 16, ARENA_W, 1);
+  // the crowd behind the fence: shoulders and heads in silhouette, two rows
+  for (let row = 0; row < 2; row++) {
+    for (let x = -6 + row * 9; x < ARENA_W + 8; x += 18) {
+      const bob = reduced ? 0 : Math.round(Math.sin((frame + x * 7 + row * 40) / 18) * 1.5);
+      const top = floor - 44 + row * 12 + (h(x + row) % 5) + bob;
+      c.fillStyle = row === 0 ? "#1c1a20" : "#24212a";
+      c.fillRect(x - 7, top + 9, 15, floor - top - 9);
+      c.fillRect(x - 4, top, 9, 9);
+      if (h(x * 3 + row) % 4 === 0) c.fillRect(x + 6, top + 2 - (reduced ? 0 : Math.abs(bob)), 3, 9);   // a raised fist
+    }
+  }
+  // the chain-link over the crowd: a diamond mesh
+  c.fillStyle = "#8a939a";
+  for (let y = 26; y < floor; y += 6) {
+    for (let x = (y / 6) % 2 ? 3 : 0; x < ARENA_W; x += 6) c.fillRect(x, y, 1, 1);
+  }
+  c.fillStyle = "#6a7278";
+  c.fillRect(0, 26, ARENA_W, 2);
+  // caged bulbs on the wall
+  for (const bx of [64, 192, 320]) {
+    const flick = reduced || h(Math.floor(frame / 9) + bx) % 23 !== 0;
+    c.fillStyle = "#1a1a1c";
+    c.fillRect(bx - 4, 4, 9, 9);
+    c.fillStyle = flick ? "#ffe9a0" : "#8a7a4a";
+    c.fillRect(bx - 2, 6, 5, 5);
+    if (flick) {
+      c.fillStyle = "#fff7d8";
+      c.fillRect(bx - 1, 7, 2, 2);
+    }
+  }
+  // the cage's posts at both edges
+  for (const px0 of [6, ARENA_W - 12]) {
+    c.fillStyle = "#3b4148";
+    c.fillRect(px0, 20, 6, floor - 20);
+    c.fillStyle = "#8a939c";
+    c.fillRect(px0, 20, 1, floor - 20);
+  }
+  // the padded floor with a worn circle
+  c.fillStyle = "#7d2a26";
+  c.fillRect(0, floor, ARENA_W, ARENA_H - floor);
+  c.fillStyle = "#5e1f1c";
+  for (let y = floor + 6; y < ARENA_H; y += 10) c.fillRect(0, y, ARENA_W, 1);
+  c.fillStyle = "#a4403a";
+  for (let x = 60; x < ARENA_W - 60; x += 2) c.fillRect(x, GROUND_Y + 6 + Math.round(Math.sin(((x - 60) / (ARENA_W - 120)) * Math.PI) * 6), 1, 1);
+  c.fillStyle = "#c9b89a";
+  c.fillRect(0, GROUND_Y + 1, ARENA_W, 1);
 }

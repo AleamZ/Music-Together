@@ -46,4 +46,6 @@ export interface Look {
   /** v20.3: with a võ phục on, the wearer's rank in that style (0–4): the belt is drawn in that rank's colour. The server
    *  keeps it (0051's characters.belt); absent or null reads as the style's first belt. */
   belt?: number | null;
+  /** v20.4: the newest underground season title ("Thủy quái mùa 1"), shown on the name tag (0052's characters.ug_title). */
+  ugTitle?: string | null;
 }

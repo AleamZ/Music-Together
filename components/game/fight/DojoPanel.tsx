@@ -27,7 +27,10 @@ function GateButton({ gate, primary = false, onClick }: { gate: Gate; primary?: 
 /** v20.2 the dojo panel (spec §v20.2 "UI flows"): a tab per style — its master, lore, stats, trait, belt ladder and
  *  specials (a looping preview on the rig, locked ones greyed) — and the buttons: Nhập môn, Mặc/Cởi võ phục, Luyện tập,
  *  Thi lên đai (disabled with the reason and a countdown). */
-export default function DojoPanel({ state, error, coins, tab, nowMs, busy, onTab, onEnroll, onWear, onUnwear, onPractice, onExam, onClose }: {
+/** v20.4 thầy Lâm's line to a student who has earned the underground (spec §v20.4 "Unlock and entrance"). */
+export const UG_HINT_LINE = "Con khá rồi đấy. Muốn thử sức thật thì tìm cái nắp cống giữa sạp đèn lồng và vựa nông sản… gõ ba dài hai ngắn.";
+
+export default function DojoPanel({ state, error, coins, tab, nowMs, busy, onTab, onEnroll, onWear, onUnwear, onPractice, onExam, onClose, ugHint = false }: {
   state: DojoState | null;
   error: string | null;
   coins: number | null;
@@ -41,6 +44,7 @@ export default function DojoPanel({ state, error, coins, tab, nowMs, busy, onTab
   onPractice: (key: string) => void;
   onExam: (key: string, gate: Gate) => void;
   onClose: () => void;
+  ugHint?: boolean;
 }) {
   const m = martialById(tab) ?? MARTIAL[0];
   const e = enrollmentOf(state, m.key);
@@ -55,6 +59,7 @@ export default function DojoPanel({ state, error, coins, tab, nowMs, busy, onTab
   return (
     <ParchmentModal title="🥋 Võ đường · thầy Lâm" onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-3 font-vt text-lg leading-tight">
+        {ugHint && <p className="rounded border border-burgundy/50 bg-ink/5 p-2 italic" data-testid="ug-hint">thầy Lâm (ghé tai): “{UG_HINT_LINE}”</p>}
         <div className="flex flex-wrap gap-1" role="tablist" aria-label="Võ phái">
           {MARTIAL.map((s) => {
             const r = enrollmentOf(state, s.key)?.rank;

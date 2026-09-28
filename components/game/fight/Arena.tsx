@@ -33,7 +33,7 @@ export function prefersReduced(): boolean {
 
 /** The arena canvas (384 × 216, integer-scaled), the HTML HUD copy over it, the keyboard (capture phase: the fight's
  *  keys never reach the world) and the touch pad. Shared by practice (v20.1) and refereed fights (v20.2). */
-export default function Arena({ driver, arena, fighters, names, paused, boxes = false, onEsc, onOver }: {
+export default function Arena({ driver, arena, fighters, names, paused, boxes = false, onEsc, onOver, controls = true }: {
   driver: FightDriver;
   arena: ArenaKind;
   fighters: readonly [FighterLook, FighterLook];
@@ -42,6 +42,8 @@ export default function Arena({ driver, arena, fighters, names, paused, boxes = 
   boxes?: boolean;
   onEsc: () => void;
   onOver: (s: State) => void;
+  /** v20.4: false for a spectator (no touch pad, no buttons). */
+  controls?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keys = useRef(new Set<string>());
@@ -198,7 +200,7 @@ export default function Arena({ driver, arena, fighters, names, paused, boxes = 
         ))}
       </div>
       {/* touch: an 8-way pad on the left, six buttons on the right */}
-      <div className="hidden w-full max-w-xl items-end justify-between gap-4 pointer-coarse:flex" data-testid="fight-touch">
+      {controls && <div className="hidden w-full max-w-xl items-end justify-between gap-4 pointer-coarse:flex" data-testid="fight-touch">
         <div
           ref={padRef}
           className="pch relative h-32 w-32 touch-none select-none rounded-full"
@@ -225,7 +227,7 @@ export default function Arena({ driver, arena, fighters, names, paused, boxes = 
             </button>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

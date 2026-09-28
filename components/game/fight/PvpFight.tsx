@@ -8,7 +8,8 @@ import type { ServerClock } from "@/lib/game/fight/referee";
 import type { FighterLook } from "@/lib/game/fight/render/rig";
 import type { StartedMatch } from "@/lib/game/fight/rings";
 import { fightClaim, fightForfeit, fightPushPvp, fightState, type MatchResult } from "@/lib/game/fight/rpc";
-import { broadcastTransport, type FightTransport } from "@/lib/game/fight/transport";
+import type { ArenaKind } from "@/lib/game/fight/render/arena-art";
+import { broadcastTransport, topicTransport, type FightTransport } from "@/lib/game/fight/transport";
 import type { Look } from "@/lib/game/types";
 import Arena, { type FightDriver } from "./Arena";
 import { KeyLegend } from "./PracticeSetup";
@@ -37,7 +38,7 @@ interface NetChip { rtt: number; delay: number; depth: number; stalledMs: number
  *  and my checkpoint hash), procedure R on a desync, a resync answer or the opponent's `fr`, the network chip, the stall
  *  banner with the claim, "Đầu hàng", and the result card the server settled. Leaving mid-match is a loss ("Thoát = xử
  *  thua"). `resume`: the page reloaded mid-match (fight_state first). */
-export default function PvpFight({ token, roomId, ring, match, me, foeId, names, looks, clock, resume, onDone, onRematch, onLeave, onToast }: {
+export default function PvpFight({ token, roomId, ring, match, me, foeId, names, looks, clock, resume, onDone, onRematch, onLeave, onToast, topic, arena = "bai_dat" }: {
   token: string;
   roomId: string;
   ring: number;
@@ -50,9 +51,13 @@ export default function PvpFight({ token, roomId, ring, match, me, foeId, names,
   clock: ServerClock;
   resume: boolean;
   onDone: () => void;
-  onRematch: (stake: number) => void;
+  /** null: no rematch (v20.4 the underground's matches). */
+  onRematch: ((stake: number) => void) | null;
   onLeave: () => void;
   onToast: (text: string) => void;
+  /** v20.4: an underground match's topic (fight:{room}:m{8 hex}) instead of the ring's. */
+  topic?: string;
+  arena?: ArenaKind;
 }) {
   const side = match.side;
   const pvp = useMemo(() => new PvpMatch(match.params, (side - 1) as 0 | 1, match.startedAtMs, (runs) => writeLog(match.id, runs)), [match, side]);
@@ -104,7 +109,7 @@ export default function PvpFight({ token, roomId, ring, match, me, foeId, names,
 
   // the ring's fight topic
   useEffect(() => {
-    const t = broadcastTransport(roomId, ring, foeId);
+    const t = topic ? topicTransport(topic, foeId) : broadcastTransport(roomId, ring, foeId);
     transport.current = t;
     t.onPacket((p) => {
       if (p.t === "fi") pvp.session.onPacket(p, performance.now());
@@ -115,7 +120,7 @@ export default function PvpFight({ token, roomId, ring, match, me, foeId, names,
       transport.current = null;
       t.close();
     };
-  }, [roomId, ring, foeId, pvp, me, resync]);
+  }, [roomId, ring, foeId, pvp, me, resync, topic]);
 
   // the pushes (one at a time, every 60 frames; keepalives while stalled) and the network chip
   useEffect(() => {
@@ -182,7 +187,7 @@ export default function PvpFight({ token, roomId, ring, match, me, foeId, names,
       <p className="pch px-2 py-0.5 font-vt text-base" data-testid="pvp-net">
         {`📶 ${chip.rtt > 0 ? `${chip.rtt} ms` : "…"} · trễ ${chip.delay} khung · lùi ${chip.depth}`}
       </p>
-      <Arena driver={driver} arena="bai_dat" fighters={fighters} names={names} paused={false} onEsc={() => setConfirmExit(true)} onOver={onOver} />
+      <Arena driver={driver} arena={arena} fighters={fighters} names={names} paused={false} onEsc={() => setConfirmExit(true)} onOver={onOver} />
       {!result && <WaitingBanner stalledMs={chip.stalledMs} claiming={claiming} onClaim={claim} />}
       <div className="flex flex-wrap items-center justify-center gap-2">
         <button type="button" className="pch-btn" disabled={result !== null} onClick={() => setConfirmExit(true)}>🏳️ Đầu hàng (Esc)</button>
@@ -209,7 +214,7 @@ export default function PvpFight({ token, roomId, ring, match, me, foeId, names,
         <ResultCard
           result={result}
           side={side}
-          onRematch={() => { onDone(); onRematch(result.pvp?.stake ?? match.stake); }}
+          onRematch={onRematch ? () => { onDone(); onRematch(result.pvp?.stake ?? match.stake); } : null}
           onLeave={() => { onDone(); onLeave(); }}
           onClose={onDone}
         />

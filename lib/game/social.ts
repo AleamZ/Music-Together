@@ -49,7 +49,7 @@ export function buildRoster({ presence, members, room, localId, looks, mapId, se
     const spot = !classic || !seating ? null : p.accountId === roles.djAccountId ? seating.djSpot : spots.get(p.accountId) ?? null;
     return {
       id: p.accountId,
-      name: byAccount.get(p.accountId)?.username || p.name || "Khách",
+      name: nameTag(byAccount.get(p.accountId)?.username || p.name || "Khách", looks.get(p.accountId)),
       badges: badgesFor(p.accountId, roles, classic),
       look: looks.get(p.accountId) ?? DEFAULT_LOOK,
       spot,
@@ -68,3 +68,7 @@ export function isHereOn(presence: readonly PresenceEntry[], accountId: string, 
 export function freshChatBubbles(messages: ChatMessage[], shown: ReadonlySet<string>, now: number, maxAgeMs = 30_000): ChatMessage[] {
   return messages.filter((m) => !shown.has(m.id) && m.account_id !== null && now - Date.parse(m.created_at) <= maxAgeMs);
 }
+
+/** v20.4: a name tag with its season title ("Lan «Thủy quái mùa 1»"). */
+export const nameTag = (name: string, look: Pick<Look, "ugTitle"> | null | undefined): string =>
+  look?.ugTitle ? `${name} «${look.ugTitle}»` : name;

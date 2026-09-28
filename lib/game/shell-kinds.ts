@@ -3,7 +3,7 @@ import type { InteractKind } from "./maps/types";
 // The interactables GameShell handles itself (before the farm, cards and fishing controllers get the rest), and the panel
 // each one opens. Pinned by tests/unit/game-shell-kinds.test.ts: concurrent edits have lost cases before.
 
-export type ShellPanel = "queue" | "board" | "restaurant" | "vehicle_shop" | "fashion_store" | "salon" | "city_map" | "news" | "pet_shop" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board";
+export type ShellPanel = "queue" | "board" | "restaurant" | "vehicle_shop" | "fashion_store" | "salon" | "city_map" | "news" | "pet_shop" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch";
 
 /** kind → the GameShell panel it opens (the portal travels instead, so it has none). */
 export const SHELL_PANEL_OF = {
@@ -25,7 +25,11 @@ export const SHELL_PANEL_OF = {
   dojo: "dojo",                                      // v20.2
   ring_corner: "ring",                              // v20.3: take the corner, the ready screen
   ring_board: "ring_board",                         // v20.3: Bảng thành tích
+  ug_organizer: "underground",                      // v20.4: anh Tư Sẹo (Kèo ngầm)
+  ug_board: "underground",                          // v20.4: Bảng xếp hạng
+  ug_door: "underground",                           // v20.4: Tầng hầm
+  cage_watch: "ug_watch",                           // v20.4: watching the cage
 } as const satisfies Partial<Record<InteractKind, ShellPanel>>;
 
 /** Every kind with its own `case` in GameShell's onInteract. */
-export const SHELL_KINDS: readonly InteractKind[] = ["portal", ...(Object.keys(SHELL_PANEL_OF) as InteractKind[])];
+export const SHELL_KINDS: readonly InteractKind[] = ["portal", "ug_hatch", ...(Object.keys(SHELL_PANEL_OF) as InteractKind[])];

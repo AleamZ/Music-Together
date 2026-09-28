@@ -53,6 +53,9 @@ export default function Dojo({ token, look, name, coins, dojo, onLook, onCoins, 
   onClose: () => void;
 }) {
   const [view, setView] = useState<View>({ kind: "panel" });
+  // v20.4: thầy Lâm's hatch line arrives once (dojo_state's ug_hint); it stays on while the panel is open
+  const [ugHint, setUgHint] = useState(false);
+  if (dojo.state?.ugHint && !ugHint) setUgHint(true);
   const [tab, setTab] = useState<number>(() => uniformStyle(look.outfit)?.id ?? 1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -292,6 +295,7 @@ export default function Dojo({ token, look, name, coins, dojo, onLook, onCoins, 
       onPractice={(key) => { const s = martialByKey(key); if (s) setView({ kind: "practice", style: s }); }}
       onExam={exam}
       onClose={onClose}
+      ugHint={ugHint}
     />
   );
 }
