@@ -86,6 +86,22 @@ end $$;
 create temp table tk (k text primary key, v text);
 insert into tk select 'a', token from public.register('dojo_a_' || floor(random() * 1e9)::text, 'pw123456');
 insert into tk select 'b', token from public.register('dojo_b_' || floor(random() * 1e9)::text, 'pw123456');
+-- v21 (0070): this smoke checks exact balances, and progression pays rewards on its own (achievements, collections,
+-- level-ups — e.g. 'earn_10k' on a 'daily' +100 000). Every account starts with them all unlocked and today's XP
+-- buckets full (no XP, no level-up; the level board is untouched).
+do $$
+begin
+  if to_regclass('public.player_progress') is not null then
+    insert into public.player_achievements (account_id, achievement)
+    select a.id, c.id from public.accounts a cross join public.achievement_catalog c on conflict do nothing;
+    insert into public.player_collections (account_id, collection)
+    select a.id, c.id from public.accounts a cross join public.collection_catalog c on conflict do nothing;
+    insert into public.player_progress (account_id, xp_day, xp_fish, xp_earn, xp_fight, xp_grant)
+    select a.id, public._vn_today(), 1000000000, 1000000000, 1000000000, 1000000000 from public.accounts a
+    on conflict (account_id) do update set xp_day = excluded.xp_day, xp_fish = excluded.xp_fish, xp_earn = excluded.xp_earn,
+                                           xp_fight = excluded.xp_fight, xp_grant = excluded.xp_grant;
+  end if;
+end $$;
 create temp view who as select (select v from tk where k = 'a') t, (select v from tk where k = 'b') t2,
   public._auth_account((select v from tk where k = 'a')) a, public._auth_account((select v from tk where k = 'b')) a2;
 insert into public.characters (account_id, skin, hair, hair_color, shoes) select a, 'warm', 'short', 'black', 'shoes_dep_blue' from who;

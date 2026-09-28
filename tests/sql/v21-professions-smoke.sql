@@ -8,6 +8,22 @@ reset client_min_messages;
 
 create temp table ps (k text primary key, v text);
 insert into ps select 't', token from public.register('pf_' || floor(random() * 1e9)::text, 'pw123456');
+-- v21 (0070): this smoke checks exact balances, and progression pays rewards on its own (achievements, collections,
+-- level-ups — e.g. 'earn_10k' on a 'daily' +100 000). Every account starts with them all unlocked and today's XP
+-- buckets full (no XP, no level-up; the level board is untouched).
+do $$
+begin
+  if to_regclass('public.player_progress') is not null then
+    insert into public.player_achievements (account_id, achievement)
+    select a.id, c.id from public.accounts a cross join public.achievement_catalog c on conflict do nothing;
+    insert into public.player_collections (account_id, collection)
+    select a.id, c.id from public.accounts a cross join public.collection_catalog c on conflict do nothing;
+    insert into public.player_progress (account_id, xp_day, xp_fish, xp_earn, xp_fight, xp_grant)
+    select a.id, public._vn_today(), 1000000000, 1000000000, 1000000000, 1000000000 from public.accounts a
+    on conflict (account_id) do update set xp_day = excluded.xp_day, xp_fish = excluded.xp_fish, xp_earn = excluded.xp_earn,
+                                           xp_fight = excluded.xp_fight, xp_grant = excluded.xp_grant;
+  end if;
+end $$;
 insert into ps select 'a', public._auth_account(v)::text from ps where k = 't';
 
 -- 1. catalog, privileges

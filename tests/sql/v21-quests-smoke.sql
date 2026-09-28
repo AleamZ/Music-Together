@@ -23,6 +23,22 @@ insert into qk select 't1', token from public.register('q1_' || floor(random() *
 insert into qk select 't2', token from public.register('q2_' || floor(random() * 1e9)::text, 'pw123456');
 insert into qk select 't3', token from public.register('q3_' || floor(random() * 1e9)::text, 'pw123456');
 insert into qk select 't4', token from public.register('q4_' || floor(random() * 1e9)::text, 'pw123456');
+-- v21 (0070): this smoke checks exact balances, and progression pays rewards on its own (achievements, collections,
+-- level-ups — e.g. 'earn_10k' on a 'daily' +100 000). Every account starts with them all unlocked and today's XP
+-- buckets full (no XP, no level-up; the level board is untouched).
+do $$
+begin
+  if to_regclass('public.player_progress') is not null then
+    insert into public.player_achievements (account_id, achievement)
+    select a.id, c.id from public.accounts a cross join public.achievement_catalog c on conflict do nothing;
+    insert into public.player_collections (account_id, collection)
+    select a.id, c.id from public.accounts a cross join public.collection_catalog c on conflict do nothing;
+    insert into public.player_progress (account_id, xp_day, xp_fish, xp_earn, xp_fight, xp_grant)
+    select a.id, public._vn_today(), 1000000000, 1000000000, 1000000000, 1000000000 from public.accounts a
+    on conflict (account_id) do update set xp_day = excluded.xp_day, xp_fish = excluded.xp_fish, xp_earn = excluded.xp_earn,
+                                           xp_fight = excluded.xp_fight, xp_grant = excluded.xp_grant;
+  end if;
+end $$;
 insert into qk select 'a' || substr(k, 2), public._auth_account(v)::text from qk where k like 't_';
 
 -- ---------- 1. Daily / weekly offers, progress only from game_events ----------
@@ -190,16 +206,16 @@ begin
   perform public.arena_accept(t3, s);
   assert (select coins from public.wallets where account_id = a3) = 900, 'stake b';
   -- bout 1: A1 beats B1; a match between a wrong pair is ignored
-  insert into public.fight_matches (kind, p1, p2, params, started_at, sim) values ('pvp', a2, a3, '{}', now(), '{}') returning id into m;
+  insert into public.fight_matches (kind, p1, p2, params, started_at, sim, ring) values ('pvp', a2, a3, '{}', now(), '{}', 1) returning id into m;
   update public.fight_matches set status = 'done', winner = 1 where id = m;
   assert (select bout from public.arena_series where id = s) = 1, 'wrong pair ignored';
-  insert into public.fight_matches (kind, p1, p2, params, started_at, sim) values ('pvp', a3, a1, '{}', now(), '{}') returning id into m;
+  insert into public.fight_matches (kind, p1, p2, params, started_at, sim, ring) values ('pvp', a3, a1, '{}', now(), '{}', 1) returning id into m;
   update public.fight_matches set status = 'done', winner = 2 where id = m;
   assert (select score_a from public.arena_series where id = s) = 1, 'bout 1';
   -- bout 2: B2 beats A2; bout 3: A1 beats B2
-  insert into public.fight_matches (kind, p1, p2, params, started_at, sim) values ('pvp', a2, a4, '{}', now(), '{}') returning id into m;
+  insert into public.fight_matches (kind, p1, p2, params, started_at, sim, ring) values ('pvp', a2, a4, '{}', now(), '{}', 1) returning id into m;
   update public.fight_matches set status = 'done', winner = 2 where id = m;
-  insert into public.fight_matches (kind, p1, p2, params, started_at, sim) values ('pvp', a1, a4, '{}', now(), '{}') returning id into m;
+  insert into public.fight_matches (kind, p1, p2, params, started_at, sim, ring) values ('pvp', a1, a4, '{}', now(), '{}', 1) returning id into m;
   update public.fight_matches set status = 'done', winner = 1 where id = m;
   assert (select status = 'done' and winner = ta from public.arena_series where id = s), 'series won';
   assert (select coins from public.wallets where account_id = a1) = 995, 'win a1';
