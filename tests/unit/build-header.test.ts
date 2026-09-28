@@ -12,12 +12,14 @@ const build = async () => {
 };
 
 describe("the client build id (anti-cheat spec §12.6)", () => {
-  it("is the host's commit, cut to 7 characters", async () => {
+  it("is the build time in UTC, then the host's commit cut to 7 characters (orderable: part 3's minimum build)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-10-02T03:04:05Z"));
     vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "0123456789abcdef");
     vi.stubEnv("CF_PAGES_COMMIT_SHA", "fedcba9876543210");
-    expect(await build()).toBe("0123456");
+    expect(await build()).toBe("202610020304-0123456");
     vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "");
-    expect(await build()).toBe("fedcba9");
+    expect(await build()).toBe("202610020304-fedcba9");
   });
 
   it("is the build time in UTC without a commit", async () => {
