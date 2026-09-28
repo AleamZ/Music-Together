@@ -59,6 +59,7 @@ import CharacterEditor from "./CharacterEditor";
 import DogPanel from "./farm/DogPanel";
 import FarmOverlays from "./farm/FarmOverlays";
 import FaintOverlay from "./FaintOverlay";
+import FightOverlay from "./fight/FightOverlay";
 import FashionStoreModal from "./FashionStoreModal";
 import RestaurantModal from "./RestaurantModal";
 import RideButton from "./RideButton";
@@ -122,7 +123,7 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
@@ -598,6 +599,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         break;
       case "estate":                                                        // v19.4
         setPanel("estate");
+        break;
+      case "punch_bag":                                                     // v20.1
+        setPanel("fight_practice");
         break;
       default:
         if (!farmInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
@@ -1101,6 +1105,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         />
       )}
       {(panel === "umbrella_stall" || panel === "umbrellas") && <UmbrellaModal shop={panel === "umbrella_stall"} onClose={close} />}
+      {panel === "fight_practice" && <FightOverlay look={myLook} name={myName} onClose={close} />}{/* v20.1 */}
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}

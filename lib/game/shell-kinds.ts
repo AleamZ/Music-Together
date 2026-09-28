@@ -3,7 +3,7 @@ import type { InteractKind } from "./maps/types";
 // The interactables GameShell handles itself (before the farm, cards and fishing controllers get the rest), and the panel
 // each one opens. Pinned by tests/unit/game-shell-kinds.test.ts: concurrent edits have lost cases before.
 
-export type ShellPanel = "queue" | "board" | "restaurant" | "vehicle_shop" | "fashion_store" | "salon" | "city_map" | "news" | "pet_shop" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate";
+export type ShellPanel = "queue" | "board" | "restaurant" | "vehicle_shop" | "fashion_store" | "salon" | "city_map" | "news" | "pet_shop" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice";
 
 /** kind → the GameShell panel it opens (the portal travels instead, so it has none). */
 export const SHELL_PANEL_OF = {
@@ -21,6 +21,7 @@ export const SHELL_PANEL_OF = {
   furniture_shop: "furniture_shop",                 // v19.2
   lot: "lot",                                       // v19.3
   estate: "estate",                                 // v19.4
+  punch_bag: "fight_practice",                      // v20.1
 } as const satisfies Partial<Record<InteractKind, ShellPanel>>;
 
 /** Every kind with its own `case` in GameShell's onInteract. */

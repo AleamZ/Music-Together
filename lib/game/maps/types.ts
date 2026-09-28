@@ -29,6 +29,8 @@ export type InteractKind =
   | "lot"
   // v19.4: the Sàn bất động sản office on Khu nhà (players sell flats and lots to each other)
   | "estate"
+  // v20.1: the punching bag on Chợ Lớn's south pavement (fight practice)
+  | "punch_bag"
   // every map: the city-map signpost (a view-only overview of the town)
   | "city_map"
   // v18.11: the hall's Báo Làng news stand (dev blog + village news)
@@ -101,7 +103,9 @@ export type PropPlacement =
   | { kind: "lantern_post"; x: number; y: number }
   | { kind: "shop_counter"; x: number; y: number }
   // every map: a wooden post carrying a small painted map of the town
-  | { kind: "city_map_post"; x: number; y: number };
+  | { kind: "city_map_post"; x: number; y: number }
+  // v20.1: Chợ Lớn's punching bag on its stand
+  | { kind: "punch_bag"; x: number; y: number };
 
 /** What a Chợ Lớn stall sells: fruit, flowers and lanterns are decoration; the fish depot and the produce depot are
  *  served (v18.5). */

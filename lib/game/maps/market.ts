@@ -68,6 +68,11 @@ export const LANTERN_POSTS: ReadonlyArray<{ x: number; y: number }> = [
   { x: 934, y: 178 }, { x: 1094, y: 178 }, { x: 1250, y: 178 },
 ];
 
+/** v20.1 Võ đài: "Bao cát · Luyện võ" on the south pavement — the bag's foot at (1090, 336), practised from (1090, 318)
+ *  facing down. It stays when the Võ đường is built beside it (v20.2). */
+export const PUNCH_BAG = { x: 1090, y: 336 } as const;
+export const PUNCH_BAG_USE = { x: 1090, y: 318 } as const;
+
 /** Outdoor tables of the nhà hàng (a table and two stools each), west of the door. */
 export const EAT_TABLES: ReadonlyArray<{ x: number; y: number }> = [{ x: 64, y: 200 }, { x: 106, y: 222 }];
 
@@ -89,6 +94,7 @@ export const MARKET_SOLIDS: Rect[] = [
   { x: 10, y: 242, w: 14, h: 10 },      // "Về sảnh" sign post
   ...LANTERN_POSTS.map((p) => ({ x: p.x - 2, y: p.y - 4, w: 4, h: 4 })),
   ...EAT_TABLES.map((t) => ({ x: t.x - 18, y: t.y - 10, w: 36, h: 10 })),
+  { x: PUNCH_BAG.x - 4, y: PUNCH_BAG.y - 6, w: 12, h: 6 },     // the punching bag's stand (v20.1)
 ];
 
 export const MARKET_INTERACTABLES: Interactable[] = [
@@ -141,6 +147,10 @@ export const MARKET_INTERACTABLES: Interactable[] = [
     id: "market_to_khu_nha", kind: "portal", label: "Khu nhà", prompt: "Đi Khu nhà (chung cư)", rect: { x: MARKET_W - 24, y: 180, w: 18, h: 24 },
     use: { x: MARKET_W - 44, y: 196 }, to: { map: "khu_nha", arrive: KHU_NHA_ARRIVE },
   },
+  {
+    id: "punch_bag", kind: "punch_bag", label: "Bao cát · Luyện võ", prompt: "Luyện võ (bao cát)",
+    rect: { x: PUNCH_BAG.x - 13, y: PUNCH_BAG.y - 36, w: 26, h: 36 }, use: { ...PUNCH_BAG_USE }, face: "down",
+  },
 ];
 
 /** The cook and the seller stand behind their counters, ông Tám in his showroom's door, and the stall vendors behind
@@ -171,6 +181,7 @@ export const MARKET_PROPS: PropPlacement[] = [
   ...LANTERN_POSTS.map((p): PropPlacement => ({ kind: "lantern_post", x: p.x, y: p.y })),
   { kind: "sign", x: 17, y: 252, icon: "note" },
   { kind: "sign", x: KHU_NHA_SIGN.x, y: KHU_NHA_SIGN.y, icon: "home" },
+  { kind: "punch_bag", x: PUNCH_BAG.x, y: PUNCH_BAG.y },                    // v20.1
 ];
 
 export function buildMarketMap(): GameMap {
