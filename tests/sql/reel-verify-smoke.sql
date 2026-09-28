@@ -1,11 +1,10 @@
--- tests/sql/reel-verify-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after 0004–0046, from the
--- repo root, with the fixture's absolute path:  psql -v fixtures=<repo>/tests/fixtures/reel-cases.json -f <this file>
--- It re-runs 0046 with \i (re-runnable). Every check is an ASSERT; the first failure stops psql.
+-- tests/sql/reel-verify-smoke.sql — run as the superuser on the throwaway PostgreSQL cluster after the full chain
+-- (0004 … newest, 0014 before 0013), from the repo root, with the fixture's absolute path:
+--   psql -v fixtures=<repo>/tests/fixtures/reel-cases.json -f <this file>
+-- It no longer re-runs 0046 with \i: that put 0046's finish_cast back over 0059's (and 0065's). Since 0059 the seed is
+-- answered by hook_cast at the bite, not by start_cast, and a won reel needs the server's hook (hooked_at); since 0057
+-- a cast claims its cell. Every check is an ASSERT; the first failure stops psql.
 \set ON_ERROR_STOP on
-set client_min_messages = warning;
-\i supabase/migrations/0046_reel_verify.sql
-\i supabase/migrations/0046_reel_verify.sql
-reset client_min_messages;
 
 -- ---------- 1. The shared fixtures: _reel_replay = replayReel (tests/unit/game-reel.test.ts) ----------
 create temp table fx as select pg_read_file(:'fixtures')::jsonb j;
@@ -85,17 +84,25 @@ insert into rs select 'room', room_id::text from public.create_room('Reel verify
 
 do $$
 declare t text := (select v from rs where k = 't'); a uuid := (select v from rs where k = 'a')::uuid;
-        room uuid := (select v from rs where k = 'room')::uuid; c jsonb; row public.casts;
+        room uuid := (select v from rs where k = 'room')::uuid; c jsonb; row public.casts; d integer[];
 begin
   insert into public.inventory (account_id, item_id, qty) values (a, 'bait_worm', 20)
   on conflict (account_id, item_id) do update set qty = 20;
   insert into public.fishing_profiles (account_id) values (a) on conflict (account_id) do nothing;
-  c := public.start_cast(room, t);
-  assert (c->>'reel_seed')::bigint between 0 and 4294967295, format('seed %s', c->'reel_seed');
+  delete from public.player_pos where account_id = a;
+  select array[cc, r] into d from generate_series(0, 79) cc, generate_series(0, 49) r where public._pond_spot(cc, r) = 'dock'
+   order by r, cc limit 1;
+  c := public.start_cast(room, t, d[1], d[2]);
+  assert c->>'cast_id' is not null and not (c ? 'reel_seed'), format('no seed at the cast (0059) %s', c);
   select * into row from public.casts where id = (c->>'cast_id')::uuid;
-  assert row.reel_seed = (c->>'reel_seed')::bigint, 'the seed is kept';
+  assert row.reel_seed between 0 and 4294967295, 'the seed is kept';
   assert row.reel_params = jsonb_build_object('zone_pct', (c->>'zone_pct')::int, 'difficulty', (c->>'difficulty')::int,
                                               'min_reel_ms', (c->>'min_reel_ms')::int), format('params %s / %s', row.reel_params, c);
+  -- hook_cast answers it at the bite
+  update public.casts set bites = true, bite_at = now() - interval '1 second', expires_at = now() + interval '100 seconds'
+   where id = row.id;
+  c := public.hook_cast(t, row.id);
+  assert c->>'result' = 'hooked' and (c->>'reel_seed')::bigint = row.reel_seed, format('hook %s', c);
   -- a won reel without its input: an old page
   c := public.finish_cast(t, row.id, true);
   assert c->>'result' = 'lost' and c->>'why' = 'outdated' and c->>'message' = 'Cập nhật trang để câu tiếp'
@@ -104,15 +111,16 @@ begin
 end $$;
 
 -- ---------- 4. finish_cast replays the reel ----------
--- A cast of a fixture's reel, bitten `ago` seconds ago.
+-- A cast of a fixture's reel, bitten and hooked `ago` seconds ago (0059: the server's hook).
 create or replace function pg_temp.cast_of(c jsonb, ago numeric) returns uuid language plpgsql as $$
 declare a uuid := (select v from rs where k = 'a')::uuid; room uuid := (select v from rs where k = 'room')::uuid; id uuid;
 begin
   delete from public.casts where account_id = a;
   delete from public.fish where account_id = a;
-  insert into public.casts (account_id, room_id, species_id, weight_g, min_reel_ms, bite_at, expires_at, reel_seed, reel_params)
+  insert into public.casts (account_id, room_id, species_id, weight_g, min_reel_ms, bite_at, expires_at, reel_seed, reel_params,
+                            hooked_at)
   values (a, room, 'ca_ro', 100, (c->'params'->>'minReelMs')::int, now() - make_interval(secs => ago),
-          now() + interval '1 minute', (c->'params'->>'seed')::bigint, pg_temp.params(c))
+          now() + interval '1 minute', (c->'params'->>'seed')::bigint, pg_temp.params(c), now() - make_interval(secs => ago))
   returning casts.id into id;
   return id;
 end $$;
