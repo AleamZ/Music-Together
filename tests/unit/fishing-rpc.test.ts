@@ -85,6 +85,15 @@ describe("RPC wrappers", () => {
     h.rpc.mockResolvedValueOnce({ data: { result: "lost", why: "too_early", state: STATE }, error: null });
     expect(await finishCast("tok", "c1", true)).toMatchObject({ result: "lost", why: "too_early" });
   });
+  it("reads the reel seed (0046) and sends the reel's input", async () => {
+    h.rpc.mockResolvedValue({ data: { cast_id: "c1", bite_ms: 1, window_ms: 1, difficulty: 1, min_reel_ms: 1, zone_pct: 25, rarity: null, bait_switched: false, reel_seed: 4294967295, state: STATE }, error: null });
+    expect((await startCast("room", "tok")).reelSeed).toBe(4294967295);
+    h.rpc.mockResolvedValue({ data: { cast_id: "c1", bite_ms: 1, window_ms: 1, difficulty: 1, min_reel_ms: 1, zone_pct: 25, rarity: null, bait_switched: false, state: STATE }, error: null });
+    expect((await startCast("room", "tok")).reelSeed).toBeNull();
+    h.rpc.mockResolvedValue({ data: { result: "lost", why: "outdated", message: "Cập nhật trang để câu tiếp", state: STATE }, error: null });
+    expect(await finishCast("tok", "c1", true, false, { toggles: [0, 12], ticks: 300 })).toMatchObject({ result: "lost", why: "outdated" });
+    expect(h.rpc).toHaveBeenLastCalledWith("finish_cast", { p_session_token: "tok", p_cast_id: "c1", p_success: true, p_inputs: [0, 12], p_ticks: 300 });
+  });
   it("maps the board", async () => {
     h.rpc.mockResolvedValue({ data: {
       records: [{ species_id: "ca_tra", username: "Dat", weight_g: 5000 }], mine: [{ species_id: "ca_ro", weight_g: 200 }],

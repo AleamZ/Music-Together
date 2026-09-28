@@ -94,6 +94,9 @@ export function castRefusal(s: FishingState | null, failed: boolean, now: number
   return spotTaken ? SPOT_TAKEN : null;
 }
 
+/** 0046: finish_cast got a won reel without its input (a page from before the server replay). */
+export const OUTDATED = "Cập nhật trang để câu tiếp";
+
 /** A cast ended without a fish: a missed bite, "Thu cần", or a reel the fish won — or, after a won reel, the server
  *  still said no (a full hand or bucket, or the time gate). */
 export function lostText(cause: "missed" | "reeled_in" | "reel" | "nobite", why: LostWhy | null, fishCap: number): string {
@@ -101,5 +104,6 @@ export function lostText(cause: "missed" | "reeled_in" | "reel" | "nobite", why:
   if (cause === "missed") return MISSED;
   if (cause === "reeled_in") return REELED_IN;
   if (why === "full") return blockerText(fishCap <= 1 ? "hands_full" : "bucket_full", 0);
+  if (why === "outdated") return OUTDATED;
   return ESCAPED;
 }

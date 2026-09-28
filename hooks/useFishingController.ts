@@ -14,6 +14,7 @@ import { NET_WON_MS, type NetInput } from "@/lib/game/fishing/netcast";
 import { nearestWater } from "@/lib/game/fishing/shore";
 import { fetchFishingBoard, type CaughtFish, type FishingBoard } from "@/lib/game/fishing/rpc";
 import { baitTotal, bestNet, castWaitMin, dayCapped, digWaitSec, handFish, type Loadout } from "@/lib/game/fishing/state";
+import type { ReelResult } from "@/lib/game/fishing/reel";
 import type { Interactable } from "@/lib/game/maps/types";
 import type { QueueItem } from "@/lib/supabase";
 
@@ -28,7 +29,7 @@ export interface FishingController {
   dismissCatch: () => void;
   hook: () => void;
   reelIn: () => void;
-  reelDone: (caught: boolean) => void;
+  reelDone: (result: ReelResult) => void;
   /** Give up the cast quietly (a portal). */
   cancelCast: () => void;
   /** Canvas input while the rod is out: a tap hooks at the bite, Esc reels in while waiting. */

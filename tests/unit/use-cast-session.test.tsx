@@ -14,8 +14,11 @@ const SPOT: Interactable = {
 const STATE = parseFishingState({ loadout: { rod: "rod_wood", bobber: "bobber_lamp", bait: "bait_worm" } })!;
 const answer = (over: Partial<StartCast> = {}): StartCast => ({
   castId: "c1", biteMs: 4000, windowMs: 2500, difficulty: 38, minReelMs: 3520, zonePct: 25, rarity: 3, baitSwitched: false,
-  spot: "dock", bites: true, state: STATE, ...over,
+  spot: "dock", bites: true, reelSeed: 9, state: STATE, ...over,
 });
+/** A reel's result as the overlay hands it back (0046: toggles + ticks go to finish_cast). */
+const R = (caught: boolean) => ({ caught, toggles: [0, 30], ticks: 240 });
+const IN = { toggles: [0, 30], ticks: 240 };
 const FISH = { id: "f1", speciesId: "ca_loc", weightG: 1200, price: 72, rarity: 2 as const };
 const withHand = parseFishingState({ fish: [{ id: "f0", species_id: "ca_ro", weight_g: 100, price: 5, caught_at: "x" }] })!;
 
@@ -51,9 +54,9 @@ describe("useCastSession", () => {
     expect(s.result.current.view.phase).toBe("bite");
     expect(s.canvas.setFishing).toHaveBeenLastCalledWith({ phase: "bite", tint: "#2f80ed", glow: true });
     act(() => s.result.current.hook());
-    expect(s.result.current.view).toMatchObject({ phase: "reeling", params: { zonePct: 25, difficulty: 38, minReelMs: 3520 } });
-    await act(async () => { s.result.current.reelDone(true); await vi.advanceTimersByTimeAsync(0); });
-    expect(s.finishCast).toHaveBeenCalledWith("c1", true);
+    expect(s.result.current.view).toMatchObject({ phase: "reeling", params: { zonePct: 25, difficulty: 38, minReelMs: 3520, seed: 9 } });
+    await act(async () => { s.result.current.reelDone(R(true)); await vi.advanceTimersByTimeAsync(0); });
+    expect(s.finishCast).toHaveBeenCalledWith("c1", true, false, IN);
     expect(s.canvas.landCatch).toHaveBeenCalledWith("ca_loc", 1200, "ca_ro");
     expect(s.result.current.caught).toEqual({ fish: FISH, record: true });
     expect(s.result.current.view.phase).toBe("idle");
@@ -108,19 +111,34 @@ describe("useCastSession", () => {
     expect(b.toasts).toEqual(["Hết mồi đang chọn — dùng trùn đất."]);
   });
 
+  it("sends no reel input to a server before 0046 (no seed), and tells an outdated page to reload", async () => {
+    const old = setup(async () => answer({ reelSeed: null }), async () => ({ result: "caught", fish: FISH, record: false, state: withHand }));
+    act(() => old.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    act(() => old.result.current.hook());
+    await act(async () => { old.result.current.reelDone(R(true)); await vi.advanceTimersByTimeAsync(0); });
+    expect(old.finishCast).toHaveBeenCalledWith("c1", true);
+    const stale = setup(async () => answer(), async () => ({ result: "lost", why: "outdated", state: STATE }));
+    act(() => stale.result.current.cast(SPOT));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    act(() => stale.result.current.hook());
+    await act(async () => { stale.result.current.reelDone(R(true)); await vi.advanceTimersByTimeAsync(0); });
+    expect(stale.toasts).toEqual(["Cập nhật trang để câu tiếp"]);
+  });
+
   it("explains a won reel the server still refused", async () => {
     const full = setup(async () => answer(), async () => ({ result: "lost", why: "full", state: STATE }));
     act(() => full.result.current.cast(SPOT));
     await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
     act(() => full.result.current.hook());
-    await act(async () => { full.result.current.reelDone(true); await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { full.result.current.reelDone(R(true)); await vi.advanceTimersByTimeAsync(0); });
     expect(full.toasts).toEqual(["Tay đang cầm cá — ra vựa bán hoặc sắm xô nhé!"]);
     const lost = setup(async () => answer(), async () => ({ result: "lost", why: "gave_up", state: STATE }));
     act(() => lost.result.current.cast(SPOT));
     await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
     act(() => lost.result.current.hook());
-    await act(async () => { lost.result.current.reelDone(false); await vi.advanceTimersByTimeAsync(0); });
-    expect(lost.finishCast).toHaveBeenCalledWith("c1", false, true); // v18.1: a lost reel was hooked
+    await act(async () => { lost.result.current.reelDone(R(false)); await vi.advanceTimersByTimeAsync(0); });
+    expect(lost.finishCast).toHaveBeenCalledWith("c1", false, true, IN); // v18.1: a lost reel was hooked
     expect(lost.toasts).toEqual(["Cá đã thoát!"]);
   });
 
@@ -144,8 +162,8 @@ describe("useCastSession", () => {
     act(() => s.result.current.cast(SPOT));
     await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
     act(() => s.result.current.hook());
-    await act(async () => { s.result.current.reelDone(false); await vi.advanceTimersByTimeAsync(0); });
-    expect(s.finishCast).toHaveBeenCalledWith("c1", false, true);
+    await act(async () => { s.result.current.reelDone(R(false)); await vi.advanceTimersByTimeAsync(0); });
+    expect(s.finishCast).toHaveBeenCalledWith("c1", false, true, IN);
     expect((s.canvas as unknown as { overboard: ReturnType<typeof vi.fn> }).overboard).toHaveBeenCalledTimes(1);
     expect(s.toasts).toEqual(["🌊 Cá lớn kéo bạn xuống ao! Mất cá, đói thêm 10. rod_bamboo trôi mất rồi…"]);
   });
@@ -156,15 +174,15 @@ describe("useCastSession", () => {
     act(() => struck.result.current.cast(SPOT));
     await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
     act(() => struck.result.current.hook());
-    await act(async () => { struck.result.current.reelDone(true); await vi.advanceTimersByTimeAsync(0); });
-    expect(struck.finishCast).toHaveBeenCalledWith("c1", true);
+    await act(async () => { struck.result.current.reelDone(R(true)); await vi.advanceTimersByTimeAsync(0); });
+    expect(struck.finishCast).toHaveBeenCalledWith("c1", true, false, IN);
     expect(struck.toasts).toEqual([]);
     expect(struck.canvas.setFishing).toHaveBeenLastCalledWith({ phase: "idle" });
     const logged = setup(async () => answer(), async () => ({ result: "lost", why: "too_early", state: STATE, anticheat: ac(0) }));
     act(() => logged.result.current.cast(SPOT));
     await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
     act(() => logged.result.current.hook());
-    await act(async () => { logged.result.current.reelDone(true); await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { logged.result.current.reelDone(R(true)); await vi.advanceTimersByTimeAsync(0); });
     expect(logged.toasts).toEqual(["Cá đã thoát!"]);
   });
 
@@ -205,7 +223,7 @@ describe("ReelOverlay", () => {
       frames = [];
       act(() => run.forEach((cb) => cb(t)));
     }
-    expect(onDone).toHaveBeenCalledWith(false);
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ caught: false, toggles: [] }));
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });

@@ -150,6 +150,8 @@ export interface StartCast {
   spot: "dock" | "shore";
   /** v18.1: false = nothing will bite this cast (a shore cast; absent from an older server = true). */
   bites: boolean;
+  /** 0046: the server-chosen reel seed (u32) finish_cast replays the reel with; null from a server before 0046. */
+  reelSeed: number | null;
   state: FishingState;
 }
 
@@ -165,12 +167,12 @@ export async function startCast(roomId: string, token: string, cell?: { col: num
     castId: String(r.cast_id), biteMs: Number(r.bite_ms), windowMs: Number(r.window_ms), difficulty: Number(r.difficulty),
     minReelMs: Number(r.min_reel_ms), zonePct: Number(r.zone_pct), rarity: isRarity(r.rarity) ? r.rarity : null,
     baitSwitched: r.bait_switched === true, spot: r.spot === "shore" ? "shore" : "dock", bites: r.bites !== false,
-    state: stateOf(r.state),
+    reelSeed: r.reel_seed == null ? null : Number(r.reel_seed) >>> 0, state: stateOf(r.state),
   };
 }
 
 export interface CaughtFish { id: string; speciesId: string; weightG: number; price: number; rarity: Rarity }
-export type LostWhy = "expired" | "gave_up" | "too_early" | "full" | "no_bite" | "overboard";
+export type LostWhy = "expired" | "gave_up" | "too_early" | "full" | "no_bite" | "overboard" | "reel_invalid" | "outdated";
 /** v18.1: what falling into the pond cost: the rod (lost or not) and the hunger taken. */
 export interface Overboard { rod: string; rodLost: boolean; hunger: number }
 /** `rodBroke` (v18.2): the cast wore the rod down to 0 (it is unequipped; absent from an older server = false). */
@@ -180,12 +182,20 @@ export type FinishCast =
    *  `overboard` (v18.1): set when why is "overboard". */
   | { result: "lost"; why: LostWhy; state: FishingState; anticheat?: AnticheatInfo | null; overboard?: Overboard; rodBroke?: boolean };
 
-const LOST_WHYS: readonly LostWhy[] = ["expired", "too_early", "full", "no_bite", "overboard"];
+const LOST_WHYS: readonly LostWhy[] = ["expired", "too_early", "full", "no_bite", "overboard", "reel_invalid", "outdated"];
 
-/** `hooked` (v18.1): the fish was hooked and the reel lost — a big fish may pull me in. Sent only when true. */
-export async function finishCast(token: string, castId: string, success: boolean, hooked = false): Promise<FinishCast> {
+/** The reel's input for the server's replay (0046): the ticks where the hold flipped, and the tick it ended on. */
+export interface ReelInput { toggles: number[]; ticks: number }
+
+/** `hooked` (v18.1): the fish was hooked and the reel lost — a big fish may pull me in. Sent only when true.
+ *  `reel` (0046): the reel's input; the server replays it and decides the catch itself. */
+export async function finishCast(token: string, castId: string, success: boolean, hooked = false, reel?: ReelInput): Promise<FinishCast> {
   const args: Record<string, unknown> = { p_session_token: token, p_cast_id: castId, p_success: success };
   if (hooked) args.p_hooked = true;
+  if (reel) {
+    args.p_inputs = reel.toggles;
+    args.p_ticks = reel.ticks;
+  }
   const r = await call("finish_cast", args);
   const state = stateOf(r.state);
   const rodBroke = r.rod_broke === true;
