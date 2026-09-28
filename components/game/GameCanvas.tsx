@@ -194,10 +194,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const insetRef = useRef(0);
   const inputRef = useRef(true);
   const speedRef = useRef(1);
+  const sprintRef = useRef({ ok: false, boost: 1 });                                  // v21 (0077)
   const ridingRef = useRef<VehicleId | null>(null);
   const liftRef = useRef<LocalLift | null>(null);                                   // v18.13
   const extrasRef = useRef<WorldExtras | null>(null);                              // v21 world (0075)
-  const sprintRef = useRef({ ok: false, boost: 1 });                                  // v21 (0077)
   const weatherRef = useRef<RoomWeather | null>(null);
   const weatherFxRef = useRef<WeatherFx>(3);
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
@@ -262,15 +262,15 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         speedRef.current = f;
         engineRef.current?.setSpeedFactor(f);
       },
-      setRiding: (v) => {
-        ridingRef.current = v;
-        engineRef.current?.setRiding(v);
       setSprint: (ok, boost) => {                                                     // v21 (0077)
         sprintRef.current = { ok, boost };
         engineRef.current?.setSprint(ok, boost);
       },
       takeSprintMs: () => engineRef.current?.takeSprintMs() ?? 0,
       inHammock: () => engineRef.current?.inHammock() ?? false,
+      setRiding: (v) => {
+        ridingRef.current = v;
+        engineRef.current?.setRiding(v);
       },
       setPet: (code, speed) => {
         petRef.current = { code, speed };
@@ -470,6 +470,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setBottomInset(insetRef.current);
     engine.setInputEnabled(inputRef.current);
     engine.setSpeedFactor(speedRef.current);
+    engine.setSprint(sprintRef.current.ok, sprintRef.current.boost);                    // v21 (0077)
     engine.setWeather(weatherRef.current);
     engine.setWeatherFx(weatherFxRef.current);
     engine.setPlots(plotsRef.current);
@@ -478,7 +479,6 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.setNewsUnread(newsUnreadRef.current);
     engine.setRingLabels(ringLabelsRef.current);
     engine.setHidden(hiddenRef.current);
-    engine.setSprint(sprintRef.current.ok, sprintRef.current.boost);                    // v21 (0077)
     engine.setGatherSpots(gatherRef.current);
     engine.setLocal({ name: init.name, badges: init.badges, look: init.look, ...dogRef.current });
     if (zoomRef.current !== 1) engine.setZoom(zoomRef.current);

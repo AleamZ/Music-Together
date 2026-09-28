@@ -136,15 +136,15 @@ import { ParchmentModal } from "./Parchment";
 import QueuePanel from "./QueuePanel";
 import SpritePreview from "./SpritePreview";
 import VitalsHud from "./VitalsHud";
+import StaminaHud from "./professions/StaminaHud";                                  // v21 (0077)
+import ProfessionModal from "./professions/ProfessionModal";                        // v21 (0077)
+import { useProfessions } from "@/hooks/useProfessions";                            // v21 (0077)
 import WeatherChip from "./WeatherChip";
 import PersonalSettings from "./PersonalSettings";
 import { loadWeatherFx, saveWeatherFx } from "@/lib/game/weather/fx";
 import type { WeatherFx } from "@/lib/game/art/weather";
 import WeatherLocationDialog from "./WeatherLocationDialog";
 import ProfileModal from "./progression/ProfileModal";                        // v21 progression
-import StaminaHud from "./professions/StaminaHud";                                  // v21 (0077)
-import ProfessionModal from "./professions/ProfessionModal";                        // v21 (0077)
-import { useProfessions } from "@/hooks/useProfessions";                            // v21 (0077)
 import { useProgress } from "@/hooks/useProgress";
 import { mapMinLevel, mapUnlocked } from "@/lib/game/progression/model";
 import { titleText } from "@/lib/game/progression/rpc";
@@ -526,6 +526,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   }, [heat.probe, vitalsState]);
   // --- rain (v18.9): umbrellas, wet, cảm lạnh and lightning
   const reloadCoins = useCallback(() => void fishing.data.reload(), [fishing.data]);
+  const profs = useProfessions(token, canvasRef);                                     // v21 (0077): stamina, nghề
   const rain = useRain({ token, canvasRef, fromVitals: vitalsState?.rain, raining: isRainy(weather?.kind), onCoinsChanged: reloadCoins, showToast });
   const rainCold = rain.cold;
   const starving = vitalsState ? isStarving(vitalsState) : false;
@@ -539,7 +540,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   if (starving !== wasStarving) {
     setWasStarving(starving);
     if (starving) setRiding(null);
-  const profs = useProfessions(token, canvasRef);                                     // v21 (0077): stamina, nghề
   }
 
   // mounting: refused while busy (fishing, farm work, a card seat, the road, a faint), with the car at the pond, or starving
@@ -884,6 +884,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             {/* row 2: hunger and thirst, then the fishing or farm status (details in the tooltips) */}
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
               <VitalsHud state={vitals.state} />
+              <StaminaHud stamina={profs.stamina} value={profs.staminaValue} state={profs.state} nowMs={profs.nowMs}
+                onOpen={() => setPanel("professions")} />{/* v21 (0077) */}
               <HeatChips chips={heat.chips} />
               {motel.rested && <span data-testid="rest-chip" title="Ngủ ngon: đói, khát chậm hơn 30 %, đi nhanh hơn 7 %" className="whitespace-nowrap">😴 Ngủ ngon</span>}
               {rain.chips.map((c) => (
@@ -902,8 +904,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             {/* row 3: the icon buttons (labels in the tooltips and for screen readers) */}
             <div className="flex flex-wrap items-center gap-1 [&_.pch-btn]:px-1.5 [&_.pch-btn]:py-0.5 [&_.pch-btn]:text-sm [&_.pch-btn]:leading-none">
               <button type="button" className="pch-btn relative tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng" data-testid="profile-hud"
-              <StaminaHud stamina={profs.stamina} value={profs.staminaValue} state={profs.state} nowMs={profs.nowMs}
-                onOpen={() => setPanel("professions")} />{/* v21 (0077) */}
                 onClick={() => { setPanel("profile"); void progress.reload(); }}>
                 ⭐{myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span>
               </button>
@@ -1168,6 +1168,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       )}
       {changelogOpen && <ChangelogModal onClose={changelog.dismiss} />}
       <QuestPanels panel={panel} token={token} mapId={map.id} at={questAt} onOpen={(p) => setPanel(p)} onCoins={reloadCoins} onClose={close} />
+      {panel === "professions" && token && (                                   // v21 (0077)
+        <ProfessionModal token={token} state={profs.state} nowMs={profs.nowMs} onState={profs.apply} onCoins={reloadCoins} onClose={close} />
+      )}
       {panel === "pet_shop" && (
         <PetShopModal
           token={token}
@@ -1211,9 +1214,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {panel === "apartment" && (
         <ApartmentModal
           token={token}
-      {panel === "professions" && token && (                                   // v21 (0077)
-        <ProfessionModal token={token} state={profs.state} nowMs={profs.nowMs} onState={profs.apply} onCoins={reloadCoins} onClose={close} />
-      )}
           roomId={room.id}
           state={apt.state}
           coins={fishing.data.state?.coins ?? null}

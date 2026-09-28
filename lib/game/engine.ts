@@ -1023,6 +1023,7 @@ export class GameEngine {
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (!this.inputEnabled || e.ctrlKey || e.metaKey || e.altKey || this.isTyping(e.target)) return;
+    if (e.key === "Shift") this.sprintHeld = true;                                                // v21 (0077)
     this.cb.onInput?.();
     if (this.rodOut) {
       // while fishing: Space hooks (and holds while reeling — the reel overlay listens too), Esc reels in
@@ -1033,7 +1034,6 @@ export class GameEngine {
         this.cb.onFishingInput?.("cancel");
       }
       return;
-    if (e.key === "Shift") this.sprintHeld = true;                                                // v21 (0077)
     }
     // v18.10: E next to a cramping member pulls them out (it wins over any prompt)
     if (e.code === "KeyE" && this.rescueTarget) {
@@ -1057,6 +1057,7 @@ export class GameEngine {
   };
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
+    if (e.key === "Shift") this.sprintHeld = false;                                               // v21 (0077)
     const k = KEYMAP[e.code];
     if (k) this.keys[k] = false;
   };
@@ -1067,13 +1068,13 @@ export class GameEngine {
 
   private readonly onVisibilityChange = (): void => {
     if (document.visibilityState === "hidden") this.halt();
-    if (e.key === "Shift") this.sprintHeld = false;                                               // v21 (0077)
   };
 
   /** Focus left the page or the tab was hidden: stop keyboard walking and send the stop now — a hidden tab may not
    *  run another frame, and everyone else would see me walk on. A click/tap path goes on (others follow the same `pa`). */
   private halt(): void {
     this.keys = { ...NO_KEYS };
+    this.sprintHeld = false;                                                                      // v21 (0077)
     if (!this.local.path) setKeyboard(this.local, { x: 0, y: 0 });
     this.announceMove(performance.now());
   }
@@ -1084,7 +1085,6 @@ export class GameEngine {
     if (this.rodOut) {
       this.cb.onFishingInput?.("tap");
       return;
-    this.sprintHeld = false;                                                                      // v21 (0077)
     }
     const r = this.canvas.getBoundingClientRect();
     const w: Vec = {
@@ -1253,6 +1253,7 @@ export class GameEngine {
       setKeyboard(this.local, dir);
     }
     const arrived = tickActor(this.moveMap, this.local, dt, now, false, this.localSpeed());
+    if (this.sprinting()) this.sprintMs += dt * 1000;                                             // v21 (0077)
     this.updateSwim(now);
     if (arrived && this.pendingInteract) {
       const it = this.pendingInteract;
@@ -1263,7 +1264,6 @@ export class GameEngine {
     this.announceMove(now);
     // a map interactable in range always wins E; else, on the field, a rat within 40 px (v17 §12.1). The same rat keeps
     // its prompt object while it runs.
-    if (this.sprinting()) this.sprintMs += dt * 1000;                                             // v21 (0077)
     // v18.1: …else, on the pond, a cast from the bank or the platform edge I stand on (the same cell keeps its prompt)
     let near = this.rodOut || this.swimming || locked ? null : promptTarget(this.usable(), this.local.pos, this.pack.liveRats, serverNow());
     if (!near && !this.rodOut && !this.swimming && !locked && this.map.id === "pond") {
