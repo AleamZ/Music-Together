@@ -54,9 +54,15 @@ describe("0064–0067: every re-created function is its newest body plus the mar
       expect(body(M(dst), sig)).toContain(`-- ${tag}`);
     });
   }
-  it("no later migration re-creates them again", () => {
+  it("no later migration re-creates them again — but 0078, verbatim but for its marked lines", () => {
     const later = readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0067");
-    for (const f of later) for (const [sig] of cases) expect(read(`supabase/migrations/${f}`).includes(`function public.${sig.slice(0, sig.indexOf("("))}(`), f).toBe(false);
+    for (const f of later) {
+      for (const [sig, , dst] of cases) {
+        if (!read(`supabase/migrations/${f}`).includes(`function public.${sig.slice(0, sig.indexOf("("))}(`)) continue;
+        expect(f, sig).toBe("0078_v21_fixes.sql");                                   // v21 fixes: the catch flag (mt.catch)
+        expect(unmarked(body(M(f.slice(0, -4)), sig), "0078")).toBe(body(M(dst), sig));
+      }
+    }
   });
 });
 

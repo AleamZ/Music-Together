@@ -81,6 +81,7 @@ describe("GameShell's own interactables", () => {
       ring_corner: "ring", ring_board: "ring_board",                                       // v20.3
       ug_organizer: "underground", ug_board: "underground", ug_door: "underground", cage_watch: "ug_watch", // v20.4
       quest_giver: "quests",                                                              // v21
+      player_stalls: "player_stalls",                                                     // v21 economy
     });
   });
   it("keeps a case for every one of them in onInteract, before the default", () => {

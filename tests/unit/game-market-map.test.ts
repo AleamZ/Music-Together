@@ -25,6 +25,7 @@ describe("market map (Chợ Lớn)", () => {
       ["city_map", "city_map"], ["market_exit", "portal"], ["restaurant", "restaurant"], ["clothes_shop", "clothes_shop"],
       ["vehicle_shop", "vehicle_shop"], ["salon", "salon"], ["market_fish_depot", "market_fish_depot"], ["market_farm_depot", "market_farm_depot"],
       ["pet_shop", "pet_shop"], ["umbrella_stall", "umbrella_stall"],                  // v18.9
+      ["player_stalls", "player_stalls"],                                           // v21 economy (0073)
       ["motel", "motel"],                                                           // v19.1
       ["furniture_shop", "furniture_shop"], ["market_to_khu_nha", "portal"],        // v19.2
       ["punch_bag", "punch_bag"],                                                   // v20.1

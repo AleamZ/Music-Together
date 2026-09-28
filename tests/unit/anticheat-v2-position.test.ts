@@ -18,8 +18,16 @@ import { heatErrorMessage } from "@/lib/game/heat/model";
 
 // 0057_server_position.sql against the TS it mirrors: the maps, the portals, the spawn, the depots, the speeds.
 const SQL = readFileSync("supabase/migrations/0057_server_position.sql", "utf8").replace(/\r\n/g, "\n");
+// A function a later migration re-created (0072's _pos_maps / _pos_portals: Mỏ đá) is read from its newest definition.
+const NEWER = ["0072_mining_crafting.sql"].map((f) => readFileSync(`supabase/migrations/${f}`, "utf8").replace(/\r\n/g, "\n"));
 const fnBody = (name: string) => {
-  const from = SQL.indexOf(`create or replace function public.${name}(`);
+  const head = `create or replace function public.${name}(`;
+  const newer = NEWER.filter((s) => s.includes(head)).pop();
+  if (newer) {
+    const at = newer.indexOf(head);
+    return newer.slice(at, newer.indexOf("$$;", at) + 3);
+  }
+  const from = SQL.indexOf(head);
   expect(from, name).toBeGreaterThanOrEqual(0);
   return SQL.slice(from, SQL.indexOf("$$;", from) + 3);
 };
@@ -37,7 +45,7 @@ describe("0057's geometry is the town's", () => {
       .filter((i) => (i.kind === "portal" || i.kind === "ug_hatch") && i.to)
       .map((i) => `${id}>${i.to!.map} ${i.use.x},${i.use.y} ${i.to!.arrive.x},${i.to!.arrive.y} ${isRoadTrip(id, i.to!.map)}`)).sort();
     expect(sql).toEqual(ts);
-    expect(sql).toHaveLength(14);
+    expect(sql).toHaveLength(16);                                                  // + Mỏ đá's two (0072)
   });
 
   it("the hall's spawn (game mode starts there, a faint sends me there) is always accepted", () => {

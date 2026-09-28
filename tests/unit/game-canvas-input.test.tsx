@@ -55,6 +55,10 @@ vi.mock("@/lib/game/engine", () => ({
       return { x: 5, y: 6 };
     }
     setSpeedFactor() {}
+    setSprint() {}                                                                 // v21 (0077)
+    takeSprintMs() {
+      return 0;
+    }
     setWeather() {}
     setWeatherFx() {}
     setRain(l: { wet: boolean }) {

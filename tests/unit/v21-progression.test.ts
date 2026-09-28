@@ -40,6 +40,10 @@ describe("0070's numbers are the client's", () => {
     const from = SQL.indexOf("insert into public.map_levels (map, min_level) values\n");
     const seed = SQL.slice(from, SQL.indexOf("on conflict (map)", from));
     const rows = Object.fromEntries([...seed.matchAll(/\('(\w+)', (\d+)\)/g)].map((m) => [m[1], Number(m[2])]));
+    // a map added later seeds its own level (0072: Mỏ đá)
+    const mine = readFileSync("supabase/migrations/0072_mining_crafting.sql", "utf8")
+      .match(/insert into public\.map_levels \(map, min_level\) values \('(\w+)', (\d+)\)/);
+    if (mine) rows[mine[1]] = Number(mine[2]);
     expect(rows).toEqual(MAP_MIN_LEVEL);
     for (const id of ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam"]) expect(MAP_MIN_LEVEL[id], id).toBe(1);
     expect(mapUnlocked("hall", 1)).toBe(true);

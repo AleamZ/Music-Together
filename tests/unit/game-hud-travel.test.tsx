@@ -60,7 +60,8 @@ describe("MapCounts", () => {
       ham_ngam: [{ accountId: "f", name: "Phúc", classic: false }],
       mo_da: [],
     }} />);
-    const chip = screen.getByRole("button", { name: "🎵 Sảnh 2 · 🎣 Ao cá 1 · 🌾 Đồng 1 · 🏮 Chợ Lớn 0 · 🏘️ Khu nhà 1 · 🥊 Bãi đất 0 · ⛏️ Mỏ đá 0" });
+    // two rows (the chip stays narrow as maps are added)
+    const chip = screen.getByRole("button", { name: "🎵 Sảnh 2 · 🎣 Ao cá 1 · 🌾 Đồng 1 · 🏮 Chợ Lớn 0🏘️ Khu nhà 1 · 🥊 Bãi đất 0 · ⛏️ Mỏ đá 0" });
     expect(screen.queryByText("🖥️ An")).toBeNull();
     fireEvent.click(chip);
     expect(screen.getByText("🖥️ An")).toBeInTheDocument();
