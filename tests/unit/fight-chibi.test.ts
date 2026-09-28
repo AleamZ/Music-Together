@@ -36,20 +36,20 @@ const armLen = (p: readonly (readonly [number, number])[], sh: number, hn: numbe
 describe("fighter art flag", () => {
   afterEach(() => window.localStorage.clear());
 
-  it("parses only 'chibi' as the chibi painter; everything else is the rig", () => {
-    expect(parseFighterArt("chibi")).toBe("chibi");
-    expect(parseFighterArt(" Chibi ")).toBe("chibi");
-    for (const v of ["rig", "", "chibis", "1", null, undefined]) expect(parseFighterArt(v)).toBe("rig");
+  it("parses only 'rig' as the rig painter; everything else is the chibi (the default)", () => {
+    expect(parseFighterArt("rig")).toBe("rig");
+    expect(parseFighterArt(" Rig ")).toBe("rig");
+    for (const v of ["chibi", "", "rigs", "1", null, undefined]) expect(parseFighterArt(v)).toBe("chibi");
   });
 
-  it("reads and writes the browser's choice (rig clears the key)", () => {
-    expect(readFighterArt()).toBe("rig");
-    writeFighterArt("chibi");
-    expect(window.localStorage.getItem(FIGHTER_ART_KEY)).toBe("chibi");
+  it("reads and writes the browser's choice (chibi clears the key)", () => {
     expect(readFighterArt()).toBe("chibi");
     writeFighterArt("rig");
-    expect(window.localStorage.getItem(FIGHTER_ART_KEY)).toBeNull();
+    expect(window.localStorage.getItem(FIGHTER_ART_KEY)).toBe("rig");
     expect(readFighterArt()).toBe("rig");
+    writeFighterArt("chibi");
+    expect(window.localStorage.getItem(FIGHTER_ART_KEY)).toBeNull();
+    expect(readFighterArt()).toBe("chibi");
   });
 });
 

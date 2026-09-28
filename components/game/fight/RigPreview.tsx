@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { RIG_H, RIG_W, poseData, type PoseId } from "@/lib/game/fight/render/poses";
 import { paintFighter } from "@/lib/game/fight/render/rig";
+import { paintChibiFighter } from "@/lib/game/fight/render/chibi";
+import { readFighterArt } from "@/lib/game/fight/render/fighter-art";
 import type { Look } from "@/lib/game/types";
 import { prefersReduced } from "./Arena";
 
@@ -29,7 +31,9 @@ export default function RigPreview({ look, style, rank, poses, scale = 2, ms = 1
     ctx.imageSmoothingEnabled = false;
     const draw = (i: number) => {
       ctx.clearRect(0, 0, RIG_W, RIG_H);
-      paintFighter(ctx, poseData(list[i % list.length], style), { look, style, rank }, 0, 0, false);
+      const id = list[i % list.length];
+      if (readFighterArt() === "chibi") paintChibiFighter(ctx, id, { look, style, rank }, 0, 0, false);
+      else paintFighter(ctx, poseData(id, style), { look, style, rank }, 0, 0, false);
     };
     if (step !== null) {
       draw(step);

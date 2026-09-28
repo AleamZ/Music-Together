@@ -149,7 +149,7 @@ export default function FighterArtPreview() {
   const [lookIdx, setLookIdx] = useState(0);
   const [scale, setScale] = useState(3);
   const [animate, setAnimate] = useState(true);
-  const inGame = useSyncExternalStore(subscribeArt, readFighterArt, () => "rig" as const);
+  const inGame = useSyncExternalStore(subscribeArt, readFighterArt, () => "chibi" as const);
 
   const look = LOOKS[lookIdx]?.look ?? LOOKS[0].look;
   const fl = useMemo<FighterLook>(() => ({ look, style, rank }), [look, style, rank]);
@@ -175,7 +175,7 @@ export default function FighterArtPreview() {
               className={`rounded border px-3 py-1 ${inGame === a ? "border-[#2b2118] bg-[#2b2118] text-[#f6ecd4]" : "border-[#b89b6a] bg-white"}`}
               onClick={() => pick(a)}
             >
-              {a === "rig" ? "Rig (mặc định)" : "Chibi (thử)"}
+              {a === "rig" ? "Rig (cũ)" : "Chibi (mặc định)"}
             </button>
           ))}
           <span className="text-xs opacity-70">Mở lại trận để thấy thay đổi.</span>
@@ -213,7 +213,7 @@ export default function FighterArtPreview() {
           {(["rig", "chibi"] as const).map((a) => (
             <figure key={a} className="flex flex-col gap-1">
               <ArenaShot art={a} a={fl} b={foe} animate={animate} />
-              <figcaption className="text-sm opacity-80">{a === "rig" ? "Rig hiện tại" : "Chibi (thử)"}</figcaption>
+              <figcaption className="text-sm opacity-80">{a === "rig" ? "Rig (cũ)" : "Chibi (mặc định)"}</figcaption>
             </figure>
           ))}
         </div>
