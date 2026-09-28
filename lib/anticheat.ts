@@ -98,6 +98,8 @@ export function chipLabel(sec: number): string {
 export function reasonText(code: string): string {
   switch (code) {
     case "reel_too_fast": return "Báo kéo được cá nhanh hơn mức trò chơi cho phép.";
+    case "reel_mismatch": return "Báo kéo được cá mà thao tác gửi lên không kéo được.";
+    case "reel_bad_input": return "Gửi thao tác kéo cá mà tay người không thể tạo ra.";
     case "quality_range": return "Gửi điểm cấy/gặt ngoài phạm vi của trò chơi.";
     default: return "Gửi dữ liệu mà giao diện trò chơi không thể tạo ra.";
   }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TICK_EVERY_MS } from "@/lib/game/vitals";
-import { vitalsTick, type VitalsState, type VitalsWhere } from "@/lib/game/vitals-rpc";
+import { VITALS_EVENT, vitalsTick, type VitalsState, type VitalsWhere } from "@/lib/game/vitals-rpc";
 
 /** The hunger/thirst heartbeat: ticks now and every 30 s while mounted (only while the tab is visible). Only the latest
  *  request's response is applied, and a state learned for another token is never shown. `where` (v18.10) reads where I
@@ -18,6 +18,18 @@ export function useVitals(token: string | null, roomId: string, where?: () => Vi
       if (s && mine === seq.current) setHeld({ token, state: s });
     } catch { /* next tick retries */ }
   }, [token, roomId]);
+  useEffect(() => {                                            // 0047: a cast's answer carries the new bars
+    if (!token) return;
+    const counter = seq;
+    const on = (e: Event) => {
+      const s = (e as CustomEvent<VitalsState>).detail;
+      if (!s) return;
+      counter.current++;                                       // an older tick in flight must not overwrite it
+      setHeld({ token, state: s });
+    };
+    window.addEventListener(VITALS_EVENT, on);
+    return () => window.removeEventListener(VITALS_EVENT, on);
+  }, [token]);
   useEffect(() => {
     if (!token) return;
     const counter = seq;

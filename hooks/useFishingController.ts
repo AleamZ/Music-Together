@@ -13,7 +13,8 @@ import { pullWaitMs } from "@/lib/game/fishing/net";
 import { NET_WON_MS, type NetInput } from "@/lib/game/fishing/netcast";
 import { nearestWater } from "@/lib/game/fishing/shore";
 import { fetchFishingBoard, type CaughtFish, type FishingBoard } from "@/lib/game/fishing/rpc";
-import { baitTotal, bestNet, castWaitMin, dayCapped, digWaitSec, handFish, type Loadout } from "@/lib/game/fishing/state";
+import { baitTotal, bestNet, digWaitSec, handFish, type Loadout } from "@/lib/game/fishing/state";
+import type { ReelResult } from "@/lib/game/fishing/reel";
 import type { Interactable } from "@/lib/game/maps/types";
 import type { QueueItem } from "@/lib/supabase";
 
@@ -28,7 +29,7 @@ export interface FishingController {
   dismissCatch: () => void;
   hook: () => void;
   reelIn: () => void;
-  reelDone: (caught: boolean) => void;
+  reelDone: (result: ReelResult) => void;
   /** Give up the cast quietly (a portal). */
   cancelCast: () => void;
   /** Canvas input while the rod is out: a tap hooks at the bite, Esc reels in while waiting. */
@@ -192,11 +193,9 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     }, SONG_BONUS_DELAY_MS);
   }, [currentId, currentMine, reload, later]);
 
-  // --- a clock for the prompts: every second while a cooldown or the hourly cap counts down
+  // --- a clock for the prompts: every second while the dig cooldown counts down (0047: no cast caps to count)
   const [now, setNow] = useState<number | null>(null);
-  const digRunning = !!state?.digReadyAt && (now === null || Date.parse(state.digReadyAt) > now);
-  const capRunning = !!state && castWaitMin(state, now ?? 0) > 0;
-  const ticking = digRunning || capRunning;
+  const ticking = !!state?.digReadyAt && (now === null || Date.parse(state.digReadyAt) > now);
   useEffect(() => {
     if (!ticking) return;
     const tick = () => setNow(serverNow());
@@ -207,17 +206,6 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       clearInterval(timer);
     };
   }, [ticking]);
-  // …the daily cap shows no countdown: one tick to show it, then one when the Vietnam day turns (a tick that comes early
-  // waits for the rest)
-  const dayRunning = !!state && dayCapped(state, now ?? 0);
-  const dayEnd = dayRunning && state.dayResetsAt !== null ? Date.parse(state.dayResetsAt) : null;
-  useEffect(() => {
-    if (!dayRunning || ticking) return;
-    const wait = now === null ? 0 : dayEnd !== null && Number.isFinite(dayEnd) ? Math.max(0, dayEnd - serverNow()) : null;
-    if (wait === null) return;
-    const timer = setTimeout(() => setNow(serverNow()), wait);
-    return () => clearTimeout(timer);
-  }, [dayRunning, ticking, dayEnd, now]);
   const promptText = useCallback((it: Interactable) => promptFor(it, state, now), [state, now]);
 
   // --- digging worms: a second of dust, then dig_worms
@@ -251,7 +239,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   // --- casting: the checks of spec §6.1, then the session takes over
   const { cast: castAt, hook, reelIn } = session;
   const fishAt = useCallback((it: Interactable) => {
-    const refusal = castRefusal(stateRef.current, failedRef.current, serverNow(), canvas()?.anglerNear(it.use) ?? false);
+    const refusal = castRefusal(stateRef.current, failedRef.current, canvas()?.anglerNear(it.use) ?? false);
     if (refusal) toastRef.current(refusal);
     else castAt(it);
   }, [canvas, castAt]);

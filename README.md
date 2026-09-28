@@ -334,7 +334,7 @@ The field has its own channel `game:{roomId}:field`. After a land or farm action
 - **Names:** 2–24 characters, no hidden characters and no reserved names (Ao cá, Hợp tác xã, root…); names that differ only in case, spacing or Unicode form are the same name. A banned account is told so at login, after the right password.
 - **Chat:** catch and land announcements are system lines that only the server can post; a look-alike line from a member shows as a normal message.
 - **Queue:** 11-character YouTube ids only; the title is cleaned, the thumbnail comes from the id, and an impossible duration counts as unknown.
-- **Fishing:** at most 300 casts per Vietnam day ("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!").
+- **Fishing:** no cast cap since `0047`; each cast costs hunger 1.8 / thirst 2.2 (a net throw 3 / 3.5), so players must eat and drink at Chợ Lớn. At ≤ 20 the character nags every 10 s.
 - **Banned accounts**, by the anti-cheat or by hand, leave the records, the richest list and the room's fish price index, earn no song bonus, and lose their land-market listings and offers.
 
 ### Trust model (updated)

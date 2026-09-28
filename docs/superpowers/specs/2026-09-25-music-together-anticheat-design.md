@@ -113,7 +113,7 @@ The audit left these details open. Each one is decided here, and the owner confi
 | R18 | `foreign_offer` covers offers of the same room only. | An offer id from another room can come from a room switch that does not remount `useField`. |
 | R19 | Kind mismatches are soft. Like hard signals, they return an envelope with `strike: 0`, so the row commits. | The old v14 client then shows "Có lỗi, thử lại nhé." instead of "Món này không mua được." for farm items. That is harmless, for a few days. |
 | R20 | Gate hugs are counted per Vietnam day and logged once, at the 20th. | Logging every catch would be noise. |
-| R21 | The daily cast cap is 300 per Vietnam day. `cast_daily_cap` is logged once, when it is reached. | 300 casts is 7.5 h at the hourly cap, so a bot running 24 h is cut to under a third (300 of 960 casts). |
+| R21 | ~~The daily cast cap is 300 per Vietnam day.~~ **Removed by 0047 (2026-09-28), with the hourly 40-cast cap:** every rod cast costs hunger 1.8 / thirst 2.2 and a net throw 3 / 3.5, so nonstop fishing empties the bars in about 1–1.3 h and the player must eat and drink at Chợ Lớn (paid, and the vitals guard refuses at 0). `cast_daily_cap` is no longer logged. | The vitals cost bounds a bot by coins and trips instead of a counter. |
 | R22 | The queue and account checks refuse but never strike. | The layer guards the game economy, and D2's lock would not even block the queue. |
 | R23 | The guard check is deny-by-default. Every SECURITY DEFINER function in `public` that anon may execute and that is not on the allowlist must call `_ac_account` or `_ac_play`. The allowlist holds signatures, so a new overload of an allowed name is judged on its own. | A new game RPC in a later migration fails the smoke test until it is guarded. |
 

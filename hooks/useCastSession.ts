@@ -8,7 +8,7 @@ import { RARITY_COLOR } from "@/lib/game/fishing/catalog";
 import { SWING_MS } from "@/lib/game/fishing/geometry";
 import { BAIT_SWITCHED, lostText, overboardText, ROD_BROKE } from "@/lib/game/fishing/messages";
 import { cellOf } from "@/lib/game/fishing/shore";
-import type { ReelParams } from "@/lib/game/fishing/reel";
+import type { ReelParams, ReelResult } from "@/lib/game/fishing/reel";
 import type { CaughtFish } from "@/lib/game/fishing/rpc";
 import { handFish } from "@/lib/game/fishing/state";
 import type { Interactable } from "@/lib/game/maps/types";
@@ -34,7 +34,7 @@ export interface CastSession {
   /** "Thu cần" while waiting: the bait is lost. */
   reelIn: () => void;
   /** The reel minigame ended. */
-  reelDone: (caught: boolean) => void;
+  reelDone: (result: ReelResult) => void;
   /** Leaving the map or the game: give the cast up quietly (fire-and-forget). */
   abandon: () => void;
 }
@@ -75,14 +75,18 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
     l.timers = [];
   };
 
-  const end = useCallback(async (success: boolean, cause: "missed" | "reeled_in" | "reel" | "nobite") => {
+  const end = useCallback(async (success: boolean, cause: "missed" | "reeled_in" | "reel" | "nobite", reel?: ReelResult) => {
     const l = live.current;
     if (!l?.info) return;
     live.current = null;
     clearTimers(l);
     setView({ phase: "finishing" });
     // v18.1: a reel lost after the hook tells the server so (a big fish may pull me in)
-    const r = cause === "reel" && !success ? await finishCast(l.info.castId, false, true) : await finishCast(l.info.castId, success);
+    // 0046: a reel sends its input — the server replays it and decides the catch
+    // (only to a server that chose the seed: one before 0046 would not know the arguments)
+    const input = reel && l.info.reelSeed != null ? { toggles: reel.toggles, ticks: reel.ticks } : undefined;
+    const r = cause === "reel" && !success ? await finishCast(l.info.castId, false, true, input)
+      : input ? await finishCast(l.info.castId, success, false, input) : await finishCast(l.info.castId, success);
     setView({ phase: "idle" });
     if (!r) {
       canvas()?.setFishing({ phase: "idle" });
@@ -123,7 +127,7 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
       }
       const info: CastInfo = {
         castId: r.castId, biteMs: r.biteMs, windowMs: r.windowMs, difficulty: r.difficulty, minReelMs: r.minReelMs,
-        zonePct: r.zonePct, rarity: r.rarity, bites: r.bites,
+        zonePct: r.zonePct, rarity: r.rarity, bites: r.bites, reelSeed: r.reelSeed,
       };
       l.info = info;
       l.answeredAt = performance.now();
@@ -157,7 +161,8 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
     if (!l?.info || l.hooked || !canHook(l.info, performance.now() - l.answeredAt)) return;
     l.hooked = true;
     clearTimers(l);
-    const params = reelParamsFor(l.info, crypto.getRandomValues(new Uint32Array(1))[0]);
+    // 0046: the server's seed (a server before 0046 sends none: any seed will do, it trusts the outcome)
+    const params = reelParamsFor(l.info, l.info.reelSeed ?? crypto.getRandomValues(new Uint32Array(1))[0]);
     canvas()?.setFishing({ phase: "reeling" });
     setView({ phase: "reeling", info: l.info, params });
   }, [canvas]);
@@ -168,8 +173,8 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
     void end(false, "reeled_in");
   }, [end, view.phase]);
 
-  const reelDone = useCallback((won: boolean) => {
-    void end(won, "reel");
+  const reelDone = useCallback((result: ReelResult) => {
+    void end(result.caught, "reel", result);
   }, [end]);
 
   const abandon = useCallback(() => {

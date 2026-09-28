@@ -131,16 +131,9 @@ export function ownsItem(s: FishingState, item: ShopItem): boolean {
   return false;
 }
 
-/** No cast is left today and the Vietnam day has not turned yet. */
-export function dayCapped(s: FishingState, now: number): boolean {
-  return s.castsTodayLeft <= 0 && !(s.dayResetsAt !== null && Date.parse(s.dayResetsAt) <= now);
-}
-
-/** Why start_cast would refuse right now (same order as the server), or null. `now` = serverNow(). */
-export function castBlocker(s: FishingState, now: number): CastBlocker | null {
-  const windowOver = s.windowResetsAt !== null && Date.parse(s.windowResetsAt) <= now;
-  if (s.castsLeft <= 0 && !windowOver) return "cast_limit";
-  if (dayCapped(s, now)) return "daily_limit";
+/** Why start_cast would refuse right now (same order as the server), or null. 0047: no hourly or daily cast cap any
+ *  more — casts cost hunger and thirst ("cast_limit" / "daily_limit" stay in the type for old server errors only). */
+export function castBlocker(s: FishingState): CastBlocker | null {
   if (s.fish.length >= s.fishCap) return s.fishCap <= 1 ? "hands_full" : "bucket_full";
   if (baitCount(s, s.loadout.bait) < 1 && baitCount(s, "bait_worm") < 1) return "no_bait";
   return null;
@@ -157,10 +150,4 @@ export function maxBuyQty(s: FishingState, item: ShopItem): number {
 /** Seconds until the dig cooldown ends (0 = ready). */
 export function digWaitSec(s: FishingState, now: number): number {
   return s.digReadyAt ? Math.max(0, Math.ceil((Date.parse(s.digReadyAt) - now) / 1000)) : 0;
-}
-
-/** Minutes until the hourly cast window resets (0 = casts available). */
-export function castWaitMin(s: FishingState, now: number): number {
-  if (s.castsLeft > 0 || !s.windowResetsAt) return 0;
-  return Math.max(0, Math.ceil((Date.parse(s.windowResetsAt) - now) / 60_000));
 }

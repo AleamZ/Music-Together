@@ -18,6 +18,7 @@ import type { PlaybackController } from "@/hooks/usePlayback";
 import { useReactions } from "@/hooks/useReactions";
 import { useVehicles } from "@/hooks/useVehicles";
 import { useVitals } from "@/hooks/useVitals";
+import { useHungerNag } from "@/hooks/useHungerNag";
 import { heatWhere, useHeat } from "@/hooks/useHeat";
 import { HeatActions, HeatChips } from "./HeatHud";
 import { useRain } from "@/hooks/useRain";
@@ -479,6 +480,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   useEffect(() => {
     canvasRef.current?.setInputEnabled(!blocking);
   }, [blocking]);
+  // 0047: a low bar nags me (a local bubble over my head only — not chat, not broadcast) while nothing holds the screen
+  const sayToSelf = useCallback((text: string) => canvasRef.current?.showBubble(accountId, text), [accountId]);
+  useHungerNag(vitalsState, blocking, sayToSelf);
 
   // --- the camera may lift the character above the bottom HUD
   const bottomRef = useRef<HTMLDivElement>(null);

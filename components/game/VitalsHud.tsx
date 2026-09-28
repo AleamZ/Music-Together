@@ -2,6 +2,7 @@
 
 import { EXHAUST_AT, lowWarn } from "@/lib/game/vitals";
 import type { VitalsState } from "@/lib/game/vitals-rpc";
+import { NAG_HINT, shouldNag } from "@/lib/game/hunger-nag";
 
 function Bar({ label, icon, value, low, color }: { label: string; icon: string; value: number | null; low: boolean; color: string }) {
   const pct = value === null ? 0 : Math.max(0, Math.min(100, value));
@@ -30,6 +31,9 @@ export default function VitalsHud({ state }: { state: VitalsState | null }) {
     <div className="flex items-center gap-2 font-vt text-base leading-none">
       <Bar label="Đói" icon="🍚" value={state?.hunger ?? null} low={low.hunger} color="#d9a441" />
       <Bar label="Khát" icon="💧" value={state?.thirst ?? null} low={low.thirst} color="#3d8fd1" />
+      {state && state.faintedUntilMs === null && shouldNag(state) && (
+        <span aria-label="Nhắc ăn uống" className="text-sm text-red-700">{NAG_HINT}</span>
+      )}
       {faints >= 1 && (
         <span
           aria-label="Số lần ngất hôm nay"

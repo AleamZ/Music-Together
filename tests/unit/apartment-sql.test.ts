@@ -5,8 +5,8 @@ import {
   APT_SELL_SHARE, APT_WALL_ROWS, FURNITURE, TV_MAX_QUEUE,
 } from "@/lib/game/housing/apartment";
 
-const SQL = readFileSync("supabase/migrations/0041_apartments.sql", "utf8");
-const MOTEL = readFileSync("supabase/migrations/0039_motel.sql", "utf8");
+const SQL = readFileSync("supabase/migrations/0041_apartments.sql", "utf8").replace(/\r\n/g, "\n");
+const MOTEL = readFileSync("supabase/migrations/0039_motel.sql", "utf8").replace(/\r\n/g, "\n");
 const RATS = readFileSync("supabase/migrations/0019_v17_rats.sql", "utf8").replace(/\r\n/g, "\n");
 
 describe("v19.2 apartments: the TS rules mirror 0041", () => {

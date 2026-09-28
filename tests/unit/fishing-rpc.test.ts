@@ -85,6 +85,15 @@ describe("RPC wrappers", () => {
     h.rpc.mockResolvedValueOnce({ data: { result: "lost", why: "too_early", state: STATE }, error: null });
     expect(await finishCast("tok", "c1", true)).toMatchObject({ result: "lost", why: "too_early" });
   });
+  it("reads the reel seed (0046) and sends the reel's input", async () => {
+    h.rpc.mockResolvedValue({ data: { cast_id: "c1", bite_ms: 1, window_ms: 1, difficulty: 1, min_reel_ms: 1, zone_pct: 25, rarity: null, bait_switched: false, reel_seed: 4294967295, state: STATE }, error: null });
+    expect((await startCast("room", "tok")).reelSeed).toBe(4294967295);
+    h.rpc.mockResolvedValue({ data: { cast_id: "c1", bite_ms: 1, window_ms: 1, difficulty: 1, min_reel_ms: 1, zone_pct: 25, rarity: null, bait_switched: false, state: STATE }, error: null });
+    expect((await startCast("room", "tok")).reelSeed).toBeNull();
+    h.rpc.mockResolvedValue({ data: { result: "lost", why: "outdated", message: "Cập nhật trang để câu tiếp", state: STATE }, error: null });
+    expect(await finishCast("tok", "c1", true, false, { toggles: [0, 12], ticks: 300 })).toMatchObject({ result: "lost", why: "outdated" });
+    expect(h.rpc).toHaveBeenLastCalledWith("finish_cast", { p_session_token: "tok", p_cast_id: "c1", p_success: true, p_inputs: [0, 12], p_ticks: 300 });
+  });
   it("maps the board", async () => {
     h.rpc.mockResolvedValue({ data: {
       records: [{ species_id: "ca_tra", username: "Dat", weight_g: 5000 }], mine: [{ species_id: "ca_ro", weight_g: 200 }],
@@ -163,7 +172,7 @@ describe("fishingErrorMessage", () => {
     expect(t("no bait")).toBe("Hết mồi — đào trùn hoặc mua mồi ở tiệm nhé.");
     expect(t("hands full")).toBe("Tay đang cầm cá — ra vựa bán hoặc sắm xô nhé!");
     expect(t("bucket full")).toBe("Xô đầy rồi — ra vựa bán bớt nhé!");
-    expect(t("cast limit", "1500")).toBe("Câu nhiều quá rồi, nghỉ tay chút nhé (còn 25 phút).");
+    expect(t("cast limit", "1500")).toBe("Câu mệt rồi — nghỉ chút nhé (còn 25 phút).");
     expect(t("dig cooldown", "32")).toBe("Đất còn cứng, chờ 32 giây nữa nhé.");
     expect(t("cast not found")).toBe("Cá đã thoát mất rồi.");
     expect(t("fish not found")).toBe("Con cá này không còn nữa.");
@@ -175,7 +184,7 @@ describe("fishingErrorMessage", () => {
   it("tells a locked account how long the lock runs, and a capped angler to come back tomorrow (anti-cheat §13)", () => {
     expect(fishingErrorMessage({ message: "account locked", details: "125", hint: "anticheat" }))
       .toBe("🔒 Tài khoản đang bị tạm khoá vì thao tác bất thường — còn 2 phút 5 giây.");
-    expect(fishingErrorMessage({ message: "daily cast limit", details: "3600" })).toBe("Hôm nay bạn câu đủ 300 lần rồi — mai quay lại nhé!");
+    expect(fishingErrorMessage({ message: "daily cast limit", details: "3600" })).toBe("Câu mệt rồi — nghỉ chút rồi câu tiếp nhé!");
     const info = { code: "bad_qty", strike: 0 as const, error: "invalid quantity", lockedUntil: null, banned: false, serverNow: null };
     expect(fishingErrorMessage(new AnticheatError(info))).toBe("Món này không mua được.");
   });

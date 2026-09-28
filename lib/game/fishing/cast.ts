@@ -10,6 +10,8 @@ export interface CastInfo {
   rarity: Rarity | null;
   /** v18.1: false = a shore cast nothing will bite (it ends at biteMs without a bite); absent = true. */
   bites?: boolean;
+  /** 0046: the server's reel seed (u32); the reel is replayed server-side from it. null/absent = a server before 0046. */
+  reelSeed?: number | null;
 }
 
 export type CastPhase = "waiting" | "bite" | "missed";

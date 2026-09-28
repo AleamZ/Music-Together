@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ShopItem } from "@/lib/game/fishing/catalog";
 import {
-  baitTotal, bestNet, castBlocker, castWaitMin, dayCapped, digWaitSec, handFish, maxBuyQty, needsRepair, ownsItem, parseFishingState,
+  baitTotal, bestNet, castBlocker, digWaitSec, handFish, maxBuyQty, needsRepair, ownsItem, parseFishingState,
   repairPrice, rodBroken, type FishingState,
 } from "@/lib/game/fishing/state";
 
@@ -56,15 +56,10 @@ describe("the daily cap and the lock (anti-cheat spec §10.4)", () => {
     expect(parseFishingState({ ...RAW, lock: { until: "soon", code: "bad_qty" } })?.lock).toBeNull();
     expect(parseFishingState({ ...RAW, lock: "bad_qty" })?.lock).toBeNull();
   });
-  it("blocks a cast at the daily cap until the Vietnam day turns, after the hourly cap", () => {
-    const capped = withS({ castsTodayLeft: 0, dayResetsAt: "2026-09-24T17:00:00Z" });
-    expect(dayCapped(capped, NOW)).toBe(true);
-    expect(castBlocker(capped, NOW)).toBe("daily_limit");
-    expect(dayCapped(capped, Date.parse("2026-09-24T17:00:00Z"))).toBe(false);
-    expect(castBlocker(capped, Date.parse("2026-09-24T17:00:00Z"))).toBeNull();
-    expect(castBlocker({ ...capped, castsLeft: 0 }, NOW)).toBe("cast_limit");
-    expect(castBlocker({ ...capped, fish: [...S.fish, ...S.fish, ...S.fish] }, NOW)).toBe("daily_limit");
-    expect(dayCapped(S, NOW)).toBe(false);
+  it("0047: never blocks a cast on the old hourly or daily caps", () => {
+    const capped = withS({ castsLeft: 0, castsTodayLeft: 0, dayResetsAt: "2026-09-24T17:00:00Z" });
+    expect(castBlocker(capped)).toBeNull();
+    expect(castBlocker({ ...capped, fish: [...S.fish, ...S.fish, ...S.fish] })).toBe("bucket_full");
   });
 });
 
@@ -87,15 +82,14 @@ describe("hand, bait and ownership", () => {
 
 describe("castBlocker", () => {
   it("allows a cast when nothing is in the way", () => {
-    expect(castBlocker(S, NOW)).toBeNull();
+    expect(castBlocker(S)).toBeNull();
   });
-  it("checks in start_cast's order: hourly cap, capacity, bait (with the worm fallback)", () => {
-    expect(castBlocker(withS({ castsLeft: 0 }), NOW)).toBe("cast_limit");
-    expect(castBlocker(withS({ castsLeft: 0 }), Date.parse("2026-09-24T11:00:01Z"))).toBeNull();
-    expect(castBlocker(withS({ fishCap: 2 }), NOW)).toBe("bucket_full");
-    expect(castBlocker(withS({ fishCap: 1, fish: [S.fish[0]] }), NOW)).toBe("hands_full");
-    expect(castBlocker(withS({ bait: { bait_worm: 0, bait_shrimp: 0, bait_bloodworm: 0 } }), NOW)).toBe("no_bait");
-    expect(castBlocker(withS({ bait: { bait_worm: 2, bait_shrimp: 0, bait_bloodworm: 0 } }), NOW)).toBeNull();
+  it("checks in start_cast's order: capacity, bait (with the worm fallback)", () => {
+    expect(castBlocker(withS({ castsLeft: 0 }))).toBeNull();
+    expect(castBlocker(withS({ fishCap: 2 }))).toBe("bucket_full");
+    expect(castBlocker(withS({ fishCap: 1, fish: [S.fish[0]] }))).toBe("hands_full");
+    expect(castBlocker(withS({ bait: { bait_worm: 0, bait_shrimp: 0, bait_bloodworm: 0 } }))).toBe("no_bait");
+    expect(castBlocker(withS({ bait: { bait_worm: 2, bait_shrimp: 0, bait_bloodworm: 0 } }))).toBeNull();
   });
 });
 
@@ -114,11 +108,9 @@ describe("maxBuyQty", () => {
 });
 
 describe("timers", () => {
-  it("counts down the dig cooldown and the hourly cap", () => {
+  it("counts down the dig cooldown; no hourly cap (0047)", () => {
     expect(digWaitSec(S, NOW)).toBe(0);
     expect(digWaitSec(withS({ digReadyAt: "2026-09-24T10:30:12.200Z" }), NOW)).toBe(13);
-    expect(castWaitMin(S, NOW)).toBe(0);
-    expect(castWaitMin(withS({ castsLeft: 0 }), NOW)).toBe(30);
   });
 });
 

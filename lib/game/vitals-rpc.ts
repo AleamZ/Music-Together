@@ -30,6 +30,16 @@ export function parseVitals(raw: unknown): VitalsState | null {
   return out;
 }
 
+/** 0047: a game RPC's answer carried fresh vitals (a cast / net throw costs hunger and thirst) — the HUD listens. */
+export const VITALS_EVENT = "mt:vitals";
+
+/** Hands an answer's `vitals` JSON to the heartbeat hook (no-op on the server or when the JSON is missing/bad). */
+export function publishVitals(raw: unknown): void {
+  const v = parseVitals(raw);
+  if (!v || typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<VitalsState>(VITALS_EVENT, { detail: v }));
+}
+
 export function vitalsErrorMessage(msg: string): string | null {
   if (msg.includes("exhausted")) return "Bạn đã kiệt sức 5 lần hôm nay — mai quay lại nhé.";
   if (msg.includes("too hungry")) return "Bạn đói lả rồi — ra Chợ Lớn ăn gì đi đã!";

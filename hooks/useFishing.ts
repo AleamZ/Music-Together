@@ -6,7 +6,7 @@ import { syncClock } from "@/lib/game/farm/clock";
 import type { FishingCatalog } from "@/lib/game/fishing/catalog";
 import {
   buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, finishCast, finishNet, fishingErrorMessage, netHaul, releaseFish,
-  repairRod, sellFish, setLoadout, startCast, startNet, type FinishCast, type FinishNet, type NetHaul, type StartCast, type StartNet,
+  repairRod, sellFish, setLoadout, startCast, startNet, type FinishCast, type FinishNet, type ReelInput, type NetHaul, type StartCast, type StartNet,
 } from "@/lib/game/fishing/rpc";
 import type { FishingState, Loadout } from "@/lib/game/fishing/state";
 
@@ -28,7 +28,8 @@ export interface FishingData {
   /** `cell` (v18.1): the pond cell the cast starts from. */
   startCast: (roomId: string, cell?: { col: number; row: number }) => Promise<StartCast | null>;
   /** `hooked` (v18.1): the reel was lost after the hook (a big fish may pull me in). */
-  finishCast: (castId: string, success: boolean, hooked?: boolean) => Promise<FinishCast | null>;
+  /** `reel` (0046): the reel's input, replayed by the server. */
+  finishCast: (castId: string, success: boolean, hooked?: boolean, reel?: ReelInput) => Promise<FinishCast | null>;
   /** v18.2 Sửa cần. */
   repair: (itemId: string) => Promise<{ cost: number } | null>;
   /** v18.2: throw a net from a pond cell; score it. */
@@ -135,7 +136,7 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     }, [act, token]),
     release: useCallback(async (id: string) => (await act(() => releaseFish(token, id), (s) => s)) !== null, [act, token]),
     startCast: useCallback((roomId: string, cell?: { col: number; row: number }) => act(() => startCast(roomId, token, cell), (x) => x.state), [act, token]),
-    finishCast: useCallback((castId: string, success: boolean, hooked = false) => act(() => finishCast(token, castId, success, hooked), (x) => x.state, lostConnection), [act, token]),
+    finishCast: useCallback((castId: string, success: boolean, hooked = false, reel?: ReelInput) => act(() => finishCast(token, castId, success, hooked, reel), (x) => x.state, lostConnection), [act, token]),
     repair: useCallback(async (itemId: string) => {
       const r = await act(() => repairRod(token, itemId), (x) => x.state);
       return r && { cost: r.cost };

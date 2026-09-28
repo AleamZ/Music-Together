@@ -15,7 +15,7 @@ import { HOUR_MS } from "@/lib/game/farm/crop";
 import { parseFieldState, type CropView, type FarmMine, type FieldState, type PlotView } from "@/lib/game/farm/state";
 import { canHook, type CastInfo } from "@/lib/game/fishing/cast";
 import { shopItemFromRow, type FishingCatalog, type ShopItemRow } from "@/lib/game/fishing/catalog";
-import { createReel, stepReel, zoneHeight, type ReelParams } from "@/lib/game/fishing/reel";
+import { createReel, REEL, stepReel, zoneUnits, type ReelParams } from "@/lib/game/fishing/reel";
 import { parseFishingState } from "@/lib/game/fishing/state";
 import { FIELD_PLOTS } from "@/lib/game/maps/field";
 import { getMap } from "@/lib/game/maps/registry";
@@ -104,7 +104,7 @@ const STATE: FieldState = parseFieldState({
 })!;
 
 describe("reel_too_fast", () => {
-  it("never lands a fish before minReelMs, at 16 ms and 50 ms frames, for difficulties 12–90", () => {
+  it("never lands a fish before minReelMs (60 Hz ticks), for difficulties 12–90", () => {
     // holding all the time with a 90 % zone keeps the fish inside it: the fastest reel there is
     const players: Array<(fish: number, zone: number, h: number) => boolean> = [
       () => true,
@@ -115,15 +115,15 @@ describe("reel_too_fast", () => {
     for (let difficulty = 12; difficulty <= 90; difficulty += 13) {
       const minReelMs = 2000 + 40 * difficulty;
       for (const zonePct of [25, 40, 90]) {
-        for (const dt of [0.016, 0.05]) {
-          for (let seed = 1; seed <= 5; seed++) {
+        {
+          for (let seed = 1; seed <= 10; seed++) {
             for (const hold of players) {
               const p: ReelParams = { zonePct, difficulty, minReelMs, seed };
               let s = createReel(p);
-              while (!s.outcome) s = stepReel(s, p, dt, hold(s.fish, s.zone, zoneHeight(p)));
+              while (!s.outcome) s = stepReel(s, p, hold(s.fish, s.zone, zoneUnits(p)));
               if (s.outcome !== "caught") continue;
               caught++;
-              expect(s.elapsedMs).toBeGreaterThanOrEqual(minReelMs - 1e-6);
+              expect((s.tick * 1000) / REEL.hz).toBeGreaterThanOrEqual(minReelMs);
             }
           }
         }

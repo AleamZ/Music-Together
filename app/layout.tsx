@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Cormorant_Garamond, EB_Garamond, Playfair_Display, Pixelify_Sans, VT323 } from "next/font/google";
 import "./globals.css";
 import Providers from "./Providers";
+import DevtoolsGuard, { DISABLE_REACT_DEVTOOLS_SCRIPT } from "@/components/DevtoolsGuard";
+import { IS_PROD } from "@/lib/app-mode";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -30,7 +32,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     >
       <body className="min-h-full">
         <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('music-together:theme');if(t==='cozy'||t==='dragon')document.documentElement.setAttribute('data-theme',t)}catch(e){}" }} />
+        {IS_PROD && <script dangerouslySetInnerHTML={{ __html: DISABLE_REACT_DEVTOOLS_SCRIPT }} />}
         <Providers>{children}</Providers>
+        <DevtoolsGuard />
       </body>
     </html>
   );

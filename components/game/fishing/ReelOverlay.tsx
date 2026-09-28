@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { FISH_ICONS } from "@/lib/game/art/fish";
 import { RARITY_COLOR, type Rarity } from "@/lib/game/fishing/catalog";
-import { createReel, fishFloor, stepReel, zoneHeight, type ReelParams } from "@/lib/game/fishing/reel";
+import { createReel, fishFloor, FX, PFX, REEL, ReelRecorder, stepReel, zoneHeight, type ReelParams, type ReelResult } from "@/lib/game/fishing/reel";
 import { isTyping } from "@/lib/game/keys";
 
 /** An unknown rarity (the bobber does not reveal it) shows a grey fish. */
 const UNKNOWN = "#6b6f74";
+const TICK_MS = 1000 / REEL.hz;
 const SILHOUETTE = FISH_ICONS.ca_ro.rows;
 
 /** A fish shape in one colour (16 × 16). */
@@ -30,7 +31,7 @@ export default function ReelOverlay({ params, rarity, onDone }: {
   params: ReelParams;
   /** Known only when the bobber reveals it. */
   rarity: Rarity | null;
-  onDone: (caught: boolean) => void;
+  onDone: (result: ReelResult) => void;
 }) {
   const [s, setS] = useState(() => createReel(params));
   const holding = useRef(false);
@@ -40,14 +41,22 @@ export default function ReelOverlay({ params, rarity, onDone }: {
   });
 
   useEffect(() => {
+    // fixed 60 Hz ticks (the server replays them): the frame's time is spent in whole ticks, at most 3 per frame
     let cur = createReel(params);
+    const rec = new ReelRecorder();
     let last = performance.now();
+    let acc = 0;
     let raf = requestAnimationFrame(function loop(t: number) {
-      cur = stepReel(cur, params, Math.max(0, t - last) / 1000, holding.current);
+      acc = Math.min(acc + Math.max(0, t - last), REEL.maxCatchUp * TICK_MS);
       last = t;
+      while (acc >= TICK_MS && !cur.outcome) {
+        acc -= TICK_MS;
+        rec.hold(cur.tick, holding.current);
+        cur = stepReel(cur, params, holding.current);
+      }
       setS(cur);
       if (cur.outcome) {
-        onDoneRef.current(cur.outcome === "caught");
+        onDoneRef.current({ caught: cur.outcome === "caught", toggles: rec.toggles, ticks: cur.tick });
         return;
       }
       raf = requestAnimationFrame(loop);
@@ -77,7 +86,8 @@ export default function ReelOverlay({ params, rarity, onDone }: {
   }, []);
 
   const zh = zoneHeight(params);
-  const inside = s.fish >= s.zone && s.fish <= s.zone + zh;
+  const zone = s.zone / FX, fish = s.fish / FX, progress = s.progress / PFX;
+  const inside = fish >= zone && fish <= zone + zh;
   const hold = (on: boolean) => () => { holding.current = on; };
   return (
     <div
@@ -93,16 +103,16 @@ export default function ReelOverlay({ params, rarity, onDone }: {
         <div className="relative h-56 w-10 overflow-hidden rounded-sm border-2 border-ink bg-[#2f6e8f]" aria-hidden="true">
           <div
             className={`absolute inset-x-0 ${inside ? "bg-[#6fd06f]/80" : "bg-[#4caf50]/60"}`}
-            style={{ bottom: `${s.zone * 100}%`, height: `${zh * 100}%` }}
+            style={{ bottom: `${zone * 100}%`, height: `${zh * 100}%` }}
           />
           <div className="absolute inset-x-0 border-t border-dashed border-white/30" style={{ bottom: `${fishFloor(params) * 100}%` }} />
-          <div className="absolute left-1/2 -translate-x-1/2 translate-y-1/2" style={{ bottom: `${s.fish * 100}%` }}>
+          <div className="absolute left-1/2 -translate-x-1/2 translate-y-1/2" style={{ bottom: `${fish * 100}%` }}>
             <FishSilhouette color={rarity ? RARITY_COLOR[rarity] : UNKNOWN} />
           </div>
         </div>
         <div className="relative w-3 overflow-hidden rounded-sm border-2 border-ink bg-parchment-300" role="progressbar"
-          aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(s.progress * 100)} aria-label="Tiến độ kéo cá">
-          <div className="absolute inset-x-0 bottom-0 bg-burgundy" style={{ height: `${s.progress * 100}%` }} />
+          aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)} aria-label="Tiến độ kéo cá">
+          <div className="absolute inset-x-0 bottom-0 bg-burgundy" style={{ height: `${progress * 100}%` }} />
         </div>
         <p className="w-24 self-center text-base">Giữ chuột, chạm hoặc Space để nâng vùng xanh.</p>
       </div>
