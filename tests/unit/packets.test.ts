@@ -135,3 +135,26 @@ describe("the fight topic's gate", () => {
     expect(Array.from({ length: 5 }, () => pass(fr, 0)).filter(Boolean)).toHaveLength(3);
   });
 });
+
+describe("the ready screen's ping meter", () => {
+  it("sends 10 pings 500 ms apart and takes the p90 of the pongs", async () => {
+    const { PingMeter } = await import("@/lib/game/fight/net");
+    const m = new PingMeter();
+    let t = 0;
+    const rtts = [80, 60, 90, 70, 300, 75, 85, 65, 95, 88];
+    for (let i = 0; i < 10; i++) {
+      const p = m.ping(t)!;
+      expect(p.n).toBe(i);
+      expect(m.ping(t + 100)).toBeNull();
+      m.pong(p.n, t + rtts[i]);
+      m.pong(p.n, t + 400);                          // a duplicate pong changes nothing
+      t += 500;
+    }
+    expect(m.ping(t + 1000)).toBeNull();
+    expect(m.ready).toBe(true);
+    expect(m.samples).toHaveLength(10);
+    expect(m.rtt).toBe(95);
+    m.reset();
+    expect(m.ready).toBe(false);
+  });
+});

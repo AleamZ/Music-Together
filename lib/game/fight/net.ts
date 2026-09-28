@@ -38,3 +38,43 @@ export function inputDelay(lag: number): number {
 export function lagRefusal(rttMs: number): string | null {
   return lagFrames(rttMs) > MAX_LAG ? `Mạng hai bên chậm quá để đấu (≈ ${Math.round(rttMs)} ms)` : null;
 }
+
+/** The ready screen's RTT measurement (spec §v20.3 "Challenge flow" 2): PINGS pings, one every PING_EVERY_MS; each pong
+ *  gives a round trip; the p90 decides L and N. Pure: the caller sends the pings, answers the opponent's and passes the
+ *  pongs in. */
+export class PingMeter {
+  private sent = new Map<number, number>();
+  private next = 0;
+  private lastAt = -Infinity;
+  readonly samples: number[] = [];
+
+  /** The next ping to send now ({n, ms}), or null (not yet, or all sent). */
+  ping(nowMs: number): { n: number; ms: number } | null {
+    if (this.next >= PINGS || nowMs - this.lastAt < PING_EVERY_MS) return null;
+    const n = this.next++;
+    this.lastAt = nowMs;
+    this.sent.set(n, nowMs);
+    return { n, ms: nowMs };
+  }
+  /** A pong for ping `n` arrived. */
+  pong(n: number, nowMs: number): void {
+    const at = this.sent.get(n);
+    if (at === undefined) return;
+    this.sent.delete(n);
+    this.samples.push(Math.max(0, nowMs - at));
+  }
+  /** Enough samples to decide (at least 3 once every ping went out; lost pings do not block). */
+  get ready(): boolean {
+    return this.samples.length >= PINGS || (this.next >= PINGS && this.samples.length >= 3);
+  }
+  get rtt(): number {
+    return p90(this.samples);
+  }
+  /** Measure again (a new opponent). */
+  reset(): void {
+    this.sent.clear();
+    this.next = 0;
+    this.lastAt = -Infinity;
+    this.samples.length = 0;
+  }
+}

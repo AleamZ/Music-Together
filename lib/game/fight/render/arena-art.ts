@@ -7,7 +7,7 @@ import { GROUND_Y } from "./fx";
 import { drawText, textWidth } from "./font";
 import type { PixelCtx } from "./rig";
 
-export type ArenaKind = "practice" | "dojo";
+export type ArenaKind = "practice" | "dojo" | "bai_dat";
 
 const SKY = ["#2b2150", "#3d2a5e", "#5a3468", "#7d3f67", "#a8515f", "#d06f55", "#e99a5a"];
 const HOUSE = ["#241a2c", "#2c2034", "#221828"];
@@ -24,6 +24,10 @@ const h = (n: number): number => {
 export function paintArena(c: PixelCtx, kind: ArenaKind, frame: number, reduced: boolean): void {
   if (kind === "dojo") {
     paintDojo(c, frame, reduced);
+    return;
+  }
+  if (kind === "bai_dat") {
+    paintBaiDat(c, frame, reduced);
     return;
   }
   c.fillStyle = SKY[SKY.length - 1];
@@ -198,4 +202,86 @@ function paintDojo(c: PixelCtx, frame: number, reduced: boolean): void {
   // the fighters' line
   c.fillStyle = "#d9c08a";
   c.fillRect(0, GROUND_Y + 1, ARENA_W, 1);
+}
+// ---------------------------------------------------------------- v20.3: Bãi đất trống
+/** The ring on the empty lot at dusk: a violet sky over the corrugated roofs of Chợ Lớn's back row, a stack of tyres and
+ *  the broken brick wall on the right, the tin roof's edge and a hanging bulb above, the ring's ropes behind the
+ *  fighters and a canvas mat on packed dirt. `night` darkens the sky (the room's day or night). */
+export function paintBaiDat(c: PixelCtx, frame: number, reduced: boolean, night = false): void {
+  const mat = GROUND_Y - 22;
+  const sky = night ? ["#0f1024", "#161836", "#1e2046", "#282a56"] : ["#3a2c5e", "#5a3a6a", "#8a4e6a", "#c46a5a"];
+  const band = Math.ceil(mat / sky.length);
+  sky.forEach((col, i) => {
+    c.fillStyle = col;
+    c.fillRect(0, i * band, ARENA_W, band);
+  });
+  // the back row of roofs (corrugated tin), a few lit windows
+  let x = -8, i = 0;
+  while (x < ARENA_W) {
+    const w = 40 + (h(i + 31) % 3) * 12, top = 70 + (h(i + 5) % 4) * 8;
+    c.fillStyle = i % 2 ? "#2a2433" : "#231e2c";
+    c.fillRect(x, top, w, mat - top);
+    c.fillStyle = "#57606c";
+    c.fillRect(x - 2, top - 4, w + 4, 4);
+    c.fillStyle = "#77818d";
+    for (let k = x; k < x + w; k += 3) c.fillRect(k, top - 4, 1, 4);
+    if (h(i * 7) % 2) {
+      c.fillStyle = night ? "#f4c25e" : "#b98a4a";
+      c.fillRect(x + 8, top + 10, 6, 7);
+    }
+    x += w + 3;
+    i++;
+  }
+  // the broken brick wall on the right and the tyre stack on the left
+  for (let yy = 96; yy < mat; yy += 5) {
+    c.fillStyle = "#c9b89a";
+    c.fillRect(318, yy, 60, 1);
+    for (let xx = 318 + ((yy / 5) % 2) * 4; xx < 378; xx += 8) {
+      c.fillStyle = (xx + yy) % 3 ? "#a8523a" : "#7e3a28";
+      c.fillRect(xx, yy + 1, 7, 4);
+    }
+  }
+  c.fillStyle = sky[sky.length - 1];
+  for (let k = 0; k < 60; k += 4) c.fillRect(318 + k, 96, 4, (h(k) % 12) + 2);
+  for (let k = 0; k < 3; k++) {
+    const ty = mat - 12 - k * 11;
+    c.fillStyle = "#161618";
+    c.fillRect(14 + k * 2, ty, 44 - k * 4, 11);
+    c.fillStyle = "#3a3a42";
+    c.fillRect(17 + k * 2, ty + 2, 38 - k * 4, 2);
+  }
+  // the ring: posts and three ropes behind the fighters
+  c.fillStyle = "#c0392b";
+  c.fillRect(20, mat - 58, 5, 58);
+  c.fillStyle = "#2f5fb8";
+  c.fillRect(ARENA_W - 25, mat - 58, 5, 58);
+  for (const ry of [mat - 52, mat - 38, mat - 24]) {
+    c.fillStyle = "#f1ece0";
+    c.fillRect(25, ry, ARENA_W - 50, 2);
+    c.fillStyle = "#b8b2a4";
+    c.fillRect(25, ry + 2, ARENA_W - 50, 1);
+  }
+  // the tin roof's edge and a bulb that swings a little
+  c.fillStyle = "#1c1a22";
+  c.fillRect(0, 0, ARENA_W, 12);
+  c.fillStyle = "#8a939d";
+  for (let k = 0; k < ARENA_W; k += 4) c.fillRect(k, 0, 3, 10);
+  const sway = reduced ? 0 : Math.round(Math.sin(frame / 40) * 2);
+  c.fillStyle = "#1c1a22";
+  c.fillRect(ARENA_W / 2, 12, 1, 18);
+  c.fillStyle = "#f7e08a";
+  c.fillRect(ARENA_W / 2 - 3 + sway, 30, 7, 7);
+  c.fillStyle = "#fff6c8";
+  c.fillRect(ARENA_W / 2 - 1 + sway, 32, 3, 3);
+  // the mat and the dirt in front
+  c.fillStyle = "#d9cfb4";
+  c.fillRect(0, mat, ARENA_W, GROUND_Y - mat + 4);
+  c.fillStyle = "#bfb394";
+  for (let k = 0; k < ARENA_W; k += 48) c.fillRect(k, mat, 1, GROUND_Y - mat + 4);
+  c.fillStyle = "#a89c7c";
+  c.fillRect(0, GROUND_Y + 1, ARENA_W, 1);
+  c.fillStyle = "#8a6a46";
+  c.fillRect(0, GROUND_Y + 5, ARENA_W, ARENA_H - GROUND_Y - 5);
+  c.fillStyle = "#b99468";
+  for (let k = 0; k < 90; k++) c.fillRect(h(k * 13) % ARENA_W, GROUND_Y + 6 + (h(k * 7) % (ARENA_H - GROUND_Y - 7)), 2, 1);
 }

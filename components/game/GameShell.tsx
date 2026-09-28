@@ -62,6 +62,10 @@ import FaintOverlay from "./FaintOverlay";
 import FightOverlay from "./fight/FightOverlay";
 import Dojo from "./fight/Dojo";
 import { useDojo } from "@/hooks/useDojo";
+import { useRings } from "@/hooks/useRings";
+import RingReady from "./fight/RingReady";
+import RingBoard from "./fight/RingBoard";
+import PvpFight from "./fight/PvpFight";
 import { practiceFighter } from "@/lib/game/fight/dojo-gates";
 import FashionStoreModal from "./FashionStoreModal";
 import RestaurantModal from "./RestaurantModal";
@@ -126,7 +130,7 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
@@ -273,6 +277,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const getCanvas = useCallback(() => canvasRef.current, []);
   const fishing = useFishingController({ token, roomId: room.id, accountId, canvas: getCanvas, current: derived.current, toast: gameToast });
   const { interact: fishingInteract, promptText, cancelCast, onFishingInput } = fishing;
+  // v20.3 Bãi đất trống: the rings (labels, my corner, my live match)
+  const rings = useRings({ token, roomId: room.id, accountId, mapId: travel.mapId, canvas: getCanvas, toast: gameToast });
+  const { takeCorner } = rings;
 
   // --- farming: the field of this room, its panels, the due tasks, the plots on the canvas and the work progress
   const farm = useFarmController({
@@ -468,7 +475,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   //     an open overlay outside the field's own, not to the farm work
   const [helpOpen, setHelpOpen] = useState(false); // the "⌨️ Phím tắt" overlay (H / ?)
   const openOverlays = {
-    panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen,fishingPanel: fishing.panel !== null || fishing.net !== null, creating, anticheatModal: anticheat.modal !== null,
+    panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen || rings.active !== null,fishingPanel: fishing.panel !== null || fishing.net !== null, creating, anticheatModal: anticheat.modal !== null,
     farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
     slingGame: farm.sling !== null,
     cardPanel: cards.panel !== null, rulesBook: cards.rules !== null, dogPanel: panel === "dog",
@@ -614,10 +621,17 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         setPanel("dojo");
         void reloadDojo();
         break;
+      case "ring_corner":                                                   // v20.3: take the corner, the ready screen
+        setPanel("ring");
+        void takeCorner(it.ring ?? 1, it.corner ?? "red");
+        break;
+      case "ring_board":                                                    // v20.3
+        setPanel("ring_board");
+        break;
       default:
         if (!farmInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner]);
 
   const leaveBroken = useCallback((message: string) => {
     window.alert(message);
@@ -640,11 +654,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     : cardPresence?.map === "pond" ? "🎣 Đang ở ao câu cá"
     : cardPresence?.map === "field" ? "🌾 Đang ở đồng ruộng"
     : cardPresence?.map === "market" ? "🏮 Đang đi Chợ Lớn"
-    : cardPresence?.map === "khu_nha" ? "🏘️ Đang ở Khu nhà" : "🎮 Đang dạo quanh sảnh";
+    : cardPresence?.map === "khu_nha" ? "🏘️ Đang ở Khu nhà"
+    : cardPresence?.map === "bai_dat" ? "🥊 Đang ở Bãi đất trống" : "🎮 Đang dạo quanh sảnh";
 
   return (
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : "bg-[#5a8f32]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
@@ -661,6 +676,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         onLookChanged={refresh}
         onFishingInput={onFishingInput}
         onPlotChanged={farm.data.plotChanged}
+        onRingHint={rings.hint}
         onLocalMove={farm.moved}
         onFirstFrame={onFirstFrame}
         onUnsupported={onUnsupported}
@@ -1134,6 +1150,47 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           onClose={close}
         />
       )}
+      {panel === "ring" && !rings.active && (                              // v20.3: my corner's ready screen
+        <RingReady
+          rings={rings}
+          roomId={room.id}
+          accountId={accountId}
+          myLook={myLook}
+          lookOf={(id) => looks.get(id) ?? null}
+          onClose={close}
+        />
+      )}
+      {panel === "ring_board" && token && <RingBoard token={token} roomId={room.id} onClose={close} />}{/* v20.3 */}
+      {rings.active && token && (() => {                                  // v20.3: a ring match (also after a reload)
+        const act = rings.active;
+        const foe = act.foe;
+        const foeLook = (foe && looks.get(foe.id)) || DEFAULT_LOOK;
+        const foeName = foe?.name ?? "Đối thủ";
+        return (
+          <PvpFight
+            key={act.id}
+            token={token}
+            roomId={room.id}
+            ring={act.ring}
+            match={act}
+            me={accountId}
+            foeId={foe?.id ?? ""}
+            names={act.side === 1 ? [myName, foeName] : [foeName, myName]}
+            looks={act.side === 1 ? [myLook, foeLook] : [foeLook, myLook]}
+            clock={rings.clock}
+            resume={act.resumed}
+            onDone={() => {
+              rings.finish();
+              setPanel(null);
+              void fishing.data.reload();
+              void reloadVitals();
+            }}
+            onRematch={(stake) => void rings.offer(act.ring, stake, act.params.delay ?? 3).then(() => setPanel("ring"))}
+            onLeave={() => void rings.leave(act.ring)}
+            onToast={showToast}
+          />
+        );
+      })()}
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}

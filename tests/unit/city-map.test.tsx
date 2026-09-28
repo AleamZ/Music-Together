@@ -75,6 +75,7 @@ describe("GameShell's own interactables", () => {
       estate: "estate",                                                                    // v19.4
       punch_bag: "fight_practice",                                                         // v20.1
       dojo: "dojo",                                                                        // v20.2
+      ring_corner: "ring", ring_board: "ring_board",                                       // v20.3
     });
   });
   it("keeps a case for every one of them in onInteract, before the default", () => {

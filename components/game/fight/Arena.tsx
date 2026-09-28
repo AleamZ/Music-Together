@@ -15,6 +15,8 @@ export interface FightDriver {
   tick(now: number, mask: number, paused: boolean): State;
   /** Seconds before frame 0 (a refereed match's 3·2·1), else null. */
   countdown?(): number | null;
+  /** v20.3 PvP: the confirmed state — the banners, the KO and the end are drawn from it only (never a prediction). */
+  confirmed?(): State;
 }
 
 export function fitScale(): number {
@@ -121,7 +123,8 @@ export default function Arena({ driver, arena, fighters, names, paused, boxes = 
         const shake = fx.shake(s[0], reduced);
         cv.style.transform = shake ? `translateX(${shake}px)` : "";
       }
-      const t = hudText(s, [me, foe]);
+      const sure = driver.confirmed?.() ?? s;
+      const t = hudText(sure, [me, foe]);
       const k = JSON.stringify(t);
       if (k !== hudKey) {
         hudKey = k;
@@ -132,11 +135,11 @@ export default function Arena({ driver, arena, fighters, names, paused, boxes = 
         lastCount = c;
         setCount(c);
       }
-      if (s[G_PHASE] === PH_OVER && !overSent) {
+      if (sure[G_PHASE] === PH_OVER && !overSent) {
         if (overAt < 0) overAt = now;
         if (now - overAt > 900) {
           overSent = true;
-          onOverRef.current(s);
+          onOverRef.current(sure);
         }
       }
       id = raf(tick);

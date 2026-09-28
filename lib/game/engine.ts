@@ -45,6 +45,7 @@ import { drawPet, petAltitude, petHeight } from "@/lib/game/art/pets";
 import { EXT_W, paintHouseExterior, paintLotYard, paintSoldFlag } from "@/lib/game/art/house";         // v19.3
 import type { HouseDraw } from "@/lib/game/housing/lot";
 import { LOTS } from "@/lib/game/maps/khu-nha";
+import { RING_RECTS } from "@/lib/game/maps/bai-dat";                                                    // v20.3
 import { ctx2d, makeCanvas } from "@/lib/game/maps/scene-art";
 import { PetFollowers, petPose, type OwnerState } from "@/lib/game/pets/follow";
 import { PARROT_ECHO_MS, parrotEchoes } from "@/lib/game/pets/model";
@@ -210,6 +211,8 @@ export class GameEngine {
   private gatherReady = new Set<string>();
   /** v18.11: Báo Làng has news I have not read (the red dot on the stand's label). */
   private newsUnread = false;
+  /** v20.3: the label over each Bãi đất trống ring (index = ring − 1; null = none). */
+  private ringLabels: ReadonlyArray<string | null> = [];
   /** v18.8: the room's weather, the ambient light (recomputed about once a second) and which props sway in the wind. */
   private weather: RoomWeather | null = null;
   private lighting: Lighting = { tint: "rgb(0, 0, 0)", alpha: 0, night: 0, shade: "rgb(255, 255, 255)" };
@@ -730,6 +733,11 @@ export class GameEngine {
   /** v18.11: the unread dot on the Báo Làng stand's label. */
   setNewsUnread(unread: boolean): void {
     this.newsUnread = unread;
+  }
+
+  /** v20.3: the rings' labels on Bãi đất trống ("⚔️ Hiệp 2 · 1–0", who waits in a corner), from ring_state. */
+  setRingLabels(labels: ReadonlyArray<string | null>): void {
+    this.ringLabels = [...labels];
   }
 
   /** The card tables' labels from card_lobby (v16 spec §5): one line over each table of the hall. */
@@ -1693,6 +1701,21 @@ export class GameEngine {
       c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
       c.fillStyle = "#fbf3dc";
       c.fillText(text, x, y + s * 0.3);
+    }
+
+    // v20.3: each Bãi đất trống ring's label above its roof (a bystander sees the round and the score)
+    if (this.map.id === "bai_dat") {
+      RING_RECTS.forEach((r, i) => {
+        const text = this.ringLabels[i];
+        if (!text) return;
+        const [x, y] = dev(r.x + r.w / 2, r.y - 22);
+        const w = Math.round(c.measureText(text).width + 3 * s), h = Math.round(4.8 * s);
+        if (x + w / 2 < 0 || x - w / 2 > this.canvas.width || y + h < 0 || y - h > this.canvas.height) return;
+        c.fillStyle = text.startsWith("⚔️") ? "rgba(142, 42, 31, 0.92)" : "rgba(58, 36, 24, 0.88)";
+        c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
+        c.fillStyle = "#fbf3dc";
+        c.fillText(text, x, y + s * 0.3);
+      });
     }
 
     // v18.11: the Báo Làng stand's label, with a red dot while something is unread
