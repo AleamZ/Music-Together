@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const round = (over: Partial<FarmRound> = {}): FarmRound => ({
-  game: "transplant", plot: 3, part: 0, ot: false, seed: 11, begunAt: 1, phase: "playing", score: null, result: null, message: null,
+  game: "transplant", plot: 3, part: 0, ot: false, seed: 11, serverSeed: false, input: null, begunAt: 1, phase: "playing", score: null, result: null, message: null,
   slow: false, ...over,
 });
 function show(r: FarmRound, over: { panelOpen?: boolean; busy?: boolean } = {}) {

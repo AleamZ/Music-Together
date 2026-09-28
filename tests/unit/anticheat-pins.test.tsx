@@ -463,7 +463,7 @@ describe("bad_spot and bad_qty (v15.3)", () => {
     let rng = 11;
     for (let game = 0; game < 12; game++) {
       const onEnd = vi.fn();
-      render(<CrabGame crab={{ hole: 1, visit: { id: "v", hole: 1, startedAt: 0 }, seed: game, begunAt: 0, phase: "playing", hits: null, message: null }}
+      render(<CrabGame crab={{ hole: 1, visit: { id: "v", hole: 1, startedAt: 0, seed: game }, seed: game, input: null, begunAt: 0, phase: "playing", hits: null, message: null }}
         panelOpen={false} onEnd={onEnd} onClose={noop} />);
       for (let t = 0; t < 16_000; t += 50) {
         rng = (rng * 1103515245 + 12345) % 2147483648;

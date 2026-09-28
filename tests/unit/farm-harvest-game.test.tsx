@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const round = (over: Partial<FarmRound> = {}): FarmRound => ({
-  game: "harvest", plot: 3, part: 2, ot: false, seed: 11, begunAt: 1, phase: "playing", score: null, result: null, message: null,
+  game: "harvest", plot: 3, part: 2, ot: false, seed: 11, serverSeed: false, input: null, begunAt: 1, phase: "playing", score: null, result: null, message: null,
   slow: false, ...over,
 });
 function show(r: FarmRound, over: { panelOpen?: boolean; busy?: boolean } = {}) {
@@ -36,7 +36,7 @@ describe("HarvestGame", () => {
     const c = createHarvestRound(11).centres[0];
     run(16);
     space("keyDown");
-    run(16 + Math.round(c * 1200));
+    run(16 + Math.round(c * 1.2));                               // the bar fills 1 000 ‰ in 72 ticks, 1.2 s
     space("keyUp");
     run(32);
     expect(screen.getByText(/Bó 2\/8 · 1 điểm/)).toBeInTheDocument();
@@ -73,7 +73,8 @@ describe("HarvestGame", () => {
       run(400);
     }
     run(400);
-    expect(onEnd.mock.calls).toEqual([[false, 0]]);
+    expect(onEnd.mock.calls).toEqual([[false, 0, { toggles: expect.any(Array), ticks: expect.any(Number) }]]);
+    expect(onEnd.mock.calls[0][2].toggles).toHaveLength(16);                     // the input the server replays (0061)
   });
 
   it("closes on Esc or Huỷ and sends nothing; an Esc for another overlay is not its own", () => {

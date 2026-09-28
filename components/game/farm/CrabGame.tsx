@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FarmCrab } from "@/hooks/useFarmController";
 import { CRAB_SCENE, drawCrabScene } from "@/lib/game/art/gather-art";
 import { CRAB, CRAB_MARK, crabClosed, createCrabRound, stepCrabRound, type CrabRound } from "@/lib/game/farm/minigames";
+import type { ToggleInput } from "@/lib/game/farm/rpc";
+import { TickClock } from "@/lib/game/fishing/net";
 import { isTyping } from "@/lib/game/keys";
 
 export const CRAB_HELP =
@@ -12,7 +14,7 @@ export const CRAB_HELP =
 /** The claws right now: closed while a grab would be a hit (§7.2). */
 function clawsClosed(s: CrabRound): boolean {
   const i = s.tries.length;
-  return s.stage === "claws" && crabClosed(CRAB.periodsMs[i], s.phases[i], s.stageMs);
+  return s.stage === "claws" && crabClosed(CRAB.periods[i], s.phases[i], s.t);
 }
 
 /** The bank, the hole, the crab and the hand, drawn on a 96 × 64 canvas that CSS scales up in whole pixels (§15). The
@@ -27,7 +29,7 @@ function Scene({ s }: { s: CrabRound }) {
     const c = ctx.current;
     if (!c) return;
     drawCrabScene(c, {
-      closed: clawsClosed(s), lurking: s.stage === "lead", mark: s.stage === "beat" ? s.tries[s.tries.length - 1] : null, t: s.elapsedMs,
+      closed: clawsClosed(s), lurking: s.stage === "lead", mark: s.stage === "beat" ? s.tries[s.tries.length - 1] : null, t: (s.tick * 1000) / 60,
       reduced: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
     });
   }, [s]);
@@ -37,16 +39,19 @@ function Scene({ s }: { s: CrabRound }) {
   );
 }
 
-/** The game (§7.2): a seeded CrabRound stepped every frame; a grab is Space, a click or a tap. Its end goes to `onEnd`
+/** The game (§7.2): a seeded CrabRound on a 60 Hz tick clock (0062: the server replays its grabs); a grab is Space, a
+ *  click or a tap. Its end goes to `onEnd`
  *  once. Dừng or Esc (R8): before the first try ends it closes the game and nothing is sent; after a try it ends the
  *  game with the hits so far. */
 function Playing({ crab, panelOpen, onEnd, onClose }: {
   crab: FarmCrab;
   panelOpen: boolean;
-  onEnd: (hits: number) => void;
+  onEnd: (hits: number, input: ToggleInput) => void;
   onClose: () => void;
 }) {
   const [s, setS] = useState(() => createCrabRound(crab.seed));
+  /** The ticks a grab came in. */
+  const grabs = useRef<number[]>([]);
   /** A grab since the last frame. */
   const grabbed = useRef(false);
   /** The round as the last frame left it, and whether the game has been handed on (its end, or Dừng). */
@@ -60,22 +65,26 @@ function Playing({ crab, panelOpen, onEnd, onClose }: {
     if (over.current) return;
     over.current = true;
     if (latest.current.tries.length === 0) cb.current.onClose();
-    else cb.current.onEnd(latest.current.hits);
+    else cb.current.onEnd(latest.current.hits, { toggles: grabs.current.slice(), ticks: latest.current.tick });
   }, []);
 
   useEffect(() => {
     let cur = createCrabRound(crab.seed);
-    let last = performance.now();
+    const clock = new TickClock(performance.now());
     let raf = requestAnimationFrame(function loop(t: number) {
-      cur = stepCrabRound(cur, Math.max(0, t - last) / 1000, grabbed.current);
-      grabbed.current = false;
-      last = t;
+      const due = clock.advance(t);
+      while (cur.tick < due && !cur.outcome) {
+        const g = grabbed.current;
+        grabbed.current = false;
+        if (g && cur.stage === "claws") grabs.current.push(cur.tick);             // only a grab in the claws counts
+        cur = stepCrabRound(cur, g);
+      }
       latest.current = cur;
       setS(cur);
       if (cur.outcome) {
         if (!over.current) {
           over.current = true;
-          cb.current.onEnd(cur.hits);
+          cb.current.onEnd(cur.hits, { toggles: grabs.current.slice(), ticks: cur.tick });
         }
         return;
       }
@@ -126,7 +135,7 @@ function Playing({ crab, panelOpen, onEnd, onClose }: {
 export default function CrabGame({ crab, panelOpen, onEnd, onClose }: {
   crab: FarmCrab;
   panelOpen: boolean;
-  onEnd: (hits: number) => void;
+  onEnd: (hits: number, input?: ToggleInput) => void;
   onClose: () => void;
 }) {
   useEffect(() => {

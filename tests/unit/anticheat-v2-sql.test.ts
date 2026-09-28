@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { NETX } from "@/lib/game/fishing/net";
 
@@ -132,6 +132,39 @@ describe("0060: the dojo's and the hầm's functions are their newest bodies plu
     }
     expect(body(M60, "dojo_kata_submit(")).toContain("jsonb_build_object('seed', 0, 'secretBot', true,");
     expect(body(M60, "ug_ladder_start(")).toContain("jsonb_build_object('seed', 0, 'secretBot', true,");
+  });
+});
+
+describe("0061–0063: the field's re-created RPCs are their newest bodies plus the marked lines", () => {
+  /** Every migration after rom and before 	o. */
+  const between = (from: string, to: string) => readdirSync("supabase/migrations")
+    .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > from.slice(0, 4) && f.slice(0, 4) < to.slice(0, 4))
+    .map((f) => f.slice(0, -4));
+  const cases: Array<[string, string, string, string]> = [
+    ["begin_work(", "0025_vitals", "0061_harvest_replay", "0061"],
+    ["harvest_part(p_room_id uuid, p_session_token text, p_plot integer, p_success boolean)", "0016_v15_2_crops", "0061_harvest_replay", "0061"],
+    ["crab_start(", "0018_v15_3_gather", "0062_crab_replay", "0062"],
+    ["crab_finish(p_room_id uuid, p_session_token text, p_visit_id uuid, p_hits integer)", "0018_v15_3_gather", "0062_crab_replay", "0062"],
+    ["sling_shoot(p_room_id uuid, p_session_token text, p_rat_id bigint, p_hit boolean)", "0019_v17_rats", "0063_sling_replay", "0063"],
+  ];
+  for (const [sig, src, dst, tag] of cases) {
+    it(sig.slice(0, sig.indexOf("(")), () => {
+      const name = sig.slice(0, sig.indexOf("("));
+      expect(between(src, dst).length).toBeGreaterThan(0);
+      for (const f of between(src, dst)) {
+        expect(M(f).includes(`function public.${name}(`), `${name} in ${f}`).toBe(false);
+      }
+      expect(unmarked(body(M(dst), sig), tag)).toBe(body(M(src), sig));
+      expect(body(M(dst), sig)).toContain(`-- ${tag}`);
+    });
+  }
+  it("the old signatures keep a failure and refuse a success as outdated", () => {
+    expect(body(M("0061_harvest_replay"), "harvest_part(p_room_id uuid, p_session_token text, p_plot integer, p_success boolean)"))
+      .toContain("if coalesce(p_success, false) then raise exception 'outdated'");
+    expect(body(M("0062_crab_replay"), "crab_finish(p_room_id uuid, p_session_token text, p_visit_id uuid, p_hits integer)"))
+      .toContain("if p_hits > 0 then raise exception 'outdated'");
+    expect(body(M("0063_sling_replay"), "sling_shoot(p_room_id uuid, p_session_token text, p_rat_id bigint, p_hit boolean)"))
+      .toContain("if coalesce(p_hit, false) then raise exception 'outdated'");
   });
 });
 

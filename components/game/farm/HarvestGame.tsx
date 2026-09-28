@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { FarmRound } from "@/hooks/useFarmController";
 import { HARVEST_PARTS } from "@/lib/game/farm/catalog";
 import { partsDoneText, partText } from "@/lib/game/farm/messages";
-import { createHarvestRound, HARVEST, HARVEST_MARK, scoreText, stepHarvestRound, type HarvestRound } from "@/lib/game/farm/minigames";
+import { createHarvestRound, HARVEST, HARVEST_MARK, scoreText, stepHarvestRound, ToggleRecorder, type HarvestRound } from "@/lib/game/farm/minigames";
+import type { ToggleInput } from "@/lib/game/farm/rpc";
+import { TickClock } from "@/lib/game/fishing/net";
 import { isTyping } from "@/lib/game/keys";
 
 export const HARVEST_HELP = "Giữ Space (hoặc giữ chuột, giữ ngón tay) cho lực liềm lên — thả khi vạch nằm trong vùng xanh.";
@@ -13,11 +15,12 @@ export const HARVEST_HELP = "Giữ Space (hoặc giữ chuột, giữ ngón tay)
 function PowerBar({ s }: { s: HarvestRound }) {
   const bundle = Math.min(s.bundle, HARVEST.bundles - 1);
   const c = s.centres[bundle];
-  const last = s.beatMs > 0 ? s.cuts[s.cuts.length - 1] : undefined;
-  const pct = (x: number) => `${Math.max(0, Math.min(1, x)) * 100}%`;
+  const last = s.beat > 0 ? s.cuts[s.cuts.length - 1] : undefined;
+  /** ‰ → a CSS per-cent. */
+  const pct = (x: number) => `${Math.max(0, Math.min(1000, x)) / 10}%`;
   return (
     <div className="relative h-7 w-64 max-w-full overflow-hidden rounded-sm border-2 border-ink bg-parchment-300" role="progressbar"
-      aria-label="Lực liềm" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(s.level * 100)}>
+      aria-label="Lực liềm" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(s.level / 10)}>
       <div className="absolute inset-y-0 bg-[#9bd07f]/60" style={{ left: pct(c - HARVEST.near), width: pct(2 * HARVEST.near) }} />
       <div className="absolute inset-y-0 bg-[#4caf50]" style={{ left: pct(c - HARVEST.band / 2), width: pct(HARVEST.band) }} />
       <div className="absolute inset-y-1 left-0 bg-[#e0b33c]/90" style={{ width: pct(s.level) }} />
@@ -26,9 +29,9 @@ function PowerBar({ s }: { s: HarvestRound }) {
   );
 }
 
-/** The round itself (v15.2 §6.2): a seeded HarvestRound stepped every frame; the sickle is Space, a mouse button or a
- *  finger held down. Its end goes to `onEnd` once. */
-function Playing({ round, onEnd }: { round: FarmRound; onEnd: (pass: boolean, score: number) => void }) {
+/** The round itself (v15.2 §6.2): a seeded HarvestRound on a 60 Hz tick clock (0061: the server replays its toggles);
+ *  the sickle is Space, a mouse button or a finger held down. Its end goes to `onEnd` once, with its input. */
+function Playing({ round, onEnd }: { round: FarmRound; onEnd: (pass: boolean, score: number, input: ToggleInput) => void }) {
   const [s, setS] = useState(() => createHarvestRound(round.seed));
   const holding = useRef(false);
   const onEndRef = useRef(onEnd);
@@ -38,13 +41,17 @@ function Playing({ round, onEnd }: { round: FarmRound; onEnd: (pass: boolean, sc
 
   useEffect(() => {
     let cur = createHarvestRound(round.seed);
-    let last = performance.now();
+    const clock = new TickClock(performance.now());
+    const rec = new ToggleRecorder();
     let raf = requestAnimationFrame(function loop(t: number) {
-      cur = stepHarvestRound(cur, Math.max(0, t - last) / 1000, holding.current);
-      last = t;
+      const due = clock.advance(t);
+      while (cur.tick < due && !cur.outcome) {
+        rec.hold(cur.tick, holding.current);
+        cur = stepHarvestRound(cur, holding.current);
+      }
       setS(cur);
       if (cur.outcome) {
-        onEndRef.current(cur.outcome === "pass", cur.score);
+        onEndRef.current(cur.outcome === "pass", cur.score2 / 2, { toggles: rec.toggles.slice(), ticks: cur.tick });
         return;
       }
       raf = requestAnimationFrame(loop);
@@ -74,15 +81,15 @@ function Playing({ round, onEnd }: { round: FarmRound; onEnd: (pass: boolean, sc
   }, []);
 
   const hold = (on: boolean) => () => { holding.current = on; };
-  const last = s.beatMs > 0 ? s.cuts[s.cuts.length - 1] : undefined;
+  const last = s.beat > 0 ? s.cuts[s.cuts.length - 1] : undefined;
   return (
     // the whole block takes a held mouse button or finger
     <div className="flex w-full touch-none select-none flex-col items-center gap-2 py-1"
       onPointerDown={hold(true)} onPointerUp={hold(false)} onPointerCancel={hold(false)} onPointerLeave={hold(false)}>
       <PowerBar s={s} />
       <p aria-live="polite">
-        Bó {Math.min(s.bundle + 1, HARVEST.bundles)}/{HARVEST.bundles} · {scoreText(s.score)} điểm
-        {last && <b className={last.score === 0 ? "text-burgundy" : undefined}> · {HARVEST_MARK[last.mark]}</b>}
+        Bó {Math.min(s.bundle + 1, HARVEST.bundles)}/{HARVEST.bundles} · {scoreText(s.score2 / 2)} điểm
+        {last && <b className={last.score2 === 0 ? "text-burgundy" : undefined}> · {HARVEST_MARK[last.mark]}</b>}
       </p>
       <p className="text-base opacity-80">{HARVEST_HELP}</p>
     </div>
@@ -99,7 +106,7 @@ export default function HarvestGame({ round, busy, panelOpen, varietyName, onEnd
   panelOpen: boolean;
   /** The plot's variety, for the harvest's last line. */
   varietyName: string;
-  onEnd: (pass: boolean, score: number) => void;
+  onEnd: (pass: boolean, score: number, input?: ToggleInput) => void;
   onNext: () => void;
   onClose: () => void;
 }) {
@@ -156,7 +163,7 @@ export default function HarvestGame({ round, busy, panelOpen, varietyName, onEnd
           <>
             <p role="status" className="text-burgundy">
               {round.phase === "lost"
-                ? `❌ Được ${scoreText(round.score ?? 0)}/${HARVEST.bundles} điểm — cần ${HARVEST.pass}. Thử lại ngay nhé!`
+                ? `❌ Được ${scoreText(round.score ?? 0)}/${HARVEST.bundles} điểm — cần ${HARVEST.pass2 / 2}. Thử lại ngay nhé!`
                 : round.message}
             </p>
             <div className="flex flex-wrap justify-center gap-2">

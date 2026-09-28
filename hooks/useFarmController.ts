@@ -17,7 +17,7 @@ import {
   NOT_OPEN_153, NOT_OPEN_17, pestSnailText, pickingText, produceSaleText, RAT_GONE, ratPrompt, ratSaleText, ratSpawnText, riceSaleText,
   slingGear, slingHitText, WORK_EXPIRED, WORK_EXPIRED_TP,
 } from "@/lib/game/farm/messages";
-import type { CrabVisit, FieldAction, PartAnswer } from "@/lib/game/farm/rpc";
+import type { CrabVisit, FieldAction, PartAnswer, SlingShotInput, ToggleInput } from "@/lib/game/farm/rpc";
 import { nearestRat } from "@/lib/game/farm/rats";
 import { marketPrice } from "@/lib/game/market/depots";
 import type { FieldState, PlotView } from "@/lib/game/farm/state";
@@ -49,8 +49,12 @@ export interface FarmRound {
   part: number;
   /** A transplant round on beds: the ớt seedlings, "cây" in its texts. */
   ot: boolean;
-  /** Seeds the round's bands. */
+  /** Seeds the round's bands: 0061's server seed (begin_work's), else a local one. */
   seed: number;
+  /** 0061: the seed is the server's — the claim sends the round's input for the replay. */
+  serverSeed: boolean;
+  /** The round's input once it ended (a harvest round on the server's seed). */
+  input: ToggleInput | null;
   /** When the begin_work answer arrived (client ms): a won round is claimed 9 s after it. */
   begunAt: number;
   /** playing → waiting (the 9 s: "Đang bó lúa…", "Đang cắm nốt hàng mạ…") → won; or lost; or refused (by the server, or
@@ -71,8 +75,10 @@ export interface FarmCrab {
   hole: number;
   /** The server's visit, from crab_start. */
   visit: CrabVisit;
-  /** Seeds the claws' phases. */
+  /** Seeds the claws' phases: 0062's server seed (the visit's), else a local one. */
   seed: number;
+  /** The game's grabs and end tick once it ended (sent when the seed is the server's). */
+  input: ToggleInput | null;
   /** When crab_start's answer arrived (client ms): a catch is sent CRAB_FINISH_WAIT_MS after it (R7). */
   begunAt: number;
   /** playing → waiting (a catch waits out its 4 s, "Đang bỏ cua vào xô…"; hits 0 go at once) → done; or refused. */
@@ -91,7 +97,7 @@ export interface FarmSling {
   rat: number;
   /** The plot the rat eats (the title, and the `fp` after a hit). */
   plot: number;
-  /** Seeds the rat's runs (shot i moves on seed + 7 919 · i). */
+  /** Seeds the rat's run: 0063's server seed (sling_start's; a new aim, a new seed). */
   seed: number;
   /** When sling_start's answer arrived (client ms): a new session is a new game. */
   begunAt: number;
@@ -123,7 +129,7 @@ export interface FarmController {
   round: FarmRound | null;
   /** The overlay's round ended: a pass is claimed at 9 s; a harvest round's fail is reported at once, a transplant
    *  round's sends nothing. */
-  endRound: (pass: boolean, score: number) => void;
+  endRound: (pass: boolean, score: number, input?: ToggleInput) => void;
   /** "Gặt tiếp" or "Thử lại": a new round of the same game on the same plot (a new begin_work, once a lost harvest
    *  round's report has landed). */
   nextRound: () => void;
@@ -133,7 +139,7 @@ export interface FarmController {
   crab: FarmCrab | null;
   /** CrabGame ended with `hits` (0–3), by itself or by Dừng after a try: a catch is sent 4 s after crab_start's answer,
    *  hits 0 at once (R7). */
-  endCrab: (hits: number) => void;
+  endCrab: (hits: number, input?: ToggleInput) => void;
   /** Dừng, Esc or Đóng (R8): before a try ends nothing is sent; a catch waiting out its 4 s is still sent, and toasted. */
   closeCrab: () => void;
   /** A snail bed's bar, running. */
@@ -144,7 +150,7 @@ export interface FarmController {
   sling: FarmSling | null;
   /** The overlay's shot, after its flight: sling_shoot. A miss with pellets left counts an answer; a hit, a refusal or the
    *  last pellet ends the session. */
-  slingShot: (hit: boolean) => Promise<void>;
+  slingShot: (hit: boolean, shot?: SlingShotInput) => Promise<void>;
   /** A shot ready 55 s or more after the last answer was dropped: a new sling_start, which counts an answer. */
   slingReaim: () => Promise<void>;
   /** "Thôi", "Đóng" or Esc: the overlay closes and nothing is sent; a sling answer still to come is dropped. */
@@ -431,8 +437,8 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     const crop = begun.state.plots.find((p) => p.no === plot)?.crop;
     const r: FarmRound = {
       game, plot, part: game === "harvest" ? (crop?.parts ?? 0) + 1 : 0, ot: crop?.kind === "upland",
-      seed: Math.floor(Math.random() * 0x7fffffff), begunAt: Date.now(), phase: "playing", score: null, result: null, message: null,
-      slow: false,
+      seed: begun.workSeed ?? Math.floor(Math.random() * 0x7fffffff), serverSeed: game === "harvest" && begun.workSeed != null,
+      input: null, begunAt: Date.now(), phase: "playing", score: null, result: null, message: null, slow: false,
     };
     setRound(r);
     // a round left idle ends before the server's window would refuse its claim, and its fa with it
@@ -456,7 +462,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     const refused = (text: string) => { refusal = text; };
     // the transplant's quality is ignored for good, and always 1 (v15.3 R20)
     const ans = r.game === "harvest"
-      ? await run({ kind: "harvest_part", plot: r.plot, success: true }, undefined, refused)
+      ? await run({ kind: "harvest_part", plot: r.plot, success: true, ...(r.input ? { input: r.input } : {}) }, undefined, refused)
       : await run({ kind: "transplant", plot: r.plot, quality: 1 }, undefined, refused);
     clearTimeout(slow);
     if (roundTimer.current === slow) roundTimer.current = null;
@@ -470,9 +476,10 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     }
     setRound({ ...r, phase: "won", result: ans.harvestPart });
   }, [run, canvas]);
-  const endRound = useCallback((pass: boolean, score: number) => {
-    const r = live.current.round;
-    if (!r || r.phase !== "playing") return;
+  const endRound = useCallback((pass: boolean, score: number, input?: ToggleInput) => {
+    const r0 = live.current.round;
+    if (!r0 || r0.phase !== "playing") return;
+    const r: FarmRound = r0.serverSeed && input ? { ...r0, input } : r0;
     stopRoundAnim();
     if (roundTimer.current) clearTimeout(roundTimer.current);
     roundTimer.current = null;
@@ -481,7 +488,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
       // a harvest round's fail is reported at once, with no gate: it clears the server's record and cuts nothing (v15.2
       // R7); a transplant round's sends nothing (v15.3 R19)
       if (r.game === "harvest") {
-        lostReport.current = run({ kind: "harvest_part", plot: r.plot, success: false }, undefined, () => {});
+        lostReport.current = run({ kind: "harvest_part", plot: r.plot, success: false, ...(r.input ? { input: r.input } : {}) }, undefined, () => {});
       }
       return;
     }
@@ -533,14 +540,14 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     crabAnim.current = setInterval(() => canvas()?.farmAnim(FARM_ANIM.crab), ROUND_FA_MS);
     setPanel(null);
     setCrab({
-      hole: it.spot, visit: begun.visit, seed: Math.floor(Math.random() * 0x7fffffff), begunAt: Date.now(), phase: "playing", hits: null,
-      message: null,
+      hole: it.spot, visit: begun.visit, seed: begun.visit.seed ?? Math.floor(Math.random() * 0x7fffffff), input: null,
+      begunAt: Date.now(), phase: "playing", hits: null, message: null,
     });
     return true;
   }, [crabStart, canvas]);
   const finishCrab = useCallback(async (c: FarmCrab) => {
     let refusal: string | null = null;
-    const r = await crabFinish(c.visit.id, c.hits ?? 0, (text) => { refusal = text; });
+    const r = await crabFinish(c.visit.id, c.hits ?? 0, (text) => { refusal = text; }, c.visit.seed != null && c.input ? c.input : undefined);
     const cat = live.current.catalog;
     const text = r ? crabResultText(r.crab, cat?.critters ?? [], heldBox(r.mine.items, cat?.items ?? [])?.name ?? null) : refusal;
     if (!sameCrab(live.current.crab, c)) {
@@ -551,11 +558,11 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     // a strike shows its modal instead of a text
     setCrab(text === null ? null : { ...c, phase: r ? "done" : "refused", message: text });
   }, [crabFinish]);
-  const endCrab = useCallback((hits: number) => {
+  const endCrab = useCallback((hits: number, input?: ToggleInput) => {
     const c = live.current.crab;
     if (!c || c.phase !== "playing") return;
     stopCrabAnim();
-    const waiting: FarmCrab = { ...c, phase: "waiting", hits };
+    const waiting: FarmCrab = { ...c, phase: "waiting", hits, input: input ?? null };
     setCrab(waiting);
     if (hits === 0) {
       void finishCrab(waiting);
@@ -640,7 +647,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     if (plot === undefined) return false;
     const closed = closes.current;
     setBusy(true);
-    const begun = await slingStart(ratId);
+    const begun = await slingStart(ratId, undefined, canvas()?.localPos() ?? undefined);
     setBusy(false);
     // the field left meanwhile, or the canvas shows another map by now: the aim is dropped (it expires on the server)
     const c = canvas();
@@ -650,7 +657,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     slingAnim.current = setInterval(() => canvas()?.farmAnim(FARM_ANIM.aim), SLING_FA_MS);
     setPanel(null);
     setSling({
-      rat: ratId, plot, seed: Math.floor(Math.random() * 0x7fffffff), begunAt: Date.now(), answers: 0, phase: "playing",
+      rat: ratId, plot, seed: begun.aim.seed ?? Math.floor(Math.random() * 0x7fffffff), begunAt: Date.now(), answers: 0, phase: "playing",
       message: null, gone: false,
     });
     return true;
@@ -660,11 +667,11 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     stopSlingAnim();
     setSling(text === null ? null : { ...s, phase: "refused", message: text, gone: text === RAT_GONE });
   }, [stopSlingAnim]);
-  const slingShot = useCallback(async (hit: boolean) => {
+  const slingShot = useCallback(async (hit: boolean, shot?: SlingShotInput) => {
     const s = live.current.sling;
     if (!s || s.phase !== "playing") return;
     let refusal: string | null = null;
-    const r = await slingShoot(s.rat, hit, (text) => { refusal = text; });
+    const r = await slingShoot(s.rat, hit, (text) => { refusal = text; }, shot);
     // a catch changed the plot for everyone, even when the overlay was closed meanwhile
     if (r?.shot.hit) canvas()?.plotChanged(s.plot);
     if (!sameSling(live.current.sling, s)) return;
@@ -682,11 +689,12 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     const s = live.current.sling;
     if (!s || s.phase !== "playing") return;
     let refusal: string | null = null;
-    const r = await slingStart(s.rat, (text) => { refusal = text; });
+    const r = await slingStart(s.rat, (text) => { refusal = text; }, canvas()?.localPos() ?? undefined);
     if (!sameSling(live.current.sling, s)) return;
     if (!r) return slingRefused(s, refusal);
-    setSling({ ...s, answers: s.answers + 1 });
-  }, [slingStart, slingRefused]);
+    // 0063: a new aim is a new seed (the rat's run starts again): a new game
+    setSling(r.aim.seed != null ? { ...s, seed: r.aim.seed, begunAt: Date.now(), answers: s.answers + 1 } : { ...s, answers: s.answers + 1 });
+  }, [slingStart, slingRefused, canvas]);
   const closeSling = useCallback(() => {
     closes.current += 1;
     stopSlingAnim();

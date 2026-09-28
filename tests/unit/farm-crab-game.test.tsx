@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const crab = (over: Partial<FarmCrab> = {}): FarmCrab => ({
-  hole: 3, visit: { id: "v1", hole: 3, startedAt: 1 }, seed: 5, begunAt: 1, phase: "playing", hits: null, message: null, ...over,
+  hole: 3, visit: { id: "v1", hole: 3, startedAt: 1, seed: 5 }, seed: 5, input: null, begunAt: 1, phase: "playing", hits: null, message: null, ...over,
 });
 function show(c: FarmCrab, over: { panelOpen?: boolean } = {}) {
   const props = { onEnd: vi.fn(), onClose: vi.fn() };
@@ -21,10 +21,12 @@ function show(c: FarmCrab, over: { panelOpen?: boolean } = {}) {
 /** Frames of 16 ms for `ms`. */
 const run = (ms: number) => act(() => { vi.advanceTimersByTime(ms); });
 const space = (target: Window | Element = window) => fireEvent.keyDown(target, { code: "Space", key: " " });
-/** From the game's start: try 1's claws well inside a closed stretch, and well inside an open one (its period 1.2 s). */
-const P = CRAB.periodsMs[0], p0 = createCrabRound(5).phases[0];
-const CLOSED_AT = CRAB.leadMs + ((((CRAB.openShare * P - p0) % P) + P) % P) + 150;
-const OPEN_AT = CRAB.leadMs + (((P - p0) % P) + P) % P + 150;
+/** From the game's start (ms): try 1's claws 10 ticks into a closed stretch, and 10 ticks into an open one (its period
+ *  72 ticks, 1.2 s). */
+const P = CRAB.periods[0], p0 = createCrabRound(5).phases[0];
+const ms = (ticks: number) => Math.round((ticks * 1000) / 60);
+const CLOSED_AT = ms(CRAB.leadTicks + ((((Math.ceil((CRAB.openTenths * P) / 10) - p0) % P) + P) % P) + 10);
+const OPEN_AT = ms(CRAB.leadTicks + ((((P - p0) % P) + P) % P) + 10);
 
 describe("CrabGame (v15.3 §13.2)", () => {
   it("names the hole, with the help, the try, the catch so far and the crab lurking", () => {
@@ -71,8 +73,8 @@ describe("CrabGame (v15.3 §13.2)", () => {
 
   it("reports the game's end once: three slips catch nothing", () => {
     const { onEnd, onClose } = show(crab());
-    run(15_500);
-    expect(onEnd.mock.calls).toEqual([[0]]);
+    run(16_000);
+    expect(onEnd.mock.calls).toEqual([[0, { toggles: [], ticks: 894 }]]);
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText("Lần 3: Cua chui mất")).toBeInTheDocument();
   });
@@ -90,7 +92,7 @@ describe("CrabGame (v15.3 §13.2)", () => {
     space();
     run(32);
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(late.onEnd.mock.calls).toEqual([[1]]);
+    expect(late.onEnd.mock.calls).toEqual([[1, { toggles: [expect.any(Number)], ticks: expect.any(Number) }]]);
     expect(late.onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Escape" });
     run(20_000);

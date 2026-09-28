@@ -41,5 +41,5 @@ describe("KataOverlay with a progressive chart", () => {
     expect(asked[0]).toBeGreaterThanOrEqual(KATA_REVEAL - 150);                 // not before the known notes run low
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onDone).toHaveBeenCalledWith([]);
-  });
+  }, 30_000);                                                                     // a few thousand frames, each an act()
 });

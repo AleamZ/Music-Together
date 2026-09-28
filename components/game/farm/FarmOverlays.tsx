@@ -98,7 +98,7 @@ export default function FarmOverlays({ farm, me, onField, panelOpen = false, dog
       {farm.sling && (
         <SlingGame key={farm.sling.begunAt} sling={farm.sling} pellets={state?.mine.items[AMMO_PELLET] ?? 0}
           message={farm.sling.gone ? ratGoneText(state?.rats?.recent.find((r) => r.id === farm.sling?.rat) ?? null) : farm.sling.message}
-          panelOpen={panelOpen || panel !== null} onShot={(hit) => void farm.slingShot(hit)} onReaim={() => void farm.slingReaim()}
+          panelOpen={panelOpen || panel !== null} onShot={(hit, shot) => void farm.slingShot(hit, shot)} onReaim={() => void farm.slingReaim()}
           onClose={farm.closeSling} />
       )}
       {panel?.kind === "plot" && (

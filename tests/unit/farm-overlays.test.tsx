@@ -158,7 +158,7 @@ describe("FarmOverlays", () => {
 
 describe("FarmOverlays, a round", () => {
   const round = (over: Partial<FarmRound> = {}): FarmRound => ({
-    game: "harvest", plot: 5, part: 2, ot: false, seed: 7, begunAt: 1, phase: "playing", score: null, result: null, message: null,
+    game: "harvest", plot: 5, part: 2, ot: false, seed: 7, serverSeed: false, input: null, begunAt: 1, phase: "playing", score: null, result: null, message: null,
     slow: false, ...over,
   });
 
@@ -173,7 +173,7 @@ describe("FarmOverlays, a round", () => {
 
   it("opens CrabGame for a crab visit (v15.3 §13.2)", () => {
     const farm = controller({
-      crab: { hole: 4, visit: { id: "v", hole: 4, startedAt: 1 }, seed: 1, begunAt: 1, phase: "done", hits: 1, message: "🦀 Bắt được 1 con: 1 cua đồng!" },
+      crab: { hole: 4, visit: { id: "v", hole: 4, startedAt: 1, seed: 1 }, seed: 1, input: null, begunAt: 1, phase: "done", hits: 1, message: "🦀 Bắt được 1 con: 1 cua đồng!" },
     });
     render(<FarmOverlays farm={farm} me="me" onField />);
     expect(screen.getByRole("dialog", { name: "Bắt cua hang 4" })).toBeInTheDocument();

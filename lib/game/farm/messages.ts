@@ -256,6 +256,8 @@ export function slingHitText(price: number): string {
 }
 /** `rat gone` (§10.6): the SlingGame then names who took it, from the state's `recent` (ratGoneText). */
 export const RAT_GONE = "Con chuột này không còn nữa.";
+/** 0061–0063: the server replays the harvest, the crab and the sling; a page from before that is told to reload. */
+export const FARM_OUTDATED = "Cập nhật trang để chơi tiếp.";
 /** Why the rat is gone (§12.2), from its `recent` entry when there is one: a sling, a dog, or back to its hole. */
 export function ratGoneText(r: RatRecent | null): string {
   if (r?.how === "sling" && r.by) return `Chuột bị ${r.by.name} bắt mất rồi!`;
@@ -391,6 +393,11 @@ export function farmErrorMessage(err: unknown, itemName?: string, action?: strin
     case "gather daily limit": return GATHER_LIMIT_TEXT;
     case "visit not found": return "Lượt bắt cua này đã xong.";
     case "visit expired": return "Lâu quá, cua chui mất rồi — lát nữa quay lại nhé.";
+    // 0061–0063: a page from before the replayed minigames, and an input the replay refused
+    case "outdated": return FARM_OUTDATED;
+    case "invalid harvest": return "Lượt gặt không hợp lệ — gặt lại nhé.";
+    case "invalid catch": return "Lượt bắt cua không hợp lệ.";
+    case "invalid shot": return "Phát bắn không hợp lệ.";
     case "no critters": return "Không có cua ốc để bán.";
     case "no sling": return "Chưa có ná — mua ở tiệm anh Hai.";
     case "no pellets": return NO_PELLETS;

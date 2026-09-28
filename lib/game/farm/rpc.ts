@@ -83,6 +83,9 @@ export async function fetchFieldState(roomId: string, token: string): Promise<Fi
   return fieldOf(await call("field_state", { p_room_id: roomId, p_session_token: token }));
 }
 
+/** A replayed minigame's input (0061, 0062): the ticks where the hold flipped (or the presses came), and the end tick. */
+export interface ToggleInput { toggles: number[]; ticks: number }
+
 /** Every room-scoped land and farm action (§11.3). */
 export type FieldAction =
   | { kind: "rent"; plot: number }
@@ -101,7 +104,8 @@ export type FieldAction =
   | { kind: "prepare_beds"; plot: number }
   | { kind: "plant"; plot: number; item: string }
   | { kind: "tend"; plot: number; act: string }
-  | { kind: "harvest_part"; plot: number; success: boolean }
+  /** `input` (0061): the round's hold toggles and end tick, replayed by the server from begin_work's seed. */
+  | { kind: "harvest_part"; plot: number; success: boolean; input?: ToggleInput }
   | { kind: "rent_harvester"; plot: number }
   | { kind: "fertilize"; plot: number; item: string }
   | { kind: "soak"; plot: number; item: string }
@@ -134,7 +138,9 @@ export function actionCall(a: FieldAction): [string, Record<string, unknown>] {
     case "prepare_beds": return ["prepare_beds", { p_plot: a.plot }];
     case "plant": return ["plant_crop", { p_plot: a.plot, p_item_id: a.item }];
     case "tend": return ["tend_crop", { p_plot: a.plot, p_act: a.act }];
-    case "harvest_part": return ["harvest_part", { p_plot: a.plot, p_success: a.success }];
+    case "harvest_part": return ["harvest_part", a.input
+      ? { p_plot: a.plot, p_toggles: a.input.toggles, p_ticks: a.input.ticks, p_pass: a.success }
+      : { p_plot: a.plot, p_success: a.success }];
     case "rent_harvester": return ["rent_harvester", { p_plot: a.plot }];
     case "fertilize": return ["apply_fertilizer", { p_plot: a.plot, p_item_id: a.item }];
     case "soak": return ["soak_seed", { p_plot: a.plot, p_item_id: a.item }];
@@ -166,6 +172,8 @@ export interface FieldAnswer {
   picking: PickingAnswer | null;
   /** pick_snails' ốc bươu vàng for the picker (null before 0018). */
   snails: CatchAnswer | null;
+  /** 0061: begin_work's seed of a harvest round (null from a server before 0061, or another work). */
+  workSeed?: number | null;
 }
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -197,6 +205,7 @@ export async function fieldAction(roomId: string, token: string, a: FieldAction)
       ? { upland: h.upland, kg: h.kg, k: h.k, pickings: h.pickings, done: h.done === true } : null,
     // pick_snails' answer has no snails before 0018; one that has them must hold them whole
     snails: r.snails === undefined ? null : catchOf(r.snails, "bad snail answer"),
+    workSeed: isNum(r.work_seed) ? r.work_seed >>> 0 : null,
   };
 }
 
@@ -230,8 +239,8 @@ export async function sellProduce(token: string, upland: string, kg: number, mar
   return mineAnswer(await call(market ? "sell_produce_market" : "sell_produce", { p_session_token: token, p_upland: upland, p_kg: kg }));
 }
 
-/** A crab visit (v15.3 §7.2): its id, the hole, and when the server started it. */
-export interface CrabVisit { id: string; hole: number; startedAt: number }
+/** A crab visit (v15.3 §7.2): its id, the hole, when the server started it, and (0062) the server's seed of the claws. */
+export interface CrabVisit { id: string; hole: number; startedAt: number; seed: number | null }
 
 /** Bắt cua (R6): the visit starts the hole's cooldown. */
 export async function crabStart(roomId: string, token: string, hole: number): Promise<MineAnswer & { visit: CrabVisit }> {
@@ -239,14 +248,19 @@ export async function crabStart(roomId: string, token: string, hole: number): Pr
   const v = r.visit && typeof r.visit === "object" ? (r.visit as Record<string, unknown>) : {};
   const startedAt = typeof v.started_at === "string" ? Date.parse(v.started_at) : NaN;
   if (typeof v.id !== "string" || !isNum(v.hole) || !Number.isFinite(startedAt)) throw new Error("bad crab visit");
-  return { ...mineAnswer(r), visit: { id: v.id, hole: v.hole, startedAt } };
+  return { ...mineAnswer(r), visit: { id: v.id, hole: v.hole, startedAt, seed: isNum(v.seed) ? v.seed >>> 0 : null } };
 }
 
 /** The end of a crab visit (R7): hits 0–3; what was kept and what escaped. The hits are the server's (§7.2): an answer
- *  without them is malformed. */
-export async function crabFinish(roomId: string, token: string, visitId: string, hits: number)
+ *  without them is malformed. `input` (0062): the grabs and the end tick, replayed from the visit's seed. */
+export async function crabFinish(roomId: string, token: string, visitId: string, hits: number, input?: ToggleInput)
   : Promise<MineAnswer & { crab: CatchAnswer & { hits: number } }> {
-  const r = await call("crab_finish", { p_room_id: roomId, p_session_token: token, p_visit_id: visitId, p_hits: hits });
+  const args: Record<string, unknown> = { p_room_id: roomId, p_session_token: token, p_visit_id: visitId, p_hits: hits };
+  if (input) {
+    args.p_grabs = input.toggles;
+    args.p_ticks = input.ticks;
+  }
+  const r = await call("crab_finish", args);
   const c = catchOf(r.crab, "bad crab answer");
   const o = r.crab as Record<string, unknown>;
   if (!isNum(o.hits)) throw new Error("bad crab answer");
@@ -268,25 +282,42 @@ export async function sellCritters(token: string, kind: string | null): Promise<
   return { ...mineAnswer(r), sold: { n: s.n, xu: s.xu } };
 }
 
-/** The slingshot's aim (v17 §6.1): at this rat, from the server's start (the 2–60 s gate counts from it). */
-export interface SlingAim { rat: number; startedAt: number }
+/** The slingshot's aim (v17 §6.1): at this rat, from the server's start (the 2–60 s gate counts from it); (0063) the
+ *  server's seed of the rat's run. */
+export interface SlingAim { rat: number; startedAt: number; seed: number | null }
+/** A shot as 0063 replays it: the press and release ticks since the start answer, the aim in milli-px. */
+export interface SlingShotInput { press: number; release: number; aim: number }
 /** A shot (§6.1): a hit catches; its price is fixed at the catch; the pellets left. */
 export interface ShotAnswer { hit: boolean; price: number | null; pellets: number }
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 
-export async function slingStart(roomId: string, token: string, rat: number): Promise<{ state: FieldState; aim: SlingAim }> {
-  const r = await call("sling_start", { p_room_id: roomId, p_session_token: token, p_rat_id: rat });
+/** `at` (0063): where I stand — a claim near the rat's plot. */
+export async function slingStart(roomId: string, token: string, rat: number, at?: { x: number; y: number })
+  : Promise<{ state: FieldState; aim: SlingAim }> {
+  const args: Record<string, unknown> = { p_room_id: roomId, p_session_token: token, p_rat_id: rat };
+  if (at) {
+    args.p_x = Math.round(at.x);
+    args.p_y = Math.round(at.y);
+  }
+  const r = await call("sling_start", args);
   const a = obj(r.aim);
   const startedAt = typeof a.started_at === "string" ? Date.parse(a.started_at) : NaN;
   if (!isNum(a.rat) || !Number.isFinite(startedAt)) throw new Error("bad aim");
-  return { state: fieldOf(r), aim: { rat: a.rat, startedAt } };
+  return { state: fieldOf(r), aim: { rat: a.rat, startedAt, seed: isNum(a.seed) ? a.seed >>> 0 : null } };
 }
 
 /** A shot's answer is the server's (as a catch's is, v15.3): a hit with its price, or a miss, and the pellets left; an
  *  answer without them whole is malformed. */
-export async function slingShoot(roomId: string, token: string, rat: number, hit: boolean): Promise<{ state: FieldState; shot: ShotAnswer }> {
-  const r = await call("sling_shoot", { p_room_id: roomId, p_session_token: token, p_rat_id: rat, p_hit: hit });
+export async function slingShoot(roomId: string, token: string, rat: number, hit: boolean, input?: SlingShotInput)
+  : Promise<{ state: FieldState; shot: ShotAnswer }> {
+  const args: Record<string, unknown> = { p_room_id: roomId, p_session_token: token, p_rat_id: rat, p_hit: hit };
+  if (input) {
+    args.p_press = input.press;
+    args.p_release = input.release;
+    args.p_aim = input.aim;
+  }
+  const r = await call("sling_shoot", args);
   const s = obj(r.shot);
   if (typeof s.hit !== "boolean" || !isNum(s.pellets) || (s.hit && !isNum(s.price))) throw new Error("bad shot answer");
   return { state: fieldOf(r), shot: { hit: s.hit, price: s.hit && isNum(s.price) ? s.price : null, pellets: s.pellets } };
