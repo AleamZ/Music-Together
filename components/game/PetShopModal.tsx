@@ -45,12 +45,14 @@ interface PetShopModalProps {
   coins: number | null;
   /** An action returned a new state (and maybe a new balance). */
   onState: (s: PetsState) => void;
+  /** v21: open 🐾 Trại thú (the egg machine, raising, battles). */
+  onOpenCenter?: () => void;
   onClose: () => void;
 }
 
 /** 🐾 Tiệm thú cưng · cô Mười (v18.12): buy a pet, take one out or leave it in the shop, feed it, play, dress it up.
  *  Prices shown are a display copy; the server decides. */
-export default function PetShopModal({ token, state, coins, onState, onClose }: PetShopModalProps) {
+export default function PetShopModal({ token, state, coins, onState, onOpenCenter, onClose }: PetShopModalProps) {
   const pets = state?.pets ?? [];
   const [tab, setTab] = useState<Tab>(pets.length > 0 ? "mine" : "buy");
   const [busy, setBusy] = useState(false);
@@ -134,6 +136,7 @@ export default function PetShopModal({ token, state, coins, onState, onClose }: 
             <button key={id} type="button" role="tab" aria-selected={tab === id}
               className={`pch-btn ${tab === id ? "pch-btn-primary" : ""}`} onClick={() => { setTab(id); setError(null); }}>{label}</button>
           ))}
+          {onOpenCenter && <button type="button" className="pch-btn" onClick={onOpenCenter}>🥚 Trại thú: trứng, nuôi dạy, đấu</button>}
         </div>
 
         {tab === "mine" && (pets.length === 0

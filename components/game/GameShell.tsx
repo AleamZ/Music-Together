@@ -93,6 +93,8 @@ import { useLift } from "@/hooks/useLift";
 import RoadTripOverlay from "./RoadTripOverlay";
 import VehicleShopModal from "./VehicleShopModal";
 import PetShopModal from "./PetShopModal";
+import PetCenterModal from "./pets/PetCenterModal";                               // v21 pets
+import { usePetChallenges } from "./pets/usePetChallenges";                        // v21 pets
 import { QuestHudButtons, QuestPanels, type QuestPanel } from "./quests/QuestPanels";
 import { usePets } from "@/hooks/usePets";
 import MotelModal from "./MotelModal";
@@ -157,7 +159,7 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | QuestPanel | "player_market" | "player_stalls" | "professions" | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | QuestPanel | "player_market" | "player_stalls" | "professions" | "pet_center" | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
@@ -402,6 +404,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     void fishing.data.reload();
   }, [showToast, fishing.data]);
   const pets = usePets(token, room.id, onPetFound);
+  const petChallenges = usePetChallenges(token, room.id, useCallback((from: string) => showToast(`⚔️ ${from} thách đấu thú cưng — bấm 🐾 để nhận!`), [showToast]));   // v21 pets
   const { reload: reloadPets } = pets;
   const petCode = myPetCode(pets.state);
   const following = followingPet(pets.state);
@@ -910,6 +913,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               <button type="button" className="pch-btn" title="Chợ người chơi · đấu giá" data-testid="player-market-hud" onClick={() => setPanel("player_market")}>
                 🏪<span className="sr-only"> Chợ người chơi</span>
               </button>
+              <button type="button" className="pch-btn relative" title="Trại thú: trứng, nuôi dạy, đấu thú, cá chiến" data-testid="pet-center-hud"
+                onClick={() => { setPanel("pet_center"); void reloadPets(); }}>
+                🐾<span className="sr-only"> Trại thú</span>
+                {petChallenges > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />}
+              </button>
               {fishing.handFish !== null && (
                 <button
                   type="button" className="pch-btn relative" data-hotkey="fish" aria-pressed={!fishing.fishStowed}
@@ -1163,6 +1171,21 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             pets.apply(s);
             if (s.coins !== undefined) void fishing.data.reload();
           }}
+          onOpenCenter={() => setPanel("pet_center")}
+          onClose={close}
+        />
+      )}
+      {panel === "pet_center" && (
+        <PetCenterModal
+          token={token}
+          roomId={room.id}
+          pets={pets.state}
+          onPets={pets.apply}
+          coins={fishing.data.state?.coins ?? null}
+          onCoins={() => void fishing.data.reload()}
+          bag={fishing.data.state?.fish ?? []}
+          species={fishing.data.catalog?.species ?? []}
+          onBagChanged={() => void fishing.data.reload()}
           onClose={close}
         />
       )}

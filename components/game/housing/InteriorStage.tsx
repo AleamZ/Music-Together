@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { drawItem } from "@/lib/game/art/furniture";
+import { drawItem, setTankContents } from "@/lib/game/art/furniture";
 import { WALK_CYCLE } from "@/lib/game/art/layers";
 import { getCharacterFrames } from "@/lib/game/art/raster";
 import type { FishRow } from "@/lib/game/fishing/state";
@@ -10,7 +10,9 @@ import { joinInterior, type InteriorHandle, type InteriorMember } from "@/lib/ga
 import { SLEEP_MS, type MotelState } from "@/lib/game/housing/motel";
 import { facingFor, inputDir, isBlockedAt, stepMove, WALK_SPEED, type Grid, type KeyState } from "@/lib/game/movement";
 import { rect, type Ctx } from "@/lib/game/maps/scene-art";
+import { aquariumView } from "@/lib/game/pets/v2";
 import type { Facing, Look, Vec } from "@/lib/game/types";
+import AquariumPanel from "./AquariumPanel";
 import FridgePanel from "./FridgePanel";
 import FurnitureIcon from "./FurnitureIcon";
 import TvController from "./TvController";
@@ -90,7 +92,7 @@ export default function InteriorStage<L extends StageLayout>(props: InteriorStag
   const canEdit = space.canDecorate(layout);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [scale, setScale] = useState(3);
-  const [panel, setPanel] = useState<"tv" | "fridge" | null>(null);
+  const [panel, setPanel] = useState<"tv" | "fridge" | "aquarium" | null>(null);
   const [decorating, setDecorating] = useState(false);
   const [ghost, setGhost] = useState<Placed | null>(null);
   const [selected, setSelected] = useState<Placed | null>(null);
@@ -107,6 +109,22 @@ export default function InteriorStage<L extends StageLayout>(props: InteriorStag
   const hasTv = space.tvNo !== null && usable.some((p) => furnitureOf(p.item)?.kind === "tv");
   const hasFridge = usable.some((p) => furnitureOf(p.item)?.kind === "fridge");
   const entry = space.entry(layout);
+  // v21 (0074): the aquariums — what swims in them (the furniture art draws it) for everyone let in
+  const aquaHome = useMemo(() => {
+    const m = /^(apt|house):(\d+)$/.exec(space.key);
+    return m ? { kind: m[1] as "apt" | "house", no: Number(m[2]) } : null;
+  }, [space.key]);
+  const hasAquarium = aquaHome !== null && layout.items.some((p) => furnitureOf(p.item)?.kind === "aquarium");
+  const [aquaTick, setAquaTick] = useState(0);
+  useEffect(() => {
+    if (!aquaHome || !layout.items.some((p) => furnitureOf(p.item)?.kind === "aquarium")) { setTankContents(null); return; }
+    let stop = false;
+    aquariumView(token, roomId, aquaHome.kind, aquaHome.no).then((v) => {
+      if (!stop) setTankContents(new Map(v.tanks.map((t) => [t.tank, { decor: t.decor, fish: t.fish }])));
+    }, () => { /* not let in any more: the layout refetch handles it */ });
+    return () => { stop = true; };
+  }, [aquaHome, layout, token, roomId, aquaTick]);
+  useEffect(() => () => setTankContents(null), []);
 
   // --- the live loop's state (refs: the canvas loop never goes through React)
   const pos = useRef<Vec>({ ...entry });
@@ -436,6 +454,7 @@ export default function InteriorStage<L extends StageLayout>(props: InteriorStag
           {near.door && <span className="pch px-2 py-0.5 text-base">Gần cửa — bấm 🚪 Ra ngoài để về phố</span>}
           {hasTv && nearKind !== "tv" && <button type="button" className="pch-btn" onClick={() => setPanel("tv")}>📺 Tivi</button>}
           {hasFridge && nearKind !== "fridge" && <button type="button" className="pch-btn" onClick={() => setPanel("fridge")}>🧊</button>}
+          {hasAquarium && <button type="button" className="pch-btn" onClick={() => setPanel("aquarium")}>🐠 Bể cá</button>}
         </div>
       )}
       <p className="text-sm text-parchment/80">Mũi tên / WASD hoặc bấm vào nhà để đi. Đứng cạnh giường, tivi, tủ lạnh để dùng.</p>
@@ -444,6 +463,10 @@ export default function InteriorStage<L extends StageLayout>(props: InteriorStag
       {hasTv && space.tvNo !== null && (
         <TvController token={token} roomId={roomId} no={space.tvNo} open={panel === "tv"} refreshKey={tvKey} onClose={() => setPanel(null)}
           onChanged={() => net.current?.notify("tv")} onDuck={onDuck} onLit={setTvLit} />
+      )}
+      {panel === "aquarium" && hasAquarium && aquaHome && (
+        <AquariumPanel token={token} roomId={roomId} kind={aquaHome.kind} no={aquaHome.no} bag={props.bag} speciesName={props.speciesName}
+          onBagChanged={props.onBagChanged} onChanged={() => { setAquaTick((k) => k + 1); net.current?.notify("layout"); }} onClose={() => setPanel(null)} />
       )}
       {panel === "fridge" && hasFridge && (
         <FridgePanel token={token} bag={props.bag} speciesName={props.speciesName} onBagChanged={props.onBagChanged} onClose={() => setPanel(null)} />

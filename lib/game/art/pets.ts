@@ -391,16 +391,43 @@ const BODIES: Readonly<Record<string, { a: string; b: string }>> = {
   tho_vest: { a: "#3d6fd1", b: "#2a52a8" },
 };
 
+// ---------------------------------------------------------------- v21 evolution (0074: form 1 and 2)
+
+/** Form 1 keeps the variant's colours with a deeper outline and wears a star mark; form 2 is a new coat per species
+ *  (golden dog, spirit cat, sakura rabbit, royal hamster, flame squirrel, phoenix parrot) with its own ornament. */
+const FORM1_OUTLINE: Readonly<Record<PetSpecies, string>> = {
+  cho: "#4a2a12", meo: "#3a1f3a", tho: "#5a2a3a", hamster: "#5a3a12", soc: "#4a1a08", vet: "#123a2a",
+};
+const FORM2_PAL: Readonly<Record<PetSpecies, Pal>> = {
+  cho: { o: "#5a2a10", b: "#f0c040", s: "#c08820", l: "#fff0c0", w: "#c08820", n: "#5a2a10" },
+  meo: { o: "#2a2050", b: "#e8e0f8", s: "#9a88c8", l: "#ffffff", w: "#9a88c8", e: "#40c0f0", p: "#c090e0" },
+  tho: { o: "#6a2a4a", b: "#f8d8e8", s: "#d890b0", l: "#ffffff", w: "#d890b0", e: "#c0306a" },
+  hamster: { o: "#5a3008", b: "#f8c060", s: "#c07818", l: "#fff4d8", w: "#c07818" },
+  soc: { o: "#3a0e04", b: "#e05a20", s: "#902a08", l: "#ffd8a0", w: "#902a08", e: "#2a1008" },
+  vet: { o: "#4a1408", b: "#f2c230", s: "#d9362b", w: "#d9362b", l: "#fff0a0", k: "#f8f0e0", f: "#a85a2a" },
+};
+const STAR: { rows: readonly string[]; pal: Pal } = { rows: ["..y..", ".yWy.", "..y.."], pal: { y: "#f6d24a", W: "#ffffff" } };
+const FORM2_ORNAMENT: Readonly<Record<PetSpecies, { rows: readonly string[]; pal: Pal }>> = {
+  cho: { rows: ["..W..", "..y..", ".yyy."], pal: { W: "#ffffff", y: "#f6d24a" } },
+  meo: { rows: ["y.y.y", "yryry", "yyyyy"], pal: { y: "#f6d24a", r: "#d9362b" } },
+  tho: { rows: ["p.p", ".y.", "p.p"], pal: { p: "#f07aa6", y: "#f6d24a" } },
+  hamster: { rows: ["y.y.y", "yyyyy"], pal: { y: "#f6d24a" } },
+  soc: { rows: ["..r..", ".ror.", "rooor"], pal: { r: "#d9362b", o: "#f6a23a" } },
+  vet: { rows: ["r.o.r", ".ror.", "..r.."], pal: { r: "#d9362b", o: "#f6d24a" } },
+};
+
 export type PetPixels = ReadonlyArray<ReadonlyArray<string | null>>;
 const cache = new Map<string, PetPixels>();
 
 /** The pet's pixels (colours or null), mirrored for "left"; the anchor is (8, last row). Cached. */
 export function petPixels(look: PetLook, facing: Facing, pose: 0 | 1 | 2): PetPixels {
-  const key = `${look.species}.${look.variant}.${look.head}.${look.neck}.${look.body}|${facing}|${pose}`;
+  const form = look.form === 1 || look.form === 2 ? look.form : 0;
+  const key = `${look.species}.${look.variant}.${look.head}.${look.neck}.${look.body}.${form}|${facing}|${pose}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const view = VIEWS[look.species][facing === "left" ? "right" : facing];
-  const pal = PET_PALETTES[look.species][look.variant] ?? Object.values(PET_PALETTES[look.species])[0];
+  const base = PET_PALETTES[look.species][look.variant] ?? Object.values(PET_PALETTES[look.species])[0];
+  const pal: Pal = form === 2 ? { ...base, ...FORM2_PAL[look.species] } : form === 1 ? { ...base, o: FORM1_OUTLINE[look.species] } : base;
   const letters = [...view.rows, ...view.legs[pose]];
   let grid: Array<Array<string | null>> = letters.map((r) => [...r].slice(0, PET_W).map((ch) => (ch === "." ? null : pal[ch] ?? pal.b)));
   const knit = look.body ? BODIES[look.body] : undefined;
@@ -420,7 +447,8 @@ export function petPixels(look: PetLook, facing: Facing, pose: 0 | 1 | 2): PetPi
       if (neck.tail && view.neck + 1 < grid.length) grid[view.neck + 1][inside[0]] = neck.tail;
     }
   }
-  const hat = look.head ? HATS[look.head] : undefined;
+  // an evolved pet without a hat wears its form's mark where a hat would sit
+  const hat = (look.head ? HATS[look.head] : undefined) ?? (form === 2 ? FORM2_ORNAMENT[look.species] : form === 1 ? STAR : undefined);
   let top = 0;
   if (hat) {
     const hw = hat.rows[0].length, hh = hat.rows.length;
@@ -453,6 +481,17 @@ export function drawPet(c: CanvasRenderingContext2D, look: PetLook, facing: Faci
   const alt = petAltitude(look, t, reduced);
   const px = petPixels(look, facing, alt ? 0 : pose);
   const h = px.length, ox = Math.round(x) - 8, oy = Math.round(y) - h + 1 - alt;
+  if (look.form === 2) {
+    // v21: the evolved form's aura, a soft pulsing glow behind the sprite
+    const k = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(t / 260);
+    c.save();
+    c.globalAlpha = 0.18 + 0.14 * k;
+    c.fillStyle = FORM2_PAL[look.species].b ?? "#f6d24a";
+    c.fillRect(ox + 1, oy + 2, 14, h - 3);
+    c.fillRect(ox + 3, oy, 10, h + 1);
+    c.restore();
+    if (!reduced && Math.floor(t / 180) % 5 === 0) { c.fillStyle = "#ffffff"; c.fillRect(ox + ((t >> 6) % 14) + 1, oy + ((t >> 7) % Math.max(1, h - 2)), 1, 1); }
+  }
   c.fillStyle = "rgba(40, 25, 10, 0.25)";
   if (alt) c.fillRect(ox + 5, Math.round(y) - 1, 6, 2);
   else c.fillRect(ox + 4, oy + h - 1, 8, 2);

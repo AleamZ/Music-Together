@@ -10,7 +10,9 @@ const TABS: ReadonlyArray<{ id: string; name: string; kinds: readonly FurnitureK
   { id: "bed", name: "🛏️ Giường", kinds: ["bed"] },
   { id: "sit", name: "🪑 Bàn ghế", kinds: ["table", "chair", "sofa"] },
   { id: "deco", name: "🪴 Đèn, cây", kinds: ["lamp", "plant"] },
-  { id: "rug", name: "🧺 Thảm, kệ", kinds: ["rug", "shelf"] },
+  { id: "rug", name: "🧺 Thảm, kệ, tủ", kinds: ["rug", "shelf", "cabinet"] },
+  { id: "art", name: "🖼️ Tranh", kinds: ["painting"] },                     // v21
+  { id: "aqua", name: "🐠 Bể cá", kinds: ["aquarium"] },                    // v21
   { id: "tech", name: "📺 Điện máy", kinds: ["tv", "fridge"] },
   { id: "surface", name: "🎨 Tường, sàn", kinds: ["wall", "floor"] },
 ];
@@ -19,6 +21,8 @@ const NOTES: Partial<Record<string, string>> = {
   tv: "Xem YouTube cùng khách trong nhà",
   fridge: "Giữ 20 con cá, không tính vào giỏ",
   fridge_big: "Giữ 50 con cá, không tính vào giỏ",
+  aquarium: "Nuôi 4 con cá sống, khách đến chơi ngắm được",                 // v21
+  aquarium_big: "Nuôi 8 con cá sống, khách đến chơi ngắm được",             // v21
 };
 
 /** 🛋️ Nội thất cô Năm (v19.2): the furniture catalogue by kind; a purchase goes to my storage, to place at home. */

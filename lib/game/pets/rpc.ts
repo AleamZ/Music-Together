@@ -16,6 +16,20 @@ export interface Pet {
   body: string | null;
   /** Play again from (epoch ms); null = ready. */
   playReadyMs: number | null;
+  // v21 (0074): Pets v2 — the server's numbers, shown as they come.
+  /** 1 Thường … 5 Thần thoại. */
+  rarity: number;
+  level: number;
+  xp: number;
+  xpNeed: number;
+  affection: number;
+  /** 0 base, 1 and 2 evolved. */
+  form: number;
+  skills: string[];
+  trn: { hp: number; atk: number; def: number; spd: number };
+  stats: { hp: number; atk: number; def: number; spd: number };
+  /** Pat again from (epoch ms); null = ready. */
+  patReadyMs: number | null;
 }
 
 export interface PetsState {
@@ -23,6 +37,10 @@ export interface PetsState {
   active: number | null;
   items: Record<string, number>;
   forageToday: number;
+  /** v21: eggs since the last Legendary or better. */
+  pity: number;
+  /** v21: care + follow XP given today (capped by the server). */
+  xpToday: number;
   serverNowMs: number;
   /** pet_tick: xu the sóc just found (0 = none). */
   found?: number;
@@ -33,6 +51,10 @@ export interface PetsState {
 
 const num = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v !== "" && Number.isFinite(Number(v)) ? Number(v) : d);
 const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+const quad = (v: unknown) => {
+  const o = (v ?? {}) as Record<string, unknown>;
+  return { hp: num(o.hp), atk: num(o.atk), def: num(o.def), spd: num(o.spd) };
+};
 
 export function parsePetsState(data: unknown): PetsState {
   const r = (data ?? {}) as Record<string, unknown>;
@@ -45,12 +67,18 @@ export function parsePetsState(data: unknown): PetsState {
       fullness: num(p.fullness), happy: num(p.happy), sulking: p.sulking === true,
       head: str(p.head), neck: str(p.neck), body: str(p.body),
       playReadyMs: p.play_ready_ms == null ? null : num(p.play_ready_ms),
+      rarity: Math.min(5, Math.max(1, num(p.rarity, 1))), level: num(p.level, 1), xp: num(p.xp), xpNeed: num(p.xp_need, 20),
+      affection: num(p.affection), form: Math.min(2, Math.max(0, num(p.form))),
+      skills: Array.isArray(p.skills) ? p.skills.filter((s): s is string => typeof s === "string") : ["tackle"],
+      trn: quad(p.trn), stats: quad(p.stats),
+      patReadyMs: p.pat_ready_ms == null ? null : num(p.pat_ready_ms),
     });
   }
   const items: Record<string, number> = {};
   if (r.items && typeof r.items === "object") for (const [k, v] of Object.entries(r.items as Record<string, unknown>)) items[k] = num(v);
   const out: PetsState = {
-    pets, active: r.active == null ? null : num(r.active), items, forageToday: num(r.forage_today), serverNowMs: num(r.server_now_ms, Date.now()),
+    pets, active: r.active == null ? null : num(r.active), items, forageToday: num(r.forage_today),
+    pity: num(r.pity), xpToday: num(r.xp_today), serverNowMs: num(r.server_now_ms, Date.now()),
   };
   if (r.found !== undefined) out.found = num(r.found);
   if (r.coins !== undefined) out.coins = num(r.coins);
@@ -66,7 +94,7 @@ export const followingPet = (s: PetsState | null): Pet | null => {
 
 export const lookOf = (p: Pet): PetLook => ({
   species: p.species, variant: p.variant, head: p.head, neck: p.neck, body: p.body,
-  happy: buffActive({ no: p.fullness, vui: p.happy }),
+  happy: buffActive({ no: p.fullness, vui: p.happy }), form: p.form,
 });
 
 /** My `pt` code (null: no pet follows). */

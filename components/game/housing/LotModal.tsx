@@ -10,6 +10,7 @@ import {
 } from "@/lib/game/housing/house";
 import { durationText } from "@/lib/game/housing/motel";
 import { ParchmentModal } from "../Parchment";
+import { KnockButton, OwnerKnocks } from "./HouseKnocks";
 
 interface LotModalProps {
   token: string;
@@ -93,9 +94,10 @@ export default function LotModal({ token, roomId, lot, state, coins, hasFlat, on
               <span>Cửa nhà:</span>
               <select className="max-w-full rounded border border-gold-300 bg-cream px-1" value={mine.visibility} disabled={busy}
                 onChange={(e) => void act(() => houseSetVisibility(token, e.target.value as Visibility))}>
-                {VISIBILITIES.map((v) => <option key={v.id} value={v.id}>{v.name} — {v.note.replace(" (gõ cửa)", " và người thuê")}</option>)}
+                {VISIBILITIES.map((v) => <option key={v.id} value={v.id}>{v.name} — {v.note.replace(" (gõ cửa)", ", người thuê (gõ cửa)")}</option>)}
               </select>
             </label>
+            {info.grid && <OwnerKnocks token={token} />}
             {mine.rooms.length > 0 && (
               <div className="flex flex-col gap-1" data-testid="lot-rooms">
                 <p>🛏️ Cho thuê phòng ({formatXu(ROOM_RENT_MIN)}–{formatXu(ROOM_RENT_MAX)} mỗi {ROOM_RENT_DAYS} ngày; bạn nhận {RENT_OWNER_PERCENT} %):</p>
@@ -140,8 +142,9 @@ export default function LotModal({ token, roomId, lot, state, coins, hasFlat, on
           <section className="flex flex-col gap-2" data-testid="lot-other">
             <p>Chủ đất: <b>{info.ownerName ?? "Ai đó"}</b> · {info.grid ? `nhà mái ${roofName.toLowerCase()}` : "chưa xây nhà"}</p>
             {info.grid && (
-              <div>
+              <div className="flex flex-wrap items-center gap-2">
                 <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => void enter()}>🚪 Vào nhà</button>
+                <KnockButton token={token} roomId={roomId} lot={lot} disabled={busy} onEnter={onEnter} />
               </div>
             )}
             {myRoomHere && (

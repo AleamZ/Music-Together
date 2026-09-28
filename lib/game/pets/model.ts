@@ -64,21 +64,26 @@ export interface PetLook {
   body: string | null;
   /** vui > 50 and not sulking (the parrot talks, the tail wags). */
   happy: boolean;
+  /** v21 evolution: 0 (or absent) base, 1 and 2 evolved forms. */
+  form?: number;
 }
 
 const ITEM_ID = /^[a-z0-9_]{1,24}$/;
 
-/** `species.variant.head.neck.body.happy`, "0" for an empty slot (≤ 90 chars). */
+/** `species.variant.head.neck.body.happy`, "0" for an empty slot, then `.form` for an evolved pet (v21; ≤ 90 chars). */
 export function encodePet(p: PetLook): string {
-  return [p.species, p.variant, p.head ?? "0", p.neck ?? "0", p.body ?? "0", p.happy ? "1" : "0"].join(".");
+  const parts = [p.species, p.variant, p.head ?? "0", p.neck ?? "0", p.body ?? "0", p.happy ? "1" : "0"];
+  if (p.form === 1 || p.form === 2) parts.push(String(p.form));
+  return parts.join(".");
 }
 
 /** A received `pt`: null when malformed. An item this client does not know (or not for this species/slot) is dropped. */
 export function parsePetCode(v: unknown): PetLook | null {
   if (typeof v !== "string" || v.length > 90) return null;
   const parts = v.split(".");
-  if (parts.length !== 6) return null;
-  const [sp, variant, head, neck, body, happy] = parts;
+  if (parts.length !== 6 && parts.length !== 7) return null;
+  const [sp, variant, head, neck, body, happy, formPart] = parts;
+  if (formPart !== undefined && formPart !== "1" && formPart !== "2") return null;
   if (!isPetSpecies(sp) || !variantOk(sp, variant) || (happy !== "0" && happy !== "1")) return null;
   const slot = (id: string, s: PetSlot): string | null | false => {
     if (id === "0") return null;
@@ -88,7 +93,9 @@ export function parsePetCode(v: unknown): PetLook | null {
   };
   const h = slot(head, "head"), n = slot(neck, "neck"), b = slot(body, "body");
   if (h === false || n === false || b === false) return null;
-  return { species: sp, variant, head: h, neck: n, body: b, happy: happy === "1" };
+  const out: PetLook = { species: sp, variant, head: h, neck: n, body: b, happy: happy === "1" };
+  if (formPart !== undefined) out.form = Number(formPart);
+  return out;
 }
 
 /** Does this line get repeated by the speaker's parrot? The same pick on every client (a third of the lines). */

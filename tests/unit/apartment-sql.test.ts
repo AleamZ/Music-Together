@@ -25,7 +25,8 @@ describe("v19.2 apartments: the TS rules mirror 0041", () => {
     const rows = [...SQL.matchAll(/\('([a-z_]+)', '([^']+)', '([a-z]+)', '([a-z_]+)', (\d), (\d), (\d+), (\d+)\)/g)].map((m) => ({
       id: m[1], name: m[2], kind: m[3], style: m[4], w: Number(m[5]), h: Number(m[6]), price: Number(m[7]), cap: Number(m[8]),
     }));
-    expect(rows).toEqual(FURNITURE.map((f) => ({ ...f, cap: f.cap ?? 0 })));
+    // v21: 0074 appends rows (tests/unit/pets-v2.test.ts pins those)
+    expect(rows).toEqual(FURNITURE.slice(0, rows.length).map((f) => ({ ...f, cap: f.cap ?? 0 })));
   });
   it("the ledger keeps 0039's reasons and adds the housing ones", () => {
     const reasons = (s: string) => {

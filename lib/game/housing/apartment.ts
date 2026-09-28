@@ -30,7 +30,8 @@ export const VISIBILITIES: ReadonlyArray<{ id: Visibility; name: string; note: s
 
 // ---------------------------------------------------------------- the catalogue (mirror of furniture_catalog)
 
-export type FurnitureKind = "bed" | "table" | "chair" | "sofa" | "lamp" | "plant" | "rug" | "shelf" | "tv" | "fridge" | "wall" | "floor";
+export type FurnitureKind = "bed" | "table" | "chair" | "sofa" | "lamp" | "plant" | "rug" | "shelf" | "tv" | "fridge" | "wall" | "floor"
+  | "aquarium" | "cabinet" | "painting";                                     // v21 (0074)
 export type FurnitureStyle = "go" | "hien_dai" | "may_tre";
 export interface Furniture { id: string; name: string; kind: FurnitureKind; style: FurnitureStyle; w: number; h: number; price: number; cap?: number }
 
@@ -69,11 +70,29 @@ export const FURNITURE: readonly Furniture[] = [
   { id: "floor_gach", name: "Sàn gạch bông", kind: "floor", style: "go", w: 0, h: 0, price: 300 },
   { id: "floor_go", name: "Sàn gỗ", kind: "floor", style: "go", w: 0, h: 0, price: 400 },
   { id: "floor_da", name: "Sàn đá hoa", kind: "floor", style: "hien_dai", w: 0, h: 0, price: 400 },
+  // v21 (0074_pets_aquarium.sql): more furniture and the aquariums (cap: fish slots)
+  { id: "bed_tang", name: "Giường tầng", kind: "bed", style: "go", w: 2, h: 3, price: 1600 },
+  { id: "bed_doi", name: "Giường đôi hoa", kind: "bed", style: "hien_dai", w: 3, h: 3, price: 2600 },
+  { id: "cabinet_go", name: "Tủ áo gỗ", kind: "cabinet", style: "go", w: 2, h: 1, price: 900 },
+  { id: "cabinet_hiendai", name: "Tủ kính", kind: "cabinet", style: "hien_dai", w: 2, h: 1, price: 1100 },
+  { id: "cabinet_maytre", name: "Tủ mây", kind: "cabinet", style: "may_tre", w: 1, h: 1, price: 500 },
+  { id: "painting_sen", name: "Tranh hoa sen", kind: "painting", style: "go", w: 2, h: 1, price: 600 },
+  { id: "painting_pho", name: "Tranh phố cổ", kind: "painting", style: "hien_dai", w: 2, h: 1, price: 800 },
+  { id: "painting_bien", name: "Tranh biển", kind: "painting", style: "may_tre", w: 1, h: 1, price: 400 },
+  { id: "plant_lan", name: "Chậu lan", kind: "plant", style: "hien_dai", w: 1, h: 1, price: 450 },
+  { id: "plant_xuongrong", name: "Xương rồng", kind: "plant", style: "may_tre", w: 1, h: 1, price: 150 },
+  { id: "plant_cau", name: "Cây cau cảnh", kind: "plant", style: "go", w: 1, h: 1, price: 350 },
+  { id: "lamp_ban", name: "Đèn bàn", kind: "lamp", style: "hien_dai", w: 1, h: 1, price: 200 },
+  { id: "lamp_hoian", name: "Đèn lồng Hội An", kind: "lamp", style: "go", w: 1, h: 1, price: 300 },
+  { id: "rug_tron", name: "Thảm tròn", kind: "rug", style: "hien_dai", w: 2, h: 2, price: 300 },
+  { id: "rug_batu", name: "Thảm Ba Tư", kind: "rug", style: "go", w: 4, h: 3, price: 900 },
+  { id: "aquarium", name: "Bể cá nhỏ", kind: "aquarium", style: "hien_dai", w: 2, h: 1, price: 3000, cap: 4 },
+  { id: "aquarium_big", name: "Bể cá lớn", kind: "aquarium", style: "hien_dai", w: 3, h: 1, price: 7000, cap: 8 },
 ];
 
 const BY_ID = new Map(FURNITURE.map((f) => [f.id, f]));
 export const furnitureOf = (id: string): Furniture | null => BY_ID.get(id) ?? null;
-export const fridgeCapOf = (id: string): number => furnitureOf(id)?.cap ?? 0;
+export const fridgeCapOf = (id: string): number => (furnitureOf(id)?.kind === "fridge" ? furnitureOf(id)?.cap ?? 0 : 0);
 export const isSurface = (f: Furniture | null): boolean => f?.kind === "wall" || f?.kind === "floor";
 
 // ---------------------------------------------------------------- the interior grid
