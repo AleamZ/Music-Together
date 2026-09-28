@@ -37,15 +37,46 @@ export class RunRecorder {
   }
   /** The runs of frames [from, frames): what a push or a packet sends. */
   runsFrom(from: number): number[] {
+    return this.runsBetween(from, this.total);
+  }
+  /** The runs of frames [from, to). */
+  runsBetween(from: number, to: number): number[] {
     const out: number[] = [];
     let at = 0;
-    for (let i = 0; i < this.r.length; i += 2) {
+    for (let i = 0; i < this.r.length && at < to; i += 2) {
       const m = this.r[i], c = this.r[i + 1];
-      const lo = Math.max(at, from), hi = at + c;
+      const lo = Math.max(at, from), hi = Math.min(at + c, to);
       if (hi > lo) out.push(m, hi - lo);
-      at = hi;
+      at += c;
     }
     return out;
+  }
+  /** The mask of frame `k` (0 past the end). */
+  maskAt(k: number): number {
+    let at = 0;
+    for (let i = 0; i < this.r.length; i += 2) {
+      if (k < at + this.r[i + 1]) return this.r[i];
+      at += this.r[i + 1];
+    }
+    return 0;
+  }
+}
+
+/** v20.2 (plan ruling P11): keeps a player's own mask changes to at most RATE_CHANGES in any RATE_WINDOW frames, so an
+ *  honest log never trips the server's "rate" rule. A change that would exceed it is held back (the previous mask stays)
+ *  and the sim sees the limited mask, so what is pushed is what was played. */
+export class RateLimiter {
+  private prev = 0;
+  private frame = 0;
+  private readonly changes: number[] = [];
+  limit(mask: number): number {
+    const k = this.frame++;
+    if (mask === this.prev) return mask;
+    while (this.changes.length > 0 && this.changes[0] <= k - RATE_WINDOW) this.changes.shift();
+    if (this.changes.length >= RATE_CHANGES) return this.prev;
+    this.changes.push(k);
+    this.prev = mask;
+    return mask;
   }
 }
 
