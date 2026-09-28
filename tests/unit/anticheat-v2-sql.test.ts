@@ -76,6 +76,18 @@ describe("0057: every re-created function is its newest body plus the marked lin
   }
 });
 
+describe("0058: _pos_claim is 0057's plus the marked lines", () => {
+  const M58 = M("0058_pos_tabs");
+  it("verbatim but for the 0058 lines", () => {
+    expect(unmarked(body(M58, "_pos_claim("), "0058")).toBe(body(M57, "_pos_claim("));
+    expect(body(M58, "_pos_claim(")).toContain("-- 0058");
+  });
+  it("reads the tab from the header lib/supabase.ts sends", () => {
+    expect(read("lib/supabase.ts")).toContain('"X-Tab-Id": TAB_ID');
+    expect(M58).toContain("->>'x-tab-id'");
+  });
+});
+
 describe("0056 mirrors lib/game/fishing/net.ts's constants", () => {
   it("the throw: the flight, the sink, the release limit, the aim and the ellipse", () => {
     expect(M56).toContain(`lt bigint := p_release + ${NETX.flightTicks}`);
