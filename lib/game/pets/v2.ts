@@ -223,6 +223,7 @@ export function parseAquaView(data: unknown): AquaView & { coins?: number } {
 
 export function v2ErrorMessage(msg: string): string {
   if (msg.includes("insufficient funds")) return "Không đủ xu.";
+  if (msg.includes("no knock")) return "Người này chưa gõ cửa (hoặc đã quá 10 phút).";          // v21 fixes (0078)
   if (msg.includes("too many pets")) return `Bạn nuôi tối đa ${MAX_PETS_V2} bé thôi.`;
   if (msg.includes("too many fighters")) return `Tối đa ${MAX_FISH_FIGHTERS} cá chiến.`;
   if (msg.includes("too soon")) return "Chậm thôi, đợi chút nhé.";

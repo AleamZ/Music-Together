@@ -49,7 +49,8 @@ function digText(o: DigResult): string {
     return `⛏️ Được ${o.qty} ${it?.name ?? o.item} (${rarityInfo(it?.rarity).label})${extra ? ` — ${extra}` : ""} · +${o.xp} XP`
       + (o.toolBroke ? " · Cuốc đã gãy!" : "");
   }
-  const why = { expired: "Hết giờ.", refused: "Lượt đào không hợp lệ.", gave_up: "Bỏ dở — không được gì.", taken: "Có người đào mất rồi!" }[o.why];
+  const why = { expired: "Hết giờ.", refused: "Lượt đào không hợp lệ.", gave_up: "Bỏ dở — không được gì.", taken: "Có người đào mất rồi!",
+    no_pickaxe: "Cuốc đã hỏng hoặc không còn — không được gì." }[o.why];                     // v21 fixes (0078)
   return why + (o.toolBroke ? " Cuốc đã gãy!" : "");
 }
 

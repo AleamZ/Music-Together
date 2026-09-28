@@ -185,6 +185,8 @@ const TEXTS: Record<string, string> = {
   "run open": "Tổ đội đang có một lượt hầm ngục.",
   "run over": "Lượt hầm ngục đã kết thúc.",
   "not joined": "Bạn chưa vào lượt hầm ngục này.",
+  "not in room": "Boss này thuộc phòng khác.",                                   // v21 fixes (0078)
+  "not in party": "Bạn không còn trong tổ đội của lượt này.",                   // v21 fixes (0078)
   "insufficient funds": "Không đủ xu.",
   "not owner": "Chỉ chủ phòng mới gọi tuyết được.",
   "too soon": "Chưa thể làm lại — đợi thêm một lúc.",

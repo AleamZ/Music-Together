@@ -89,7 +89,7 @@ export async function mineStart(roomId: string, token: string, node: number): Pr
 
 export type DigResult =
   | { result: "mined"; item: string; qty: number; perfect: boolean; buff: boolean; xp: number; toolBroke: boolean }
-  | { result: "lost"; why: "expired" | "refused" | "gave_up" | "taken"; toolBroke: boolean };
+  | { result: "lost"; why: "expired" | "refused" | "gave_up" | "taken" | "no_pickaxe"; toolBroke: boolean };
 
 export async function mineFinish(roomId: string, token: string, strikes: readonly number[], ticks: number, pass: boolean)
   : Promise<{ outcome: DigResult; state: MineState }> {
@@ -97,7 +97,7 @@ export async function mineFinish(roomId: string, token: string, strikes: readonl
   const toolBroke = r.tool_broke === true;
   const outcome: DigResult = r.result === "mined"
     ? { result: "mined", item: str(r.item), qty: num(r.qty, 1), perfect: r.perfect === true, buff: r.buff === true, xp: num(r.xp), toolBroke }
-    : { result: "lost", why: (["expired", "refused", "gave_up", "taken"] as const).find((w) => w === r.why) ?? "refused", toolBroke };
+    : { result: "lost", why: (["expired", "refused", "gave_up", "taken", "no_pickaxe"] as const).find((w) => w === r.why) ?? "refused", toolBroke };
   return { outcome, state: stateOf(r) };
 }
 
