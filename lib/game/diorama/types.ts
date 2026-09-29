@@ -2,6 +2,7 @@ import type { Frame } from "@/lib/game/art/layers";
 import type { WeatherFx } from "@/lib/game/art/weather";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 import type { WeatherKind } from "@/lib/game/weather/model";
+import type { CharAct } from "./character/pose";
 
 /** A character drawn as a camera-facing billboard (its 24×48 chibi frame). */
 export interface Billboard {
@@ -15,6 +16,8 @@ export interface Billboard {
   /** The name tag (null = none). */
   name: string | null;
   me?: boolean;
+  /** The 3D chibi's action (sit, fish cast/reel, swim, ride, wave…); absent = idle/walk/run from how the feet move. */
+  act?: CharAct;
 }
 
 /** What the engine hands the diorama each frame (the same state the 2D renderer draws). */

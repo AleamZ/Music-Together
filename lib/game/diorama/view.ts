@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { inPond, onPlatform } from "@/lib/game/maps/pond";
 import type { GameMap } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
-import { BillboardLayer } from "./billboards";
+import { CharacterLayer } from "./character/layer";
 import { animateWater, buildDiorama, WATER_Y, type Built } from "./build";
 import {
   clampOrbit, flyForward, flyFromOrbit, FOLLOW_ORBIT, lerp3, orbitEye, OVERVIEW_ORBIT, smoothK, stepFly, type FlyState, type Orbit, type V3,
@@ -50,7 +50,7 @@ export class DioramaView implements View3D {
   private readonly sun = new THREE.DirectionalLight(0xfff1d6, 2.4);
   private readonly fog = new THREE.Fog(0x9fd3f0, 70, 160);
   private readonly built: Built;
-  private readonly people: BillboardLayer;
+  private readonly people: CharacterLayer;
   private readonly weather = new WeatherLayer();
   private readonly monitor: FpsMonitor;
   private readonly ro: ResizeObserver;
@@ -94,7 +94,7 @@ export class DioramaView implements View3D {
     this.sun.shadow.bias = -0.0008;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
-    this.people = new BillboardLayer(map, (x, y) => (onPlatform(x, y) ? 0.12 : inPond(x, y, -2) ? WATER_Y - 0.9 : 0));
+    this.people = new CharacterLayer(map, (x, y) => (onPlatform(x, y) ? 0.12 : inPond(x, y, -2) ? WATER_Y - 0.9 : 0));
     this.scene.add(this.people.root, this.weather.root);
     this.applyQuality(this.monitor.quality());
 
@@ -160,6 +160,7 @@ export class DioramaView implements View3D {
     const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
     this.renderer.setPixelRatio(q === "high" ? Math.min(dpr, 2) : Math.min(dpr, 1) * 0.75);
     this.sun.castShadow = q === "high";
+    this.people.setQuality(q);
     for (const t of this.built.thinnable) t.mesh.count = q === "high" ? t.full : Math.ceil(t.full * 0.45);
     this.resize();
   }
@@ -259,7 +260,7 @@ export class DioramaView implements View3D {
     }
 
     const yaw = this.mode === "free" ? this.fly.yaw : Math.atan2(this.eye.x - this.look.x, this.eye.z - this.look.z);
-    this.people.update(f.billboards, yaw);
+    this.people.update(f.billboards, yaw, f.t, f.reduced);
     this.weather.update(f.weather, f.fx, f.reduced, f.t, new THREE.Vector3(this.look.x, 0, this.look.z), f.windKmh, this.quality === "low");
     this.renderer.render(this.scene, this.camera);
   }
