@@ -9,12 +9,14 @@ import { MOVE_TABLE, MOVE_TABLE_LEN, REC, STYLE_BASE, STYLE_REC } from "@/lib/ga
 const SQL = readFileSync("supabase/migrations/0048_fight_engine.sql", "utf8").replace(/\r\n/g, "\n");
 // 0079 re-creates _fx_moves(), _fx_contact() and _fx_bot() (the boxes fit the chibi fighter): the newest definitions.
 const M79 = readFileSync("supabase/migrations/0079_chibi_boxes.sql", "utf8").replace(/\r\n/g, "\n");
+// 0081 re-creates _fx_moves() again (the attack boxes' heights fit the chibi's striking limb): the newest table.
+const M81 = readFileSync("supabase/migrations/0081_chibi_heights.sql", "utf8").replace(/\r\n/g, "\n");
 
 // The replay itself is pinned by tests/fixtures/fight-cases.json (Vitest here, tests/sql/fight-engine-smoke.sql there);
 // these pins keep the table and the constants of the two engines side by side.
 describe("0048_fight_engine.sql", () => {
-  it("_fx_moves() (newest: 0079) is MOVE_TABLE", () => {
-    const m = /create or replace function public\._fx_moves\(\) returns integer\[\]\s*language sql immutable parallel safe\s*as \$\$ select '\{([^}]*)\}'::integer\[\] \$\$;/.exec(M79);
+  it("_fx_moves() (newest: 0081) is MOVE_TABLE", () => {
+    const m = /create or replace function public\._fx_moves\(\) returns integer\[\]\s*language sql immutable parallel safe\s*as \$\$ select '\{([^}]*)\}'::integer\[\] \$\$;/.exec(M81);
     expect(m).not.toBeNull();
     const nums = m![1].split(",").map((x) => Number(x.trim()));
     expect(nums).toHaveLength(MOVE_TABLE_LEN);

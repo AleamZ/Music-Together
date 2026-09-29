@@ -56,11 +56,13 @@ Every smoke above is re-runnable on the same cluster.
    migration's bodies back over 0078's), so run them **in migration order** — `v21-progression-smoke.sql` (0070),
    `v21-quests-smoke.sql` (0071), `v21-crafting-smoke.sql` (0072; `-v mine=…/mine-cases.json`), `v21-economy-smoke.sql`
    (0073), `v21-pets-smoke.sql` (0074), `v21-world-smoke.sql` (0075), `v21-fishing-smoke.sql` (0076),
-   `v21-professions-smoke.sql` (0077) — then **re-apply 0078 and 0079**, then `v21-fixes-smoke.sql` (0078, re-applies it itself;
+   `v21-professions-smoke.sql` (0077) — then **re-apply 0078, 0079 and 0081**, then `v21-fixes-smoke.sql` (0078, re-applies it itself;
    `-v fixtures=…/reel-cases.json`) and `anticheat-guards.sql` once more. The group smokes are listed below too.
 7. 0079 (the chibi's boxes) re-creates 0048's `_fx_moves` / `_fx_contact` and 0049's `_fx_bot`: `v20-rerun.sql` puts the
    old bodies back, so the re-apply of 0055 … newest after it (step 2) must include 0079 — `fight-engine-smoke.sql`,
    `v20-2`, `v20-3`, `v20-4` and `anticheat-v2-fight-smoke.sql` replay fixtures generated with its numbers.
+   0081 (the attack boxes' heights) re-creates `_fx_moves` once more, over 0079's: re-apply it after 0079 every time
+   (0080 is news data only and needs no re-apply); the fight fixtures carry 0081's table.
 
 ## The staged smokes
 

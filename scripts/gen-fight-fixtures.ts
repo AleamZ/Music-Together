@@ -261,7 +261,7 @@ export function buildFightCases(): FightCase[] {
     ["bots-tudo-1-vs-2", fighterParams(0, 0, { bot: 1 }), fighterParams(0, 0, { bot: 2 }), 21],
     ["bots-vovinam-3-vs-muaythai-4", fighterParams(1, 2, { bot: 3 }), fighterParams(2, 3, { bot: 4 }), 22],
     ["bots-karate-5-vs-taekwondo-5", fighterParams(3, 4, { bot: 5 }), fighterParams(4, 4, { bot: 5 }), 28],
-    ["bots-boxing-6-vs-judo-7", fighterParams(5, 4, { bot: 6 }), fighterParams(6, 4, { bot: 7 }), 32],
+    ["bots-boxing-6-vs-judo-7", fighterParams(5, 4, { bot: 6 }), fighterParams(6, 4, { bot: 7 }), 37],
     ["bots-vinhxuan-8-vs-karate-8", fighterParams(7, 4, { bot: 8 }), fighterParams(3, 4, { bot: 8 }), 27],
     ["bots-judo-8-vs-dummy", fighterParams(6, 4, { bot: 8 }), fighterParams(0, 0, { bot: BOT_DUMMY }), 26],
   ];

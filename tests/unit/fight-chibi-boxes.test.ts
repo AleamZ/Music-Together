@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { MARTIAL } from "@/lib/game/fight/dojo";
 import { HURT_AIR, HURT_CROUCH, HURT_STAND } from "@/lib/game/fight/engine";
-import { K_CROUCH, K_JUMP, K_STAND, K_STRIKE, M_KIND, M_REACH, M_SLOT, MOVES_PER_STYLE, STYLE_COUNT, mv } from "@/lib/game/fight/moves";
+import {
+  H_LOW, K_CROUCH, K_JUMP, K_STAND, K_STRIKE, M_HEIGHT, M_KIND, M_MOTION, M_REACH, M_SLOT, M_YHI, M_YLO, MO_DP, MOVES_PER_STYLE, MV_CHP,
+  STYLE_COUNT, mv,
+} from "@/lib/game/fight/moves";
 import { chibiMatrix, chibiPoseOf } from "@/lib/game/fight/render/chibi";
 import { RIG_H, RIG_W, moveKeys, stancePoseIds, type PoseId } from "@/lib/game/fight/render/poses";
 import { STYLE_ART, styleRef } from "@/lib/game/fight/render/style-poses";
@@ -24,6 +27,28 @@ function bounds(pose: PoseId, style: number): { front: number; height: number } 
   return { front, height: RIG_H - top };
 }
 
+/** 0081: the heights (over the feet) of the striking fist or foot: the run of rows around the frontmost row whose front
+ *  edge is within 3 px of it. The feet rows are left out unless the move hits low (a lunge's front foot can reach as far
+ *  as the fist), and an anti-air counts only the arm above the waist (the crouched knee is as far forward). */
+function limbRows(pose: PoseId, style: number, minH: number): number[] {
+  const look = MARTIAL.find((m) => m.id === style)?.masterLook ?? { ...DEFAULT_LOOK, hat: null };
+  const mat = chibiMatrix(chibiPoseOf(pose, style), { look, style, rank: 2 });
+  const front = mat.map((row, y) => {
+    let f = -RIG_W;
+    if (RIG_H - y < minH) return f;
+    row.forEach((c, x) => { if (c && !STREAK.test(c)) f = Math.max(f, x - RIG_W / 2); });
+    return f;
+  });
+  let best = 0;
+  front.forEach((f, y) => { if (f > front[best]) best = y; });
+  let top = best, bot = best;
+  while (top > 0 && front[top - 1] >= front[best] - 3) top--;
+  while (bot < front.length - 1 && front[bot + 1] >= front[best] - 3) bot++;
+  const rows: number[] = [];
+  for (let y = top; y <= bot; y++) rows.push(RIG_H - y);
+  return rows;
+}
+
 /** The poses shown on move `id`'s active frames. */
 function activePoses(style: number, id: number): PoseId[] {
   const slot = mv(id, M_SLOT);
@@ -40,6 +65,26 @@ describe("the boxes fit the chibi (0079)", () => {
         const limb = Math.max(...activePoses(st, id).map((p) => bounds(p, st).front));
         const reach = mv(id, M_REACH);
         expect(Math.abs(reach - limb), `style ${st} move ${i}: reach ${reach}, limb ${limb}`).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it("every strike's box spans its limb's height, not the head (0081)", () => {
+    for (let st = 0; st < STYLE_COUNT; st++) {
+      for (let i = 0; i < MOVES_PER_STYLE; i++) {
+        const id = st * MOVES_PER_STYLE + i, kind = mv(id, M_KIND);
+        if (kind !== K_STAND && kind !== K_CROUCH && kind !== K_JUMP && kind !== K_STRIKE) continue;
+        // an anti-air keeps some sky above its rising fist
+        const antiAir = mv(id, M_MOTION) === MO_DP || i === MV_CHP;
+        const minH = antiAir ? 20 : mv(id, M_HEIGHT) === H_LOW ? 0 : 7;
+        const rows = activePoses(st, id).flatMap((p) => limbRows(p, st, minH));
+        const lo = Math.min(...rows) - 1, hi = Math.max(...rows), ylo = mv(id, M_YLO), yhi = mv(id, M_YHI);
+        const tag = `style ${st} move ${i}: box ${ylo}–${yhi}, limb ${lo}–${hi}`;
+        expect(rows.length, tag).toBeGreaterThan(0);
+        expect(ylo, tag).toBeLessThanOrEqual(lo + 1);
+        expect(ylo, tag).toBeGreaterThanOrEqual(lo - (antiAir ? 8 : 4)); // the uppercut sweeps up from the waist
+        expect(yhi, tag).toBeGreaterThanOrEqual(hi - 1);
+        if (!antiAir) expect(yhi, tag).toBeLessThanOrEqual(hi + 6);
       }
     }
   });
