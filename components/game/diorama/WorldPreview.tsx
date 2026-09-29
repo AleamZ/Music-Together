@@ -40,7 +40,7 @@ function camPresets(): Record<string, { pos: { x: number; y: number; z: number }
     backdrop: { pos: { x: 130, y: 180, z: 300 }, yaw: 0, pitch: -0.3 },                 // the world and the ranges past it
     horizon: { pos: { x: 60, y: 6, z: 118 }, yaw: 0.3, pitch: 0.02 },                  // ground level, looking north
     ranges: { pos: { x: 250, y: 30, z: 40 }, yaw: -0.8, pitch: 0.05 },                  // the north-east ranges
-    estuary: { pos: { x: 0, y: 60, z: 130 }, yaw: 2.4, pitch: -0.15 },                  // the south-west, out to sea
+    estuary: { pos: { x: -40, y: 45, z: 140 }, yaw: 1.25, pitch: -0.2 },                  // the south-west, out to sea
     caukhi: look(monkey.x, monkey.y, 9, 4),
     bridge: look(road.x, road.y, 11, 5, 1.1),
     market: look(FLOATING_MARKET.x, FLOATING_MARKET.y, 16, 7, 0.3),
@@ -152,7 +152,9 @@ export default function WorldPreview({ init = {} }: { init?: WorldPreviewInit })
           const p = camPresets()[name];
           if (!p) return `unknown preset; try ${Object.keys(camPresets()).join(", ")}`;
           v.setFly(p.pos, p.yaw, p.pitch);
-          for (let i = 0; i < 3; i++) if (lastFrame) v.render({ ...lastFrame, t: performance.now() + i * 16 });
+          // render right before the read (the canvas keeps no drawing buffer); a frame even before the loop ran one
+          const base = lastFrame ?? { t: performance.now(), focus: me.display, billboards: [], night: 0, warm: 0, weather: null, windKmh: 10, fx: 3 as WeatherFx, reduced: false };
+          for (let i = 0; i < 3; i++) v.render({ ...base, t: performance.now() + i * 16 });
           return canvas.toDataURL("image/jpeg", quality);
         },
         /** snapAt, saved by the dev route to <os tmp>/world-snaps/<file>.jpg; resolves to where. */

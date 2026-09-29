@@ -117,7 +117,7 @@ export class WorldView implements View3D {
   private backdrop: Backdrop | null = null;
   private sea: THREE.Mesh | null = null;
   /** The muddy brown-green water of the delta (the river mouths, the canals). */
-  private readonly seaMat = toon({ color: 0x8a8a52, transparent: true, opacity: 0.9 });
+  private readonly seaMat = toon({ color: 0x6f9296, transparent: true, opacity: 0.9 });
   private readonly zones: ZoneScene[] = [];
   private readonly mergedGeos: THREE.BufferGeometry[] = [];
   private readonly mergedMats: THREE.Material[] = [];

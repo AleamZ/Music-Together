@@ -49,19 +49,28 @@ function estuary(x: number, y: number): number {
   return 1 - smoothstep(5200, 6400, d + fbm(x / 1400, y / 1400, 2) * 900);
 }
 
+/** How wet far px (x, y) is, 0…1 (smooth across the banks, so the grid shows no steps), and how much of it is sea. */
+export function backdropWet(x: number, y: number): { wet: number; sea: number } {
+  const sea = smoothstep(0.3, 0.7, estuary(x, y));
+  const w = 180 + Math.max(0, Math.hypot(x - WORLD_W / 2, y - WORLD_H / 2) - 3000) * 0.02;
+  const river = Math.max(1 - smoothstep(w - 160, w + 160, segDist(FAR_RIVER, x, y)), 1 - smoothstep(w * 1.4 - 160, w * 1.4 + 160, segDist(WEST_RIVER, x, y)));
+  let canal = 0;
+  for (const c of FAR_CANALS) canal = Math.max(canal, 1 - smoothstep(20, 180, segDist(c, x, y)));
+  return { wet: Math.max(sea, river, canal * 0.8), sea };
+}
+
 /** Is far px (x, y) water? */
 export function backdropWater(x: number, y: number): boolean {
-  if (estuary(x, y) > 0.5) return true;
-  const w = 180 + Math.max(0, Math.hypot(x - WORLD_W / 2, y - WORLD_H / 2) - 3000) * 0.02;
-  if (segDist(FAR_RIVER, x, y) < w || segDist(WEST_RIVER, x, y) < w * 1.4) return true;
-  return FAR_CANALS.some((c) => segDist(c, x, y) < 40);
+  return backdropWet(x, y).wet > 0.5;
 }
 
 const C = {
   rice: new THREE.Color(0x8fbf4a), ripe: new THREE.Color(0xc7c255), young: new THREE.Color(0x6fae45),
   dike: new THREE.Color(0x7d8a4a), orchard: new THREE.Color(0x4f7f3a), sand: new THREE.Color(0xcdbf8a),
-  haze: new THREE.Color(0x9fb8b0),
+  haze: new THREE.Color(0x9fb8b0), river: new THREE.Color(0x5f96a8), sea: new THREE.Color(0x3f86b8),
 };
+
+const tmpW = new THREE.Color();
 
 function farLand(): THREE.Mesh {
   const step = 200, reach = 12000;
@@ -73,9 +82,10 @@ function farLand(): THREE.Mesh {
     const x = x0 + i * step, y = y0 + j * step, k = (j * (nx + 1) + i) * 3;
     const out = Math.max(DOMAIN.x0 - x, x - DOMAIN.x1, DOMAIN.y0 - y, y - DOMAIN.y1, 0);
     const inside = out === 0;
-    const wet = backdropWater(x, y);
+    const { wet, sea } = backdropWet(x, y);
     // the land a hand above the water; the far rim rises gently so the eye reads distance
-    const h = inside ? -30 : wet ? RIVER_LEVEL - 2 : RIVER_LEVEL + 0.35 + smoothstep(4000, 14000, out) * 3;
+    const land = RIVER_LEVEL + 0.35 + smoothstep(4000, 14000, out) * 3;
+    const h = inside ? -30 : land + (RIVER_LEVEL + 0.08 - land) * wet;   // water: its own surface, over the sea plane
     pos.set([x / U, h, y / U], k);
     // paddy blocks (each ~1.2 km a tone), dikes between, orchard strips, sand on the estuary's shore
     const bx = Math.floor(x / 1200), by = Math.floor(y / 900), t = hashAt(bx, by, 17);
@@ -83,6 +93,7 @@ function farLand(): THREE.Mesh {
     if (hashAt(bx, by, 29) > 0.8) c.copy(C.orchard);
     if (Math.abs(((x % 1200) + 1200) % 1200 - 600) > 560 || Math.abs(((y % 900) + 900) % 900 - 450) > 410) c.lerp(C.dike, 0.6);
     if (estuary(x, y) > 0.2) c.lerp(C.sand, 0.7);
+    c.lerp(tmpW.copy(C.river).lerp(C.sea, sea), wet);
     c.lerp(C.haze, Math.min(0.55, out / 16000));
     col.set([c.r, c.g, c.b], k);
   }
@@ -146,10 +157,10 @@ function ranges(): { mesh: THREE.Mesh; clouds: THREE.Mesh } {
   const c = new THREE.Color();
   layers.forEach((L, li) => {
     const pos: number[] = [], cols: number[] = [], idx: number[] = [];
+    const peakAt = (i: number) => Math.pow(Math.max(0, fbm(i / 9 + li * 13, li * 7.7, 4) * 0.9 + 0.55), 1.6) * L.h * (0.55 + 0.45 * Math.sin((i / n) * Math.PI));
     for (let i = 0; i <= n; i++) {
       const a = a0 + (a1 - a0) * (i / n);
-      const ridge = Math.max(0, fbm(i / 9 + li * 13, li * 7.7, 4) * 0.9 + 0.55);
-      const peak = Math.pow(ridge, 1.6) * L.h * (0.55 + 0.45 * Math.sin((i / n) * Math.PI));
+      const peak = peakAt(i);
       const x = cx + Math.cos(a) * L.r, y = cy + Math.sin(a) * L.r * 0.8;
       pos.push(x / U, -2, y / U, x / U, RIVER_LEVEL + 6 + peak, y / U);
       c.set(L.col);
@@ -158,9 +169,10 @@ function ranges(): { mesh: THREE.Mesh; clouds: THREE.Mesh } {
       cols.push(c.r, c.g, c.b);
       if (i < n) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
       // cloud caps on the high peaks toward Núi Mây Xanh (the north-east)
-      if (li < 2 && peak > L.h * 0.75 && a > -Math.PI * 0.6 && a < 0 && hashAt(i, li, 41) > 0.45) {
-        const cl = new THREE.IcosahedronGeometry(1, 0).scale(L.h * 0.7, L.h * 0.12, L.h * 0.35);
-        cl.translate(x / U, RIVER_LEVEL + 6 + peak * 0.8, y / U);
+      // (on a summit only: higher than both neighbours; the cap sits on it, wrapped round the ridge)
+      if (li < 2 && peak > L.h * 0.6 && peak > peakAt(i - 1) && peak > peakAt(i + 1) && a > -Math.PI * 0.6 && a < 0) {
+        const cl = new THREE.IcosahedronGeometry(1, 1).scale(L.h * 0.3, L.h * 0.07, L.h * 0.3);
+        cl.translate(x / U, RIVER_LEVEL + 6 + peak - L.h * 0.02, y / U);
         cloudParts.push(cl);
       }
     }
