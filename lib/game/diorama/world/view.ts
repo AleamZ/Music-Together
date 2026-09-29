@@ -513,6 +513,7 @@ export class WorldView implements View3D {
     this.water.animate(t, f.windKmh);
     this.landmarks.animate(t, f.windKmh);
     this.nui.animate(t, f.reduced);
+    this.forest.animate(t, f.windKmh, f.reduced);
     this.life.animate(f.t, f.windKmh, f.reduced);
     const amp = f.reduced ? 0 : 0.03 + Math.min(0.25, f.windKmh / 200);
     for (const z of this.zones) for (const s of z.built.sway) s.obj.rotation.z = s.base + Math.sin(t / 700 + s.seed) * amp;

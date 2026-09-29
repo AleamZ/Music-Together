@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { CABLE, cableAt, DI_LAC, FOOTBRIDGE, GATE, LAKE, NUI, PARK_NAME, SUMMIT, TEMPLE, TOWER, WATERFALL } from "@/lib/game/world/nuicam";
+import { cumulative, pointAt, ROADS } from "@/lib/game/world/roads";
 import { heightAt } from "@/lib/game/world/terrain";
 import { faceAxes, signMesh, type FaceQuad } from "../zones/signmesh";
 import { toon } from "./toon";
@@ -182,6 +183,23 @@ export function buildNuiCam(): NuiCam {
     const y = heightAt(GATE.x, GATE.y) + 6.3, ax = faceAxes("w");
     faces.push({ center: new THREE.Vector3(U(GATE.x) - 0.85, y, U(GATE.y)), right: ax.right, up: ax.up, w: 6.2, h: 0.95, art: { lines: [PARK_NAME], bg: 0x1f5fa8, fg: 0xfff4c0, rim: 0xf2c230 } });
     parts.push(box(0.1, 1.1, 6.4, U(GATE.x) - 0.78, y, U(GATE.y), 0x2a2a30));
+  }
+  // the road in: flower beds along both verges (a low brick edge, soil, rows of bright blooms)
+  {
+    const road = ROADS.find((r) => r.id === "bai_dat_mine")!, cum = cumulative(road.pts), L = cum[cum.length - 1];
+    for (let s = 20; s < L; s += 42) {
+      const p = pointAt(road.pts, cum, s);
+      if (p.x < 3200 || p.x > 3440) continue;
+      for (const side of [-1, 1]) {
+        const off = road.w / 2 + 7, x = p.x - p.dy * side * off, y = p.y + p.dx * side * off, yaw = Math.atan2(p.dx, p.dy), y0 = heightAt(x, y);
+        const bed = [box(0.9, 0.22, 2, 0, 0.11, 0, 0xa8604a), box(0.75, 0.24, 1.85, 0, 0.13, 0, 0x5a3a24)];
+        for (let k = 0; k < 8; k++) bed.push(tint(new THREE.IcosahedronGeometry(0.11, 0).translate(((k % 2) - 0.5) * 0.35, 0.33, -0.8 + Math.floor(k / 2) * 0.53), [0xf2d22a, 0xe8546a, 0xf4f1e8, 0xe07a2e][(k + Math.floor(s)) % 4]));
+        // a bông giấy (bougainvillea) shrub between the beds, smothered in magenta
+        bed.push(tint(new THREE.IcosahedronGeometry(0.75, 0).scale(1, 0.85, 1).translate(0, 0.8, 1.35), 0x3f7a2e));
+        for (let k = 0; k < 9; k++) bed.push(tint(new THREE.IcosahedronGeometry(0.18, 0).translate(Math.cos(k * 2.4) * 0.62, 0.6 + (k % 3) * 0.3, 1.35 + Math.sin(k * 2.4) * 0.6), k % 3 ? 0xd4308a : 0xf06ab0));
+        for (const g of bed) parts.push(place(g, x, y, yaw, y0));
+      }
+    }
   }
   const signs = signMesh(faces);
   if (signs) root.add(signs.mesh);

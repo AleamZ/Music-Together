@@ -29,6 +29,15 @@ export function chunkOf(x: number, y: number): number {
  *  paddies' dikes), bông điên điển (round the lotus ponds) and dâm bụt hedges along the paths. */
 export type TreeKind = "tram" | "dua" | "duanuoc" | "tre" | "xoai" | "man" | "chuoi" | "thotnot" | "diendien" | "hedge";
 
+/** The road in to the mountain's gate (bai_dat → the mine), lined with palms, bougainvillea and flower beds. */
+const GATE_ROAD = ROADS.find((r) => r.id === "bai_dat_mine")!;
+const GATE_CUM = cumulative(GATE_ROAD.pts);
+/** Distance (px) from the gate road's edge. */
+export function gateRoadGap(x: number, y: number): number {
+  return nearestOn(GATE_ROAD.pts, GATE_CUM, x, y).d - GATE_ROAD.w / 2;
+}
+const onGateRoad = (x: number, y: number) => x > 3180 && x < 3470 && y > 1180 && y < 1360;
+
 export interface TreeSpot { x: number; y: number; h: number; kind: TreeKind; scale: number; rot: number; tint: number }
 export interface Spot { x: number; y: number; h: number; scale: number; rot: number; tint: number }
 
@@ -110,6 +119,7 @@ function treeKindAt(x: number, y: number, roll: number, k: number): TreeKind | n
   if (we > 2 && we < 26) return roll < 0.6 && fbm(x / 140 + 3, y / 140, 2) > -0.05 ? "duanuoc" : null;
   if (lotusPonds().some((p) => { const d = Math.hypot(p.x - x, p.y - y); return d > p.r + 6 && d < p.r + 30; })) return roll < 0.5 ? "diendien" : null;
   const pc = pathClearance(x, y), zc = zoneClearance(x, y);
+  if (onGateRoad(x, y)) { const d = gateRoadGap(x, y); if (d > 22 && d < 30) return roll < 0.55 ? "dua" : null; if (d > 5 && d < 22) return null; }   // the verge: beds + bougainvillea (nuicam.ts)
   if (pc > 10 && pc < 17 && zc > 20) return roll < 0.35 ? "hedge" : null;                // dâm bụt along the paths
   if (pc > 17 && pc < 34 && roll < 0.2) return "dua";
   if (zc > 16 && zc < 150 && roll < 0.16) return k < 0.35 ? "tre" : k < 0.65 ? "chuoi" : "dua";
@@ -189,7 +199,7 @@ export function scatterRocks(): readonly Spot[] {
 
 /** Grass tufts in the meadows (the near chunks only draw them). */
 export function scatterGrass(): readonly Spot[] {
-  tufts ??= scatter(18, 40, (x, y, h, roll) => h < 14 && roll < 0.55 && x > -200 && y > -200 && x < 4360 && y < 2440, 4);
+  tufts ??= scatter(18, 40, (x, y, h, roll) => h < 14 && roll < (landUse(x, y) === "paddy" ? 0.95 : 0.55) && x > -200 && y > -200 && x < 4360 && y < 2440, 4);
   return tufts;
 }
 

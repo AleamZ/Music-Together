@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { DOMAIN } from "@/lib/game/world/terrain";
-import { CHUNK_PX, chunkOf, CHUNKS_X, CHUNKS_Y, scatterFlowers, scatterGrass, scatterHyacinths, scatterRocks, scatterTrees, type Spot, type TreeKind } from "@/lib/game/world/scenery";
+import { CHUNK_PX, chunkOf, CHUNKS_X, CHUNKS_Y, landUse, scatterFlowers, scatterGrass, scatterHyacinths, scatterRocks, scatterTrees, type Spot, type TreeKind } from "@/lib/game/world/scenery";
 import { toon } from "./toon";
 
 // Browser only: the world's trees, rocks, grass and flowers, instanced per scenery chunk. Trees have three levels of
@@ -173,11 +173,27 @@ export class Forest {
   private lodDist: [number, number] = [110, 260];
   private nearOn = true;
   readonly counts = { trees: 0, rocks: 0, grass: 0, flowers: 0 };
+  /** (time s, strength) for the rice's wind sway. */
+  private readonly wind = { value: new THREE.Vector2(0, 0.25) };
 
   constructor(density = 1) {
     const treeMat = toon({ vertexColors: true });
     const rockMat = toon({ vertexColors: true });
     const grassMat = toon({ vertexColors: true, side: THREE.DoubleSide });
+    // the rice (and grass) sways: a wind wave rolling across the paddies, bending each tuft's top more than its base —
+    // a few vertex-shader lines, no extra draw calls
+    const wind = this.wind;
+    grassMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uWind = wind;
+      sh.vertexShader = "uniform vec2 uWind;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+#ifdef USE_INSTANCING
+      vec2 wp = vec2(instanceMatrix[3].x, instanceMatrix[3].z);
+      float gust = sin(uWind.x * 1.6 - wp.x * 0.35 - wp.y * 0.22) * 0.6 + sin(uWind.x * 2.7 - wp.x * 0.9 + wp.y * 0.5) * 0.25;
+      float bend = max(position.y, 0.0) * gust * uWind.y;
+      transformed.x += bend; transformed.z += bend * 0.5;
+#endif`);
+    };
+    grassMat.customProgramCacheKey = () => "rice-wind";
     this.mats.push(treeMat, rockMat, grassMat);
     const treeGeo: Record<TreeKind, THREE.BufferGeometry[]> = {
       ...Object.fromEntries((Object.keys(BUILDERS) as TreeKind[]).map((k) => {
@@ -258,7 +274,7 @@ export class Forest {
         this.root.add(hy);
       }
       if (grass[c].length) {
-        set.near.add(inst(tuftGeo, grassMat, grass[c], (sp) => [sp.scale, sp.scale, sp.scale, -0.05], (sp) => [0x7fb54a, 0x6aa23c, 0x98c45a][Math.floor(sp.tint * 3)]));
+        set.near.add(inst(tuftGeo, grassMat, grass[c], (sp) => [sp.scale, sp.scale, sp.scale, -0.05], (sp) => (landUse(sp.x, sp.y) === "paddy" ? [0x9ccc48, 0xb8c850, 0xd8c457] : [0x7fb54a, 0x6aa23c, 0x98c45a])[Math.floor(sp.tint * 3)]));
         this.counts.grass += grass[c].length;
       }
       if (flowers[c].length) {
@@ -279,6 +295,11 @@ export class Forest {
   }
 
   /** Pick each chunk's level of detail from the camera. */
+  /** The wind over the rice: time (ms), wind km/h; frozen when reduced motion. */
+  animate(t: number, windKmh: number, reduced: boolean): void {
+    this.wind.value.set(reduced ? 0 : t / 1000, reduced ? 0 : 0.12 + Math.min(0.35, windKmh / 60));
+  }
+
   update(camera: THREE.Vector3): void {
     for (const c of this.chunks) {
       const d = c.center.distanceTo(camera);
