@@ -30,6 +30,8 @@ export interface Built {
   flowers: THREE.InstancedMesh | null;
   /** Roofs and awnings that turn see-through while the player is under or just behind them (map px footprint). */
   roofs: Array<{ mats: THREE.MeshLambertMaterial[]; x: number; y: number; w: number; h: number }>;
+  /** Windows, neon and bulbs that light up at night (the view sets their emissiveIntensity from the night); zones only. */
+  glow?: THREE.MeshLambertMaterial[];
   dispose(): void;
 }
 

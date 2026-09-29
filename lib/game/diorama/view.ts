@@ -1,17 +1,16 @@
 import * as THREE from "three";
-import { inPond, onPlatform } from "@/lib/game/maps/pond";
 import type { GameMap } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 import { CharacterLayer } from "./character/layer";
-import { animateWater, buildDiorama, WATER_Y, type Built } from "./build";
+import { animateWater, type Built } from "./build";
 import {
   clampOrbit, flyForward, flyFromOrbit, FOLLOW_ORBIT, lerp3, orbitEye, OVERVIEW_ORBIT, smoothK, stepFly, type FlyState, type Orbit, type V3,
 } from "./camera";
 import { pxToWorld, rayToMapPx } from "./coords";
-import { buildPondLayout } from "./layout";
 import { createFpsMonitor, type FpsMonitor } from "./quality";
 import type { CameraMode, DioramaFrame, Quality, View3D } from "./types";
 import { WeatherLayer } from "./weather3d";
+import { buildMapScene } from "./zones";
 
 // Browser only: the diorama view of a map (the pond for now). The engine keeps the game — movement, collision, the
 // network — and hands this view a DioramaFrame every animation frame; the view draws it with Three.js (WebGL2).
@@ -50,6 +49,7 @@ export class DioramaView implements View3D {
   private readonly sun = new THREE.DirectionalLight(0xfff1d6, 2.4);
   private readonly fog = new THREE.Fog(0x9fd3f0, 70, 160);
   private readonly built: Built;
+  private readonly heightAt: (x: number, y: number) => number;
   private readonly people: CharacterLayer;
   private readonly weather = new WeatherLayer();
   private readonly monitor: FpsMonitor;
@@ -80,8 +80,9 @@ export class DioramaView implements View3D {
     this.monitor = createFpsMonitor({ start: opts.quality === "low" ? "low" : "high" });
     if (opts.quality === "high" || opts.quality === "low") this.monitor.force(opts.quality);
 
-    const layout = buildPondLayout(map);
-    this.built = buildDiorama(layout);
+    const scene = buildMapScene(map);
+    this.built = scene.built;
+    this.heightAt = scene.heightAt;
     this.scene.add(this.built.root);
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x9fd3f0);
@@ -94,7 +95,7 @@ export class DioramaView implements View3D {
     this.sun.shadow.bias = -0.0008;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
-    this.people = new CharacterLayer(map, (x, y) => (onPlatform(x, y) ? 0.12 : inPond(x, y, -2) ? WATER_Y - 0.9 : 0));
+    this.people = new CharacterLayer(map, this.heightAt);
     this.scene.add(this.people.root, this.weather.root);
     this.applyQuality(this.monitor.quality());
 
@@ -267,7 +268,7 @@ export class DioramaView implements View3D {
 
   private updateCamera(f: DioramaFrame, dt: number): void {
     const focus = pxToWorld(f.focus, this.map);
-    const onDeck = onPlatform(f.focus.x, f.focus.y) ? 0.12 : 0;
+    const onDeck = Math.max(0, this.heightAt(f.focus.x, f.focus.y));
     let eye: V3, look: V3, rate = 5;
     if (this.mode === "follow") {
       look = { x: focus.x, y: onDeck + 1.3, z: focus.z };
@@ -320,6 +321,7 @@ export class DioramaView implements View3D {
     this.hemi.groundColor.setHex(0x5a7a3a).lerp(new THREE.Color(0x141a30), f.night);
     for (const l of this.built.lamps) l.intensity = 9 * f.night;
     for (const b of this.built.bulbs) b.color.setHex(0xd23a3a).lerp(new THREE.Color(0xffd27a), f.night);
+    for (const m of this.built.glow ?? []) m.emissiveIntensity = f.night * 0.9;
 
     // the sprites are unlit: tint them like the 2D night multiply (and the dusk's warmth)
     const tint = this.tmpTint.setRGB(1, 1, 1);

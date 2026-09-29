@@ -43,7 +43,8 @@ describe("diorama flag", () => {
   });
   it("only swaps the maps that have a diorama", () => {
     expect(usesDiorama("3d", "pond")).toBe(true);
-    expect(usesDiorama("3d", "hall")).toBe(false);
+    expect(usesDiorama("3d", "hall")).toBe(true);
+    expect(usesDiorama("3d", "ham_ngam")).toBe(false);
     expect(usesDiorama("2d", "pond")).toBe(false);
   });
   it("defaults to 2d and persists the choice", () => {

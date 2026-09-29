@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createActor, setKeyboard, setPath, tickActor, walkFrame, idleFrame, type Actor } from "@/lib/game/actor";
 import { lightingFor, type WeatherFx } from "@/lib/game/art/weather";
 import { CAMERA_MODES } from "@/lib/game/diorama/camera";
 import type { Billboard, CameraMode, Quality } from "@/lib/game/diorama/types";
 import { DioramaView, type DioramaStats } from "@/lib/game/diorama/view";
 import { CHU_TAM_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
+import { DIORAMA_MAPS } from "@/lib/game/diorama/flag";
 import { getMap } from "@/lib/game/maps/registry";
+import type { MapId } from "@/lib/game/maps/types";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
 import type { Vec } from "@/lib/game/types";
 import type { WeatherKind } from "@/lib/game/weather/model";
@@ -18,6 +20,13 @@ import type { WeatherKind } from "@/lib/game/weather/model";
 
 const KINDS: ReadonlyArray<WeatherKind | "none"> = ["none", "clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
 const MODE_LABEL: Record<CameraMode, string> = { follow: "Theo người", overview: "Toàn cảnh", free: "Bay tự do" };
+const MAP_LABEL: Partial<Record<MapId, string>> = { pond: "Ao cá", hall: "Đình làng", market: "Chợ Lớn", khu_nha: "Khu nhà" };
+/** The map in the URL (?map=hall); the pond by default (and on the server). */
+function mapFromUrl(search: string): MapId {
+  const m = new URLSearchParams(search).get("map") as MapId | null;
+  return m && DIORAMA_MAPS.has(m) ? m : "pond";
+}
+const noSubscribe = () => () => {};
 /** A tour of the pond's walkable places (the fake players stroll between them). */
 const TOUR: readonly Vec[] = [
   { x: 300, y: 330 }, { x: 300, y: 212 }, { x: 380, y: 210 }, { x: 220, y: 212 }, { x: 300, y: 300 },
@@ -34,6 +43,7 @@ function hourToMs(hour: number): number {
 }
 
 export default function DioramaPreview() {
+  const mapId = useSyncExternalStore(noSubscribe, () => mapFromUrl(window.location.search), (): MapId | null => null);   // null until hydrated: no throwaway pond view
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<DioramaView | null>(null);
   const [hour, setHour] = useState(10);
@@ -52,13 +62,15 @@ export default function DioramaPreview() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const map = getMap("pond");
+    if (!canvas || !mapId) return;
+    const map = getMap(mapId);
+    // the pond's hand-picked tour; elsewhere every interactable's use spot (all walkable)
+    const tour: readonly Vec[] = mapId === "pond" ? TOUR : map.interactables.map((i) => i.use);
     const now0 = performance.now();
     const me: Actor = createActor("me", { ...map.spawn }, map.spawn.dir, now0);
-    const other: Actor = createActor("ba", { x: 498, y: 300 }, "left", now0);
+    const other: Actor = createActor("ba", mapId === "pond" ? { x: 498, y: 300 } : { ...tour[0] }, "left", now0);
     const keys = { up: false, down: false, left: false, right: false };
-    let tourI = 1, otherI = 6, lastInput = -Infinity;
+    let tourI = 1 % tour.length, otherI = 6 % tour.length, lastInput = -Infinity;
     const walkTo = (a: Actor, to: Vec) => {
       const cells = findPath(map, a.pos, to);
       if (cells) setPath(a, smoothPath(map, a.pos, cells));
@@ -101,8 +113,8 @@ export default function DioramaPreview() {
       last = t;
       const env = envRef.current;
       // the fake players: me strolls the tour while left alone; the other always does
-      if (env.auto && t - lastInput > 4000 && !me.path && !me.moving) { walkTo(me, TOUR[tourI]); tourI = (tourI + 1) % TOUR.length; }
-      if (!other.path && !other.moving) { walkTo(other, TOUR[otherI]); otherI = (otherI + 3) % TOUR.length; }
+      if (env.auto && t - lastInput > 4000 && !me.path && !me.moving) { walkTo(me, tour[tourI]); tourI = (tourI + 1) % tour.length; }
+      if (!other.path && !other.moving) { walkTo(other, tour[otherI]); otherI = (otherI + 3) % tour.length; }
       tickActor(map, me, dt, t, false);
       tickActor(map, other, dt, t, false);
       const frameOf = (a: Actor) => { const f = walkFrame(a); return f === 0 ? idleFrame(t, a.id.length * 300) : f; };
@@ -130,7 +142,7 @@ export default function DioramaPreview() {
       delete (window as unknown as { __diorama?: unknown }).__diorama;
       view.dispose();
     };
-  }, []);
+  }, [mapId]);
 
   const pickMode = (m: CameraMode) => { setMode(m); viewRef.current?.setCameraMode(m); };
   const pickQuality = (q: Quality | "auto") => { setQuality(q); viewRef.current?.setQuality(q); };
@@ -138,10 +150,16 @@ export default function DioramaPreview() {
 
   return (
     <main className="fixed inset-0 bg-[#1b1410] text-[#f4ead8]">
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label="Ao cá 3D" />
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label={`${mapId ? MAP_LABEL[mapId] ?? mapId : ""} 3D`} />
       {error && <div className="absolute inset-0 grid place-items-center text-lg">Không mở được WebGL: {error}</div>}
       <div className="absolute top-2 left-2 flex max-w-[calc(100%-16px)] flex-col gap-2 rounded bg-black/55 p-3 text-sm backdrop-blur-sm sm:w-72">
-        <div className="font-bold">Ao cá — diorama 3D (thử)</div>
+        <div className="font-bold">{mapId ? MAP_LABEL[mapId] ?? mapId : "…"} — diorama 3D (thử)</div>
+        <label className="flex items-center justify-between gap-2">
+          <span>Bản đồ</span>
+          <select className="rounded bg-white/15 px-1 py-0.5" value={mapId ?? "pond"} onChange={(e) => { window.location.search = `?map=${e.target.value}`; }}>
+            {[...DIORAMA_MAPS].map((m) => <option key={m} value={m} className="text-black">{MAP_LABEL[m] ?? m}</option>)}
+          </select>
+        </label>
         <label className="flex flex-col gap-1">
           <span>Giờ: {String(hh).padStart(2, "0")}:{String(mm).padStart(2, "0")}</span>
           <input type="range" min={0} max={24} step={0.25} value={hour} onChange={(e) => setHour(Number(e.target.value))} />
