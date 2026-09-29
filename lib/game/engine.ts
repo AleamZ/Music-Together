@@ -434,7 +434,21 @@ export class GameEngine {
         return { x: l.x0 + (l.x1 - l.x0) * k, y: l.y0 + (l.y1 - l.y0) * k, h: k >= 1 ? 0 : Math.sin(k * Math.PI) };
       }),
       gates: (this.worldMap?.gates ?? []).map((g) => ({ id: g.id, at: g.at, barrier: g.barrier })),
+      pets: this.pets.drawn().map((p) => ({ ownerId: p.id, species: p.look.species, x: p.x, y: p.y })),        // P4
+      anglers: this.anglersFrame(t),                                                                            // P4
     };
+  }
+
+  /** P4: everyone with a line in the water (mine and the others'), feet + facing + phase code (1 wait, 2 bite, 3 reel). */
+  private anglersFrame(t: number): GameplayFrame["anglers"] {
+    const out: Array<NonNullable<GameplayFrame["anglers"]>[number]> = [];
+    const mine = phaseCode(this.fishing.phase);
+    if (mine > 0) out.push({ id: this.opts.localId, x: this.local.display.x, y: this.local.display.y, facing: this.local.facing, phase: mine as 1 | 2 | 3 });
+    for (const [id, a] of this.world.actors) {
+      const ph = this.world.fishing(id, t).phase;
+      if (ph > 0 && this.visible(id, t)) out.push({ id, x: a.display.x, y: a.display.y, facing: a.facing, phase: ph as 1 | 2 | 3 });
+    }
+    return out;
   }
 
   /** v18.8: the room's weather (null = unknown: no effects, lighting by the local clock). */

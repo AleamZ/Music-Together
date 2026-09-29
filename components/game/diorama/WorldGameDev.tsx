@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import GameCanvas, { type GameCanvasHandle } from "@/components/game/GameCanvas";
 import WorldMiniMap from "@/components/game/WorldMiniMap";
 import ZoneToast from "@/components/game/ZoneToast";
+import { useDevLive } from "./useDevLive";
 import { CO_BA_LOOK, CO_UT_LOOK, CHU_TU_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
@@ -136,6 +137,9 @@ export default function WorldGameDev() {
     return () => window.clearInterval(id);
   }, [bus]);
 
+  // P4: a fake game state through the real live feed (stalls, animals, a boss, houses, rings, my pet)
+  useDevLive(canvasRef, isZone(travel.mapId) ? travel.mapId : "hall");
+
   // screenshots: jump anywhere
   useEffect(() => {
     const w = window as unknown as { __worldDev?: unknown };
@@ -144,6 +148,7 @@ export default function WorldGameDev() {
       at: (x: number, y: number) => setTravel((t) => ({ mapId: isZone(zoneAt({ x, y })) ? (zoneAt({ x, y }) as MapId) : "bai_dat", arrive: null, key: t.key + 1, world: { x, y, dir: "down" } })),
       mine: () => setTravel((t) => ({ mapId: "bai_dat", arrive: null, key: t.key + 1, world: { ...MINE.exit, dir: "right" } })),
       interact: () => canvasRef.current?.interact(),
+      fish: (phase: "idle" | "waiting" | "bite" | "reeling") => canvasRef.current?.setFishing({ phase }),
       pos: () => canvasRef.current?.worldPos() ?? canvasRef.current?.localPos(),
       zone: () => canvasRef.current?.zone(),
       travel: () => travel,

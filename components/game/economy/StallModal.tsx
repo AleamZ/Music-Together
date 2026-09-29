@@ -12,7 +12,7 @@ import StallRowView from "./StallRowView";
 
 /** 🏮 chú Bảy's row of rented stalls at Chợ Lớn (v21 #45): rent a stall, stock it with my things at my prices, and
  *  they sell while I am away; buy from other players' stalls. Each call claims the stall row on the server. */
-export default function StallModal({ token, onChanged, onClose }: { token: string; onChanged: () => void; onClose: () => void }) {
+export default function StallModal({ token, onChanged, onClose, onStalls }: { token: string; onChanged: () => void; onClose: () => void; /** P4: each econ_state's stalls (the 3D market draws them). */ onStalls?: (stalls: EconState["stalls"]) => void }) {
   const [state, setState] = useState<EconState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +42,11 @@ export default function StallModal({ token, onChanged, onClose }: { token: strin
       setBusy(false);
     }
   };
+
+  const stalls = state?.stalls;
+  useEffect(() => {
+    if (stalls) onStalls?.(stalls);
+  }, [stalls, onStalls]);
 
   const now = state?.serverNowMs ?? 0;
   const mine = state?.stalls.find((s) => s.mine) ?? null;

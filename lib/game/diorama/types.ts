@@ -3,6 +3,7 @@ import type { WeatherFx } from "@/lib/game/art/weather";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 import type { WeatherKind } from "@/lib/game/weather/model";
 import type { CharAct } from "./character/pose";
+import type { PetSpecies } from "@/lib/game/pets/catalog";
 
 /** A character drawn as a camera-facing billboard (its 24×48 chibi frame). */
 export interface Billboard {
@@ -30,6 +31,10 @@ export interface GameplayFrame {
   /** A fish in the air: where, and how high (0…1 of its arc). */
   leaps: ReadonlyArray<{ x: number; y: number; h: number }>;
   gates: ReadonlyArray<{ id: string; at: Vec; barrier: { x: number; y: number; w: number; h: number } | null }>;
+  /** P4: the pets following their owners (the engine's PetFollowers; ownerId = the owner's account id). */
+  pets?: ReadonlyArray<{ ownerId: string; species: PetSpecies; x: number; y: number }>;
+  /** P4: everyone fishing (mine and the others' from realtime): feet, facing, phase code (1 wait, 2 bite, 3 reel). */
+  anglers?: ReadonlyArray<{ id: string; x: number; y: number; facing: Facing; phase: 1 | 2 | 3 }>;
 }
 
 /** What the engine hands the diorama each frame (the same state the 2D renderer draws). */

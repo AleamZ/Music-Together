@@ -64,8 +64,10 @@ export function useWorld(o: WorldOpts) {
       offsetRef.current = s.serverNowMs - Date.now();
       setState(s);
       setOffset(s.serverNowMs - Date.now());
+      canvas()?.setLiveInputs?.({ realm: { state: s, zone: mapId, offsetMs: s.serverNowMs - Date.now() } });   // P4: the 3D world
     } catch { /* offline or locked: keep the last state */ }
-  }, [token, roomId, mapId]);
+  }, [token, roomId, mapId, canvas]);
+  useEffect(() => () => canvas()?.setLiveInputs?.({ realm: null }), [canvas]);
 
   useEffect(() => {
     const first = setTimeout(() => void reload(), 0);

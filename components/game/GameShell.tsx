@@ -534,7 +534,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const { reload: reloadHouses } = houses;
   const houseLots = houses.state?.lots;
   useEffect(() => {
-    canvasRef.current?.setHouses((houseLots ?? []).map((l) => ({ lot: l.no, owned: l.owned, grid: l.grid, roof: l.roof })));
+    canvasRef.current?.setHouses((houseLots ?? []).map((l) => ({ lot: l.no, owned: l.owned, grid: l.grid, roof: l.roof, ownerName: l.ownerName, mine: l.mine })));   // P4: names in 3D
   }, [houseLots]);
   const [trip, setTrip] = useState<{ to: { map: MapId; arrive: Spot }; toMarket: boolean; vehicle: Vehicle | null } | null>(null);
   const skipRoad = useCallback(async (): Promise<boolean> => {
@@ -1394,7 +1394,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         <PlayerMarketModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} />
       )}
       {panel === "player_stalls" && (                                      // v21 economy
-        <StallModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} />
+        <StallModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} onStalls={(stalls) => canvasRef.current?.setLiveInputs?.({ stalls })} />
       )}
       {trade.done && <TradeDoneFx key={trade.done.k} coins={trade.done.coins} onDone={trade.clearDone} />}{/* v22 (0086) */}
       {trade.state?.trade && (                                              // v21 economy

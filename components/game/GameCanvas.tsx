@@ -4,6 +4,7 @@ import { useEffect, useImperativeHandle, useRef, useSyncExternalStore, type Ref 
 import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/diorama/flag";
 import { DioramaView } from "@/lib/game/diorama/view";
 import { WorldView } from "@/lib/game/diorama/world/view";
+import { LiveFeed, type LiveHouseIn, type LiveInputs } from "@/lib/game/diorama/world/live-feed";
 import { ZoneChannels } from "@/lib/game/net/world-channels";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap } from "@/lib/game/maps/types";
@@ -110,7 +111,7 @@ export interface GameCanvasHandle {
   /** The hall's card-table labels (v16 spec §5). */
   setCardTables: (labels: Readonly<Partial<Record<CardGame, string>>>) => void;
   /** v19.3: Khu nhà's lots and their houses. */
-  setHouses: (houses: ReadonlyArray<HouseDraw>) => void;
+  setHouses: (houses: ReadonlyArray<LiveHouseIn>) => void;
   /** v18.11: the unread dot on the Báo Làng stand. */
   setNewsUnread: (unread: boolean) => void;
   /** v20.3: the labels over Bãi đất trống's rings (index = ring − 1). */
@@ -147,6 +148,10 @@ export interface GameCanvasHandle {
   nearForLift: (id: string) => boolean;
   /** P2 world mode: where I stand in world px (the world minimap / city map), or null; and the zone my feet are in. */
   worldPos: () => Vec | null;
+  /** P4: the game state the 3D world draws besides the people (zone-local, as the hooks have it): the rented stalls,
+   *  the realm's animals and bosses, a treasure dig, Khu nhà's owners… Each key replaces the last; houses and the
+   *  rings' labels come in through setHouses / setRingLabels too. */
+  setLiveInputs?: (patch: LiveInputs) => void;
   zone: () => ZoneId | null;
 }
 
@@ -283,6 +288,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   const ringLabelsRef = useRef<ReadonlyArray<string | null>>([]);
   const hiddenRef = useRef<readonly string[]>([]);
   const gatherRef = useRef<ReadonlyArray<{ id: string; ready: boolean }>>([]);
+  // P4: the world view's live feed (kept across worlds) and the world view up now
+  const feedRef = useRef<LiveFeed | null>(null);
+  const worldViewRef = useRef<WorldView | null>(null);
   // v17: my dog (from the latest setLocal), the field's rats and my last input, kept across worlds
   const dogRef = useRef<Pick<LocalInfo, "dog" | "dogHungry">>({});
   // v18.12: my following pet, kept across worlds
@@ -303,6 +311,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   });
 
   useImperativeHandle(ref, () => {
+    // P4: a state change reaches the world view at once (the moving part follows each frame: see the view's wrapper)
+    const feed = (patch: LiveInputs) => {
+      feedRef.current ??= new LiveFeed();
+      feedRef.current.set(patch);
+      worldViewRef.current?.setLive(feedRef.current.at(Date.now()));
+    };
     // P2 world mode: the shell and the RPCs speak zone-local; the engine world px (identity on a single map)
     const fromZ = (p: Vec): Vec => engineRef.current?.fromZone(p) ?? p;
     const sendFs = (c?: [string, number]) => {
@@ -453,10 +467,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       setHouses: (houses) => {
         housesRef.current = houses;
         engineRef.current?.setHouses(houses);
+        feed({ houses });
       },
       setRingLabels: (labels) => {
         ringLabelsRef.current = labels;
         engineRef.current?.setRingLabels(labels);
+        feed({ ringLabels: labels });
       },
       setHidden: (ids) => {
         hiddenRef.current = ids;
@@ -507,6 +523,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       sendLift: (m) => sendRef.current?.({ ...m, id: localId } as GameMessage),
       liftCandidate: () => engineRef.current?.liftCandidate() ?? null,
       nearForLift: (id) => engineRef.current?.nearForLift(id) ?? false,
+      setLiveInputs: feed,
     };
   }, [localId]);
 
@@ -733,9 +750,19 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
           wv.setCameraMode("follow");
           view = wv;
+          // P4: the live feed (stalls, rings, houses, digs, the realm's animals and bosses); what moves by itself is
+          // brought up to time each frame, the rest on a state change
+          const lf = (feedRef.current ??= new LiveFeed());
+          wv.setLive(lf.at(Date.now()));
+          worldViewRef.current = wv;
           // P3: the world view draws the frame's gameplay itself (vehicles and the boat under riders, rats, dogs,
-          // leaping fish, gate barriers: DioramaFrame.gameplay + Billboard.vehicle)
-          engine.setView3D(wv);
+          // leaping fish, gate barriers, P4 pets and bobbers: DioramaFrame.gameplay + Billboard.vehicle)
+          engine.setView3D({
+            render: (f) => {
+              if (lf.moving()) wv.setLive(lf.at(Date.now()));
+              wv.render(f);
+            },
+          });
         } else {
           view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
           engine.setView3D(view);
@@ -751,6 +778,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     return () => {
       if (view) {
         if (view3dRef.current === view) view3dRef.current = null;
+        if (worldViewRef.current === view) worldViewRef.current = null;
         engine.setView3D(null);
         view.dispose();
       }
