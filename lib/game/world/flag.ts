@@ -32,12 +32,24 @@ export function worldModeFor(gfx: GfxMode, flagOn: boolean): boolean {
   return gfx === "3d" && flagOn;
 }
 
-/** worldModeFor with this browser's graphics setting and the server's flag. */
-export async function worldModeOn(): Promise<boolean> {
-  return worldModeFor(readGfx(), await unifiedWorldOn());
+// The 3D world failed to load on this page (GameShell's worldFailed): the client falls back to 2D entirely — the
+// per-map game AND the 2D claims (pos_report) — until the page reloads.
+let worldFailed = false;
+
+/** GameShell: the world view could not be built; from now on this page plays (and reports) 2D. */
+export function markWorldFailed(): void {
+  worldFailed = true;
 }
 
-/** Tests: forget the cached flags. */
+/** worldModeFor with this browser's graphics setting and the server's flag (never after the world failed to load). */
+export async function worldModeOn(): Promise<boolean> {
+  if (worldFailed) return false;
+  const on = await unifiedWorldOn();
+  return !worldFailed && worldModeFor(readGfx(), on);
+}
+
+/** Tests: forget the cached flags (and a world failure). */
 export function resetAppFlags(): void {
   flags = null;
+  worldFailed = false;
 }

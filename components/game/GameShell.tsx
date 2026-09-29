@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { readGfx, subscribeGfx, type GfxMode } from "@/lib/game/diorama/flag";
-import { unifiedWorldOn } from "@/lib/game/world/flag";
+import { markWorldFailed, unifiedWorldOn } from "@/lib/game/world/flag";
 import { worldArrival } from "@/lib/game/world/wild";
 import { gateText } from "@/lib/game/world/gates";
 import { nearestZone } from "@/lib/game/world/aoi";
@@ -292,7 +292,18 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     // a zone of the world is the map the HUD, the hooks and the RPCs talk about (the wild keeps the last one)
     if (isZone(z)) setTravel((t) => (t.mapId === z ? t : { ...t, mapId: z, arrive: null, walked: true, world: null }));
   }, []);
-  const onWorldFailed = useCallback(() => setWorldFailed(true), []);
+  // the 3D world failed to load: fall back to 2D entirely — the per-map game (worldMode off) and the 2D claims
+  // (posReport → pos_report); the server still has my tab in world mode, so the fallback itself is claimed in 2D
+  const onWorldFailed = useCallback(() => {
+    markWorldFailed();
+    setWorldFailed(true);
+  }, []);
+  useEffect(() => {
+    if (!worldFailed || !token) return;
+    const t = travelRef.current;
+    const at = t.arrive ?? getMap(t.mapId).spawn;
+    void posReport(token, t.mapId, at.x, at.y);
+  }, [worldFailed, token]);
   const onAoiChange = useCallback((zs: ZoneId[], cell?: number) => {
     if (cell !== undefined) cellRef.current = cell;
     setAoi((cur) => (cur.length === zs.length && cur.every((z, i) => z === zs[i]) ? cur : zs));

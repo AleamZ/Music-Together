@@ -4,7 +4,8 @@ vi.mock("@/lib/supabase", () => ({ supabase: { rpc: vi.fn() } }));
 
 import { supabase } from "@/lib/supabase";
 import { GFX_KEY } from "@/lib/game/diorama/flag";
-import { resetAppFlags, worldModeFor, worldModeOn } from "@/lib/game/world/flag";
+import { markWorldFailed, resetAppFlags, worldModeFor, worldModeOn } from "@/lib/game/world/flag";
+import { posReport } from "@/lib/game/position";
 
 const rpc = vi.mocked(supabase.rpc);
 
@@ -35,5 +36,36 @@ describe("world mode selection (0090)", () => {
     resetAppFlags();
     rpc.mockResolvedValue({ data: { unified_world: false }, error: null } as never);
     expect(await worldModeOn()).toBe(false);
+  });
+});
+
+// A 3D world that fails to load (GameShell's worldFailed) falls back to 2D entirely, the claims included.
+describe("world load failure → 2D (fix pass)", () => {
+  beforeEach(() => { rpc.mockReset(); resetAppFlags(); window.localStorage.setItem(GFX_KEY, "3d"); });
+
+  const calls = () => rpc.mock.calls.map((c) => c[0]).filter((n) => n !== "app_flags");
+
+  it("posReport claims pos_report_w in world mode, pos_report once the world failed", async () => {
+    rpc.mockImplementation(((name: string) =>
+      Promise.resolve(name === "app_flags" ? { data: { unified_world: true }, error: null } : { data: { ok: true }, error: null })) as never);
+    expect(await worldModeOn()).toBe(true);
+    await posReport("tok", "hall", 516, 334);
+    expect(calls()).toEqual(["pos_report_w"]);
+    markWorldFailed();
+    expect(await worldModeOn()).toBe(false);
+    rpc.mockClear();
+    await posReport("tok", "hall", 516, 334);
+    expect(calls()).toEqual(["pos_report"]);
+    expect(rpc).toHaveBeenCalledWith("pos_report", { p_session_token: "tok", p_map: "hall", p_x: 516, p_y: 334 });
+  });
+
+  it("a failure while the flags are still loading wins too", async () => {
+    let done: (v: unknown) => void = () => {};
+    rpc.mockImplementation(((name: string) =>
+      name === "app_flags" ? new Promise((r) => { done = r; }) : Promise.resolve({ data: { ok: true }, error: null })) as never);
+    const p = worldModeOn();
+    markWorldFailed();
+    done({ data: { unified_world: true }, error: null });
+    expect(await p).toBe(false);
   });
 });
