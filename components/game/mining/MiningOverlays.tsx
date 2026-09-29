@@ -255,8 +255,8 @@ export default function MiningOverlays({ m, showChip }: { m: UseMining; showChip
         <CraftFrame title={m.craft.title} label={m.craft.game === "brew" ? "Nấu thuốc" : "Rèn nâng cấp"} phase={m.craft.phase}
           message={m.craft.message} good={m.craft.good} onClose={m.closeCraft}>
           {m.craft.game === "brew"
-            ? <BrewGame key={m.craft.seed} seed={m.craft.seed} onEnd={m.finishBrew} />
-            : <AnvilGame key={m.craft.seed} seed={m.craft.seed} onEnd={m.finishAnvil} />}
+            ? <BrewGame key={m.craft.key} centre={m.craft.centre} live={m.craft.live} onEnd={m.finishBrew} />
+            : <AnvilGame key={m.craft.key} live={m.craft.live} onEnd={m.finishAnvil} />}
         </CraftFrame>
       )}
       {m.panel === "shop" && <ShopPanel m={m} />}

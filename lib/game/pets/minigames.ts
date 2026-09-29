@@ -101,7 +101,10 @@ export interface CareResult {
 
 /** FEED from its packed moves (the bowl starts in the middle lane; a move at tick t counts from tick t). */
 export function replayFeed(seed: number, inputs: readonly number[]): CareResult {
-  const lanes = feedLanes(seed);
+  return replayFeedP(feedLanes(seed), inputs);
+}
+/** The same from the lanes (0087's _pcare_feed_p). */
+export function replayFeedP(lanes: readonly number[], inputs: readonly number[]): CareResult {
   let bowl = 2, j = 0, caught = 0, quick = 0;
   for (let i = 0; i < FEED.foods; i++) {
     const land = feedLand(i);
@@ -124,7 +127,10 @@ export function replayFeed(seed: number, inputs: readonly number[]): CareResult 
 
 /** PAT from its packed zone changes (0 = the hand lifted, 1–5 = a spot). */
 export function replayRub(seed: number, inputs: readonly number[]): CareResult {
-  const likes = rubLikes(seed);
+  return replayRubP(rubLikes(seed), inputs);
+}
+/** The same from the liked spots (0087's _pcare_rub_p). */
+export function replayRubP(likes: readonly number[], inputs: readonly number[]): CareResult {
   let zone = 0, j = 0, good = 0;
   for (let t = 0; t < RUB.ticks; t++) {
     while (j < inputs.length && Math.floor(inputs[j] / 8) <= t) {
@@ -144,7 +150,10 @@ export function replayRub(seed: number, inputs: readonly number[]): CareResult {
 
 /** PLAY from its press ticks: each throw takes the first press in its 100 ticks; ≤ 6 ticks off 2 points, ≤ 13 1. */
 export function replayFetch(seed: number, presses: readonly number[]): CareResult {
-  const fl = fetchFlights(seed);
+  return replayFetchP(fetchFlights(seed), presses);
+}
+/** The same from the flights (0087's _pcare_fetch_p). */
+export function replayFetchP(fl: readonly number[], presses: readonly number[]): CareResult {
   let pts = 0, exact = 0;
   for (let i = 0; i < FETCH.throws; i++) {
     const s = fetchStart(i);
@@ -158,6 +167,17 @@ export function replayFetch(seed: number, presses: readonly number[]): CareResul
   return { score: pts, permille, quick: exact, suspicious: exact >= FETCH.throws };
 }
 
+/** 0087: a care round's parameters from mg_sync('care') — events 1… are { lane } (feed), { like } (pat), { flight }
+ *  (play), each revealed 0.5 s before it shows; the ones not revealed yet are −1. */
+export function careRoundFrom(kind: CareKind, ev: Record<number, Record<string, number>>): number[] {
+  const n = kind === "feed" ? FEED.foods : kind === "pat" ? RUB.segs : FETCH.throws;
+  const key = kind === "feed" ? "lane" : kind === "pat" ? "like" : "flight";
+  return Array.from({ length: n }, (_, i) => ev[i + 1]?.[key] ?? -1);
+}
+export const careEvents = (kind: CareKind): number => (kind === "feed" ? FEED.foods : kind === "pat" ? RUB.segs : FETCH.throws);
+export function replayCareP(kind: CareKind, round: readonly number[], inputs: readonly number[]): CareResult {
+  return kind === "feed" ? replayFeedP(round, inputs) : kind === "pat" ? replayRubP(round, inputs) : replayFetchP(round, inputs);
+}
 export function replayCare(kind: CareKind, seed: number, inputs: readonly number[]): CareResult {
   return kind === "feed" ? replayFeed(seed, inputs) : kind === "pat" ? replayRub(seed, inputs) : replayFetch(seed, inputs);
 }

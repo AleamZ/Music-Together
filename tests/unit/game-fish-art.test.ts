@@ -28,7 +28,9 @@ describe("fish and gear icons", () => {
     }
   });
   it("cover every seeded species and shop item", () => {
-    expect(seededIds("fish_species").sort()).toEqual(Object.keys(FISH_ICONS).sort());
+    const species = [sql, readFileSync("supabase/migrations/0076_fishing_extras.sql", "utf8"),
+      readFileSync("supabase/migrations/0086_explore_minigames.sql", "utf8")].flatMap((src) => seededIds("fish_species", src));
+    expect(species.sort()).toEqual(Object.keys(FISH_ICONS).sort());
     expect([...seededIds("shop_items"), ...seededIds("shop_items", sql34)].sort()).toEqual(Object.keys(GEAR_ICONS).sort());
   });
   it("map codes to colours", () => {

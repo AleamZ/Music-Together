@@ -5,6 +5,8 @@ import { rand32 } from "../fishing/reel";
 // (Space, a click or a tap) hits when the marker is within `win` ‰ of the glowing vein. `need` hits pass; need + 3
 // strikes without them fail. A 60 Hz integer sim on the server's seed: public._mine_replay replays the strike ticks and
 // decides the outcome (0072). Any change here must be mirrored there — tests/fixtures/mine-cases.json pins both.
+// 0087: the server rolls the dig itself and reveals it through mg_sync (hooks/useLiveDig.ts): the bar's period at the
+// start, each vein (centre) when it may be struck at; createMineRoundFrom / withVeins build the round from that.
 
 export const MINE = {
   hz: 60,
@@ -45,7 +47,10 @@ export interface MineReplay { outcome: MineOutcome; ticks: number | null; hits: 
 
 /** The dig from its strike ticks (public._mine_replay). */
 export function replayMine(seed: number, need: number, win: number, strikes: readonly number[]): MineReplay {
-  const rd = mineRound(seed, need);
+  return replayMineP(mineRound(seed, need), need, win, strikes);
+}
+/** The same from the round [period, centre 1 … need] (0087's _mine_replay_p). */
+export function replayMineP(rd: readonly number[], need: number, win: number, strikes: readonly number[]): MineReplay {
   let hits = 0, used = 0;
   for (const s of strikes) {
     used++;
@@ -81,6 +86,19 @@ export function createMineRound(seed: number, need: number, win: number): MineRo
   return { seed, need, win, period: rd[0], centres: rd.slice(1), tick: 0, hits: 0, strikes: [], last: null, outcome: "open" };
 }
 
+/** 0087: a dig whose veins are not known yet (−1) — mg_sync reveals them one by one (events 1 … need: { c }). */
+export function createMineRoundFrom(period: number, need: number, win: number): MineRound {
+  return { seed: 0, need, win, period, centres: new Array<number>(need).fill(-1), tick: 0, hits: 0, strikes: [], last: null, outcome: "open" };
+}
+export function withVeins(s: MineRound, ev: Record<number, Record<string, number>>): MineRound {
+  let centres = s.centres;
+  for (let i = 1; i <= centres.length; i++) {
+    const c = ev[i]?.c;
+    if (c !== undefined && centres[i - 1] !== c) { if (centres === s.centres) centres = centres.slice(); centres[i - 1] = c; }
+  }
+  return centres === s.centres ? s : { ...s, centres };
+}
+
 /** One tick; `strike` is a strike at this tick (the rate limit is the caller's). */
 export function stepMineRound(s: MineRound, strike: boolean): MineRound {
   if (s.outcome !== "open") return s;
@@ -98,5 +116,5 @@ export function stepMineRound(s: MineRound, strike: boolean): MineRound {
 /** A strike is allowed when the last `rate` strikes span at least 60 ticks (the server's rate rule). */
 export function canStrike(s: MineRound): boolean {
   const n = s.strikes.length;
-  return s.outcome === "open" && n < MINE.maxStrikes && (n < MINE.rate || s.tick - s.strikes[n - MINE.rate] >= 60);
+  return s.outcome === "open" && s.centres[s.hits] >= 0 && n < MINE.maxStrikes && (n < MINE.rate || s.tick - s.strikes[n - MINE.rate] >= 60);
 }

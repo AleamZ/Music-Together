@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { BREW, brewQuality, createBrew, QUALITY_NAME, stepBrew, type BrewRound } from "@/lib/game/craftmg/games";
-import { prefersReduced, useKeys, useRound } from "./shared";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { BREW, brewQuality, createBrewFrom, QUALITY_NAME, replayBrewP, stepBrew, withDrift, type BrewRound } from "@/lib/game/craftmg/games";
+import { useLive, waitEvents, type LiveSync } from "@/lib/game/mglive";
+import { prefersReduced, useKeys, useLiveRound } from "./shared";
 
 export const BREW_HELP = "Giữ Space (hoặc giữ nút Quạt lửa) để thổi lửa, thả ra cho nguội — giữ vạch nhiệt trong dải xanh.";
 
@@ -74,13 +75,36 @@ function Meter({ s }: { s: BrewRound }) {
   );
 }
 
-export default function BrewGame({ seed, onEnd }: { seed: number; onEnd: (toggles: readonly number[], score: number) => void }) {
+/** 0087: the band's centre comes with the start; the drift through mg_sync('brew') 1 s ahead; the fan's toggles go up
+ *  live. The score sent is the replay on the whole revealed round. */
+export default function BrewGame({ centre, live: sync, onEnd }: {
+  centre: number; live: LiveSync | null; onEnd: (toggles: readonly number[], score: number) => void;
+}) {
   const holding = useRef(false);
   const [reduced] = useState(prefersReduced);
-  const init = useCallback(() => createBrew(seed), [seed]);
-  const step = useCallback((cur: BrewRound) => stepBrew(cur, holding.current), []);
-  const s = useRound(init, step, (cur) => cur.done, (cur) => onEnd(cur.toggles.slice(), cur.score));
+  const toggles = useRef<number[]>([]);
+  const live = useLive(sync, () => [toggles.current, null]);
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  });
+  const init = useCallback(() => createBrewFrom(centre), [centre]);
+  const step = useCallback((cur: BrewRound) => {
+    const next = stepBrew(withDrift(cur, liveRef.current.ev.current ?? {}), holding.current);
+    if (next.toggles !== cur.toggles) toggles.current = next.toggles;
+    return next;
+  }, []);
+  const s = useLiveRound(live, init, step, (cur) => cur.done, (cur) => {
+    void (async () => {
+      const l = liveRef.current;
+      await waitEvents(l, BREW.ticks / BREW.seg);
+      l.stop();
+      const drift = withDrift(cur, l.ev.current ?? {}).drift;
+      onEnd(cur.toggles.slice(), replayBrewP([cur.centre, ...drift], cur.toggles));
+    })();
+  });
   useKeys(["Space"], () => { holding.current = true; }, () => { holding.current = false; });
+  if (!live.ready) return <p role="status">Chuẩn bị…</p>;
   const q = brewQuality(s.score);
   const left = Math.ceil((BREW.ticks - s.tick) / 60);
   return (

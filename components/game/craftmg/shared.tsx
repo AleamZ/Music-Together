@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TickClock } from "@/lib/game/fishing/net";
 import { isTyping } from "@/lib/game/keys";
+import { liveTick, type Live } from "@/lib/game/mglive";
 
 // v22 crafting minigames (0084): the 60 Hz loop every round runs on, the reduced-motion switch and the dialog frame.
 
@@ -40,6 +41,44 @@ export function useRound<S>(init: () => S, step: (s: S) => S, done: (s: S) => bo
     });
     return () => cancelAnimationFrame(raf);
   }, []);
+  return s;
+}
+
+/**
+ * 0087: steps a live round (lib/game/mglive.ts) at 60 Hz from its tick 0 — the first sync's answer — on wall time, so a
+ * tick is never claimed earlier than it happened; nothing runs before that.
+ */
+export function useLiveRound<S>(live: Pick<Live, "ready" | "t0">, init: () => S, step: (s: S) => S, done: (s: S) => boolean,
+                                onDone: (s: S) => void): S {
+  const [s, setS] = useState(init);
+  const fns = useRef({ init, step, done, onDone });
+  useEffect(() => {
+    fns.current = { init, step, done, onDone };
+  });
+  const { ready, t0 } = live;
+  useEffect(() => {
+    if (!ready) return;
+    let cur = fns.current.init();
+    let tick = 0;
+    let over = false;
+    let raf = requestAnimationFrame(function loop(t: number) {
+      const due = liveTick(t0, t);
+      while (tick < due && !fns.current.done(cur)) {
+        cur = fns.current.step(cur);
+        tick++;
+      }
+      setS(cur);
+      if (fns.current.done(cur)) {
+        if (!over) {
+          over = true;
+          fns.current.onDone(cur);
+        }
+        return;
+      }
+      raf = requestAnimationFrame(loop);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [ready, t0]);
   return s;
 }
 

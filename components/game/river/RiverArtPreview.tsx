@@ -6,8 +6,17 @@ import { DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap, paintMap } from "@/lib/game/maps/registry";
 import { drawBoatRider } from "@/lib/game/river/art";
 import type { Facing } from "@/lib/game/types";
+import { localLive } from "@/lib/game/mglive";
+import { mineRound } from "@/lib/game/mining/game";
+import { rowRound } from "@/lib/game/river/row";
 import { ChestReveal, DetectorHud, ShovelGame } from "./TreasureHunt";
 import RowGame from "./RowGame";
+
+// the minigames on fixed rounds, every event known at once (no server here)
+const ROW_BEATS = rowRound(12345);
+const PREVIEW_ROW = localLive(Object.fromEntries(ROW_BEATS.targets.map((t, i) => [i + 1, { t, side: ROW_BEATS.sides[i] }])));
+const PREVIEW_DIG = mineRound(777, 3);
+const PREVIEW_DIG_LIVE = localLive(Object.fromEntries(PREVIEW_DIG.slice(1).map((c, i) => [i + 1, { c }])));
 
 const BOATS: ReadonlyArray<{ x: number; y: number; f: Facing; moving: boolean }> = [
   { x: 80, y: 240, f: "right", moving: false }, { x: 250, y: 300, f: "left", moving: true },
@@ -41,8 +50,8 @@ export default function RiverArtPreview() {
           <button key={g} type="button" className="pch-btn" onClick={() => setGame(g)}>{g}</button>
         ))}
       </div>
-      {game === "row" && <RowGame view={{ dir: "out", phase: "playing", seed: 12345, need: 8, result: null }} onEnd={() => setGame("none")} onClose={() => setGame("none")} />}
-      {game === "dig" && <ShovelGame view={{ phase: "playing", mapId: "m", seed: 777, need: 3, win: 120, message: "" }} onEnd={() => setGame("none")} onClose={() => setGame("none")} />}
+      {game === "row" && <RowGame view={{ dir: "out", phase: "playing", live: PREVIEW_ROW, need: 8, result: null }} onEnd={() => setGame("none")} onClose={() => setGame("none")} />}
+      {game === "dig" && <ShovelGame view={{ phase: "playing", mapId: "m", period: PREVIEW_DIG[0], live: PREVIEW_DIG_LIVE, need: 3, win: 120, message: "" }} onEnd={() => setGame("none")} onClose={() => setGame("none")} />}
       {game === "chest" && <ChestReveal view={{ loot: 1840, jackpot: false, clean: true }} onClose={() => setGame("none")} />}
       {game === "detector" && <div className="relative h-60 w-full"><DetectorHud view={{ mapId: "m", map: "pond", band: 2, wrongMap: false }} busy={false} onDig={() => {}} onStop={() => setGame("none")} /></div>}
     </main>

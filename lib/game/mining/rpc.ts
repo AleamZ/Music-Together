@@ -1,14 +1,15 @@
 import { AnticheatError, screenAnswer } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
 
-// Supabase calls for Mỏ đá (0072): the mine's state, the dig (server seed → replayed strikes), herbs, chú Tám's counter,
+// Supabase calls for Mỏ đá (0072): the mine's state, the dig (replayed strikes; since 0087 played live — the veins come
+// through mg_sync('mine'), the start answers the bar's period), herbs, chú Tám's counter,
 // bà Sáu's cauldron and the anvil. Every answer carries the whole mine state.
 
 export interface MineNode { no: number; item: string; readyAt: number }
 export interface MineTool { id: string; durability: number; max: number | null; level: number }
 export interface MineGear { id: string; kind: "rod" | "net"; name: string; price: number | null; durability: number | null; max: number | null; level: number }
 export interface MineBuff { kind: "luck" | "miner"; power: number; until: number }
-export interface MineDig { node: number; item: string; tool: string; seed: number; need: number; win: number; startedAt: number }
+export interface MineDig { node: number; item: string; tool: string; period: number; need: number; win: number; startedAt: number }
 export interface MineState {
   serverNow: number;
   coins: number;
@@ -35,8 +36,8 @@ export function parseDig(raw: unknown): MineDig | null {
   if (!raw || typeof raw !== "object") return null;
   const d = obj(raw);
   const startedAt = time(d.started_at);
-  if (!Number.isFinite(startedAt) || typeof d.seed !== "number") return null;
-  return { node: num(d.node), item: str(d.item), tool: str(d.tool), seed: d.seed >>> 0, need: num(d.need, 3), win: num(d.win, 90), startedAt };
+  if (!Number.isFinite(startedAt) || typeof d.period !== "number") return null;
+  return { node: num(d.node), item: str(d.item), tool: str(d.tool), period: d.period, need: num(d.need, 3), win: num(d.win, 90), startedAt };
 }
 
 /** The mine state (0072 _mine_state); null when malformed. */

@@ -40,7 +40,9 @@ do $$
 declare t text := pg_temp.v('ta'); a uuid := pg_temp.v('a')::uuid; room uuid := pg_temp.v('room')::uuid; c jsonb;
         d integer[]; i integer;
 begin
-  assert (select count(*) from public.fish_species where water = 'deep') = 6, 'six deep species';
+  -- 0076's six (0086 adds five river species to the deep water)
+  assert (select count(*) from public.fish_species where water = 'deep'
+           and id not in ('ca_lang', 'ca_ngat', 'ca_dua', 'ca_anh_vu', 'ca_vo_dem')) = 6, 'six deep species';
   assert not exists (select 1 from public.fish_species where water = 'deep' and rarity < 3), 'deep species are rare+';
   assert (select count(distinct rarity) from public.fish_species where water = 'deep') = 3, 'deep 3, 4, 5';
   assert exists (select 1 from pg_trigger where tgname = 'casts_zz_water'), 'the water trigger';

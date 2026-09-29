@@ -21,15 +21,16 @@ const num = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFi
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 export type RowDir = "out" | "home";
-export interface RowStart { dir: RowDir; seed: number; need: number }
+export interface RowStart { dir: RowDir; need: number }
 export type RowFinish =
   | { result: "arrived"; hits: number; need: number; pass: boolean; to: { map: MapId; x: number; y: number; dir: Facing } }
-  | { result: "drift"; why: "missed" | "expired" | "refused"; hits: number; need: number };
+  | { result: "drift"; why: "missed" | "expired" | "refused" | "late" | "outdated"; hits: number; need: number };
 
+/** 0087: the start answers only the direction and the need; the beats come through mg_sync('row'). */
 export function parseRowStart(raw: unknown): RowStart | null {
   const r = obj(obj(raw).row);
-  if ((r.dir !== "out" && r.dir !== "home") || typeof r.seed !== "number" || typeof r.need !== "number") return null;
-  return { dir: r.dir, seed: r.seed, need: r.need };
+  if ((r.dir !== "out" && r.dir !== "home") || typeof r.need !== "number") return null;
+  return { dir: r.dir, need: r.need };
 }
 
 export function parseRowFinish(raw: unknown): RowFinish {
@@ -39,7 +40,7 @@ export function parseRowFinish(raw: unknown): RowFinish {
     const dir: Facing = t.dir === "down" || t.dir === "up" || t.dir === "left" ? t.dir : "right";
     return { result: "arrived", hits: num(o.hits), need: num(o.need), pass: o.pass !== false, to: { map: t.map === "pond" ? "pond" : "song_cai", x: num(t.x), y: num(t.y), dir } };
   }
-  const why = o.why === "expired" || o.why === "refused" ? o.why : "missed";
+  const why = o.why === "expired" || o.why === "refused" || o.why === "late" || o.why === "outdated" ? o.why : "missed";
   return { result: "drift", why, hits: num(o.hits), need: num(o.need) };
 }
 
@@ -81,13 +82,13 @@ export const treasurePing = async (roomId: string, token: string, mapId: string,
   parsePing(await call("treasure_ping", { p_room_id: roomId, p_session_token: token, p_map_id: mapId, p_map: map, p_x: Math.round(x), p_y: Math.round(y) }));
 
 export type DigStart =
-  | { result: "dig"; seed: number; need: number; win: number }
+  | { result: "dig"; period: number; need: number; win: number }
   | { result: "miss"; heat: "hot" | "warm" | "cold" | "wrong_map" };
 export function parseDigStart(raw: unknown): DigStart {
   const o = obj(raw);
   if (o.result === "dig") {
     const d = obj(o.dig);
-    return { result: "dig", seed: num(d.seed), need: num(d.need, 3), win: num(d.win, 120) };
+    return { result: "dig", period: num(d.period, 100), need: num(d.need, 3), win: num(d.win, 120) };
   }
   const heat = o.heat === "hot" || o.heat === "warm" || o.heat === "wrong_map" ? o.heat : "cold";
   return { result: "miss", heat };
@@ -97,11 +98,11 @@ export const treasureDigStart = async (roomId: string, token: string, mapId: str
 
 export type DigFinish =
   | { result: "found"; loot: number; jackpot: boolean; clean: boolean }
-  | { result: "lost"; why: "expired" | "refused" | "gave_up" };
+  | { result: "lost"; why: "expired" | "refused" | "gave_up" | "late" | "outdated" };
 export function parseDigFinish(raw: unknown): DigFinish {
   const o = obj(raw);
   if (o.result === "found") return { result: "found", loot: num(o.loot), jackpot: o.jackpot === true, clean: o.clean === true };
-  return { result: "lost", why: o.why === "expired" || o.why === "refused" ? o.why : "gave_up" };
+  return { result: "lost", why: o.why === "expired" || o.why === "refused" || o.why === "late" || o.why === "outdated" ? o.why : "gave_up" };
 }
 export const treasureDigFinish = async (roomId: string, token: string, strikes: readonly number[], ticks: number, pass: boolean) =>
   parseDigFinish(await call("treasure_dig_finish", { p_room_id: roomId, p_session_token: token, p_strikes: strikes, p_ticks: ticks, p_pass: pass }));

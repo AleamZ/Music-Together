@@ -12,12 +12,13 @@ import { clockText, MACHINES, type ExtrasState, type MachineId } from "@/lib/gam
 import {
   buyMachine, extrasErrorMessage, fetchExtras, machineHarvest, machineWater, processStart, sellGoods,
 } from "@/lib/game/fishing/extras-rpc";
-import { sortFinish, sortStart } from "@/lib/game/craftmg/rpc";
+import { lostText, sortFinish, sortStart } from "@/lib/game/craftmg/rpc";
+import { liveSync, type LiveSync } from "@/lib/game/mglive";
 import SortGame from "@/components/game/craftmg/SortGame";
 import { CraftFrame } from "@/components/game/craftmg/shared";
 
 /** v22 (0084): the sort minigame at collecting, and the sprinkler's install / refill splash. */
-interface SortView { seed: number; phase: "playing" | "sending" | "done"; message: string | null; good: boolean | null }
+interface SortView { key: number; live: LiveSync; phase: "playing" | "sending" | "done"; message: string | null; good: boolean | null }
 const SPLASH_CSS = `
 .mp-splash { position: relative; }
 .mp-splash::after { content: ""; position: absolute; inset: -4px; border: 3px dashed #4aa3c8; border-radius: 6px;
@@ -114,7 +115,7 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
 
   const startSort = useCallback(() => void run(async () => {
     const r = await sortStart(token);
-    setSort({ seed: r.seed, phase: "playing", message: null, good: null });
+    setSort({ key: Date.now(), live: liveSync(token, "sort"), phase: "playing", message: null, good: null });
     return r.state;
   }), [run, token]);
   const endSort = useCallback((ticks: readonly number[], dirs: readonly number[], score: number) => {
@@ -126,7 +127,7 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
         const a = r.answer;
         const message = a.result === "collected"
           ? `${a.score >= 8 ? "Phân loại chuẩn rồi!" : "Nhìn kỹ nguyên liệu nhé!"} Đúng ${a.score}/12 — đã lấy hàng ra${a.bonus > 0 ? `, thưởng +${a.pct}% (${formatXu(a.bonus)})` : ""}.`
-          : a.why === "expired" ? "Hết giờ — hàng vẫn nằm trong máy." : "Lượt phân loại không hợp lệ.";
+          : lostText(a.why, "Hết giờ — hàng vẫn nằm trong máy.");
         setSort((v) => (v ? { ...v, phase: "done", message, good: a.result === "collected" && a.score >= 8 } : v));
         onCoinsChanged();
       } catch (err) {
@@ -251,7 +252,7 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
       </div>
       {sort && (
         <CraftFrame title="🏭 Phân loại mẻ hàng" label="Phân loại" phase={sort.phase} message={sort.message} good={sort.good} onClose={() => setSort(null)}>
-          <SortGame key={sort.seed} seed={sort.seed} onEnd={endSort} />
+          <SortGame key={sort.key} live={sort.live} onEnd={endSort} />
         </CraftFrame>
       )}
       <style>{SPLASH_CSS}</style>

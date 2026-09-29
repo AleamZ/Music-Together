@@ -8,6 +8,10 @@ import { minePos } from "../mining/game";
 //  - brew  (bà Sáu's cauldron): keep the heat in the green band → potion quality 1–3 (+0 / +5 / +10 % effect).
 //  - anvil (the anvil): strike when the glow peaks, 5 strikes → the server-rolled success chance ±10 pp.
 //  - sort  (Máy chế biến, collecting): sort 12 grains into good / bad baskets → a 0 / 2 / 5 % bonus on the batch value.
+// 0087: the server rolls each round itself and reveals it through mg_sync (lib/game/mglive.ts): the brew's drift 1 s
+// ahead, the anvil's glow at a secret tick, each grain 1 s before it is in reach. The overlays build their rounds from
+// those events (create*From / with*) and report scores replayed on them (*P); the seed functions stay as the fixtures'
+// reference.
 
 /* ---------------- brew ---------------- */
 
@@ -43,7 +47,10 @@ export const brewStep = (h: number, fanning: boolean, drift: number): number =>
 
 /** Ticks in the band over the round, from the fan's press/release ticks (public._brew_replay). */
 export function replayBrew(seed: number, toggles: readonly number[]): number {
-  const rd = brewRound(seed);
+  return replayBrewP(brewRound(seed), toggles);
+}
+/** The same from the round [centre, drift 1 … 20] (0087's _brew_replay_p). */
+export function replayBrewP(rd: readonly number[], toggles: readonly number[]): number {
   let h: number = BREW.start, fan = false, k = 0, score = 0;
   for (let t = 0; t < BREW.ticks; t++) {
     if (k < toggles.length && toggles[k] === t) { fan = !fan; k++; }
@@ -66,6 +73,18 @@ export interface BrewRound { centre: number; drift: number[]; tick: number; heat
 export function createBrew(seed: number): BrewRound {
   const rd = brewRound(seed);
   return { centre: rd[0], drift: rd.slice(1), tick: 0, heat: BREW.start, fan: false, score: 0, toggles: [], done: false };
+}
+/** 0087: a brew on the band's centre, its drift filled in as mg_sync reveals it (events 1–20: { drift }). */
+export function createBrewFrom(centre: number): BrewRound {
+  return { centre, drift: new Array<number>(BREW.ticks / BREW.seg).fill(0), tick: 0, heat: BREW.start, fan: false, score: 0, toggles: [], done: false };
+}
+export function withDrift(s: BrewRound, ev: Record<number, Record<string, number>>): BrewRound {
+  let drift = s.drift;
+  for (let i = 1; i <= drift.length; i++) {
+    const d = ev[i]?.drift;
+    if (d !== undefined && drift[i - 1] !== d) { if (drift === s.drift) drift = drift.slice(); drift[i - 1] = d; }
+  }
+  return drift === s.drift ? s : { ...s, drift };
 }
 /** Toggles allowed now (the server's rate rule). */
 export function canToggle(s: BrewRound): boolean {
@@ -102,7 +121,11 @@ export const anvilPoints = (g: number): number => (g >= ANVIL.great ? 2 : g >= A
 export interface AnvilReplay { score: number; ticks: number; exact: number }
 /** The strikes' score, the round's end tick and the strikes on the best tick (public._anvil_replay). */
 export function replayAnvil(seed: number, strikes: readonly number[]): AnvilReplay {
-  const [p, ph] = anvilRound(seed);
+  return replayAnvilP(anvilRound(seed), strikes);
+}
+/** The same from the round [period, phase] (0087's _anvil_replay_p, less its 'spread'). */
+export function replayAnvilP(rd: readonly number[], strikes: readonly number[]): AnvilReplay {
+  const [p, ph] = rd;
   const tol = 1000 - Math.ceil(2000 / p);
   let score = 0, exact = 0;
   for (const s of strikes) {
@@ -123,9 +146,14 @@ export function createAnvil(seed: number): AnvilRound {
   const [period, phase] = anvilRound(seed);
   return { period, phase, tick: 0, strikes: [], score: 0, last: null, done: false };
 }
+/** 0087: the anvil before its glow shows (period 0: nothing to strike at yet); withGlow once mg_sync revealed it. */
+export function createAnvilWaiting(): AnvilRound {
+  return { period: 0, phase: 0, tick: 0, strikes: [], score: 0, last: null, done: false };
+}
+export const withGlow = (s: AnvilRound, period: number, phase: number): AnvilRound => (s.period === period && s.phase === phase ? s : { ...s, period, phase });
 export function canHammer(s: AnvilRound): boolean {
   const n = s.strikes.length;
-  return !s.done && n < ANVIL.strikes && (n < ANVIL.rate || s.tick - s.strikes[n - ANVIL.rate] >= 60);
+  return !s.done && s.period > 0 && n < ANVIL.strikes && (n < ANVIL.rate || s.tick - s.strikes[n - ANVIL.rate] >= 60);
 }
 export function stepAnvil(s: AnvilRound, strike: boolean): AnvilRound {
   if (s.done) return s;
@@ -166,7 +194,10 @@ export interface SortReplay { score: number; reactions: number[] }
 /** Correct sorts: an input decides the grain in reach if it is still undecided (public._sort_replay). dir 0 = good
  *  basket (left), 1 = bad (right). */
 export function replaySort(seed: number, ticks: readonly number[], dirs: readonly number[]): SortReplay {
-  const kinds = sortRound(seed);
+  return replaySortP(sortRound(seed), ticks, dirs);
+}
+/** The same from the grains (0087's _sort_replay_p). */
+export function replaySortP(kinds: readonly number[], ticks: readonly number[], dirs: readonly number[]): SortReplay {
   const done = new Array<boolean>(SORT.items).fill(false);
   let score = 0;
   const reactions: number[] = [];
@@ -189,6 +220,18 @@ export const sortBonus = (score: number): number => (score >= 11 ? 5 : score >= 
 export interface SortRound { kinds: number[]; tick: number; ticks: number[]; dirs: number[]; decided: (boolean | null)[]; score: number; done: boolean }
 export function createSort(seed: number): SortRound {
   return { kinds: sortRound(seed), tick: 0, ticks: [], dirs: [], decided: new Array(SORT.items).fill(null), score: 0, done: false };
+}
+/** 0087: the grains not revealed yet are −1 (mg_sync reveals each 1 s before it is in reach: events 1–12, { kind }). */
+export function createSortFrom(): SortRound {
+  return { kinds: new Array<number>(SORT.items).fill(-1), tick: 0, ticks: [], dirs: [], decided: new Array(SORT.items).fill(null), score: 0, done: false };
+}
+export function withKinds(s: SortRound, ev: Record<number, Record<string, number>>): SortRound {
+  let kinds = s.kinds;
+  for (let i = 1; i <= kinds.length; i++) {
+    const k = ev[i]?.kind;
+    if (k !== undefined && kinds[i - 1] !== k) { if (kinds === s.kinds) kinds = kinds.slice(); kinds[i - 1] = k; }
+  }
+  return kinds === s.kinds ? s : { ...s, kinds };
 }
 export function canSort(s: SortRound): boolean {
   const n = s.ticks.length;

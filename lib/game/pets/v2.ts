@@ -107,8 +107,6 @@ export interface Battle {
   id: number; mode: "pve" | "pvp"; status: "pending" | "active" | "done"; side: 1 | 2; npc: string | null; turn: number;
   f1: Fighter | null; f2: Fighter | null; hp1: number; hp2: number; log: LogLine[]; stake: number; winner: 0 | 1 | 2 | null;
   reward: number; p1Name: string | null; p2Name: string | null; acted: boolean; foeActed: boolean; deadlineMs: number;
-  /** v22 (0085): my side's power-meter seed this turn (null: none). */
-  pressSeed: number | null;
 }
 export interface FishFighter { id: number; speciesId: string; weightG: number; name: string; level: number; xp: number; xpNeed: number; skills: string[]; trn: Stats; stats: Stats & { rarity: number } }
 export interface BattleState {
@@ -158,7 +156,6 @@ export function parseBattle(v: unknown): Battle | null {
     winner: w === 0 || w === 1 || w === 2 ? w : null, reward: num(o.reward),
     p1Name: typeof o.p1_name === "string" ? o.p1_name : null, p2Name: typeof o.p2_name === "string" ? o.p2_name : null,
     acted: o.acted === true, foeActed: o.foe_acted === true, deadlineMs: num(o.deadline_ms),
-    pressSeed: o.press_seed == null ? null : num(o.press_seed),
   };
 }
 
@@ -303,6 +300,11 @@ export const battleAccept = async (token: string, battle: number, kind: FKind, i
   parseBattleState(await rpc("battle_accept", { p_session_token: token, p_battle: battle, p_kind: kind, p_id: id }));
 export const battleDecline = async (token: string, battle: number) =>
   parseBattleState(await rpc("battle_decline", { p_session_token: token, p_battle: battle }));
+/** 0087: open this turn's power meter (its period; the sweet spot comes through mg_sync('press') at a secret tick). */
+export const battlePressOpen = async (token: string, battle: number): Promise<{ period: number }> => {
+  const d = await rpc("battle_press_open", { p_session_token: token, p_battle: battle });
+  return { period: num(rec(rec(d).press).period, 80) };
+};
 /** v22 (0085): the pick with its power press (the press tick on my meter, null = none; ticks the meter ran). */
 export const battleActPress = async (token: string, battle: number, skill: string, press: number | null, ticks: number) => {
   const d = await rpc("battle_act_press", { p_session_token: token, p_battle: battle, p_skill: skill, p_press: press, p_ticks: ticks });
@@ -310,11 +312,11 @@ export const battleActPress = async (token: string, battle: number, skill: strin
 };
 
 // v22 (0085): the care minigames
-export interface CareRound { pet: number; kind: "feed" | "pat" | "play"; seed: number; ticks: number }
+export interface CareRound { pet: number; kind: "feed" | "pat" | "play"; ticks: number }
 export const careStart = async (token: string, pet: number, kind: CareRound["kind"]): Promise<PetsState & { round: CareRound }> => {
   const d = await rpc("pet_care_start", { p_session_token: token, p_pet: pet, p_kind: kind });
   const r = rec(rec(d).round);
-  return { ...parsePetsState(d), round: { pet: num(r.pet), kind: r.kind === "pat" || r.kind === "play" ? r.kind : "feed", seed: num(r.seed), ticks: num(r.ticks) } };
+  return { ...parsePetsState(d), round: { pet: num(r.pet), kind: r.kind === "pat" || r.kind === "play" ? r.kind : "feed", ticks: num(r.ticks) } };
 };
 export interface CareOutcome { result: "done" | "lost"; why: string | null; permille: number; affection: number; xp: number }
 export const careFinish = async (token: string, inputs: readonly number[], ticks: number, score: number): Promise<PetsState & { outcome: CareOutcome }> => {

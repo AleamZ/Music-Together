@@ -257,7 +257,7 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
           <p className="text-center">Đã chọn chiêu — chờ đối thủ…</p>
         ) : press ? (
           <div className="flex justify-center">
-            <PowerPress seed={b.pressSeed ?? 0} skill={skillOf(press.skill)?.name ?? press.skill} onCancel={() => setPressing(null)}
+            <PowerPress token={token} battle={b.id} skill={skillOf(press.skill)?.name ?? press.skill} onCancel={() => setPressing(null)}
               onPress={(tick, ticks) => void run(() => battleActPress(token, b.id, press.skill, tick, ticks), (r) => {
                 setPressing(null);
                 withBattle(r);
@@ -273,7 +273,7 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
                   title={k ? `${SKILL_NOTE[k.kind]}${k.power ? ` · lực ${k.power}, chính xác ${k.acc}%` : ""}` : s}
                   onClick={() => {
                     // a hit gets the power press; a guard / heal (and a battle from before the press) goes at once
-                    if (k?.kind === "hit" && b.pressSeed !== null) setPressing({ battle: b.id, turn: b.turn, skill: s });
+                    if (k?.kind === "hit") setPressing({ battle: b.id, turn: b.turn, skill: s });
                     else void run(() => battleActPress(token, b.id, s, null, 1), withBattle);
                   }}>{k?.name ?? s}</button>
               );

@@ -7,6 +7,9 @@ import { rand32 } from "../fishing/reel";
 // and the dungeon (rhythm arrows + a telegraphed slam to dodge). 60 Hz integer sims on the server's seed; the SQL
 // replays them statement for statement (public._wg_*, 0083) — tests/fixtures/world-mg-cases.json pins both. The client
 // sends only its input ticks; the server derives the outcome.
+// 0087: the server rolls the round itself (the draws, one by one) and reveals it through mg_sync (lib/game/mglive.ts);
+// the overlays build the parameters from those events (*From) and replay with the *P functions; the seed functions stay
+// as the fixtures' reference.
 
 export const WG = {
   hz: 60,
@@ -77,7 +80,10 @@ const dodgedAt = (c: number, dodges: readonly number[]) => dodges.some((d) => d 
 /** The hunt from its release ticks and dodge ticks (public._wg_hunt). A dangerous animal charges at `charge` unless
  *  dodged; an arrow still in flight then is lost. */
 export function replayHunt(seed: number, species: string, danger: boolean, shots: readonly number[], dodges: readonly number[]): WildReplay {
-  const p = huntParams(seed, species);
+  return replayHuntP(huntParams(seed, species), danger, shots, dodges);
+}
+/** The hunt from its parameters (0087's _wg_hunt_u). */
+export function replayHuntP(p: HuntParams, danger: boolean, shots: readonly number[], dodges: readonly number[]): WildReplay {
   const dodged = !danger || dodgedAt(p.charge, dodges);
   const cend = dodged ? Infinity : p.charge;
   let used = 0;
@@ -119,7 +125,10 @@ export function trapPath(p: TrapParams, n: number): number[] {
 }
 /** The trap from its pull tick (public._wg_trap): at most one pull; the animal past the trail's end escapes. */
 export function replayTrap(seed: number, species: string, pulls: readonly number[]): WildReplay {
-  const p = trapParams(seed, species);
+  return replayTrapP(trapParams(seed, species), pulls);
+}
+/** The trap from its parameters (0087's _wg_trap_u). */
+export function replayTrapP(p: TrapParams, pulls: readonly number[]): WildReplay {
   const path = trapPath(p, WG.maxTicks);
   const esc = path.indexOf(1000);
   const pull = pulls.length > 0 ? pulls[0] : null;
@@ -157,7 +166,10 @@ export function snapScore(p: PhotoParams, zooms: readonly number[], t: number): 
 }
 /** The best of the snaps (public._wg_photo); the third snap ends the round. */
 export function replayPhoto(seed: number, species: string, snaps: readonly number[], zooms: readonly number[]): WildReplay {
-  const p = photoParams(seed, species);
+  return replayPhotoP(photoParams(seed, species), snaps, zooms);
+}
+/** The photo from its parameters (0087's _wg_photo_u). */
+export function replayPhotoP(p: PhotoParams, snaps: readonly number[], zooms: readonly number[]): WildReplay {
   let best = 0, used = 0;
   for (const s of snaps) {
     used++;
@@ -173,6 +185,45 @@ export const PHOTO_GREAT = 700;
 /** The replay of any wild game; `a` = shots | pulls | snaps, `b` = dodges | — | zoom toggles. */
 export function replayWild(game: WildGame, seed: number, species: string, danger: boolean, a: readonly number[], b: readonly number[]): WildReplay {
   return game === "hunt" ? replayHunt(seed, species, danger, a, b) : game === "trap" ? replayTrap(seed, species, a) : replayPhoto(seed, species, a, b);
+}
+
+export type WildParams = HuntParams | TrapParams | PhotoParams;
+/** The replay of any wild game from its parameters. */
+export function replayWildP(game: WildGame, p: WildParams, danger: boolean, a: readonly number[], b: readonly number[]): WildReplay {
+  return game === "hunt" ? replayHuntP(p as HuntParams, danger, a, b) : game === "trap" ? replayTrapP(p as TrapParams, a) : replayPhotoP(p as PhotoParams, a, b);
+}
+
+// ---------------------------------------------------------------- 0087: the parameters from mg_sync's events
+type Ev = Record<number, Record<string, number>>;
+/** The hunt once the animal showed (event 1: period, phase, wind; event 2: the charge, a dangerous animal only). The
+ *  charge not yet revealed is far away. */
+export function huntParamsFrom(reticle: number, ev: Ev): HuntParams | null {
+  const g = ev[1];
+  if (!g) return null;
+  return { period: g.period, phase: g.phase, wind: g.wind, reticle, charge: ev[2]?.charge ?? 100_000 };
+}
+/** The trail: events 1–8 are the segments (len, v); one not revealed yet stands still (it is revealed 0.5 s early). */
+export function trapParamsFrom(species: string, ev: Ev): TrapParams {
+  const mul = speedOf(species) >= 150 ? 3 : 2;
+  const segs = [];
+  for (let i = 1; i <= 8; i++) segs.push(ev[i] ? { len: ev[i].len, v: ev[i].v } : { len: 100_000, v: 0 });
+  return { segs, tail: 3 * mul, zone: mul === 3 ? 60 : 40 };
+}
+/** The photo once the animal showed (event 1). */
+export function photoParamsFrom(ev: Ev): PhotoParams | null {
+  const g = ev[1];
+  return g ? { period: g.period, phase: g.phase, pose: g.pose, poseAt: g.pose_at } : null;
+}
+/** The combo so far: events 1–6 the arrows (beat, dir), 7 the slam; the ones not revealed yet are far away. */
+export function comboParamsFrom(ev: Ev): ComboParams & { known: number } {
+  const beats: number[] = [], dirs: Dir[] = [];
+  let known = 0;
+  for (let i = 1; i <= COMBO.arrows; i++) {
+    if (ev[i]) { beats.push(ev[i].beat); dirs.push((ev[i].dir % 4) as Dir); known = i; }
+    else { beats.push(100_000 + i * 100); dirs.push(0); }
+  }
+  const last = ev[COMBO.arrows]?.beat;
+  return { beats, dirs, slam: ev[7]?.slam ?? 100_000, end: last === undefined ? 100_000 : last + COMBO.win + 1, known };
 }
 
 /** Why an input pair is one no round makes (public._wg_input_error; null = fine). */
@@ -220,7 +271,10 @@ export interface ComboReplay { judges: Judge[]; streaks: number[]; perfect: numb
  *  window judges it (the right direction: perfect/good, a wrong one: miss); a press outside any window breaks the
  *  streak. `best` is the longest streak. */
 export function replayCombo(seed: number, keys: readonly number[], dodges: readonly number[], ticks: number): ComboReplay {
-  const p = comboParams(seed);
+  return replayComboP(comboParams(seed), keys, dodges, ticks);
+}
+/** The combo from its parameters (0087's _wg_combo_u). */
+export function replayComboP(p: ComboParams, keys: readonly number[], dodges: readonly number[], ticks: number): ComboReplay {
   const judges: Judge[] = p.beats.map(() => "miss");
   const done = p.beats.map(() => false);
   const streaks = p.beats.map(() => 0);
