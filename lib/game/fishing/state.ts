@@ -123,11 +123,13 @@ export function baitTotal(s: FishingState): number {
   return Object.values(s.bait).reduce((a, b) => a + b, 0);
 }
 
-/** Owned: a starter item, a bought one, or a bucket / bait box no bigger than what the account already has. */
+/** Owned: a starter item, a bought one, or a bucket / bait box / fishing kit no bigger than what the account already has. */
 export function ownsItem(s: FishingState, item: ShopItem): boolean {
   if (item.starter || s.owned.includes(item.id)) return true;
   if (item.kind === "bucket") return (item.capacity ?? 0) <= s.fishCap - 1;
   if (item.kind === "bait_box") return (item.capacity ?? 0) <= s.baitCap;
+  // Bộ câu cá: owned once both its bait box and its crate would add nothing (same rule as the server's buy_item).
+  if (item.kind === "fishing_kit") return (item.capacity ?? 0) <= s.baitCap && (item.capacity ?? 0) <= s.fishCap - 1;
   return false;
 }
 

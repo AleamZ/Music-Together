@@ -7,7 +7,7 @@ import { UmbrellaShelf } from "@/components/game/rain/UmbrellaShelf";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
 import { baitTotal, maxBuyQty, needsRepair, ownsItem, repairPrice, wearFor, type FishingState } from "@/lib/game/fishing/state";
 
-const KIND_ORDER: ReadonlyArray<ShopItem["kind"]> = ["rod", "net", "bobber", "bait", "bait_box", "bucket"];
+const KIND_ORDER: ReadonlyArray<ShopItem["kind"]> = ["fishing_kit", "rod", "net", "bobber", "bait", "bait_box", "bucket"];
 
 /** One shop tile: icon, name, price, effect and the buy button (bait: with a quantity). */
 function Tile({ item, state, busy, onBuy }: { item: ShopItem; state: FishingState; busy: boolean; onBuy: (itemId: string, qty: number) => void }) {

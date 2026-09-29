@@ -16,9 +16,9 @@ export interface FishSpecies {
   id: string; name: string; rarity: Rarity; minG: number; maxG: number; pricePerKg: number; difficulty: number; sortOrder: number;
 }
 
-export type ShopKind = "rod" | "bobber" | "bait" | "bait_box" | "bucket" | "net";
+export type ShopKind = "rod" | "bobber" | "bait" | "bait_box" | "bucket" | "net" | "fishing_kit";
 /** The shop_items kinds the fishing shop sells (the farm items share the table since v15). */
-export const FISHING_KINDS: readonly ShopKind[] = ["rod", "bobber", "bait", "bait_box", "bucket", "net"];
+export const FISHING_KINDS: readonly ShopKind[] = ["rod", "bobber", "bait", "bait_box", "bucket", "net", "fishing_kit"];
 const SHOP_KINDS: readonly string[] = FISHING_KINDS;
 
 export interface ShopItem {
@@ -115,6 +115,8 @@ export function describeItem(it: ShopItem): string {
       return `Chứa ${it.capacity ?? 0} mồi`;
     case "bucket":
       return `Đựng ${it.capacity ?? 0} con cá`;
+    case "fishing_kit":
+      return `Gồm Hộp mồi ${it.capacity ?? 0} (chứa ${it.capacity ?? 0} mồi) và Thùng cá ${it.capacity ?? 0} (đựng ${it.capacity ?? 0} con cá)`;
     case "net":
       return `Quăng ${it.durability ?? 0} lần · 2–5 cá thường${(it.radiusPx ?? 0) >= 32 ? " · lưới rộng, thêm 1 con" : ""}`;
   }

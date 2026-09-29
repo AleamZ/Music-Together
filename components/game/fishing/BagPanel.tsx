@@ -146,7 +146,7 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
   const kind = (k: ShopItem["kind"]) => catalog.items.filter((i) => i.kind === k);
   const owned = (k: "rod" | "bobber") => kind(k).filter((i) => ownsItem(state, i));
   const bucket = kind("bucket").filter((i) => ownsItem(state, i)).sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0))[0];
-  const box = kind("bait_box").find((i) => ownsItem(state, i));
+  const box = kind("bait_box").filter((i) => ownsItem(state, i)).sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0))[0];
 
   const gearRow = (item: ShopItem, slot: keyof Loadout, count?: number) => {
     const using = state.loadout[slot] === item.id;
