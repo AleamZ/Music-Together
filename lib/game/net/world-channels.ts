@@ -19,6 +19,9 @@ export class ZoneChannels {
   private readonly h: ZoneChannelHandlers;
   private readonly open = new Map<ZoneId, GameChannelHandle>();
   private own: ZoneId | null = null;
+  /** P3: while I am in the wild, the zone whose topic also gets a zone-local copy of my movement (the per-map clients
+   *  there see me at its edge; world clients drop the copy — they hear the wild's topic). */
+  private fallback: ZoneId | null = null;
 
   private readonly joinFn: typeof joinGameChannel;
 
@@ -29,9 +32,11 @@ export class ZoneChannels {
     this.joinFn = join;
   }
 
-  /** Listen to exactly these zones (the first is mine: I broadcast there). New ones are joined, dropped ones left. */
-  setZones(zones: readonly ZoneId[]): void {
+  /** Listen to exactly these zones (the first is mine: I broadcast there). New ones are joined, dropped ones left.
+   *  `fallback` (P3, in the wild): one of them that also gets my movement, zone-local. */
+  setZones(zones: readonly ZoneId[], fallback: ZoneId | null = null): void {
     this.own = zones[0] ?? null;
+    this.fallback = this.own === "wild" && fallback && zones.includes(fallback) ? fallback : null;
     for (const [z, ch] of this.open) if (!zones.includes(z)) { ch.leave(); this.open.delete(z); }
     for (const z of zones) if (!this.open.has(z)) this.join(z);
   }
@@ -40,9 +45,15 @@ export class ZoneChannels {
     return [...this.open.keys()];
   }
 
+  /** P3: the zone that gets my zone-local fallback copy (null outside the wild). */
+  fallbackZone(): ZoneId | null {
+    return this.fallback;
+  }
+
   private join(zone: ZoneId): void {
     const ch = this.joinFn(this.roomId, { id: zone, ...zoneBounds(zone) }, {
-      onMessage: (msg) => this.h.onMessage(fromZoneMsg(msg, zone), zone),
+      // P3: a fallback copy is for the per-map clients: I hear its sender on the wild's topic
+      onMessage: (msg) => { if (!("fb" in msg && msg.fb === 1)) this.h.onMessage(fromZoneMsg(msg, zone), zone); },
       onStatus: (connected) => this.h.onStatus(zone, connected),
     });
     this.open.set(zone, ch);
@@ -52,6 +63,9 @@ export class ZoneChannels {
   send(msg: GameMessage, zone: ZoneId | null = this.own): void {
     if (!zone) return;
     this.open.get(zone)?.send(toZoneMsg(msg, zone));
+    if (zone === this.own && this.fallback && (msg.t === "st" || msg.t === "mv" || msg.t === "pa")) {
+      this.open.get(this.fallback)?.send(toZoneMsg(msg, this.fallback, true));
+    }
   }
 
   /** Leave every topic; `last` (a `bye`) goes to my own zone first. */

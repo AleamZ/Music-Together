@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { subscribeRoom, trackPresence, type PresenceHandle, type RoomState } from "@/lib/realtime";
+import type { MapId } from "@/lib/game/maps/types";
 import type { PresenceDog, PresenceEntry, PresenceMap, PresenceMode } from "@/lib/presence-modes";
 import { supabase } from "@/lib/supabase";
 import { deriveRole, type RoleFlags } from "@/lib/roles";
@@ -12,7 +13,7 @@ export interface RoomView {
   loading: boolean; state: RoomState; onlineIds: string[];
   presence: PresenceEntry[]; setPresenceMode: (m: PresenceMode) => void;
   /** The game map I am on (published with the mode; shared presence budget). */
-  setPresenceMap: (m: PresenceMap) => void;
+  setPresenceMap: (m: PresenceMap, near?: MapId) => void;
   /** My dog (v17 §7.3; published with the mode and the map, in game mode only; shared presence budget). */
   setPresenceDog: (d: PresenceDog | null) => void;
   token: string; accountId: string; username: string; myMemberId: string | null;
@@ -31,9 +32,9 @@ export function useRoom(code: string): RoomView {
     presenceRef.current?.setMode(m);
   }, []);
   const mapRef = useRef<PresenceMap>("hall");
-  const setPresenceMap = useCallback((m: PresenceMap) => {
+  const setPresenceMap = useCallback((m: PresenceMap, near?: MapId) => {
     mapRef.current = m;
-    presenceRef.current?.setMap(m);
+    presenceRef.current?.setMap(m, near);
   }, []);
   const dogRef = useRef<PresenceDog | null>(null);
   const setPresenceDog = useCallback((d: PresenceDog | null) => {

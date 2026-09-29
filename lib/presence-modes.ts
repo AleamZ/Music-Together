@@ -5,7 +5,8 @@ import type { ViewMode } from "@/lib/view-mode";
 export type PresenceMode = ViewMode;
 /** Where a game-mode member is: a map, or (P2 world mode) "wild" — the world between the zones ("Ngoài đồng"). */
 export type PresenceMap = MapId | "wild";
-export interface PresenceMeta { name?: unknown; online_at?: unknown; mode?: unknown; map?: unknown; dog?: unknown }
+/** `w` (P3): 1 = out in the wild — `map` then holds the nearest zone, for older clients that know no "wild". */
+export interface PresenceMeta { name?: unknown; online_at?: unknown; mode?: unknown; map?: unknown; dog?: unknown; w?: unknown }
 /** A member's dog as presence carries it (v17 §7.3): `{n, c}` on the wire. */
 export interface PresenceDog { name: string; coat: DogCoat }
 /** `map`: the game map the member walks on (v14); null in the classic view. `dog` (v17): the dog walking with them,
@@ -46,7 +47,7 @@ export function aggregatePresenceModes(state: Record<string, PresenceMeta[] | un
       continue;
     }
     const latest = games.reduce((a, b) => (onlineAt(b) > onlineAt(a) ? b : a));
-    out.push({ accountId, name, mode: "game", map: presenceMap(latest.map), dog: presenceDog(latest.dog) });
+    out.push({ accountId, name, mode: "game", map: latest.w === 1 ? "wild" : presenceMap(latest.map), dog: presenceDog(latest.dog) });
   }
   return out.sort((a, b) => (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
 }

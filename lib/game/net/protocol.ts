@@ -33,8 +33,8 @@ export const MAX_PLOT = 10;
  *  absent = none; malformed = dropped); `rn` (v18.9) = rain bits (lib/game/rain/model.ts RN; absent = dry) and `cr` = the cramp's ms left (0..10000); anything else is dropped. `fp` = "plot p changed, fetch the field again"; `fa` = the sender's farm animation. */
 export type GameMessage =
   | { t: "hello"; id: string }
-  | { t: "st" | "mv"; id: string; x: number; y: number; d: FacingCode; mv: boolean; vx: Unit; vy: Unit; h?: string | null; f?: FishPhase; v?: VehicleId | null; sw?: SwimCode; hx?: number; cr?: number; pt?: string; rn?: number; hm?: 1 } & LiftTags
-  | { t: "pa"; id: string; x: number; y: number; pts: Array<[number, number]>; h?: string | null; v?: VehicleId | null; sw?: SwimCode; hx?: number; cr?: number; pt?: string; rn?: number; hm?: 1 } & LiftTags
+  | { t: "st" | "mv"; id: string; x: number; y: number; d: FacingCode; mv: boolean; vx: Unit; vy: Unit; h?: string | null; f?: FishPhase; v?: VehicleId | null; sw?: SwimCode; hx?: number; cr?: number; pt?: string; rn?: number; hm?: 1; fb?: 1 } & LiftTags
+  | { t: "pa"; id: string; x: number; y: number; pts: Array<[number, number]>; h?: string | null; v?: VehicleId | null; sw?: SwimCode; hx?: number; cr?: number; pt?: string; rn?: number; hm?: 1; fb?: 1 } & LiftTags
   | { t: "fs"; id: string; f: FishPhase; h: string | null; c?: [string, number]; n?: NetCast }
   | { t: "fp"; id: string; p: number }
   | { t: "fa"; id: string; a: FarmAnim }
@@ -116,6 +116,7 @@ export function parseGameMessage(event: string, payload: unknown, bounds: { widt
       if (parsePetCode(p.pt)) msg.pt = p.pt as string;
       if (isRainBits(p.rn)) msg.rn = p.rn;                                  // v18.9
       if (p.hm === 1) msg.hm = 1;                                            // lying in the hall's hammock
+      if (p.fb === 1) msg.fb = 1;                                            // P3: a wild player's zone-local fallback copy
       liftTags(p, msg);
       return msg;
     }
@@ -137,6 +138,7 @@ export function parseGameMessage(event: string, payload: unknown, bounds: { widt
       if (parsePetCode(p.pt)) msg.pt = p.pt as string;
       if (isRainBits(p.rn)) msg.rn = p.rn;                                  // v18.9
       if (p.hm === 1) msg.hm = 1;                                            // lying in the hall's hammock
+      if (p.fb === 1) msg.fb = 1;                                            // P3: a wild player's zone-local fallback copy
       liftTags(p, msg);
       return msg;
     }

@@ -27,21 +27,48 @@ function joined(): Map<ZoneId, Set<ZoneId>> {
 }
 const JOINED = joined();
 
+/** P3: a zone stays listened to from the wild until I am this much farther than WILD_REACH (no flapping at the edge). */
+export const AOI_HYSTERESIS = 64;
+
+/** How far (px) a world point is from a zone's rectangle (0 inside). */
+export function zoneDistance(id: (typeof ZONE_IDS)[number], pos: Vec): number {
+  const z = ZONES[id];
+  const dx = Math.max(z.ox - pos.x, 0, pos.x - (z.ox + z.w)), dy = Math.max(z.oy - pos.y, 0, pos.y - (z.oy + z.h));
+  return Math.hypot(dx, dy);
+}
+
+/** P3: the zone nearest a world point — a wild player's zone-local fallback (the per-map clients see them at its edge). */
+export function nearestZone(pos: Vec): (typeof ZONE_IDS)[number] {
+  let best = ZONE_IDS[0], bestD = Infinity;
+  for (const id of ZONE_IDS) {
+    const d = zoneDistance(id, pos);
+    if (d < bestD) { best = id; bestD = d; }
+  }
+  return best;
+}
+
 /** The zones a world client listens to at `pos` in `zone`: its own, the ones a road joins to it and the wild (from the
- *  wild: every zone within WILD_REACH of me). Sorted, own zone first. */
-export function aoiZones(zone: ZoneId, pos: Vec): ZoneId[] {
+ *  wild: every zone within WILD_REACH of me, and always the nearest — the fallback topic I also announce myself on).
+ *  Sorted, own zone first. `keep` (P3): zones listened to now stay while within WILD_REACH + AOI_HYSTERESIS. */
+export function aoiZones(zone: ZoneId, pos: Vec, keep: readonly ZoneId[] = []): ZoneId[] {
   const out = new Set<ZoneId>([zone]);
   if (zone === "wild") {
     for (const id of ZONE_IDS) {
-      const z = ZONES[id];
-      const dx = Math.max(z.ox - pos.x, 0, pos.x - (z.ox + z.w)), dy = Math.max(z.oy - pos.y, 0, pos.y - (z.oy + z.h));
-      if (Math.hypot(dx, dy) <= WILD_REACH) out.add(id);
+      const d = zoneDistance(id, pos);
+      if (d <= WILD_REACH || (keep.includes(id) && d <= WILD_REACH + AOI_HYSTERESIS)) out.add(id);
     }
+    out.add(nearestZone(pos));
   } else {
     for (const n of JOINED.get(zone) ?? []) if (n === "wild" || (ZONE_IDS as readonly string[]).includes(n)) out.add(n);
     out.add("wild");
   }
   return [zone, ...[...out].filter((z) => z !== zone).sort()];
+}
+
+/** P3: the zones to listen to after a step in the wild — null when they are the same as now (nothing to do). */
+export function aoiStep(current: readonly ZoneId[], zone: ZoneId, pos: Vec): ZoneId[] | null {
+  const next = aoiZones(zone, pos, current);
+  return next.length === current.length && next.every((z, i) => z === current[i]) ? null : next;
 }
 
 /** A topic's bounds (what parseGameMessage accepts): the zone's size; the wild's is the world. */
@@ -57,8 +84,9 @@ const clampTo = (v: number, hi: number) => Math.max(0, Math.min(hi, Math.round(v
  * leaves the zone is cut where it does (one more point, clamped on the edge): the per-map clients drop a message with a
  * point outside their map, and the rest of the walk is announced on the next zone's topic when I get there.
  */
-export function toZoneMsg(msg: GameMessage, zone: ZoneId): GameMessage {
+export function toZoneMsg(msg: GameMessage, zone: ZoneId, fallback = false): GameMessage {
   if (msg.t !== "st" && msg.t !== "mv" && msg.t !== "pa") return msg;
+  if (fallback) return toZoneMsg({ ...msg, fb: 1 }, zone);                    // P3: a wild player's copy for the per-map clients
   const r = zoneRect(zone);
   if (!r) return msg;
   const w = r.w, h = r.h;

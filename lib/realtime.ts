@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { PresenceMap } from "@/lib/presence-modes";
+import type { MapId } from "@/lib/game/maps/types";
 import { supabase, type Room, type Member, type QueueItem } from "@/lib/supabase";
 import {
   aggregatePresenceModes, presenceDelay, PRESENCE_BUDGET, type PresenceDog, type PresenceEntry, type PresenceMeta, type PresenceMode,
@@ -49,13 +50,14 @@ export function subscribeRoom(roomId: string, onState: (s: RoomState) => void): 
 export interface PresenceHandle {
   unsubscribe: () => void;
   setMode: (mode: PresenceMode) => void;
-  /** The game map I walk on (v14). Published only while the mode is "game" (classic → map null). */
-  setMap: (map: PresenceMap) => void;
+  /** The game map I walk on (v14). Published only while the mode is "game" (classic → map null). P3: in the wild,
+   *  `near` is the zone published as `map` for the older clients (which know no "wild"), with `w: 1` for the new ones. */
+  setMap: (map: PresenceMap, near?: MapId) => void;
   /** My dog (v17 §7.3), or null. Published only while the mode is "game" (classic → dog null). */
   setDog: (dog: PresenceDog | null) => void;
 }
 
-interface Published { mode: PresenceMode; map: PresenceMap | null; dog: PresenceDog | null }
+interface Published { mode: PresenceMode; map: PresenceMap | null; dog: PresenceDog | null; near: MapId }
 
 const sameDog = (a: PresenceDog | null, b: PresenceDog | null) => a === b || (!!a && !!b && a.name === b.name && a.coat === b.coat);
 
@@ -71,12 +73,14 @@ export function trackPresence(
   const channel = supabase.channel(`presence:${roomId}`, { config: { presence: { key: me.memberId } } });
   let mode: PresenceMode = me.mode;          // what other members should see…
   let map: PresenceMap = me.map ?? "hall";
+  let near: MapId = "hall";                  // P3: the wild's fallback zone
   let dog: PresenceDog | null = me.dog ?? null;
   let published: Published | null = null;    // …and the last state the server acknowledged with 'ok'
-  const wanted = (): Published => ({ mode, map: mode === "game" ? map : null, dog: mode === "game" ? dog : null });
+  const wanted = (): Published => ({ mode, map: mode === "game" ? map : null, dog: mode === "game" ? dog : null, near });
   const isPublished = () => {
     const w = wanted();
-    return published !== null && published.mode === w.mode && published.map === w.map && sameDog(published.dog, w.dog);
+    return published !== null && published.mode === w.mode && published.map === w.map && sameDog(published.dog, w.dog)
+      && (w.map !== "wild" || published.near === w.near);
   };
   let subscribed = false;
   let gen = 0;                               // counts (re)joins: an 'ok' for a call sent in an older join is stale
@@ -99,7 +103,9 @@ export function trackPresence(
     sentAt = [...sentAt.filter((t) => now - t < PRESENCE_BUDGET.windowMs), now];
     // A rejected call counts as failed (retried below) instead of leaving `sending` stuck.
     const status = await channel.track({
-      name: me.name, online_at: new Date(now).toISOString(), mode: next.mode, map: next.map,
+      name: me.name, online_at: new Date(now).toISOString(), mode: next.mode,
+      // P3: an older client maps "wild" to the hall — it gets the nearest zone; `w: 1` says the wild to the new ones
+      ...(next.map === "wild" ? { map: next.near, w: 1 } : { map: next.map }),
       dog: next.dog ? { n: next.dog.name, c: next.dog.coat } : null,
     }).catch(() => "error" as const);
     sending = false;
@@ -140,9 +146,11 @@ export function trackPresence(
       // The 1 s delay merges rapid toggles; A→B→A inside it sends nothing because the wanted state is published.
       schedule(1000);
     },
-    setMap: (next) => {
-      if (closed || next === map) return;
+    setMap: (next, nearZone) => {
+      const nextNear = next === "wild" ? nearZone ?? near : near;
+      if (closed || (next === map && nextNear === near)) return;
       map = next;
+      near = nextNear;
       schedule(1000);
     },
     setDog: (next) => {
