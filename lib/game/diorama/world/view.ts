@@ -25,6 +25,7 @@ import { buildBridges, buildLandmarks, buildSkyLife, buildWater, type Landmarks,
 import { TerrainJobs } from "./terrain-jobs";
 import { chunkGeometry, landColor, LOD_STEPS } from "./terrain-mesh";
 import { buildDelta } from "./delta";
+import { buildNuiCam } from "./nuicam";
 import { toon, toonify } from "./toon";
 
 // Browser only: the unified world in 3D (spec P2/P3's visual part). One continuous landscape — the heightmap's chunks
@@ -123,6 +124,8 @@ export class WorldView implements View3D {
   private readonly bridges: THREE.Group;
   /** The delta's life along the water: canal bridges, stilt houses, moored xuồng, the floating market (one mesh). */
   private readonly delta = buildDelta();
+  /** The mountain (Núi Cấm-like) and its landmarks: lake, temple, tower, Di Lặc, waterfall, cable car, clouds, gate. */
+  private readonly nui = buildNuiCam();
   private readonly people: CharacterLayer;
   private readonly live: LiveLayer;
   private liveState: WorldLive = {};
@@ -192,7 +195,7 @@ export class WorldView implements View3D {
     this.landmarks = buildLandmarks();
     this.life = buildSkyLife();
     this.forest = new Forest(opts.density ?? 1);
-    this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root, this.forest.root, this.delta.root);
+    this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root, this.forest.root, this.delta.root, this.nui.root);
 
     this.people = new CharacterLayer({ width: 0, height: 0 }, (x, y) => this.heightAt(x, y));
     this.live = new LiveLayer((x, y) => this.heightAt(x, y));
@@ -509,6 +512,7 @@ export class WorldView implements View3D {
     });
     this.water.animate(t, f.windKmh);
     this.landmarks.animate(t, f.windKmh);
+    this.nui.animate(t, f.reduced);
     this.life.animate(f.t, f.windKmh, f.reduced);
     const amp = f.reduced ? 0 : 0.03 + Math.min(0.25, f.windKmh / 200);
     for (const z of this.zones) for (const s of z.built.sway) s.obj.rotation.z = s.base + Math.sin(t / 700 + s.seed) * amp;
@@ -711,6 +715,7 @@ export class WorldView implements View3D {
     this.life.dispose();
     this.bridges.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); });
     this.delta.dispose();
+    this.nui.dispose();
     this.sky.dispose();
     this.ink.dispose();
     this.sun.shadow.map?.dispose();

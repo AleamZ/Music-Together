@@ -86,5 +86,5 @@ describe("GameCanvas world mode → WorldView.setLive (P4)", () => {
     const m = v.lives.length;
     wrapper.render(f);
     expect(v.lives.length).toBe(m);
-  });
+  }, 30_000);                                                              // builds the whole delta world
 });

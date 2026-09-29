@@ -1,5 +1,6 @@
 import type { Vec } from "@/lib/game/types";
 import { MINE, MINE_HILL } from "./mine";
+import { LAKE, nuiHeight } from "./nuicam";
 import { cumulative, nearestOn, ROADS, TRAILS, type Road, type Trail } from "./roads";
 import { WORLD_CELL, WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId } from "./zones";
 
@@ -63,12 +64,8 @@ export const KNOLLS: readonly { x: number; y: number; r: number }[] = [
   MINE_HILL,
 ];
 
-/** The low hill group in the east (Núi Sam-like: rounded, a pagoda on top): centre / radius px, height units. */
-export const EAST_HILLS: readonly { x: number; y: number; r: number; h: number }[] = [
-  { x: 3780, y: 1232, r: 250, h: 5 }, { x: 3950, y: 1110, r: 180, h: 3.4 }, { x: 3930, y: 1430, r: 160, h: 2.8 },
-];
-/** Where the hill's pagoda stands (the summit). */
-export const PAGODA = { x: 3800, y: 1180 } as const;
+/** The delta's one mountain (nuicam.ts: Núi Cấm-like), and its lake. */
+export { NUI, LAKE } from "./nuicam";
 
 /** Kênh rạch: the canals crossing the delta, joined to the river (their water is the river's level). World px. */
 export const CANALS: readonly (readonly Vec[])[] = [
@@ -80,11 +77,16 @@ export const CANALS: readonly (readonly Vec[])[] = [
   [{ x: 60, y: 1100 }, { x: 250, y: 1300 }, { x: 300, y: 1600 }, { x: 310, y: 1800 }],
 ];
 const CANAL_CUM = CANALS.map((c) => cumulative(c));
+const CANAL_BOX = CANALS.map((c) => ({ x0: Math.min(...c.map((p) => p.x)), x1: Math.max(...c.map((p) => p.x)), y0: Math.min(...c.map((p) => p.y)), y1: Math.max(...c.map((p) => p.y)) }));
 export const CANAL_HALF_W = 13;
 /** Distance (px) to the nearest canal's centreline. */
-export function canalDist(x: number, y: number): number {
+export function canalDist(x: number, y: number, far = 200): number {
   let d = Infinity;
-  for (let i = 0; i < CANALS.length; i++) d = Math.min(d, nearestOn(CANALS[i], CANAL_CUM[i], x, y).d);
+  for (let i = 0; i < CANALS.length; i++) {
+    const b = CANAL_BOX[i];
+    if (x < b.x0 - far || x > b.x1 + far || y < b.y0 - far || y > b.y1 + far) continue;   // too far to matter
+    d = Math.min(d, nearestOn(CANALS[i], CANAL_CUM[i], x, y).d);
+  }
   return d;
 }
 /** How far (px) past the world's edge (0 inside): beyond it the delta opens onto the river mouths' water. */
@@ -241,10 +243,10 @@ export function onPath(x: number, y: number): boolean {
  *  low eastern hills, the river's bank, the shore where the land sinks into the river mouths past the world's edge. */
 export function naturalHeight(x: number, y: number): number {
   let h = RIVER_BANK + 0.8 + 0.35 * fbm(x / 520, y / 520, 3) + 0.12 * fbm(x / 90, y / 90, 2);
-  for (const k of EAST_HILLS) {
-    const d = Math.hypot(x - k.x, y - k.y);
-    if (d < k.r) { const u = 1 - d / k.r; h += k.h * u * u * (3 - 2 * u); }
-  }
+  h += nuiHeight(x, y, (a, b) => fbm(a, b, 2));
+  // the mountain lake's terrace: flat round the shore, a basin under the water
+  const dl = Math.hypot(x - LAKE.x, y - LAKE.y);
+  if (dl < LAKE.r + 40) h = dl < LAKE.r ? LAKE.level - 0.9 * (1 - dl / LAKE.r) - 0.15 : lerp(LAKE.level + 0.35, h, smoothstep(LAKE.r, LAKE.r + 40, dl));
   // the river valley: the land settles toward the bank
   const r = riverAt(x, y);
   const v = 1 - smoothstep(r.hw, r.hw + 560, r.d);
@@ -319,6 +321,7 @@ export function waterAt(x: number, y: number): number | null {
   const r = riverAt(x, y);
   if (!r.inZone && r.d < r.hw) return RIVER_LEVEL;
   if (outside(x, y) > 0) return RIVER_LEVEL;
+  if (Math.hypot(x - LAKE.x, y - LAKE.y) < LAKE.r) return LAKE.level;
   if (canalDist(x, y) < CANAL_HALF_W) return RIVER_LEVEL;
   const st = streamAt(x, y);
   if (st.d < STREAM_HALF_W) return streamLevel(st.s);

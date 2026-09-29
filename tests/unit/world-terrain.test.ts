@@ -3,7 +3,7 @@ import { buildWorld, type WorldMap } from "@/lib/game/world/compose";
 import { cumulative, pointAt, ROADS, TRAILS } from "@/lib/game/world/roads";
 import {
   bridgeAt, DOMAIN, heightAt, heightGrid, MAX_ROAD_SLOPE, MAX_WALK_SLOPE, onPath, RIVER_LEVEL, RIVER_PTS, riverAt, slopeAtCell,
-  standHeight, STREAM_PTS, waterAt, ZONE_ELEV, CANALS, EAST_HILLS,
+  standHeight, STREAM_PTS, waterAt, ZONE_ELEV, CANALS, NUI,
 } from "@/lib/game/world/terrain";
 import { wildBlocked } from "@/lib/game/world/wild";
 import { LANDMARKS, scatterRocks, scatterTrees } from "@/lib/game/world/scenery";
@@ -112,7 +112,7 @@ describe("world terrain", () => {
     expect(riverAt(end.x, end.y).d).toBeLessThan(riverAt(end.x, end.y).hw);
   });
 
-  it("is a flat delta ringed by the river mouths' water, with one low hill group in the east", () => {
+  it("is a flat delta ringed by the river mouths' water, with one mountain in the east", () => {
     let wet = 0, n = 0;
     for (let x = DOMAIN.x0; x <= DOMAIN.x1; x += 160) for (const y of [DOMAIN.y0 + 200, DOMAIN.y1 - 200]) {
       n++;
@@ -124,10 +124,11 @@ describe("world terrain", () => {
     for (let y = 40; y < WORLD_H; y += 80) for (let x = 40; x < WORLD_W; x += 80) {
       if (zoneAt({ x, y }) !== "wild") continue;
       const h = heightAt(x, y);
-      if (Math.hypot(x - EAST_HILLS[0].x, y - EAST_HILLS[0].y) > 450) expect(h, `${x},${y}`).toBeLessThan(3.5);
+      if (Math.hypot(x - NUI.x, y - NUI.y) > NUI.r + 120) expect(h, `${x},${y}`).toBeLessThan(3.5);
       top = Math.max(top, h);
     }
-    expect(top).toBeLessThan(9);
+    expect(top).toBeGreaterThan(12);                                          // the one mountain, a landmark
+    expect(top).toBeLessThan(22);
   });
 
   it("cuts canals joined to the river, at its level", () => {
@@ -205,6 +206,6 @@ describe("the world's scenery", () => {
       expect(zoneAt(l), `${l.kind} ${l.x},${l.y}`).toBe("wild");
       expect(waterAt(l.x, l.y), l.kind).toBeNull();
     }
-    expect(LANDMARKS.map((l) => l.kind)).toEqual(expect.arrayContaining(["flag", "arch", "tower", "headframe", "pagoda"]));
+    expect(LANDMARKS.map((l) => l.kind)).toEqual(expect.arrayContaining(["flag", "arch", "tower", "headframe"]));
   });
 });

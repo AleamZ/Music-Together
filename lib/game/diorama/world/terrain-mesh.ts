@@ -60,7 +60,7 @@ export function landColor(x: number, y: number, h: number, s: number, out: THREE
   for (const id of ZONE_IDS) dz = Math.min(dz, rectDistance(id, x, y));
   out.lerp(C.zoneGrass, (1 - smoothstep(0, 48, dz)) * 0.8);
   // rock on the cliffs and up the mountains, pale on the peaks
-  out.lerp(tmp.copy(C.rock).lerp(C.rockDark, smoothstep(-0.3, 0.3, n2)), Math.max(smoothstep(0.9, 1.8, s), smoothstep(20, 34, h) * 0.8));
+  out.lerp(tmp.copy(C.rock).lerp(C.rockDark, smoothstep(-0.3, 0.3, n2)), Math.max(smoothstep(1.7, 3.2, s), smoothstep(20, 34, h) * 0.8));
   out.lerp(C.peak, smoothstep(30, 46, h) * 0.8);
   // water's edge: sand, the bed under it
   const r = riverAt(x, y);

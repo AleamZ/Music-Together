@@ -71,7 +71,7 @@ describe("GameCanvas in world mode (P2)", () => {
     expect([...topics.keys()].filter((t) => t.startsWith("c")).sort()).toEqual([...cells].sort());
     expect([...topics.keys()].filter((t) => !t.startsWith("c")).sort()).toEqual(got.aoi[0].filter((z) => z !== "wild").sort());
     expect(got.failed).toBe(1);                                                  // jsdom: no WebGL for the world view
-  });
+  }, 30_000);                                                              // builds the whole delta world (heavier since the delta passes)
 
   it("broadcasts on my grid cell (world px) with a zone-local copy on my zone's topic; plant takes zone-local points", async () => {
     const { ref } = mount();
