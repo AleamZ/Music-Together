@@ -5,6 +5,8 @@
 // against lib/game/maps).
 import { screenAnswer } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
+import { unifiedWorldOn } from "@/lib/game/world/flag";
+import { toWorld, type ZoneId } from "@/lib/game/world/zones";
 
 export const POS = {
   /** px/s: walk 70 × car 2.8 × pet 1.2 × rest 1.07 ≈ 252, rounded up. */
@@ -31,7 +33,11 @@ export const POS = {
  *  against an older position, which is more lenient. A strike's envelope still reaches the modal (screenAnswer). */
 export async function posReport(token: string, map: string, x: number, y: number): Promise<void> {
   try {
-    const { data, error } = await supabase.rpc("pos_report", { p_session_token: token, p_map: map, p_x: Math.round(x), p_y: Math.round(y) });
+    // 0088: with the unified world on, a map that is a zone reports its world px (pos_report_w); else the old claim
+    const w = (await unifiedWorldOn()) ? toWorld(map as ZoneId, { x, y }) : null;
+    const { data, error } = w
+      ? await supabase.rpc("pos_report_w", { p_session_token: token, p_wx: Math.round(w.x), p_wy: Math.round(w.y) })
+      : await supabase.rpc("pos_report", { p_session_token: token, p_map: map, p_x: Math.round(x), p_y: Math.round(y) });
     screenAnswer(data, error);
   } catch {
     /* the next claim is judged against the older position */

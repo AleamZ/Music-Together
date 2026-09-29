@@ -54,6 +54,8 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'fb_state(uuid,text)', 'fishing_extras_state(text)',         -- v21 fishing (0076): reads (fb_state settles lazily)
      -- the position and the heartbeat: they run during a lock by design (0057), and judge every claim themselves
      'pos_report(text,text,integer,integer)', 'vitals_tick(text,uuid,text,integer,integer)',
+    'pos_report_w(text,integer,integer)',                         -- 0088: the claim in world px
+    'app_flags()',                                                -- 0088: a read of the switches
      'jump_in(uuid,text,integer,integer)', 'rescue_swimmer(uuid,text,uuid,integer,integer)', 'leave_water(uuid,text)',
      'warm_up_start(uuid,text,integer,integer)', 'warm_up_finish(uuid,text)', 'skip_trip(text)',
      -- the character, the wardrobe and the home: spending or moving one's own things, no income

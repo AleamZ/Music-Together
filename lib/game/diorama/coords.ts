@@ -18,6 +18,20 @@ export function worldToPx(x: number, z: number, size: MapSize): Vec {
   return { x: x * PX_PER_UNIT + size.width / 2, y: z * PX_PER_UNIT + size.height / 2 };
 }
 
+// Absolute mode (the unified world, spec §2 "3D: absolute coords (px/16)"): no centring — world px (0, 0) is the 3D
+// origin, so chunks of one big world line up. `origin` is a zone's offset in the world (lib/game/world/zones.ts) when
+// the px are zone-local. Nothing renders with it yet (P2); the centred pxToWorld above stays the renderer's.
+
+/** px (zone-local with the zone's `origin`, or world px) → 3D ground point (x, z), absolute. */
+export function pxToWorldAbs(p: Vec, origin: Vec = { x: 0, y: 0 }): { x: number; z: number } {
+  return { x: (p.x + origin.x) / PX_PER_UNIT, z: (p.y + origin.y) / PX_PER_UNIT };
+}
+
+/** Absolute 3D ground point (x, z) → px (world px, or zone-local with the zone's `origin`). */
+export function worldAbsToPx(x: number, z: number, origin: Vec = { x: 0, y: 0 }): Vec {
+  return { x: x * PX_PER_UNIT - origin.x, y: z * PX_PER_UNIT - origin.y };
+}
+
 /** A length in px → 3D units. */
 export const pxLen = (px: number): number => px / PX_PER_UNIT;
 
