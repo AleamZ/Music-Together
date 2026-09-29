@@ -1,21 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BigPop, Confetti, CountUp, FxStyle, useBump } from "@/components/game/celebrate/Fx";
 import { ParchmentModal } from "@/components/game/Parchment";
+import { fanfare } from "@/lib/game/river/beep";
 import { serverNow } from "@/lib/game/farm/clock";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import {
   BATTLE_DURATIONS, BATTLE_FEES, BATTLE_MAX_PLAYERS, battlePhase, battlePrize, clockText, myBattle, type Battle, type BattleBoard,
 } from "@/lib/game/fishing/extras";
 
-/** A clock that ticks every second while shown. */
-function useNow(): number {
+/** A clock that ticks every `ms` (a second by default) while shown. */
+function useNow(ms = 1000): number {
   const [now, setNow] = useState(() => serverNow());
   useEffect(() => {
-    const t = setInterval(() => setNow(serverNow()), 1000);
+    const t = setInterval(() => setNow(serverNow()), ms);
     return () => clearInterval(t);
-  }, []);
+  }, [ms]);
   return now;
+}
+
+/** v22: one scoreboard row — it flashes and floats "+N" when the score goes up. */
+function ScoreRow({ p, rank, me, speciesName }: { p: Battle["players"][number]; rank: number; me: string; speciesName: (id: string) => string }) {
+  const bump = useBump(p.score);
+  return (
+    <li key={bump ? `b${bump.at}` : "s"} className={`relative flex items-center gap-2 rounded-sm ${bump && bump.delta > 0 ? "fxc-flash" : ""} ${p.accountId === me ? "font-bold text-burgundy" : ""}`}>
+      <span className={`w-6 text-right tabular-nums ${rank === 0 && p.score > 0 ? "motion-safe:animate-bounce" : ""}`}>{rank === 0 && p.score > 0 ? "👑" : `${rank + 1}.`}</span>
+      <span className="min-w-0 flex-1 truncate">{p.username}</span>
+      <span className="text-base opacity-80">{p.catches} con{p.best ? ` · ${speciesName(p.best)}` : ""}</span>
+      <span className="tabular-nums">{formatXu(p.score)}</span>
+      {bump && bump.delta > 0 && <span className="fxc-rise absolute right-0 -top-3 text-base text-[#2e7d32]">+{formatXu(bump.delta)}</span>}
+    </li>
+  );
 }
 
 /** One battle's scoreboard: rank, name, catches, value (the leader crowned). */
@@ -23,14 +39,8 @@ export function Scoreboard({ battle, me, speciesName, limit }: { battle: Battle;
   const rows = limit ? battle.players.slice(0, limit) : battle.players;
   return (
     <ol className="flex flex-col gap-0.5">
-      {rows.map((p, i) => (
-        <li key={p.accountId} className={`flex items-center gap-2 ${p.accountId === me ? "font-bold text-burgundy" : ""}`}>
-          <span className="w-6 text-right tabular-nums">{i === 0 && p.score > 0 ? "👑" : `${i + 1}.`}</span>
-          <span className="min-w-0 flex-1 truncate">{p.username}</span>
-          <span className="text-base opacity-80">{p.catches} con{p.best ? ` · ${speciesName(p.best)}` : ""}</span>
-          <span className="tabular-nums">{formatXu(p.score)}</span>
-        </li>
-      ))}
+      <FxStyle />
+      {rows.map((p, i) => <ScoreRow key={p.accountId} p={p} rank={i} me={me} speciesName={speciesName} />)}
     </ol>
   );
 }
@@ -125,16 +135,43 @@ export default function BattlePanel({ board, busy, speciesName, onCreate, onJoin
 
 /** The live scoreboard over the world while my battle runs (top 3 and the clock). */
 export function BattleChip({ board, speciesName, onOpen }: { board: BattleBoard | null; speciesName: (id: string) => string; onOpen: () => void }) {
-  const now = useNow();
+  const now = useNow(250);
   const b = myBattle(board);
   if (!b || !board || b.status !== "live") return null;
   const phase = battlePhase(b, now);
+  // v22: the live start — 3, 2, 1 in the middle of the screen, then "Câu!" for a moment
+  const toStart = (b.startsAt ?? now) - now;
+  const sinceStart = now - (b.startsAt ?? now);
+  const pop = phase === "countdown" && toStart <= 3500 ? String(Math.max(1, Math.ceil(toStart / 1000)))
+    : phase === "fishing" && sinceStart < 1200 ? "🎣 Câu!" : null;
   return (
+    <>
+    {pop && <BigPop k={pop}>{pop}</BigPop>}
     <button type="button" onClick={onOpen} className="pch absolute left-2 top-28 z-10 flex w-56 flex-col gap-0.5 p-2 text-left font-vt text-base leading-tight">
       <span className="text-lg text-burgundy">
         🏆 Đấu câu · {phase === "countdown" ? `bắt đầu sau ${clockText((b.startsAt ?? now) - now)}` : phase === "fishing" ? `còn ${clockText((b.endsAt ?? now) - now)}` : "đang chấm…"}
       </span>
       <Scoreboard battle={b} me={board.me} speciesName={speciesName} limit={3} />
     </button>
+    </>
+  );
+}
+
+/** v22: my battle is over — a winner's fanfare with confetti and the prize counting up, or a short "better luck" card. */
+export function BattleResult({ won, prize, onClose }: { won: boolean; prize: number; onClose: () => void }) {
+  useEffect(() => {
+    if (won) fanfare();
+    const t = setTimeout(onClose, won ? 6000 : 3500);
+    return () => clearTimeout(t);
+  }, [won, onClose]);
+  return (
+    <>
+      {won && <Confetti />}
+      <button type="button" onClick={onClose} className="pch absolute left-1/2 top-24 z-40 flex -translate-x-1/2 flex-col items-center gap-1 px-5 py-3 font-vt leading-none motion-safe:animate-bounce"
+        role="status">
+        <span className="text-3xl text-burgundy">{won ? "🏆 Bạn thắng trận câu!" : "🎣 Trận câu đã xong"}</span>
+        {won ? <span className="text-2xl text-[#8e6a12]">+<CountUp value={prize} /> xu</span> : <span className="text-xl">Lần sau thử lại nhé!</span>}
+      </button>
+    </>
   );
 }

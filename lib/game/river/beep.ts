@@ -49,3 +49,8 @@ export function fanfare(): void {
 }
 /** A coin's clink. */
 export const coinClink = (): void => tone(1760, 80, "sine", 0.05);
+/** A camera's shutter: a click and a short noise burst. */
+export function shutterClick(): void {
+  tone(2400, 25, "square", 0.05);
+  tone(600, 60, "triangle", 0.05, 0.03);
+}

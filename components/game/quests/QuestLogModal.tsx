@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { questErrorMessage, type QuestCat } from "@/lib/game/quests/model";
 import { questAccept, questClaim, questCompanyClaim, questState, type Quest, type QuestState } from "@/lib/game/quests/rpc";
 import { ParchmentModal } from "../Parchment";
+import { FillBar, RewardPop } from "../celebrate/Fx";
 
 type Tab = QuestCat | "company";
 const TABS: ReadonlyArray<[Tab, string]> = [
@@ -22,9 +23,7 @@ function Bar({ v, goal }: { v: number; goal: number }) {
   const pct = Math.max(0, Math.min(100, (v / Math.max(1, goal)) * 100));
   return (
     <span className="flex items-center gap-2">
-      <span className="inline-block h-2.5 w-32 overflow-hidden rounded-sm border border-gold-300 bg-parchment">
-        <span className="block h-full bg-emerald-600" style={{ width: `${pct}%` }} />
-      </span>
+      <FillBar pct={pct} />
       <span className="tabular-nums text-base">{v.toLocaleString("vi-VN")}/{goal.toLocaleString("vi-VN")}</span>
     </span>
   );
@@ -48,6 +47,7 @@ export default function QuestLogModal({ token, at, initialTab, onCoins, onOpenLo
   const [state, setState] = useState<QuestState | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [reward, setReward] = useState<{ coins: number; xp: number; k: number } | null>(null);   // v22: the chest pop
 
   useEffect(() => {
     let live = true;
@@ -63,6 +63,7 @@ export default function QuestLogModal({ token, at, initialTab, onCoins, onOpenLo
       setState(s);
       if (s.paid !== undefined) {
         setMsg(`Nhận ${s.paid.toLocaleString("vi-VN")} xu${s.xp ? ` và ${s.xp} XP` : ""}!`);
+        setReward({ coins: s.paid, xp: s.xp ?? 0, k: Date.now() });
         onCoins();
       }
     } catch (e) {
@@ -103,7 +104,8 @@ export default function QuestLogModal({ token, at, initialTab, onCoins, onOpenLo
   const company = state?.company ?? null;
   return (
     <ParchmentModal title="📜 Nhiệm vụ" onClose={onClose} className="sm:max-w-[720px]">
-      <div className="flex min-h-0 flex-1 flex-col gap-3 font-vt text-lg" data-testid="quest-log">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-3 font-vt text-lg" data-testid="quest-log">
+        {reward && <RewardPop key={reward.k} coins={reward.coins} xp={reward.xp} title="Hoàn thành nhiệm vụ!" onDone={() => setReward(null)} />}
         <div className="flex flex-wrap gap-1" role="tablist">
           {TABS.map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id}
@@ -135,9 +137,7 @@ export default function QuestLogModal({ token, at, initialTab, onCoins, onOpenLo
               <div className="rounded border border-gold-300 p-2">
                 <div className="text-xl text-burgundy">{company.title}</div>
                 <p className="text-base">{company.descr} Ai góp sức đều nhận 🪙 {company.coins} · ✨ {company.xp} XP khi xong.</p>
-                <div className="h-4 w-full overflow-hidden rounded border border-gold-300 bg-parchment">
-                  <div className="h-full bg-amber-500" style={{ width: `${Math.min(100, (company.progress / Math.max(1, company.goal)) * 100)}%` }} />
-                </div>
+                <FillBar pct={Math.min(100, (company.progress / Math.max(1, company.goal)) * 100)} className="block h-4 w-full" color="bg-amber-500" />
                 <p className="text-base tabular-nums">
                   {company.progress.toLocaleString("vi-VN")}/{company.goal.toLocaleString("vi-VN")} · {company.contributors} người góp ·
                   bạn góp {company.mine.toLocaleString("vi-VN")}

@@ -9,13 +9,19 @@ import { tradeOpen, tradeState } from "./rpc";
 export function useTrade(token: string | null, roomId: string, toast: (text: string) => void) {
   const [state, setState] = useState<TradeState | null>(null);
   const seen = useRef<number | null>(null);
+  // v22: a trade that just finished while I watched: the coins it brought me (the celebration), until cleared
+  const [done, setDone] = useState<{ k: number; coins: number } | null>(null);
+  const coinsBefore = useRef<number | null>(null);
   const toastRef = useRef(toast);
   useEffect(() => { toastRef.current = toast; }, [toast]);
   const open = state?.trade != null;
 
   const apply = useCallback((s: TradeState) => {
     setState(s);
+    const before = coinsBefore.current;
+    coinsBefore.current = s.coins;
     if (s.lastDone && s.lastDone.id !== seen.current) {
+      if (seen.current !== null && before !== null && s.lastDone.status === "done") setDone({ k: s.lastDone.id, coins: Math.max(0, s.coins - before) });
       seen.current = s.lastDone.id;
       toastRef.current(s.lastDone.status === "done" ? `🤝 Giao dịch với ${s.lastDone.partnerName} đã xong!` : `Giao dịch với ${s.lastDone.partnerName} đã huỷ.`);
     }
@@ -41,5 +47,5 @@ export function useTrade(token: string | null, roomId: string, toast: (text: str
     }
   }, [token, roomId, apply]);
 
-  return { state, apply, start };
+  return { state, apply, start, done, clearDone: useCallback(() => setDone(null), []) };
 }

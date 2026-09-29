@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { centreOf, CoinFly, Confetti } from "../celebrate/Fx";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import {
   AUCTION_CAP_PERCENT, AUCTION_HOURS, AUCTION_MIN_VALUE, BAND_MAX_PERCENT, BAND_MIN_PERCENT, econErrText, kindIcon, kindName,
@@ -16,6 +17,21 @@ type Tab = "browse" | "sell" | "mine" | "auction";
 const TABS: ReadonlyArray<{ id: Tab; name: string }> = [
   { id: "browse", name: "🛒 Chợ" }, { id: "sell", name: "📝 Rao bán" }, { id: "mine", name: "📋 Tin của tôi" }, { id: "auction", name: "🔨 Đấu giá" },
 ];
+/** v22: an open auction's clock, ticking every second from the server's now; red and pulsing in the anti-snipe minutes. */
+function AuctionClock({ endsMs, serverNowMs, gotAt }: { endsMs: number; serverNowMs: number; gotAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const left = endsMs - (serverNowMs + (now - gotAt));
+  if (left <= 0) return <span className="font-bold"> · ⏳ đang chốt…</span>;
+  const s = Math.floor(left / 1000);
+  const hot = left <= SNIPE_SECONDS * 1000;
+  const text = s >= 3600 ? leftText(left) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return <span className={`tabular-nums ${hot ? "font-bold text-red-700 motion-safe:animate-pulse" : ""}`}> · ⏱️ {text}</span>;
+}
+
 const STATUS: Record<string, string> = { open: "đang rao", sold: "đã bán", expired: "hết hạn", cancelled: "đã gỡ", void: "bị huỷ (hết hàng)" };
 
 /** 🏪 Chợ người chơi (v21 #41, #42): browse and search what players sell, list my fish, clothes and produce at my own
@@ -36,12 +52,43 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
   const [confirm, setConfirm] = useState<number | null>(null);
   const [bids, setBids] = useState<Record<number, string>>({});
   const [hours, setHours] = useState<number>(6);
+  // v22: coins flying to the purse when my listing / auction sells, confetti when I win an auction
+  const [flies, setFlies] = useState<Array<{ k: string; amount: number; from: { x: number; y: number } }>>([]);
+  const [won, setWon] = useState(0);
+  const [gotAt, setGotAt] = useState(0);
+  const seen = useRef<Map<string, string> | null>(null);
+  const apply = useCallback((next: EconState) => {
+    const prev = seen.current;
+    const cur = new Map<string, string>();
+    const fly: Array<{ k: string; amount: number; from: { x: number; y: number } }> = [];
+    let wins = 0;
+    for (const l of next.mine) {
+      cur.set(`l${l.id}`, l.status);
+      if (prev?.get(`l${l.id}`) === "open" && l.status === "sold") {
+        fly.push({ k: `l${l.id}`, amount: saleShare(l.price).seller, from: centreOf(document.querySelector(`[data-testid="econ-listing-${l.id}"]`)) });
+      }
+    }
+    for (const a of next.auctions) {
+      cur.set(`a${a.id}`, a.status);
+      if (prev?.get(`a${a.id}`) !== "open" || a.status !== "sold") continue;
+      if (a.mine && a.top !== null) {
+        fly.push({ k: `a${a.id}`, amount: saleShare(a.top).seller, from: centreOf(document.querySelector(`[data-testid="econ-auction-${a.id}"]`)) });
+      } else if (a.leading) wins++;
+    }
+    seen.current = cur;
+    if (fly.length) setFlies((f) => [...f, ...fly]);
+    if (wins) setWon(Date.now());
+    setGotAt(Date.now());
+    setState(next);
+  }, []);
 
   useEffect(() => {
     let live = true;
-    econState(token).then((s) => { if (live) setState(s); }, (e: unknown) => { if (live) setError(econErrText(e)); });
-    return () => { live = false; };
-  }, [token]);
+    econState(token).then((s) => { if (live) apply(s); }, (e: unknown) => { if (live) setError(econErrText(e)); });
+    // v22: keep the auction clocks and the sales live while the market is open
+    const poll = setInterval(() => { econState(token).then((s) => { if (live) apply(s); }, () => {}); }, 8000);
+    return () => { live = false; clearInterval(poll); };
+  }, [token, apply]);
 
   const act = async (fn: () => Promise<EconState>, done: string) => {
     if (busy) return;
@@ -49,12 +96,12 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
     setError(null);
     setNotice(null);
     try {
-      setState(await fn());
+      apply(await fn());
       setNotice(done);
       onChanged();
     } catch (e) {
       setError(econErrText(e));
-      econState(token).then(setState, () => {});
+      econState(token).then(apply, () => {});
     } finally {
       setBusy(false);
       setConfirm(null);
@@ -101,7 +148,7 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
         <p className="text-base">
           Người bán: <b>{a.sellerName}</b> · giá trị {formatXu(a.value)} · khởi điểm {formatXu(a.start)}
           {a.top !== null ? ` · cao nhất ${formatXu(a.top)} (${a.leading ? "bạn" : a.topName ?? "ai đó"}, ${a.bids} lượt)` : " · chưa ai đặt"}
-          {open ? ` · còn ${leftText(a.endsMs - now)}` : ` · ${a.status === "sold" ? (a.leading ? "🏆 bạn thắng" : "đã bán") : STATUS[a.status] ?? a.status}`}
+          {open ? <AuctionClock endsMs={a.endsMs} serverNowMs={now} gotAt={gotAt} /> : ` · ${a.status === "sold" ? (a.leading ? "🏆 bạn thắng" : "đã bán") : STATUS[a.status] ?? a.status}`}
         </p>
         {open && !a.mine && (
           <span className="flex flex-wrap items-center gap-2">
@@ -126,6 +173,9 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
   return (
     <ParchmentModal title="🏪 Chợ người chơi" onClose={onClose} className="sm:max-w-2xl">
       <div className="flex flex-col gap-3 overflow-y-auto font-vt text-lg leading-tight" data-testid="player-market">
+        {flies.map((f) => <CoinFly key={f.k} from={f.from} amount={f.amount} onDone={() => setFlies((all) => all.filter((x) => x.k !== f.k))} />)}
+        {won > 0 && <Confetti key={won} count={40} />}
+        {won > 0 && <p role="status" className="text-emerald-800">🏆 Bạn đã thắng một phiên đấu giá — món hàng đã vào giỏ!</p>}
         <StallRowView rented={(state?.stalls ?? []).map((s) => s.renterName !== null)} notes={state?.listings.length ?? 0} />
         <p className="text-base">
           Mua bán cá, đồ thời trang và nông sản giữa bà con. Giá trong khoảng {BAND_MIN_PERCENT} %–{BAND_MAX_PERCENT} % giá trị,

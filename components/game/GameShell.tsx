@@ -115,6 +115,7 @@ import EstateModal from "./housing/EstateModal";
 import PlayerMarketModal from "./economy/PlayerMarketModal";                                // v21 economy
 import StallModal from "./economy/StallModal";                                            // v21 economy
 import TradeWindow from "./economy/TradeWindow";                                          // v21 economy
+import { TradeDoneFx } from "./celebrate/Fx";                                             // v22 (0086)
 import { useTrade } from "@/lib/game/economy/useTrade";                                   // v21 economy
 import { petSpeed } from "@/lib/game/pets/model";
 import { followingPet, lookOf, myPetCode } from "@/lib/game/pets/rpc";
@@ -1292,6 +1293,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {panel === "player_stalls" && (                                      // v21 economy
         <StallModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} />
       )}
+      {trade.done && <TradeDoneFx key={trade.done.k} coins={trade.done.coins} onDone={trade.clearDone} />}{/* v22 (0086) */}
       {trade.state?.trade && (                                              // v21 economy
         <TradeWindow key={trade.state.trade.id} token={token} trade={trade.state.trade} onState={trade.apply}
           onChanged={() => void fishing.data.reload()} />

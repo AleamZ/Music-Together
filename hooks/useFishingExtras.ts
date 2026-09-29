@@ -30,6 +30,9 @@ export interface FishingExtras {
   /** The map the canvas showed at the last syncMap (the treasure panel's "here"). */
   mapNow: string | null;
   syncMap: () => void;
+  /** v22: my battle just ended (the fanfare card), until dismissed. */
+  battleResult: { won: boolean; prize: number } | null;
+  dismissBattleResult: () => void;
 }
 
 /** Battles are polled this often while the board is open or I am in one; else rarely. */
@@ -51,6 +54,7 @@ export function useFishingExtras({ token, roomId, canvas, toast, watching, onCoi
   const [busy, setBusy] = useState(false);
   const [digNote, setDigNote] = useState<Record<string, string>>({});
   const [mapNow, setMapNow] = useState<string | null>(null);
+  const [battleResult, setBattleResult] = useState<{ won: boolean; prize: number } | null>(null);   // v22
   const live = useRef({ toast, onCoins, canvas });
   useEffect(() => {
     live.current = { toast, onCoins, canvas };
@@ -88,6 +92,7 @@ export function useFishingExtras({ token, roomId, canvas, toast, watching, onCoi
     const done = board.battles.find((b) => b.id === prev);
     if (!done) return;
     if (done.status === "done") {
+      setBattleResult({ won: done.winners.includes(board.me), prize: done.prize });                   // v22: the fanfare
       live.current.toast(done.winners.includes(board.me) ? `🏆 Bạn thắng trận câu! +${formatXu(done.prize)}` : "🎣 Trận câu đã xong — chúc lần sau may mắn!");
     } else if (done.status === "cancelled") {
       live.current.toast("Trận câu đã huỷ — tiền cược đã trả lại.");
@@ -112,7 +117,8 @@ export function useFishingExtras({ token, roomId, canvas, toast, watching, onCoi
   }, []);
 
   return {
-    state, board, busy, reload, digNote, mapNow,
+    state, board, busy, reload, digNote, mapNow, battleResult,
+    dismissBattleResult: useCallback(() => setBattleResult(null), []),
     syncMap: useCallback(() => setMapNow(live.current.canvas()?.mapId() ?? null), []),
     buyBoat: useCallback(() => void run(() => buyBoat(roomId, token), (s) => {
       setState(s);

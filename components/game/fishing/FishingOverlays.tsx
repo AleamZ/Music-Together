@@ -2,7 +2,7 @@
 
 import type { FishingController } from "@/hooks/useFishingController";
 import BagPanel, { type BagFarm } from "./BagPanel";
-import BattlePanel, { BattleChip } from "./BattlePanel";
+import BattlePanel, { BattleChip, BattleResult } from "./BattlePanel";
 import BoatPanel from "./BoatPanel";
 import TreasurePanel from "./TreasurePanel";
 import CatchCard from "./CatchCard";
@@ -69,6 +69,7 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
       {panel === "records" && <RecordsPanel catalog={catalog} load={fishing.loadBoard} onClose={closePanel} />}
       {/* v21 (0076): the boat, the battles, the treasure maps */}
       <BattleChip board={x.board} speciesName={speciesName} onOpen={() => fishing.openPanel("battle")} />
+      {x.battleResult && <BattleResult won={x.battleResult.won} prize={x.battleResult.prize} onClose={x.dismissBattleResult} />}
       {(x.state?.maps.length ?? 0) > 0 && panel === null && (
         <button type="button" className="pch-btn absolute right-2 top-28 z-10 text-lg" title="Bản đồ kho báu"
           onClick={() => { x.syncMap(); fishing.openPanel("treasure"); }}>

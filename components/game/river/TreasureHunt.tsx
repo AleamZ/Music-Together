@@ -8,6 +8,7 @@ import { isTyping } from "@/lib/game/keys";
 import { canStrike, createMineRound, MINE, minePos, stepMineRound, type MineRound } from "@/lib/game/mining/game";
 import { coinClink, shovelThud } from "@/lib/game/river/beep";
 import { BAND_TEXT, signalBars } from "@/lib/game/river/treasure";
+import { CoinBurst } from "@/components/game/celebrate/Fx";
 
 // v22 (0086) the treasure hunt: the detector's HUD (signal bars, a pulsing ring, "Đào!" on the spot), the shovel dig
 // (0072's dig sim: the blade sweeps, strike inside the dark soil) and the chest's reveal (the lid opens, coins pop).
@@ -174,33 +175,6 @@ export function ShovelGame({ view, onEnd, onClose }: { view: DigView; onEnd: (st
         )}
       </div>
     </div>
-  );
-}
-
-/** Coins bursting out of an opened chest: CSS-only particles (one frame under reduced motion). */
-export function CoinBurst({ count = 14, className = "" }: { count?: number; className?: string }) {
-  return (
-    <span className={`pointer-events-none absolute inset-0 ${className}`} aria-hidden="true">
-      {Array.from({ length: count }, (_, i) => {
-        const a = (i / count) * Math.PI * 2, d = 60 + (i % 3) * 22;
-        return (
-          <span key={i} className="explore-coin absolute left-1/2 top-1/2 text-xl"
-            style={{ "--dx": `${Math.round(Math.cos(a) * d)}px`, "--dy": `${Math.round(Math.sin(a) * d - 40)}px`, animationDelay: `${(i % 5) * 40}ms` } as React.CSSProperties}>
-            🪙
-          </span>
-        );
-      })}
-      <style>{`
-        .explore-coin { transform: translate(-50%, -50%); opacity: 0; animation: explore-coin 900ms cubic-bezier(.2,.7,.3,1) forwards; }
-        @keyframes explore-coin {
-          0% { transform: translate(-50%, -50%) scale(.4); opacity: 0; }
-          15% { opacity: 1; }
-          70% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1); opacity: 1; }
-          100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 30px)) scale(.9); opacity: 0; }
-        }
-        @media (prefers-reduced-motion: reduce) { .explore-coin { animation: none; opacity: 0; } }
-      `}</style>
-    </span>
   );
 }
 
