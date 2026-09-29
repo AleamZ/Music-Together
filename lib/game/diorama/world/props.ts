@@ -12,7 +12,7 @@ import { flagPixels, VN_RATIO } from "./vnflag";
 
 // Browser only: the world's set pieces — the river and the stream as flowing ribbons, the red bridges on the trails,
 // the landmarks seen from afar (the hall's flag on its rise, the market arch, the dojo tower, the mine headframe), windmills,
-// clouds, hot-air balloons and a few flocks of birds. All procedural, toon-shaded.
+// big tropical clouds and a few flocks of birds (no hot-air balloons: this is the delta). All procedural, toon-shaded.
 
 const U = (px: number) => px / 16;
 
@@ -355,32 +355,6 @@ export function buildSkyLife(): SkyLife {
   }));
   clouds.frustumCulled = false;
   root.add(clouds);
-  // hot-air balloons
-  const balloons: Array<{ g: THREE.Group; x: number; z: number; y: number; ph: number }> = [];
-  const stripes = [[0xe24a3b, 0xf4d35e], [0x3a86c8, 0xf2f0e6], [0x6bb04a, 0xf29a4a]];
-  stripes.forEach(([a, b], i) => {
-    const env = new THREE.SphereGeometry(2.2, 12, 10).scale(1, 1.2, 1).toNonIndexed();
-    env.deleteAttribute("uv");
-    const pos = env.getAttribute("position"), col = new Float32Array(pos.count * 3), ca = new THREE.Color(a), cb = new THREE.Color(b);
-    for (let k = 0; k < pos.count; k++) {
-      const ang = Math.atan2(pos.getZ(k), pos.getX(k));
-      const c = Math.floor(((ang + Math.PI) / (2 * Math.PI)) * 12) % 2 ? ca : cb;
-      col.set([c.r, c.g, c.b], k * 3);
-    }
-    env.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    const basket = colored(new THREE.BoxGeometry(0.8, 0.6, 0.8).translate(0, -3.6, 0), 0x8a5a36);
-    const ropes = colored(new THREE.CylinderGeometry(0.9, 0.45, 1.3, 4, 1, true).translate(0, -2.9, 0), 0x5a4030);
-    const geo = mergeGeometries([env, basket, ropes])!;
-    geos.push(geo, env, basket, ropes);
-    const m = toon({ vertexColors: true });
-    mats.push(m);
-    const g = new THREE.Group();
-    const mesh = new THREE.Mesh(geo, m);
-    mesh.castShadow = true;
-    g.add(mesh);
-    root.add(g);
-    balloons.push({ g, x: [60, 175, 235][i], z: [30, 105, 40][i], y: [28, 34, 24][i], ph: i * 2.1 });
-  });
   // birds: little flapping Vs in a few flocks
   const birdGeo = new THREE.BufferGeometry();
   birdGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, -0.9, 0, -0.35, 0, 0, 0.3, 0, 0, 0, 0, 0, 0.3, 0.9, 0, -0.35], 3));
@@ -403,10 +377,6 @@ export function buildSkyLife(): SkyLife {
         clouds.setMatrixAt(i, m4);
       });
       clouds.instanceMatrix.needsUpdate = true;
-      for (const b of balloons) {
-        b.g.position.set(b.x + Math.sin(ts * 0.05 + b.ph) * 12, b.y + Math.sin(ts * 0.4 + b.ph) * 1.2, b.z + Math.cos(ts * 0.04 + b.ph) * 8);
-        b.g.rotation.y = ts * 0.1 + b.ph;
-      }
       for (let i = 0; i < BIRDS; i++) {
         const flock = i % 3, k = Math.floor(i / 3);
         const cx = [90, 180, 40][flock], cz = [60, 40, 110][flock], r = [26, 34, 20][flock];

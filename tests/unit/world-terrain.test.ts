@@ -157,7 +157,7 @@ describe("the wild's collision from the terrain", () => {
       const b = world.blocked[r * world.cols + c] === 1;
       if (onPath(x, y)) { if (b) bad.push(`path ${x},${y}`); continue; }
       if (waterAt(x, y) !== null && bridgeAt(x, y) === null && !b) bad.push(`water ${x},${y}`);
-      if (slopeAtCell(g, c, r) > MAX_WALK_SLOPE && !b) bad.push(`cliff ${x},${y}`);
+      if (slopeAtCell(g, c, r) > MAX_WALK_SLOPE && !b && bridgeAt(x, y) === null) bad.push(`cliff ${x},${y}`);   // a bridge deck spans the bank
       if (b !== wildBlocked(x, y)) bad.push(`mismatch ${x},${y}`);
     }
     expect(bad.slice(0, 10)).toEqual([]);
@@ -186,7 +186,7 @@ describe("the world's scenery", () => {
   it("keeps every tree and rock off the zones, the paths and the water; deterministic", async () => {
     const trees = scatterTrees();
     const rocks = scatterRocks();
-    expect(trees.length).toBeGreaterThan(3000);
+    expect(trees.length).toBeGreaterThan(2500);
     expect(trees.length).toBeLessThan(26000);                                // instanced per chunk, 3 LODs: keep it lean
     const bad = [...trees, ...rocks].filter((t) => zoneAt({ x: t.x, y: t.y }) !== "wild" && t.x >= 0 && t.y >= 0 && t.x < WORLD_W && t.y < WORLD_H
       || onPath(t.x, t.y) || waterAt(t.x, t.y) !== null);

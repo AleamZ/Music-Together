@@ -1,5 +1,6 @@
 import { MO_DA_ARRIVE } from "@/lib/game/maps/arrivals";
 import { MINE, MINE_SOLID } from "./mine";
+import { deltaSolid } from "./delta";
 export { MINE, MINE_HILL, MINE_SOLID } from "./mine";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
@@ -120,6 +121,7 @@ export function wildBlocked(x: number, y: number): boolean {
   if (x >= MINE_SOLID.x && x < MINE_SOLID.x + MINE_SOLID.w && y >= MINE_SOLID.y && y < MINE_SOLID.y + MINE_SOLID.h) return true;
   if (LANDMARK_SOLIDS.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 <= s.r ** 2)) return true;
   if (KNOLLS.some((h) => (x - h.x) ** 2 + (y - h.y) ** 2 <= h.r ** 2)) return true;
+  if (deltaSolid(x, y)) return true;                                           // the stilt houses on the banks
   const g = heightGrid(), c = Math.floor(x / WORLD_CELL), r = Math.floor(y / WORLD_CELL);
   if (g.h[r * g.cols + c] > MAX_WALK_HEIGHT) return true;
   return slopeAtCell(g, c, r) > MAX_WALK_SLOPE;

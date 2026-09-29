@@ -305,6 +305,7 @@ export function heightAt(x: number, y: number): number {
 
   // roads and trails ramp between their ends (a trail's bridge leaves the water under it)
   const p = pathBlend(x, y);
+  if (cd < CANAL_HALF_W) { p.road = 0; p.trail = 0; }                 // the water shows under the bridge
   if (p.road > 0 || p.trail > 0) {
     if (p.trail > 0) h = lerp(h, p.trailH, p.trail * (1 - water));
     if (p.road > 0) h = lerp(h, p.roadH, p.road);
@@ -318,17 +319,18 @@ export function waterAt(x: number, y: number): number | null {
   const r = riverAt(x, y);
   if (!r.inZone && r.d < r.hw) return RIVER_LEVEL;
   if (outside(x, y) > 0) return RIVER_LEVEL;
-  if (canalDist(x, y) < CANAL_HALF_W && !onPath(x, y)) return RIVER_LEVEL;
+  if (canalDist(x, y) < CANAL_HALF_W) return RIVER_LEVEL;
   const st = streamAt(x, y);
   if (st.d < STREAM_HALF_W) return streamLevel(st.s);
   return null;
 }
 
-/** A bridge deck: a trail over the water (its height), or null. */
+/** A bridge deck: a trail over the water, or a road or trail over a canal (its height), or null. */
 export function bridgeAt(x: number, y: number): number | null {
   if (waterAt(x, y) === null) return null;
+  const canal = canalDist(x, y) < CANAL_HALF_W;
   for (const t of allPaths()) {
-    if (!t.trail) continue;
+    if (!t.trail && !canal) continue;
     const n = nearestOn(t.pts, t.cum, x, y);
     if (n.d <= t.w / 2 + 4) return lerp(t.h0, t.h1, n.s / t.cum[t.cum.length - 1]);
   }

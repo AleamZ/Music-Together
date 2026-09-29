@@ -1,4 +1,5 @@
 import type { Vec } from "@/lib/game/types";
+import { stiltHouses } from "./delta";
 import { MINE } from "./mine";
 import { PAGODA } from "./terrain";
 import { cumulative, nearestOn, ROADS, TRAILS } from "./roads";
@@ -72,6 +73,7 @@ export function sceneryFree(x: number, y: number, pad: number): boolean {
   const s = streamAt(x, y);
   if (s.d < STREAM_HALF_W + pad) return false;
   if (waterAt(x, y) !== null) return false;
+  if (stiltHouses().some((h) => Math.hypot(h.x - x, h.y - y) < 40 + pad)) return false;
   return !LANDMARKS.some((l) => Math.hypot(l.x - x, l.y - y) < 70 + pad);
 }
 
