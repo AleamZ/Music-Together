@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { DOMAIN } from "@/lib/game/world/terrain";
-import { CHUNK_PX, chunkOf, CHUNKS_X, CHUNKS_Y, scatterFlowers, scatterGrass, scatterRocks, scatterTrees, type Spot, type TreeKind } from "@/lib/game/world/scenery";
+import { CHUNK_PX, chunkOf, CHUNKS_X, CHUNKS_Y, scatterFlowers, scatterGrass, scatterHyacinths, scatterRocks, scatterTrees, type Spot, type TreeKind } from "@/lib/game/world/scenery";
 import { toon } from "./toon";
 
 // Browser only: the world's trees, rocks, grass and flowers, instanced per scenery chunk. Trees have three levels of
@@ -43,23 +43,66 @@ function roundTree(lod: number): THREE.BufferGeometry {
   return mergeGeometries(parts)!;
 }
 
-function conifer(lod: number): THREE.BufferGeometry {
-  const seg = lod === 0 ? 8 : lod === 1 ? 6 : 4;
-  const tiers = lod === 0 ? 3 : lod === 1 ? 2 : 1;
+const PALE = new THREE.Color(0xe2dccb), PALM_TRUNK = new THREE.Color(0x8a6a48), CULM = new THREE.Color(0x9ab85a);
+
+/** Tràm (melaleuca): a tall, slim, pale papery trunk and a few small airy tufts high up. */
+function tram(lod: number): THREE.BufferGeometry {
+  const parts = [painted(new THREE.CylinderGeometry(0.07, 0.13, 4.2, lod === 0 ? 6 : 4).translate(0, 2.1, 0), PALE)];
+  const tufts = lod === 0 ? [[0, 4.4, 0, 0.75], [0.45, 3.8, 0.2, 0.5], [-0.35, 4.0, -0.25, 0.55]] : lod === 1 ? [[0, 4.3, 0, 0.85]] : [[0, 4.1, 0, 0.9]];
+  for (const [x, y, z, r] of tufts) parts.push(painted(crown(0, r, r * 0.7, y).translate(x, 0, z), WHITE));
+  return mergeGeometries(parts)!;
+}
+
+/** Dừa (coconut palm): a leaning, slightly curved ringed trunk and a crown of drooping fronds, coconuts under it. */
+function dua(lod: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < tiers; i++) {
-    const r = tiers === 1 ? 1.25 : 1.35 - i * (0.9 / tiers), h = tiers === 1 ? 4.6 : 2.4;
-    const y = tiers === 1 ? 3.1 : 1.8 + i * 1.25;
-    parts.push(painted(new THREE.ConeGeometry(r, h, seg).translate(0, y, 0), WHITE));
+  const segs = lod === 0 ? 5 : 2, H = 5.2;
+  let x = 0, y = 0;
+  for (let i = 0; i < segs; i++) {
+    const lean = 0.12 + i * 0.06, h = H / segs;
+    parts.push(painted(new THREE.CylinderGeometry(0.11 - i * 0.008, 0.14 - i * 0.008, h * 1.04, lod === 0 ? 6 : 4).rotateZ(-lean).translate(x + Math.sin(lean) * h / 2, y + h / 2, 0), PALM_TRUNK));
+    x += Math.sin(lean) * h; y += Math.cos(lean) * h;
   }
-  if (lod < 2) parts.push(painted(new THREE.CylinderGeometry(0.14, 0.2, 1.2, 4).translate(0, 0.6, 0), TRUNK));
+  const n = lod === 0 ? 8 : lod === 1 ? 6 : 5;
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2;
+    const frond = new THREE.BoxGeometry(2.2, 0.04, 0.42).translate(1.05, 0, 0).rotateZ(-0.35 - (k % 2) * 0.2).rotateY(a).translate(x, y, 0);
+    parts.push(painted(frond, WHITE));
+  }
+  if (lod === 0) for (let k = 0; k < 3; k++) parts.push(painted(new THREE.IcosahedronGeometry(0.14, 0).translate(x + Math.cos(k * 2) * 0.18, y - 0.18, Math.sin(k * 2) * 0.18), new THREE.Color(0x6b8a2e)));
+  return mergeGeometries(parts)!;
+}
+
+/** Dừa nước (nipa palm): no trunk — long feathery fronds straight out of the mud, arching over the water. */
+function duanuoc(lod: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const n = lod === 0 ? 7 : lod === 1 ? 5 : 4;
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2 + (k % 2) * 0.3, tilt = 0.6 + (k % 3) * 0.15;
+    parts.push(painted(new THREE.BoxGeometry(0.34, 3.2, 0.05).translate(0, 1.6, 0).rotateZ(tilt).rotateY(a), WHITE));
+  }
+  return mergeGeometries(parts)!;
+}
+
+/** Tre (a bamboo clump): a bundle of tall green culms, their leafy tops nodding outwards. */
+function tre(lod: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const n = lod === 0 ? 9 : lod === 1 ? 5 : 3;
+  for (let k = 0; k < n; k++) {
+    const a = k * 2.4, r = 0.25 + (k % 3) * 0.12, h = 4.2 + (k % 4) * 0.5, lean = 0.08 + (k % 3) * 0.06;
+    const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
+    if (lod < 2) parts.push(painted(new THREE.CylinderGeometry(0.05, 0.06, h, 4).translate(0, h / 2, 0).rotateZ(-lean).rotateY(a).translate(cx, 0, cz), CULM));
+    parts.push(painted(new THREE.ConeGeometry(0.55, 1.6, 5).translate(0, h - 0.2, 0).rotateZ(-lean * 1.6).rotateY(a).translate(cx, 0, cz), WHITE));
+  }
   return mergeGeometries(parts)!;
 }
 
 const TREE_COLORS: Record<TreeKind, number[]> = {
-  round: [0x6fae45, 0x5d9a3a, 0x7cb850, 0x4f8a33, 0x88be55],
-  conifer: [0x3f7a45, 0x356b3c, 0x4a8a4f, 0x2f6038],
-  yellow: [0xe3b53c, 0xd8962e, 0xeccc5a, 0xe3b53c, 0xeccc5a, 0xc8643a],
+  tram: [0x7f9a5a, 0x8aa662, 0x6f8c4e, 0x94a86a],
+  dua: [0x5f9a3a, 0x6aa83f, 0x4f8a33, 0x78b048],
+  duanuoc: [0x5a8a3a, 0x6f9a42, 0x4f7a32],
+  tre: [0x7cae44, 0x8abf4e, 0x6a9a3a],
+  cay: [0x3f7a2e, 0x4a8a34, 0x356a28, 0x5a9a3a],
 };
 
 interface ChunkSet {
@@ -67,6 +110,7 @@ interface ChunkSet {
   lods: THREE.Group[];
   near: THREE.Group;                    // grass, flowers (only at LOD 0)
   rocks?: THREE.InstancedMesh;
+  hy?: THREE.InstancedMesh;
   center: THREE.Vector3;
   level: number;
 }
@@ -86,12 +130,13 @@ export class Forest {
     const grassMat = toon({ vertexColors: true, side: THREE.DoubleSide });
     this.mats.push(treeMat, rockMat, grassMat);
     const treeGeo: Record<TreeKind, THREE.BufferGeometry[]> = {
-      round: [0, 1, 2].map(roundTree), conifer: [0, 1, 2].map(conifer), yellow: [0, 1, 2].map(roundTree),
+      tram: [0, 1, 2].map(tram), dua: [0, 1, 2].map(dua), duanuoc: [0, 1, 2].map(duanuoc), tre: [0, 1, 2].map(tre), cay: [0, 1, 2].map(roundTree),
     };
     const rockGeo = painted(new THREE.DodecahedronGeometry(1, 0), new THREE.Color(0x9a9488));
     const tuftGeo = painted(mergeGeometries([0, 1, 2].map((i) => new THREE.ConeGeometry(0.1, 0.7, 3).rotateZ((i - 1) * 0.35).translate((i - 1) * 0.12, 0.3, 0))!), WHITE);
     const flowerGeo = painted(new THREE.IcosahedronGeometry(0.16, 0).translate(0, 0.35, 0), WHITE);
-    this.geos.push(...treeGeo.round, ...treeGeo.conifer, ...treeGeo.yellow, rockGeo, tuftGeo, flowerGeo);
+    const hyGeo = painted(mergeGeometries([new THREE.SphereGeometry(0.34, 6, 3, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.SphereGeometry(0.22, 5, 3, 0, Math.PI * 2, 0, Math.PI / 2).translate(0.32, 0, 0.1)])!, WHITE);
+    this.geos.push(...Object.values(treeGeo).flat(), rockGeo, tuftGeo, flowerGeo, hyGeo);
 
     const n = CHUNKS_X * CHUNKS_Y;
     const byChunk = <T extends { x: number; y: number }>(list: readonly T[], thin: number) => {
@@ -103,6 +148,7 @@ export class Forest {
     const rocks = byChunk(scatterRocks(), density);
     const grass = byChunk(scatterGrass(), density);
     const flowers = byChunk(scatterFlowers(), density);
+    const hyacinths = byChunk(scatterHyacinths(), density);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     const col = new THREE.Color();
 
@@ -110,15 +156,13 @@ export class Forest {
       const set: ChunkSet = { lods: [new THREE.Group(), new THREE.Group(), new THREE.Group()], near: new THREE.Group(), center: new THREE.Vector3(), level: -1 };
       const list = trees[c];
       if (list.length) {
-        // the round and yellow trees share a shape (only the colours differ): one instanced mesh for both
-        for (const kinds of [["round", "yellow"], ["conifer"]] as const) {
-          const mine = list.filter((t) => (kinds as readonly TreeKind[]).includes(t.kind));
+        for (const kind of Object.keys(treeGeo) as TreeKind[]) {
+          const mine = list.filter((t) => t.kind === kind);
           if (!mine.length) continue;
           for (let lod = 0; lod < 3; lod++) {
-            const im = new THREE.InstancedMesh(treeGeo[kinds[0]][lod], treeMat, mine.length);
+            const im = new THREE.InstancedMesh(treeGeo[kind][lod], treeMat, mine.length);
             mine.forEach((t, i) => {
-              const kind = t.kind;
-              const k = t.scale * (kind === "conifer" ? 1.1 : 1);
+              const k = t.scale * (kind === "tram" ? 1.15 : kind === "cay" ? 0.8 : 1);
               m.compose(p.set(t.x / 16, t.h - 0.15, t.y / 16), q.setFromAxisAngle(up, t.rot), s.set(k, k * (0.9 + t.tint * 0.3), k));
               im.setMatrixAt(i, m);
               const pal = TREE_COLORS[kind];
@@ -151,6 +195,12 @@ export class Forest {
         this.root.add(r);
         this.counts.rocks += rocks[c].length;
       }
+      if (hyacinths[c].length) {                          // lục bình: shown with the rocks (a draw call a chunk)
+        const hy = inst(hyGeo, grassMat, hyacinths[c], (sp) => [sp.scale, sp.scale * 0.6, sp.scale, 0.01], (sp) => (sp.tint < 0.7 ? 0x4f8a33 : 0x6aa83f));
+        hy.visible = false;
+        set.hy = hy;
+        this.root.add(hy);
+      }
       if (grass[c].length) {
         set.near.add(inst(tuftGeo, grassMat, grass[c], (sp) => [sp.scale, sp.scale, sp.scale, -0.05], (sp) => [0x7fb54a, 0x6aa23c, 0x98c45a][Math.floor(sp.tint * 3)]));
         this.counts.grass += grass[c].length;
@@ -182,6 +232,7 @@ export class Forest {
       c.lods.forEach((g, i) => { g.visible = i === level; });
       c.near.visible = this.nearOn && level === 0;
       if (c.rocks) c.rocks.visible = level < 2;
+      if (c.hy) c.hy.visible = level < 2;
     }
   }
 
