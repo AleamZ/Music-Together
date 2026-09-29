@@ -4,18 +4,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { drawPet } from "@/lib/game/art/pets";
 import { formatXu, type FishSpecies } from "@/lib/game/fishing/catalog";
 import type { FishRow } from "@/lib/game/fishing/state";
-import { isPetSpecies, SPECIES } from "@/lib/game/pets/catalog";
+import { foodOf, SPECIES, toyOf } from "@/lib/game/pets/catalog";
 import type { PetLook } from "@/lib/game/pets/model";
 import { lookOf, type Pet, type PetsState } from "@/lib/game/pets/rpc";
 import {
-  battleAccept, battleAct, battleChallenge, battleDecline, battleForfeit, battleStartPve, battleState, DAY_XP, errText, evolveNeeds,
+  battleAccept, battleActPress, battleChallenge, battleDecline, battleForfeit, battleStartPve, battleState, DAY_XP, errText, evolveNeeds,
   fighterLearn, fighterTrain, FISH_FIGHTER_RARITY, fishFighterRelease, fishToFighter, FORM_NAMES, GACHA_PITY, GACHA_POOLS, GACHA_PRICE,
-  gachaRoll, logText, MAX_FISH_FIGHTERS, MAX_PETS_V2, MAX_STAKE, NPCS, PVE_PAID_WINS, PVE_PER_DAY, petEvolve, petPat, petRelease, PVP_CUT,
-  RARITIES, rarityOf, SKILL_NOTE, skillOf, SKILLS, trainCap, trainCost, type Battle, type BattleState, type Fighter, type FishFighter,
+  gachaRoll, logText, MAX_FISH_FIGHTERS, MAX_PETS_V2, MAX_STAKE, NPCS, PVE_PAID_WINS, PVE_PER_DAY, petEvolve, petRelease, PVP_CUT,
+  RARITIES, rarityOf, SKILL_NOTE, skillOf, SKILLS, trainCap, trainCost, type Battle, type BattleState, type FishFighter,
   type Stats,
 } from "@/lib/game/pets/v2";
 import ItemIcon from "../ItemIcon";
 import { ParchmentModal } from "../Parchment";
+import { BattleStage, PowerPress } from "./BattleStage";
+import CareGame from "./CareGame";
+import EggHatch from "./EggHatch";
+import type { CareKind } from "@/lib/game/pets/minigames";
 
 type Tab = "egg" | "raise" | "battle" | "fish";
 const TABS: ReadonlyArray<[Tab, string]> = [["egg", "🥚 Máy trứng"], ["raise", "💖 Nuôi dạy"], ["battle", "⚔️ Đấu thú"], ["fish", "🐟 Cá chiến"]];
@@ -36,9 +40,6 @@ function Sprite({ look, scale = 3, flip = false }: { look: PetLook | null; scale
   }, [look, scale, flip]);
   return <canvas ref={ref} width={22 * scale} height={26 * scale} className="[image-rendering:pixelated]" aria-hidden="true" />;
 }
-
-const lookOfFighter = (f: Fighter | null): PetLook | null =>
-  f && f.kind !== "fish" && isPetSpecies(f.species) ? { species: f.species, variant: f.variant, head: null, neck: null, body: null, happy: true, form: f.form } : null;
 
 function RarityBadge({ tier }: { tier: number }) {
   const r = rarityOf(tier);
@@ -80,6 +81,9 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
   const [target, setTarget] = useState<string>("");
   const [stake, setStake] = useState("0");
   const [confirmRelease, setConfirmRelease] = useState<string | null>(null);
+  const [care, setCare] = useState<{ pet: Pet; kind: CareKind } | null>(null);     // v22: a care minigame open
+  const [pressing, setPressing] = useState<{ battle: number; turn: number; skill: string } | null>(null);   // v22: the power press
+  const [rolling, setRolling] = useState(false);
   const pet = pets.find((p) => p.id === sel) ?? pets[0] ?? null;
   const nowMs = petsState?.serverNowMs ?? 0;
   const speciesName = (id: string) => species.find((s) => s.id === id)?.name ?? id;
@@ -140,19 +144,11 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
         Nuôi tối đa {MAX_PETS_V2} bé ({pets.length} hiện có).</p>
       <div>
         <button type="button" className="pch-btn pch-btn-primary text-xl" disabled={busy || pets.length >= MAX_PETS_V2 || (coins !== null && coins < GACHA_PRICE)}
-          onClick={() => void run(() => gachaRoll(token), (s) => { setRolled(s.rolled ?? null); withPets(s); if (s.pets.length) setSel(s.pets[s.pets.length - 1].id); })}>
+          onClick={() => { setRolled(null); setRolling(true); void run(() => gachaRoll(token).finally(() => setRolling(false)), (s) => { setRolled(s.rolled ?? null); withPets(s); if (s.pets.length) setSel(s.pets[s.pets.length - 1].id); }); }}>
           🥚 Quay trứng · {formatXu(GACHA_PRICE)}
         </button>
       </div>
-      {rolled && isPetSpecies(rolled.species) && (
-        <div className="flex items-center gap-3 rounded-sm border-2 p-2 motion-safe:animate-[pulse_1s_ease-in-out_2]" style={{ borderColor: rarityOf(rolled.rarity).color }} data-testid="egg-result">
-          <Sprite look={{ species: rolled.species, variant: rolled.variant, head: null, neck: null, body: null, happy: true }} scale={4} />
-          <div className="flex flex-col gap-1">
-            <span className="text-xl font-bold text-burgundy">Nở ra {SPECIES[rolled.species].icon} {SPECIES[rolled.species].name}!</span>
-            <RarityBadge tier={rolled.rarity} />
-          </div>
-        </div>
-      )}
+      <EggHatch rolled={rolled} rolling={rolling} />
     </section>
   );
 
@@ -173,8 +169,12 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
           </div>
         </div>
         <div className="flex flex-wrap gap-1">
-          <button type="button" className="pch-btn" disabled={busy || patWait || p.sulking} onClick={() => void run(() => petPat(token, p.id), withPets)}>
+          <button type="button" className="pch-btn" disabled={busy || patWait || p.sulking} onClick={() => setCare({ pet: p, kind: "pat" })}>
             {patWait ? "Vừa vuốt ve" : "🤲 Vuốt ve"}</button>
+          <button type="button" className="pch-btn" disabled={busy || !(petsState?.items[foodOf(p.species).id] ?? 0)} onClick={() => setCare({ pet: p, kind: "feed" })}>
+            🍖 Cho ăn ({petsState?.items[foodOf(p.species).id] ?? 0})</button>
+          <button type="button" className="pch-btn" disabled={busy || p.sulking || !(petsState?.items[toyOf(p.species).id] ?? 0) || (p.playReadyMs !== null && p.playReadyMs > nowMs)}
+            title={toyOf(p.species).name} onClick={() => setCare({ pet: p, kind: "play" })}>🎾 Chơi bóng</button>
           {need && (
             <button type="button" className="pch-btn pch-btn-primary" disabled={busy || !canEvolve}
               title={`Cần cấp ${need.level} và thân thiết ${need.affection}`} onClick={() => void run(() => petEvolve(token, p.id), withPets)}>
@@ -235,23 +235,16 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
   );
 
   const battleView = (b: Battle) => {
-    const me = b.side === 1 ? b.f1 : b.f2, foe = b.side === 1 ? b.f2 : b.f1;
-    const myHp = b.side === 1 ? b.hp1 : b.hp2, foeHp = b.side === 1 ? b.hp2 : b.hp1;
+    const me = b.side === 1 ? b.f1 : b.f2;
     const names: [string, string] = [b.f1?.name ?? "?", b.f2?.name ?? "?"];
     const done = b.status === "done";
     const iWon = done && b.winner === b.side;
-    const fighterBox = (f: Fighter | null, hp: number, mine: boolean) => (
-      <div className="flex flex-col items-center gap-1">
-        {f?.kind === "fish" ? <ItemIcon id={f.species} scale={4} /> : <Sprite look={lookOfFighter(f)} scale={4} flip={!mine} />}
-        <span className="font-bold text-burgundy">{f?.name} · Lv{f?.level}</span>
-        <span className="text-base">{bar(hp, f?.hp ?? 1, hp / Math.max(1, f?.hp ?? 1) > 0.35 ? "bg-emerald-500" : "bg-rose-500", "w-28")} {hp}/{f?.hp}</span>
-      </div>
-    );
+    const press = pressing && pressing.battle === b.id && pressing.turn === b.turn && !done && !b.acted ? pressing : null;
     return (
       <div className="flex flex-col gap-2 rounded-sm border-2 border-gold-300 bg-cream p-2" data-testid="battle-view">
         <p className="text-center">{b.mode === "pve" ? "Đấu với NPC" : `Đấu với ${b.side === 1 ? b.p2Name : b.p1Name}`} · Lượt {Math.min(b.turn, 30)}
           {b.stake > 0 && <> · cược {formatXu(b.stake)}</>}</p>
-        <div className="flex items-end justify-around gap-2">{fighterBox(me, myHp, true)}<span className="text-2xl">⚔️</span>{fighterBox(foe, foeHp, false)}</div>
+        <BattleStage b={b} />
         <ul className="min-h-12 text-base" aria-live="polite">
           {b.log.map((l, i) => <li key={i} className={l.who === b.side ? "text-emerald-800" : "text-rose-800"}>{logText(l, names)}</li>)}
         </ul>
@@ -262,6 +255,15 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
           </p>
         ) : b.acted ? (
           <p className="text-center">Đã chọn chiêu — chờ đối thủ…</p>
+        ) : press ? (
+          <div className="flex justify-center">
+            <PowerPress seed={b.pressSeed ?? 0} skill={skillOf(press.skill)?.name ?? press.skill} onCancel={() => setPressing(null)}
+              onPress={(tick, ticks) => void run(() => battleActPress(token, b.id, press.skill, tick, ticks), (r) => {
+                setPressing(null);
+                withBattle(r);
+                if (r.refused) setError("Lượt đánh không hợp lệ.");
+              })} />
+          </div>
         ) : (
           <div className="flex flex-wrap justify-center gap-1">
             {(me?.skills ?? []).map((s) => {
@@ -269,7 +271,11 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
               return (
                 <button key={s} type="button" className="pch-btn pch-btn-primary" disabled={busy}
                   title={k ? `${SKILL_NOTE[k.kind]}${k.power ? ` · lực ${k.power}, chính xác ${k.acc}%` : ""}` : s}
-                  onClick={() => void run(() => battleAct(token, b.id, s), withBattle)}>{k?.name ?? s}</button>
+                  onClick={() => {
+                    // a hit gets the power press; a guard / heal (and a battle from before the press) goes at once
+                    if (k?.kind === "hit" && b.pressSeed !== null) setPressing({ battle: b.id, turn: b.turn, skill: s });
+                    else void run(() => battleActPress(token, b.id, s, null, 1), withBattle);
+                  }}>{k?.name ?? s}</button>
               );
             })}
             <button type="button" className="pch-btn" disabled={busy} onClick={() => void run(() => battleForfeit(token, b.id), withBattle)}>🏳️ Bỏ cuộc</button>
@@ -282,9 +288,9 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
 
   const battleTab = (
     <section className="flex flex-col gap-2" data-testid="pet-battle">
-      {bs?.battle ? battleView(bs.battle) : (
+      {(bs?.battle ?? bs?.last) && <div key={(bs.battle ?? bs.last)!.id}>{battleView((bs.battle ?? bs.last)!)}</div>}
+      {bs?.battle ? null : (
         <>
-          {bs?.last && battleView(bs.last)}
           {fighters.length === 0 ? <p>Cần một bé hoặc một cá chiến để đấu.</p> : (
             <>
               <label className="flex flex-wrap items-center gap-2">Ra trận:
@@ -420,6 +426,7 @@ export default function PetCenterModal({ token, roomId, pets: petsState, onPets,
           <button type="button" className="pch-btn" onClick={onClose}>Đóng</button>
         </div>
       </div>
+      {care && <CareGame token={token} pet={care.pet} kind={care.kind} onPets={withPets} onClose={() => setCare(null)} />}
     </ParchmentModal>
   );
 }

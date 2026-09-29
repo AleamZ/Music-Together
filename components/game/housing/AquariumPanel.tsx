@@ -8,6 +8,7 @@ import {
   AQUA_DECOR, aquariumDecor, aquariumMine, aquariumPut, aquariumTake, aquariumView, errText, MAX_DECOR, type AquaView, type Tank,
 } from "@/lib/game/pets/v2";
 import ItemIcon from "../ItemIcon";
+import AquariumTank from "../pets/AquariumTank";
 import { ParchmentModal } from "../Parchment";
 
 const kg = (g: number) => `${(g / 1000).toLocaleString("vi-VN", { maximumFractionDigits: 2 })} kg`;
@@ -32,6 +33,7 @@ export default function AquariumPanel({ token, roomId, kind, no, bag, speciesNam
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pick, setPick] = useState<Record<number, string>>({});
+  const [feed, setFeed] = useState<Record<number, number>>({});   // v22: flakes sprinkled per tank (show only)
 
   const load = useCallback(async () => {
     const [v, m] = await Promise.all([aquariumView(token, roomId, kind, no), aquariumMine(token).catch(() => ({ tanks: [] as Tank[], showcase: [] }))]);
@@ -84,6 +86,13 @@ export default function AquariumPanel({ token, roomId, kind, no, bag, speciesNam
           return (
             <section key={t.tank} className="flex flex-col gap-1 rounded-sm border-2 border-sky-300 bg-sky-50 p-2" data-testid={`tank-${t.tank}`}>
               <p className="font-bold text-burgundy">{furnitureOf(t.item)?.name ?? "Bể cá"} · {t.fish.length}/{t.cap} con</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <AquariumTank fish={t.fish} decor={t.decor} feedSignal={feed[t.tank] ?? 0} />
+                {t.fish.length > 0 && (
+                  <button type="button" className="pch-btn px-1.5 py-0.5 text-sm" onClick={() => setFeed({ ...feed, [t.tank]: (feed[t.tank] ?? 0) + 1 })}>
+                    🍤 Rắc thức ăn</button>
+                )}
+              </div>
               <ul className="flex flex-col gap-1">
                 {t.fish.map((f, i) => (
                   <li key={f.id ?? i} className="flex items-center justify-between gap-2 rounded-sm border border-sky-200 bg-cream px-1.5 py-0.5">

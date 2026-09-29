@@ -6,9 +6,11 @@ import { formatXu } from "@/lib/game/fishing/catalog";
 import { PET_ITEMS, PET_SLOTS, PET_SPECIES, SPECIES, fashionFor, foodOf, toyOf, MAX_PETS, type PetSlot, type PetSpecies } from "@/lib/game/pets/catalog";
 import { petErrorMessage, sanitizePetName, type PetLook } from "@/lib/game/pets/model";
 import {
-  buyPet, buyPetItem, equipPet, feedPet, lookOf, playPet, renamePet, setActivePet, type Pet, type PetsState,
+  buyPet, buyPetItem, equipPet, lookOf, renamePet, setActivePet, type Pet, type PetsState,
 } from "@/lib/game/pets/rpc";
 import { ParchmentModal } from "./Parchment";
+import CareGame from "./pets/CareGame";
+import type { CareKind } from "@/lib/game/pets/minigames";
 
 type Tab = "buy" | "mine" | "care" | "fashion";
 const TABS: ReadonlyArray<[Tab, string]> = [["mine", "🐾 Thú của tôi"], ["buy", "🏪 Mua thú"], ["care", "🍖 Đồ ăn & đồ chơi"], ["fashion", "🎀 Thời trang"]];
@@ -58,6 +60,7 @@ export default function PetShopModal({ token, state, coins, onState, onOpenCente
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pick, setPick] = useState<{ species: PetSpecies; variant: string } | null>(null);
+  const [care, setCare] = useState<{ pet: Pet; kind: CareKind } | null>(null);   // v22: the care minigames
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
   const [selected, setSelected] = useState<number | null>(state?.active ?? pets[0]?.id ?? null);
@@ -114,10 +117,10 @@ export default function PetShopModal({ token, state, coins, onState, onOpenCente
         </div>
         <div className="flex flex-wrap gap-1">
           <button type="button" className="pch-btn" disabled={busy || !has(foodOf(p.species).id)} title={`${foodOf(p.species).name} (còn ${items[foodOf(p.species).id] ?? 0})`}
-            onClick={() => void run(() => feedPet(token, p.id))}>Cho ăn ({items[foodOf(p.species).id] ?? 0})</button>
+            onClick={() => setCare({ pet: p, kind: "feed" })}>Cho ăn ({items[foodOf(p.species).id] ?? 0})</button>
           <button type="button" className="pch-btn" disabled={busy || !has(toyOf(p.species).id) || playWait || p.sulking}
             title={has(toyOf(p.species).id) ? toyOf(p.species).name : `Cần ${toyOf(p.species).name}`}
-            onClick={() => void run(() => playPet(token, p.id))}>{playWait ? "Vừa chơi" : "Chơi"}</button>
+            onClick={() => setCare({ pet: p, kind: "play" })}>{playWait ? "Vừa chơi" : "Chơi"}</button>
           {active ? (
             <button type="button" className="pch-btn" disabled={busy} onClick={() => void run(() => setActivePet(token, null))}>Gửi tiệm</button>
           ) : (
@@ -242,6 +245,7 @@ export default function PetShopModal({ token, state, coins, onState, onOpenCente
           <button type="button" className="pch-btn" onClick={onClose}>Đóng</button>
         </div>
       </div>
+      {care && <CareGame token={token} pet={care.pet} kind={care.kind} onPets={onState} onClose={() => setCare(null)} />}
     </ParchmentModal>
   );
 }

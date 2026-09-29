@@ -102,11 +102,13 @@ export function battleDmg(power: number, atk: number, def: number, roll: number,
 
 export interface Stats { hp: number; atk: number; def: number; spd: number }
 export interface Fighter extends Stats { kind: "pet" | "fish" | "npc"; id: string | number; name: string; species: string; variant: string; rarity: number; form: number; level: number; skills: string[] }
-export interface LogLine { who: 1 | 2; skill: string; dmg?: number; crit?: boolean; guarded?: boolean; miss?: boolean; heal?: number; guard?: boolean; fail?: boolean }
+export interface LogLine { who: 1 | 2; skill: string; dmg?: number; crit?: boolean; guarded?: boolean; miss?: boolean; heal?: number; guard?: boolean; fail?: boolean; power?: number }
 export interface Battle {
   id: number; mode: "pve" | "pvp"; status: "pending" | "active" | "done"; side: 1 | 2; npc: string | null; turn: number;
   f1: Fighter | null; f2: Fighter | null; hp1: number; hp2: number; log: LogLine[]; stake: number; winner: 0 | 1 | 2 | null;
   reward: number; p1Name: string | null; p2Name: string | null; acted: boolean; foeActed: boolean; deadlineMs: number;
+  /** v22 (0085): my side's power-meter seed this turn (null: none). */
+  pressSeed: number | null;
 }
 export interface FishFighter { id: number; speciesId: string; weightG: number; name: string; level: number; xp: number; xpNeed: number; skills: string[]; trn: Stats; stats: Stats & { rarity: number } }
 export interface BattleState {
@@ -145,6 +147,7 @@ export function parseBattle(v: unknown): Battle | null {
     log.push({
       who: l.who, skill: str(l.skill), dmg: l.dmg == null ? undefined : num(l.dmg), crit: l.crit === true, guarded: l.guarded === true,
       miss: l.miss === true, heal: l.heal == null ? undefined : num(l.heal), guard: l.guard === true, fail: l.fail === true,
+      power: l.power == null ? undefined : num(l.power),
     });
   }
   const w = o.winner;
@@ -155,6 +158,7 @@ export function parseBattle(v: unknown): Battle | null {
     winner: w === 0 || w === 1 || w === 2 ? w : null, reward: num(o.reward),
     p1Name: typeof o.p1_name === "string" ? o.p1_name : null, p2Name: typeof o.p2_name === "string" ? o.p2_name : null,
     acted: o.acted === true, foeActed: o.foe_acted === true, deadlineMs: num(o.deadline_ms),
+    pressSeed: o.press_seed == null ? null : num(o.press_seed),
   };
 }
 
@@ -223,6 +227,11 @@ export function parseAquaView(data: unknown): AquaView & { coins?: number } {
 
 export function v2ErrorMessage(msg: string): string {
   if (msg.includes("insufficient funds")) return "Không đủ xu.";
+  if (msg.includes("outdated")) return "Trang đã cũ — tải lại trang nhé.";                        // v22 (0085)
+  if (msg.includes("no food")) return "Hết đồ ăn cho bé — mua ở tiệm thú cưng.";
+  if (msg.includes("no toy")) return "Cần đồ chơi của bé — mua ở tiệm thú cưng.";
+  if (msg.includes("too tired")) return "Bạn mệt quá, nghỉ chút đã.";
+  if (msg.includes("no round")) return "Lượt chơi đã hết.";
   if (msg.includes("no knock")) return "Người này chưa gõ cửa (hoặc đã quá 10 phút).";          // v21 fixes (0078)
   if (msg.includes("too many pets")) return `Bạn nuôi tối đa ${MAX_PETS_V2} bé thôi.`;
   if (msg.includes("too many fighters")) return `Tối đa ${MAX_FISH_FIGHTERS} cá chiến.`;
@@ -272,7 +281,6 @@ export const gachaRoll = async (token: string): Promise<PetsState & { rolled?: {
   return { ...parsePetsState(d), rolled: { rarity: num(r.rarity, 1), species: str(r.species), variant: str(r.variant) } };
 };
 export const petRelease = async (token: string, pet: number) => parsePetsState(await rpc("pet_release", { p_session_token: token, p_pet: pet }));
-export const petPat = async (token: string, pet: number) => parsePetsState(await rpc("pet_pat", { p_session_token: token, p_pet: pet }));
 export const petEvolve = async (token: string, pet: number) => parsePetsState(await rpc("pet_evolve", { p_session_token: token, p_pet: pet }));
 
 /** Training and skills answer both states (and the balance). */
@@ -295,8 +303,25 @@ export const battleAccept = async (token: string, battle: number, kind: FKind, i
   parseBattleState(await rpc("battle_accept", { p_session_token: token, p_battle: battle, p_kind: kind, p_id: id }));
 export const battleDecline = async (token: string, battle: number) =>
   parseBattleState(await rpc("battle_decline", { p_session_token: token, p_battle: battle }));
-export const battleAct = async (token: string, battle: number, skill: string) =>
-  parseBattleState(await rpc("battle_act", { p_session_token: token, p_battle: battle, p_skill: skill }));
+/** v22 (0085): the pick with its power press (the press tick on my meter, null = none; ticks the meter ran). */
+export const battleActPress = async (token: string, battle: number, skill: string, press: number | null, ticks: number) => {
+  const d = await rpc("battle_act_press", { p_session_token: token, p_battle: battle, p_skill: skill, p_press: press, p_ticks: ticks });
+  return { ...parseBattleState(d), power: num(rec(d).power, 1000), refused: typeof rec(d).code === "string" };
+};
+
+// v22 (0085): the care minigames
+export interface CareRound { pet: number; kind: "feed" | "pat" | "play"; seed: number; ticks: number }
+export const careStart = async (token: string, pet: number, kind: CareRound["kind"]): Promise<PetsState & { round: CareRound }> => {
+  const d = await rpc("pet_care_start", { p_session_token: token, p_pet: pet, p_kind: kind });
+  const r = rec(rec(d).round);
+  return { ...parsePetsState(d), round: { pet: num(r.pet), kind: r.kind === "pat" || r.kind === "play" ? r.kind : "feed", seed: num(r.seed), ticks: num(r.ticks) } };
+};
+export interface CareOutcome { result: "done" | "lost"; why: string | null; permille: number; affection: number; xp: number }
+export const careFinish = async (token: string, inputs: readonly number[], ticks: number, score: number): Promise<PetsState & { outcome: CareOutcome }> => {
+  const d = rec(await rpc("pet_care_finish", { p_session_token: token, p_inputs: inputs, p_ticks: ticks, p_score: score }));
+  return { ...parsePetsState(d), outcome: { result: d.result === "done" ? "done" : "lost", why: typeof d.why === "string" ? d.why : null,
+    permille: num(d.permille), affection: num(d.affection), xp: num(d.xp) } };
+};
 export const battleForfeit = async (token: string, battle: number) =>
   parseBattleState(await rpc("battle_forfeit", { p_session_token: token, p_battle: battle }));
 export const fishToFighter = async (token: string, fishId: string) =>

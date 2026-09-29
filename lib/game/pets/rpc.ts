@@ -116,8 +116,7 @@ export const buyPet = (token: string, species: PetSpecies, variant: string, name
   call("pet_buy", { p_session_token: token, p_species: species, p_variant: variant, p_name: name });
 export const buyPetItem = (token: string, item: string, qty = 1) =>
   call("pet_buy_item", { p_session_token: token, p_item: item, p_qty: qty });
-export const feedPet = (token: string, pet: number) => call("pet_feed", { p_session_token: token, p_pet: pet });
-export const playPet = (token: string, pet: number) => call("pet_play", { p_session_token: token, p_pet: pet });
+// v22 (0085): feeding and playing are minigames now (pet_care_start / pet_care_finish in ./v2.ts).
 export const setActivePet = (token: string, pet: number | null) => call("pet_set_active", { p_session_token: token, p_pet: pet });
 export const renamePet = (token: string, pet: number, name: string) =>
   call("pet_rename", { p_session_token: token, p_pet: pet, p_name: name });
