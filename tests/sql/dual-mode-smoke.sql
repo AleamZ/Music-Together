@@ -10,6 +10,8 @@
 --   4. A switches graphics mid-session: the first claim after each switch is judged by both models (no strike); the
 --      next one by the new model only; a real teleport is refused even on a switch.
 --   5. Level gates and waypoints in both modes; real teleports caught in both modes.
+--   7. 0091: the lenient switch at most once per 5 minutes per account (player_pos.switch_at); a faster switch is judged
+--      by its new mode only and logged as a soft pos_mode_switch event. It re-runs 0091 twice with \i.
 \set ON_ERROR_STOP on
 set time zone 'UTC';
 set client_min_messages = warning;
@@ -383,6 +385,57 @@ begin
   j := public.pos_report_w(tb, 1476, 930);                                       -- the wild: off the map
   assert j ? 'anticheat', format('flag off wild %s', j);
   raise notice 'flag off ok';
+end $$;
+
+-- ---------- 7. 0091: the lenient switch at most once per 5 minutes ----------
+set client_min_messages = warning;
+\i supabase/migrations/0091_dual_mode_fix.sql
+\i supabase/migrations/0091_dual_mode_fix.sql
+reset client_min_messages;
+update public.app_flags set enabled = true where key = 'unified_world';
+do $$
+declare ta text := (select v from dm where k = 'ta'); a uuid := (select v from dm where k = 'a')::uuid; j jsonb;
+        n0 integer; s0 integer;
+begin
+  assert exists (select 1 from information_schema.columns where table_name = 'player_pos' and column_name = 'switch_at'), 'switch_at column';
+  perform pg_temp.tab('tA');
+  perform pg_temp.put('a', 'pond', 352, 374, 0.2);
+  update public.player_pos set switch_at = null where account_id = a;
+  j := public.pos_report(ta, 'pond', 352, 374);                                  -- 2D, no stored mode
+  perform pg_temp.ago('a', 0.2);
+  n0 := (select count(*) from public.anticheat_events where account_id = a and code = 'pos_teleport');
+  s0 := (select count(*) from public.anticheat_events where account_id = a and code = 'pos_mode_switch');
+  -- the first switch (no stored mode, never switched): lenient, as in 0090
+  j := public.pos_report_w(ta, 1476, 814);
+  assert j = '{"ok": true, "map": "hall", "x": 516, "y": 334}'::jsonb, format('first switch lenient %s', j);
+  assert (select switch_at from public.player_pos where account_id = a) > now() - interval '1 minute', 'switch_at stamped';
+  perform pg_temp.ago('a', 2);
+  assert public._pos_claim(a, 'wild', 1476, 930, 'cast') is null, 'in the wild';
+  -- a switch back within 5 minutes: judged by the new (2D) model only — the wild → hall is no 2D hop — and logged soft
+  perform pg_temp.ago('a', 0.5);
+  j := public.pos_report(ta, 'hall', 516, 334);
+  assert j ? 'anticheat' and pg_temp.pos('a') like 'wild:%/w', format('rapid switch judged by 2D %s %s', j, pg_temp.pos('a'));
+  assert (select count(*) from public.anticheat_events where account_id = a and code = 'pos_mode_switch') = s0 + 1, 'soft event';
+  assert (select outcome from public.anticheat_events where account_id = a and code = 'pos_mode_switch' order by id desc limit 1) = 'soft',
+         'no strike for the switch itself';
+  assert (select count(*) from public.anticheat_events where account_id = a and code = 'pos_teleport') = n0 + 1, 'the refused claim';
+  -- alternating fast: each rapid switch judged by its own model; the stamp does not move
+  perform pg_temp.ago('a', 0.5);
+  j := public.pos_report_w(ta, 1476, 930);                                       -- same mode (w): not a switch
+  assert j->>'ok' = 'true', format('3D walk %s', j);
+  -- 5 minutes later the switch is lenient again
+  update public.player_pos set switch_at = now() - interval '6 minutes' where account_id = a;
+  perform pg_temp.ago('a', 0.5);
+  j := public.pos_report(ta, 'hall', 516, 334);
+  assert j = '{"ok": true}'::jsonb and pg_temp.pos('a') like 'hall:516,334@%/2', format('lenient again %s %s', j, pg_temp.pos('a'));
+  assert (select switch_at from public.player_pos where account_id = a) > now() - interval '1 minute', 're-stamped';
+  -- and a switch right back is not
+  perform pg_temp.ago('a', 0.2);
+  j := public.pos_report_w(ta, 1312, 1414);                                      -- the pond's portal hop in 3D: a walk
+  assert j ? 'anticheat', format('rapid switch to 3D judged by the world %s', j);
+  assert (select count(*) from public.anticheat_events where account_id = a and code = 'pos_mode_switch') = s0 + 2, 'second soft event';
+  perform pg_temp.tab(null);
+  raise notice '0091 switch limit ok';
 end $$;
 update public.app_flags set enabled = true where key = 'unified_world';
 do $$ begin assert public.app_flags() = '{"unified_world": true}'::jsonb, 'left on'; raise notice 'dual mode smoke ok'; end $$;
