@@ -77,7 +77,11 @@ describe("zones", () => {
       .map((m) => [m[1], Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])]);
     expect(rows).toEqual(ZONE_IDS.map((id) => [id, ZONES[id].ox, ZONES[id].oy, ZONES[id].w, ZONES[id].h]));
     const maps = [...fnBody("_pos_maps").matchAll(/\('(\w+)', (\d+), (\d+)\)/g)].map((m) => [m[1], Number(m[2]), Number(m[3])]);
-    expect(maps).toEqual([...MAP_IDS.map((id) => [id, getMap(id).width, getMap(id).height]), ["wild", WORLD_W, WORLD_H]]);
+    // 0097 adds Rừng tràm after the wild
+    const maps97 = [...readFileSync("supabase/migrations/0097_forest_complete.sql", "utf8").replace(/\r\n/g, "\n")
+      .split("create or replace function public._pos_maps(")[1].split("$$;")[0].matchAll(/\('(\w+)', (\d+), (\d+)\)/g)].map((m) => [m[1], Number(m[2]), Number(m[3])]);
+    expect(maps).toEqual([...MAP_IDS.filter((id) => id !== "rung_tram").map((id) => [id, getMap(id).width, getMap(id).height]), ["wild", WORLD_W, WORLD_H]]);
+    expect(maps97).toEqual([...maps, ["rung_tram", getMap("rung_tram").width, getMap("rung_tram").height]]);
   });
 });
 
@@ -138,7 +142,7 @@ describe("buildWorld", () => {
     expect(hatch?.to?.map).toBe("ham_ngam");
     expect(hatch?.zone).toBe("market");
     for (const [id, m] of zonesWithMaps) for (const it of m.interactables)
-      if (it.kind === "portal") expect(OPENINGS.some((o) => o.zone === id && o.portal === it.id), `${id} ${it.id}`).toBe(true);
+      if (it.kind === "portal" && !it.only2d) expect(OPENINGS.some((o) => o.zone === id && o.portal === it.id), `${id} ${it.id}`).toBe(true);
     for (const o of OPENINGS) {
       const use = getMap(o.zone).interactables.find((i) => i.id === o.portal)!.use;
       const end = openingEnd(o, use);

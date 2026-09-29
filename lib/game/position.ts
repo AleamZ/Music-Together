@@ -5,7 +5,7 @@
 // against lib/game/maps).
 import { screenAnswer } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
-import { unifiedWorldOn } from "@/lib/game/world/flag";
+import { worldModeOn } from "@/lib/game/world/flag";
 import { toWorld, type ZoneId } from "@/lib/game/world/zones";
 import type { VehicleId } from "@/lib/game/travel/vehicles";
 
@@ -34,8 +34,9 @@ export const POS = {
  *  against an older position, which is more lenient. A strike's envelope still reaches the modal (screenAnswer). */
 export async function posReport(token: string, map: string, x: number, y: number): Promise<void> {
   try {
-    // 0088: with the unified world on, a map that is a zone reports its world px (pos_report_w); else the old claim
-    const w = (await unifiedWorldOn()) ? toWorld(map as ZoneId, { x, y }) : null;
+    // 0088 / 0090: in world mode (3D graphics AND the server's flag), a map that is a zone reports its world px
+    // (pos_report_w: the server judges me in the world); a 2D client keeps the old claim (judged by the portal graph)
+    const w = (await worldModeOn()) ? toWorld(map as ZoneId, { x, y }) : null;
     const { data, error } = w
       ? await supabase.rpc("pos_report_w", { p_session_token: token, p_wx: Math.round(w.x), p_wy: Math.round(w.y) })
       : await supabase.rpc("pos_report", { p_session_token: token, p_map: map, p_x: Math.round(x), p_y: Math.round(y) });

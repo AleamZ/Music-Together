@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { readGfx, subscribeGfx, type GfxMode } from "@/lib/game/diorama/flag";
-import { unifiedWorldOn } from "@/lib/game/world/flag";
+import { markWorldFailed, unifiedWorldOn } from "@/lib/game/world/flag";
 import { worldArrival } from "@/lib/game/world/wild";
 import { gateText } from "@/lib/game/world/gates";
 import { nearestZone } from "@/lib/game/world/aoi";
@@ -62,6 +62,8 @@ import { getCategoryLabel } from "@/lib/sponsorblock";
 import AnticheatChip from "./AnticheatChip";
 import AnticheatModal from "./AnticheatModal";
 import CameraZoomControl from "./CameraZoomControl";
+import Camera3dControl from "./Camera3dControl";
+import ForestHud from "./forest/ForestHud";
 import CityMapModal from "./CityMapModal";
 import CardOverlays from "./cards/CardOverlays";
 import CardSeatChip from "./cards/CardSeatChip";
@@ -256,9 +258,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const presenceAt = inWorld && zone ? zone : travel.mapId;
   // P3: in the wild, the nearest zone goes along for the older clients (they know no "wild"; realtime.ts setMap)
   const [wildNear, setWildNear] = useState<MapId>("hall");
+  // P4: my grid cell rides along with the next presence publish (a cell change alone publishes nothing)
+  const cellRef = useRef<number | null>(null);
   useEffect(() => {
-    setPresenceMap(presenceAt, presenceAt === "wild" ? wildNear : undefined);
-  }, [presenceAt, wildNear, setPresenceMap]);
+    setPresenceMap(presenceAt, presenceAt === "wild" ? wildNear : undefined, inWorld ? cellRef.current : null);
+  }, [presenceAt, wildNear, inWorld, setPresenceMap]);
   // 0057: where I arrive is a position claim (the server checks each claim against the last one it accepted); P2: walking
   // across the world is not an arrival (the heartbeat below reports it)
   useEffect(() => {
@@ -290,9 +294,15 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     // a zone of the world is the map the HUD, the hooks and the RPCs talk about (the wild keeps the last one)
     if (isZone(z)) setTravel((t) => (t.mapId === z ? t : { ...t, mapId: z, arrive: null, walked: true, world: null }));
   }, []);
-  const onWorldFailed = useCallback(() => setWorldFailed(true), []);
-  const onAoiChange = useCallback((zs: ZoneId[]) => {
-    setAoi(zs);
+  // the 3D world failed to load: fall back to 2D entirely — the per-map game (worldMode off) and the 2D claims
+  // (posReport → pos_report); the server still has my tab in world mode, so the fallback itself is claimed in 2D
+  const onWorldFailed = useCallback(() => {
+    markWorldFailed();
+    setWorldFailed(true);
+  }, []);
+  const onAoiChange = useCallback((zs: ZoneId[], cell?: number) => {
+    if (cell !== undefined) cellRef.current = cell;
+    setAoi((cur) => (cur.length === zs.length && cur.every((z, i) => z === zs[i]) ? cur : zs));
     const p = canvasRef.current?.worldPos();
     if (p) setWildNear(nearestZone(p));
   }, []);
@@ -319,6 +329,13 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     travelRef.current = travel;
     worldModeRef.current = worldMode;
   }, [travel, worldMode]);
+  // the world failed to load (onWorldFailed above): claim where the 2D game puts me, in 2D
+  useEffect(() => {
+    if (!worldFailed || !token) return;
+    const t = travelRef.current;
+    const at = t.arrive ?? getMap(t.mapId).spawn;
+    void posReport(token, t.mapId, at.x, at.y);
+  }, [worldFailed, token]);
   const travelTo = useCallback((to: { map: MapId; arrive: Spot }) => {
     if (fadeTimer.current) return;
     // P2: out of an interior onto the world where its exit is not a zone's spot (Mỏ đá's tunnel → the mine mouth)
@@ -534,7 +551,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const { reload: reloadHouses } = houses;
   const houseLots = houses.state?.lots;
   useEffect(() => {
-    canvasRef.current?.setHouses((houseLots ?? []).map((l) => ({ lot: l.no, owned: l.owned, grid: l.grid, roof: l.roof })));
+    canvasRef.current?.setHouses((houseLots ?? []).map((l) => ({ lot: l.no, owned: l.owned, grid: l.grid, roof: l.roof, ownerName: l.ownerName, mine: l.mine })));   // P4: names in 3D
   }, [houseLots]);
   const [trip, setTrip] = useState<{ to: { map: MapId; arrive: Spot }; toMarket: boolean; vehicle: Vehicle | null } | null>(null);
   const skipRoad = useCallback(async (): Promise<boolean> => {
@@ -648,10 +665,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   //     an open overlay outside the field's own, not to the farm work
   const [helpOpen, setHelpOpen] = useState(false); // the "⌨️ Phím tắt" overlay (H / ?)
   const [worldOpen, setWorldOpen] = useState(false); // v21 world (0075): the 🌍 panel
+  const [forestOpen, setForestOpen] = useState(false); // 0096: chopping, cooking, the stall's logs
   const openOverlays = {
     panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen || rings.active !== null
       || ug.active !== null || ugResult !== null || knocking !== null || isCalled(ug.state)                     // v20.4
       || worldOpen                                                                                             // v21 world
+      || forestOpen                                                                                            // 0096 forest
       || trade.state?.trade != null                                                                             // v21 economy
       || mining.open                                                                                            // v21 Mỏ đá
       || explore.open,                                                                                          // v22 (0086)
@@ -918,7 +937,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
 
   return (
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : map.id === "song_cai" ? "bg-[#3f7478]" : "bg-[#5a8f32]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : map.id === "song_cai" ? "bg-[#3f7478]" : map.id === "rung_tram" ? "bg-[#3f5a2c]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
@@ -1071,11 +1090,13 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
               <QuestHudButtons token={token} canPopup={!blocking} onOpen={openQuestPanel} />
               <PersonalSettings weatherFx={weatherFx} onWeatherFx={changeWeatherFx} />
-              <CameraZoomControl
-                mapWidth={map.width}
-                mapHeight={map.height}
-                onZoomChange={(z) => canvasRef.current?.setZoom(z)}
-              />
+              {worldMode ? <Camera3dControl /> : (
+                <CameraZoomControl
+                  mapWidth={map.width}
+                  mapHeight={map.height}
+                  onZoomChange={(z) => canvasRef.current?.setZoom(z)}
+                />
+              )}
               <button type="button" className="pch-btn relative pointer-coarse:hidden" title="Phím tắt (H)" onClick={() => setHelpOpen(true)}>
                 ⌨️<span className="sr-only"> Phím tắt</span><KeyBadge id="help" />
               </button>
@@ -1134,6 +1155,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       <WorldHud token={token} roomId={room.id} accountId={accountId} isOwner={isOwner} mapId={map.id} canvas={getCanvas}
         blocked={blocking || faint !== null || trip !== null} toast={showToast} onCoins={reloadCoins}
         onWeather={() => void roomWeather.reload()} onPanel={setWorldOpen} />{/* v21 world (0075) */}
+      <ForestHud token={token} mapId={map.id} canvas={getCanvas} blocked={blocking || faint !== null || trip !== null}
+        toast={showToast} onCoins={reloadCoins} onPanel={setForestOpen} />{/* 0096 forest */}
       <HeatActions heat={heat} hidden={blocking || faint !== null || trip !== null || fishing.net !== null}
         onNet={fishing.netReady && fishing.cast.phase === "idle" ? fishing.throwNet : null} />
       {prompt && !blocking && (
@@ -1394,7 +1417,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         <PlayerMarketModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} />
       )}
       {panel === "player_stalls" && (                                      // v21 economy
-        <StallModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} />
+        <StallModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} onStalls={(stalls) => canvasRef.current?.setLiveInputs?.({ stalls })} />
       )}
       {trade.done && <TradeDoneFx key={trade.done.k} coins={trade.done.coins} onDone={trade.clearDone} />}{/* v22 (0086) */}
       {trade.state?.trade && (                                              // v21 economy
@@ -1603,7 +1626,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}
-          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length, song_cai: counts.song_cai.length }}
+          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length, song_cai: counts.song_cai.length, rung_tram: counts.rung_tram.length }}
           onClose={close}
           getWorldPos={inWorld ? getWorldPos : undefined}
           waypoints={inWorld ? wpMarks : undefined}

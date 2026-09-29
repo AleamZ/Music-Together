@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import {
-  ACT_RANGE, GATE, MAX_COMBO, STALL, beat, inArena, near, speciesOf, type WildAction,
+  ACT_RANGE, GATE, MAX_COMBO, STALL, beat, inArena, near, photoOnly, speciesOf, type WildAction,
 } from "@/lib/game/realm/model";
 import type { MapId } from "@/lib/game/maps/types";
 import type { WildAnimal } from "@/lib/game/realm/rpc";
@@ -47,6 +47,7 @@ export default function WorldHud(props: {
   const s = w.state;
   const now = w.here.now + w.offset;
   const pos = w.here.pos;
+  const zonePos = w.inWild ? null : pos;                       // 0096: in the wild `pos` is world px (the forest's animals)
 
   // the nearest animal in photo range
   let target: { a: WildAnimal; d: number } | null = null;
@@ -58,7 +59,7 @@ export default function WorldHud(props: {
       if (d <= ACT_RANGE.photo && (!target || d < target.d)) target = { a, d };
     }
   }
-  const fight = s?.fights.find((f) => f.status === "up" && now >= f.startsMs && now < f.endsMs && inArena(mapId, pos, { map: f.map, ...f.arena })) ?? null;
+  const fight = s?.fights.find((f) => f.status === "up" && now >= f.startsMs && now < f.endsMs && inArena(mapId, zonePos, { map: f.map, ...f.arena })) ?? null;
   const since = w.lastHit ? w.here.now - w.lastHit.at : Infinity;
   const b = beat(since);
 
@@ -79,8 +80,8 @@ export default function WorldHud(props: {
   const banner = s?.fights.find((f) => f.status === "up" && now < f.endsMs) ?? null;
   const lastChat = s?.party?.chat.at(-1) ?? null;
   const chatFresh = lastChat !== null && now - lastChat.atMs < 60_000;
-  const atStall = near(mapId, pos, STALL, 56);
-  const atGate = near(mapId, pos, GATE, 56);
+  const atStall = near(mapId, zonePos, STALL, 56);
+  const atGate = near(mapId, zonePos, GATE, 56);
   const sp = target ? speciesOf(target.a.species) : null;
   const danger = sp !== null && sp.danger > 0 && s?.night === true;
 
@@ -117,7 +118,7 @@ export default function WorldHud(props: {
 
       {!blocked && !gameOpen && target && sp && !fight && (
         <div className="pch pointer-events-auto absolute bottom-36 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 px-2 py-1 font-vt text-base">
-          <span className="mr-1">{sp.name}{danger ? " ⚠️ nguy hiểm" : ""}</span>
+          <span className="mr-1">{sp.name}{danger ? " ⚠️ nguy hiểm" : ""}{photoOnly(sp) ? " · 📷 Chỉ chụp ảnh" : ""}</span>
           {sp.hunt > 0 && actBtn("hunt", "🏹 Săn", target.d <= ACT_RANGE.hunt)}
           {sp.trap > 0 && actBtn("trap", "🪤 Bẫy", target.d <= ACT_RANGE.trap)}
           {actBtn("photo", target.a.photographed ? "📷 Đã chụp" : "📷 Chụp", !target.a.photographed)}

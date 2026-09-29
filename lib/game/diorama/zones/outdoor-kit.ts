@@ -4,6 +4,20 @@ import type { PlotDraw } from "@/lib/game/art/crops";
 import type { GameMap, Rect } from "@/lib/game/maps/types";
 import { pxLen, pxToWorld, type MapSize } from "../coords";
 import { rng } from "../layout";
+import { separateCoplanar } from "./coplanar";
+import { upper } from "./kit";
+import { signSize, type SignArt, type SignIcon } from "./signart";
+import { faceAxes, signMesh, type FaceQuad } from "./signmesh";
+
+/** A label in at most two balanced lines. */
+function wrap(s: string, max = 9): string[] {
+  const t = upper(s);
+  if ([...t].length <= max || !t.includes(" ")) return [t];
+  const mid = t.length / 2;
+  let best = -1;
+  for (let i = 0; i < t.length; i++) if (t[i] === " " && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
+  return [t.slice(0, best), t.slice(best + 1)];
+}
 
 // The toolkit of the outdoor zone dioramas built straight from their map data (field, Bãi đất, Mỏ đá, Sông Cái):
 // flat-shaded Lambert materials cached by colour, boxes placed in map px, instanced repeats, a terrain of one instanced
@@ -58,6 +72,16 @@ export interface Inst {
 export const inRect = (x: number, y: number, r: Rect, pad = 0): boolean =>
   x >= r.x - pad && x < r.x + r.w + pad && y >= r.y - pad && y < r.y + r.h + pad;
 
+/** The label of the interactable nearest to px (x, y) within `within` px — what a sign there names. */
+export function labelNear(map: GameMap, x: number, y: number, within = 48): string | null {
+  let best: string | null = null, bd = within;
+  for (const it of map.interactables) {
+    const d = Math.hypot(it.rect.x + it.rect.w / 2 - x, it.rect.y + it.rect.h / 2 - y);
+    if (d < bd) { bd = d; best = it.label; }
+  }
+  return best;
+}
+
 export class Kit {
   readonly root = new THREE.Group();
   readonly size: MapSize;
@@ -69,6 +93,8 @@ export class Kit {
   readonly animators: Array<(t: number, wind: number) => void> = [];
   readonly unit: THREE.BoxGeometry;
   private firstWater: THREE.Mesh | null = null;
+  private readonly faces: FaceQuad[] = [];
+  private readonly texs: THREE.Texture[] = [];
   private readonly geos = new Set<THREE.BufferGeometry>();
   private readonly mats = new Map<string, THREE.Material>();
   private readonly m4 = new THREE.Matrix4();
@@ -293,20 +319,35 @@ export class Kit {
     this.root.add(crown);
   }
 
-  /** A small sign on one post (px base), the green city-map post, or a two-post board. */
-  sign(x: number, y: number, kind: "sign" | "city" | "board" = "sign"): void {
+  /** A painted face (world units: centre, width; its height follows the painting), looking `face` way. */
+  face(x: number, y: number, z: number, w: number, art: SignArt, face: "s" | "n" | "e" | "w" = "s"): number {
+    const s = signSize(art), h = w * (s.h / s.w);
+    const ax = faceAxes(face);
+    this.faces.push({ center: new THREE.Vector3(x, y, z), right: ax.right, up: ax.up, w, h, art });
+    return h;
+  }
+
+  /** A signboard on one post (px base), the green city-map post, or a two-post board — painted with `label` (the
+   *  nearest place it names) and an icon; the paint floats in front of the board, never in its plane. */
+  sign(x: number, y: number, kind: "sign" | "city" | "board" = "sign", label?: string | null, icon?: SignIcon): void {
     const c = this.W(x, y);
-    const h = pxLen(kind === "sign" ? 22 : 30), w = pxLen(kind === "sign" ? 16 : kind === "city" ? 18 : 24);
+    const art: SignArt = kind === "city" ? { lines: ["BẢN ĐỒ"], icon: "map", bg: 0x9ecf8a, fg: 0x1f4a2a }
+      : kind === "board" ? { lines: wrap(label ?? "Bảng tin", 12), icon: icon ?? "paper", bg: 0xd06a3a, fg: 0xf4ead0 }
+      : { lines: label ? wrap(label) : [], icon: icon ?? "arrow", bg: 0xf4f1e8, fg: 0x3a2418 };
+    const s = signSize(art);
+    const w = Math.min(pxLen(kind === "board" ? 30 : 22), s.w * pxLen(0.6)), bh = w * (s.h / s.w);
+    const z0 = pxLen(kind === "sign" ? 13 : 16), top = z0 + bh;
     const post = this.lam(0x5a3a1e);
-    for (const sx of kind === "board" ? [-1, 1] : [0]) this.box(0.12, h, 0.12, post, c.x + sx * (w / 2 - 0.1), 0, c.z);
-    this.box(w, h * 0.42, 0.08, 0x3a2418, c.x, h * 0.51, c.z + 0.06);
-    this.box(w - 0.12, h * 0.42 - 0.12, 0.1, kind === "city" ? 0x9ecf8a : kind === "board" ? 0xd06a3a : 0xf4f1e8, c.x, h * 0.57, c.z + 0.07);
-    if (kind === "board") this.box(w + 0.2, 0.1, 0.4, 0x8a5a30, c.x, h * 0.93, c.z + 0.05);
+    const postGeo = this.geo(new THREE.CylinderGeometry(0.075, 0.085, 1, 6));
+    for (const sx of kind === "board" ? [-1, 1] : [0]) { const m = this.mesh(postGeo, post, c.x + sx * (w / 2 - 0.05), (top + 0.15) / 2, c.z); m.scale.y = top + 0.15; }
+    this.box(w + 0.12, bh + 0.12, 0.1, 0x3a2418, c.x, z0 - 0.06, c.z + 0.06);
+    this.face(c.x, z0 + bh / 2, c.z + 0.11 + 0.025, w, art);
+    this.box(w + 0.25, 0.09, 0.2, 0x8a5a30, c.x, top + 0.06, c.z + 0.06);
   }
 
   /** A water surface over a px rect: a gentle bob, waves travelling downstream (+x) when `flow` > 0. Vertex colours
    *  from `tint(x, y)` (px) when given (deeper in the middle, lighter over shoals). */
-  water(r: Rect, opts: { y?: number; color?: number; opacity?: number; segs?: [number, number]; flow?: number; tint?: (x: number, y: number) => number } = {}): THREE.Mesh {
+  water(r: Rect, opts: { y?: number; color?: number; opacity?: number; segs?: [number, number]; flow?: number; tint?: (x: number, y: number) => number; calm?: (x: number, y: number) => number } = {}): THREE.Mesh {
     const a = this.W(r.x, r.y), b = this.W(r.x + r.w, r.y + r.h);
     const [sx, sz] = opts.segs ?? [Math.max(2, Math.round(r.w / 12)), Math.max(2, Math.round(r.h / 12))];
     const g = this.geo(new THREE.PlaneGeometry(b.x - a.x, b.z - a.z, sx, sz));
@@ -333,13 +374,16 @@ export class Kit {
     this.firstWater ??= m;
     const base = Float32Array.from((g.attributes.position as THREE.BufferAttribute).array);
     const flow = opts.flow ?? 0;
+    // per vertex: how much it waves (1 = fully; `calm` stills the ends that meet another water sheet, so the two never cross)
+    const still = new Float32Array(base.length / 3).fill(1);
+    if (opts.calm) for (let i = 0; i < still.length; i++) still[i] = opts.calm((base[i * 3] + cx) * 16 + this.size.width / 2, (base[i * 3 + 2] + cz) * 16 + this.size.height / 2);
     this.animators.push((t, wind) => {
       const pos = g.attributes.position as THREE.BufferAttribute;
       const arr = pos.array as Float32Array;
       const amp = 0.03 + Math.min(0.07, wind / 900), s = t / 1000;
       for (let i = 0; i < arr.length; i += 3) {
         const x = base[i], z = base[i + 2];
-        arr[i + 1] = base[i + 1] + amp * (Math.sin(x * 0.9 - s * (1.6 + flow * 2.2)) + Math.sin(z * 1.3 - s * 1.1 + x * 0.3) * 0.6);
+        arr[i + 1] = base[i + 1] + still[i / 3] * amp * (Math.sin(x * 0.9 - s * (1.6 + flow * 2.2)) + Math.sin(z * 1.3 - s * 1.1 + x * 0.3) * 0.6);
       }
       pos.needsUpdate = true;
       g.computeVertexNormals();
@@ -347,9 +391,25 @@ export class Kit {
     return m;
   }
 
+  /** No two axis-aligned box faces in one plane (coplanar.ts): the unit boxes straight under the root, unrotated. */
+  private separate(): void {
+    const list: Array<{ x: number; y: number; z: number; w: number; d: number; h: number; m: THREE.Mesh }> = [];
+    for (const o of this.root.children) {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || m.geometry !== this.unit || m.rotation.x !== 0 || m.rotation.y !== 0 || m.rotation.z !== 0 || (m as THREE.InstancedMesh).isInstancedMesh) continue;
+      const s = m.scale, p = m.position;
+      list.push({ x: p.x - s.x / 2, y: p.z - s.z / 2, z: p.y - s.y / 2, w: s.x, d: s.z, h: s.y, m });
+    }
+    separateCoplanar(list, 0.022, 2);
+    for (const b of list) { b.m.scale.set(b.w, b.h, b.d); b.m.position.set(b.x + b.w / 2, b.z + b.h / 2, b.y + b.d / 2); }
+  }
+
   /** Merge the static meshes per material, hang the hooks on the group (userData.rig) and return it. */
   finish(hooks: { heightAt: ZoneRig["heightAt"]; setPlots?: ZoneRig["setPlots"]; animate?: ZoneRig["animate"]; cave?: boolean }): THREE.Group {
     const root = this.root;
+    this.separate();
+    const signs = signMesh(this.faces);
+    if (signs) { this.geo(signs.geometry); this.own(signs.material); this.texs.push(signs.texture); root.add(signs.mesh); }
     root.updateMatrixWorld(true);
     const kept = (o: THREE.Object3D) => { for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p.userData.keep) return true; return false; };
     const buckets = new Map<string, { mat: THREE.Material; cast: boolean; parts: THREE.BufferGeometry[]; meshes: THREE.Mesh[] }>();
@@ -374,7 +434,7 @@ export class Kit {
       m.receiveShadow = true;
       root.add(m);
     }
-    const animators = this.animators, geos = this.geos, mats = this.mats;
+    const animators = this.animators, geos = this.geos, mats = this.mats, texs = this.texs;
     const rig: ZoneRig = {
       lamps: this.lamps, bulbs: this.bulbs, thinnable: this.thinnable, sway: this.sway, roofs: this.roofs, water: this.firstWater,
       heightAt: hooks.heightAt,
@@ -388,6 +448,7 @@ export class Kit {
         root.traverse((o) => { if (o instanceof THREE.InstancedMesh) o.dispose(); });
         for (const g of geos) g.dispose();
         for (const m of mats.values()) m.dispose();
+        for (const x of texs) x.dispose();
         root.clear();
       },
     };
@@ -395,3 +456,7 @@ export class Kit {
     return root;
   }
 }
+
+
+
+

@@ -8,10 +8,11 @@ import {
 import type { Vec } from "@/lib/game/types";
 import { ZONES } from "@/lib/game/world/zones";
 import { toon } from "./toon";
+import { flagPixels, VN_RATIO } from "./vnflag";
 
 // Browser only: the world's set pieces — the river and the stream as flowing ribbons, the red bridges on the trails,
-// the landmarks seen from afar (the đình's flag, the market arch, the dojo tower, the mine headframe), windmills,
-// clouds, hot-air balloons and a few flocks of birds. All procedural, toon-shaded.
+// the landmarks seen from afar (the hall's flag on its rise, the market arch, the dojo tower, the mine headframe), windmills,
+// big tropical clouds and a few flocks of birds (no hot-air balloons: this is the delta). All procedural, toon-shaded.
 
 const U = (px: number) => px / 16;
 
@@ -103,18 +104,11 @@ export function streamRunnel(): { pts: Vec[]; length: number; lip: number; level
 export function buildWater(): Water {
   const root = new THREE.Group();
   const tex = streakTexture();
-  const mat = toon({ color: 0x4f9fb0, map: tex, transparent: true, opacity: 0.93, side: THREE.DoubleSide });
+  // the delta's water: brown-green and muddy (phù sa), not a mountain stream's blue
+  const mat = toon({ color: 0x9a9258, map: tex, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
   const cum = cumulative(RIVER_PTS), L = cum[cum.length - 1];
-  const sc = ZONES.song_cai;
-  // in the world Sông Cái's own water runs to its west and east edges (openEnds): the ribbon meets it there, level
-  // (the zone's water is at RIVER_LEVEL too), overlapping a few px just under it — no step at either end
-  const [sIn, sOut] = riverRibbonSpan();
-  const half = (s: number) => riverHalfWidth(s) + 6;
-  const lvl = (s: number) => {
-    const x = pointAt(RIVER_PTS, cum, s).x;
-    return x > sc.ox - 2 && x < sc.ox + sc.w + 2 ? RIVER_LEVEL - 0.015 : RIVER_LEVEL;
-  };
-  const geos = [ribbon(RIVER_PTS, 0, sIn, 6, half, lvl), ribbon(RIVER_PTS, sOut, L, 6, half, lvl)];
+  // one continuous ribbon, end to end — through Sông Cái too (the zone draws no water of its own in the world)
+  const geos = [ribbon(RIVER_PTS, 0, L, 6, (s) => riverHalfWidth(s) + 6, () => RIVER_LEVEL)];
   // the stream: out of the pond's water, across the pond's grass in a shallow runnel, then down to the river
   const run = streamRunnel();
   geos.push(ribbon(run.pts, 0, run.length, 8, (s) => (s < run.lip ? STREAM_HALF_W - 1 : STREAM_HALF_W + 3), run.level));  for (const g of geos) {
@@ -168,13 +162,31 @@ export function buildBridges(): THREE.Group {
 
 // ---------------------------------------------------------------- landmarks
 
+/** The flag cloth's length (units); its height is 2/3 of it. */
+const FLAG_LEN = 3.2;
+
+/** The flag's texture (rows flipped: a DataTexture's first row is its bottom). */
+function flagTexture(): THREE.DataTexture {
+  const p = flagPixels(300), rows = new Uint8Array(p.rgba.length), stride = p.w * 4;
+  for (let y = 0; y < p.h; y++) rows.set(p.rgba.subarray(y * stride, (y + 1) * stride), (p.h - 1 - y) * stride);
+  const tex = new THREE.DataTexture(rows, p.w, p.h, THREE.RGBAFormat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export interface Landmarks { root: THREE.Group; animate(t: number, wind: number): void; dispose(): void }
 
 export function buildLandmarks(): Landmarks {
   const root = new THREE.Group();
   const mat = toon({ vertexColors: true });
   const bladeMat = toon({ vertexColors: true, side: THREE.DoubleSide });
-  const flagMat = toon({ color: 0xda251d, side: THREE.DoubleSide });
+  const flagTex = flagTexture();
+  const flagMat = toon({ map: flagTex, side: THREE.DoubleSide });
   const lampMat = new THREE.MeshBasicMaterial({ color: 0xffc46a });
   const spinning: Array<{ obj: THREE.Object3D; speed: number }> = [];
   const flags: THREE.Mesh[] = [];
@@ -220,16 +232,27 @@ export function buildLandmarks(): Landmarks {
         colored(new THREE.SphereGeometry(0.2, 6, 4).translate(0, 11.1, 0), 0xe0b43a),
         box(1.6, 0.5, 1.6, 0, 0.25, 0, 0x8e877a),
       ], l);
-      const flagGeo = new THREE.PlaneGeometry(3.2, 2.1, 8, 2).translate(1.6, 9.8, 0);
+      // the national flag (vnflag.ts): 2 : 3, the star painted into the cloth's texture — one layer, both sides
+      const flagGeo = new THREE.PlaneGeometry(FLAG_LEN, FLAG_LEN * VN_RATIO, 16, 4).translate(FLAG_LEN / 2, 9.8, 0);
       geos.push(flagGeo);
       const flag = new THREE.Mesh(flagGeo, flagMat);
       flag.userData.base = Float32Array.from(flagGeo.getAttribute("position").array);
-      const starGeo = new THREE.CircleGeometry(0.55, 5).translate(1.25, 9.8, 0.02);
-      geos.push(starGeo);
-      const star = new THREE.Mesh(starGeo, toon({ color: 0xffdf3a, side: THREE.DoubleSide }));
-      flag.add(star);
       g.add(flag);
       flags.push(flag);
+    } else if (l.kind === "pagoda") {
+      // a small hill pagoda: a stone terrace, three shrinking tiers under upturned tiled roofs, a golden finial
+      const parts: THREE.BufferGeometry[] = [box(4.2, 0.5, 4.2, 0, 0.25, 0, 0x9a8a78), box(3.6, 0.3, 3.6, 0, 0.65, 0, 0xb8a890)];
+      let y = 0.8;
+      for (let i = 0; i < 3; i++) {
+        const w = 2.6 - i * 0.6, h = 1.5 - i * 0.2;
+        parts.push(box(w, h, w, 0, y + h / 2, 0, i % 2 ? 0xf0dcae : 0xe8c890));
+        parts.push(box(w * 0.3, h * 0.6, 0.06, 0, y + h * 0.3, w / 2 + 0.02, 0x7a2a1a));
+        y += h;
+        parts.push(colored(new THREE.ConeGeometry(w * 0.95, 0.9, 4).rotateY(Math.PI / 4).translate(0, y + 0.35, 0), 0xa8452e));
+        y += 0.55;
+      }
+      parts.push(colored(new THREE.CylinderGeometry(0.05, 0.14, 1.2, 6).translate(0, y + 0.5, 0), 0xe0b43a));
+      add(parts, l);
     } else if (l.kind === "arch") {
       add([
         box(0.7, 5.2, 0.7, 0, 2.6, -2.1, 0xb8322a), box(0.7, 5.2, 0.7, 0, 2.6, 2.1, 0xb8322a),
@@ -303,7 +326,7 @@ export function buildLandmarks(): Landmarks {
         pos.needsUpdate = true;
       }
     },
-    dispose() { for (const g of geos) g.dispose(); mat.dispose(); bladeMat.dispose(); flagMat.dispose(); lampMat.dispose(); },
+    dispose() { for (const g of geos) g.dispose(); mat.dispose(); bladeMat.dispose(); flagMat.dispose(); flagTex.dispose(); lampMat.dispose(); },
   };
 }
 
@@ -332,32 +355,6 @@ export function buildSkyLife(): SkyLife {
   }));
   clouds.frustumCulled = false;
   root.add(clouds);
-  // hot-air balloons
-  const balloons: Array<{ g: THREE.Group; x: number; z: number; y: number; ph: number }> = [];
-  const stripes = [[0xe24a3b, 0xf4d35e], [0x3a86c8, 0xf2f0e6], [0x6bb04a, 0xf29a4a]];
-  stripes.forEach(([a, b], i) => {
-    const env = new THREE.SphereGeometry(2.2, 12, 10).scale(1, 1.2, 1).toNonIndexed();
-    env.deleteAttribute("uv");
-    const pos = env.getAttribute("position"), col = new Float32Array(pos.count * 3), ca = new THREE.Color(a), cb = new THREE.Color(b);
-    for (let k = 0; k < pos.count; k++) {
-      const ang = Math.atan2(pos.getZ(k), pos.getX(k));
-      const c = Math.floor(((ang + Math.PI) / (2 * Math.PI)) * 12) % 2 ? ca : cb;
-      col.set([c.r, c.g, c.b], k * 3);
-    }
-    env.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    const basket = colored(new THREE.BoxGeometry(0.8, 0.6, 0.8).translate(0, -3.6, 0), 0x8a5a36);
-    const ropes = colored(new THREE.CylinderGeometry(0.9, 0.45, 1.3, 4, 1, true).translate(0, -2.9, 0), 0x5a4030);
-    const geo = mergeGeometries([env, basket, ropes])!;
-    geos.push(geo, env, basket, ropes);
-    const m = toon({ vertexColors: true });
-    mats.push(m);
-    const g = new THREE.Group();
-    const mesh = new THREE.Mesh(geo, m);
-    mesh.castShadow = true;
-    g.add(mesh);
-    root.add(g);
-    balloons.push({ g, x: [60, 175, 235][i], z: [30, 105, 40][i], y: [28, 34, 24][i], ph: i * 2.1 });
-  });
   // birds: little flapping Vs in a few flocks
   const birdGeo = new THREE.BufferGeometry();
   birdGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, -0.9, 0, -0.35, 0, 0, 0.3, 0, 0, 0, 0, 0, 0.3, 0.9, 0, -0.35], 3));
@@ -380,10 +377,6 @@ export function buildSkyLife(): SkyLife {
         clouds.setMatrixAt(i, m4);
       });
       clouds.instanceMatrix.needsUpdate = true;
-      for (const b of balloons) {
-        b.g.position.set(b.x + Math.sin(ts * 0.05 + b.ph) * 12, b.y + Math.sin(ts * 0.4 + b.ph) * 1.2, b.z + Math.cos(ts * 0.04 + b.ph) * 8);
-        b.g.rotation.y = ts * 0.1 + b.ph;
-      }
       for (let i = 0; i < BIRDS; i++) {
         const flock = i % 3, k = Math.floor(i / 3);
         const cx = [90, 180, 40][flock], cz = [60, 40, 110][flock], r = [26, 34, 20][flock];

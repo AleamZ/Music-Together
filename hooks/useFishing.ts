@@ -33,7 +33,7 @@ export interface FishingData {
   /** v21 (0076): a cast from the boat's deck (the deep water); it goes on through hookCast / finishCast. */
   startBoatCast: (roomId: string) => Promise<StartCast | null>;
   /** v22 (0086): a cast from the boat on Sông Cái, where it floats. */
-  startRiverCast: (roomId: string, at: { x: number; y: number }) => Promise<StartCast | null>;
+  startRiverCast: (roomId: string, at: { x: number; y: number; map?: "song_cai" | "wild" }) => Promise<StartCast | null>;
   /** `hooked` (v18.1): the reel was lost after the hook (a big fish may pull me in). */
   /** `reel` (0046): the reel's input, replayed by the server. */
   finishCast: (castId: string, success: boolean, hooked?: boolean, reel?: ReelInput) => Promise<FinishCast | null>;
@@ -146,7 +146,7 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     release: useCallback(async (id: string) => (await act(() => releaseFish(token, id), (s) => s)) !== null, [act, token]),
     startCast: useCallback((roomId: string, cell?: { col: number; row: number }) => act(() => startCast(roomId, token, cell), (x) => x.state), [act, token]),
     startBoatCast: useCallback((roomId: string) => act(() => startBoatCast(roomId, token), (x) => x.state), [act, token]),   // v21 (0076)
-    startRiverCast: useCallback((roomId: string, at: { x: number; y: number }) => act(() => startRiverCast(roomId, token, at.x, at.y), (x) => x.state, extrasErrorMessage), [act, token]),   // v22 (0086)
+    startRiverCast: useCallback((roomId: string, at: { x: number; y: number; map?: "song_cai" | "wild" }) => act(() => startRiverCast(roomId, token, at.x, at.y, at.map), (x) => x.state, extrasErrorMessage), [act, token]),   // v22 (0086)
     finishCast: useCallback((castId: string, success: boolean, hooked = false, reel?: ReelInput) => act(() => finishCast(token, castId, success, hooked, reel), (x) => x.state, lostConnection), [act, token]),
     hookCast: useCallback((castId: string) => act(() => hookCast(token, castId), (x) => x.state, lostConnection), [act, token]),
     repair: useCallback(async (itemId: string) => {

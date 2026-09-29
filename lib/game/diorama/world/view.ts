@@ -5,11 +5,12 @@ import type { GameMap } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 import { openingRect } from "@/lib/game/world/compose";
 import { CHUNK_PX, CHUNKS_X, CHUNKS_Y } from "@/lib/game/world/scenery";
-import { DOMAIN, heightAt as terrainHeight, standHeight, ZONE_ELEV, zoneUnder } from "@/lib/game/world/terrain";
+import { DOMAIN, RIVER_LEVEL, standHeight, ZONE_ELEV, zoneUnder } from "@/lib/game/world/terrain";
 import { OPENINGS } from "@/lib/game/world/wild";
 import { WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId } from "@/lib/game/world/zones";
 import { animateWater, type Built } from "../build";
 import { flyForward, lerp3, orbitEye, smoothK, type FlyState, type Orbit, type V3 } from "../camera";
+import { RIG } from "../character/build";
 import { CharacterLayer } from "../character/layer";
 import { createFpsMonitor, type FpsMonitor } from "../quality";
 import type { CameraMode, DioramaFrame, Quality, View3D } from "../types";
@@ -17,6 +18,7 @@ import { WeatherLayer } from "../weather3d";
 import { buildMapScene } from "../zones";
 import { demoFieldPlots } from "../zones/field";
 import { Forest } from "./forest";
+import { getCam, pinchBy, setCam, subscribeCam, zoomBy, type GameCam } from "./game-camera";
 import { LiveLayer } from "./live";
 import { liveFromFrame, type WorldLive } from "./live-plan";
 import { mergeStatic } from "./merge";
@@ -24,7 +26,10 @@ import { InkPass, SkyDome } from "./post";
 import { buildBridges, buildLandmarks, buildSkyLife, buildWater, type Landmarks, type SkyLife, type Water } from "./props";
 import { TerrainJobs } from "./terrain-jobs";
 import { chunkGeometry, landColor, LOD_STEPS } from "./terrain-mesh";
+import { buildDelta } from "./delta";
+import { buildNuiCam } from "./nuicam";
 import { toon, toonify } from "./toon";
+import { pixelize, pixelizeTree } from "../pixeltex";
 
 // Browser only: the unified world in 3D (spec P2/P3's visual part). One continuous landscape — the heightmap's chunks
 // at three levels of detail, the zones' dioramas (unchanged, restyled to the toon ramp) on their plateaus, the river,
@@ -36,6 +41,9 @@ export interface WorldViewOptions {
   /** A tap/click (not a drag) on the ground: the world px under it. */
   onTap?: (p: Vec) => void;
   allowFree?: boolean;
+  /** The game's camera (game-camera.ts): the follow distance and first person come from the shared camera state, and
+   *  the wheel / a pinch write it back. Off (the /dev pages): the orbit's own wheel zoom. */
+  gameCamera?: boolean;
   quality?: Quality | "auto";
   /** 0.5 … 1: scenery density (low-end devices build fewer trees). */
   density?: number;
@@ -105,6 +113,9 @@ export class WorldView implements View3D {
   private readonly terrain = new THREE.Group();
   private readonly jobs = new TerrainJobs((c, level, geo) => this.chunkBuilt(c, level, geo));
   private horizon: THREE.Mesh | null = null;
+  private sea: THREE.Mesh | null = null;
+  /** The muddy brown-green water of the delta (the river mouths, the canals). */
+  private readonly seaMat = toon({ color: 0x8a8a52, transparent: true, opacity: 0.9 });
   private readonly zones: ZoneScene[] = [];
   private readonly mergedGeos: THREE.BufferGeometry[] = [];
   private readonly mergedMats: THREE.Material[] = [];
@@ -117,6 +128,10 @@ export class WorldView implements View3D {
   private readonly landmarks: Landmarks;
   private readonly life: SkyLife;
   private readonly bridges: THREE.Group;
+  /** The delta's life along the water: canal bridges, stilt houses, moored xuồng, the floating market (one mesh). */
+  private readonly delta = buildDelta();
+  /** The mountain (Núi Cấm-like) and its landmarks: lake, temple, tower, Di Lặc, waterfall, cable car, clouds, gate. */
+  private readonly nui = buildNuiCam();
   private readonly people: CharacterLayer;
   private readonly live: LiveLayer;
   private liveState: WorldLive = {};
@@ -141,6 +156,12 @@ export class WorldView implements View3D {
   private shadowFrame = 0;
   private disposed = false;
   private frameNo = 0;
+  /** The game's camera (options.gameCamera), its unsubscribe, the first-person pitch and the pinch's fingers. */
+  private gcam: GameCam | null = null;
+  private unsubCam: (() => void) | null = null;
+  private fpPitch = -0.1;
+  private readonly touches = new Map<number, { x: number; y: number }>();
+  private pinchD = 0;
 
   constructor(canvas: HTMLCanvasElement, opts: WorldViewOptions = {}) {
     this.canvas = canvas;
@@ -186,7 +207,12 @@ export class WorldView implements View3D {
     this.landmarks = buildLandmarks();
     this.life = buildSkyLife();
     this.forest = new Forest(opts.density ?? 1);
-    this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root, this.forest.root);
+    this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root, this.forest.root, this.delta.root, this.nui.root);
+    // the pixel texels (pixeltex.ts: grass, dirt, planks, thatch, tin, water) on the land and everything built on it
+    pixelize(this.terrainMat);
+    pixelize(this.seaMat, true);
+    pixelizeTree(this.water.root, true);
+    for (const r of [this.bridges, this.landmarks.root, this.forest.root, this.delta.root, this.nui.root]) pixelizeTree(r);
 
     this.people = new CharacterLayer({ width: 0, height: 0 }, (x, y) => this.heightAt(x, y));
     this.live = new LiveLayer((x, y) => this.heightAt(x, y));
@@ -204,6 +230,18 @@ export class WorldView implements View3D {
     canvas.addEventListener("contextmenu", this.onContextMenu);
     window.addEventListener("keydown", this.onKey, true);
     window.addEventListener("keyup", this.onKey, true);
+    if (opts.gameCamera) {
+      this.applyGameCam(getCam());
+      this.unsubCam = subscribeCam((c) => this.applyGameCam(c));
+    }
+  }
+
+  /** The game's camera changed (the HUD, the wheel, a pinch): the follow distance and first person. */
+  private applyGameCam(c: GameCam): void {
+    if (this.gcam?.view !== c.view && c.view === "first") this.fpPitch = -0.1;
+    this.gcam = c;
+    this.orbit.follow = { ...this.orbit.follow, distance: c.distance };
+    this.people.setHideMyHead(c.view === "first");
   }
 
   // ------------------------------------------------------------ building
@@ -234,6 +272,7 @@ export class WorldView implements View3D {
     this.mergedGeos.push(...merged.geos);
     this.mergedMats.push(...merged.mats);
     this.meshCounts[id] = [merged.before, merged.after];
+    pixelizeTree(root);
     this.scene.add(root);
     root.updateMatrixWorld(true);
     for (const l of built.lamps) {
@@ -271,7 +310,7 @@ export class WorldView implements View3D {
       const x = x0 + i * step, y = y0 + j * step, k = (j * (nx + 1) + i) * 3;
       const inside = x > DOMAIN.x0 && x < DOMAIN.x1 && y > DOMAIN.y0 && y < DOMAIN.y1;
       const out = Math.max(DOMAIN.x0 - x, x - DOMAIN.x1, DOMAIN.y0 - y, y - DOMAIN.y1, 0);
-      const h = inside ? -30 : terrainHeight(x, y) * (1 + out / 4000) + out / 700;
+      const h = inside ? -30 : RIVER_LEVEL - 1.6;
       pos.set([x / 16, h, y / 16], k);
       landColor(x, y, h, 0.3, c).lerp(far, Math.min(0.6, out / 9000));
       col.set([c.r, c.g, c.b], k);
@@ -289,6 +328,15 @@ export class WorldView implements View3D {
     this.horizon = new THREE.Mesh(g, this.terrainMat);
     this.horizon.name = "horizon";
     this.scene.add(this.horizon);
+    // the delta's one water table: the river mouths out to the horizon, and every canal carved below it in the land
+    // (the river's own ribbon lies on top of it, a hair higher)
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(2 * reach + (DOMAIN.x1 - DOMAIN.x0), 2 * reach + (DOMAIN.y1 - DOMAIN.y0)).rotateX(-Math.PI / 2), this.seaMat);
+    sea.position.set((DOMAIN.x0 + DOMAIN.x1) / 32, RIVER_LEVEL - 0.05, (DOMAIN.y0 + DOMAIN.y1) / 32);
+    sea.name = "sea";
+    sea.renderOrder = -1;                                                  // under the river's ribbon, always
+    sea.receiveShadow = true;
+    this.sea = sea;
+    this.scene.add(sea);
   }
 
   // ------------------------------------------------------------ hooks for the engine
@@ -319,9 +367,21 @@ export class WorldView implements View3D {
     this.liveState = live;
   }
 
+  /** 0097: the felled trees of the rừng tràm (world px): stumps until they respawn. */
+  setFelled(points: ReadonlyArray<Vec>): void {
+    this.forest.setFelled(points);
+  }
+
   /** The field's plots (the crops by stage). */
   setPlots(plots: ReadonlyArray<PlotDraw>): void {
     this.zones.find((z) => z.id === "field")?.built.setPlots?.(plots, Date.now());
+  }
+
+  /** Dev screenshots: put the free camera exactly here (units), looking along yaw/pitch, with no keys held. */
+  setFly(pos: V3, yaw: number, pitch: number): void {
+    this.setCameraMode("free");
+    this.flyIn = { f: false, b: false, l: false, r: false, u: false, d: false, fast: false };
+    this.fly = { pos: { ...pos }, yaw, pitch };
   }
 
   setCameraMode(m: CameraMode): void {
@@ -410,11 +470,27 @@ export class WorldView implements View3D {
   private readonly onContextMenu = (e: Event): void => { e.preventDefault(); };
 
   private readonly onPointerDown = (e: PointerEvent): void => {
+    this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.touches.size === 2) this.pinchD = this.spread();
     this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, button: e.button };
     this.canvas.setPointerCapture?.(e.pointerId);
   };
 
+  /** The two first fingers' spread (px). */
+  private spread(): number {
+    const [a, b] = [...this.touches.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  }
+
   private readonly onPointerMove = (e: PointerEvent): void => {
+    if (this.touches.has(e.pointerId)) this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.touches.size >= 2) {                                          // a pinch: zoom the game camera, no orbit, no tap
+      const s = this.spread();
+      if (this.gcam && this.mode === "follow" && this.pinchD > 0 && s > 0) setCam(pinchBy(getCam(), s / this.pinchD));
+      this.pinchD = s;
+      if (this.drag) this.drag.moved = true;
+      return;
+    }
     const d = this.drag;
     if (!d || d.id !== e.pointerId) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
@@ -426,10 +502,17 @@ export class WorldView implements View3D {
       return;
     }
     const m = this.mode, o = this.orbit[m];
+    if (m === "follow" && this.gcam?.view === "first") {                     // first person: look around (the yaw is the orbit's)
+      this.orbit.follow = { ...o, yaw: o.yaw - dx * 0.005 };
+      this.fpPitch = Math.max(-1.2, Math.min(1.1, this.fpPitch - dy * 0.004));
+      return;
+    }
     this.orbit[m] = { ...o, yaw: o.yaw - dx * 0.006, pitch: Math.max(0.12, Math.min(1.45, o.pitch + dy * 0.004)) };
   };
 
   private readonly onPointerUp = (e: PointerEvent): void => {
+    this.touches.delete(e.pointerId);
+    if (this.touches.size < 2) this.pinchD = 0;
     const d = this.drag;
     if (!d || d.id !== e.pointerId) return;
     this.drag = null;
@@ -441,6 +524,10 @@ export class WorldView implements View3D {
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     if (this.mode === "free") return;
+    if (this.gcam && this.mode === "follow") {                               // the game: zoom within its limits, kept
+      setCam(zoomBy(getCam(), e.deltaY));
+      return;
+    }
     const m = this.mode, o = this.orbit[m], lim = ORBITS[m];
     this.orbit[m] = { ...o, distance: Math.max(lim.min, Math.min(lim.max, o.distance * Math.exp(e.deltaY * 0.001))) };
   };
@@ -487,6 +574,8 @@ export class WorldView implements View3D {
     });
     this.water.animate(t, f.windKmh);
     this.landmarks.animate(t, f.windKmh);
+    this.nui.animate(t, f.reduced);
+    this.forest.animate(t, f.windKmh, f.reduced);
     this.life.animate(f.t, f.windKmh, f.reduced);
     const amp = f.reduced ? 0 : 0.03 + Math.min(0.25, f.windKmh / 200);
     for (const z of this.zones) for (const s of z.built.sway) s.obj.rotation.z = s.base + Math.sin(t / 700 + s.seed) * amp;
@@ -519,7 +608,14 @@ export class WorldView implements View3D {
 
   private updateCamera(f: DioramaFrame, dt: number): void {
     let eye: V3, look: V3, rate = 5;
-    if (this.mode === "follow") {
+    if (this.mode === "follow" && this.gcam?.view === "first") {
+      // first person: the eyes (the head's middle), looking along the orbit's yaw and the view's own pitch
+      const y = this.heightAt(f.focus.x, f.focus.y) + RIG.hipY + RIG.neckY + RIG.headH * 0.45;
+      const o = this.orbit.follow, c = Math.cos(this.fpPitch);
+      eye = { x: f.focus.x / 16, y, z: f.focus.y / 16 };
+      look = { x: eye.x - Math.sin(o.yaw) * c, y: y + Math.sin(this.fpPitch), z: eye.z - Math.cos(o.yaw) * c };
+      rate = 30;
+    } else if (this.mode === "follow") {
       look = { x: f.focus.x / 16, y: this.heightAt(f.focus.x, f.focus.y) + 1.3, z: f.focus.y / 16 };
       eye = orbitEye(look, this.orbit.follow);
       const ground = this.heightAt(eye.x * 16, eye.z * 16) + 6.5;               // never in a hill or the treetops
@@ -662,6 +758,8 @@ export class WorldView implements View3D {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.unsubCam?.();
+    this.unsubCam = null;
     this.ro.disconnect();
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
@@ -680,12 +778,16 @@ export class WorldView implements View3D {
     for (const m of this.mergedMats) m.dispose();
     for (const c of this.chunks) for (const g of c.geos) g?.dispose();
     this.horizon?.geometry.dispose();
+    this.sea?.geometry.dispose();
+    this.seaMat.dispose();
     this.terrainMat.dispose();
     this.forest.dispose();
     this.water.dispose();
     this.landmarks.dispose();
     this.life.dispose();
     this.bridges.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); });
+    this.delta.dispose();
+    this.nui.dispose();
     this.sky.dispose();
     this.ink.dispose();
     this.sun.shadow.map?.dispose();

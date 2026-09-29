@@ -15,6 +15,7 @@ const LABEL: Record<PresenceMap, { icon: string; name: string }> = {
   ham_ngam: { icon: "🕳️", name: "Hầm" },
   mo_da: { icon: "⛏️", name: "Mỏ đá" },
   song_cai: { icon: "🛶", name: "Sông Cái" },
+  rung_tram: { icon: "🌲", name: "Rừng tràm" },
   wild: { icon: "🌲", name: "Ngoài đồng" },                              // P2: the world between the zones
 };
 // v20.4: the hầm is a secret: nobody is counted there

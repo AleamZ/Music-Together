@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { CO_TU_LOOK } from "@/lib/game/look";
 import { LOTS } from "@/lib/game/maps/khu-nha";
-import { POND_CX, POND_CY, POND_RX, POND_RY } from "@/lib/game/maps/pond";
+import { pondDuckAt } from "@/lib/game/world/pond-life";
 import { RIVER } from "@/lib/game/river/geometry";
 import type { Facing } from "@/lib/game/types";
 import { RIVER_LEVEL, ZONE_ELEV } from "@/lib/game/world/terrain";
@@ -15,7 +15,7 @@ import {
 } from "./live-plan";
 import {
   barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, fishModel, houseModel, Labels,
-  lotSign, ModelMats, petModel, ratModel, ringModel, spearModel, stallModel, vehicleModel, wildAnimal,
+  lotSign, ModelMats, petModel, poseCreature, ratModel, ringModel, spearModel, stallModel, vehicleModel, wildAnimal,
   type Barrier, type Boat, type Creature, type Vehicle,
 } from "./models";
 
@@ -73,7 +73,7 @@ export class LiveLayer {
     for (let i = 0; i < 3; i++) {
       const c = duckModel(this.mats);
       this.root.add(c.root);
-      this.ambient.ducks.push({ c, a: i * 2.1, r: 0.45 + i * 0.12, speed: 0.05 + i * 0.015 });
+      this.ambient.ducks.push({ c, a: i * 2.1, r: i / 2, speed: 0.05 + i * 0.015 });
     }
   }
 
@@ -356,22 +356,7 @@ export class LiveLayer {
 
   private animate(c: Creature, m: Motion, t: number, fleeing: boolean, reduced: boolean): void {
     c.root.rotation.y = m.yaw;
-    const g = gait(m.speed, fleeing);
-    const s = reduced ? 0 : Math.sin(m.phase), k = g.amp;
-    if (c.legs.length === 4) {
-      c.legs[0].rotation.x = c.legs[3].rotation.x = s * k;
-      c.legs[1].rotation.x = c.legs[2].rotation.x = -s * k;
-    }
-    c.body.position.y = c.hop && g.freq > 0 && !reduced ? Math.abs(Math.sin(m.phase / 2)) * 0.18 : 0;
-    c.body.rotation.x = fleeing && g.freq > 0 ? -0.08 : 0;
-    if (c.head) c.head.rotation.x = g.freq === 0 && !reduced ? Math.max(0, Math.sin(t / 1400 + m.phase)) * 0.5 : 0;   // grazing
-    if (c.tail) c.tail.rotation.y = reduced ? 0 : Math.sin(t / (fleeing ? 90 : 220)) * 0.35;
-    if (c.wings.length) {
-      const air = c.flies && (fleeing || g.freq > 2.5);
-      const flap = air && !reduced ? Math.sin(t / 55) * 0.9 : 0.1;
-      c.wings[0].rotation.z = flap; c.wings[1].rotation.z = -flap;
-      c.body.position.y = air ? Math.min(2.5, c.body.position.y + 0.5 + Math.sin(t / 300) * 0.2) : c.body.position.y;
-    }
+    poseCreature(c, m.phase, gait(m.speed, fleeing), t, fleeing, reduced);
   }
 
   private boss(b: LiveBoss, t: number, dt: number): void {
@@ -500,9 +485,9 @@ export class LiveLayer {
     const pond = ZONES.pond;
     for (const d of this.ambient.ducks) {
       if (!reduced) d.a += d.speed * dt;
-      const x = pond.ox + POND_CX + Math.cos(d.a) * POND_RX * d.r, y = pond.oy + POND_CY + Math.sin(d.a) * POND_RY * d.r;
-      d.c.root.position.set(U(x), POND_WATER - 0.2 + (reduced ? 0 : Math.sin(t / 500 + d.a * 9) * 0.02), U(y));
-      d.c.root.rotation.y = Math.atan2(-Math.sin(d.a) * POND_RX, Math.cos(d.a) * POND_RY);
+      const p = pondDuckAt(d.r, d.a);                                     // north of the jetty, clear of its deck
+      d.c.root.position.set(U(pond.ox + p.x), POND_WATER - 0.2 + (reduced ? 0 : Math.sin(t / 500 + d.a * 9) * 0.02), U(pond.oy + p.y));
+      d.c.root.rotation.y = p.yaw;
     }
   }
 

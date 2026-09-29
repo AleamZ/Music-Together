@@ -82,3 +82,30 @@ export function strand(p0: V3, p1: V3, p2: V3, w: readonly [number, number], t: 
   const len = A.distanceTo(B) + B.distanceTo(C);
   return { at, center: (_u, v) => point(Math.min(1, Math.max(0, v))), sizeU: TAU * Math.max(w[0], w[1]) * 0.8, sizeV: len, segU: seg[0], segV: seg[1] };
 }
+
+/** A lathe profile with `k`-1 Catmull-Rom rings added between each pair (smoother silhouettes, same corners): closing
+ *  caps (rx = rz = 0) and flat steps (equal y) stay straight. */
+export function smoothRings(rings: readonly Ring[], k = 2): Ring[] {
+  if (k <= 1 || rings.length < 3) return [...rings];
+  const n = rings.length;
+  const cap = (r: Ring) => r.rx === 0 && r.rz === 0;
+  const out: Ring[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const a = rings[i], b = rings[i + 1];
+    out.push(a);
+    const straight = cap(a) || cap(b) || a.y === b.y;
+    const p0 = i > 0 && !cap(rings[i - 1]) ? rings[i - 1] : a, p3 = i + 2 < n && !cap(rings[i + 2]) ? rings[i + 2] : b;
+    for (let j = 1; j < k; j++) {
+      const t = j / k, t2 = t * t, t3 = t2 * t;
+      const cr = (q0: number, q1: number, q2: number, q3: number) =>
+        straight ? q1 + (q2 - q1) * t : 0.5 * (2 * q1 + (q2 - q0) * t + (2 * q0 - 5 * q1 + 4 * q2 - q3) * t2 + (3 * q1 - q0 - 3 * q2 + q3) * t3);
+      out.push({
+        y: a.y + (b.y - a.y) * t,
+        rx: Math.max(0, cr(p0.rx, a.rx, b.rx, p3.rx)), rz: Math.max(0, cr(p0.rz, a.rz, b.rz, p3.rz)),
+        x: cr(p0.x ?? 0, a.x ?? 0, b.x ?? 0, p3.x ?? 0), z: cr(p0.z ?? 0, a.z ?? 0, b.z ?? 0, p3.z ?? 0),
+      });
+    }
+  }
+  out.push(rings[n - 1]);
+  return out;
+}

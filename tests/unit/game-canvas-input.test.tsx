@@ -106,6 +106,9 @@ vi.mock("@/lib/game/engine", () => ({
     setCardTables(labels: unknown) {
       this.rec.cards.push(labels);
     }
+    setCardSeats(seats: unknown) {                                                  // the 3D view's real seats
+      void seats;
+    }
     setRingLabels(labels: unknown) {                                                 // v20.3
       this.rec.rings.push(labels);
     }

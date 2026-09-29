@@ -65,7 +65,8 @@ export function buildRoster({ presence, members, room, localId, looks, mapId, se
  *  are taken only from such a member (anti-cheat spec §14). */
 export function isHereOn(presence: readonly PresenceEntry[], accountId: string, mapId: MapId | readonly string[]): boolean {
   const on = (m: string | null) => m !== null && (typeof mapId === "string" ? m === mapId : mapId.includes(m));   // P2: a zone set
-  return presence.some((p) => p.accountId === accountId && p.mode === "game" && on(p.map));
+  // a member out in the wild is also "here" on the zone its client falls back to (the 2D clients see it at the edge)
+  return presence.some((p) => p.accountId === accountId && p.mode === "game" && (on(p.map) || (p.map === "wild" && p.near !== undefined && on(p.near))));
 }
 
 /** Chat messages that should pop up as bubbles: not shown yet, written by a person, at most maxAgeMs old. */

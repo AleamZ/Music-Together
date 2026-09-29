@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { DEFAULT_LOOK } from "@/lib/game/look";
+import { isDefaultBody, normalizeBody } from "@/lib/game/body";
 import { GENDERS, HAIR_COLORS, HAIR_STYLES, SKIN_TONES, hairFitsGender, type Gender, type HairColor, type HairStyle, type ItemSlot, type Look } from "@/lib/game/types";
 
 /** Catalog slots: the Look slots plus `outfit`, a full-body piece (added by 0024) drawn over top + bottom. */
@@ -36,6 +37,8 @@ export interface CharacterRow {
   /** Added by 0070 (v21): the level and the worn title (the name tag). */
   pg_level?: number | null;
   pg_title?: string | null;
+  /** Added by 0094: body proportions (lib/game/body.ts); null / absent reads as the default body. */
+  body?: unknown;
 }
 
 export { DEFAULT_LOOK };
@@ -58,6 +61,7 @@ function pick<T extends string>(list: readonly T[], v: string, fallback: T): T {
 }
 
 export function lookFromRow(row: CharacterRow): Look {
+  const gender = pick(GENDERS, row.gender ?? "", "nam" as Gender);
   return {
     skin: pick(SKIN_TONES, row.skin, DEFAULT_LOOK.skin),
     hair: pick(HAIR_STYLES, row.hair, DEFAULT_LOOK.hair),
@@ -69,12 +73,13 @@ export function lookFromRow(row: CharacterRow): Look {
     neck: row.neck ?? null,
     wrist: row.wrist ?? null,
     hairpin: row.hairpin ?? null,
-    gender: pick(GENDERS, row.gender ?? "", "nam" as Gender),
+    gender,
     outfit: row.outfit ?? null,
     ...(typeof row.belt === "number" && row.belt >= 0 && row.belt <= 4 ? { belt: row.belt } : {}),
     ...(typeof row.ug_title === "string" && row.ug_title.length > 0 && row.ug_title.length <= 40 ? { ugTitle: row.ug_title } : {}),
     ...(typeof row.pg_level === "number" && row.pg_level >= 1 && row.pg_level <= 99 ? { pgLevel: row.pg_level } : {}),
     ...(typeof row.pg_title === "string" && row.pg_title.length > 0 && row.pg_title.length <= 40 ? { pgTitle: row.pg_title } : {}),
+    ...(row.body !== null && row.body !== undefined && !isDefaultBody(row.body, gender) ? { body: normalizeBody(row.body, gender) } : {}),
   };
 }
 
@@ -121,7 +126,7 @@ export function fetchCatalog(): Promise<CatalogItem[]> {
 const LOOK_COLUMNS = "account_id, skin, hair, hair_color, hat, top, bottom, shoes, neck, gender, outfit, wrist, hairpin";
 /** v20.3 / v20.4: the extra columns (0051's belt, 0052's ug_title); a database without them yet is read without them, once
  *  and for all this page. */
-const EXTRA_COLUMNS = ["belt, ug_title, pg_level, pg_title", "belt, ug_title", "belt", ""] as const;
+const EXTRA_COLUMNS = ["belt, ug_title, pg_level, pg_title, body", "belt, ug_title, pg_level, pg_title", "belt, ug_title", "belt", ""] as const;
 let extra = 0;
 
 /** Looks of the given accounts; accounts without a character are simply absent from the map. */
@@ -131,7 +136,7 @@ export async function fetchCharacters(accountIds: string[]): Promise<Map<string,
   const run = (cols: string) => supabase.from("characters").select(cols).in("account_id", accountIds);
   const cols = () => (EXTRA_COLUMNS[extra] ? `${LOOK_COLUMNS}, ${EXTRA_COLUMNS[extra]}` : LOOK_COLUMNS);
   let res = await run(cols());
-  while (res.error && extra < EXTRA_COLUMNS.length - 1 && (res.error.code === "42703" || /belt|ug_title|pg_level|pg_title/.test(res.error.message ?? ""))) {
+  while (res.error && extra < EXTRA_COLUMNS.length - 1 && (res.error.code === "42703" || /belt|ug_title|pg_level|pg_title|body/.test(res.error.message ?? ""))) {
     // no belt means no 0051, so no 0052 either: straight to the plain columns; no ug_title: drop only that
     extra = /belt/.test(res.error.message ?? "") ? EXTRA_COLUMNS.length - 1 : /ug_title/.test(res.error.message ?? "") ? EXTRA_COLUMNS.indexOf("belt") : extra + 1;   // v21: no pg_* drops only those
     res = await run(cols());
@@ -146,6 +151,8 @@ export async function saveCharacter(token: string, look: Look): Promise<Look> {
     p_session_token: token, p_skin: look.skin, p_hair: look.hair, p_hair_color: look.hairColor,
     p_hat: look.hat, p_top: look.top, p_bottom: look.bottom, p_shoes: look.shoes, p_neck: look.neck, p_gender: look.gender ?? "nam",
     p_outfit: look.outfit ?? null, p_wrist: look.wrist ?? null, p_hairpin: look.hairpin ?? null,
+    p_body: look.body === null || look.body === undefined || isDefaultBody(look.body, look.gender ?? "nam") ? null
+      : normalizeBody(look.body, look.gender ?? "nam"),   // 0094
   });
   if (error) throw error;
   return lookFromRow((Array.isArray(data) ? data[0] : data) as CharacterRow);
@@ -156,6 +163,7 @@ export function characterErrorMessage(err: unknown): string {
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";
   if (msg.includes("item not for this gender")) return "Món đồ này không hợp với giới tính của nhân vật.";
   if (msg.includes("item not available")) return "Món đồ này chưa dùng được.";
+  if (msg.includes("invalid body shape")) return "Dáng người không hợp lệ.";
   if (msg.includes("invalid character option")) return "Lựa chọn ngoại hình không hợp lệ.";
   return "Không lưu được nhân vật — thử lại nhé.";
 }

@@ -51,6 +51,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   { id: "petCenter", codes: ["Digit5", "Numpad5"], label: "5", desc: "Trại thú: trứng, nuôi dạy, đấu thú, cá chiến", group: "hud" },
   { id: "world", codes: ["Digit6", "Numpad6"], label: "6", desc: "Thế giới: săn bắt, tổ đội, boss, hầm ngục", group: "hud" },
   { id: "photo", codes: ["Digit7", "Numpad7"], label: "7", desc: "Chụp ảnh", group: "hud" },
+  { id: "camView", codes: ["Digit8", "Numpad8"], label: "8", desc: "Thế giới 3D: góc nhìn thứ nhất / thứ ba", group: "hud" },
   { id: "jump", codes: ["KeyJ"], label: "J", desc: "Nhảy xuống ao", group: "pond" },
   { id: "warmUp", codes: ["KeyK"], label: "K", desc: "Khởi động", group: "pond" },
   { id: "net", codes: ["KeyL"], label: "L", desc: "Quăng lưới", group: "pond" },

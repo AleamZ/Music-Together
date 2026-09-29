@@ -7,6 +7,7 @@ import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable } from "@/lib/game/maps/types";
 import type { GameChannelHandlers } from "@/lib/game/net/channel";
 import type { GameMessage } from "@/lib/game/net/protocol";
+import { cellAt, cellNeighbourhood, cellTopicId } from "@/lib/game/world/grid";
 import { MINE } from "@/lib/game/world/wild";
 import { serverPos, toWorld, ZONE_IDS, type ZoneId } from "@/lib/game/world/zones";
 
@@ -63,23 +64,32 @@ describe("GameCanvas in world mode (P2)", () => {
     expect({ map: h.mapId(), ...h.localPos() }).toEqual(sp);
     expect(h.zone()).toBe("hall");
     expect(got.zones).toEqual(["hall"]);
-    expect(got.aoi[0][0]).toBe("hall");
-    expect([...topics.keys()].sort()).toEqual([...got.aoi[0]].sort());           // my zone + its neighbours' topics
+    expect(got.aoi[0]).toContain("hall");
+    // P4: my grid cell + its neighbours (world px), and the zone topics they overlap (the 2D clients there)
+    const cell = cellAt(h.worldPos()!);
+    const cells = cellNeighbourhood(cell).map(cellTopicId);
+    expect([...topics.keys()].filter((t) => t.startsWith("c")).sort()).toEqual([...cells].sort());
+    expect([...topics.keys()].filter((t) => !t.startsWith("c")).sort()).toEqual(got.aoi[0].filter((z) => z !== "wild").sort());
     expect(got.failed).toBe(1);                                                  // jsdom: no WebGL for the world view
-  });
+  }, 30_000);                                                              // builds the whole delta world (heavier since the delta passes)
 
-  it("broadcasts on my zone's topic, zone-local; plant/puff/anglerNear take zone-local points", async () => {
+  it("broadcasts on my grid cell (world px) with a zone-local copy on my zone's topic; plant takes zone-local points", async () => {
     const { ref } = mount();
     await act(async () => {});
     const h = ref.current!;
     const hall = topics.get("hall")!;
+    const own = topics.get(cellTopicId(cellAt(h.worldPos()!)))!;
     expect(hall.sent.some((m) => m.t === "hello")).toBe(true);
+    expect(own.sent.some((m) => m.t === "hello")).toBe(true);
+    const copy = hall.sent.find((m) => m.t === "st") as Extract<GameMessage, { t: "st" | "mv" }>;
+    expect(copy).toMatchObject({ fb: 1, x: getMap("hall").spawn.x, y: getMap("hall").spawn.y });   // zone-local, flagged
     h.plant({ x: 100, y: 120 }, "up");                                            // a fishing spot, zone-local
     expect(h.worldPos()).toEqual(toWorld("hall", { x: 100, y: 120 }));
     expect(h.localPos()).toEqual({ x: 100, y: 120 });
-    const last = hall.sent.filter((m) => m.t === "mv").at(-1) as Extract<GameMessage, { t: "st" | "mv" }>;
-    expect([last.x, last.y]).toEqual([100, 120]);                                 // the wire is zone-local
-    expect(topics.get("market")!.sent.filter((m) => m.t === "mv")).toEqual([]);   // only my zone's topic
+    const last = own.sent.filter((m) => m.t === "mv").at(-1) as Extract<GameMessage, { t: "st" | "mv" }>;
+    const w = toWorld("hall", { x: 100, y: 120 })!;
+    expect([last.x, last.y]).toEqual([w.x, w.y]);                                 // the cell's wire is world px
+    for (const [t, rec] of topics) if (t !== "hall" && rec !== own && !t.startsWith("c")) expect(rec.sent.filter((m) => m.t === "mv")).toEqual([]);
   });
 
   it("a real arrival (travelKey) moves me in the running world — out of the cave onto the mine mouth", async () => {

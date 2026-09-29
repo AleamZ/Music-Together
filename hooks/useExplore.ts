@@ -76,6 +76,13 @@ export function useExplore({ token, roomId, mapId, canvas, toast, travelTo, canc
   const [dig, setDig] = useState<DigView | null>(null);
   const [chest, setChest] = useState<ChestView | null>(null);
   const live = useRef({ toast, canvas, travelTo, cancelCast, onCoins, onMaps });
+  // P4: where my dig is (zone-local), shown in the 3D world while it lasts
+  const digAt = useRef<{ zone: MapId; x: number; y: number } | null>(null);
+  const digState = dig ? (dig.phase === "done" ? "dug" : "hint") : null;
+  useEffect(() => {
+    const at = digAt.current;
+    canvas()?.setLiveInputs?.({ digs: digState && at ? [{ id: "me", ...at, state: digState }] : [] });
+  }, [digState, canvas]);
   useEffect(() => {
     live.current = { toast, canvas, travelTo, cancelCast, onCoins, onMaps };
   });
@@ -174,6 +181,7 @@ export function useExplore({ token, roomId, mapId, canvas, toast, travelTo, canc
     const at = c?.localPos(), here = c?.mapId();
     if (!at || !here) return;
     const id = detector.mapId;
+    digAt.current = { zone: here, x: at.x, y: at.y };                                  // P4: the 3D dig spot
     setDig({ phase: "starting", mapId: id, period: 100, live: null, need: 3, win: 120, message: "" });
     c?.puff({ x: at.x, y: at.y - 6 });
     void treasureDigStart(roomId, token, id, here, at.x, at.y).then((r) => {

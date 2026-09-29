@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { pxToWorld, pxToWorldAbs, worldAbsToPx } from "@/lib/game/diorama/coords";
 import { posReport } from "@/lib/game/position";
 import { resetAppFlags } from "@/lib/game/world/flag";
+import { GFX_KEY } from "@/lib/game/diorama/flag";
 import { ZONES } from "@/lib/game/world/zones";
 
 const rpc = vi.mocked(supabase.rpc);
@@ -18,7 +19,7 @@ function serve(flags: Record<string, boolean> | Error) {
 }
 
 describe("posReport and the unified_world flag (0088)", () => {
-  beforeEach(() => { rpc.mockReset(); resetAppFlags(); });
+  beforeEach(() => { rpc.mockReset(); resetAppFlags(); window.localStorage.removeItem(GFX_KEY); });
 
   it("flag off: the old zone-local pos_report", async () => {
     serve({ unified_world: false });
@@ -32,13 +33,27 @@ describe("posReport and the unified_world flag (0088)", () => {
     expect(rpc).toHaveBeenLastCalledWith("pos_report", { p_session_token: "tok", p_map: "hall", p_x: 612, p_y: 300 });
   });
 
-  it("flag on: world px through pos_report_w; an interior keeps pos_report; the flag is read once", async () => {
+  it("flag on + 3D graphics: world px through pos_report_w; an interior keeps pos_report; the flag is read once", async () => {
     serve({ unified_world: true });
+    window.localStorage.setItem(GFX_KEY, "3d");
     await posReport("tok", "pond", 300, 356);
     expect(rpc).toHaveBeenLastCalledWith("pos_report_w", { p_session_token: "tok", p_wx: 300 + ZONES.pond.ox, p_wy: 356 + ZONES.pond.oy });
     await posReport("tok", "ham_ngam", 48, 84);
     expect(rpc).toHaveBeenLastCalledWith("pos_report", { p_session_token: "tok", p_map: "ham_ngam", p_x: 48, p_y: 84 });
     expect(rpc.mock.calls.filter((c) => c[0] === "app_flags")).toHaveLength(1);
+  });
+
+  it("0090: flag on but 2D graphics: the old zone-local pos_report (the 2D game is unchanged)", async () => {
+    serve({ unified_world: true });
+    await posReport("tok", "pond", 300, 356);
+    expect(rpc).toHaveBeenLastCalledWith("pos_report", { p_session_token: "tok", p_map: "pond", p_x: 300, p_y: 356 });
+  });
+
+  it("0090: 3D graphics but the flag off: the old pos_report", async () => {
+    serve({ unified_world: false });
+    window.localStorage.setItem(GFX_KEY, "3d");
+    await posReport("tok", "pond", 300, 356);
+    expect(rpc).toHaveBeenLastCalledWith("pos_report", { p_session_token: "tok", p_map: "pond", p_x: 300, p_y: 356 });
   });
 });
 

@@ -4,8 +4,9 @@ import {
   SHOWROOM_DOOR, SHOWROOM_FRONT, STALLS, UG_HATCH, VO_DUONG_AWNING, VO_DUONG_FRONT,
 } from "@/lib/game/maps/market";
 import type { GameMap, Rect, StallGoods } from "@/lib/game/maps/types";
-import { COL, ZoneKit, type ZGround, type ZoneLayout, type ZoneOpts } from "./kit";
+import { COL, DECAL_LIFT, upper, wrap, ZoneKit, type ZGround, type ZoneLayout, type ZoneOpts } from "./kit";
 import { renderZone } from "./render";
+import type { SignIcon } from "./signart";
 
 // Chợ Lớn — the street market at dusk as a diorama, from market.ts (collision, props, interactables) and market-art.ts
 // (the look): the row of houses behind, seven shops on the north row with their open fronts (the keeper stands inside,
@@ -27,6 +28,8 @@ const GOODS: Record<StallGoods, number[]> = {
   fruit: [0xe07a2e, 0xf4d03a, 0x6aa83f, 0xd23a3a], flower: [0xf29bb5, 0xf4f1e8, 0xd4758f], lantern: [0xd23a3a, 0xe0b33c, 0xe07a2e],
   fish: [0x9fb8c8, 0xc0d0d8, 0x7a8e9a], produce: [0xe8cf7a, 0x6aa83f, 0x9a6a3a], umbrella: [0x2f5fa8, 0xd23a3a, 0xf4d03a, 0x2e9a94],
 };
+const GOODS_NAME: Record<StallGoods, string> = { fruit: "Trái cây", flower: "Hoa tươi", lantern: "Lồng đèn", fish: "Cá tươi", produce: "Nông sản", umbrella: "Ô dù" };
+const GOODS_ICON: Record<StallGoods, SignIcon> = { fruit: "market", flower: "star", lantern: "star", fish: "fish", produce: "rice", umbrella: "home" };
 /** market-art.ts's LANTERN_STRINGS: [x1, y1, x2, y2, sag] in the 2D picture. */
 const LANTERN_STRINGS: ReadonlyArray<readonly [number, number, number, number, number]> = [
   [26, 134, 244, 64, 10], [244, 64, 396, 64, 12], [396, 64, 600, 134, 10], [604, 64, 774, 134, 10], [26, 134, 774, 134, 34],
@@ -78,6 +81,7 @@ export function marketLayout(map: GameMap, opts: ZoneOpts = {}): ZoneLayout {
   for (let j = 0; j < 6; j++) k.box(pole.x, pole.y, 5, 5, 5, [0xd23a3a, 0xf4f1e8, 0x3a7bd5][j % 3], { z0: 14 + j * 5 });
   // the motel's neon board
   k.box(MOTEL_FRONT.x + 50, MOTEL_FRONT.y + MOTEL_FRONT.h - 1, 60, 2, 12, 0xff5fa2, { z0: 88, glow: true });
+  k.signFace(MOTEL_FRONT.x + 80, MOTEL_FRONT.y + MOTEL_FRONT.h + 1 + DECAL_LIFT, 94, { lines: ["HOA SEN"], icon: "star", bg: 0x2a1a2a, fg: 0xff9fca, rim: 0xff5fa2 }, "s", 56);
   // the awnings over the three original shops' fronts (they reach over the pavement)
   const awnings: Array<[Rect, number, number]> = [[RESTAURANT_FRONT, COL.red, COL.white], [CLOTHES_FRONT, COL.teal, COL.white], [SALON_FRONT, 0xd4758f, COL.white]];
   for (const [r, a, b] of awnings) {
@@ -98,8 +102,10 @@ export function marketLayout(map: GameMap, opts: ZoneOpts = {}): ZoneLayout {
     for (let i = 0; i < 9; i++) k.box(r.x + 6 + i * 8, r.y + 26 + (i % 2) * 3, 5, 4, 4, goods[i % goods.length], { z0: 16 });
     if (s.goods === "lantern") for (let i = 0; i < 5; i++) k.bulb(r.x + 10 + i * 15, r.y + r.h + 4, 38, goods[i % goods.length], 2.6);
     if (s.goods === "umbrella") for (let i = 0; i < 3; i++) k.gable(r.x + 10 + i * 22, r.y + 8, 16, 16, 30, 6, goods[i], "x");
-    if (s.goods === "fish" || s.goods === "produce" || s.goods === "umbrella") {
-      k.box(r.x + 12, r.y + r.h + 6, r.w - 24, 2, 10, s.goods === "fish" ? COL.tealDark : s.goods === "produce" ? 0x3a6e2a : 0x1e3f78, { z0: 48, roof: id });
+    {
+      const bg = s.goods === "fish" ? COL.tealDark : s.goods === "produce" ? 0x3a6e2a : s.goods === "umbrella" ? 0x1e3f78 : COL.woodDeep;
+      k.box(r.x + 12, r.y + r.h + 6, r.w - 24, 1.6, 11, bg, { z0: 47, roof: id });
+      k.signFace(r.x + r.w / 2, r.y + r.h + 7.6 + DECAL_LIFT, 52.5, { lines: wrap(k.labelNear(r.x + r.w / 2, r.y + r.h / 2, 60) ?? GOODS_NAME[s.goods], 14), icon: GOODS_ICON[s.goods], bg, fg: COL.white }, "s", r.w - 28);
     }
     k.light(r.x + r.w / 2, r.y + r.h + 6, 44, s.goods === "lantern" ? 3 : 1);
   }
@@ -117,7 +123,8 @@ export function marketLayout(map: GameMap, opts: ZoneOpts = {}): ZoneLayout {
   for (const gx of [gate.x + 6, gate.x + gate.w - 14]) k.box(gx, v.y - 6, 8, 6, 52, COL.redDark);
   const gid = k.roofGroup("dojo_gate", { x: gate.x, y: gate.y, w: gate.w, h: gate.h });
   k.gable(gate.x - 6, gate.y + 4, gate.w + 12, gate.h, 52, 14, COL.tileDark, "x", gid);
-  k.box(gate.x + 30, v.y - 4, gate.w - 60, 2, 10, COL.redDark, { z0: 40, roof: gid });
+  k.box(gate.x + 30, v.y - 4, gate.w - 60, 2, 11, COL.redDark, { z0: 40, roof: gid });
+  k.signFace(gate.x + gate.w / 2, v.y - 2 + DECAL_LIFT, 45, { lines: ["VÕ ĐƯỜNG"], icon: "fist", bg: COL.redDark, fg: COL.goldLight, rim: COL.gold }, "s", gate.w - 64);
   k.light(920, 268, 56, 4);
 
   // the canal wall, the plank bridge over the gap, a xuồng in the canal, the manhole
@@ -153,7 +160,9 @@ function shop(k: ZoneKit, s: Shop, id: string): void {
   k.box(r.x, r.y + r.h - 1, r.w, 1.5, 3, COL.outline, { z0: H - 3 });
   const roof = k.roofGroup(id, { x: r.x, y: r.y, w: r.w, h: r.h - 40 });
   k.gable(r.x - 4, r.y - 2, r.w + 8, r.h + 6, H, 26, s.roof, "x", roof);
-  k.box(r.x + r.w / 2 - 36, r.y + r.h - 1, 72, 2, 12, s.sign, { z0: H - 18, glow: true });
+  const name = k.labelNear(r.x + r.w / 2, r.y + r.h - 10, r.w / 2 + 20) ?? "";
+  k.box(r.x + r.w / 2 - 38, r.y + r.h - 1, 76, 1.8, 16, s.sign, { z0: H - 20, glow: true });
+  k.signFace(r.x + r.w / 2, r.y + r.h + 0.8 + DECAL_LIFT, H - 12, { lines: [upper(name)], bg: s.sign, fg: COL.goldLight, rim: COL.gold }, "s", 70);
   k.windows(r.x, r.y + r.h, (rec.x - r.x), [22], 1, () => true, 22, 20);
   k.windows(rec.x + rec.w, r.y + r.h, r.x + r.w - rec.x - rec.w, [22], 1, () => true, 22, 20);
   if (s.storeys === 2) k.windows(r.x, r.y + r.h, r.w, [62], 4, (i) => i % 3 !== 1, 14, 16);
@@ -165,3 +174,5 @@ export function buildMarket(map: GameMap, opts: ZoneOpts = {}): THREE.Group {
   built.root.userData.built = built;
   return built.root;
 }
+
+

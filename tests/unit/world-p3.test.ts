@@ -21,7 +21,8 @@ import { waypointAt, waypointClick, waypointMarks } from "@/lib/game/world/waypo
 import { fitWorld } from "@/lib/game/world/minimap";
 import { MINE } from "@/lib/game/world/mine";
 import { toWorld, ZONE_IDS, ZONES, type ZoneId } from "@/lib/game/world/zones";
-import { ZoneChannels } from "@/lib/game/net/world-channels";
+import { GridChannels } from "@/lib/game/net/grid-channels";
+import { isHereOn } from "@/lib/game/social";
 import type { GameMessage } from "@/lib/game/net/protocol";
 import { parseGameMessage } from "@/lib/game/net/protocol";
 import type { Facing, Vec } from "@/lib/game/types";
@@ -252,24 +253,48 @@ describe("the wild's area of interest and the zone-local fallback", () => {
     const parsed = parseGameMessage("st", { ...fb }, { width: 640, height: 400 });
     expect(parsed && "fb" in parsed ? parsed.fb : undefined).toBe(1);
 
-    const sent: Array<{ zone: string; msg: GameMessage }> = [];
+  });
+
+  // fix pass: the P3 ZoneChannels are gone (P4 GridChannels carry the zone topics); from the wild, movement goes to the
+  // nearest zone as the flagged copy and everything else (look, bye, lifts, …) as it is, so the 2D players there hear it
+  it("from the wild: moves as fallback copies, non-movement as is, to the nearest zone's 2D players", () => {
+    const id = "a1b2c3d4-0000-4000-8000-000000000001";
+    const hall = ZONES.hall;
+    const pos = { x: hall.ox - 60, y: hall.oy + 100 };                          // the wild, just west of the hall
+    expect(nearestZone(pos)).toBe("hall");
+    const sent: Array<{ topic: string; msg: GameMessage }> = [];
     const got: GameMessage[] = [];
-    const handlers = new Map<string, (m: GameMessage) => void>();
-    const zc = new ZoneChannels("room", { onMessage: (m) => got.push(m), onStatus: () => {} }, ((_r: string, map: { id: string }, h: { onMessage: (m: GameMessage) => void }) => {
-      handlers.set(map.id, h.onMessage);
-      return { send: (msg: GameMessage) => sent.push({ zone: map.id, msg }), leave: () => {} };
-    }) as never);
-    zc.setZones(["wild", "hall"], "hall");
-    zc.send(st);
-    expect(sent.map((s) => s.zone)).toEqual(["wild", "hall"]);
-    expect((sent[1].msg as { fb?: number }).fb).toBe(1);
-    handlers.get("hall")!(fb);                                                  // a copy heard: dropped
-    handlers.get("wild")!(st);
-    expect(got).toHaveLength(1);
-    zc.setZones(["hall", "wild"], "hall");                                      // in a zone: no fallback
-    sent.length = 0;
-    zc.send(st);
-    expect(sent.map((s) => s.zone)).toEqual(["hall"]);
+    const zoneHandlers = new Map<string, (m: GameMessage) => void>();
+    let t = 0;
+    const gc = new GridChannels("room", { onMessage: (m) => got.push(m), onStatus: () => {} }, ((_r: string, map: { id: string }, h: { onMessage: (m: GameMessage) => void }) => {
+      zoneHandlers.set(map.id, h.onMessage);
+      return { send: (msg: GameMessage) => sent.push({ topic: map.id, msg }), leave: (last?: GameMessage) => { if (last) sent.push({ topic: map.id, msg: last }); } };
+    }) as never, { now: () => t, setTimer: () => 0, clearTimer: () => {} });
+    gc.update(pos, "wild");
+    expect(gc.zoneOut()).toBe("hall");
+    const zoneMsgs = () => sent.filter((s) => s.topic === "hall").map((s) => s.msg);
+    t = 10_000;
+    gc.send({ t: "st", id, x: pos.x, y: pos.y, d: "d", mv: false, vx: 0, vy: 0 } as GameMessage);
+    const mv = zoneMsgs().find((m) => m.t === "st") as { fb?: number; x: number } | undefined;
+    expect(mv?.fb).toBe(1);
+    expect(mv?.x).toBe(0);                                                      // at the hall's edge
+    for (const m of [{ t: "lk", id }, { t: "rq", id, to: "b" }, { t: "fa", id, a: 1 }] as GameMessage[]) gc.send(m);
+    expect(zoneMsgs().map((m) => m.t)).toEqual(expect.arrayContaining(["lk", "rq", "fa"]));
+    gc.leave({ t: "bye", id });
+    expect(zoneMsgs().some((m) => m.t === "bye")).toBe(true);
+    // a zone topic's fallback copy (another wild 3D player) is dropped: it is heard on the cells
+    zoneHandlers.get("hall")?.({ ...(mv as object), id: "a1b2c3d4-0000-4000-8000-000000000002" } as GameMessage);
+    expect(got.filter((m) => "fb" in m)).toHaveLength(0);
+  });
+
+  it("counts a wild player as here on its fallback zone (2D clients) and in the wild (3D clients)", () => {
+    const presence = aggregatePresenceModes({ a: [{ mode: "game", map: "hall", w: 1 }], b: [{ mode: "game", map: "pond" }] });
+    expect(presence[0].near).toBe("hall");
+    expect(isHereOn(presence, "a", "hall")).toBe(true);                         // the 2D hall: look, bye, lifts reach
+    expect(isHereOn(presence, "a", "pond")).toBe(false);
+    expect(isHereOn(presence, "a", ["wild"])).toBe(true);
+    expect(isHereOn(presence, "b", "pond")).toBe(true);
+    expect(presence[1].near).toBeUndefined();
   });
 
   it("reads the wild from presence's w flag (older clients see the nearest zone)", () => {

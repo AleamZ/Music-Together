@@ -7,15 +7,21 @@ import {
 
 const SQL = readFileSync("supabase/migrations/0077_professions.sql", "utf8").replace(/\r\n/g, "\n");
 
-/** The rows of the seed `insert into public.<table> … values … on conflict`. */
+/** 0096 adds Thợ săn and Tiều phu (their rows follow 0077's). */
+const SQL96 = readFileSync("supabase/migrations/0096_forest_professions.sql", "utf8").replace(/\r\n/g, "\n");
+
+/** The rows of the seed `insert into public.<table> … values … on conflict` (0077's, then 0096's). */
 function seedRows(table: string): string[] {
-  const from = SQL.indexOf(`insert into public.${table} (`);
-  const body = SQL.slice(SQL.indexOf("values", from), SQL.indexOf("on conflict", from));
-  return [...body.matchAll(/\(([^()]*)\)/g)].map((m) => m[1]);
+  return [SQL, SQL96].flatMap((sql) => {
+    const from = sql.indexOf(`insert into public.${table} (`);
+    if (from < 0) return [];
+    const body = sql.slice(sql.indexOf("values", from), sql.indexOf("on conflict", from));
+    return [...body.matchAll(/\(([^()]*)\)/g)].map((m) => m[1]);
+  });
 }
 const q = (s: string | null) => (s === null ? "null" : `'${s}'`);
 
-describe("professions catalog = the 0077 seed", () => {
+describe("professions catalog = the 0077 + 0096 seeds", () => {
   it("professions", () => {
     expect(seedRows("profession_catalog").map((r) => r.replace(/\s+/g, " ").trim()))
       .toEqual(PROFESSIONS.map((p, i) => `'${p.id}', '${p.name}', '${p.icon}', ${i + 1}`));

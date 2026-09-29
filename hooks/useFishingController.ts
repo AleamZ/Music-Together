@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
+import { isWildBoatSpot } from "@/lib/game/world/boat";
 import { useCastSession, type CastSession, type CastView } from "@/hooks/useCastSession";
 import { useFishing, type FishingData } from "@/hooks/useFishing";
 import { useFishingExtras, type FishingExtras } from "@/hooks/useFishingExtras";
@@ -136,7 +137,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   // v21 (0076): a cast from the boat goes to start_boat_cast; the rest of the cast (hook, reel, finish) is the same
   const boatCasting = useRef(false);
   // v22 (0086): a cast on Sông Cái goes to start_river_cast from where the boat floats
-  const riverAt = useRef<{ x: number; y: number } | null>(null);
+  const riverAt = useRef<{ x: number; y: number; map?: "song_cai" | "wild" } | null>(null);
   const castData = useMemo(() => ({
     ...data, startCast: (r: string, cell?: { col: number; row: number }) => {
       const river = riverAt.current;
@@ -267,7 +268,8 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     const refusal = castRefusal(stateRef.current, failedRef.current, canvas()?.anglerNear(it.use) ?? false);
     if (refusal) toastRef.current(refusal);
     else {
-      riverAt.current = canvas()?.mapId() === "song_cai" ? { x: it.use.x, y: it.use.y } : null;   // v22 (0086)
+      riverAt.current = isWildBoatSpot(it) ? { x: it.use.x, y: it.use.y, map: "wild" }   // 0095: the wild river / canals
+        : canvas()?.mapId() === "song_cai" ? { x: it.use.x, y: it.use.y } : null;   // v22 (0086)
       castAt(it);
       riverAt.current = null;                                         // a cast already out never read it
     }

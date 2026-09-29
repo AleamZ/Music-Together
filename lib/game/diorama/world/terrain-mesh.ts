@@ -2,8 +2,9 @@ import * as THREE from "three";
 import { cumulative, nearestOn, ROADS, TRAILS } from "@/lib/game/world/roads";
 import { CHUNK_PX, CHUNKS_X } from "@/lib/game/world/scenery";
 import {
-  DOMAIN, fbm, heightAt, rectDistance, riverAt, RIVER_BANK, smoothstep, streamAt, STREAM_HALF_W, zoneUnder,
+  DOMAIN, fbm, heightAt, songCaiRenderHeight, rectDistance, riverAt, RIVER_BANK, smoothstep, streamAt, STREAM_HALF_W, zoneUnder,
 } from "@/lib/game/world/terrain";
+import { landUse } from "@/lib/game/world/scenery";
 import { ZONE_IDS } from "@/lib/game/world/zones";
 
 // Browser only: the heightmap (lib/game/world/terrain.ts) as chunk meshes. Each chunk is CHUNK_PX square, meshed at
@@ -19,9 +20,11 @@ const UNDER_ZONE = 0.45;
 
 const C = {
   meadow: new THREE.Color(0x86b64c), meadowDark: new THREE.Color(0x5f9a3c), hay: new THREE.Color(0xb7c064),
-  forest: new THREE.Color(0x4a7f36), zoneGrass: new THREE.Color(0x6aa23c), sand: new THREE.Color(0xdcc38c),
-  bed: new THREE.Color(0x5b7f70), rock: new THREE.Color(0x9c9a86), rockDark: new THREE.Color(0x7f8270),
+  forest: new THREE.Color(0x4a7f36), zoneGrass: new THREE.Color(0x6aa23c), sand: new THREE.Color(0xb8a878),
+  bed: new THREE.Color(0x8a8458), rock: new THREE.Color(0x9c9a86), rockDark: new THREE.Color(0x7f8270),
   peak: new THREE.Color(0xc9c7bd), road: new THREE.Color(0xc79a5f), trail: new THREE.Color(0xb89c6c),
+  rice: new THREE.Color(0x9ccc48), riceRipe: new THREE.Color(0xd8c457), paddyWater: new THREE.Color(0x7a9a70),
+  dike: new THREE.Color(0x8a8a4a), tramFloor: new THREE.Color(0x6a8446),
 };
 
 interface PathGeo { pts: readonly { x: number; y: number }[]; cum: number[]; hw: number; trail: boolean }
@@ -37,14 +40,27 @@ export function landColor(x: number, y: number, h: number, s: number, out: THREE
   const n = fbm(x / 260, y / 260, 3), n2 = fbm(x / 90 + 40, y / 90, 2);
   out.copy(C.meadow).lerp(C.meadowDark, smoothstep(-0.25, 0.35, n));
   out.lerp(C.hay, smoothstep(0.25, 0.55, n2) * 0.45);
-  const forest = smoothstep(-0.12, 0.32, fbm(x / 430 + 5, y / 430 - 3, 3));
-  out.lerp(C.forest, forest * 0.55 + smoothstep(600, 300, y) * 0.3);
+  // the delta's land use (scenery.ts landUse): rice paddies cut by their dikes, the tràm forest's wet floor, the
+  // orchards' raised beds
+  const use = landUse(x, y);
+  if (use === "paddy") {
+    const ripe = smoothstep(0.1, 0.5, fbm(x / 380 - 3, y / 380 + 8, 2));
+    out.copy(C.rice).lerp(C.riceRipe, ripe).lerp(C.paddyWater, smoothstep(0.3, 0.6, n2) * 0.35);
+    const gx = Math.abs(((x + 4096) % 96) - 48), gy = Math.abs(((y + 4096) % 72) - 36);
+    if (((y + 4096) % 6) < 2) out.multiplyScalar(0.93);                      // the planted rows
+    if (Math.max(gx, gy) > 42) out.lerp(C.dike, 0.85);                       // bờ đê / bờ ruộng
+  } else if (use === "tram") {
+    out.copy(C.tramFloor).lerp(C.paddyWater, smoothstep(0.2, 0.5, n2) * 0.5);
+  } else {
+    out.lerp(C.forest, 0.35);
+    if (Math.abs(((y + 4000) % 44) - 22) > 15) out.lerp(C.dike, 0.4);       // mương between the raised beds
+  }
   // near a zone: its own grass, so the plinth's edge melts in
   let dz = Infinity;
   for (const id of ZONE_IDS) dz = Math.min(dz, rectDistance(id, x, y));
   out.lerp(C.zoneGrass, (1 - smoothstep(0, 48, dz)) * 0.8);
   // rock on the cliffs and up the mountains, pale on the peaks
-  out.lerp(tmp.copy(C.rock).lerp(C.rockDark, smoothstep(-0.3, 0.3, n2)), Math.max(smoothstep(0.9, 1.8, s), smoothstep(20, 34, h) * 0.8));
+  out.lerp(tmp.copy(C.rock).lerp(C.rockDark, smoothstep(-0.3, 0.3, n2)), Math.max(smoothstep(1.7, 3.2, s), smoothstep(20, 34, h) * 0.8));
   out.lerp(C.peak, smoothstep(30, 46, h) * 0.8);
   // water's edge: sand, the bed under it
   const r = riverAt(x, y);
@@ -62,8 +78,10 @@ export function landColor(x: number, y: number, h: number, s: number, out: THREE
 
 /** The renderer's height: the terrain, sunk inside the zones. */
 export function meshHeight(x: number, y: number): number {
+  const z = zoneUnder(x, y);
+  if (z === "song_cai") return songCaiRenderHeight(x, y);            // the river runs on through it, one piece
   const h = heightAt(x, y);
-  return zoneUnder(x, y) ? h - UNDER_ZONE : h;
+  return z ? h - UNDER_ZONE : h;
 }
 
 /** A chunk's mesh as plain arrays (world units, absolute: px / 16) — built on the main thread or in the terrain worker. */
