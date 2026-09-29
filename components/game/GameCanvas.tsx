@@ -152,6 +152,8 @@ export interface GameCanvasHandle {
   nearForLift: (id: string) => boolean;
   /** P2 world mode: where I stand in world px (the world minimap / city map), or null; and the zone my feet are in. */
   worldPos: () => Vec | null;
+  /** P4 world map: the others in sight (world px) and whether I am in the boat. */
+  mapMarks: () => { others: Array<{ id: string; x: number; y: number }>; boat: boolean };
   /** P4: the game state the 3D world draws besides the people (zone-local, as the hooks have it): the rented stalls,
    *  the realm's animals and bosses, a treasure dig, Khu nhà's owners… Each key replaces the last; houses and the
    *  rings' labels come in through setHouses / setRingLabels too. */
@@ -531,6 +533,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
         return isZone(e.currentZone()) ? e.toZone(e.localPos()) : null;         // P2: serverPos — zone-local
       },
       worldPos: () => (engineRef.current?.isWorld() ? engineRef.current.localPos() : null),
+      mapMarks: () => (engineRef.current?.isWorld() ? engineRef.current.mapMarks() : { others: [], boat: false }),
       zone: () => (engineRef.current?.isWorld() ? engineRef.current.currentZone() : null),
       setWork: (a) => {
         // 0097: my chibi works; the others see it too — the farm animation code, re-sent while it lasts (it plays 2.5 s)

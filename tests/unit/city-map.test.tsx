@@ -48,7 +48,7 @@ describe("city overview", () => {
   it("shows every map with its count, marks where I am, lists the key places, Khu nhà included (v19.2)", () => {
     const onClose = vi.fn();
     render(<CityMapModal current="market" counts={{ hall: 3, pond: 1, field: 0, market: 2, khu_nha: 4, bai_dat: 2, ham_ngam: 1, mo_da: 0, song_cai: 0, rung_tram: 0 }} onClose={onClose} />);
-    const dialog = screen.getByRole("dialog", { name: "🗺️ Bản đồ thành phố" });
+    const dialog = screen.getByRole("dialog", { name: "🗺️ Bản đồ thế giới" });
     for (const id of MAP_IDS.filter((m) => !CITY_PLACES[m].hidden)) expect(within(dialog).getByTestId(`city-map-${id}`)).toHaveTextContent(CITY_PLACES[id].name);
     // v20.4: the hầm is a secret
     expect(within(dialog).queryByTestId("city-map-ham_ngam")).toBeNull();
@@ -61,7 +61,8 @@ describe("city overview", () => {
     for (const place of ["Nhà hàng", "Xe cộ", "Tiệm quần áo", "Salon tóc", "Vựa cá Chợ Lớn", "Vựa nông sản", "Nội thất cô Năm", "Chung cư Phú Mỹ · chú Sáu"]) {
       expect(dialog.textContent).toContain(place);
     }
-    expect(dialog.querySelectorAll("[data-road]")).toHaveLength(cityRoads().length);
+    expect(within(dialog).getByTestId("world-map")).toBeTruthy();
+    expect(within(dialog).getByTestId("world-map-legend")).toHaveTextContent("Rừng tràm");
     fireEvent.click(screen.getByRole("button", { name: "Đóng" }));
     expect(onClose).toHaveBeenCalled();
   });

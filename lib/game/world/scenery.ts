@@ -1,4 +1,5 @@
 import type { Vec } from "@/lib/game/types";
+import { outsideWorld as outside, rimHills } from "./rim";
 import { gardenSpots, lotusPonds, stiltHouses } from "./delta";
 import { MINE } from "./mine";
 import { DI_LAC, LAKE, NUI, NUI_SOLIDS, SUMMIT, WATERFALL } from "./nuicam";
@@ -123,6 +124,10 @@ function treeKindAt(x: number, y: number, roll: number, k: number): TreeKind | n
   if (pc > 10 && pc < 17 && zc > 20) return roll < 0.35 ? "hedge" : null;                // dâm bụt along the paths
   if (pc > 17 && pc < 34 && roll < 0.2) return "dua";
   if (zc > 16 && zc < 150 && roll < 0.16) return k < 0.35 ? "tre" : k < 0.65 ? "chuoi" : "dua";
+  // the rim's hills (Thất Sơn, rim.ts): the same rounded broadleaf canopy, bamboo and coconuts at their feet
+  const hill = rimHills(x, y);
+  if (hill > 2.5) return roll < 0.7 ? (k < 0.7 ? "xoai" : k < 0.85 ? "tre" : "dua") : null;
+  if (hill > 0.6) return roll < 0.35 ? (k < 0.5 ? "tre" : "dua") : null;
   // the mountain: a dense rounded broadleaf canopy all over its slopes
   if (Math.hypot(x - NUI.x, (y - NUI.y) * 1.15) < NUI.r * 0.92) return roll < 0.75 ? (k < 0.8 ? "xoai" : "dua") : null;
   const use = landUse(x, y);
@@ -144,10 +149,13 @@ export function scatterTrees(): readonly TreeSpot[] {
     const roll = hashAt(gx, gy, 1);
     if (roll > 0.8) continue;                                                  // no rule plants above 0.8: skip early
     const x = gx + (hashAt(gx, gy, 2) - 0.5) * STEP * 0.9, y = gy + (hashAt(gx, gy, 3) - 0.5) * STEP * 0.9;
+    const rim = outside(x, y) > 0;
+    if (rim && hashAt(gx, gy, 8) > 0.5) continue;                              // the rim: half as dense (it is only seen)
     const kind = treeKindAt(x, y, roll, hashAt(gx, gy, 4));
     if (!kind) continue;
+    if (rim && waterAt(x, y) !== null) continue;
     const h = heightAt(x, y);
-    if (slopeAt(x, y, h) > (Math.hypot(x - NUI.x, y - NUI.y) < NUI.r ? 3 : 1.6)) continue;
+    if (slopeAt(x, y, h) > (Math.hypot(x - NUI.x, y - NUI.y) < NUI.r || rim ? 3 : 1.6)) continue;
     if (!sceneryFree(x, y, kind === "duanuoc" || kind === "hedge" ? 2 : 12)) continue;
     out.push({ x, y, h, kind, scale: 0.55 + hashAt(gx, gy, 5) * 0.45, rot: hashAt(gx, gy, 6) * Math.PI * 2, tint: hashAt(gx, gy, 7) });
   }
