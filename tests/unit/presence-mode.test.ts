@@ -93,9 +93,10 @@ describe("mapCounts", () => {
       ham_ngam: [],
       mo_da: [],
       song_cai: [],
+      rung_tram: [],                                                          // 0097
       wild: [],                                                               // P2: out between the zones
     });
-    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [], ham_ngam: [], mo_da: [], song_cai: [], wild: [] });
+    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [], ham_ngam: [], mo_da: [], song_cai: [], rung_tram: [], wild: [] });
     // P2 world mode: "wild" is a presence map ("Ngoài đồng"); an unknown one is still the hall
     expect(mapCounts([{ accountId: "w", name: "Wu", mode: "game", map: "wild" }]).wild).toEqual([{ accountId: "w", name: "Wu", classic: false }]);
   });

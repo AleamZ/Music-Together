@@ -22,6 +22,7 @@ export const SHADE_RECTS: Readonly<Record<MapId, readonly Rect[]>> = {
   ],
   ham_ngam: [],                              // v20.4: indoors as a whole (INDOOR_MAPS)
   mo_da: [],                                 // v21 #19: a cave
+  rung_tram: [],                             // 0097: the forest (no porch; 0051 _in_shade has none)
   song_cai: [],                              // v22 (0086): the river (see BREEZY_MAPS)
 };
 

@@ -58,6 +58,11 @@ export const CITY_PLACES: Readonly<Record<MapId, CityPlace>> = {
     id: "song_cai", icon: "🛶", name: "Sông Cái", at: { x: 22, y: 90 },
     places: ["Bến sông · ông Năm đò", "Bãi Lau", "Ghềnh Đá Đỏ", "Vũng Ngát", "Cù lao giữa sông"],
   },
+  // 0097: through the gap in Bãi đất trống's south fence
+  rung_tram: {
+    id: "rung_tram", icon: "🌲", name: "Rừng tràm", at: { x: 78, y: 92 },
+    places: ["Thú rừng (săn, bẫy, chụp ảnh)", "Cây tràm, cây gỗ (đốn củi)"],
+  },
 };
 
 /** v22 (0086): roads that are not portals — the boat trip from Ao cá to Sông Cái (the rowing minigame). */

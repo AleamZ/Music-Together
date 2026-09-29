@@ -43,11 +43,11 @@ describe("city-map signposts", () => {
 
 describe("city overview", () => {
   it("has a road for every pair of maps a portal links, both ways once", () => {
-    expect(cityRoads().map(([a, b]) => `${a}-${b}`).sort()).toEqual(["bai_dat-mo_da", "hall-field", "hall-market", "hall-pond", "market-bai_dat", "market-khu_nha", "pond-field", "pond-song_cai"]);
+    expect(cityRoads().map(([a, b]) => `${a}-${b}`).sort()).toEqual(["bai_dat-mo_da", "hall-field", "hall-market", "hall-pond", "market-bai_dat", "market-khu_nha", "pond-field", "pond-song_cai", "bai_dat-rung_tram"].sort());
   });
   it("shows every map with its count, marks where I am, lists the key places, Khu nhà included (v19.2)", () => {
     const onClose = vi.fn();
-    render(<CityMapModal current="market" counts={{ hall: 3, pond: 1, field: 0, market: 2, khu_nha: 4, bai_dat: 2, ham_ngam: 1, mo_da: 0, song_cai: 0 }} onClose={onClose} />);
+    render(<CityMapModal current="market" counts={{ hall: 3, pond: 1, field: 0, market: 2, khu_nha: 4, bai_dat: 2, ham_ngam: 1, mo_da: 0, song_cai: 0, rung_tram: 0 }} onClose={onClose} />);
     const dialog = screen.getByRole("dialog", { name: "🗺️ Bản đồ thành phố" });
     for (const id of MAP_IDS.filter((m) => !CITY_PLACES[m].hidden)) expect(within(dialog).getByTestId(`city-map-${id}`)).toHaveTextContent(CITY_PLACES[id].name);
     // v20.4: the hầm is a secret

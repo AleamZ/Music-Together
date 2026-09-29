@@ -19,7 +19,7 @@ import { heatErrorMessage } from "@/lib/game/heat/model";
 // 0057_server_position.sql against the TS it mirrors: the maps, the portals, the spawn, the depots, the speeds.
 const SQL = readFileSync("supabase/migrations/0057_server_position.sql", "utf8").replace(/\r\n/g, "\n");
 // A function a later migration re-created (0072's _pos_maps / _pos_portals: Mỏ đá) is read from its newest definition.
-const NEWER = ["0072_mining_crafting.sql", "0086_explore_minigames.sql"].map((f) => readFileSync(`supabase/migrations/${f}`, "utf8").replace(/\r\n/g, "\n"));
+const NEWER = ["0072_mining_crafting.sql", "0086_explore_minigames.sql", "0097_forest_complete.sql"].map((f) => readFileSync(`supabase/migrations/${f}`, "utf8").replace(/\r\n/g, "\n"));
 const fnBody = (name: string) => {
   const head = `create or replace function public.${name}(`;
   const newer = NEWER.filter((s) => s.includes(head)).pop();
@@ -34,7 +34,8 @@ const fnBody = (name: string) => {
 
 describe("0057's geometry is the town's", () => {
   it("the maps' sizes", () => {
-    const rows = [...fnBody("_pos_maps").matchAll(/\('(\w+)', (\d+), (\d+)\)/g)].map((m) => [m[1], Number(m[2]), Number(m[3])]);
+    const rows = [...fnBody("_pos_maps").matchAll(/\('(\w+)', (\d+), (\d+)\)/g)].map((m) => [m[1], Number(m[2]), Number(m[3])])
+      .filter((r) => r[0] !== "wild");                                              // 0097's body carries 0088's wild too
     expect(rows).toEqual(MAP_IDS.map((id) => [id, getMap(id).width, getMap(id).height]));
   });
 
@@ -45,7 +46,7 @@ describe("0057's geometry is the town's", () => {
       .filter((i) => (i.kind === "portal" || i.kind === "ug_hatch") && i.to)
       .map((i) => `${id}>${i.to!.map} ${i.use.x},${i.use.y} ${i.to!.arrive.x},${i.to!.arrive.y} ${isRoadTrip(id, i.to!.map)}`)).sort();
     expect(sql).toEqual(ts);
-    expect(sql).toHaveLength(16);                                                  // + Mỏ đá's two (0072)
+    expect(sql).toHaveLength(18);                                                  // + Mỏ đá's two (0072), Rừng tràm's two (0097)
   });
 
   it("the hall's spawn (game mode starts there, a faint sends me there) is always accepted", () => {
