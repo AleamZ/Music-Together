@@ -367,6 +367,11 @@ export class WorldView implements View3D {
     this.liveState = live;
   }
 
+  /** 0097: the felled trees of the rừng tràm (world px): stumps until they respawn. */
+  setFelled(points: ReadonlyArray<Vec>): void {
+    this.forest.setFelled(points);
+  }
+
   /** The field's plots (the crops by stage). */
   setPlots(plots: ReadonlyArray<PlotDraw>): void {
     this.zones.find((z) => z.id === "field")?.built.setPlots?.(plots, Date.now());

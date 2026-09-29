@@ -175,6 +175,9 @@ export class Forest {
   readonly counts = { trees: 0, rocks: 0, grass: 0, flowers: 0 };
   /** (time s, strength) for the rice's wind sway. */
   private readonly wind = { value: new THREE.Vector2(0, 0.25) };
+  /** 0097: every tràm's instances (all its LODs) by its rounded world px, and the ones shown felled now (a stump). */
+  private readonly tramAt = new Map<string, Array<{ im: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }>>();
+  private hidden = new Set<string>();
 
   constructor(density = 1) {
     const treeMat = toon({ vertexColors: true });
@@ -236,6 +239,12 @@ export class Forest {
               const k = t.scale * (kind === "tram" ? 1.15 : kind === "xoai" ? 0.9 : kind === "hedge" ? 1.2 : 1);
               m.compose(p.set(t.x / 16, t.h - 0.15, t.y / 16), q.setFromAxisAngle(up, t.rot), s.set(k, k * (0.9 + t.tint * 0.3), k));
               im.setMatrixAt(i, m);
+              if (kind === "tram") {                                                   // 0097: felled trees are hidden
+                const key = `${Math.round(t.x)},${Math.round(t.y)}`;
+                const list = this.tramAt.get(key) ?? [];
+                list.push({ im, i, m: m.clone() });
+                this.tramAt.set(key, list);
+              }
               const pal = TREE_COLORS[kind], base = new THREE.Color(pal[0]);
               col.setHex(pal[Math.floor(t.tint * pal.length) % pal.length]);
               im.setColorAt(i, col.setRGB(Math.min(1.25, col.r / Math.max(0.05, base.r)), Math.min(1.25, col.g / Math.max(0.05, base.g)), Math.min(1.25, col.b / Math.max(0.05, base.b))));
@@ -286,6 +295,22 @@ export class Forest {
       for (const g of [...set.lods, set.near]) { g.visible = false; this.root.add(g); }
       this.chunks.push(set);
     }
+  }
+
+  /** 0097: the felled tràm (world px) are cut down to a stump until they respawn; the rest stand. */
+  setFelled(points: ReadonlyArray<{ x: number; y: number }>): void {
+    const next = new Set(points.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`));
+    const touched = new Set<THREE.InstancedMesh>();
+    const stump = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+    for (const key of this.hidden) if (!next.has(key)) for (const e of this.tramAt.get(key) ?? []) { e.im.setMatrixAt(e.i, e.m); touched.add(e.im); }
+    for (const key of next) if (!this.hidden.has(key)) for (const e of this.tramAt.get(key) ?? []) {
+      e.m.decompose(pos, q, sc);
+      stump.compose(pos, q, sc.set(sc.x * 0.9, sc.y * 0.07, sc.z * 0.9));        // the trunk's foot only
+      e.im.setMatrixAt(e.i, stump);
+      touched.add(e.im);
+    }
+    for (const im of touched) im.instanceMatrix.needsUpdate = true;
+    this.hidden = next;
   }
 
   setQuality(high: boolean): void {

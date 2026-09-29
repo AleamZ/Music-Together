@@ -375,6 +375,9 @@ export class GameEngine {
       const ph = this.world.fishing(id, t).phase;
       if (ph === 3) return "reel";
       if (ph !== 0) return "cast";
+      const fa = this.world.farmAnim(id, t);                                            // 0097: chopping / cooking, as they told us
+      if (fa === FARM_ANIM.chop) return "chop";
+      if (fa === FARM_ANIM.cook) return "cook";
       return waved.has(id) ? "wave" : undefined;
     };
     for (const e of this.world.roster.values()) {

@@ -15,6 +15,8 @@ import {
 } from "@/lib/game/realm/rpc";
 import { noLine, okLine } from "@/lib/game/realm/mg-copy";
 import { liveSync } from "@/lib/game/mglive";
+import { isFelled } from "@/lib/game/forest/felled-store";
+import { drawStump, drawTram, rungTramTrees } from "@/lib/game/forest/trees2d";
 import type { WildView } from "./WildGame";
 import type { ComboView } from "./ComboGame";
 import { WILD_ITEMS } from "@/lib/game/realm/model";
@@ -131,6 +133,14 @@ export function useWorld(o: WorldOpts) {
             }
           },
         });
+      }
+      // 0097: Rừng tràm's trees (2D), a stump where one was felled (the shared felled store: everyone's)
+      if (map === "rung_tram") {
+        for (const tr of rungTramTrees()) {
+          const down = isFelled(tr.key);
+          out.push({ x: tr.x, y: tr.y, draw: (b, cx, cy) => (down ? drawStump(b, Math.round(tr.x) - cx, Math.round(tr.y) - cy)
+            : drawTram(b, Math.round(tr.x) - cx, Math.round(tr.y) - cy, tr.cx * 7 + tr.k, reduced ? 0 : (Math.sin(t / 900 + tr.x) + 1) / 2)) });
+        }
       }
       if (map === GATE.map) {
         out.push({ x: GATE.x, y: GATE.y - 8, draw: (b, cx, cy) => drawGate(b, GATE.x - cx, GATE.y - 8 - cy, t, reduced) });

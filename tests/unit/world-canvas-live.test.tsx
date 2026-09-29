@@ -22,6 +22,7 @@ const { views, FakeView } = vi.hoisted(() => {
     setLive(l: WorldLive) { this.lives.push(l); }
     render() {}
     setCameraMode() {}
+    setFelled() {}
     setPlots() {}
     dispose() {}
   }

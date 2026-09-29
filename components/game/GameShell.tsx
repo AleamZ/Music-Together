@@ -937,7 +937,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
 
   return (
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : map.id === "song_cai" ? "bg-[#3f7478]" : "bg-[#5a8f32]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : map.id === "song_cai" ? "bg-[#3f7478]" : map.id === "rung_tram" ? "bg-[#3f5a2c]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
@@ -1626,7 +1626,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}
-          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length, song_cai: counts.song_cai.length }}
+          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length, song_cai: counts.song_cai.length, rung_tram: counts.rung_tram.length }}
           onClose={close}
           getWorldPos={inWorld ? getWorldPos : undefined}
           waypoints={inWorld ? wpMarks : undefined}

@@ -26,6 +26,8 @@ import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import { budgetKind, createBudget, GAME_LIMITS } from "@/lib/game/net/budget";
 import { joinGameChannel } from "@/lib/game/net/channel";
 import { FARM_ANIM, type FarmAnim, type FishPhase, type GameMessage } from "@/lib/game/net/protocol";
+import { felledKeys, subscribeFelled } from "@/lib/game/forest/felled-store";
+import { felledPoints } from "@/lib/game/forest/near";
 import { createReplyScheduler, replyWindowMs, type ReplyScheduler } from "@/lib/game/net/replies";
 import type { VehicleId } from "@/lib/game/travel/vehicles";
 import type { LocalLift } from "@/lib/game/engine";
@@ -296,6 +298,17 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   // P4: the world view's live feed (kept across worlds) and the world view up now
   const feedRef = useRef<LiveFeed | null>(null);
   const worldViewRef = useRef<WorldView | null>(null);
+  /** 0097: the chop / cook animation's re-send timer. */
+  const workTimerRef = useRef(0);
+  // 0097: the felled trees (the shared store, fed by the forest HUD's polls) are stumps in the 3D world; a respawn
+  // is caught by the 10 s refresh
+  useEffect(() => {
+    const push = () => { const wv = worldViewRef.current; if (wv) wv.setFelled(felledPoints(felledKeys())); };   // only the 3D world pays for the scatter
+    push();
+    const off = subscribeFelled(push);
+    const id = window.setInterval(push, 10_000);
+    return () => { off(); window.clearInterval(id); window.clearInterval(workTimerRef.current); };
+  }, []);
   // v17: my dog (from the latest setLocal), the field's rats and my last input, kept across worlds
   const dogRef = useRef<Pick<LocalInfo, "dog" | "dogHungry">>({});
   // v18.12: my following pet, kept across worlds
@@ -519,7 +532,18 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       },
       worldPos: () => (engineRef.current?.isWorld() ? engineRef.current.localPos() : null),
       zone: () => (engineRef.current?.isWorld() ? engineRef.current.currentZone() : null),
-      setWork: (a) => engineRef.current?.setWork(a),
+      setWork: (a) => {
+        // 0097: my chibi works; the others see it too — the farm animation code, re-sent while it lasts (it plays 2.5 s)
+        engineRef.current?.setWork(a);
+        window.clearInterval(workTimerRef.current);
+        const code = a === "chop" ? FARM_ANIM.chop : a === "cook" ? FARM_ANIM.cook : FARM_ANIM.stop;
+        const send = () => {
+          engineRef.current?.showFarmAnim(code);
+          sendRef.current?.({ t: "fa", id: localId, a: code });
+        };
+        send();
+        if (a) workTimerRef.current = window.setInterval(send, 2000);
+      },
       lastInputAt: () => inputAtRef.current,
       setZoom: (zoom: number) => {
         zoomRef.current = zoom;
@@ -757,6 +781,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           const lf = (feedRef.current ??= new LiveFeed());
           wv.setLive(lf.at(Date.now()));
           worldViewRef.current = wv;
+          wv.setFelled(felledPoints(felledKeys()));                                     // 0097
           // P3: the world view draws the frame's gameplay itself (vehicles and the boat under riders, rats, dogs,
           // leaping fish, gate barriers, P4 pets and bobbers: DioramaFrame.gameplay + Billboard.vehicle)
           engine.setView3D({
