@@ -62,6 +62,7 @@ import { getCategoryLabel } from "@/lib/sponsorblock";
 import AnticheatChip from "./AnticheatChip";
 import AnticheatModal from "./AnticheatModal";
 import CameraZoomControl from "./CameraZoomControl";
+import Camera3dControl from "./Camera3dControl";
 import CityMapModal from "./CityMapModal";
 import CardOverlays from "./cards/CardOverlays";
 import CardSeatChip from "./cards/CardSeatChip";
@@ -1086,11 +1087,13 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
               <QuestHudButtons token={token} canPopup={!blocking} onOpen={openQuestPanel} />
               <PersonalSettings weatherFx={weatherFx} onWeatherFx={changeWeatherFx} />
-              <CameraZoomControl
-                mapWidth={map.width}
-                mapHeight={map.height}
-                onZoomChange={(z) => canvasRef.current?.setZoom(z)}
-              />
+              {worldMode ? <Camera3dControl /> : (
+                <CameraZoomControl
+                  mapWidth={map.width}
+                  mapHeight={map.height}
+                  onZoomChange={(z) => canvasRef.current?.setZoom(z)}
+                />
+              )}
               <button type="button" className="pch-btn relative pointer-coarse:hidden" title="Phím tắt (H)" onClick={() => setHelpOpen(true)}>
                 ⌨️<span className="sr-only"> Phím tắt</span><KeyBadge id="help" />
               </button>

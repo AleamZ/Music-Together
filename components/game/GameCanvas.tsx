@@ -11,7 +11,6 @@ import type { GameMap } from "@/lib/game/maps/types";
 import { cellZones } from "@/lib/game/world/grid";
 import { buildWorld, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { isZone, toWorld, zoneRect, type ZoneId } from "@/lib/game/world/zones";
-import { IS_PROD } from "@/lib/app-mode";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
 import type { CardSeatIn } from "@/lib/game/diorama/zones/seats";
@@ -745,7 +744,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     if (use3d && c3) {
       try {
         if (wmap) {
-          const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+          // the game's camera: third person (near / mid / far, wheel or pinch zoom) or first person; never the free
+          // camera (only the /dev pages allow it)
+          const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: false, gameCamera: true });
           wv.setCameraMode("follow");
           view = wv;
           // P4: the live feed (stalls, rings, houses, digs, the realm's animals and bosses); what moves by itself is
@@ -762,7 +763,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
             },
           });
         } else {
-          view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+          view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: false });
           engine.setView3D(view);
         }
         view.setPlots(plotsRef.current);

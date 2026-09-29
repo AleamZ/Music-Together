@@ -10,6 +10,7 @@ import { OPENINGS } from "@/lib/game/world/wild";
 import { WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId } from "@/lib/game/world/zones";
 import { animateWater, type Built } from "../build";
 import { flyForward, lerp3, orbitEye, smoothK, type FlyState, type Orbit, type V3 } from "../camera";
+import { RIG } from "../character/build";
 import { CharacterLayer } from "../character/layer";
 import { createFpsMonitor, type FpsMonitor } from "../quality";
 import type { CameraMode, DioramaFrame, Quality, View3D } from "../types";
@@ -17,6 +18,7 @@ import { WeatherLayer } from "../weather3d";
 import { buildMapScene } from "../zones";
 import { demoFieldPlots } from "../zones/field";
 import { Forest } from "./forest";
+import { getCam, pinchBy, setCam, subscribeCam, zoomBy, type GameCam } from "./game-camera";
 import { LiveLayer } from "./live";
 import { liveFromFrame, type WorldLive } from "./live-plan";
 import { mergeStatic } from "./merge";
@@ -38,6 +40,9 @@ export interface WorldViewOptions {
   /** A tap/click (not a drag) on the ground: the world px under it. */
   onTap?: (p: Vec) => void;
   allowFree?: boolean;
+  /** The game's camera (game-camera.ts): the follow distance and first person come from the shared camera state, and
+   *  the wheel / a pinch write it back. Off (the /dev pages): the orbit's own wheel zoom. */
+  gameCamera?: boolean;
   quality?: Quality | "auto";
   /** 0.5 … 1: scenery density (low-end devices build fewer trees). */
   density?: number;
@@ -150,6 +155,12 @@ export class WorldView implements View3D {
   private shadowFrame = 0;
   private disposed = false;
   private frameNo = 0;
+  /** The game's camera (options.gameCamera), its unsubscribe, the first-person pitch and the pinch's fingers. */
+  private gcam: GameCam | null = null;
+  private unsubCam: (() => void) | null = null;
+  private fpPitch = -0.1;
+  private readonly touches = new Map<number, { x: number; y: number }>();
+  private pinchD = 0;
 
   constructor(canvas: HTMLCanvasElement, opts: WorldViewOptions = {}) {
     this.canvas = canvas;
@@ -213,6 +224,18 @@ export class WorldView implements View3D {
     canvas.addEventListener("contextmenu", this.onContextMenu);
     window.addEventListener("keydown", this.onKey, true);
     window.addEventListener("keyup", this.onKey, true);
+    if (opts.gameCamera) {
+      this.applyGameCam(getCam());
+      this.unsubCam = subscribeCam((c) => this.applyGameCam(c));
+    }
+  }
+
+  /** The game's camera changed (the HUD, the wheel, a pinch): the follow distance and first person. */
+  private applyGameCam(c: GameCam): void {
+    if (this.gcam?.view !== c.view && c.view === "first") this.fpPitch = -0.1;
+    this.gcam = c;
+    this.orbit.follow = { ...this.orbit.follow, distance: c.distance };
+    this.people.setHideMyHead(c.view === "first");
   }
 
   // ------------------------------------------------------------ building
@@ -435,11 +458,27 @@ export class WorldView implements View3D {
   private readonly onContextMenu = (e: Event): void => { e.preventDefault(); };
 
   private readonly onPointerDown = (e: PointerEvent): void => {
+    this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.touches.size === 2) this.pinchD = this.spread();
     this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, button: e.button };
     this.canvas.setPointerCapture?.(e.pointerId);
   };
 
+  /** The two first fingers' spread (px). */
+  private spread(): number {
+    const [a, b] = [...this.touches.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  }
+
   private readonly onPointerMove = (e: PointerEvent): void => {
+    if (this.touches.has(e.pointerId)) this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.touches.size >= 2) {                                          // a pinch: zoom the game camera, no orbit, no tap
+      const s = this.spread();
+      if (this.gcam && this.mode === "follow" && this.pinchD > 0 && s > 0) setCam(pinchBy(getCam(), s / this.pinchD));
+      this.pinchD = s;
+      if (this.drag) this.drag.moved = true;
+      return;
+    }
     const d = this.drag;
     if (!d || d.id !== e.pointerId) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
@@ -451,10 +490,17 @@ export class WorldView implements View3D {
       return;
     }
     const m = this.mode, o = this.orbit[m];
+    if (m === "follow" && this.gcam?.view === "first") {                     // first person: look around (the yaw is the orbit's)
+      this.orbit.follow = { ...o, yaw: o.yaw - dx * 0.005 };
+      this.fpPitch = Math.max(-1.2, Math.min(1.1, this.fpPitch - dy * 0.004));
+      return;
+    }
     this.orbit[m] = { ...o, yaw: o.yaw - dx * 0.006, pitch: Math.max(0.12, Math.min(1.45, o.pitch + dy * 0.004)) };
   };
 
   private readonly onPointerUp = (e: PointerEvent): void => {
+    this.touches.delete(e.pointerId);
+    if (this.touches.size < 2) this.pinchD = 0;
     const d = this.drag;
     if (!d || d.id !== e.pointerId) return;
     this.drag = null;
@@ -466,6 +512,10 @@ export class WorldView implements View3D {
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     if (this.mode === "free") return;
+    if (this.gcam && this.mode === "follow") {                               // the game: zoom within its limits, kept
+      setCam(zoomBy(getCam(), e.deltaY));
+      return;
+    }
     const m = this.mode, o = this.orbit[m], lim = ORBITS[m];
     this.orbit[m] = { ...o, distance: Math.max(lim.min, Math.min(lim.max, o.distance * Math.exp(e.deltaY * 0.001))) };
   };
@@ -546,7 +596,14 @@ export class WorldView implements View3D {
 
   private updateCamera(f: DioramaFrame, dt: number): void {
     let eye: V3, look: V3, rate = 5;
-    if (this.mode === "follow") {
+    if (this.mode === "follow" && this.gcam?.view === "first") {
+      // first person: the eyes (the head's middle), looking along the orbit's yaw and the view's own pitch
+      const y = this.heightAt(f.focus.x, f.focus.y) + RIG.hipY + RIG.neckY + RIG.headH * 0.45;
+      const o = this.orbit.follow, c = Math.cos(this.fpPitch);
+      eye = { x: f.focus.x / 16, y, z: f.focus.y / 16 };
+      look = { x: eye.x - Math.sin(o.yaw) * c, y: y + Math.sin(this.fpPitch), z: eye.z - Math.cos(o.yaw) * c };
+      rate = 30;
+    } else if (this.mode === "follow") {
       look = { x: f.focus.x / 16, y: this.heightAt(f.focus.x, f.focus.y) + 1.3, z: f.focus.y / 16 };
       eye = orbitEye(look, this.orbit.follow);
       const ground = this.heightAt(eye.x * 16, eye.z * 16) + 6.5;               // never in a hill or the treetops
@@ -689,6 +746,8 @@ export class WorldView implements View3D {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.unsubCam?.();
+    this.unsubCam = null;
     this.ro.disconnect();
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);

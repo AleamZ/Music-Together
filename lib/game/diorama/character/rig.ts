@@ -106,6 +106,11 @@ export class ChibiRig {
     for (const s of SEGS) this.m[s].castShadow = on;
   }
 
+  /** Show or hide the head (and the hat and face on it): first person hides my own. */
+  setHeadVisible(on: boolean): void {
+    this.head.visible = on;
+  }
+
   apply(p: Pose): void {
     const d = this.dims, post = d.posture;
     // sinking (sitting, swimming) is measured on the default leg; longer or shorter legs sink in proportion
