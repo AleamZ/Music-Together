@@ -102,11 +102,11 @@ begin
     assert j->'round'->>'game' = 'hunt', format('a 2D hunt: %s', j);
     assert (select durability from public.prof_tools where account_id = a and item = 'cung_tap_su') = 59, 'the bow wore';
   end if;
-  -- the species, items and meats
-  assert (select count(*) from public._wild_species() where id in ('boar', 'pheasant')) = 2, 'new animals';
-  assert public._wild_meat('boar') = 'thit_heo_rung' and public._wild_meat('bear') = 'thit_gau' and public._wild_meat('rabbit') is null, 'meats';
-  assert (select count(*) from public._wild_species() s where public._wild_meat(s.id) is not null
-           and not exists (select 1 from public._wild_items() i where i.id = public._wild_meat(s.id))) = 0, 'every meat is sold';
+  -- the forest's animals: three for the pot, three for the album only
+  assert (select count(*) from public._wild_species() where id in ('chuot_dong', 'ga_rung', 'ran_ri_ca') and hunt > 0 and drop_item like 'thit_%') = 3, 'huntable';
+  assert (select count(*) from public._wild_species() where id in ('cay_huong', 'co_trang', 'rua_hop_lung_den') and hunt = 0 and trap = 0) = 3, 'photo only';
+  assert (select count(*) from public._wild_species() s where s.drop_item is not null
+           and not exists (select 1 from public._wild_items() i where i.id = s.drop_item)) = 0, 'every drop is sold';
 end $$;
 
 -- ---------- 3. A 2D woodcutter in Rừng tràm ----------
@@ -121,21 +121,18 @@ begin
   perform pg_temp.put2(a, 'rung_tram', cx * 64 + 32 - o.ox, cy * 64 + 32 - o.oy);
   j := public.chop_start(t, cx, cy, 0, 'rung_tram', cx * 64 + 32 - o.ox, cy * 64 + 32 - o.oy);
   assert j->'round'->>'game' = 'chop', format('a 2D chop: %s', j);
-  -- a dish's chop_stamina buff: the next chop costs 3
-  perform pg_temp.fresh(a);
-  perform public._buff_grant(a, 'chop_stamina', 1, 20);
-  j := public.chop_start(t, cx, cy, 1, 'rung_tram', cx * 64 + 32 - o.ox, cy * 64 + 32 - o.oy);
-  assert (select value from public.player_stamina where account_id = a) between 96.9 and 97.2, 'stamina 3 with the buff';
-  -- the axe's repair at the stall: half its price × the worn share
+  -- the axe's repair at the stall: its repair price a point × the missing points
   update public.prof_tools set durability = 30 where account_id = a and item = 'riu_tap_su';
   perform pg_temp.put2(a, 'bai_dat', 460, 56);
   j := public.tool_repair(t, 'riu_tap_su');
-  assert (j->>'cost')::int = 20, format('repair %s', j);
+  assert (j->>'cost')::int = 30, format('repair %s', j);
   assert (select durability from public.prof_tools where account_id = a and item = 'riu_tap_su') = 60, 'as new';
-  assert exists (select 1 from public.coin_ledger where account_id = a and reason = 'repair' and delta = -20), 'repair paid';
+  assert exists (select 1 from public.coin_ledger where account_id = a and reason = 'repair' and delta = -30), 'repair paid';
   assert pg_temp.err(format('select public.tool_repair(%L, %L)', t, 'riu_tap_su')) = 'nothing to repair', 'full';
-  j := public.tool_buy(t, 'chao_tap_su');
-  assert j->'forest'->'tools' @> '[{"item": "chao_tap_su"}]', 'a pan is sold now';
+  j := public.tool_buy(t, 'chao_gang');
+  assert j->'forest'->'tools' @> '[{"item": "chao_gang", "durability": 130}]', 'a tier-2 pan';
+  j := public.tool_buy(t, 'cung_go_tram');
+  assert j->'forest'->'tools' @> '[{"item": "cung_go_tram", "durability": 110}]', 'a tier-2 bow';
 end $$;
 
 -- ---------- 4. The kitchen: the pan, the fish, the buff dishes ----------
@@ -146,29 +143,29 @@ begin
   perform public.profession_choose(t, 'dau_bep');
   assert exists (select 1 from public.prof_tools where account_id = a and item = 'chao_tap_su'), 'the starter pan';
   update public.prof_tools set durability = 0 where account_id = a and item = 'chao_tap_su';
-  e := pg_temp.err(format('select public.cook_start(%L, %L)', t, 'com_rau_nam'));
+  e := pg_temp.err(format('select public.cook_start(%L, %L)', t, 'com_tam_suon'));
   assert e = 'no pan', format('no pan: %s', e);
   update public.prof_tools set durability = 60 where account_id = a and item = 'chao_tap_su';
-  -- a fish dish takes a common fish
-  e := pg_temp.err(format('select public.cook_start(%L, %L)', t, 'com_ca_nuong'));
+  -- a fish dish takes its fish from the catch (cá rô kho tiêu: two cá rô)
+  e := pg_temp.err(format('select public.cook_start(%L, %L)', t, 'ca_ro_kho_tieu'));
   assert e = 'no ingredients', format('no fish: %s', e);
-  insert into public.fish (account_id, species_id, weight_g, price)
-  select a, s.id, s.min_g, 10 from public.fish_species s where s.rarity = 1 order by s.sort_order limit 1;
+  insert into public.fish (account_id, species_id, weight_g, price) values (a, 'ca_ro', 100, 10), (a, 'ca_ro', 120, 10), (a, 'ca_loc', 900, 50);
   perform pg_temp.fresh(a);
-  j := public.cook_start(t, 'com_ca_nuong');
-  assert j->'round'->>'recipe' = 'com_ca_nuong', format('fish dish %s', j);
-  assert not exists (select 1 from public.fish where account_id = a), 'the fish used';
+  j := public.cook_start(t, 'ca_ro_kho_tieu');
+  assert j->'round'->>'recipe' = 'ca_ro_kho_tieu', format('fish dish %s', j);
+  assert (select count(*) from public.fish where account_id = a) = 1 and exists (select 1 from public.fish where account_id = a and species_id = 'ca_loc'), 'the two cá rô used';
   assert (select durability from public.prof_tools where account_id = a and item = 'chao_tap_su') = 59, 'the pan wore';
   -- a buff dish, eaten: the buff for its minutes × the quality's %, replacing the old one
-  insert into public.cooked_dishes (account_id, dish, quality, qty) values (a, 'thit_gau_ham_nam', 3, 1), (a, 'canh_cao_thao_moc', 1, 1);
-  j := public.cook_eat(t, 'canh_cao_thao_moc', 1);
+  insert into public.cooked_dishes (account_id, dish, quality, qty) values (a, 'chao_ran_dau_xanh', 1, 1), (a, 'chuot_dong_nuong_sa', 3, 1);
+  j := public.cook_eat(t, 'chao_ran_dau_xanh', 1);
   assert j->>'buff' = 'hunt_chance' and public._buff(a, 'hunt_chance') = 5, format('buff %s', j);
-  j := public.cook_eat(t, 'thit_gau_ham_nam', 3);
-  assert public._buff(a, 'hunt_chance') = 10, 'replaced, not stacked';
-  assert (select until from public.player_buffs where account_id = a and kind = 'hunt_chance') between now() + interval '29 minutes' and now() + interval '31 minutes', '20 min × 150 %';
+  j := public.cook_eat(t, 'chuot_dong_nuong_sa', 3);
+  assert public._buff(a, 'hunt_chance') = 3, 'replaced, not stacked';
+  assert (select until from public.player_buffs where account_id = a and kind = 'hunt_chance') between now() + interval '17 minutes' and now() + interval '19 minutes', '12 min × 150 %';
   assert (select count(*) from public._cook_recipes()) = 10, 'ten dishes';
+  assert (select count(*) from public._cook_recipes() r where r.fish is not null and not exists (select 1 from public.fish_species f where f.id = r.fish)) = 0, 'every fish is a catch';
   j := public.forest_state(t);
-  assert j ? 'fish_common', 'the kitchen sees the fish';
+  assert j->'fish'->>'ca_loc' = '1', format('the kitchen sees the catch %s', j->'fish');
 end $$;
 
 -- ---------- 5. Thợ săn xp for hunters only ----------
