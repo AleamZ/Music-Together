@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildWorld, type WorldMap } from "@/lib/game/world/compose";
 import { cumulative, pointAt, ROADS, TRAILS } from "@/lib/game/world/roads";
 import {
@@ -157,15 +157,24 @@ describe("the wild's collision from the terrain", () => {
 });
 
 describe("the world's scenery", () => {
-  it("keeps every tree and rock off the zones, the paths and the water; deterministic", () => {
+  // CPU-bound (~2 s alone: every tree and rock of the world checked against the zones, paths and water), so under the
+  // full suite's parallel load it outran vitest's 5 s default; the scatter is a pure function of hashAt / fbm (no
+  // Math.random, no clock anywhere in lib/game/world), proven below against a fresh, uncached module instance.
+  it("keeps every tree and rock off the zones, the paths and the water; deterministic", async () => {
     const trees = scatterTrees();
+    const rocks = scatterRocks();
     expect(trees.length).toBeGreaterThan(5000);
-    const bad = [...trees, ...scatterRocks()].filter((t) => zoneAt({ x: t.x, y: t.y }) !== "wild" && t.x >= 0 && t.y >= 0 && t.x < WORLD_W && t.y < WORLD_H
+    const bad = [...trees, ...rocks].filter((t) => zoneAt({ x: t.x, y: t.y }) !== "wild" && t.x >= 0 && t.y >= 0 && t.x < WORLD_W && t.y < WORLD_H
       || onPath(t.x, t.y) || waterAt(t.x, t.y) !== null);
     expect(bad.slice(0, 5)).toEqual([]);
-    expect(trees.slice(0, 50)).toEqual(scatterTrees().slice(0, 50));
     expect(new Set(trees.map((t) => t.kind))).toEqual(new Set(["round", "conifer", "yellow"]));
-  });
+    // determinism: a second module instance (its own empty caches) scatters exactly the same world
+    vi.resetModules();
+    const fresh = await import("@/lib/game/world/scenery");
+    expect(fresh.scatterTrees()).not.toBe(trees);
+    expect(fresh.scatterTrees()).toEqual(trees);
+    expect(fresh.scatterRocks()).toEqual(rocks);
+  }, 30_000);
 
   it("puts the landmarks in the wild, off the water", () => {
     for (const l of LANDMARKS) {
