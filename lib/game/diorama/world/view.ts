@@ -27,6 +27,7 @@ import { buildBridges, buildLandmarks, buildSkyLife, buildWater, type Landmarks,
 import { TerrainJobs } from "./terrain-jobs";
 import { chunkGeometry, landColor, LOD_STEPS } from "./terrain-mesh";
 import { buildDelta } from "./delta";
+import { buildBackdrop, type Backdrop } from "./backdrop";
 import { buildNuiCam } from "./nuicam";
 import { toon, toonify } from "./toon";
 import { pixelize, pixelizeTree } from "../pixeltex";
@@ -113,9 +114,10 @@ export class WorldView implements View3D {
   private readonly terrain = new THREE.Group();
   private readonly jobs = new TerrainJobs((c, level, geo) => this.chunkBuilt(c, level, geo));
   private horizon: THREE.Mesh | null = null;
+  private backdrop: Backdrop | null = null;
   private sea: THREE.Mesh | null = null;
   /** The muddy brown-green water of the delta (the river mouths, the canals). */
-  private readonly seaMat = toon({ color: 0x8a8a52, transparent: true, opacity: 0.9 });
+  private readonly seaMat = toon({ color: 0x6f9296, transparent: true, opacity: 0.9 });
   private readonly zones: ZoneScene[] = [];
   private readonly mergedGeos: THREE.BufferGeometry[] = [];
   private readonly mergedMats: THREE.Material[] = [];
@@ -304,33 +306,13 @@ export class WorldView implements View3D {
 
   /** The far mountains past the chunks, to the horizon: one coarse ring whose inner edge meets the land's rim. */
   private buildHorizon(): void {
-    const step = 320, reach = 14000;
-    const x0 = DOMAIN.x0 - Math.ceil(reach / step) * step, y0 = DOMAIN.y0 - Math.ceil(reach / step) * step;
-    const nx = Math.round((DOMAIN.x1 - DOMAIN.x0 + 2 * (DOMAIN.x0 - x0)) / step), ny = Math.round((DOMAIN.y1 - DOMAIN.y0 + 2 * (DOMAIN.y0 - y0)) / step);
-    const pos = new Float32Array((nx + 1) * (ny + 1) * 3), col = new Float32Array((nx + 1) * (ny + 1) * 3);
-    const c = new THREE.Color(), far = new THREE.Color(0x7d9a8a);
-    for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
-      const x = x0 + i * step, y = y0 + j * step, k = (j * (nx + 1) + i) * 3;
-      const inside = x > DOMAIN.x0 && x < DOMAIN.x1 && y > DOMAIN.y0 && y < DOMAIN.y1;
-      const out = Math.max(DOMAIN.x0 - x, x - DOMAIN.x1, DOMAIN.y0 - y, y - DOMAIN.y1, 0);
-      const h = inside ? -30 : RIVER_LEVEL - 1.6;
-      pos.set([x / 16, h, y / 16], k);
-      landColor(x, y, h, 0.3, c).lerp(far, Math.min(0.6, out / 9000));
-      col.set([c.r, c.g, c.b], k);
-    }
-    const idx: number[] = [];
-    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-      const a = j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1;
-      idx.push(a, d, b, b, d, e);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    this.horizon = new THREE.Mesh(g, this.terrainMat);
-    this.horizon.name = "horizon";
-    this.scene.add(this.horizon);
+    const reach = 14000;
+    // 0095 backdrop (backdrop.ts): the delta going on past the rim, the estuary, palm lines, the far ranges
+    this.backdrop = buildBackdrop();
+    this.backdrop.land.material = this.terrainMat;
+    this.horizon = this.backdrop.land;
+    this.scene.add(this.horizon, this.backdrop.root);
+    pixelizeTree(this.backdrop.root);
     // the delta's one water table: the river mouths out to the horizon, and every canal carved below it in the land
     // (the river's own ribbon lies on top of it, a hair higher)
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(2 * reach + (DOMAIN.x1 - DOMAIN.x0), 2 * reach + (DOMAIN.y1 - DOMAIN.y0)).rotateX(-Math.PI / 2), this.seaMat);
@@ -702,7 +684,8 @@ export class WorldView implements View3D {
     this.sky.horizon.copy(hor);
     (this.scene.background as THREE.Color).copy(hor);
     this.fog.color.copy(hor);
-    const base = this.mode === "follow" ? [80, 520] : this.mode === "overview" ? [180, 980] : [90, 760];
+    this.backdrop?.tint(hor, f.night);
+    const base = this.mode === "follow" ? [120, 760] : this.mode === "overview" ? [260, 1400] : [140, 1100];
     const fk = 1 - (1 - (FOG_K[kind] ?? 1)) * fxK;
     this.fog.near = base[0] * fk;
     this.fog.far = base[1] * Math.max(0.25, fk);
@@ -781,7 +764,7 @@ export class WorldView implements View3D {
     for (const g of this.mergedGeos) g.dispose();
     for (const m of this.mergedMats) m.dispose();
     for (const c of this.chunks) for (const g of c.geos) g?.dispose();
-    this.horizon?.geometry.dispose();
+    this.backdrop?.dispose();
     this.sea?.geometry.dispose();
     this.seaMat.dispose();
     this.terrainMat.dispose();

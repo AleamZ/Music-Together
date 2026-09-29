@@ -9,6 +9,7 @@ import { nearestZone } from "@/lib/game/world/aoi";
 import { waypointClick, waypointMarks, type WaypointMark } from "@/lib/game/world/waypoints";
 import { isZone, ZONE_IDS, type ZoneId } from "@/lib/game/world/zones";
 import WorldMiniMap from "./WorldMiniMap";
+import { mapPosToWorld } from "@/lib/game/world/worldmap";
 import ZoneToast from "./ZoneToast";
 import ChatDrawer from "@/components/room/ChatDrawer";
 import MemberList from "@/components/room/MemberList";
@@ -310,6 +311,17 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const gateLevels = useRef<Readonly<Record<string, number>> | undefined>(undefined);
   const onGate = useCallback((m: MapId) => showToast(gateText(mapMinLevel(m, gateLevels.current))), [showToast]);
   const getWorldPos = useCallback(() => canvasRef.current?.worldPos() ?? null, []);
+  // P4 world map: the others in sight and my boat (world mode); a 2D player's spot mapped onto the world (Rừng tràm too)
+  const getMapMarks = useCallback(() => canvasRef.current?.mapMarks() ?? { others: [], boat: false }, []);
+  const mapIdRef = useRef(travel.mapId);
+  useEffect(() => {
+    mapIdRef.current = travel.mapId;
+  }, [travel.mapId]);
+  const getMapPos2d = useCallback(() => {
+    const p = canvasRef.current?.localPos();
+    return p ? mapPosToWorld(mapIdRef.current, p) : null;
+  }, []);
+  const openWorldMap = useCallback(() => setPanel("city_map"), []);
   useEffect(() => () => {
     if (fadeTimer.current) clearTimeout(fadeTimer.current);
   }, []);
@@ -1189,8 +1201,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
 
       <div className="pointer-events-none absolute bottom-18 right-3 z-10 hidden sm:block">
-        {inWorld ? <WorldMiniMap getWorldPos={getWorldPos} zone={zone} waypoints={wpMarks} onWaypoint={onWaypoint} /> : <MiniMap mapId={travel.mapId} getLocalPos={() => canvasRef.current?.localPos() ?? null} />}
+        {inWorld ? <WorldMiniMap getWorldPos={getWorldPos} getMarks={getMapMarks} zone={zone} waypoints={wpMarks} onOpenMap={openWorldMap} /> : <MiniMap mapId={travel.mapId} getLocalPos={() => canvasRef.current?.localPos() ?? null} onOpenMap={openWorldMap} />}
       </div>
+      <button type="button" className="pch-btn pointer-events-auto absolute bottom-18 right-3 z-10 px-2 py-1 font-vt text-lg sm:hidden" onClick={openWorldMap} aria-label="Mở bản đồ thế giới">🗺️</button>
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
         <HudChatBar
@@ -1628,9 +1641,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           current={travel.mapId}
           counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length, song_cai: counts.song_cai.length, rung_tram: counts.rung_tram.length }}
           onClose={close}
-          getWorldPos={inWorld ? getWorldPos : undefined}
-          waypoints={inWorld ? wpMarks : undefined}
-          onWaypoint={onWaypoint}
+          getWorldPos={inWorld ? getWorldPos : getMapPos2d}
+          getMarks={inWorld ? getMapMarks : undefined}
+          waypoints={wpMarks}
+          onWaypoint={inWorld ? onWaypoint : undefined}
         />
       )}
       {creating && (

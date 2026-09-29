@@ -507,6 +507,18 @@ export class GameEngine {
     this.pack.pet(performance.now());
   }
 
+  /** P4 world map: the others I can see (display px, world px in world mode) and whether I am in the boat. */
+  mapMarks(): { others: Array<{ id: string; x: number; y: number }>; boat: boolean } {
+    const t = performance.now(), others: Array<{ id: string; x: number; y: number }> = [];
+    for (const e of this.world.roster.values()) {
+      if (e.id === this.opts.localId) continue;
+      const a = this.world.actors.get(e.id);
+      if (!a || !this.visible(e.id, t)) continue;
+      others.push({ id: e.id, x: a.display.x, y: a.display.y });
+    }
+    return { others, boat: this.worldMap !== null && this.afloat };
+  }
+
   /** Where I stand (world px). */
   localPos(): Vec {
     return { x: this.local.pos.x, y: this.local.pos.y };
