@@ -1,7 +1,8 @@
 // Nghề nghiệp (v21, supabase/migrations/0077_professions.sql is authoritative): the catalog the panel shows.
 // tests/unit/professions.test.ts pins every row equal to the SQL seed.
 
-export type ProfId = "ngu_dan" | "nong_dan" | "tho_mo" | "dau_bep" | "thuong_nhan" | "tho_ren" | "tho_moc" | "vo_si";
+export type ProfId = "ngu_dan" | "nong_dan" | "tho_mo" | "dau_bep" | "thuong_nhan" | "tho_ren" | "tho_moc" | "vo_si"
+  | "tho_san" | "tieu_phu";
 
 export interface Profession { id: ProfId; name: string; icon: string; blurb: string }
 
@@ -14,6 +15,9 @@ export const PROFESSIONS: readonly Profession[] = [
   { id: "tho_ren", name: "Thợ rèn", icon: "⚒️", blurb: "Lên cấp khi nâng cấp, sửa và rèn đồ nghề." },
   { id: "tho_moc", name: "Thợ mộc", icon: "🪚", blurb: "Lên cấp khi mua sắm nội thất, dựng nhà, đóng đồ gỗ." },
   { id: "vo_si", name: "Võ sĩ", icon: "🥋", blurb: "Lên cấp khi đấu võ, học và thi ở võ đường." },
+  // 0096
+  { id: "tho_san", name: "Thợ săn", icon: "🏹", blurb: "Săn, bẫy thú trong rừng tràm: dễ trúng hơn, hay được thêm chiến lợi phẩm." },
+  { id: "tieu_phu", name: "Tiều phu", icon: "🪓", blurb: "Đốn cây trong rừng tràm lấy gỗ, bán gỗ ở Sạp thợ săn." },
 ];
 
 export type PerkKey =
@@ -23,7 +27,10 @@ export type PerkKey =
   | "buff_time_pct" | "buff_power_pct" | "meal_pct" | "potion_pct"
   | "market_sell_pct" | "buy_pct" | "shop_rent_pct"
   | "upgrade_pct" | "repair_pct" | "furniture_pct" | "house_pct"
-  | "fight_stamina_pct" | "dojo_pct";
+  | "fight_stamina_pct" | "dojo_pct"
+  // 0096
+  | "hunt_chance_pct" | "hunt_stamina_pct" | "hunt_drop_pct" | "hunt_night_pct" | "hunt_big"
+  | "chop_miss_bonus" | "chop_window_ms" | "chop_stamina_pct" | "axe_save_pct" | "wood_extra_pct" | "wood_sell_pct";
 
 /** What a perk does, for the panel: `{v}` is the node's value. */
 export const PERK_TEXT: Readonly<Record<PerkKey, string>> = {
@@ -51,6 +58,17 @@ export const PERK_TEXT: Readonly<Record<PerkKey, string>> = {
   house_pct: "Hoàn {v}% tiền xây nhà",
   fight_stamina_pct: "Đấu võ tốn ít thể lực hơn {v}%",
   dojo_pct: "Hoàn {v}% học phí, lệ phí thi võ đường",
+  hunt_chance_pct: "+{v} điểm % săn, bẫy thành công",
+  hunt_stamina_pct: "Săn, bẫy tốn ít thể lực hơn {v}%",
+  hunt_drop_pct: "+{v} điểm % được thêm 1 chiến lợi phẩm (nghề chính)",
+  hunt_night_pct: "+{v} điểm % săn, bẫy thành công ban đêm",
+  hunt_big: "Săn được sói, gấu: thêm {v} chiến lợi phẩm",
+  chop_miss_bonus: "Lượt chặt có nhịp trượt: thêm {v} nhát",
+  chop_window_ms: "Cửa sổ nhịp chặt rộng thêm {v} ms",
+  chop_stamina_pct: "Chặt cây tốn ít thể lực hơn {v}%",
+  axe_save_pct: "{v}% lượt chặt không mòn rìu",
+  wood_extra_pct: "{v}% cây đổ rơi thêm 1 khúc gỗ",
+  wood_sell_pct: "Bán gỗ được thêm {v}%",
 };
 
 export interface SkillNode { id: string; prof: ProfId; name: string; perk: PerkKey; value: number; cost: number; req: string | null }
@@ -104,6 +122,19 @@ export const SKILL_NODES: readonly SkillNode[] = [
   { id: "v_rest", prof: "vo_si", name: "Điều tức", perk: "stamina_regen_pct", value: 25, cost: 2, req: "v_wind" },
   { id: "v_dojo2", prof: "vo_si", name: "Đệ tử ruột", perk: "dojo_pct", value: 10, cost: 2, req: "v_dojo" },
   { id: "v_iron", prof: "vo_si", name: "Mình đồng", perk: "fight_stamina_pct", value: 25, cost: 3, req: "v_wind" },
+  // 0096
+  { id: "h_track", prof: "tho_san", name: "Dấu vết rõ ràng", perk: "hunt_chance_pct", value: 5, cost: 1, req: null },
+  { id: "h_quiet", prof: "tho_san", name: "Bước chân êm", perk: "hunt_stamina_pct", value: 50, cost: 1, req: null },
+  { id: "h_loot", prof: "tho_san", name: "Thu nhặt khéo", perk: "hunt_drop_pct", value: 10, cost: 2, req: "h_track" },
+  { id: "h_night", prof: "tho_san", name: "Thợ săn ban đêm", perk: "hunt_night_pct", value: 10, cost: 2, req: "h_track" },
+  { id: "h_body", prof: "tho_san", name: "Học từ rừng", perk: "stamina_max", value: 15, cost: 2, req: "h_quiet" },
+  { id: "h_big", prof: "tho_san", name: "Đối đầu thú lớn", perk: "hunt_big", value: 1, cost: 3, req: "h_loot" },
+  { id: "l_steady", prof: "tieu_phu", name: "Chặt đều tay", perk: "chop_miss_bonus", value: 1, cost: 1, req: null },
+  { id: "l_grain", prof: "tieu_phu", name: "Mắt nhìn thớ gỗ", perk: "chop_window_ms", value: 40, cost: 1, req: null },
+  { id: "l_breath", prof: "tieu_phu", name: "Giữ lực", perk: "chop_stamina_pct", value: 20, cost: 2, req: "l_steady" },
+  { id: "l_edge", prof: "tieu_phu", name: "Giữ lưỡi rìu", perk: "axe_save_pct", value: 25, cost: 2, req: "l_grain" },
+  { id: "l_gather", prof: "tieu_phu", name: "Gom gỗ khéo", perk: "wood_extra_pct", value: 10, cost: 2, req: "l_steady" },
+  { id: "l_deep", prof: "tieu_phu", name: "Người rừng sâu", perk: "wood_sell_pct", value: 10, cost: 3, req: "l_gather" },
 ];
 
 export type BuffKey = "speed" | "rare_fish" | "strength" | "stamina_regen" | "luck" | "miner";

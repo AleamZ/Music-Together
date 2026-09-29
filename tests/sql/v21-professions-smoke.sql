@@ -29,8 +29,9 @@ insert into ps select 'a', public._auth_account(v)::text from ps where k = 't';
 -- 1. catalog, privileges
 do $$
 begin
-  assert (select count(*) from public.profession_catalog) = 8, 'eight professions';
-  assert (select count(*) from public.skill_nodes) = 48, 'six nodes each';
+  -- 0096 adds tho_san and tieu_phu (on the full chain): 0077's eight, and six nodes for every nghề
+  assert (select count(*) from public.profession_catalog where id not in ('tho_san', 'tieu_phu')) = 8, 'eight professions';
+  assert (select count(*) from public.skill_nodes) = 6 * (select count(*) from public.profession_catalog), 'six nodes each';
   assert not exists (select prof from public.skill_nodes group by prof having count(*) <> 6), 'six per profession';
   assert not exists (select 1 from public.skill_nodes n join public.skill_nodes r on r.id = n.req where r.prof <> n.prof),
     'prerequisites stay in their tree';
@@ -164,7 +165,7 @@ begin
   exception when sqlstate '53400' then assert sqlerrm = 'too tired', sqlerrm;
   end;
   j := public.profession_state(t);
-  assert j ? 'profs' and jsonb_array_length(j->'profs') = 8 and j->'stamina' ? 'max', format('state %s', j);
+  assert j ? 'profs' and jsonb_array_length(j->'profs') = (select count(*) from public.profession_catalog) and j->'stamina' ? 'max', format('state %s', j);
   -- a wipe clears it
   insert into public.anticheat_wipes (account_id, username, wiped_by, snapshot) values (a, 'x', a, '{}');
   assert not exists (select 1 from public.player_profession_main where account_id = a), 'wiped';
