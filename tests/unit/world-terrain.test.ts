@@ -191,7 +191,7 @@ describe("the world's scenery", () => {
     const bad = [...trees, ...rocks].filter((t) => zoneAt({ x: t.x, y: t.y }) !== "wild" && t.x >= 0 && t.y >= 0 && t.x < WORLD_W && t.y < WORLD_H
       || onPath(t.x, t.y) || waterAt(t.x, t.y) !== null);
     expect(bad.slice(0, 5)).toEqual([]);
-    expect(new Set(trees.map((t) => t.kind))).toEqual(new Set(["tram", "dua", "duanuoc", "tre", "cay"]));
+    expect(new Set(trees.map((t) => t.kind))).toEqual(new Set(["tram", "dua", "duanuoc", "tre", "xoai", "man", "chuoi", "thotnot", "diendien", "hedge"]));
     // determinism: a second module instance (its own empty caches) scatters exactly the same world
     vi.resetModules();
     const fresh = await import("@/lib/game/world/scenery");

@@ -35,13 +35,8 @@ function crown(detail: number, sx: number, sy: number, y: number): THREE.BufferG
   return g;
 }
 
-function roundTree(lod: number): THREE.BufferGeometry {
-  if (lod === 2) return painted(crown(0, 1.7, 1.6, 2.6), WHITE);
-  const parts = [painted(crown(lod === 0 ? 1 : 0, 1.7, 1.55, 2.7), WHITE)];
-  if (lod === 0) parts.push(painted(crown(1, 1.05, 0.95, 3.7).translate(0.5, 0, 0.2), WHITE));
-  parts.push(painted(new THREE.CylinderGeometry(0.16, 0.26, 1.6, lod === 0 ? 6 : 4).translate(0, 0.8, 0), TRUNK));
-  return mergeGeometries(parts)!;
-}
+/** The leaf colour the tree builders paint (set per kind; fruit and flowers keep their own). */
+let LEAF = WHITE;
 
 const PALE = new THREE.Color(0xe2dccb), PALM_TRUNK = new THREE.Color(0x8a6a48), CULM = new THREE.Color(0x9ab85a);
 
@@ -49,7 +44,7 @@ const PALE = new THREE.Color(0xe2dccb), PALM_TRUNK = new THREE.Color(0x8a6a48), 
 function tram(lod: number): THREE.BufferGeometry {
   const parts = [painted(new THREE.CylinderGeometry(0.07, 0.13, 4.2, lod === 0 ? 6 : 4).translate(0, 2.1, 0), PALE)];
   const tufts = lod === 0 ? [[0, 4.4, 0, 0.75], [0.45, 3.8, 0.2, 0.5], [-0.35, 4.0, -0.25, 0.55]] : lod === 1 ? [[0, 4.3, 0, 0.85]] : [[0, 4.1, 0, 0.9]];
-  for (const [x, y, z, r] of tufts) parts.push(painted(crown(0, r, r * 0.7, y).translate(x, 0, z), WHITE));
+  for (const [x, y, z, r] of tufts) parts.push(painted(crown(0, r, r * 0.7, y).translate(x, 0, z), LEAF));
   return mergeGeometries(parts)!;
 }
 
@@ -67,7 +62,7 @@ function dua(lod: number): THREE.BufferGeometry {
   for (let k = 0; k < n; k++) {
     const a = (k / n) * Math.PI * 2;
     const frond = new THREE.BoxGeometry(2.2, 0.04, 0.42).translate(1.05, 0, 0).rotateZ(-0.35 - (k % 2) * 0.2).rotateY(a).translate(x, y, 0);
-    parts.push(painted(frond, WHITE));
+    parts.push(painted(frond, LEAF));
   }
   if (lod === 0) for (let k = 0; k < 3; k++) parts.push(painted(new THREE.IcosahedronGeometry(0.14, 0).translate(x + Math.cos(k * 2) * 0.18, y - 0.18, Math.sin(k * 2) * 0.18), new THREE.Color(0x6b8a2e)));
   return mergeGeometries(parts)!;
@@ -79,7 +74,7 @@ function duanuoc(lod: number): THREE.BufferGeometry {
   const n = lod === 0 ? 7 : lod === 1 ? 5 : 4;
   for (let k = 0; k < n; k++) {
     const a = (k / n) * Math.PI * 2 + (k % 2) * 0.3, tilt = 0.6 + (k % 3) * 0.15;
-    parts.push(painted(new THREE.BoxGeometry(0.34, 3.2, 0.05).translate(0, 1.6, 0).rotateZ(tilt).rotateY(a), WHITE));
+    parts.push(painted(new THREE.BoxGeometry(0.34, 3.2, 0.05).translate(0, 1.6, 0).rotateZ(tilt).rotateY(a), LEAF));
   }
   return mergeGeometries(parts)!;
 }
@@ -92,8 +87,56 @@ function tre(lod: number): THREE.BufferGeometry {
     const a = k * 2.4, r = 0.25 + (k % 3) * 0.12, h = 4.2 + (k % 4) * 0.5, lean = 0.08 + (k % 3) * 0.06;
     const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
     if (lod < 2) parts.push(painted(new THREE.CylinderGeometry(0.05, 0.06, h, 4).translate(0, h / 2, 0).rotateZ(-lean).rotateY(a).translate(cx, 0, cz), CULM));
-    parts.push(painted(new THREE.ConeGeometry(0.55, 1.6, 5).translate(0, h - 0.2, 0).rotateZ(-lean * 1.6).rotateY(a).translate(cx, 0, cz), WHITE));
+    parts.push(painted(new THREE.ConeGeometry(0.55, 1.6, 5).translate(0, h - 0.2, 0).rotateZ(-lean * 1.6).rotateY(a).translate(cx, 0, cz), LEAF));
   }
+  return mergeGeometries(parts)!;
+}
+
+/** Painted in a fixed colour (fruit, flowers: the instance colour tints only the LEAF parts' leaves). */
+const fixed = (g: THREE.BufferGeometry, hex: number) => painted(g, new THREE.Color(hex));
+
+/** Thốt nốt (sugar palm): a very tall, straight, thin trunk and a round, spiky ball of fan leaves on top. */
+function thotnot(lod: number): THREE.BufferGeometry {
+  const parts = [painted(new THREE.CylinderGeometry(0.1, 0.16, 7, lod === 0 ? 6 : 4).translate(0, 3.5, 0), new THREE.Color(0x5a4a3a))];
+  parts.push(painted(new THREE.IcosahedronGeometry(1.15, 0).translate(0, 7.4, 0), LEAF));
+  if (lod === 0) for (let k = 0; k < 8; k++) parts.push(painted(new THREE.ConeGeometry(0.22, 1.1, 3).translate(0, 0.55, 0).rotateZ(1.2).rotateY((k / 8) * Math.PI * 2).translate(0, 7.3, 0), LEAF));
+  return mergeGeometries(parts)!;
+}
+
+/** Chuối (banana): a soft green pseudo-stem and big paddle leaves arching out; some carry a hanging bunch. */
+function chuoi(lod: number): THREE.BufferGeometry {
+  const parts = [painted(new THREE.CylinderGeometry(0.16, 0.22, 1.8, 5).translate(0, 0.9, 0), new THREE.Color(0x7a9a48))];
+  const n = lod === 0 ? 7 : 4;
+  for (let k = 0; k < n; k++) parts.push(painted(new THREE.BoxGeometry(0.5, 0.03, 2).translate(0, 0, 0.95).rotateX(-0.5 - (k % 2) * 0.35).rotateY((k / n) * Math.PI * 2).translate(0, 1.8, 0), LEAF));
+  if (lod === 0) parts.push(fixed(new THREE.CylinderGeometry(0.2, 0.08, 0.6, 5).translate(0.25, 1.35, 0), 0x9ab83a), fixed(new THREE.ConeGeometry(0.12, 0.3, 4).rotateX(Math.PI).translate(0.25, 0.9, 0), 0x7a2a4a));
+  return mergeGeometries(parts)!;
+}
+
+/** Xoài (mango): a dense, dark, rounded canopy on a short trunk, a few green fruits hanging. */
+function xoai(lod: number): THREE.BufferGeometry {
+  const parts = [painted(crown(lod === 0 ? 1 : 0, 2, 1.5, 2.9), LEAF), painted(new THREE.CylinderGeometry(0.2, 0.3, 1.9, lod === 0 ? 6 : 4).translate(0, 0.95, 0), TRUNK)];
+  if (lod === 0) for (let k = 0; k < 5; k++) parts.push(fixed(new THREE.SphereGeometry(0.13, 5, 4).scale(0.8, 1.2, 0.8).translate(Math.cos(k * 1.3) * 1.5, 1.7, Math.sin(k * 1.3) * 1.5), 0x9ac84a));
+  return mergeGeometries(parts)!;
+}
+
+/** Mận (rose-apple): a medium tree, lighter leaves, clusters of red-pink bell fruits. */
+function man(lod: number): THREE.BufferGeometry {
+  const parts = [painted(crown(0, 1.5, 1.3, 2.5), LEAF), painted(new THREE.CylinderGeometry(0.14, 0.22, 1.7, 4).translate(0, 0.85, 0), TRUNK)];
+  if (lod < 2) for (let k = 0; k < (lod === 0 ? 9 : 4); k++) parts.push(fixed(new THREE.ConeGeometry(0.14, 0.24, 5).rotateX(Math.PI).translate(Math.cos(k * 2.1) * 1.35, 1.6 + (k % 3) * 0.35, Math.sin(k * 2.1) * 1.2), k % 2 ? 0xd8324a : 0xf06a8a));
+  return mergeGeometries(parts)!;
+}
+
+/** Bông điên điển (sesbania): a slender shrub-tree with feathery leaves and hanging clusters of yellow flowers. */
+function diendien(lod: number): THREE.BufferGeometry {
+  const parts = [painted(new THREE.CylinderGeometry(0.06, 0.1, 1.8, 4).translate(0, 0.9, 0), TRUNK), painted(crown(0, 1.1, 0.6, 2.1), LEAF)];
+  if (lod < 2) for (let k = 0; k < (lod === 0 ? 10 : 5); k++) parts.push(fixed(new THREE.ConeGeometry(0.1, 0.35, 4).rotateX(Math.PI).translate(Math.cos(k * 2.4) * 0.9, 1.6, Math.sin(k * 2.4) * 0.9), 0xf6d22a));
+  return mergeGeometries(parts)!;
+}
+
+/** A dâm bụt / ixora hedge bush: a low green mound dotted with red flowers. */
+function hedge(lod: number): THREE.BufferGeometry {
+  const parts = [painted(crown(0, 0.7, 0.5, 0.45), LEAF)];
+  if (lod < 2) for (let k = 0; k < (lod === 0 ? 7 : 3); k++) parts.push(fixed(new THREE.IcosahedronGeometry(0.12, 0).translate(Math.cos(k * 2.3) * 0.55, 0.6 + (k % 2) * 0.2, Math.sin(k * 2.3) * 0.5), 0xe03a3a));
   return mergeGeometries(parts)!;
 }
 
@@ -102,8 +145,15 @@ const TREE_COLORS: Record<TreeKind, number[]> = {
   dua: [0x5f9a3a, 0x6aa83f, 0x4f8a33, 0x78b048],
   duanuoc: [0x5a8a3a, 0x6f9a42, 0x4f7a32],
   tre: [0x7cae44, 0x8abf4e, 0x6a9a3a],
-  cay: [0x3f7a2e, 0x4a8a34, 0x356a28, 0x5a9a3a],
+  xoai: [0x2f5f24, 0x356a28, 0x2a5420],
+  man: [0x5a9a3a, 0x6aa83f, 0x4f8a33],
+  chuoi: [0x7cc04a, 0x6aaf40, 0x8ccf52],
+  thotnot: [0x4f7a32, 0x5a8a3a, 0x46702c],
+  diendien: [0x7aa84a, 0x8ab85a],
+  hedge: [0x3f7a2e, 0x4a8a34],
 };
+
+const BUILDERS: Record<TreeKind, (lod: number) => THREE.BufferGeometry> = { tram, dua, duanuoc, tre, xoai, man, chuoi, thotnot, diendien, hedge };
 
 interface ChunkSet {
   /** trees by LOD, then kind */
@@ -130,7 +180,12 @@ export class Forest {
     const grassMat = toon({ vertexColors: true, side: THREE.DoubleSide });
     this.mats.push(treeMat, rockMat, grassMat);
     const treeGeo: Record<TreeKind, THREE.BufferGeometry[]> = {
-      tram: [0, 1, 2].map(tram), dua: [0, 1, 2].map(dua), duanuoc: [0, 1, 2].map(duanuoc), tre: [0, 1, 2].map(tre), cay: [0, 1, 2].map(roundTree),
+      ...Object.fromEntries((Object.keys(BUILDERS) as TreeKind[]).map((k) => {
+        LEAF = new THREE.Color(TREE_COLORS[k][0]);
+        const g = [0, 1, 2].map(BUILDERS[k]);
+        LEAF = WHITE;
+        return [k, g];
+      })) as Record<TreeKind, THREE.BufferGeometry[]>,
     };
     const rockGeo = painted(new THREE.DodecahedronGeometry(1, 0), new THREE.Color(0x9a9488));
     const tuftGeo = painted(mergeGeometries([0, 1, 2].map((i) => new THREE.ConeGeometry(0.1, 0.7, 3).rotateZ((i - 1) * 0.35).translate((i - 1) * 0.12, 0.3, 0))!), WHITE);
@@ -162,11 +217,12 @@ export class Forest {
           for (let lod = 0; lod < 3; lod++) {
             const im = new THREE.InstancedMesh(treeGeo[kind][lod], treeMat, mine.length);
             mine.forEach((t, i) => {
-              const k = t.scale * (kind === "tram" ? 1.15 : kind === "cay" ? 0.8 : 1);
+              const k = t.scale * (kind === "tram" ? 1.15 : kind === "xoai" ? 0.9 : kind === "hedge" ? 1.2 : 1);
               m.compose(p.set(t.x / 16, t.h - 0.15, t.y / 16), q.setFromAxisAngle(up, t.rot), s.set(k, k * (0.9 + t.tint * 0.3), k));
               im.setMatrixAt(i, m);
-              const pal = TREE_COLORS[kind];
-              im.setColorAt(i, col.setHex(pal[Math.floor(t.tint * pal.length) % pal.length]));
+              const pal = TREE_COLORS[kind], base = new THREE.Color(pal[0]);
+              col.setHex(pal[Math.floor(t.tint * pal.length) % pal.length]);
+              im.setColorAt(i, col.setRGB(Math.min(1.25, col.r / Math.max(0.05, base.r)), Math.min(1.25, col.g / Math.max(0.05, base.g)), Math.min(1.25, col.b / Math.max(0.05, base.b))));
             });
             im.castShadow = lod < 2;
             im.receiveShadow = false;

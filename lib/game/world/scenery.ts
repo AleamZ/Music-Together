@@ -1,5 +1,5 @@
 import type { Vec } from "@/lib/game/types";
-import { stiltHouses } from "./delta";
+import { gardenSpots, lotusPonds, stiltHouses } from "./delta";
 import { MINE } from "./mine";
 import { PAGODA } from "./terrain";
 import { cumulative, nearestOn, ROADS, TRAILS } from "./roads";
@@ -25,8 +25,9 @@ export function chunkOf(x: number, y: number): number {
 }
 
 /** The delta's trees: tràm (melaleuca, the forests), dừa (coconut palms), dừa nước (nipa palms on the banks), tre
- *  (bamboo clumps round the houses), cây trái (orchard fruit trees: mango, durian, rambutan). */
-export type TreeKind = "tram" | "dua" | "duanuoc" | "tre" | "cay";
+ *  (bamboo clumps round the houses), xoài (mango), mận (rose-apple), chuối (banana), thốt nốt (sugar palms on the
+ *  paddies' dikes), bông điên điển (round the lotus ponds) and dâm bụt hedges along the paths. */
+export type TreeKind = "tram" | "dua" | "duanuoc" | "tre" | "xoai" | "man" | "chuoi" | "thotnot" | "diendien" | "hedge";
 
 export interface TreeSpot { x: number; y: number; h: number; kind: TreeKind; scale: number; rot: number; tint: number }
 export interface Spot { x: number; y: number; h: number; scale: number; rot: number; tint: number }
@@ -68,6 +69,7 @@ export function zoneClearance(x: number, y: number): number {
 export function sceneryFree(x: number, y: number, pad: number): boolean {
   if (zoneClearance(x, y) < pad + (x >= ZONES.song_cai.ox - 40 && x < ZONES.song_cai.ox + ZONES.song_cai.w + 40 && y > ZONES.song_cai.oy - 40 ? 28 : 0)) return false;
   if (pathClearance(x, y) < pad * 1.6 + 10) return false;
+  if (lotusPonds().some((p) => Math.hypot(p.x - x, p.y - y) < p.r + 4 + pad) || gardenSpots().some((g) => Math.hypot(g.x - x, g.y - y) < 36 + pad)) return false;
   const r = riverAt(x, y);
   if (!r.inZone && r.d < r.hw + pad) return false;
   const s = streamAt(x, y);
@@ -105,13 +107,18 @@ const STEP = 22;
 function treeKindAt(x: number, y: number, roll: number, k: number): TreeKind | null {
   const we = waterEdge(x, y);
   if (we > 2 && we < 26) return roll < 0.6 && fbm(x / 140 + 3, y / 140, 2) > -0.05 ? "duanuoc" : null;
+  if (lotusPonds().some((p) => { const d = Math.hypot(p.x - x, p.y - y); return d > p.r + 6 && d < p.r + 30; })) return roll < 0.5 ? "diendien" : null;
   const pc = pathClearance(x, y), zc = zoneClearance(x, y);
-  if (pc > 10 && pc < 30 && roll < 0.22) return "dua";
-  if (zc > 16 && zc < 150 && roll < 0.12) return k < 0.5 ? "tre" : "dua";
+  if (pc > 10 && pc < 17 && zc > 20) return roll < 0.35 ? "hedge" : null;                // dâm bụt along the paths
+  if (pc > 17 && pc < 34 && roll < 0.2) return "dua";
+  if (zc > 16 && zc < 150 && roll < 0.16) return k < 0.35 ? "tre" : k < 0.65 ? "chuoi" : "dua";
   const use = landUse(x, y);
   if (use === "tram") return roll < 0.8 ? "tram" : null;
-  if (use === "orchard") return roll < 0.5 && Math.abs(((y + 4000) % 44) - 22) < 8 ? (k < 0.18 ? "dua" : "cay") : null;
-  return roll < 0.012 ? "dua" : null;                                          // a lone palm on a paddy's dike
+  if (use === "orchard") return roll < 0.55 && Math.abs(((y + 4000) % 44) - 22) < 8 ? (k < 0.4 ? "xoai" : k < 0.65 ? "man" : k < 0.9 ? "chuoi" : "dua") : null;
+  // the paddies: dừa groves standing like dark islands, thốt nốt in loose rows on the dikes, else open rice
+  if (fbm(x / 260 + 11, y / 260 - 5, 2) > 0.32) return roll < 0.5 ? "dua" : null;
+  const onDike = Math.abs(((x + 4096) % 96) - 48) > 42 || Math.abs(((y + 4096) % 72) - 36) > 30;
+  return onDike && roll < 0.09 ? "thotnot" : null;
 }
 
 let trees: TreeSpot[] | null = null;
@@ -128,7 +135,7 @@ export function scatterTrees(): readonly TreeSpot[] {
     if (slopeAt(x, y, h) > 1.6) continue;
     const kind = treeKindAt(x, y, roll, hashAt(gx, gy, 4));
     if (!kind) continue;
-    if (!sceneryFree(x, y, kind === "duanuoc" ? 4 : 12)) continue;
+    if (!sceneryFree(x, y, kind === "duanuoc" || kind === "hedge" ? 2 : 12)) continue;
     out.push({ x, y, h, kind, scale: 0.55 + hashAt(gx, gy, 5) * 0.45, rot: hashAt(gx, gy, 6) * Math.PI * 2, tint: hashAt(gx, gy, 7) });
   }
   trees = out;

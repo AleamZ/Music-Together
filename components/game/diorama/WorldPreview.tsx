@@ -17,7 +17,7 @@ import { buildWorld } from "@/lib/game/world/compose";
 import { MINE } from "@/lib/game/world/mine";
 import { TRAILS } from "@/lib/game/world/roads";
 import { toWorld } from "@/lib/game/world/zones";
-import { canalCrossings, FLOATING_MARKET, stiltHouses } from "@/lib/game/world/delta";
+import { canalCrossings, FLOATING_MARKET, gardenSpots, lotusPonds, stiltHouses, villageShops } from "@/lib/game/world/delta";
 import { heightAt } from "@/lib/game/world/terrain";
 import type { WeatherKind } from "@/lib/game/weather/model";
 
@@ -46,6 +46,10 @@ function camPresets(): Record<string, { pos: { x: number; y: number; z: number }
     tram: look(1700, 250, 20, 10),
     hill: look(3780, 1232, 60, 25, -0.9),
     pond: look(1260, 1260, 18, 11, 0.2),
+    lotus: (() => { const p = lotusPonds()[0]; return look(p.x, p.y, 9, 5, 0.6); })(),
+    garden: (() => { const g = gardenSpots()[0]; return look(g.x, g.y, 10, 5, 0.4); })(),
+    shop: (() => { const s = villageShops()[0]; return look(s.x, s.y, 9, 3.5, s.yaw); })(),
+    lua: { pos: { x: 20, y: 18, z: 130 }, yaw: -2.2, pitch: -0.3 },
     pondedge: look(1290, 1470, 16, 6, 0.1),
   };
 }

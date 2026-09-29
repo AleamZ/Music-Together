@@ -38,3 +38,20 @@ describe("the delta's life along the water", () => {
     }
   });
 });
+
+describe("the hamlets", () => {
+  it("lotus ponds, garden houses and tạp hóa shops stand on dry land off the paths, solid", async () => {
+    const { gardenSpots, lotusPonds, villageShops } = await import("@/lib/game/world/delta");
+    expect(lotusPonds().length).toBeGreaterThanOrEqual(3);
+    expect(gardenSpots().length).toBeGreaterThanOrEqual(2);
+    const shops = villageShops();
+    expect(shops.length).toBeGreaterThanOrEqual(2);
+    for (const s of shops) expect(s.name).toMatch(/^TẠP HÓA /);
+    for (const p of [...lotusPonds(), ...gardenSpots(), ...shops]) {
+      expect(zoneAt(p)).toBe("wild");
+      expect(waterAt(p.x, p.y)).toBeNull();
+      expect(onPath(p.x, p.y)).toBe(false);
+      expect(wildBlocked(p.x, p.y)).toBe(true);
+    }
+  });
+});

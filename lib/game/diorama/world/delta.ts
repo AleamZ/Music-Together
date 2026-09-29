@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { canalCrossings, floatingMarket, mooredBoats, stiltHouses, type Boat, type Crossing, type House } from "@/lib/game/world/delta";
-import { RIVER_LEVEL } from "@/lib/game/world/terrain";
+import { canalCrossings, floatingMarket, gardenSpots, lotusPonds, mooredBoats, stiltHouses, villageShops, type Boat, type Crossing, type Garden, type House, type Pond, type Shop } from "@/lib/game/world/delta";
+import { heightAt, RIVER_LEVEL } from "@/lib/game/world/terrain";
+import { faceAxes, signMesh, type FaceQuad } from "../zones/signmesh";
 import { toon } from "./toon";
 
 // Browser only: the delta's life along the water (lib/game/world/delta.ts) as ONE vertex-coloured mesh — plank bridges
@@ -105,6 +106,58 @@ function boat(b: Boat, out: THREE.BufferGeometry[]): void {
   for (const g of p) out.push(at(g, U(b.x), 0, U(b.y), b.yaw));
 }
 
+/** Ao sen: a round pond (water a hair over the ground, polygon-offset), lotus pads, pink flowers and buds. */
+function pond(p: Pond, out: THREE.BufferGeometry[]): void {
+  const g0 = heightAt(p.x, p.y), r = U(p.r), cx = U(p.x), cz = U(p.y);
+  out.push(tint(new THREE.CylinderGeometry(r + 0.35, r + 0.6, 0.12, 20).translate(cx, g0 + 0.02, cz), 0x7a6a44));      // the mud rim
+  out.push(tint(new THREE.CylinderGeometry(r, r, 0.06, 20).translate(cx, g0 + 0.07, cz), 0x6f8a58));                    // the water
+  for (let i = 0; i < 18; i++) {
+    const a = i * 2.39996, d = Math.sqrt((i + 0.5) / 18) * (r - 0.35), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+    out.push(tint(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 8, 1, false, 0.4, Math.PI * 1.8).translate(x, g0 + 0.115, z), i % 3 ? 0x4f8a33 : 0x5f9a3a));
+    if (i % 3 === 0) {
+      out.push(tint(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 3).translate(x + 0.1, g0 + 0.35, z), 0x4f7a30));
+      out.push(tint(new THREE.ConeGeometry(0.16, 0.3, 6).rotateX(i % 2 ? Math.PI : 0).translate(x + 0.1, g0 + 0.66, z), i % 2 ? 0xf28ab0 : 0xe86a9a));
+    }
+  }
+}
+
+/** A thatched garden house among the fruit trees (leaf roof on posts, a raised floor), its pale stone path. */
+function garden(gd: Garden, out: THREE.BufferGeometry[]): void {
+  const y = heightAt(gd.x, gd.y), p: THREE.BufferGeometry[] = [];
+  p.push(box(2.6, 0.3, 2.2, 0, y + 0.15, 0, 0x9a7a4e));
+  for (const [x, z] of [[-1.1, -0.9], [1.1, -0.9], [-1.1, 0.9], [1.1, 0.9]]) p.push(cyl(0.07, 1.5, x, y + 1.05, z, 0x6b4a33));
+  p.push(box(2.3, 1, 0.08, 0, y + 0.8, -0.9, 0xb89a68));
+  p.push(roof(3.4, 3, 1.1, y + 1.8, 0xb8944a));
+  for (let i = 1; i <= 6; i++) {                                                        // the path: pale stepping stones, winding
+    const s = i * 0.95, x = Math.sin(i * 0.9) * 0.6;
+    p.push(tint(new THREE.CylinderGeometry(0.32, 0.36, 0.08, 7).translate(x, y + 0.03, 1.3 + s), 0xd8d0bc));
+  }
+  for (const g of p) out.push(at(g, U(gd.x), 0, U(gd.y), gd.yaw));
+}
+
+/** A tạp hóa: a single-storey tiled front with a corrugated awning, goods hanging at the door, an umbrella, chairs. */
+function shop(s: Shop, out: THREE.BufferGeometry[], signs: FaceQuad[]): void {
+  const y = heightAt(s.x, s.y), p: THREE.BufferGeometry[] = [];
+  const wall = [0xe8d6b0, 0xcfe0d4, 0xecd07a, 0xe6b8a8][s.seed % 4];
+  p.push(box(4.4, 2.6, 3, 0, y + 1.3, -0.4, wall));
+  p.push(roof(4.8, 3.6, 1, y + 2.6, 0xb0503a));
+  p.push(box(4.6, 0.06, 1.6, 0, y + 2.1, 1.8, 0x9aa4a8).rotateX(0.18));                // the corrugated awning
+  for (const x of [-2.1, 2.1]) p.push(cyl(0.05, 2, x, y + 1, 2.5, 0x8a8e98));
+  p.push(box(1.6, 1.9, 0.06, 0, y + 0.95, 1.12, 0x3a2a24));                             // the open doorway
+  for (let i = 0; i < 6; i++) p.push(box(0.22, 0.3, 0.12, -1.3 + (i % 3) * 0.25, y + 1.9 - Math.floor(i / 3) * 0.35, 1.25, [0xd23a3a, 0xf4d03a, 0x3a7bd5, 0x5caa4a, 0xe07a2e, 0xf4f1e8][i]));
+  p.push(box(1.1, 0.8, 0.6, 1.4, y + 0.4, 1.5, 0xa8744a));                               // a counter of goods
+  p.push(cyl(0.04, 2, 3, y + 1, 3, 0xe8e2d4, 4));                                        // the sun umbrella
+  p.push(tint(new THREE.ConeGeometry(1.3, 0.5, 8).translate(3, y + 2.1, 3), s.seed % 2 ? 0xd23a3a : 0x2e7ad0));
+  for (const x of [2.5, 3.5]) p.push(box(0.45, 0.45, 0.45, x, y + 0.23, 3.6, s.seed % 2 ? 0x2e7ad0 : 0xd23a3a));   // plastic chairs
+  p.push(tint(new THREE.CylinderGeometry(0.22, 0.16, 0.35, 6).translate(-2, y + 0.18, 1.6), 0x9a5a3a), tint(new THREE.IcosahedronGeometry(0.35, 0).translate(-2, y + 0.6, 1.6), 0x4f9a3a));
+  for (const g of p) out.push(at(g, U(s.x), 0, U(s.y), s.yaw));
+  // the signboard: a big painted board over the awning, facing the road
+  const c = new THREE.Vector3(0, y + 2.9, 1.12).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw).add(new THREE.Vector3(U(s.x), 0, U(s.y)));
+  const ax = faceAxes("s");
+  signs.push({ center: c, right: ax.right.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw), up: ax.up, w: 4.2, h: 0.9, art: { lines: [s.name], bg: [0x1f5fa8, 0xd23a3a, 0x2e8a4a][s.seed % 3], fg: 0xfff4c0, rim: 0xf4d03a } });
+  out.push(at(box(4.4, 1, 0.1, 0, y + 2.9, 1.06, 0x3a2418), U(s.x), 0, U(s.y), s.yaw));
+}
+
 /** Everything along the water, one mesh. */
 export function buildDelta(): { root: THREE.Group; dispose(): void } {
   const parts: THREE.BufferGeometry[] = [];
@@ -112,8 +165,14 @@ export function buildDelta(): { root: THREE.Group; dispose(): void } {
   for (const h of stiltHouses()) house(h, parts);
   for (const b of mooredBoats()) boat(b, parts);
   for (const b of floatingMarket()) boat(b, parts);
+  for (const p of lotusPonds()) pond(p, parts);
+  for (const g of gardenSpots()) garden(g, parts);
+  const faces: FaceQuad[] = [];
+  for (const s of villageShops()) shop(s, parts, faces);
   const root = new THREE.Group();
   root.name = "delta";
+  const signs = signMesh(faces);
+  if (signs) root.add(signs.mesh);
   const geo = parts.length ? mergeGeometries(parts)! : new THREE.BufferGeometry();
   for (const p of parts) p.dispose();
   const mat = toon({ vertexColors: true });
@@ -121,5 +180,5 @@ export function buildDelta(): { root: THREE.Group; dispose(): void } {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   root.add(mesh);
-  return { root, dispose() { geo.dispose(); mat.dispose(); } };
+  return { root, dispose() { geo.dispose(); mat.dispose(); if (signs) { signs.geometry.dispose(); signs.material.dispose(); signs.texture.dispose(); } } };
 }

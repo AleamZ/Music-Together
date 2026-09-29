@@ -107,7 +107,66 @@ export function floatingMarket(): readonly Boat[] {
   return out;
 }
 
-/** The houses are solid (a circle each, px); the boats float. */
+/** A spot searched on a jittered grid (deterministic): the first `max` that `ok` accepts, `gap` px apart. */
+function spots(step: number, salt: number, max: number, gap: number, ok: (x: number, y: number) => boolean): Vec[] {
+  const out: Vec[] = [];
+  for (let gy = 440; gy < WORLD_H - 60 && out.length < max; gy += step) for (let gx = 60; gx < WORLD_W - 60 && out.length < max; gx += step) {
+    if (hashAt(gx, gy, salt) > 0.45) continue;
+    const x = gx + (hashAt(gx, gy, salt + 1) - 0.5) * step * 0.6, y = gy + (hashAt(gx, gy, salt + 2) - 0.5) * step * 0.6;
+    if (!ok(x, y) || out.some((p) => Math.hypot(p.x - x, p.y - y) < gap)) continue;
+    out.push({ x, y });
+  }
+  return out;
+}
+const dry = (x: number, y: number, r: number) => waterAt(x, y) === null && canalDist(x, y) > CANAL_HALF_W + r && riverAt(x, y).d > riverAt(x, y).hw + r
+  && !stiltHouses().some((h) => Math.hypot(h.x - x, h.y - y) < 60 + r);
+
+export interface Pond { x: number; y: number; r: number; seed: number }
+let ponds: Pond[] | null = null;
+/** Ao sen: the hamlets' lotus ponds (round pads, pink flowers and buds), điên điển shrubs round their banks. */
+export function lotusPonds(): readonly Pond[] {
+  ponds ??= spots(210, 101, 10, 260, (x, y) => { const z = zoneGap(x, y); return z > 70 && z < 320 && pathGap(x, y) > 60 && dry(x, y, 50); })
+    .map((p, i) => ({ ...p, r: 26 + hashAt(p.x, p.y, 105) * 14, seed: i }));
+  return ponds;
+}
+
+export interface Garden { x: number; y: number; yaw: number; seed: number }
+let gardens: Garden[] | null = null;
+/** Thatched garden houses among the fruit trees, a winding pale stone path to each. */
+export function gardenSpots(): readonly Garden[] {
+  gardens ??= spots(180, 111, 8, 300, (x, y) => { const z = zoneGap(x, y); return z > 60 && z < 420 && pathGap(x, y) > 50 && dry(x, y, 40)
+    && !lotusPonds().some((p) => Math.hypot(p.x - x, p.y - y) < p.r + 70); })
+    .map((p, i) => ({ ...p, yaw: hashAt(p.x, p.y, 115) * Math.PI * 2, seed: i }));
+  return gardens;
+}
+
+export interface Shop { x: number; y: number; yaw: number; name: string; seed: number }
+/** Invented shop names (no real brands). */
+const SHOP_NAMES = ["TẠP HÓA CÔ BA", "TẠP HÓA HAI LÚA", "TẠP HÓA ÚT HIỀN", "TẠP HÓA BẢY NHỎ", "TẠP HÓA MƯỜI THƠM", "TẠP HÓA CHÍN LỤA"];
+let shops: Shop[] | null = null;
+/** Roadside tạp hóa: single-storey fronts facing the road near the villages. */
+export function villageShops(): readonly Shop[] {
+  if (shops) return shops;
+  const out: Shop[] = [];
+  for (const r of ROADS) {
+    const cum = cumulative(r.pts), L = cum[cum.length - 1];
+    for (let s = 40; s < L - 40 && out.length < SHOP_NAMES.length; s += 150) {
+      const p = pointAt(r.pts, cum, s), side = (out.length % 2) ? 1 : -1;
+      const nx = -p.dy * side, ny = p.dx * side, off = r.w / 2 + 34;
+      const x = p.x + nx * off, y = p.y + ny * off;
+      if (zoneGap(x, y) < 40 || pathGap(x, y) < 22 || !dry(x, y, 30) || out.some((o) => Math.hypot(o.x - x, o.y - y) < 200)) continue;
+      if (lotusPonds().some((o) => Math.hypot(o.x - x, o.y - y) < o.r + 50) || gardenSpots().some((o) => Math.hypot(o.x - x, o.y - y) < 80)) continue;
+      out.push({ x, y, yaw: Math.atan2(-nx, -ny), name: SHOP_NAMES[out.length], seed: out.length });
+    }
+  }
+  shops = out;
+  return out;
+}
+
+/** The houses, shops, garden huts and ponds are solid (a circle each, px); the boats float. */
 export function deltaSolid(x: number, y: number): boolean {
-  return stiltHouses().some((h) => (x - h.x) ** 2 + (y - h.y) ** 2 <= 20 * 20);
+  return stiltHouses().some((h) => (x - h.x) ** 2 + (y - h.y) ** 2 <= 20 * 20)
+    || villageShops().some((h) => (x - h.x) ** 2 + (y - h.y) ** 2 <= 22 * 22)
+    || gardenSpots().some((h) => (x - h.x) ** 2 + (y - h.y) ** 2 <= 18 * 18)
+    || lotusPonds().some((p) => (x - p.x) ** 2 + (y - p.y) ** 2 <= p.r * p.r);
 }

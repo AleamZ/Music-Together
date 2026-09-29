@@ -47,6 +47,7 @@ export function landColor(x: number, y: number, h: number, s: number, out: THREE
     const ripe = smoothstep(0.1, 0.5, fbm(x / 380 - 3, y / 380 + 8, 2));
     out.copy(C.rice).lerp(C.riceRipe, ripe).lerp(C.paddyWater, smoothstep(0.3, 0.6, n2) * 0.35);
     const gx = Math.abs(((x + 4096) % 96) - 48), gy = Math.abs(((y + 4096) % 72) - 36);
+    if (((y + 4096) % 6) < 2) out.multiplyScalar(0.93);                      // the planted rows
     if (Math.max(gx, gy) > 42) out.lerp(C.dike, 0.85);                       // bờ đê / bờ ruộng
   } else if (use === "tram") {
     out.copy(C.tramFloor).lerp(C.paddyWater, smoothstep(0.2, 0.5, n2) * 0.5);
