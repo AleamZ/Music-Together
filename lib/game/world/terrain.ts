@@ -152,7 +152,8 @@ export function zoneUnder(x: number, y: number): OutdoorMapId | null {
 /** The river's half-width (px) at arc length s: wider where it nears Sông Cái (the zone's water is 320 px wide). */
 export function riverHalfWidth(s: number): number {
   const toZone = s < RIVER_ZONE.s0 ? RIVER_ZONE.s0 - s : s > RIVER_ZONE.s1 ? s - RIVER_ZONE.s1 : 0;
-  return 104 + 52 * (1 - smoothstep(0, 360, toZone)) + 16 * valueNoise(s / 260, 3.7);
+  // through Sông Cái a touch wider still, so the one continuous river covers the zone's playable water (local y 80–400)
+  return 104 + 64 * (1 - smoothstep(0, 360, toZone)) + (toZone === 0 ? 10 : 16) * valueNoise(s / 260, 3.7);
 }
 
 export interface RiverHit { d: number; s: number; hw: number; inZone: boolean }
@@ -332,6 +333,14 @@ export function bridgeAt(x: number, y: number): number | null {
     if (n.d <= t.w / 2 + 4) return lerp(t.h0, t.h1, n.s / t.cum[t.cum.length - 1]);
   }
   return null;
+}
+
+/** The land the world draws under Sông Cái (its diorama brings only props there, P2 "liền mạch"): the zone's bank level
+ *  with the one continuous river's channel carved through it — the same channel as outside, so there is no seam. */
+export function songCaiRenderHeight(x: number, y: number): number {
+  const r = riverAt(x, y), base = ZONE_ELEV.song_cai;
+  if (r.d < r.hw) { const t = r.d / r.hw; return RIVER_LEVEL - 0.35 - 1.3 * (1 - t * t); }
+  return lerp(RIVER_LEVEL - 0.3, base, smoothstep(r.hw, r.hw + 40, r.d));
 }
 
 /** Where feet stand in the wild: the ground, or a bridge's deck. */

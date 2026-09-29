@@ -106,7 +106,9 @@ export function buildSongCaiZone(map: GameMap, opts: OutdoorOptions = {}): THREE
   const k = new Kit(map);
   const W = (x: number, y: number) => k.W(x, y);
   const open = (x: number, y: number) => !!opts.openEnds && y >= RIVER.y0 && y <= RIVER.y1 && (x < RIVER.x0 || x > RIVER.x1);
-  k.terrain(map.cell, (x, y) => {
+  // in the world (openEnds) the zone brings only its props: the land, the banks and the one continuous river are the
+  // world's (terrain-mesh songCaiRenderHeight, props.ts buildWater) — no rectangular slab, no seam
+  if (!opts.openEnds) k.terrain(map.cell, (x, y) => {
     const g0 = riverGroundAt(x, y), g = g0 !== "jetty" && open(x, y) ? "water" : g0;
     switch (g) {
       case "water": return { top: -riverDepth(x, y), color: 0x5a4a30 };
@@ -118,14 +120,14 @@ export function buildSongCaiZone(map: GameMap, opts: OutdoorOptions = {}): THREE
       default: return { top: 0, color: 0x6aa23c };
     }
   }, 8601);
-  k.base();
+  if (!opts.openEnds) k.base();
 
   // ---- the river: one wide surface, flowing east; foam lines at its lips
   // open ends (the world): the sheet stops exactly at the zone's edges, and its waves die out over the last 40 px so it
   // lies flat on the wild river's sheet (just under it, world/props.ts) instead of cutting through it
   const wx0 = opts.openEnds ? 0 : RIVER.x0 - 6, wx1 = opts.openEnds ? map.width : RIVER.x1 + 6;
   const calm = opts.openEnds ? (x: number) => Math.min(1, Math.max(0, Math.min(x, map.width - x) / 40)) : undefined;
-  k.water({ x: wx0, y: RIVER.y0 - 4, w: wx1 - wx0, h: RIVER.y1 - RIVER.y0 + 8 }, { flow: 1, tint: opts.openEnds ? endTint(map.width) : riverTint, segs: [120, 44], opacity: 0.86, calm });
+  if (!opts.openEnds) k.water({ x: wx0, y: RIVER.y0 - 4, w: wx1 - wx0, h: RIVER.y1 - RIVER.y0 + 8 }, { flow: 1, tint: opts.openEnds ? endTint(map.width) : riverTint, segs: [120, 44], opacity: 0.86, calm });
 
   // ---- rocks (mossy, with a foam collar upstream) and the island
   const rockGeo = k.geo(new THREE.DodecahedronGeometry(1, 0));

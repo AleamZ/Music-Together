@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { cumulative, nearestOn, ROADS, TRAILS } from "@/lib/game/world/roads";
 import { CHUNK_PX, CHUNKS_X } from "@/lib/game/world/scenery";
 import {
-  DOMAIN, fbm, heightAt, rectDistance, riverAt, RIVER_BANK, smoothstep, streamAt, STREAM_HALF_W, zoneUnder,
+  DOMAIN, fbm, heightAt, songCaiRenderHeight, rectDistance, riverAt, RIVER_BANK, smoothstep, streamAt, STREAM_HALF_W, zoneUnder,
 } from "@/lib/game/world/terrain";
 import { ZONE_IDS } from "@/lib/game/world/zones";
 
@@ -62,8 +62,10 @@ export function landColor(x: number, y: number, h: number, s: number, out: THREE
 
 /** The renderer's height: the terrain, sunk inside the zones. */
 export function meshHeight(x: number, y: number): number {
+  const z = zoneUnder(x, y);
+  if (z === "song_cai") return songCaiRenderHeight(x, y);            // the river runs on through it, one piece
   const h = heightAt(x, y);
-  return zoneUnder(x, y) ? h - UNDER_ZONE : h;
+  return z ? h - UNDER_ZONE : h;
 }
 
 /** A chunk's mesh as plain arrays (world units, absolute: px / 16) — built on the main thread or in the terrain worker. */
