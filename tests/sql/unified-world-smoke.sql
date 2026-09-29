@@ -6,6 +6,8 @@
 --      wild is off the map; pos_report_w is the zone's claim; wx / wy follow every writer.
 --   3. Flag on: the world's speed check (distance, the detour factor, the slack), old portal hops refused, interiors by
 --      the portal graph, the wild as a map, the waypoint exemption, the zone's level gate, _pos_on_zone.
+--   4. P2: Mỏ đá underground — no longer a zone; the mine mouth (wild) ↔ the cave through _world_portals, the flag-off
+--      graph untouched; the level gate at the mouth; the waypoint exemption only right after a paid trip there.
 \set ON_ERROR_STOP on
 set time zone 'UTC';
 set client_min_messages = warning;
@@ -53,7 +55,8 @@ do $$
 declare r record;
 begin
   assert public.app_flags() = '{"unified_world": false}'::jsonb, format('flags %s', public.app_flags());
-  assert (select count(*) from public._world_zones()) = 8, 'eight zones';
+  assert (select count(*) from public._world_zones()) = 7, 'seven zones (P2: mo_da is underground)';
+  assert not exists (select 1 from public._world_zones() where zone = 'mo_da') and public._zone_to_world('mo_da', 44, 200) is null, 'mo_da interior';
   assert (select count(*) from public._pos_maps()) = 10 and exists (select 1 from public._pos_maps() where map = 'wild' and w = 4160 and h = 2240), 'wild map';
   assert (select min_level from public.map_levels where map = 'wild') = 1, 'wild level';
   -- no two zones overlap; all inside the world
@@ -72,7 +75,7 @@ begin
   assert (select zone from public._world_to_zone(100, 100)) = 'wild', 'wild point';
   assert (select count(*) from public._world_to_zone(1572, 780)) = 1, 'one zone';
   assert not exists (select 1 from public._world_to_zone(5000, 10)), 'outside';
-  assert (select count(*) from public.world_waypoints) = 8
+  assert (select count(*) from public.world_waypoints) = 7 and not exists (select 1 from public.world_waypoints where zone = 'mo_da')
      and (select wx from public.world_waypoints where id = 'ww_pond') = 1260
      and (select waypoint from public.world_waypoints where id = 'ww_pond') = 'wp_pond', 'waypoints';
   assert has_function_privilege('anon', 'public.pos_report_w(text, integer, integer)', 'execute')
@@ -81,7 +84,9 @@ begin
      and not has_function_privilege('anon', 'public._zone_to_world(text, integer, integer)', 'execute')
      and not has_function_privilege('anon', 'public._pos_on_zone(uuid, text, integer, integer, integer)', 'execute')
      and not has_function_privilege('anon', 'public._app_flag(text)', 'execute')
-     and not has_function_privilege('anon', 'public._pos_at_waypoint(uuid, text, integer, integer)', 'execute')
+     and not has_function_privilege('anon', 'public._pos_at_waypoint(uuid, text, integer, integer, text, integer, integer, timestamptz)', 'execute')
+     and not has_function_privilege('anon', 'public._world_portals()', 'execute')
+     and to_regprocedure('public._pos_at_waypoint(uuid, text, integer, integer)') is null
      and not has_table_privilege('anon', 'public.app_flags', 'select')
      and not has_table_privilege('anon', 'public.world_waypoints', 'select'), 'private';
   raise notice 'geometry ok';
@@ -196,25 +201,27 @@ end $$;
 do $$
 declare t text := (select v from ux where k = 'ta'); a uuid := (select v from ux where k = 'a')::uuid; j jsonb;
 begin
-  -- a discovered waypoint is exempt; an undiscovered one is not
+  -- P2 review: a discovered waypoint is NO free teleport — walking off and claiming it is judged like any claim
   delete from public.player_waypoints where account_id = a;
   insert into public.player_waypoints (account_id, waypoint) values (a, 'wp_pond');
+  insert into public.player_progress (account_id) values (a) on conflict (account_id) do nothing;
+  update public.player_progress set tp_at = null where account_id = a;
   perform pg_temp.put('khu_nha', 400, 200, 0);
   j := public.pos_report(t, 'pond', 300, 356);
-  assert j->>'ok' = 'true' and pg_temp.pos() = 'pond:300,356@1260,1396', format('waypoint %s', j);
+  assert j ? 'anticheat' and pg_temp.pos() = 'khu_nha:400,200@3600,680', format('discovered, no trip: refused %s', j);
+  -- right after a paid waypoint_travel to it (the server wrote the position then: tp_at = pos.at) it is exempt
+  perform pg_temp.put('pond', 300, 356, 0);
+  update public.player_progress set tp_at = (select at from public.player_pos where account_id = a) where account_id = a;
+  assert public._pos_at_waypoint(a, 'pond', 300, 356, 'pond', 300, 356, (select at from public.player_pos where account_id = a)), 'fresh trip';
+  -- …not once a later claim was accepted, not at another waypoint than the trip's, not after 60 s
+  assert not public._pos_at_waypoint(a, 'pond', 300, 356, 'pond', 300, 356, now() + interval '1 second'), 'a claim since';
+  assert not public._pos_at_waypoint(a, 'pond', 300, 356, 'hall', 612, 300, (select at from public.player_pos where account_id = a)), 'another target';
+  update public.player_progress set tp_at = now() - interval '2 minutes' where account_id = a;
+  perform pg_temp.put('pond', 300, 356, 120);
+  assert not public._pos_at_waypoint(a, 'pond', 300, 356, 'pond', 300, 356, (select at from public.player_pos where account_id = a)), 'stale trip';
   perform pg_temp.put('khu_nha', 400, 200, 0);
   j := public.pos_report(t, 'field', 60, 106);
   assert j ? 'anticheat', format('undiscovered %s', j);
-  -- with the flag off the waypoint is no exemption
-  update public.app_flags set enabled = false where key = 'unified_world';
-  perform pg_temp.put('khu_nha', 400, 200, 0);
-  j := public.pos_report(t, 'pond', 300, 356);
-  assert j ? 'anticheat', format('waypoint, flag off %s', j);
-  update public.app_flags set enabled = true where key = 'unified_world';
-  -- the zone's level gate: Mỏ đá (level 5) from its gate on Bãi đất, in time: map_locked, not counted
-  perform pg_temp.put('bai_dat', 748, 268, 5);
-  j := public.pos_report_w(t, 3360 + 44, 1040 + 200);
-  assert j->'anticheat'->>'why' = 'map_locked' and pg_temp.pos() = 'bai_dat:748,268@3148,1308', format('gate %s', j);
   -- _pos_on_zone: in the world across a zone border, on the map for an interior
   perform pg_temp.put('wild', 1476, 900, 0);
   assert public._pos_on_zone(a, 'hall', 516, 390, 40), 'on zone (world)';
@@ -226,3 +233,45 @@ end $$;
 
 update public.app_flags set enabled = false where key = 'unified_world';
 do $$ begin assert public.app_flags() = '{"unified_world": false}'::jsonb, 'back off'; raise notice 'unified world smoke ok'; end $$;
+
+-- ---------- 4. P2: Mỏ đá underground ----------
+update public.app_flags set enabled = true where key = 'unified_world';
+do $$
+declare t text := (select v from ux where k = 'ta'); a uuid := (select v from ux where k = 'a')::uuid; j jsonb; n numeric;
+        lvl integer := (select min_level from public.map_levels where map = 'mo_da');
+begin
+  -- the flag-off graph is 0072's: the mouth's edge lives in _world_portals only
+  assert not exists (select 1 from public._pos_portals() where from_map = 'wild' or to_map = 'wild'), 'flag-off graph untouched';
+  assert (select count(*) from public._world_portals()) = (select count(*) from public._pos_portals()) + 2, 'two more';
+  assert exists (select 1 from public._world_portals() where from_map = 'wild' and to_map = 'mo_da' and ux = 3624 and uy = 1232 and ax = 44 and ay = 200), 'down';
+  assert exists (select 1 from public._world_portals() where from_map = 'mo_da' and to_map = 'wild' and ux = 28 and uy = 200 and ax = 3600 and ay = 1232), 'up';
+  -- the old plateau is the wild's now
+  assert (select zone from public._world_to_zone(3600, 1240)) = 'wild', 'freed plateau';
+  -- interior ↔ world: inside the cave to its door, then through the world
+  assert public._pos_need_s('wild', 3624, 1232, 'mo_da', 44, 200, 0) = 0, 'mouth → cave';
+  assert public._pos_need_s('mo_da', 28, 200, 'wild', 3600, 1232, 0) = 0, 'cave → mouth';
+  n := public._pos_need_s('mo_da', 300, 300, 'hall', 612, 300, 0);
+  assert abs(n - (sqrt(272.0 ^ 2 + 100.0 ^ 2) + sqrt(2028.0 ^ 2 + 452.0 ^ 2) - 104) / 260.0) < 0.001, format('cave → hall %s', n);
+  n := public._pos_need_s('hall', 612, 300, 'mo_da', 300, 300, 0);
+  assert abs(n - (sqrt(2052.0 ^ 2 + 452.0 ^ 2) + sqrt(256.0 ^ 2 + 100.0 ^ 2) - 104) / 260.0) < 0.001, format('hall → cave %s', n);
+  -- the level gate at the mouth: in time, but Mỏ đá (level 5) is locked for a level-1 account — refused, not counted
+  update public.map_levels set min_level = 5 where map = 'mo_da';
+  perform pg_temp.put('wild', 3624, 1232, 2);
+  j := public.pos_report(t, 'mo_da', 44, 200);
+  assert j->'anticheat'->>'why' = 'map_locked' and pg_temp.pos() = 'wild:3624,1232@3624,1232', format('gate %s', j);
+  -- open: down the tunnel, and back up at the mouth
+  update public.map_levels set min_level = 1 where map = 'mo_da';
+  j := public.pos_report(t, 'mo_da', 44, 200);
+  assert j->>'ok' = 'true' and pg_temp.pos() = 'mo_da:44,200@-,-', format('down %s', j);
+  perform pg_temp.put('mo_da', 28, 200, 1);
+  j := public.pos_report_w(t, 3600, 1232);
+  assert j = '{"ok": true, "map": "wild", "x": 3600, "y": 1232}'::jsonb, format('up %s', j);
+  -- the cave's far end to the hall in a second: refused
+  perform pg_temp.put('mo_da', 560, 314, 1);
+  j := public.pos_report(t, 'hall', 400, 300);                                  -- (off the spawn: that one is always accepted)
+  assert j ? 'anticheat', format('cave → hall too fast %s', j);
+  update public.map_levels set min_level = lvl where map = 'mo_da';
+  raise notice 'mine underground ok';
+end $$;
+update public.app_flags set enabled = false where key = 'unified_world';
+do $$ begin assert public.app_flags() = '{"unified_world": false}'::jsonb, 'back off (P2)'; raise notice 'P2 smoke ok'; end $$;

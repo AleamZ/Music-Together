@@ -202,8 +202,10 @@ describe("P2: Mỏ đá underground", () => {
     expect(OPENINGS.find((o) => o.portal === "mo_da_gate")).toMatchObject({ zone: "bai_dat", wild: true });
   });
 
-  it("0088's portal graph joins the mouth and the cave both ways (the level gate is the claim on mo_da)", () => {
-    const body = fnBody("_pos_portals");
+  it("0088's world portals join the mouth and the cave both ways (the flag-off graph untouched; the gate is the claim on mo_da)", () => {
+    const body = fnBody("_world_portals");
+    expect(body).toContain("select * from public._pos_portals()");
+    expect(SQL).not.toContain("create or replace function public._pos_portals(");
     const exit = getMap("mo_da").interactables.find((i) => i.id === "mo_da_exit")!;
     expect(body).toContain(`('wild', 'mo_da', ${MINE.use.x}, ${MINE.use.y}, ${MO_DA_ARRIVE.x}, ${MO_DA_ARRIVE.y}, false)`);
     expect(body).toContain(`('mo_da', 'wild', ${exit.use.x}, ${exit.use.y}, ${INTERIOR_EXITS.mo_da!.x}, ${INTERIOR_EXITS.mo_da!.y}, false)`);

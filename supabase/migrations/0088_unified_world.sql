@@ -20,14 +20,14 @@
 --      pos_report_w(token, wx, wy): the claim from world px (converted to the zone). pos_report is unchanged.
 --   F. world_waypoints: the old maps' arrival spots in world px, linked to 0070's waypoints where one exists.
 --   G. P2 (owner: Mỏ đá goes underground): mo_da leaves _world_zones and is an interior like the hầm; its door in the
---      world is the mine mouth on the eastern hills — a _pos_portals edge wild (3624, 1232) ↔ mo_da (44, 200) / (28, 200) →
---      wild (3600, 1232). _pos_need_s (flag on) judges a trip between an interior and a world point through the interior's
+--      world is the mine mouth on the eastern hills — _world_portals() (0072's _pos_portals, the flag-off graph untouched,
+--      plus wild (3624, 1232) ↔ mo_da (44, 200) / (28, 200) → wild (3600, 1232)). _pos_need_s (flag on) judges a trip between an interior and a world point through the interior's
 --      portals, then straight through the world. The level gate (map_levels mo_da, lv5) still applies: the claim at the
 --      cave's arrival is a claim on mo_da.
 --   H. P2 review: a world waypoint exempts a claim from the speed check only right after a paid waypoint_travel to it
 --      (_pos_at_waypoint reads player_progress.tp_at; before, any discovered waypoint was a free teleport).
--- Re-created functions I did not create: _pos_maps (0086's, + the row marked 0088), _pos_portals (0072's, + the rows
--- marked 0088), _pos_need_s (0057's), _pos_claim (0078's) — each verbatim but for the lines marked 0088.
+-- Re-created functions I did not create: _pos_maps (0086's, + the row marked 0088), _pos_need_s (0057's), _pos_claim
+-- (0078's) — each verbatim but for the lines marked 0088.
 -- Lock order unchanged: heat_state → vitals → player_pos → wallet → anticheat_status.
 -- =========================================================
 
@@ -84,32 +84,25 @@ as $$
                       where p_wx >= z.ox and p_wx < z.ox + z.w and p_wy >= z.oy and p_wy < z.oy + z.h)
 $$;
 
--- _pos_portals (0072_mining_crafting.sql's, verbatim but for the rows marked 0088): P2 puts Mỏ đá underground — its door in
--- the world is the mine mouth on the eastern hills (lib/game/world/mine.ts MINE: use (3624, 1232), exit (3600, 1232)), a
--- portal between the wild (world px) and the mo_da interior. The old Bãi đất ↔ Mỏ đá gate stays for the flag-off client.
-create or replace function public._pos_portals() returns table (from_map text, to_map text, ux integer, uy integer,
-                                                                ax integer, ay integer, road boolean)
+-- The world's portals (P2): 0072's _pos_portals — the flag-off graph, unchanged — plus Mỏ đá's door in the world since it
+-- went underground: the mine mouth on the eastern hills (lib/game/world/mine.ts MINE: use (3624, 1232); out of the cave at
+-- (3600, 1232)), a portal between the wild (world px) and the mo_da interior. Read only with the flag on (the interior
+-- trips of _pos_need_s, _world_adjacent); the old Bãi đất ↔ Mỏ đá gate stays for the per-map client.
+create or replace function public._world_portals() returns table (from_map text, to_map text, ux integer, uy integer,
+                                                                  ax integer, ay integer, road boolean)
 language sql immutable parallel safe
 as $$
-  values ('hall', 'pond', 516, 334, 300, 356, false), ('hall', 'field', 62, 236, 60, 106, false),
-         ('hall', 'market', 604, 200, 72, 252, true),
-         ('pond', 'hall', 352, 374, 516, 334, false), ('pond', 'field', 190, 348, 760, 244, false),
-         ('field', 'hall', 60, 106, 62, 236, false), ('field', 'pond', 760, 244, 190, 348, false),
-         ('market', 'hall', 40, 244, 584, 224, true), ('market', 'khu_nha', 1236, 196, 68, 208, true),
-         ('market', 'bai_dat', 1180, 358, 400, 48, false), ('market', 'ham_ngam', 640, 352, 48, 84, false),
-         ('khu_nha', 'market', 40, 196, 1206, 204, true), ('bai_dat', 'market', 400, 36, 1180, 356, false),
-         ('ham_ngam', 'market', 48, 52, 640, 350, false),
-         ('bai_dat', 'mo_da', 748, 268, 44, 200, false), ('mo_da', 'bai_dat', 28, 200, 736, 268, false),  -- 0072
-         ('wild', 'mo_da', 3624, 1232, 44, 200, false), ('mo_da', 'wild', 28, 200, 3600, 1232, false)     -- 0088
+  select * from public._pos_portals()
+  union all
+  values ('wild', 'mo_da', 3624, 1232, 44, 200, false), ('mo_da', 'wild', 28, 200, 3600, 1232, false)
 $$;
-revoke all on function public._pos_portals() from public, anon, authenticated;
-
+revoke all on function public._world_portals() from public, anon, authenticated;
 -- Two zones an old portal joined (the roads of the world); a zone and itself; the wild and anything.
 create or replace function public._world_adjacent(p_a text, p_b text) returns boolean
 language sql immutable parallel safe
 as $$
   select p_a = p_b or p_a = 'wild' or p_b = 'wild'
-      or exists (select 1 from public._pos_portals() p where p.from_map = p_a and p.to_map = p_b)
+      or exists (select 1 from public._world_portals() p where p.from_map = p_a and p.to_map = p_b)
 $$;
 
 -- Is the account's server position within p_r px of (zone, x, y)? In the world when both have world coords, else on the
@@ -192,14 +185,14 @@ begin
       return (select min(greatest(0, sqrt(((p.ux - p_x0)::numeric) ^ 2 + ((p.uy - p_y0)::numeric) ^ 2)
                           + sqrt(((b[1] - o.w[1])::numeric) ^ 2 + ((b[2] - o.w[2])::numeric) ^ 2)
                             * case when public._world_adjacent(p.to_map, p_m1) then 1 else 1.35 end - 64 - 40) / 260.0)
-                from public._pos_portals() p cross join lateral (select public._zone_to_world(p.to_map, p.ax, p.ay) w) o
+                from public._world_portals() p cross join lateral (select public._zone_to_world(p.to_map, p.ax, p.ay) w) o
                where p.from_map = p_m0 and o.w is not null);
     end if;
     if b is null and a is not null and p_x1 is not null then
       return (select min(greatest(0, sqrt(((o.w[1] - a[1])::numeric) ^ 2 + ((o.w[2] - a[2])::numeric) ^ 2)
                             * case when public._world_adjacent(p_m0, p.from_map) then 1 else 1.35 end
                           + sqrt(((p_x1 - p.ax)::numeric) ^ 2 + ((p_y1 - p.ay)::numeric) ^ 2) - 64 - 40) / 260.0)
-                from public._pos_portals() p cross join lateral (select public._zone_to_world(p.from_map, p.ux, p.uy) w) o
+                from public._world_portals() p cross join lateral (select public._zone_to_world(p.from_map, p.ux, p.uy) w) o
                where p.to_map = p_m1 and o.w is not null);
     end if;
     if (a is null and p_m0 = 'wild') or (b is null and p_m1 = 'wild') then return null; end if;
