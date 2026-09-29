@@ -298,12 +298,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     markWorldFailed();
     setWorldFailed(true);
   }, []);
-  useEffect(() => {
-    if (!worldFailed || !token) return;
-    const t = travelRef.current;
-    const at = t.arrive ?? getMap(t.mapId).spawn;
-    void posReport(token, t.mapId, at.x, at.y);
-  }, [worldFailed, token]);
   const onAoiChange = useCallback((zs: ZoneId[], cell?: number) => {
     if (cell !== undefined) cellRef.current = cell;
     setAoi((cur) => (cur.length === zs.length && cur.every((z, i) => z === zs[i]) ? cur : zs));
@@ -333,6 +327,13 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     travelRef.current = travel;
     worldModeRef.current = worldMode;
   }, [travel, worldMode]);
+  // the world failed to load (onWorldFailed above): claim where the 2D game puts me, in 2D
+  useEffect(() => {
+    if (!worldFailed || !token) return;
+    const t = travelRef.current;
+    const at = t.arrive ?? getMap(t.mapId).spawn;
+    void posReport(token, t.mapId, at.x, at.y);
+  }, [worldFailed, token]);
   const travelTo = useCallback((to: { map: MapId; arrive: Spot }) => {
     if (fadeTimer.current) return;
     // P2: out of an interior onto the world where its exit is not a zone's spot (Mỏ đá's tunnel → the mine mouth)
