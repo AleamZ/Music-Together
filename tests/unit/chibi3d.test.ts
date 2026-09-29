@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ITEM_ART } from "@/lib/game/art/items";
 import { BELT_COLORS } from "@/lib/game/art/uniforms";
-import { ChibiFactory } from "@/lib/game/diorama/character/build";
+import * as THREE from "three";
+import { ChibiFactory, SEGS, buildChibi } from "@/lib/game/diorama/character/build";
+import { FACE_H, FACE_W, facePixels } from "@/lib/game/diorama/character/voxel-face";
 import { LOOK_SLOTS, wearableIds, wearing } from "@/lib/game/diorama/character/catalog";
 import { CHAR_ACTS, FACING_YAW, REST, locomotion, poseAt, turnToward, wrapAngle, yawOf } from "@/lib/game/diorama/character/pose";
 import { chibiSpec, hex, type ChibiSpec } from "@/lib/game/diorama/character/spec";
@@ -91,22 +93,49 @@ describe("chibi spec: Look → 3D parts", () => {
 });
 
 describe("chibi factory", () => {
-  it("builds every hair style and hat shape at both detail levels, low-poly", () => {
+  it("builds every hair style and hat shape at both detail levels: sculpted pieces on one pixel atlas", () => {
     const f = new ChibiFactory(1000);
     const hats = [...new Set(Object.entries(ITEM_ART).filter(([, a]) => a.slot === "hat").map(([id]) => id))];
     for (const detail of ["high", "low"] as const) {
       for (const hair of HAIR_STYLES) {
         const { parts } = f.acquire(chibiSpec({ ...DEFAULT_LOOK, hair, hat: null }), detail);
-        expect(parts.head.getAttribute("color").count).toBe(parts.head.getAttribute("position").count);
+        expect(parts.head.getAttribute("uv").count).toBe(parts.head.getAttribute("position").count);
+        for (const v of parts.head.getAttribute("uv").array as Float32Array) expect(v >= 0 && v <= 1).toBe(true);
       }
       for (const hat of hats) f.acquire(chibiSpec({ ...DEFAULT_LOOK, hat }), detail);
     }
     const { parts } = f.acquire(chibiSpec(DEFAULT_LOOK), "high");
-    const tris = Object.values(parts).reduce((n, g) => n + g.getAttribute("position").count / 3, 0);
-    expect(tris).toBeLessThan(3000);
+    const tris = SEGS.reduce((n, s) => n + parts[s].getAttribute("position").count / 3, 0);
+    expect(tris).toBeLessThan(8000);                                           // sculpted pieces + the ink hull
+    const tex = (p: typeof parts) => (p.material as THREE.MeshLambertMaterial).map as THREE.DataTexture;
     const low = f.acquire(chibiSpec(DEFAULT_LOOK), "low").parts;
-    expect(low.head.getAttribute("position").count).toBeLessThan(parts.head.getAttribute("position").count);
+    expect(tex(low).image.width * tex(low).image.height).toBeLessThan(tex(parts).image.width * tex(parts).image.height);
+    expect(tex(parts).magFilter).toBe(THREE.NearestFilter);
+    for (const e of ["open", "blink", "happy"] as const) expect(parts.faces[e]).toBeTruthy();
     f.dispose();
+  });
+
+  it("paints the look's own colours into the atlas", () => {
+    const spec = chibiSpec({ ...BARE, top: "top_baba_yellow" });
+    const b = buildChibi(spec, "high");
+    const seen = new Set<string>();
+    for (let i = 0; i < b.pixels.length; i += 4) if (b.pixels[i + 3]) seen.add(`${b.pixels[i] >> 4},${b.pixels[i + 1] >> 4},${b.pixels[i + 2] >> 4}`);
+    const near = (hexc: string) => {
+      const n = parseInt(hexc.slice(1), 16);
+      return seen.has(`${(n >> 16) >> 4},${((n >> 8) & 255) >> 4},${(n & 255) >> 4}`);
+    };
+    expect(near(spec.skin) || near(spec.skinShade)).toBe(true);
+    expect(near(spec.torso)).toBe(true);
+  });
+
+  it("faces: open eyes differ from the blink and the smile", () => {
+    const open = facePixels("open", "nam"), blink = facePixels("blink", "nam"), happy = facePixels("happy", "nu");
+    expect(open.length).toBe(FACE_W * FACE_H * 4);
+    expect(open).not.toEqual(blink);
+    expect(open).not.toEqual(happy);
+    expect(poseAt("wave", 0.3).face).toBe("happy");
+    expect([0, 1, 2, 3, 3.5].some((t) => poseAt("idle", t).face === "blink")).toBe(true);
+    expect(poseAt("idle", 3.5, 0, true).face).toBe("open");
   });
 
   it("shares parts per look and evicts only released ones", () => {

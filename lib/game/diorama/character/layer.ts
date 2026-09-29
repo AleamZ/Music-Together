@@ -6,14 +6,31 @@ import { FACING_YAW, locomotion, poseAt, turnToward, yawOf, type CharAct } from 
 import { ChibiRig } from "./rig";
 import { chibiSpec } from "./spec";
 
-// Browser only: the diorama's people as 3D low-poly chibis (replaces the billboard sprites). Same inputs as before —
+// Browser only: the diorama's people as 3D voxel chibis (replaces the billboard sprites). Same inputs as before —
 // one entry per person per frame — plus an optional action; walking/running comes from how fast the feet move, the
 // model turns smoothly toward where it is going, and a soft blob shadow and the name tag follow it.
 
-const TAG_Y = RIG.hipY + RIG.neckY + RIG.headCY + RIG.headR + 0.95;
+const TAG_Y = RIG.hipY + RIG.neckY + RIG.headH + 0.75;
 /** Deeper than this under the ground plane = in the water (the view lowers swimmers' feet by ~0.9). */
 const WATER_DEPTH = -0.3;
 const SWIM_LIFT = 0.9;
+
+/** A soft round contact shadow (alpha falls off smoothly to the rim). */
+function softBlob(): THREE.DataTexture {
+  const n = 32, px = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const d = Math.hypot((x + 0.5) / n - 0.5, (y + 0.5) / n - 0.5) * 2;
+    const a = Math.max(0, 1 - d);
+    const i = (y * n + x) * 4;
+    px[i] = px[i + 1] = px[i + 2] = 255;
+    px[i + 3] = Math.round(255 * a * a * (3 - 2 * a));
+  }
+  const t = new THREE.DataTexture(px, n, n, THREE.RGBAFormat);
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
 
 interface Actor {
   rig: ChibiRig;
@@ -36,7 +53,7 @@ export class CharacterLayer {
   private readonly size: MapSize;
   private readonly groundAt: (x: number, y: number) => number;
   private readonly factory = new ChibiFactory();
-  private readonly blobGeo: THREE.CircleGeometry;
+  private readonly blobGeo: THREE.PlaneGeometry;
   private readonly blobMat: THREE.MeshBasicMaterial;
   private readonly tags = new Map<string, { tex: THREE.CanvasTexture; mat: THREE.SpriteMaterial; aspect: number }>();
   private readonly actors = new Map<string, Actor>();
@@ -47,12 +64,12 @@ export class CharacterLayer {
   constructor(size: MapSize, groundAt: (x: number, y: number) => number) {
     this.size = size;
     this.groundAt = groundAt;
-    this.blobGeo = new THREE.CircleGeometry(0.46, 16);
+    this.blobGeo = new THREE.PlaneGeometry(0.95, 0.95);
     this.blobGeo.rotateX(-Math.PI / 2);
-    this.blobMat = new THREE.MeshBasicMaterial({ color: 0x28190a, transparent: true, opacity: 0.3, depthWrite: false });
+    this.blobMat = new THREE.MeshBasicMaterial({ color: 0x3a2814, map: softBlob(), transparent: true, opacity: 0.42, depthWrite: false });
   }
 
-  /** Low quality: coarser meshes, no cast shadows. */
+  /** Low quality: coarser pixel atlases, no cast shadows. */
   setQuality(q: Quality): void {
     if (q === this.quality) return;
     this.quality = q;
@@ -107,7 +124,7 @@ export class CharacterLayer {
     for (const b of list) {
       let a = this.actors.get(b.id);
       if (!a) {
-        const rig = new ChibiRig(this.factory.material);
+        const rig = new ChibiRig();
         rig.setShadow(this.quality === "high");
         const blob = new THREE.Mesh(this.blobGeo, this.blobMat);
         blob.position.y = 0.02;
@@ -187,6 +204,7 @@ export class CharacterLayer {
     for (const tg of this.tags.values()) { tg.tex.dispose(); tg.mat.dispose(); }
     this.tags.clear();
     this.blobGeo.dispose();
+    this.blobMat.map?.dispose();
     this.blobMat.dispose();
   }
 }

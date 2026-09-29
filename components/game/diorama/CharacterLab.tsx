@@ -8,10 +8,11 @@ import { LOOK_SLOTS, wearableIds, wearing, type LookSlot } from "@/lib/game/dior
 import { CHAR_ACTS, poseAt, type CharAct } from "@/lib/game/diorama/character/pose";
 import { ChibiRig } from "@/lib/game/diorama/character/rig";
 import { chibiSpec } from "@/lib/game/diorama/character/spec";
+import { addVoxelLights } from "@/lib/game/diorama/character/voxel-material";
 import { ANH_HAI_LOOK, CHU_TAM_LOOK, CHU_TU_LOOK, CO_BA_LOOK, CO_UT_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
 import { GENDERS, HAIR_COLORS, HAIR_STYLES, SKIN_TONES, type Look } from "@/lib/game/types";
 
-// Dev only (/dev/diorama): the 3D chibi lab — pick a look from the real catalog art and an action, watch the model
+// Dev only (/dev/diorama): the 3D voxel chibi lab — pick a look from the real catalog art and an action, watch the model
 // turn and animate; below, a line-up of sample looks (the pond's NPCs and some catalog outfits).
 
 const ACT_LABEL: Record<CharAct, string> = {
@@ -45,15 +46,10 @@ function mount(canvas: HTMLCanvasElement, camPos: THREE.Vector3, target: THREE.V
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.shadowMap.enabled = true;
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xcfe8d8);
-  scene.add(new THREE.HemisphereLight(0xdff2ff, 0x5a7a3a, 1.4));
-  const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
-  sun.position.set(4, 8, 6);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  Object.assign(sun.shadow.camera, { left: -ground, right: ground, top: ground, bottom: -ground });
-  scene.add(sun);
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(ground, 32), new THREE.MeshLambertMaterial({ color: 0x8fbf6a }));
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  scene.background = new THREE.Color(0xdcdde6);
+  addVoxelLights(scene, ground);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(ground * 1.6, 48), new THREE.MeshLambertMaterial({ color: 0xe9e4da }));
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
@@ -91,11 +87,22 @@ function CharacterLab() {
   const gridRef = useRef<HTMLCanvasElement>(null);
   const [look, setLook] = useState<Look>(DEFAULT_LOOK);
   const [act, setAct] = useState<CharAct>("idle");
-  const [spin, setSpin] = useState(true);
+  const [spin, setSpin] = useState(false);
+  const [close, setClose] = useState(false);
+  useEffect(() => {
+    // dev deep links: #lab-close (face close-up), #lab-s7 (sample 7), #lab-a3 (action 3)
+    const h = window.location.hash;
+    const sm = /-s(\d+)/.exec(h), am = /-a(\d+)/.exec(h);
+    queueMicrotask(() => {
+      if (h.includes("close")) setClose(true);
+      if (sm && SAMPLE_LOOKS[Number(sm[1])]) setLook(SAMPLE_LOOKS[Number(sm[1])].look);
+      if (am && CHAR_ACTS[Number(am[1])]) setAct(CHAR_ACTS[Number(am[1])]);
+    });
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const ids = useMemo(() => wearableIds(), []);
-  const stateRef = useRef({ look, act, spin });
-  useEffect(() => { stateRef.current = { look, act, spin }; });
+  const stateRef = useRef({ look, act, spin, close });
+  useEffect(() => { stateRef.current = { look, act, spin, close }; });
 
   useEffect(() => {
     const canvas = mainRef.current;
@@ -103,9 +110,9 @@ function CharacterLab() {
     let m: Mounted;
     let rig: ChibiRig | null = null, key = "", lookKey = "", yaw = 0, last = 0;
     try {
-      m = mount(canvas, new THREE.Vector3(0, 2.2, 6.2), new THREE.Vector3(0, 1.15, 0), 3, (t) => {
+      m = mount(canvas, new THREE.Vector3(0, 1.9, 4.6), new THREE.Vector3(0, 1.0, 0), 3, (t) => {
         const s = stateRef.current;
-        if (!rig) { rig = new ChibiRig(m.factory.material); m.scene.add(rig.root); }
+        if (!rig) { rig = new ChibiRig(); m.scene.add(rig.root); }
         const spec = chibiSpec(s.look);
         if (spec.key !== lookKey) {
           if (key) m.factory.release(key);
@@ -116,6 +123,9 @@ function CharacterLab() {
         const dt = last ? Math.min(0.1, t - last) : 0;
         last = t;
         if (s.spin) yaw += dt * 0.8;
+        else yaw = -0.55;
+        m.camera.position.set(0, s.close ? 1.75 : 1.8, s.close ? 2.9 : 5.4);
+        m.camera.lookAt(0, s.close ? 1.45 : 1.05, 0);
         rig.root.rotation.y = yaw;
         rig.root.position.y = s.act === "swim" ? 0.5 : 0;
         rig.apply(poseAt(s.act, t));
@@ -133,13 +143,13 @@ function CharacterLab() {
     let m: Mounted;
     const rigs: ChibiRig[] = [];
     try {
-      m = mount(canvas, new THREE.Vector3(0, 4.2, 11.5), new THREE.Vector3(0, 0.9, 0), 9, (t) => {
+      m = mount(canvas, new THREE.Vector3(0, 4.4, 10.4), new THREE.Vector3(0, 0.8, 0), 9, (t) => {
         if (!rigs.length) {
           SAMPLE_LOOKS.forEach((s, i) => {
-            const r = new ChibiRig(m.factory.material);
+            const r = new ChibiRig();
             r.setParts(m.factory.acquire(chibiSpec(s.look), "high").parts);
             const col = i % 6, row = Math.floor(i / 6);
-            r.root.position.set((col - 2.5) * 2.2 + row * 1.1, s.act === "swim" ? 0.5 : 0, (row - 0.5) * 3.6);
+            r.root.position.set((col - 2.5) * 1.6 + row * 0.6 - 0.3, s.act === "swim" ? 0.5 : 0, (row - 0.5) * 3);
             m.scene.add(r.root);
             rigs.push(r);
           });
@@ -171,7 +181,7 @@ function CharacterLab() {
       <h2 className="mb-2 text-lg font-bold">Phòng thử nhân vật 3D</h2>
       {error && <p className="text-sm text-red-700">{error}</p>}
       <div className="flex flex-col gap-4 md:flex-row">
-        <canvas ref={mainRef} className="h-[420px] w-full rounded-lg border border-stone-300 md:w-[360px]" />
+        <canvas ref={mainRef} className="h-[520px] w-full rounded-lg border border-stone-300 md:w-[400px]" />
         <div className="grid flex-1 grid-cols-1 content-start gap-1.5 sm:grid-cols-2">
           {pick("Hành động", act, CHAR_ACTS.map((a) => [a, ACT_LABEL[a]] as const), (v) => setAct(v as CharAct))}
           {pick("Dáng", look.gender ?? "nam", GENDERS.map((g) => [g, g === "nu" ? "Nữ" : "Nam"] as const), (v) => setLook({ ...look, gender: v as Look["gender"] }))}
@@ -186,6 +196,7 @@ function CharacterLab() {
           ))}
           {look.outfit?.startsWith("vp_") && pick("Đai", String(look.belt ?? 0), [0, 1, 2, 3, 4].map((b) => [String(b), `Cấp ${b}`] as const), (v) => setLook({ ...look, belt: Number(v) }))}
           <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={spin} onChange={(e) => setSpin(e.target.checked)} /> Xoay</label>
+          <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={close} onChange={(e) => setClose(e.target.checked)} /> Cận mặt</label>
           <div className="flex flex-wrap gap-1 sm:col-span-2">
             {SAMPLE_LOOKS.slice(0, 6).map((s) => (
               <button key={s.name} type="button" className="rounded bg-stone-200 px-2 py-0.5 text-xs" onClick={() => setLook(s.look)}>{s.name}</button>
@@ -194,7 +205,7 @@ function CharacterLab() {
         </div>
       </div>
       <h3 className="mb-1 mt-4 text-sm font-semibold">12 kiểu mẫu</h3>
-      <canvas ref={gridRef} className="h-[380px] w-full rounded-lg border border-stone-300" />
+      <canvas ref={gridRef} className="h-[520px] w-full rounded-lg border border-stone-300" />
       <p className="mt-1 text-xs text-stone-500">{SAMPLE_LOOKS.map((s) => `${s.name} (${ACT_LABEL[s.act]})`).join(" · ")}</p>
     </section>
   );
@@ -204,7 +215,7 @@ function CharacterLab() {
 export default function CharacterLabPanel() {
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (window.location.hash === "#lab") queueMicrotask(() => setOpen(true));
+    if (window.location.hash.startsWith("#lab")) queueMicrotask(() => setOpen(true));
   }, []);
   if (!open) {
     return (

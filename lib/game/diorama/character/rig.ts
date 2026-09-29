@@ -1,14 +1,16 @@
 import * as THREE from "three";
-import { RIG, type ChibiParts } from "./build";
+import { RIG, SEGS, VOX, type ChibiParts, type Seg } from "./build";
 import type { Pose } from "./pose";
 
-// Browser only: one chibi on screen — a small pivot hierarchy (hips → head, shoulders → elbows, hips → knees) whose
-// meshes point at the shared, per-look geometry. `apply` poses it; the root's position/yaw are the caller's.
+// Browser only: one voxel chibi on screen — a small pivot hierarchy (hips → head, shoulders → elbows, hips → knees)
+// whose meshes point at the shared, per-look geometry and atlas material, plus the face decal whose material is
+// swapped for blinks and smiles. `apply` poses it; the root's position/yaw are the caller's.
 
 const EMPTY = new THREE.BufferGeometry();
+const NONE = new THREE.MeshBasicMaterial({ visible: false });
 
-function mesh(mat: THREE.Material): THREE.Mesh {
-  const m = new THREE.Mesh(EMPTY, mat);
+function mesh(): THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
+  const m = new THREE.Mesh<THREE.BufferGeometry, THREE.Material>(EMPTY, NONE);
   m.castShadow = true;
   return m;
 }
@@ -25,23 +27,23 @@ export class ChibiRig {
   private readonly legR = new THREE.Group();
   private readonly kneeL = new THREE.Group();
   private readonly kneeR = new THREE.Group();
-  private readonly m: Record<keyof ChibiParts, THREE.Mesh>;
+  private readonly m = {} as Record<Seg, THREE.Mesh<THREE.BufferGeometry, THREE.Material>>;
+  private readonly face: THREE.Mesh<THREE.BufferGeometry, THREE.Material> = new THREE.Mesh(EMPTY, NONE);
+  private parts: ChibiParts | null = null;
 
-  constructor(mat: THREE.Material) {
-    this.m = {
-      head: mesh(mat), torso: mesh(mat), upperL: mesh(mat), upperR: mesh(mat), foreL: mesh(mat), foreR: mesh(mat),
-      thighL: mesh(mat), thighR: mesh(mat), calfL: mesh(mat), calfR: mesh(mat), rod: mesh(mat),
-    };
+  constructor() {
+    for (const s of SEGS) this.m[s] = mesh();
     this.body.position.y = RIG.hipY;
     this.head.position.y = RIG.neckY;
+    this.head.scale.setScalar(RIG.headScale);
     this.armL.position.set(-RIG.shoulderX, RIG.shoulderY, 0);
     this.armR.position.set(RIG.shoulderX, RIG.shoulderY, 0);
     this.elbowL.position.y = this.elbowR.position.y = -RIG.upperLen;
     this.legL.position.set(-RIG.legX, 0, 0);
     this.legR.position.set(RIG.legX, 0, 0);
     this.kneeL.position.y = this.kneeR.position.y = -RIG.thighLen;
-    this.m.rod.position.set(0, -RIG.foreLen - 0.04, 0.02);
-    this.head.add(this.m.head);
+    this.m.rod.position.set(0, -5.1 * VOX, 0.2 * VOX);
+    this.head.add(this.m.head, this.face);
     this.elbowL.add(this.m.foreL);
     this.elbowR.add(this.m.foreR, this.m.rod);
     this.armL.add(this.m.upperL, this.elbowL);
@@ -55,11 +57,14 @@ export class ChibiRig {
   }
 
   setParts(p: ChibiParts): void {
-    for (const k of Object.keys(this.m) as (keyof ChibiParts)[]) this.m[k].geometry = p[k];
+    this.parts = p;
+    for (const s of SEGS) { this.m[s].geometry = p[s]; this.m[s].material = p.material; }
+    this.face.geometry = p.faceGeo;
+    this.face.material = p.faces.open;
   }
 
   setShadow(on: boolean): void {
-    for (const k of Object.keys(this.m) as (keyof ChibiParts)[]) this.m[k].castShadow = on;
+    for (const s of SEGS) this.m[s].castShadow = on;
   }
 
   apply(p: Pose): void {
@@ -75,10 +80,14 @@ export class ChibiRig {
     this.kneeL.rotation.x = p.kneeL;
     this.kneeR.rotation.x = p.kneeR;
     this.m.rod.visible = p.rod > 0;
+    if (this.parts) this.face.material = this.parts.faces[p.face];
   }
 
-  /** Drops the geometry references (the factory owns them). */
+  /** Drops the geometry/material references (the factory owns them). */
   detach(): void {
-    for (const k of Object.keys(this.m) as (keyof ChibiParts)[]) this.m[k].geometry = EMPTY;
+    this.parts = null;
+    for (const s of SEGS) { this.m[s].geometry = EMPTY; this.m[s].material = NONE; }
+    this.face.geometry = EMPTY;
+    this.face.material = NONE;
   }
 }
