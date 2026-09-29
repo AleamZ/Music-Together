@@ -1,4 +1,5 @@
 import type { Vec } from "@/lib/game/types";
+import { MINE, MINE_HILL } from "./mine";
 import { cumulative, nearestOn, ROADS, TRAILS, type Road, type Trail } from "./roads";
 import { WORLD_CELL, WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId } from "./zones";
 
@@ -15,9 +16,10 @@ export const TERRAIN_SEED = 20260929;
 /** px per 3D unit (lib/game/diorama/coords.ts PX_PER_UNIT; not imported: that module is the renderer's). */
 const PXU = 16;
 
-/** Each zone's plateau height, units (village hall mid, fields low near the river, the mine high in the east). */
+/** Each zone's plateau height, units (village hall mid, fields low near the river, Khu nhà high in the east; the mine's
+ *  apron is MINE.pad.elev). */
 export const ZONE_ELEV: Readonly<Record<OutdoorMapId, number>> = {
-  song_cai: 0.6, field: 1.4, pond: 2.2, hall: 4.4, bai_dat: 6.0, market: 6.4, khu_nha: 8.4, mo_da: 8.6,
+  song_cai: 0.6, field: 1.4, pond: 2.2, hall: 4.4, bai_dat: 6.0, market: 6.4, khu_nha: 8.4,
 };
 /** How far (px) a plateau blends into the land around it. */
 export const PLATEAU_MARGIN = 160;
@@ -60,6 +62,7 @@ export const KNOLLS: readonly { x: number; y: number; r: number }[] = [
   { x: 4090, y: 1300, r: 60 },
   { x: 2100, y: 1250, r: 90 },
   { x: 3700, y: 1540, r: 70 },
+  MINE_HILL,                                               // the hill the mine's tunnel runs into (P2)
 ];
 
 /** The ring rendered around the world (mountains to the horizon), px beyond each edge. */
@@ -156,12 +159,15 @@ export function streamAt(x: number, y: number): { d: number; s: number } {
 
 interface PathInfo { pts: readonly Vec[]; cum: number[]; w: number; h0: number; h1: number; trail: boolean; ends: OutdoorMapId[] }
 
-const zoneOf = (end: string) => end.split(":")[0] as OutdoorMapId;
+/** A road end's zone (null: the wild's own end, the mine mouth) and its height. */
+const zoneOf = (end: string): OutdoorMapId | null => (end.startsWith("wild:") ? null : end.split(":")[0] as OutdoorMapId);
+const endElev = (end: string): number => { const z = zoneOf(end); return z ? ZONE_ELEV[z] : MINE.pad.elev; };
 
 let paths: PathInfo[] | null = null;
 
 function roadInfo(r: Road): PathInfo {
-  return { pts: r.pts, cum: cumulative(r.pts), w: r.w, h0: ZONE_ELEV[zoneOf(r.a)], h1: ZONE_ELEV[zoneOf(r.b)], trail: false, ends: [zoneOf(r.a), zoneOf(r.b)] };
+  const ends = [zoneOf(r.a), zoneOf(r.b)].filter((z): z is OutdoorMapId => z !== null);
+  return { pts: r.pts, cum: cumulative(r.pts), w: r.w, h0: endElev(r.a), h1: endElev(r.b), trail: false, ends };
 }
 
 /** Roads first (a trail starts on one: its first height is the road's there), then the trails. */
@@ -254,6 +260,9 @@ export function heightAt(x: number, y: number): number {
     wsum += w; esum += w * ZONE_ELEV[id]; wmax = Math.max(wmax, w);
   }
   if (wsum > 0) h = lerp(h, esum / wsum, wmax);
+  // the mine mouth's apron: flat at its height, blending out over PLATEAU_MARGIN / 2
+  const pd = Math.hypot(x - MINE.pad.x, y - MINE.pad.y) - MINE.pad.r;
+  if (pd < PLATEAU_MARGIN / 2) h = lerp(h, MINE.pad.elev, 1 - smoothstep(0, PLATEAU_MARGIN / 2, pd));
 
   // the river's channel (outside Sông Cái): a bank lip, then the bed
   const r = riverAt(x, y);

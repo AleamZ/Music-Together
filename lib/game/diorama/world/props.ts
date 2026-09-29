@@ -150,6 +150,7 @@ export function buildLandmarks(): Landmarks {
   const mat = toon({ vertexColors: true });
   const bladeMat = toon({ vertexColors: true, side: THREE.DoubleSide });
   const flagMat = toon({ color: 0xda251d, side: THREE.DoubleSide });
+  const lampMat = new THREE.MeshBasicMaterial({ color: 0xffc46a });
   const spinning: Array<{ obj: THREE.Object3D; speed: number }> = [];
   const flags: THREE.Mesh[] = [];
   const geos: THREE.BufferGeometry[] = [];
@@ -236,6 +237,32 @@ export function buildLandmarks(): Landmarks {
       wheel.position.set(0, 9.6, 0);
       g.add(wheel);
       spinning.push({ obj: wheel, speed: 0.4 });
+    } else if (l.kind === "mine") {
+      // P2: the mine mouth — a timber-framed tunnel into the hill (local +z = out of the tunnel), rails and a cart
+      // coming out, a lantern each side; the dark inside is Mỏ đá (an interior, entered by the door in front)
+      const parts: THREE.BufferGeometry[] = [];
+      const R = (i: number) => ((Math.sin(i * 127.1 + l.x) * 43758.5453) % 1 + 1) % 1;
+      for (let i = 0; i < 16; i++) {                                    // the rock round the mouth
+        const a = (i / 15) * Math.PI, r = 2.3 + R(i) * 0.6;
+        parts.push(colored(new THREE.DodecahedronGeometry(0.9 + R(i + 40) * 0.7, 0)
+          .translate(Math.cos(a) * r, Math.sin(a) * r * 1.05 + 0.2, -0.6 - R(i + 80) * 1.2), [0x6d655c, 0x7a7266, 0x5f5850][i % 3]));
+      }
+      parts.push(colored(new THREE.DodecahedronGeometry(3.6, 1).scale(1.3, 0.85, 1.1).translate(0, 1.4, -3.6), 0x6a6258));
+      parts.push(box(2.6, 2.6, 0.1, 0, 1.3, -0.35, 0x0e0c0b));          // the dark inside
+      for (const s of [-1, 1]) parts.push(box(0.34, 2.9, 0.34, s * 1.35, 1.45, 0, 0x6e4424));
+      parts.push(box(3.4, 0.4, 0.5, 0, 3.0, 0, 0x8a5a30), box(1.8, 0.5, 0.08, 0, 3.55, 0.2, 0xf4ead0));
+      for (let z = -0.3; z < 5.6; z += 0.45) parts.push(box(1.5, 0.08, 0.16, 0, 0.04, z, 0x6e4424));
+      for (const s of [-1, 1]) parts.push(box(0.08, 0.1, 6, s * 0.5, 0.12, 2.7, 0x8a939c));
+      parts.push(box(1.2, 0.65, 0.9, 0, 0.55, 3.4, 0x5b636b), colored(new THREE.DodecahedronGeometry(0.45, 0).scale(1.1, 0.6, 0.8).translate(0, 0.95, 3.4), 0x8a8178));
+      for (const s of [-1, 1]) parts.push(box(0.12, 1.6, 0.12, s * 2.1, 0.8, 0.6, 0x6e4424));
+      const g = add(parts, l);
+      for (const s of [-1, 1]) {
+        const lampGeo = new THREE.SphereGeometry(0.2, 8, 6);
+        geos.push(lampGeo);
+        const lamp = new THREE.Mesh(lampGeo, lampMat);
+        lamp.position.set(s * 2.1, 1.75, 0.6);
+        g.add(lamp);
+      }
     }
   }
   return {
@@ -251,7 +278,7 @@ export function buildLandmarks(): Landmarks {
         pos.needsUpdate = true;
       }
     },
-    dispose() { for (const g of geos) g.dispose(); mat.dispose(); bladeMat.dispose(); flagMat.dispose(); },
+    dispose() { for (const g of geos) g.dispose(); mat.dispose(); bladeMat.dispose(); flagMat.dispose(); lampMat.dispose(); },
   };
 }
 

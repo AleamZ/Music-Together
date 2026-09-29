@@ -1,4 +1,7 @@
-import type { MapId } from "@/lib/game/maps/types";
+import { MO_DA_ARRIVE } from "@/lib/game/maps/arrivals";
+import { MINE, MINE_SOLID } from "./mine";
+export { MINE, MINE_HILL, MINE_SOLID } from "./mine";
+import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 import {
   bridgeAt, heightGrid, KNOLLS, MAX_WALK_HEIGHT, MAX_WALK_SLOPE, onPath, slopeAtCell, waterAt,
@@ -13,13 +16,15 @@ import { WORLD_CELL, WORLD_H, WORLD_W, ZONES, type OutdoorMapId } from "./zones"
 //   - the forest belt along the north edge (scenery),
 //   - water: the river winding across the south and the pond's stream (the bridges on the trails cross the river),
 //   - a reed bank around Sông Cái (the zone is boat water, reached from the pond's pier: no walking in),
+//   - the mine mouth's frame (the tunnel itself is Mỏ đá, an interior),
 //   - the world's rim (one cell).
 // Roads and trails are walkable whatever lies under them; each road joins the two ends of an old portal pair.
 /** Which edge of a zone a portal's opening runs to. */
 export type Side = "top" | "bottom" | "left" | "right";
 
-/** A portal of the old maps that becomes an opening in its zone's wall: a corridor from its use point to `side`. */
-export interface Opening { zone: OutdoorMapId; portal: string; side: Side }
+/** A portal of the old maps that becomes an opening in its zone's wall: a corridor from its use point to `side`.
+ *  `wild`: it opens onto the wild itself (not another zone) — Bãi đất's east gate, whose road climbs to the mine mouth. */
+export interface Opening { zone: OutdoorMapId; portal: string; side: Side; wild?: true }
 
 /** Every outdoor portal (the hầm's hatch stays a hatch: an interior). */
 export const OPENINGS: readonly Opening[] = [
@@ -35,9 +40,23 @@ export const OPENINGS: readonly Opening[] = [
   { zone: "market", portal: "market_to_bai_dat", side: "bottom" },
   { zone: "khu_nha", portal: "khu_nha_exit", side: "left" },
   { zone: "bai_dat", portal: "bai_dat_exit", side: "top" },
-  { zone: "bai_dat", portal: "mo_da_gate", side: "right" },
-  { zone: "mo_da", portal: "mo_da_exit", side: "left" },
+  { zone: "bai_dat", portal: "mo_da_gate", side: "right", wild: true },
 ];
+
+// ---------------------------------------------------------------- the mine mouth (P2: Mỏ đá is underground)
+
+/** The wild's own interactables (world px): the mine mouth, a portal down to Mỏ đá (level gate as the old gate's). */
+export const WILD_INTERACTABLES: readonly Interactable[] = [
+  {
+    id: "mine_entrance", kind: "portal", label: "Cửa hầm mỏ", prompt: "Xuống hầm Mỏ đá",
+    rect: { x: MINE_SOLID.x, y: MINE_SOLID.y, w: MINE_SOLID.w, h: MINE_SOLID.h }, use: { ...MINE.use }, face: "right",
+    to: { map: "mo_da", arrive: MO_DA_ARRIVE },
+  },
+];
+
+/** Where an interior's exit lands in the world (world px) when it is not a zone's own spot: Mỏ đá's gate (whose old
+ *  portal led to Bãi đất) comes up at the mine mouth. */
+export const INTERIOR_EXITS: Readonly<Partial<Record<MapId, Spot>>> = { mo_da: MINE.exit };
 
 /** An opening's corridor width, px. */
 export const OPENING_W = 24;
@@ -76,6 +95,7 @@ export function wildBlocked(x: number, y: number): boolean {
   if (y < FOREST.y1) return true;
   if (waterAt(x, y) !== null) return bridgeAt(x, y) === null;
   if (nearSongCai(x, y)) return true;
+  if (x >= MINE_SOLID.x && x < MINE_SOLID.x + MINE_SOLID.w && y >= MINE_SOLID.y && y < MINE_SOLID.y + MINE_SOLID.h) return true;
   if (KNOLLS.some((h) => (x - h.x) ** 2 + (y - h.y) ** 2 <= h.r ** 2)) return true;
   const g = heightGrid(), c = Math.floor(x / WORLD_CELL), r = Math.floor(y / WORLD_CELL);
   if (g.h[r * g.cols + c] > MAX_WALK_HEIGHT) return true;

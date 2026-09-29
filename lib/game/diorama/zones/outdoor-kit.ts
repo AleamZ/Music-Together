@@ -26,6 +26,8 @@ export interface ZoneRig {
   heightAt(x: number, y: number): number;
   /** The field's plots (crops by stage); other zones have none. */
   setPlots?(plots: ReadonlyArray<PlotDraw>, now: number): void;
+  /** P2: underground (Mỏ đá): no sky — the view lights it as a cave (dark, lamps always lit). */
+  cave?: boolean;
   dispose(): void;
 }
 
@@ -344,7 +346,7 @@ export class Kit {
   }
 
   /** Merge the static meshes per material, hang the hooks on the group (userData.rig) and return it. */
-  finish(hooks: { heightAt: ZoneRig["heightAt"]; setPlots?: ZoneRig["setPlots"]; animate?: ZoneRig["animate"] }): THREE.Group {
+  finish(hooks: { heightAt: ZoneRig["heightAt"]; setPlots?: ZoneRig["setPlots"]; animate?: ZoneRig["animate"]; cave?: boolean }): THREE.Group {
     const root = this.root;
     root.updateMatrixWorld(true);
     const kept = (o: THREE.Object3D) => { for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p.userData.keep) return true; return false; };
@@ -375,6 +377,7 @@ export class Kit {
       lamps: this.lamps, bulbs: this.bulbs, thinnable: this.thinnable, sway: this.sway, roofs: this.roofs, water: this.firstWater,
       heightAt: hooks.heightAt,
       setPlots: hooks.setPlots,
+      cave: hooks.cave,
       animate: (t, wind) => {
         for (const a of animators) a(t, wind);
         hooks.animate?.(t, wind);

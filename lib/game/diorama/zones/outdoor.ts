@@ -24,7 +24,7 @@ export function builtFromGroup(root: THREE.Group): Built {
   const water = rig.water ?? new THREE.Mesh();
   return {
     root, water, waterBase: new Float32Array(0), thinnable: rig.thinnable, sway: rig.sway, lamps: rig.lamps, bulbs: rig.bulbs,
-    flowers: null, roofs: rig.roofs, animate: rig.animate, setPlots: rig.setPlots, dispose: rig.dispose,
+    flowers: null, roofs: rig.roofs, animate: rig.animate, setPlots: rig.setPlots, cave: rig.cave, dispose: rig.dispose,
   };
 }
 

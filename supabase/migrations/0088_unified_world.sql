@@ -19,8 +19,15 @@
 --      exempt from the speed check like the hall's spawn. The level gate is the zone's (the claimed map is the zone).
 --      pos_report_w(token, wx, wy): the claim from world px (converted to the zone). pos_report is unchanged.
 --   F. world_waypoints: the old maps' arrival spots in world px, linked to 0070's waypoints where one exists.
--- Re-created functions I did not create: _pos_maps (0086's, + the row marked 0088), _pos_need_s (0057's),
--- _pos_claim (0078's) — each verbatim but for the lines marked 0088.
+--   G. P2 (owner: Mỏ đá goes underground): mo_da leaves _world_zones and is an interior like the hầm; its door in the
+--      world is the mine mouth on the eastern hills — a _pos_portals edge wild (3624, 1232) ↔ mo_da (44, 200) / (28, 200) →
+--      wild (3600, 1232). _pos_need_s (flag on) judges a trip between an interior and a world point through the interior's
+--      portals, then straight through the world. The level gate (map_levels mo_da, lv5) still applies: the claim at the
+--      cave's arrival is a claim on mo_da.
+--   H. P2 review: a world waypoint exempts a claim from the speed check only right after a paid waypoint_travel to it
+--      (_pos_at_waypoint reads player_progress.tp_at; before, any discovered waypoint was a free teleport).
+-- Re-created functions I did not create: _pos_maps (0086's, + the row marked 0088), _pos_portals (0072's, + the rows
+-- marked 0088), _pos_need_s (0057's), _pos_claim (0078's) — each verbatim but for the lines marked 0088.
 -- Lock order unchanged: heat_state → vitals → player_pos → wallet → anticheat_status.
 -- =========================================================
 
@@ -52,7 +59,7 @@ language sql immutable parallel safe
 as $$
   values ('field', 0, 560, 800, 480), ('hall', 960, 480, 640, 400), ('pond', 960, 1040, 640, 400),
          ('market', 1760, 480, 1280, 400), ('khu_nha', 3200, 480, 800, 400), ('bai_dat', 2400, 1040, 800, 400),
-         ('mo_da', 3360, 1040, 640, 400), ('song_cai', 960, 1600, 960, 480)
+         ('song_cai', 960, 1600, 960, 480)                                          -- P2: mo_da is an interior (underground)
 $$;
 
 -- Zone-local → world px ({wx, wy}); the wild is the identity; null for an interior or an unknown map.
@@ -76,6 +83,26 @@ as $$
      and not exists (select 1 from public._world_zones() z
                       where p_wx >= z.ox and p_wx < z.ox + z.w and p_wy >= z.oy and p_wy < z.oy + z.h)
 $$;
+
+-- _pos_portals (0072_mining_crafting.sql's, verbatim but for the rows marked 0088): P2 puts Mỏ đá underground — its door in
+-- the world is the mine mouth on the eastern hills (lib/game/world/mine.ts MINE: use (3624, 1232), exit (3600, 1232)), a
+-- portal between the wild (world px) and the mo_da interior. The old Bãi đất ↔ Mỏ đá gate stays for the flag-off client.
+create or replace function public._pos_portals() returns table (from_map text, to_map text, ux integer, uy integer,
+                                                                ax integer, ay integer, road boolean)
+language sql immutable parallel safe
+as $$
+  values ('hall', 'pond', 516, 334, 300, 356, false), ('hall', 'field', 62, 236, 60, 106, false),
+         ('hall', 'market', 604, 200, 72, 252, true),
+         ('pond', 'hall', 352, 374, 516, 334, false), ('pond', 'field', 190, 348, 760, 244, false),
+         ('field', 'hall', 60, 106, 62, 236, false), ('field', 'pond', 760, 244, 190, 348, false),
+         ('market', 'hall', 40, 244, 584, 224, true), ('market', 'khu_nha', 1236, 196, 68, 208, true),
+         ('market', 'bai_dat', 1180, 358, 400, 48, false), ('market', 'ham_ngam', 640, 352, 48, 84, false),
+         ('khu_nha', 'market', 40, 196, 1206, 204, true), ('bai_dat', 'market', 400, 36, 1180, 356, false),
+         ('ham_ngam', 'market', 48, 52, 640, 350, false),
+         ('bai_dat', 'mo_da', 748, 268, 44, 200, false), ('mo_da', 'bai_dat', 28, 200, 736, 268, false),  -- 0072
+         ('wild', 'mo_da', 3624, 1232, 44, 200, false), ('mo_da', 'wild', 28, 200, 3600, 1232, false)     -- 0088
+$$;
+revoke all on function public._pos_portals() from public, anon, authenticated;
 
 -- Two zones an old portal joined (the roads of the world); a zone and itself; the wild and anything.
 create or replace function public._world_adjacent(p_a text, p_b text) returns boolean
@@ -159,6 +186,22 @@ begin
       return greatest(0, sqrt(((b[1] - a[1])::numeric) ^ 2 + ((b[2] - a[2])::numeric) ^ 2)
                          * case when public._world_adjacent(p_m0, p_m1) then 1 else 1.35 end - 64) / 260.0;
     end if;
+    -- P2: one end in an interior (the hầm, Mỏ đá underground): inside it to one of its portals, then through the world
+    -- from where that portal comes out (× 1.35 unless the two are joined), less the slack and one hop's
+    if a is null and b is not null and p_x0 is not null then
+      return (select min(greatest(0, sqrt(((p.ux - p_x0)::numeric) ^ 2 + ((p.uy - p_y0)::numeric) ^ 2)
+                          + sqrt(((b[1] - o.w[1])::numeric) ^ 2 + ((b[2] - o.w[2])::numeric) ^ 2)
+                            * case when public._world_adjacent(p.to_map, p_m1) then 1 else 1.35 end - 64 - 40) / 260.0)
+                from public._pos_portals() p cross join lateral (select public._zone_to_world(p.to_map, p.ax, p.ay) w) o
+               where p.from_map = p_m0 and o.w is not null);
+    end if;
+    if b is null and a is not null and p_x1 is not null then
+      return (select min(greatest(0, sqrt(((o.w[1] - a[1])::numeric) ^ 2 + ((o.w[2] - a[2])::numeric) ^ 2)
+                            * case when public._world_adjacent(p_m0, p.from_map) then 1 else 1.35 end
+                          + sqrt(((p_x1 - p.ax)::numeric) ^ 2 + ((p_y1 - p.ay)::numeric) ^ 2) - 64 - 40) / 260.0)
+                from public._pos_portals() p cross join lateral (select public._zone_to_world(p.from_map, p.ux, p.uy) w) o
+               where p.to_map = p_m1 and o.w is not null);
+    end if;
     if (a is null and p_m0 = 'wild') or (b is null and p_m1 = 'wild') then return null; end if;
   end if;
   -- 0088 }
@@ -189,26 +232,41 @@ create table if not exists public.world_waypoints (
 );
 alter table public.world_waypoints enable row level security;
 revoke all on public.world_waypoints from anon, authenticated;
--- The old maps' spawns (lib/game/maps/*: each map's spawn = its main arrival).
+-- The old maps' spawns (lib/game/maps/*: each map's spawn = its main arrival). Mỏ đá is an interior since P2: no world
+-- waypoint (a re-run over the P1 version drops its row).
+delete from public.world_waypoints where id = 'ww_mo_da';
 insert into public.world_waypoints (id, zone, x, y, wx, wy, waypoint)
 select v.id, v.zone, v.x, v.y, (public._zone_to_world(v.zone, v.x, v.y))[1], (public._zone_to_world(v.zone, v.x, v.y))[2],
        (select w.id from public.waypoints w where w.id = v.wp)
   from (values ('ww_hall', 'hall', 612, 300, 'wp_hall'), ('ww_pond', 'pond', 300, 356, 'wp_pond'),
                ('ww_field', 'field', 60, 106, 'wp_field'), ('ww_market', 'market', 72, 252, 'wp_market'),
                ('ww_khu_nha', 'khu_nha', 68, 208, 'wp_khu_nha'), ('ww_bai_dat', 'bai_dat', 400, 48, 'wp_bai_dat'),
-               ('ww_mo_da', 'mo_da', 44, 200, null), ('ww_song_cai', 'song_cai', 80, 240, null)) v(id, zone, x, y, wp)
+               ('ww_song_cai', 'song_cai', 80, 240, null)) v(id, zone, x, y, wp)
 on conflict (id) do update set zone = excluded.zone, x = excluded.x, y = excluded.y, wx = excluded.wx, wy = excluded.wy,
   waypoint = excluded.waypoint;
 
--- Is (zone, x, y) within 16 px of a world waypoint this account has discovered (0070's player_waypoints)?
-create or replace function public._pos_at_waypoint(p_account uuid, p_map text, p_x integer, p_y integer) returns boolean
+-- Is (zone, x, y) within 16 px of a world waypoint this account has discovered (0070's player_waypoints) — AND was the
+-- account just moved there by a paid waypoint_travel? P2 review ("free teleport"): being at a discovered waypoint alone
+-- exempted any claim from the speed check, so one could walk off and claim any discovered waypoint for free. Now the
+-- exemption holds only while the server position is still the one waypoint_travel wrote (no claim accepted since:
+-- player_progress.tp_at >= player_pos.at), at that trip's target (the waypoint the position stands on), within 60 s.
+drop function if exists public._pos_at_waypoint(uuid, text, integer, integer);
+create or replace function public._pos_at_waypoint(p_account uuid, p_map text, p_x integer, p_y integer,
+                                                   p_from_map text, p_from_x integer, p_from_y integer, p_since timestamptz)
+returns boolean
 language sql stable security definer set search_path = public, extensions
 as $$
   select exists (select 1 from public.world_waypoints ww
                    join public.player_waypoints pw on pw.waypoint = ww.waypoint and pw.account_id = p_account
-                  where ww.zone = p_map and abs(ww.x - p_x) <= 16 and abs(ww.y - p_y) <= 16)
+                   join public.waypoints w on w.id = ww.waypoint
+                   join public.player_progress r on r.account_id = p_account
+                  where ww.zone = p_map and abs(ww.x - p_x) <= 16 and abs(ww.y - p_y) <= 16
+                    and w.map = p_from_map and w.x = p_from_x and w.y = p_from_y          -- the trip's target
+                    and r.tp_at is not null and r.tp_at >= p_since                          -- nothing accepted since
+                    and r.tp_at > now() - interval '60 seconds')
 $$;
-revoke all on function public._pos_at_waypoint(uuid, text, integer, integer) from public, anon, authenticated;
+revoke all on function public._pos_at_waypoint(uuid, text, integer, integer, text, integer, integer, timestamptz)
+  from public, anon, authenticated;
 
 -- ---------- E. Claims ----------
 -- _pos_claim (0078_v21_fixes.sql's, verbatim but for the lines marked 0088)
@@ -238,7 +296,7 @@ begin
          or not exists (select 1 from public._world_to_zone(p_x, p_y) z where z.zone = 'wild'))) then   -- 0088: a zone owns its rect
     v_why := 'off_map';
   elsif pp.account_id is not null and not (p_map = 'hall' and abs(p_x - 612) <= 16 and abs(p_y - 300) <= 16)
-        and not (v_world and public._pos_at_waypoint(p_account, p_map, p_x, p_y)) then  -- 0088: a discovered waypoint
+        and not (v_world and public._pos_at_waypoint(p_account, p_map, p_x, p_y, pp.map, pp.x, pp.y, pp.at)) then  -- 0088: just travelled there
     v_dt := extract(epoch from now() - pp.at);
     v_road := public._pos_road_s(p_account, p_map, pp.at, pp.skip_at);
     v_need := public._pos_need_s(pp.map, pp.x, pp.y, p_map, p_x, p_y, v_road);

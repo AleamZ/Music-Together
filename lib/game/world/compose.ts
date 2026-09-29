@@ -1,14 +1,15 @@
 import { getMap } from "@/lib/game/maps/registry";
-import type { GameMap, Interactable, MapId, Npc, PlotGeom, PropPlacement, Rect, Seating, Spot } from "@/lib/game/maps/types";
+import type { GameMap, Interactable, Npc, PlotGeom, PropPlacement, Rect, Seating, Spot } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
-import { LINKS, OPENINGS, OPENING_W, onRoad, ROADS, wildBlocked, type Opening, type Road } from "./wild";
+import { LINKS, OPENINGS, OPENING_W, onRoad, ROADS, WILD_INTERACTABLES, wildBlocked, type Opening, type Road } from "./wild";
 import { toWorld, WORLD_CELL, WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId, type ZoneId } from "./zones";
 
 // buildWorld (spec §2): the one world map, headless. Each unlocked zone's collision grid is stamped at its offset; its
 // interactables, NPCs, props, plots and seating are moved to world px and tagged with their zone; the portals between
-// outdoor maps become openings in the zone walls (roads in the wild join them); interior portals (the hầm's hatch) stay.
+// outdoor maps become openings in the zone walls (roads in the wild join them); interior portals (the hầm's hatch) stay,
+// and the wild adds its own (the mine mouth down to Mỏ đá, underground since P2).
 // A locked zone (the account's level) is a solid block with nothing in it — the bamboo barrier of P3.
-// Pure: no canvas, no DOM. The renderers and the engine adopt it in P2; nothing uses it at runtime yet.
+// Pure: no canvas, no DOM. The engine runs on it in world mode (P2: GameCanvas, behind the unified_world flag + 3D).
 
 export type Zoned<T> = T & { zone: ZoneId };
 
@@ -138,7 +139,7 @@ export function buildWorld(unlocked: Iterable<ZoneId> = ZONE_IDS): WorldMap {
     // 3. its openings (a neighbour zone that is locked keeps its wall shut: the road ends at a barrier)
     for (const op of OPENINGS.filter((q) => q.zone === id)) {
       const portal = m.interactables.find((i) => i.id === op.portal);
-      if (!portal?.to || !open.has(portal.to.map)) continue;
+      if (!portal?.to || (!op.wild && !open.has(portal.to.map))) continue;
       const rc = openingRect(op, portal.use);
       for (let y = Math.max(0, Math.floor(rc.y / cell)); y < Math.min(m.rows, Math.ceil((rc.y + rc.h) / cell)); y++)
         for (let x = Math.max(0, Math.floor(rc.x / cell)); x < Math.min(m.cols, Math.ceil((rc.x + rc.w) / cell)); x++)
@@ -146,7 +147,7 @@ export function buildWorld(unlocked: Iterable<ZoneId> = ZONE_IDS): WorldMap {
     }
     // 4. its things, in world px
     for (const it of m.interactables) {
-      if (isPortal(it) && it.to && isOutdoor(it.to.map)) continue;             // an opening now
+      if (isPortal(it) && OPENINGS.some((q) => q.zone === id && q.portal === it.id)) continue;   // an opening now
       const w: Zoned<Interactable> = { ...it, zone: id, rect: mvRect(it.rect, o), use: mv(it.use, o) };
       interactables.push(w);
     }
@@ -159,6 +160,8 @@ export function buildWorld(unlocked: Iterable<ZoneId> = ZONE_IDS): WorldMap {
     }
   }
 
+  for (const it of WILD_INTERACTABLES) interactables.push({ ...it, zone: "wild" });
+
   const links: WorldLink[] = LINKS.filter((l) => open.has(l.from.zone) && open.has(l.to.zone))
     .map((l) => ({ kind: l.kind, from: toWorld(l.from.zone, l.from.p)!, to: toWorld(l.to.zone, l.to.p)! }));
 
@@ -170,8 +173,4 @@ export function buildWorld(unlocked: Iterable<ZoneId> = ZONE_IDS): WorldMap {
   const spawn = mvSpot(hall.spawn, { x: ZONES.hall.ox, y: ZONES.hall.oy });
   return { id: "world", width: WORLD_W, height: WORLD_H, cell, cols, rows, blocked, spawn, seating,
     interactables, npcs, props, plots, zones, roads: ROADS, links, hash };
-}
-
-function isOutdoor(map: MapId): boolean {
-  return map in ZONES;
 }

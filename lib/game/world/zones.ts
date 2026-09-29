@@ -5,7 +5,8 @@ import type { Vec } from "@/lib/game/types";
 // rectangle at a fixed offset in one 4160 × 2240 px world. (zone, local x, y) and (world x, y) are the same position
 // written two ways; the gameplay RPCs keep speaking zone-local, so a client sends serverPos(world). The rest of the world
 // is "wild" (roads, forest, hills, the river band: lib/game/world/wild.ts), whose local coords ARE world coords.
-// Interiors (the hầm; houses and flats) are not in the world: entered by a door or a hatch, as before.
+// Interiors (the hầm; Mỏ đá, underground since P2 — entered from the mine mouth on the eastern hills; houses and flats)
+// are not in the world: entered by a door, a hatch or a tunnel, as before, each on its own map and realtime topic.
 // Mirrored by 0088_unified_world.sql (_world_zones, _zone_to_world, _world_to_zone); tests/unit/world-zones.test.ts pins them.
 
 export const WORLD_W = 4160;
@@ -15,7 +16,7 @@ export const WORLD_CELL = 8;
 
 export type ZoneId = MapId | "wild";
 /** A map that is a zone of the world (every map but the interiors). */
-export type OutdoorMapId = Exclude<MapId, "ham_ngam">;
+export type OutdoorMapId = Exclude<MapId, "ham_ngam" | "mo_da">;
 
 export interface ZoneRect { ox: number; oy: number; w: number; h: number }
 
@@ -27,7 +28,6 @@ export const ZONES: Readonly<Record<OutdoorMapId, ZoneRect>> = {
   market: { ox: 1760, oy: 480, w: 1280, h: 400 },
   khu_nha: { ox: 3200, oy: 480, w: 800, h: 400 },
   bai_dat: { ox: 2400, oy: 1040, w: 800, h: 400 },
-  mo_da: { ox: 3360, oy: 1040, w: 640, h: 400 },
   song_cai: { ox: 960, oy: 1600, w: 960, h: 480 },
 };
 
@@ -35,10 +35,10 @@ export const ZONES: Readonly<Record<OutdoorMapId, ZoneRect>> = {
 export const WILD: ZoneRect = { ox: 0, oy: 0, w: WORLD_W, h: WORLD_H };
 
 /** The zones in a fixed order (the SQL's). */
-export const ZONE_IDS: readonly OutdoorMapId[] = ["field", "hall", "pond", "market", "khu_nha", "bai_dat", "mo_da", "song_cai"];
+export const ZONE_IDS: readonly OutdoorMapId[] = ["field", "hall", "pond", "market", "khu_nha", "bai_dat", "song_cai"];
 
-/** Maps entered by a door or a hatch: no place in the world. */
-export const INTERIORS: readonly MapId[] = ["ham_ngam"];
+/** Maps entered by a door, a hatch or the mine's tunnel: no place in the world (their own map and topic). */
+export const INTERIORS: readonly MapId[] = ["ham_ngam", "mo_da"];
 
 export function isInterior(map: ZoneId): boolean {
   return (INTERIORS as readonly string[]).includes(map);

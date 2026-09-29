@@ -37,6 +37,8 @@ export interface Built {
   animate?: (t: number, wind: number) => void;
   /** The field: the plots' crops from the farm state. */
   setPlots?: (plots: ReadonlyArray<PlotDraw>, now: number) => void;
+  /** P2: an underground scene (Mỏ đá): the view lights it as a cave — no sky, a dark fog, its lamps always lit. */
+  cave?: boolean;
   dispose(): void;
 }
 

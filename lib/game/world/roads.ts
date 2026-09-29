@@ -3,7 +3,8 @@ import type { Vec } from "@/lib/game/types";
 // The roads of the wild (spec §1): polylines in world px that join the two ends of an old portal pair, plus the trails
 // (lib/game/world/terrain.ts) that lead to the river's bridges. Data only; wild.ts re-exports the roads.
 
-/** A road: a polyline in world px, `w` px wide, joining two openings' ends (`a`, `b`: "zone:portal"). */
+/** A road: a polyline in world px, `w` px wide, joining two openings' ends (`a`, `b`: "zone:portal"; "wild:mine" is the
+ *  mine mouth on the eastern hills, lib/game/world/mine.ts). */
 export interface Road { id: string; a: string; b: string; pts: readonly Vec[]; w: number }
 
 // The openings' ends on the zone edges (world px), worked out from the portals' use points (see wild.ts OPENINGS):
@@ -11,7 +12,7 @@ export interface Road { id: string; a: string; b: string; pts: readonly Vec[]; w
 //   pond exit (1312, 1440)   pond bridge (1150, 1440)
 //   field north (60, 560)    field east (800, 804)
 //   market west (1760, 724)  market east (3040, 676)  market south (2940, 880)
-//   khu_nha west (3200, 676) bai_dat north (2800, 1040) bai_dat east (3200, 1308) mo_da west (3360, 1240)
+//   khu_nha west (3200, 676) bai_dat north (2800, 1040) bai_dat east (3200, 1308)      the mine mouth (3624, 1232)
 export const ROADS: readonly Road[] = [
   { id: "hall_pond", a: "hall:dock_sign", b: "pond:pond_exit", w: 32,
     pts: [{ x: 1476, y: 880 }, { x: 1476, y: 960 }, { x: 1680, y: 960 }, { x: 1680, y: 1500 }, { x: 1312, y: 1500 }, { x: 1312, y: 1440 }] },
@@ -25,8 +26,8 @@ export const ROADS: readonly Road[] = [
     pts: [{ x: 3040, y: 676 }, { x: 3200, y: 676 }] },
   { id: "market_bai_dat", a: "market:market_to_bai_dat", b: "bai_dat:bai_dat_exit", w: 32,
     pts: [{ x: 2940, y: 880 }, { x: 2940, y: 960 }, { x: 2800, y: 960 }, { x: 2800, y: 1040 }] },
-  { id: "bai_dat_mo_da", a: "bai_dat:mo_da_gate", b: "mo_da:mo_da_exit", w: 32,
-    pts: [{ x: 3200, y: 1308 }, { x: 3280, y: 1308 }, { x: 3280, y: 1240 }, { x: 3360, y: 1240 }] },
+  { id: "bai_dat_mine", a: "bai_dat:mo_da_gate", b: "wild:mine", w: 32,
+    pts: [{ x: 3200, y: 1308 }, { x: 3280, y: 1308 }, { x: 3400, y: 1232 }, { x: 3624, y: 1232 }] },
 ];
 
 /** A trail: a footpath off a road (`from`: the road's id) to a bridge over the river and the south bank. */
@@ -35,7 +36,7 @@ export interface Trail { id: string; from: string; pts: readonly Vec[]; w: numbe
 export const TRAILS: readonly Trail[] = [
   { id: "trail_b1", from: "field_pond", w: 24,
     pts: [{ x: 880, y: 1360 }, { x: 720, y: 1420 }, { x: 540, y: 1540 }, { x: 424, y: 1690 }, { x: 424, y: 2180 }] },
-  { id: "trail_b2", from: "bai_dat_mo_da", w: 24,
+  { id: "trail_b2", from: "bai_dat_mine", w: 24,
     pts: [{ x: 3280, y: 1308 }, { x: 3280, y: 1480 }, { x: 3050, y: 1570 }, { x: 2800, y: 1650 }, { x: 2624, y: 1780 }, { x: 2624, y: 2180 }] },
 ];
 

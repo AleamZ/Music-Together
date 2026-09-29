@@ -4,7 +4,8 @@ import { getMap } from "@/lib/game/maps/registry";
 import { MAP_IDS, type GameMap } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 import { buildWorld, interactablesNear, npcsNear, openingEnd, type WorldMap } from "@/lib/game/world/compose";
-import { OPENINGS, ROADS } from "@/lib/game/world/wild";
+import { MO_DA_ARRIVE } from "@/lib/game/maps/arrivals";
+import { INTERIOR_EXITS, MINE, OPENINGS, ROADS } from "@/lib/game/world/wild";
 import {
   INTERIORS, serverPos, toLocal, toWorld, WORLD_CELL, WORLD_H, WORLD_W, zoneAt, ZONE_IDS, ZONES, type ZoneId,
 } from "@/lib/game/world/zones";
@@ -132,7 +133,7 @@ describe("buildWorld", () => {
   });
 
   it("the portals between outdoor maps are gone (openings); the hầm's hatch stays; roads join the openings' ends", () => {
-    expect(world.interactables.filter((i) => i.kind === "portal")).toEqual([]);
+    expect(world.interactables.filter((i) => i.kind === "portal").map((i) => i.id)).toEqual(["mine_entrance"]);
     const hatch = world.interactables.find((i) => i.kind === "ug_hatch");
     expect(hatch?.to?.map).toBe("ham_ngam");
     expect(hatch?.zone).toBe("market");
@@ -159,13 +160,61 @@ describe("buildWorld", () => {
   });
 
   it("a locked zone is solid and empty; its neighbours keep their walls shut", () => {
-    const w = buildWorld(ZONE_IDS.filter((z) => z !== "song_cai" && z !== "mo_da"));
-    const z = ZONES.mo_da;
+    const w = buildWorld(ZONE_IDS.filter((z) => z !== "song_cai" && z !== "khu_nha"));
+    const z = ZONES.khu_nha;
     expect(w.blocked[(z.oy / 8 + 25) * w.cols + z.ox / 8 + 40]).toBe(1);
-    expect(w.interactables.some((i) => i.zone === "mo_da")).toBe(false);
+    expect(w.interactables.some((i) => i.zone === "khu_nha")).toBe(false);
     expect(w.links).toEqual([]);
     const s = reach(w, w.spawn);
-    const mdGate = toWorld("bai_dat", getMap("bai_dat").interactables.find((i) => i.id === "mo_da_gate")!.use)!;
-    expect(s[Math.floor(mdGate.y / 8) * w.cols + Math.floor(mdGate.x / 8)]).toBe(1);   // the gate's spot, but no further
+    const gate = toWorld("market", getMap("market").interactables.find((i) => i.id === "market_to_khu_nha")!.use)!;
+    expect(s[Math.floor(gate.y / 8) * w.cols + Math.floor(gate.x / 8)]).toBe(1);        // the gate's spot, but no further
+    const inside = toWorld("khu_nha", getMap("khu_nha").spawn)!;
+    expect(s[Math.floor(inside.y / 8) * w.cols + Math.floor(inside.x / 8)]).toBe(0);
+  });
+});
+
+describe("P2: Mỏ đá underground", () => {
+  const world = buildWorld();
+  const seen = reach(world, world.spawn);
+  const cellOf = (p: Vec) => Math.floor(p.y / WORLD_CELL) * world.cols + Math.floor(p.x / WORLD_CELL);
+
+  it("is an interior: no zone, no world position, nothing of it in the world", () => {
+    expect(INTERIORS).toContain("mo_da");
+    expect(ZONE_IDS).not.toContain("mo_da");
+    expect(toWorld("mo_da", { x: 44, y: 200 })).toBeNull();
+    expect(zoneAt({ x: 3600, y: 1240 })).toBe("wild");                                   // the old plateau is the wild's
+    expect(world.interactables.some((i) => i.zone === ("mo_da" as ZoneId))).toBe(false);
+    expect(world.interactables.some((i) => i.id === "mo_da_gate")).toBe(false);           // Bãi đất's gate is an opening
+  });
+
+  it("the mine mouth on the hills is a portal down to the cave, reachable on foot, the road ending at it", () => {
+    const door = world.interactables.find((i) => i.id === "mine_entrance")!;
+    expect(door).toMatchObject({ zone: "wild", kind: "portal", to: { map: "mo_da", arrive: MO_DA_ARRIVE }, use: MINE.use });
+    expect(interactablesNear(world, MINE.use, 4)).toContain(door);
+    for (const p of [MINE.use, INTERIOR_EXITS.mo_da!]) {
+      expect(world.blocked[cellOf(p)], `${p.x},${p.y}`).toBe(0);
+      expect(seen[cellOf(p)], `${p.x},${p.y}`).toBe(1);
+    }
+    expect(world.blocked[cellOf(MINE.mouth)]).toBe(1);                                    // the frame itself is solid
+    const road = ROADS.find((r) => r.b === "wild:mine")!;
+    expect(road.a).toBe("bai_dat:mo_da_gate");
+    expect(road.pts[road.pts.length - 1]).toEqual(MINE.use);
+    expect(OPENINGS.find((o) => o.portal === "mo_da_gate")).toMatchObject({ zone: "bai_dat", wild: true });
+  });
+
+  it("0088's portal graph joins the mouth and the cave both ways (the level gate is the claim on mo_da)", () => {
+    const body = fnBody("_pos_portals");
+    const exit = getMap("mo_da").interactables.find((i) => i.id === "mo_da_exit")!;
+    expect(body).toContain(`('wild', 'mo_da', ${MINE.use.x}, ${MINE.use.y}, ${MO_DA_ARRIVE.x}, ${MO_DA_ARRIVE.y}, false)`);
+    expect(body).toContain(`('mo_da', 'wild', ${exit.use.x}, ${exit.use.y}, ${INTERIOR_EXITS.mo_da!.x}, ${INTERIOR_EXITS.mo_da!.y}, false)`);
+    expect(fnBody("_world_zones")).not.toContain("'mo_da'");
+    expect(SQL).toContain("delete from public.world_waypoints where id = 'ww_mo_da'");
+  });
+
+  it("0088's waypoint exemption needs a fresh paid trip to that waypoint (no free teleport)", () => {
+    const body = fnBody("_pos_at_waypoint");
+    expect(body).toContain("r.tp_at >= p_since");
+    expect(body).toContain("interval '60 seconds'");
+    expect(fnBody("_pos_claim")).toContain("_pos_at_waypoint(p_account, p_map, p_x, p_y, pp.map, pp.x, pp.y, pp.at)");
   });
 });

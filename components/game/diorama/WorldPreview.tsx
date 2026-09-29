@@ -13,6 +13,7 @@ import type { GameMap } from "@/lib/game/maps/types";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
 import type { Vec } from "@/lib/game/types";
 import { buildWorld } from "@/lib/game/world/compose";
+import { MINE } from "@/lib/game/world/mine";
 import { TRAILS } from "@/lib/game/world/roads";
 import { toWorld } from "@/lib/game/world/zones";
 import type { WeatherKind } from "@/lib/game/weather/model";
@@ -36,7 +37,7 @@ function tourStops(): Vec[] {
   const b1 = TRAILS[0].pts, b2 = TRAILS[1].pts;
   return [
     toWorld("hall", getMap("hall").spawn)!, spot("hall", "market_sign"), spot("market", "market_to_khu_nha"), spot("khu_nha", "khu_nha_exit"),
-    spot("market", "market_to_bai_dat"), spot("bai_dat", "mo_da_gate"), spot("mo_da", "mo_da_exit"), b2[b2.length - 1], spot("bai_dat", "bai_dat_exit"),
+    spot("market", "market_to_bai_dat"), spot("bai_dat", "mo_da_gate"), MINE.use, b2[b2.length - 1], spot("bai_dat", "bai_dat_exit"),
     spot("market", "market_exit"), spot("hall", "dock_sign"), spot("pond", "pond_exit"), spot("pond", "field_bridge"), b1[b1.length - 1],
     spot("field", "field_to_pond"), spot("field", "field_to_hall"), spot("hall", "field_sign"),
   ];

@@ -301,6 +301,7 @@ export class DioramaView implements View3D {
 
   /** The 2D game's light model in 3D: night/dusk from the same `night`/`warm`, the weather's grey, fog and the lamps. */
   private updateLight(f: DioramaFrame): void {
+    if (this.built.cave) { this.caveLight(f); return; }
     const kind = f.weather ?? "clear";
     const grey = GREY_SKY[kind];
     const overcast = grey === undefined ? 0 : kind === "cloudy" ? 0.45 : kind === "fog" ? 0.7 : 0.75;
@@ -336,6 +337,26 @@ export class DioramaView implements View3D {
     tint.multiplyScalar(1 - overcast * 0.15 * fogK);
     if (flash) tint.setRGB(1, 1, 1);
     this.people.setTint(tint);
+  }
+
+  /** P2: underground (Mỏ đá) — the same at any hour: a dark, warm fog, a dim cool fill from the tunnel and the lamps, the
+   *  props' bulbs and the glowing moss always on (a flicker in the flames' light). */
+  private caveLight(f: DioramaFrame): void {
+    const bg = this.tmpSky.setHex(0x0c0a09);
+    (this.scene.background as THREE.Color).copy(bg);
+    this.fog.color.copy(bg);
+    this.fog.near = 34;
+    this.fog.far = 92;
+    const flick = f.reduced ? 1 : 0.92 + 0.08 * Math.sin(f.t / 90) * Math.sin(f.t / 37);
+    this.sun.intensity = 0.55;
+    this.sun.color.setHex(0x9fb4d8);
+    this.hemi.intensity = 0.75;
+    this.hemi.color.setHex(0xb89a78);
+    this.hemi.groundColor.setHex(0x1c140e);
+    for (const l of this.built.lamps) l.intensity = 8 * flick;
+    for (const b of this.built.bulbs) b.color.setHex(0xffd27a);
+    for (const m of this.built.glow ?? []) m.emissiveIntensity = 0.9;
+    this.people.setTint(this.tmpTint.setRGB(0.95, 0.86, 0.76));
   }
 
   dispose(): void {

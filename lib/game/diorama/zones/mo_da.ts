@@ -6,12 +6,15 @@ import { pxLen } from "../coords";
 import { rng } from "../layout";
 import { inRect, Kit, type Inst, type OutdoorOptions } from "./outdoor-kit";
 
-// Mỏ đá ("mo_da") as a diorama: a quarry at the foot of the hills — the layered rock face along the north with timber
-// props and oil lamps (and a tunnel mouth), low rock walls round the other sides with the gate in the west, the gravel
+// Mỏ đá ("mo_da") as a diorama — since P2 UNDERGROUND (owner: "phần mỏ thì làm ngầm dưới lòng đất"): a cave under the
+// eastern hills, entered down the tunnel from the mine mouth (lib/game/world/mine.ts). The layered rock face along the
+// north rises into a ceiling of overhanging ledges with stalactites; tall rock walls east and west (low in the south, where
+// the camera looks in), the tunnel back up in the west wall with the rails running out of it, the gravel
 // floor with the cart rails, the ten ore rocks (their veins in the colour of what each node holds now, rubble while it
 // grows back — read live from the mining hook's mineView), the four glowing herb patches, chú Tám's plank shed, the anvil
 // on its stump and bà Sáu's bubbling cauldron over a fire with her jar shelf. Faithful to lib/game/maps/mo-da.ts and
-// mo-da-art.ts. Pure layout first, then the Three.js builder.
+// mo-da-art.ts (the local layout and interactables are unchanged: every mining/crafting RPC keeps its coords). Lit as a
+// cave (rig.cave: no sky, dark fog, lamps always on, glowing moss). Pure layout first, then the Three.js builder.
 
 // ---------------------------------------------------------------- pure
 
@@ -27,8 +30,8 @@ export function moGroundAt(x: number, y: number, w = 640, h = 400): MoGround {
 }
 
 const GROUND: Record<MoGround, { top: number; color: number }> = {
-  face: { top: 0.02, color: 0x6d655c }, wall: { top: 0.02, color: 0x4f4841 }, gate: { top: 0, color: 0x665846 },
-  floor: { top: 0, color: 0x7a6a58 }, rail: { top: -0.01, color: 0x6e5a44 },
+  face: { top: 0.02, color: 0x5d564e }, wall: { top: 0.02, color: 0x433d37 }, gate: { top: 0, color: 0x3a3029 },
+  floor: { top: 0, color: 0x62564a }, rail: { top: -0.01, color: 0x584838 },
 };
 
 /** The veins' colours by item (mo-da-art's VEIN). */
@@ -93,18 +96,58 @@ export function buildMoDaZone(map: GameMap, opts: OutdoorOptions = {}): THREE.Gr
   const k = new Kit(map);
   const W = (x: number, y: number) => k.W(x, y);
   k.terrain(map.cell, (x, y) => GROUND[moGroundAt(x, y, map.width, map.height)], 7201);
-  k.base(0x6a5238, 0x5a544c);
-
-  // ---- the hills behind
-  const hillGeo = k.geo(new THREE.SphereGeometry(1, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2));
-  k.inst(hillGeo, k.lam(0xffffff), L.hills.map((h) => { const p = W(h.x, h.y); return { x: p.x, y: 0, z: p.z, sx: h.r * 1.4, sy: h.r * 0.9, sz: h.r, color: h.color }; }));
-
-  // ---- the rock face: strata columns, crack lines, timber props, a tunnel mouth
+  k.base(0x3a3029, 0x2e2925);
   const rock = k.geo(new THREE.DodecahedronGeometry(1, 0));
   const RR = rng(7202);
+
+  // ---- the cave: the ceiling's overhang (ledges along the north, east and west at the top of the walls, with stalactites),
+  // tall rock walls east and west, stalagmites by the south wall — the middle stays open to the tilted camera
+  const drip = k.geo(new THREE.ConeGeometry(1, 1, 5).rotateX(Math.PI));
+  const ceilY = 6.2, ledge: Array<{ x: number; y: number; w: number; h: number }> = [
+    { x: 0, y: -30, w: map.width, h: MO_WALL_H + 58 },                          // over the rock face, jutting south
+    { x: -40, y: MO_WALL_H, w: 64, h: map.height - MO_WALL_H - 60 },            // west
+    { x: map.width - 40, y: MO_WALL_H, w: 80, h: map.height - MO_WALL_H - 60 }, // east
+  ];
+  for (const r of ledge) k.boxPx(r, ceilY, 1.4, 0x3b3530);
+  const drips: Inst[] = [];
+  for (let i = 0; i < 70; i++) {
+    const side = i % 3, t = RR();
+    const x = side === 0 ? 8 + t * (map.width - 16) : side === 1 ? 4 + RR() * 20 : map.width - 24 + RR() * 20;
+    const y = side === 0 ? MO_WALL_H + 6 + RR() * 22 : MO_WALL_H + 20 + t * (map.height - MO_WALL_H - 90);
+    const p = W(x, y), l = 0.5 + RR() * 1.6;
+    drips.push({ x: p.x, y: ceilY - l / 2, z: p.z, sx: 0.16 + RR() * 0.14, sy: l, sz: 0.16 + RR() * 0.14, color: [0x5d564e, 0x6d655c, 0x4f4841][i % 3] });
+  }
+  k.inst(drip, k.lam(0xffffff), drips, { thin: true, shadow: false });
+  for (const x of [4, map.width - 12]) {                                        // the tall side walls under the ledges
+    for (let y = MO_WALL_H; y < map.height - 40; y += 26) {
+      if (x < 20 && y > 150 && y < 240) continue;                               // the tunnel's mouth
+      const p = W(x, y + 13), b = k.mesh(rock, k.lam([0x4f4841, 0x5d564e][Math.floor(y / 26) % 2]), p.x, 2.6, p.z);
+      b.scale.set(0.9, 3.2 + RR() * 0.6, 1.1);
+      b.rotation.y = RR() * 3;
+    }
+  }
+  const mites: Inst[] = [];
+  for (let i = 0; i < 18; i++) {
+    const p = W(30 + RR() * (map.width - 60), map.height - 20 - RR() * 10), l = 0.5 + RR() * 1.1;
+    mites.push({ x: p.x, y: l / 2, z: p.z, sx: 0.2 + RR() * 0.15, sy: l, sz: 0.2 + RR() * 0.15, color: [0x5d564e, 0x6d655c][i % 2] });
+  }
+  k.inst(k.geo(new THREE.ConeGeometry(1, 1, 5)), k.lam(0xffffff), mites, { thin: true, shadow: false });
+  // the tunnel back up (west): a dark bore through the wall, timber sets along it, the rails running in
+  {
+    const p = W(-18, 200);
+    k.box(2.6, 2.7, 3.2, 0x0a0908, p.x, 0, p.z);
+    for (const dx of [0.4, 1.4]) {
+      for (const s of [-1, 1]) k.box(0.26, 2.5, 0.26, 0x6e4424, p.x + dx, 0, p.z + s * 1.15);
+      k.box(0.3, 0.28, 2.7, 0x8a5a30, p.x + dx, 2.5, p.z);
+    }
+    k.bulb(p.x + 1.4, 2.2, p.z - 1.0, 0.12);
+    k.lamp(14, 188, 60, 2.2, 0xffb060);
+  }
+
+  // ---- the rock face: strata columns up to the ceiling, crack lines, timber props, a side gallery's mouth
   for (const c of L.face) {
     const p = W(c.x + c.w / 2, MO_WALL_H / 2);
-    k.box(pxLen(c.w) + 0.02, c.h, pxLen(MO_WALL_H), c.color, p.x, 0, p.z);
+    k.box(pxLen(c.w) + 0.02, c.h + 2.6, pxLen(MO_WALL_H), c.color, p.x, 0, p.z);
     for (let y = 0.7; y < c.h - 0.2; y += 0.9) k.box(pxLen(c.w) + 0.04, 0.08, pxLen(MO_WALL_H) + 0.04, 0x4f4841, p.x, y + Math.sin(c.x / 23 + y) * 0.1, p.z);
     if (RR() < 0.4) { const b = k.mesh(rock, k.lam(0x8a8178), p.x + (RR() - 0.5), c.h, p.z + (RR() - 0.5) * 2); b.scale.set(0.6, 0.35, 0.6); }
   }
@@ -169,10 +212,12 @@ export function buildMoDaZone(map: GameMap, opts: OutdoorOptions = {}): THREE.Gr
   const rubbleIm = k.inst(k.unit, k.lam(0x4f4841), [], { capacity: ores.length * 4 });
   // the herb patches: moss and mushrooms / herbs (in the node's colour when ready), a soft glow
   const moss = k.geo(new THREE.CylinderGeometry(1, 1, 0.05, 10));
+  const mossMat = k.own(new THREE.MeshLambertMaterial({ color: 0x3f7e2e, flatShading: true, emissive: 0x1f6a2a, emissiveIntensity: 0.7 }));
   for (const n of herbs) {
     const p = W(n.x, n.y - 3);
-    const m = k.mesh(moss, k.lam(0x3f6e23), p.x, 0.03, p.z, k.root, false);
-    m.scale.set(pxLen(12), 1, pxLen(7));
+    const m = k.mesh(moss, mossMat, p.x, 0.03, p.z, k.root, false);
+    m.userData.keep = true;
+    m.scale.set(pxLen(16), 1, pxLen(10));
   }
   const capGeo = k.geo(new THREE.SphereGeometry(0.14, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2));
   const stemGeo = k.geo(new THREE.CylinderGeometry(0.035, 0.045, 0.2, 5));
@@ -281,6 +326,7 @@ export function buildMoDaZone(map: GameMap, opts: OutdoorOptions = {}): THREE.Gr
 
   return k.finish({
     heightAt: moHeightAt,
+    cave: true,
     animate(t) {
       flames.forEach((f, i) => { const s = 1 + Math.sin(t / 80 + i * 2.1) * 0.18; f.scale.set(s, s * (1 + Math.sin(t / 55 + i) * 0.15), s); });
       brew.position.y = 1.3 + Math.sin(t / 300) * 0.02;
