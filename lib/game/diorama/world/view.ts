@@ -29,6 +29,7 @@ import { chunkGeometry, landColor, LOD_STEPS } from "./terrain-mesh";
 import { buildDelta } from "./delta";
 import { buildNuiCam } from "./nuicam";
 import { toon, toonify } from "./toon";
+import { pixelize, pixelizeTree } from "../pixeltex";
 
 // Browser only: the unified world in 3D (spec P2/P3's visual part). One continuous landscape — the heightmap's chunks
 // at three levels of detail, the zones' dioramas (unchanged, restyled to the toon ramp) on their plateaus, the river,
@@ -207,6 +208,11 @@ export class WorldView implements View3D {
     this.life = buildSkyLife();
     this.forest = new Forest(opts.density ?? 1);
     this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root, this.forest.root, this.delta.root, this.nui.root);
+    // the pixel texels (pixeltex.ts: grass, dirt, planks, thatch, tin, water) on the land and everything built on it
+    pixelize(this.terrainMat);
+    pixelize(this.seaMat, true);
+    pixelizeTree(this.water.root, true);
+    for (const r of [this.bridges, this.landmarks.root, this.forest.root, this.delta.root, this.nui.root]) pixelizeTree(r);
 
     this.people = new CharacterLayer({ width: 0, height: 0 }, (x, y) => this.heightAt(x, y));
     this.live = new LiveLayer((x, y) => this.heightAt(x, y));
@@ -266,6 +272,7 @@ export class WorldView implements View3D {
     this.mergedGeos.push(...merged.geos);
     this.mergedMats.push(...merged.mats);
     this.meshCounts[id] = [merged.before, merged.after];
+    pixelizeTree(root);
     this.scene.add(root);
     root.updateMatrixWorld(true);
     for (const l of built.lamps) {
