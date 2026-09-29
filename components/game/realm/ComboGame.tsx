@@ -2,24 +2,30 @@
 
 // v22 world (0083): the combo strike on a boss or a dungeon monster — six arrows slide into the ring; press the arrow
 // key as each one reaches it (±10 ticks, perfect ±3); the boss winds up a slam: press Space (Né) in time or be stunned.
-// A 60 Hz sim on the server's seed (lib/game/realm/minigames.ts); combo_finish replays the key ticks.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// A 60 Hz sim (lib/game/realm/minigames.ts) on the chart mg_sync reveals 2 s ahead (0087); combo_finish replays the
+// key ticks, which went up live. Esc gives the round up (only a round played to its end is taken).
+
+import { useCallback, useEffect, useRef, useState } from "react";
 import { drawBoss } from "@/lib/game/realm/art";
-import { COMBO, DIR_ICON, DIR_KEYS, comboParams, replayCombo, type Dir, type Judge } from "@/lib/game/realm/minigames";
+import { COMBO, DIR_ICON, DIR_KEYS, comboParamsFrom, replayComboP, type Dir, type Judge } from "@/lib/game/realm/minigames";
 import { COMBO_HELP, JUDGE_TEXT } from "@/lib/game/realm/mg-copy";
 import type { BossId } from "@/lib/game/realm/model";
 import type { ComboRound } from "@/lib/game/realm/rpc";
-import { TickClock } from "@/lib/game/fishing/net";
+import { liveTick, useLive, type LiveSync } from "@/lib/game/mglive";
 import { isTyping } from "@/lib/game/keys";
 
 export interface ComboView {
   round: ComboRound; name: string; boss: BossId | null; icon: string;
   phase: "playing" | "sending" | "done"; message: string; dmg: number | null;
+  /** 0087: the round's live channel (mg_sync('world')); null in a test render. */
+  live: LiveSync | null;
 }
 
 /** Pixels per tick of the arrows' slide. */
 const SPEED = 2.2;
 const RING_X = 48;
+/** mg_sync reveals an arrow this many ticks before its beat (0087's _mg_events). */
+const COMBO_AHEAD = 120;
 
 function BossSprite({ boss, icon, hurtAt, tick, shake }: { boss: BossId | null; icon: string; hurtAt: number; tick: number; shake: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -36,7 +42,6 @@ function BossSprite({ boss, icon, hurtAt, tick, shake }: { boss: BossId | null; 
 }
 
 function Playing({ view, onEnd }: { view: ComboView; onEnd: (keys: number[], dodges: number[], ticks: number) => void }) {
-  const p = useMemo(() => comboParams(view.round.seed), [view.round.seed]);
   const [tick, setTick] = useState(0);
   const [keys, setKeys] = useState<number[]>([]);
   const [dodges, setDodges] = useState<number[]>([]);
@@ -47,17 +52,31 @@ function Playing({ view, onEnd }: { view: ComboView; onEnd: (keys: number[], dod
   useEffect(() => {
     cb.current = onEnd;
   });
-  const stop = useCallback(() => {
+  // 0087: the chart comes from the server a little ahead (mg_sync); the keys go up as they are pressed
+  const live = useLive(view.live, () => [st.current.keys, st.current.dodges]);
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  });
+  const end = useCallback((ticks: number) => {
     if (over.current) return;
     over.current = true;
-    cb.current(st.current.keys.slice(), st.current.dodges.slice(), Math.max(1, st.current.tick));
+    liveRef.current.stop();
+    cb.current(st.current.keys.slice(), st.current.dodges.slice(), ticks);
   }, []);
+  // Esc gives the round up (a finish before the last beat is refused, so nothing is sent)
+  const stop = useCallback(() => end(-1), [end]);
+  useEffect(() => {
+    if (live.failed) end(-1);
+  }, [live.failed, end]);
 
   useEffect(() => {
-    const clock = new TickClock(performance.now());
+    if (!live.ready) return;
+    const t0 = live.t0;
     let raf = requestAnimationFrame(function loop(now: number) {
-      const due = clock.advance(now);
+      const due = liveTick(t0, now);
       const s = st.current;
+      const p = comboParamsFrom(liveRef.current.ev.current ?? {});
       while (s.tick < due && !over.current) {
         const t = s.tick;
         const d = want.current.dir;
@@ -70,9 +89,8 @@ function Playing({ view, onEnd }: { view: ComboView; onEnd: (keys: number[], dod
         if (want.current.dodge && m < 3 && (m === 0 || t - s.dodges[m - 1] >= 60)) s.dodges = [...s.dodges, t];
         want.current.dodge = false;
         s.tick = t + 1;
-        if (s.tick >= p.end) {
-          over.current = true;
-          cb.current(s.keys.slice(), s.dodges.slice(), p.end);
+        if (p.known === COMBO.arrows && s.tick >= p.end) {
+          end(p.end);
           break;
         }
       }
@@ -82,7 +100,7 @@ function Playing({ view, onEnd }: { view: ComboView; onEnd: (keys: number[], dod
       if (!over.current) raf = requestAnimationFrame(loop);
     });
     return () => cancelAnimationFrame(raf);
-  }, [p]);
+  }, [live.ready, live.t0, end]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -97,7 +115,8 @@ function Playing({ view, onEnd }: { view: ComboView; onEnd: (keys: number[], dod
     return () => window.removeEventListener("keydown", down);
   }, [stop]);
 
-  const rep = replayCombo(view.round.seed, keys, dodges, tick + 1);
+  const p = comboParamsFrom(live.events);
+  const rep = replayComboP(p, keys, dodges, tick + 1);
   const judged = (i: number): Judge | null => {
     if (rep.judges[i] !== "miss") return rep.judges[i];
     return tick > p.beats[i] + COMBO.win ? "miss" : null;
@@ -108,6 +127,7 @@ function Playing({ view, onEnd }: { view: ComboView; onEnd: (keys: number[], dod
   const hitByslam = tick > p.slam && tick < p.slam + 30 && !dodgedNow;
   const streak = rep.streaks.reduce((a, s, i) => (p.beats[i] <= tick && s > 0 ? s : a), 0);
 
+  if (!live.ready) return <p role="status">Chuẩn bị…</p>;
   return (
     <>
       <div className={`relative flex h-36 w-full items-end justify-center overflow-hidden rounded border-2 border-[#3a2418] ${warn ? "bg-[#6a2a24]" : "bg-[#3a3a4a]"} ${hitByslam ? "animate-pulse" : ""}`}>
@@ -120,15 +140,18 @@ function Playing({ view, onEnd }: { view: ComboView; onEnd: (keys: number[], dod
         {warn && <b className="absolute left-2 top-2 text-lg text-[#ffd040]">💥 {dodgedNow ? "Né được!" : "Né! (Space)"}</b>}
         {hitByslam && <b className="absolute right-2 top-2 text-lg text-[#ff8080]">😵 Choáng!</b>}
       </div>
-      {/* the lane: arrows slide right → left into the ring */}
+      {/* the lane: arrows slide right → left into the ring (each one shows up 2 s before its beat) */}
       <div className="relative h-14 w-full overflow-hidden rounded border-2 border-[#3a2418] bg-[#f4e6c8]" aria-hidden="true">
         <div className="absolute top-1 h-11 w-11 -translate-x-1/2 rounded-full border-4 border-[#b8322a]" style={{ left: RING_X }} />
         {p.beats.map((b, i) => {
+          if (i >= p.known) return null;
           const j = judged(i);
           const x = RING_X + (b - tick) * SPEED;
           if (x < -30 || x > 700) return null;
+          const fade = Math.max(0.15, Math.min(1, (COMBO_AHEAD - (b - tick)) / 20));
           return (
-            <span key={i} className={`absolute top-2 -translate-x-1/2 text-3xl ${j === "miss" ? "opacity-30 grayscale" : j ? "scale-125 opacity-60" : ""}`} style={{ left: x }}>
+            <span key={i} className={`absolute top-2 -translate-x-1/2 text-3xl ${j === "miss" ? "opacity-30 grayscale" : j ? "scale-125 opacity-60" : ""}`}
+              style={{ left: x, opacity: j ? undefined : fade }}>
               {DIR_ICON[p.dirs[i]]}
             </span>
           );
@@ -141,7 +164,7 @@ function Playing({ view, onEnd }: { view: ComboView; onEnd: (keys: number[], dod
         ))}
         <button type="button" className="pch-btn pch-btn-primary px-3" onPointerDown={() => { want.current.dodge = true; }}>🤸 Né</button>
       </div>
-      <button type="button" className="pch-btn" onClick={stop}>Dừng (Esc)</button>
+      <button type="button" className="pch-btn" onClick={stop}>Bỏ (Esc)</button>
     </>
   );
 }

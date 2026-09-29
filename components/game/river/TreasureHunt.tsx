@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChestView, DetectorView, DigView } from "@/hooks/useExplore";
+import { useLiveDig } from "@/hooks/useLiveDig";
 import { formatXu } from "@/lib/game/fishing/catalog";
-import { TickClock } from "@/lib/game/fishing/net";
 import { isTyping } from "@/lib/game/keys";
-import { canStrike, createMineRound, MINE, minePos, stepMineRound, type MineRound } from "@/lib/game/mining/game";
+import { MINE, minePos, type MineRound } from "@/lib/game/mining/game";
 import { coinClink, shovelThud } from "@/lib/game/river/beep";
 import { BAND_TEXT, signalBars } from "@/lib/game/river/treasure";
 import { CoinBurst } from "@/components/game/celebrate/Fx";
@@ -58,7 +58,8 @@ export function DetectorHud({ view, busy, onDig, onStop }: { view: DetectorView;
 /** The dirt bar: the dark soil band (the current centre ± win) and the shovel blade sweeping. */
 function DirtBar({ s }: { s: MineRound }) {
   const c = s.centres[Math.min(s.hits, s.centres.length - 1)];
-  const lo = Math.max(0, c - s.win) / 10, hi = Math.min(1000, c + s.win) / 10;
+  // 0087: a vein not revealed yet (−1) shows no soil band
+  const lo = c < 0 ? 0 : Math.max(0, c - s.win) / 10, hi = c < 0 ? 0 : Math.min(1000, c + s.win) / 10;
   const pos = minePos(s.period, s.tick) / 10;
   return (
     <div className="relative h-12 w-full overflow-hidden rounded border-2 border-[#3a2418] bg-[#c89a5e]" aria-hidden="true">
@@ -85,59 +86,23 @@ function Pit({ hits, need }: { hits: number; need: number }) {
 }
 
 function Digging({ view, onEnd }: { view: DigView; onEnd: (strikes: readonly number[], ticks: number, pass: boolean) => void }) {
-  const [s, setS] = useState(() => createMineRound(view.seed, view.need, view.win));
-  const struck = useRef(false);
-  const latest = useRef(s);
-  const over = useRef(false);
-  const cb = useRef(onEnd);
-  useEffect(() => {
-    cb.current = onEnd;
-  });
-  const stop = useCallback(() => {
-    if (over.current) return;
-    over.current = true;
-    cb.current(latest.current.strikes.slice(), Math.max(1, latest.current.tick), false);
-  }, []);
-  useEffect(() => {
-    let cur = createMineRound(view.seed, view.need, view.win);
-    const clock = new TickClock(performance.now());
-    let raf = requestAnimationFrame(function loop(t: number) {
-      const due = clock.advance(t);
-      while (cur.tick < due && cur.outcome === "open") {
-        const hit = struck.current && canStrike(cur);
-        struck.current = false;
-        const before = cur.hits;
-        cur = stepMineRound(cur, hit);
-        if (hit) shovelThud(cur.hits > before);
-      }
-      latest.current = cur;
-      setS(cur);
-      if (cur.outcome !== "open") {
-        if (!over.current) {
-          over.current = true;
-          cb.current(cur.strikes.slice(), cur.tick, cur.outcome === "pass");
-        }
-        return;
-      }
-      raf = requestAnimationFrame(loop);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [view.seed, view.need, view.win]);
+  const { s, ready, strike, stop } = useLiveDig(view.live, view.period, view.need, view.win, onEnd, shovelThud);
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
       if (e.code === "Space") {
         e.preventDefault();
-        if (!e.repeat) struck.current = true;
+        if (!e.repeat) strike();
       } else if (e.key === "Escape") stop();
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
-  }, [stop]);
+  }, [strike, stop]);
+  if (!ready) return <p role="status">Chuẩn bị…</p>;
   const left = view.need + MINE.spare - s.strikes.length;
   return (
     <>
-      <div role="group" aria-label="Đào kho báu" onPointerDown={() => { struck.current = true; }}
+      <div role="group" aria-label="Đào kho báu" onPointerDown={() => { strike(); }}
         className={`flex w-full touch-none select-none flex-col items-center gap-2 py-1 ${s.last === "hit" ? "motion-safe:animate-[pulse_0.3s_ease-out_1]" : ""}`}>
         <Pit hits={s.hits} need={view.need} />
         <DirtBar s={s} />

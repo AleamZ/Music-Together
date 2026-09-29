@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RowView } from "@/hooks/useExplore";
-import { TickClock } from "@/lib/game/fishing/net";
 import { isTyping } from "@/lib/game/keys";
+import { liveTick, useLive } from "@/lib/game/mglive";
 import { paddleSplash } from "@/lib/game/river/beep";
-import { canStroke, createRow, ROW, stepRow, type RowState, type Side } from "@/lib/game/river/row";
+import { canStroke, createRowFrom, ROW, stepRow, withBeats, type RowState, type Side } from "@/lib/game/river/row";
 
 export const ROW_HELP = "Chèo đều theo nhịp: bấm ← / → (A / D) hoặc chạm mái chèo trái / phải khi nhịp chạm vạch.";
 
@@ -89,7 +89,7 @@ function paint(c: CanvasRenderingContext2D, s: RowState, dir: RowView["dir"], re
 }
 
 function Playing({ view, onEnd, onQuit }: { view: RowView; onEnd: (strokes: readonly number[], ticks: number) => void; onQuit: () => void }) {
-  const [s, setS] = useState(() => createRow(view.seed, view.need));
+  const [s, setS] = useState(() => createRowFrom(view.need));
   const pending = useRef<Side | null>(null);
   const over = useRef(false);
   const cb = useRef(onEnd);
@@ -97,23 +97,32 @@ function Playing({ view, onEnd, onQuit }: { view: RowView; onEnd: (strokes: read
   useEffect(() => {
     cb.current = onEnd;
   });
+  // 0087: the beats come from mg_sync('row') 1.5 s ahead (they show 80 ticks ahead); the strokes go up live
+  const strokes = useRef<number[]>([]);
+  const live = useLive(view.live, () => [strokes.current, null]);
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  });
   const stroke = useCallback((side: Side) => {
     pending.current = side;
   }, []);
 
   useEffect(() => {
+    if (!live.ready) return;
     const reduced = reducedMotion();
-    let cur = createRow(view.seed, view.need);
-    const clock = new TickClock(performance.now());
+    const t0 = live.t0;
+    let cur = createRowFrom(view.need);
     let raf = requestAnimationFrame(function loop(now: number) {
-      const due = clock.advance(now);
+      const due = liveTick(t0, now);
+      cur = withBeats(cur, liveRef.current.ev.current ?? {});
       while (cur.tick < due && cur.outcome === "open") {
         // strokes during the countdown are ignored here (never sent), so an eager tap is not a stray
         const want = pending.current !== null && canStroke(cur) && cur.tick >= ROW.lead - ROW.win - 4 ? pending.current : null;
         pending.current = null;
         const before = cur.hits;
         cur = stepRow(cur, want);
-        if (want !== null) paddleSplash(cur.hits > before);
+        if (want !== null) { paddleSplash(cur.hits > before); strokes.current = cur.strokes; }
       }
       setS(cur);
       const c = cv.current?.getContext("2d");
@@ -121,6 +130,7 @@ function Playing({ view, onEnd, onQuit }: { view: RowView; onEnd: (strokes: read
       if (cur.outcome !== "open") {
         if (!over.current) {
           over.current = true;
+          liveRef.current.stop();
           cb.current(cur.strokes.slice(), cur.tick);
         }
         return;
@@ -128,7 +138,7 @@ function Playing({ view, onEnd, onQuit }: { view: RowView; onEnd: (strokes: read
       raf = requestAnimationFrame(loop);
     });
     return () => cancelAnimationFrame(raf);
-  }, [view.seed, view.need, view.dir]);
+  }, [view.need, view.dir, live.ready, live.t0]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -142,6 +152,7 @@ function Playing({ view, onEnd, onQuit }: { view: RowView; onEnd: (strokes: read
   }, [stroke, onQuit]);
 
   const countdown = s.tick < ROW.lead - 10 ? Math.ceil((ROW.lead - 10 - s.tick) / 30) : null;
+  if (!live.ready) return <p role="status">Chuẩn bị…</p>;
   return (
     <div className="flex w-full flex-col items-center gap-2">
       <div className="relative">

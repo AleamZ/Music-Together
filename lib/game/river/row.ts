@@ -99,6 +99,39 @@ export interface RowState {
   outcome: "pass" | "fail" | "open";
 }
 
+/** 0087: a row whose beats come through mg_sync('row') 1.5 s ahead (events 1–12: { t, side }); the ones not revealed
+ *  yet are far away, and the end is known with the last beat. */
+export function createRowFrom(need: number): RowState {
+  const beats: RowBeats = { targets: [], sides: [] };
+  for (let b = 0; b < ROW.beats; b++) { beats.targets.push(100_000 + b * 100); beats.sides.push(0); }
+  return { beats, need, end: 100_000, tick: 0, beat: 0, hits: 0, stray: 0, strokes: [], marks: beats.targets.map(() => null), last: null, outcome: "open" };
+}
+export function withBeats(s: RowState, ev: Record<number, Record<string, number>>): RowState {
+  let beats = s.beats;
+  for (let b = 1; b <= ROW.beats; b++) {
+    const e = ev[b];
+    if (!e || beats.targets[b - 1] === e.t) continue;
+    if (beats === s.beats) beats = { targets: beats.targets.slice(), sides: beats.sides.slice() };
+    beats.targets[b - 1] = e.t;
+    beats.sides[b - 1] = (e.side === 1 ? 1 : 0) as Side;
+  }
+  if (beats === s.beats) return s;
+  return { ...s, beats, end: ev[ROW.beats] ? rowEnd(beats) : 100_000 };
+}
+/** The row from the beats (0087's _row_replay_p). */
+export function replayRowP(rd: RowBeats, need: number, strokes: readonly number[]): RowReplay {
+  let b = 0, hits = 0, stray = 0, exact = 0;
+  for (const s of strokes) {
+    const t = Math.floor(s / 2), sd = s % 2;
+    while (b < ROW.beats && rd.targets[b] + ROW.win < t) b++;
+    if (b < ROW.beats && Math.abs(t - rd.targets[b]) <= ROW.win && sd === rd.sides[b]) {
+      if (Math.abs(t - rd.targets[b]) <= 1) exact++;
+      hits++;
+      b++;
+    } else stray++;
+  }
+  return { outcome: hits >= need && stray <= ROW.maxStray ? "pass" : "fail", ticks: rowEnd(rd), hits, stray, exact };
+}
 export function createRow(seed: number, need: number): RowState {
   const beats = rowRound(seed);
   return {

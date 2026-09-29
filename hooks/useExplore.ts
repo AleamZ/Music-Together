@@ -12,6 +12,7 @@ import {
   rowFinish, rowStart, treasureDigFinish, treasureDigStart, treasurePing, type RowDir, type RowFinish,
 } from "@/lib/game/river/rpc";
 import { beepMs, PING_IDLE_MS, PING_MOVE_PX, PING_MS } from "@/lib/game/river/treasure";
+import { liveSync, type LiveSync } from "@/lib/game/mglive";
 
 // v22 (0086) the explore minigames for the game shell: chèo ghe between Cầu ao and Sông Cái (the rowing rhythm, then the
 // trip), the metal detector over a treasure map (pings while I walk, a beep that quickens), the shovel dig on the spot
@@ -20,7 +21,8 @@ import { beepMs, PING_IDLE_MS, PING_MOVE_PX, PING_MS } from "@/lib/game/river/tr
 export interface RowView {
   dir: RowDir;
   phase: "starting" | "playing" | "sending" | "done";
-  seed: number;
+  /** 0087: the round's live channel (mg_sync('row')); null before the start answered. */
+  live: LiveSync | null;
   need: number;
   result: RowFinish | null;
 }
@@ -28,7 +30,9 @@ export interface DetectorView { mapId: string; map: string; band: number | null;
 export interface DigView {
   phase: "starting" | "playing" | "sending" | "done";
   mapId: string;
-  seed: number;
+  /** 0087: the bar's period and the live channel (mg_sync('dig')). */
+  period: number;
+  live: LiveSync | null;
   need: number;
   win: number;
   message: string;
@@ -85,9 +89,9 @@ export function useExplore({ token, roomId, mapId, canvas, toast, travelTo, canc
     const c = live.current.canvas();
     const at = c?.localPos() ?? null;
     live.current.cancelCast();
-    setRow({ dir, phase: "starting", seed: 0, need: 0, result: null });
+    setRow({ dir, phase: "starting", live: null, need: 0, result: null });
     void rowStart(roomId, token, dir, dir === "home" && at ? at : undefined).then(
-      (r) => setRow((cur) => cur && cur.phase === "starting" ? { ...cur, phase: "playing", seed: r.seed, need: r.need } : cur),
+      (r) => setRow((cur) => cur && cur.phase === "starting" ? { ...cur, phase: "playing", live: liveSync(token, "row"), need: r.need } : cur),
       (err) => {
         setRow(null);
         fail(err);
@@ -170,10 +174,10 @@ export function useExplore({ token, roomId, mapId, canvas, toast, travelTo, canc
     const at = c?.localPos(), here = c?.mapId();
     if (!at || !here) return;
     const id = detector.mapId;
-    setDig({ phase: "starting", mapId: id, seed: 0, need: 3, win: 120, message: "" });
+    setDig({ phase: "starting", mapId: id, period: 100, live: null, need: 3, win: 120, message: "" });
     c?.puff({ x: at.x, y: at.y - 6 });
     void treasureDigStart(roomId, token, id, here, at.x, at.y).then((r) => {
-      if (r.result === "dig") setDig((d) => d && { ...d, phase: "playing", seed: r.seed, need: r.need, win: r.win });
+      if (r.result === "dig") setDig((d) => d && { ...d, phase: "playing", period: r.period, live: liveSync(token, "dig"), need: r.need, win: r.win });
       else {
         setDig(null);
         live.current.toast(HEAT_TEXT[r.heat]);
@@ -197,7 +201,9 @@ export function useExplore({ token, roomId, mapId, canvas, toast, travelTo, canc
       } else {
         setDig((d) => d && {
           ...d, phase: "done",
-          message: r.why === "expired" ? "Đào lâu quá — đất lấp lại mất rồi. Đào lại nhé!" : "Xẻng trượt nhịp rồi — kho báu vẫn nằm đó, đào lại nhé!",
+          message: r.why === "expired" ? "Đào lâu quá — đất lấp lại mất rồi. Đào lại nhé!"
+            : r.why === "late" ? "Mạng chập chờn — lượt đào không được tính, kho báu vẫn nằm đó."
+            : "Xẻng trượt nhịp rồi — kho báu vẫn nằm đó, đào lại nhé!",
         });
       }
     }, (err) => {

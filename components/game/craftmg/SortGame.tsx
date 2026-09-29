@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { createSort, SORT, SORT_TICKS, sortArrive, sortBonus, sortItemAt, stepSort, type SortRound } from "@/lib/game/craftmg/games";
-import { prefersReduced, useKeys, useRound } from "./shared";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createSortFrom, replaySortP, SORT, SORT_TICKS, sortArrive, sortBonus, sortItemAt, stepSort, withKinds, type SortRound } from "@/lib/game/craftmg/games";
+import { useLive, waitEvents, type LiveSync } from "@/lib/game/mglive";
+import { prefersReduced, useKeys, useLiveRound } from "./shared";
 
 export const SORT_HELP = "Chọn đúng ngăn cho từng hạt! ← hạt tốt, → sạn/hạt lép (hoặc chạm nút).";
 
@@ -55,16 +56,37 @@ function Chute({ s, reduced }: { s: SortRound; reduced: boolean }) {
   );
 }
 
-export default function SortGame({ seed, onEnd }: { seed: number; onEnd: (ticks: readonly number[], dirs: readonly number[], score: number) => void }) {
+/** 0087: each grain comes through mg_sync('sort') 1 s before it is in reach; the sorts go up live as tick·2 + basket;
+ *  the score sent is the replay on every revealed grain. */
+export default function SortGame({ live: sync, onEnd }: { live: LiveSync | null; onEnd: (ticks: readonly number[], dirs: readonly number[], score: number) => void }) {
   const pressed = useRef<0 | 1 | null>(null);
   const [reduced] = useState(prefersReduced);
-  const init = useCallback(() => createSort(seed), [seed]);
+  const packed = useRef<number[]>([]);
+  const live = useLive(sync, () => [packed.current, null]);
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  });
+  const init = useCallback(() => createSortFrom(), []);
   const step = useCallback((cur: SortRound) => {
     const d = pressed.current;
     pressed.current = null;
-    return stepSort(cur, d);
+    const next = stepSort(withKinds(cur, liveRef.current.ev.current ?? {}), d);
+    if (next.ticks !== cur.ticks) {
+      packed.current = next.ticks.map((t, k) => t * 2 + next.dirs[k]);
+      liveRef.current.flush();
+    }
+    return next;
   }, []);
-  const s = useRound(init, step, (cur) => cur.done, (cur) => onEnd(cur.ticks.slice(), cur.dirs.slice(), cur.score));
+  const s = useLiveRound(live, init, step, (cur) => cur.done, (cur) => {
+    void (async () => {
+      const l = liveRef.current;
+      await waitEvents(l, SORT.items);
+      l.stop();
+      const kinds = withKinds(cur, l.ev.current ?? {}).kinds;
+      onEnd(cur.ticks.slice(), cur.dirs.slice(), replaySortP(kinds, cur.ticks, cur.dirs).score);
+    })();
+  });
   useKeys(["ArrowLeft", "ArrowRight", "KeyA", "KeyD"], (code) => { pressed.current = code === "ArrowLeft" || code === "KeyA" ? 0 : 1; });
   const done = s.decided.filter((d) => d !== null).length;
   const left = Math.ceil((SORT_TICKS - s.tick) / 60);

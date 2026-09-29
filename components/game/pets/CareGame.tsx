@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { drawPet } from "@/lib/game/art/pets";
-import { TickClock } from "@/lib/game/fishing/net";
+import { liveSync, liveTick, useLive, waitEvents } from "@/lib/game/mglive";
 import { isTyping } from "@/lib/game/keys";
 import { SPECIES } from "@/lib/game/pets/catalog";
 import {
-  CARE_BASE, careGain, FEED, feedLanes, feedLand, feedSpawn, FETCH, fetchFlights, fetchStart, pack, replayCare, RUB, rubLikes,
+  CARE_BASE, careEvents, careGain, careRoundFrom, FEED, feedLand, feedSpawn, FETCH, fetchStart, pack, replayCareP, RUB,
   type CareKind,
 } from "@/lib/game/pets/minigames";
 import { lookOf, type Pet, type PetsState } from "@/lib/game/pets/rpc";
@@ -72,8 +72,8 @@ function heart(c: CanvasRenderingContext2D, x: number, y: number, col = "#e2436b
   c.fillRect(x - 2, y + 2, 4, 1); c.fillRect(x - 1, y + 3, 2, 1);
 }
 
-function Playing({ round, pet, onEnd, onQuit }: {
-  round: CareRound; pet: Pet; onEnd: (inputs: number[], ticks: number, score: number) => void; onQuit: () => void;
+function Playing({ round, pet, token, onEnd, onQuit }: {
+  round: CareRound; pet: Pet; token: string; onEnd: (inputs: number[], ticks: number, score: number) => void; onQuit: () => void;
 }) {
   const reduced = useReducedMotion();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -88,6 +88,11 @@ function Playing({ round, pet, onEnd, onQuit }: {
   const cb = useRef(onEnd);
   useEffect(() => { cb.current = onEnd; });
   const kind = round.kind;
+  // 0087: the treats / liked spots / throws come from mg_sync('care') 0.5 s before they show; the inputs go up live
+  const [sync] = useState(() => liveSync(token, "care"));
+  const live = useLive(sync, () => [inputs.current, null]);
+  const liveRef = useRef(live);
+  useEffect(() => { liveRef.current = live; });
 
   // record a lane / zone change at tick t within the server's rules (max, rate); false: dropped
   const record = useCallback((t: number, v: number): boolean => {
@@ -100,9 +105,16 @@ function Playing({ round, pet, onEnd, onQuit }: {
   }, [kind]);
 
   useEffect(() => {
+    if (!live.ready) return;
     const look = lookOf(pet);
-    const lanes = feedLanes(round.seed), likes = rubLikes(round.seed), flights = fetchFlights(round.seed);
-    const clock = new TickClock(performance.now());
+    const t0 = live.t0;
+    let lanes: number[] = [], likes: number[] = [], flights: number[] = [];
+    const reveal = () => {
+      const ev = liveRef.current.ev.current ?? {};
+      const r = careRoundFrom(kind, ev);
+      if (kind === "feed") lanes = r; else if (kind === "pat") likes = r; else flights = r.map((f) => (f < 0 ? 999 : f));
+    };
+    reveal();
     let t = 0, caught = 0, good = 0, pts = 0;
     const done = new Set<number>();
     const draw = () => {
@@ -121,7 +133,7 @@ function Playing({ round, pet, onEnd, onQuit }: {
         for (let l = 0; l < FEED.lanes; l++) { c.fillStyle = "rgba(255,255,255,0.25)"; c.fillRect(laneX(l) - 20, 0, 40, GROUND); }
         for (let i = 0; i < FEED.foods; i++) {
           const s = feedSpawn(i), land = feedLand(i);
-          if (t < s || t > land) continue;
+          if (t < s || t > land || lanes[i] < 0) continue;
           const y = 6 + ((t - s) / FEED.fall) * (GROUND - 16);
           treat(c, pet.species, laneX(lanes[i]), y);
         }
@@ -176,7 +188,9 @@ function Playing({ round, pet, onEnd, onQuit }: {
       drawFx(c, fx.current, t);
     };
     let raf = requestAnimationFrame(function loop(now: number) {
-      const due = Math.min(clock.advance(now), round.ticks);
+      const due = Math.min(liveTick(t0, now), round.ticks);
+      reveal();
+      const n0 = inputs.current.length, last0 = inputs.current[n0 - 1];
       while (t < due) {
         // this tick's input
         if (kind === "play") {
@@ -225,6 +239,7 @@ function Playing({ round, pet, onEnd, onQuit }: {
         }
         t++;
       }
+      if (inputs.current.length !== n0 || inputs.current[n0 - 1] !== last0) liveRef.current.flush();
       fx.current = fx.current.filter((f) => t - f.t0 < 40);
       draw();
       setHud({ tick: t, score: kind === "feed" ? caught : kind === "pat" ? good : pts });
@@ -232,14 +247,20 @@ function Playing({ round, pet, onEnd, onQuit }: {
         if (!over.current) {
           over.current = true;
           const list = inputs.current.slice();
-          cb.current(list, round.ticks, replayCare(kind, round.seed, list).score);
+          // the score sent is the replay on the whole revealed round (the last events may still be on their way)
+          void (async () => {
+            const l = liveRef.current;
+            await waitEvents(l, careEvents(kind));
+            l.stop();
+            cb.current(list, round.ticks, replayCareP(kind, careRoundFrom(kind, l.ev.current ?? {}), list).score);
+          })();
         }
         return;
       }
       raf = requestAnimationFrame(loop);
     });
     return () => cancelAnimationFrame(raf);
-  }, [round, pet, kind, reduced, record]);
+  }, [round, pet, kind, reduced, record, live.ready, live.t0]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -285,6 +306,7 @@ function Playing({ round, pet, onEnd, onQuit }: {
   const onUp = () => { if (kind === "pat") want.current = 0; };
 
   const secs = Math.max(0, Math.ceil((round.ticks - hud.tick) / 60));
+  if (!live.ready) return <p role="status">Chuẩn bị…</p>;
   const scoreText = kind === "feed" ? `Hứng được ${hud.score}/${FEED.foods}`
     : kind === "pat" ? `Bé sướng ${Math.min(100, Math.floor(hud.score / 4))}%` : `Điểm ${hud.score}/${2 * FETCH.throws}`;
   return (
@@ -338,7 +360,7 @@ export default function CareGame({ token, pet, kind, onPets, onClose }: {
       <div className="pch flex w-[540px] max-w-full flex-col items-center gap-2 p-3 text-center font-vt text-lg leading-tight">
         <h2 className="font-vt text-2xl leading-none text-burgundy">{CARE_TITLE[kind]} · {SPECIES[pet.species].icon} {pet.name}</h2>
         {phase.k === "starting" && <p role="status">Chuẩn bị…</p>}
-        {phase.k === "playing" && <Playing round={phase.round} pet={pet} onEnd={onEnd} onQuit={onClose} />}
+        {phase.k === "playing" && <Playing round={phase.round} pet={pet} token={token} onEnd={onEnd} onQuit={onClose} />}
         {phase.k === "sending" && <p role="status">Bé đang tận hưởng…</p>}
         {phase.k === "done" && (
           <>
@@ -353,7 +375,8 @@ export default function CareGame({ token, pet, kind, onPets, onClose }: {
                 {phase.outcome.xp < careGain(base.xp, phase.outcome.permille) && <p className="text-base opacity-80">Hôm nay bé đã nhận gần đủ XP chăm sóc.</p>}
               </div>
             ) : (
-              <p role="status">{phase.outcome.why === "expired" ? "Lượt chơi quá lâu, bé chán mất rồi." : "Lượt chơi không hợp lệ."}</p>
+              <p role="status">{phase.outcome.why === "expired" ? "Lượt chơi quá lâu, bé chán mất rồi."
+                : phase.outcome.why === "late" ? "Mạng chập chờn — lượt này không được tính." : "Lượt chơi không hợp lệ."}</p>
             )}
             <button type="button" className="pch-btn pch-btn-primary" onClick={onClose}>Đóng</button>
           </>

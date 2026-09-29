@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { craftItem } from "@/lib/game/mining/catalog";
-import { canStrike, createMineRound, MINE, minePos, stepMineRound, type MineRound } from "@/lib/game/mining/game";
+import { MINE, minePos, type MineRound } from "@/lib/game/mining/game";
 import type { MineDigView } from "@/hooks/useMining";
-import { TickClock } from "@/lib/game/fishing/net";
+import { useLiveDig } from "@/hooks/useLiveDig";
 import { isTyping } from "@/lib/game/keys";
 import { rarityInfo } from "@/lib/game/rarity";
 
@@ -38,66 +38,31 @@ function Bar({ s }: { s: MineRound }) {
   );
 }
 
-/** The dig: a seeded MineRound on a 60 Hz tick clock (0072 replays its strikes). Its end goes to `onEnd` once; Dừng
- *  (Esc) gives the dig up. */
+/** The dig: a MineRound played live (0087: the veins through mg_sync('mine'); 0072 replays its strikes). Its end goes
+ *  to `onEnd` once; Dừng (Esc) gives the dig up. */
 function Playing({ view, onEnd }: { view: MineDigView; onEnd: (strikes: readonly number[], ticks: number, pass: boolean) => void }) {
   const { dig } = view;
-  const [s, setS] = useState(() => createMineRound(dig.seed, dig.need, dig.win));
-  const struck = useRef(false);
-  const latest = useRef(s);
-  const over = useRef(false);
-  const cb = useRef(onEnd);
-  useEffect(() => {
-    cb.current = onEnd;
-  });
-  const stop = useCallback(() => {
-    if (over.current) return;
-    over.current = true;
-    cb.current(latest.current.strikes.slice(), Math.max(1, latest.current.tick), false);
-  }, []);
-
-  useEffect(() => {
-    let cur = createMineRound(dig.seed, dig.need, dig.win);
-    const clock = new TickClock(performance.now());
-    let raf = requestAnimationFrame(function loop(t: number) {
-      const due = clock.advance(t);
-      while (cur.tick < due && cur.outcome === "open") {
-        const hit = struck.current && canStrike(cur);
-        struck.current = false;
-        cur = stepMineRound(cur, hit);
-      }
-      latest.current = cur;
-      setS(cur);
-      if (cur.outcome !== "open") {
-        if (!over.current) {
-          over.current = true;
-          cb.current(cur.strikes.slice(), cur.tick, cur.outcome === "pass");
-        }
-        return;
-      }
-      raf = requestAnimationFrame(loop);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [dig.seed, dig.need, dig.win]);
+  const { s, ready, strike, stop } = useLiveDig(view.live, dig.period, dig.need, dig.win, onEnd);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
       if (e.code === "Space") {
         e.preventDefault();
-        if (!e.repeat) struck.current = true;
+        if (!e.repeat) strike();
       } else if (e.key === "Escape") {
         stop();
       }
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
-  }, [stop]);
+  }, [strike, stop]);
 
+  if (!ready) return <p role="status">Chuẩn bị…</p>;
   const left = dig.need + MINE.spare - s.strikes.length;
   return (
     <>
-      <div role="group" aria-label="Mỏ quặng" onPointerDown={() => { struck.current = true; }}
+      <div role="group" aria-label="Mỏ quặng" onPointerDown={() => { strike(); }}
         className="flex w-full touch-none select-none flex-col items-center gap-2 py-1">
         <Bar s={s} />
         <p>Trúng {s.hits}/{dig.need} · còn {left} nhát

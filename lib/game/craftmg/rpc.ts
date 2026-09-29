@@ -3,11 +3,12 @@ import { supabase } from "@/lib/supabase";
 import { parseExtrasState, type ExtrasState } from "@/lib/game/fishing/extras";
 import { parseMineState, type MineState } from "@/lib/game/mining/rpc";
 
-// Supabase calls for the v22 crafting minigames (0084): *_start returns the round's seed, *_finish sends only the inputs
-// (the server replays them). A flagged answer throws an AnticheatError.
+// Supabase calls for the v22 crafting minigames (0084): *_start opens the round, *_finish sends only the inputs (the
+// server replays them). 0087: the round stays on the server — mg_sync('brew' | 'anvil' | 'sort') reveals it while it is
+// played (lib/game/mglive.ts); a start answers only what is on screen at once (the brew's band). A flagged answer throws
+// an AnticheatError.
 
 export type CraftGame = "brew" | "anvil" | "sort";
-export interface CraftRound { game: CraftGame; seed: number; label: string }
 
 async function call(fn: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await supabase.rpc(fn, args);
@@ -28,18 +29,20 @@ function extras(r: Record<string, unknown>): ExtrasState {
   if (!s) throw new Error("bad extras state");
   return s;
 }
-function seedOf(r: Record<string, unknown>): number {
-  const s = obj(r.round).seed;
-  if (typeof s !== "number") throw new Error("bad round");
-  return s >>> 0;
-}
-/** 'lost' answers: expired / refused. */
-export type Lost = { result: "lost"; why: "expired" | "refused" };
-const lost = (r: Record<string, unknown>): Lost => ({ result: "lost", why: r.why === "expired" ? "expired" : "refused" });
+/** 'lost' answers: expired / refused / late (not played live: void, 0087) / outdated (a round from before 0087). */
+export type Lost = { result: "lost"; why: "expired" | "refused" | "late" | "outdated" };
+const lost = (r: Record<string, unknown>): Lost => ({
+  result: "lost", why: r.why === "expired" || r.why === "late" || r.why === "outdated" ? r.why : "refused",
+});
+/** Why a craft round was not taken, in a line. */
+export const lostText = (why: Lost["why"], expired: string): string =>
+  why === "expired" ? expired : why === "late" ? "Mạng chập chờn — lượt này không được tính, chưa mất gì." : why === "outdated" ? "Trò chơi đã cập nhật — thử lại nhé." : "Lượt này không hợp lệ.";
 
-export async function brewStart(token: string, recipe: string, qty: number): Promise<{ seed: number; state: MineState }> {
+export async function brewStart(token: string, recipe: string, qty: number): Promise<{ centre: number; state: MineState }> {
   const r = await call("brew_start", { p_session_token: token, p_recipe: recipe, p_qty: qty });
-  return { seed: seedOf(r), state: mine(r) };
+  const centre = obj(r.round).centre;
+  if (typeof centre !== "number") throw new Error("bad round");
+  return { centre, state: mine(r) };
 }
 export type BrewAnswer = { result: "brewed"; potion: string; qty: number; quality: 1 | 2 | 3; bonus: number } | Lost;
 export async function brewFinish(token: string, toggles: readonly number[], score: number): Promise<{ answer: BrewAnswer; state: MineState }> {
@@ -50,9 +53,10 @@ export async function brewFinish(token: string, toggles: readonly number[], scor
   return { answer: { result: "brewed", potion: String(b.potion ?? ""), qty: num(b.qty, 1), quality: q === 3 ? 3 : q === 2 ? 2 : 1, bonus: num(b.bonus) }, state: mine(r) };
 }
 
-export async function upgradeStart(token: string, item: string): Promise<{ seed: number; chance: number; state: MineState }> {
+export async function upgradeStart(token: string, item: string): Promise<{ chance: number; state: MineState }> {
   const r = await call("upgrade_start", { p_session_token: token, p_item: item });
-  return { seed: seedOf(r), chance: num(obj(r.round).chance), state: mine(r) };
+  if (!obj(r.round).game) throw new Error("bad round");
+  return { chance: num(obj(r.round).chance), state: mine(r) };
 }
 export type AnvilAnswer = { result: "done"; item: string; ok: boolean; level: number; chance: number; nudge: number; final: number } | Lost;
 export async function upgradeFinish(token: string, strikes: readonly number[], ticks: number, score: number): Promise<{ answer: AnvilAnswer; state: MineState }> {
@@ -65,9 +69,10 @@ export async function upgradeFinish(token: string, strikes: readonly number[], t
   };
 }
 
-export async function sortStart(token: string): Promise<{ seed: number; state: ExtrasState }> {
+export async function sortStart(token: string): Promise<{ state: ExtrasState }> {
   const r = await call("process_sort_start", { p_session_token: token });
-  return { seed: seedOf(r), state: extras(r) };
+  if (!obj(r.round).game) throw new Error("bad round");
+  return { state: extras(r) };
 }
 export type SortAnswer = { result: "collected"; score: number; pct: number; bonus: number } | Lost;
 export async function sortFinish(token: string, ticks: readonly number[], dirs: readonly number[], score: number): Promise<{ answer: SortAnswer; state: ExtrasState }> {

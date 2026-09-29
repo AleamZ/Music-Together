@@ -122,15 +122,18 @@ async function call(fn: string, args: Record<string, unknown>): Promise<R> {
 export const worldState = async (token: string, roomId: string, map: MapId) =>
   parseWorld(await call("world_state", { p_session_token: token, p_room_id: roomId, p_map: map }));
 
-// v22 (0083): the wild minigames — a start (the server's seed) and a finish (only my input ticks; the server replays)
-export interface WildRound { game: WildAction; spawn: number; species: WildSpeciesId; danger: boolean; seed: number }
+// v22 (0083): the wild minigames — a start and a finish (only my input ticks; the server replays). 0087: the round stays
+// on the server (mg_sync('world') reveals it, lib/game/mglive.ts); the start answers only the aim's sweep (a hunt).
+// `nonce` is a client-side random number that picks the flavour lines.
+export interface WildRound { game: WildAction; spawn: number; species: WildSpeciesId; danger: boolean; reticle: number; nonce: number }
+const nonce = () => Math.floor(Math.random() * 1_000_000);
 export interface WildResult {
   result: "ok" | "fail" | "lost"; why: string | null; outcome: string | null; score: number; chance: number;
   item: WildItemId | null; qty: number; xp: number; saved: boolean; knocked: boolean; fainted: boolean; wild: WildState | null;
 }
 export const wildStart = async (token: string, spawn: number, action: WildAction, map: MapId, x: number, y: number): Promise<WildRound> => {
   const r = obj((await call("wild_start", { p_session_token: token, p_spawn: spawn, p_action: action, p_map: map, p_x: Math.round(x), p_y: Math.round(y) })).round);
-  return { game: action, spawn: num(r.spawn), species: speciesOf(String(r.species))?.id ?? "rabbit", danger: r.danger === true, seed: num(r.seed) };
+  return { game: action, spawn: num(r.spawn), species: speciesOf(String(r.species))?.id ?? "rabbit", danger: r.danger === true, reticle: num(r.reticle, 120), nonce: nonce() };
 };
 export const wildFinish = async (token: string, a: readonly number[], b: readonly number[], ticks: number): Promise<WildResult> => {
   const r = await call("wild_finish", { p_session_token: token, p_a: a, p_b: b, p_ticks: ticks });
@@ -157,14 +160,14 @@ export const partySay = (token: string, body: string) => party("party_say", { p_
 
 // v22 (0083): the combo strike (bosses and the dungeon) — six rhythm arrows and a slam to dodge, replayed by the server
 export type ComboKind = "boss" | "dungeon";
-export interface ComboRound { kind: ComboKind; ref: number; target: number; seed: number }
+export interface ComboRound { kind: ComboKind; ref: number; target: number; nonce: number }
 export interface ComboResult {
   result: "ok" | "lost"; why: string | null; dmg: number; judges: string[]; best: number; stunned: boolean;
   hp: number; killed: boolean; myDmg: number; cap: number; cleared: boolean; target: number;
 }
 export const comboStart = async (token: string, kind: ComboKind, ref: number, target: number, map: MapId, x: number, y: number): Promise<ComboRound> => {
   const r = obj((await call("combo_start", { p_session_token: token, p_kind: kind, p_ref: ref, p_target: target, p_map: map, p_x: Math.round(x), p_y: Math.round(y) })).round);
-  return { kind, ref: num(r.ref), target: num(r.target), seed: num(r.seed) };
+  return { kind, ref: num(r.ref), target: num(r.target), nonce: nonce() };
 };
 export const comboFinish = async (token: string, keys: readonly number[], dodges: readonly number[], ticks: number): Promise<ComboResult> => {
   const r = await call("combo_finish", { p_session_token: token, p_keys: keys, p_dodges: dodges, p_ticks: ticks });

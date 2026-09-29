@@ -14,6 +14,7 @@ import {
   type BossFight, type WildAnimal, type WorldState,
 } from "@/lib/game/realm/rpc";
 import { noLine, okLine } from "@/lib/game/realm/mg-copy";
+import { liveSync } from "@/lib/game/mglive";
 import type { WildView } from "./WildGame";
 import type { ComboView } from "./ComboGame";
 import { WILD_ITEMS } from "@/lib/game/realm/model";
@@ -153,12 +154,12 @@ export function useWorld(o: WorldOpts) {
 
   const posNow = () => canvas()?.localPos() ?? null;
 
-  // v22 (0083): the wild minigames — start (the server's seed), play (WildGame), finish (the inputs only)
+  // v22 (0083): the wild minigames — start, play (WildGame, live via mg_sync since 0087), finish (the inputs only)
   const act = (a: WildAnimal, action: WildAction) => {
     const p = posNow();
     if (!p || busy || wild || combo) return;
     void run(() => wildStart(token, a.id, action, mapId, p.x, p.y), (round) => {
-      setWild({ round, phase: "playing", message: "", night: stateRef.current?.night ?? false });
+      setWild({ round, phase: "playing", message: "", night: stateRef.current?.night ?? false, live: liveSync(token, "world") });
     });
   };
   const wildEnd = (a: number[], b: number[], ticks: number) => {
@@ -174,18 +175,19 @@ export function useWorld(o: WorldOpts) {
         const r = await wildFinish(token, a, b, ticks);
         const lines: string[] = [];
         if (v.round.game === "photo") {
-          lines.push(r.saved ? `${okLine("photo", v.round.seed)} 📷 ${sp?.name} vào album (${r.score} điểm, +${r.xp} XP)`
-            : r.result === "lost" ? "Lượt này không được tính." : `${noLine("photo", v.round.seed)} (${r.score} điểm — cần 250)`);
+          lines.push(r.saved ? `${okLine("photo", v.round.nonce)} 📷 ${sp?.name} vào album (${r.score} điểm, +${r.xp} XP)`
+            : r.result === "lost" ? "Lượt này không được tính." : `${noLine("photo", v.round.nonce)} (${r.score} điểm — cần 250)`);
         } else if (r.result === "ok" && r.item) {
-          lines.push(`${okLine(key, v.round.seed)} +${r.qty} ${WILD_ITEMS[r.item].name} (+${r.xp} XP)`);
+          lines.push(`${okLine(key, v.round.nonce)} +${r.qty} ${WILD_ITEMS[r.item].name} (+${r.xp} XP)`);
         } else if (r.result === "lost") {
-          lines.push(r.why === "gone" ? "Con vật đã chạy mất." : r.why === "expired" ? "Hết giờ rồi." : "Lượt này không được tính.");
+          lines.push(r.why === "gone" ? "Con vật đã chạy mất." : r.why === "expired" ? "Hết giờ rồi."
+            : r.why === "late" ? "Mạng chập chờn — lượt này không được tính." : "Lượt này không được tính.");
         } else if (r.outcome === "hit" || r.outcome === "caught") {
           lines.push(`Trúng ${r.score} điểm nhưng ${sp?.name} vùng thoát được (${r.chance}%)…`);
         } else {
-          lines.push(noLine(key, v.round.seed));
+          lines.push(noLine(key, v.round.nonce));
         }
-        if (v.round.danger) lines.push(r.knocked ? `${noLine("dodge", v.round.seed)} 💥 Đói, khát −8${r.fainted ? " — bạn ngất đi!" : ""}` : okLine("dodge", v.round.seed));
+        if (v.round.danger) lines.push(r.knocked ? `${noLine("dodge", v.round.nonce)} 💥 Đói, khát −8${r.fainted ? " — bạn ngất đi!" : ""}` : okLine("dodge", v.round.nonce));
         message = lines.join("\n");
       } catch (e) {
         message = worldErrorText(e);
@@ -203,12 +205,16 @@ export function useWorld(o: WorldOpts) {
   const startCombo = (kind: "boss" | "dungeon", ref: number, target: number, view: Pick<ComboView, "name" | "boss" | "icon">) => {
     const p = posNow();
     if (!p || busy || wild || combo) return;
-    void run(() => comboStart(token, kind, ref, target, mapId, p.x, p.y), (round) => setCombo({ ...view, round, phase: "playing", message: "", dmg: null }));
+    void run(() => comboStart(token, kind, ref, target, mapId, p.x, p.y), (round) => setCombo({ ...view, round, phase: "playing", message: "", dmg: null, live: liveSync(token, "world") }));
   };
   const attack = (f: BossFight) => startCombo("boss", f.id, 0, { name: f.name, boss: f.boss, icon: "👹" });
   const comboEnd = (keys: number[], dodges: number[], ticks: number) => {
     const v = combo;
     if (!v || v.phase !== "playing") return;
+    if (ticks < 0) {                     // given up (Esc) or the live channel lost: nothing is sent (0087)
+      setCombo(null);
+      return;
+    }
     setCombo({ ...v, phase: "sending" });
     void (async () => {
       let message: string, dmg: number | null = null;
@@ -217,9 +223,9 @@ export function useWorld(o: WorldOpts) {
         dmg = r.dmg;
         const hits = r.judges.filter((j) => j !== "miss").length;
         const lines = [r.result === "ok"
-          ? `${hits >= 4 ? okLine("combo", v.round.seed) : noLine("combo", v.round.seed)} ${hits}/6 nhịp, chuỗi ×${r.best} → ${r.dmg} sát thương`
-          : r.why === "expired" ? "Hết giờ rồi." : r.why === "boss not up" ? "Boss đã đi." : r.why === "run over" ? "Lượt hầm ngục đã kết thúc." : "Lượt này không được tính."];
-        if (r.stunned) lines.push(`💢 ${noLine("dodge", v.round.seed + 1)} Choáng 3 giây (đói, khát −3)`);
+          ? `${hits >= 4 ? okLine("combo", v.round.nonce) : noLine("combo", v.round.nonce)} ${hits}/6 nhịp, chuỗi ×${r.best} → ${r.dmg} sát thương`
+          : r.why === "expired" ? "Hết giờ rồi." : r.why === "late" ? "Mạng chập chờn — lượt này không được tính." : r.why === "boss not up" ? "Boss đã đi." : r.why === "run over" ? "Lượt hầm ngục đã kết thúc." : "Lượt này không được tính."];
+        if (r.stunned) lines.push(`💢 ${noLine("dodge", v.round.nonce + 1)} Choáng 3 giây (đói, khát −3)`);
         if (r.killed) { lines.push(`🏆 ${v.name} đã bị hạ! Phần thưởng chia theo công sức.`); onCoins(); }
         if (r.cleared) { lines.push("🏆 Hạ Dơi Chúa — hầm ngục đã được dọn sạch!"); onCoins(); }
         if (r.dmg > 0) {

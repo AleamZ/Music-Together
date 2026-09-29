@@ -2,28 +2,40 @@
 
 // v22 world (0083): the wild minigames' overlay — the hunt (aim and release, lead the animal, the wind; a wolf or a bear
 // charges: dodge), the trap (pull the cord as it steps in; a net for birds and fireflies) and the photo (frame, zoom,
-// snap the pose). A 60 Hz sim on the server's seed (lib/game/realm/minigames.ts); only the input ticks go back
-// (wild_finish replays them).
+// snap the pose). A 60 Hz sim (lib/game/realm/minigames.ts); only the input ticks go back (wild_finish replays them).
+// 0087: the round stays on the server — mg_sync reveals the hunted / photographed animal when it shows (a secret tick
+// 0.5–1 s in; a shot or a snap waits a moment after it), the trail 0.5 s ahead and the charge 1 s ahead; the inputs go
+// up as they are made.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { drawAnimal } from "@/lib/game/realm/art";
 import {
-  WG, huntAim, huntAnimal, huntParams, photoParams, photoPose, photoX, replayWild, snapScore, trapParams, trapPath, zoomAt,
-  type WildReplay,
+  WG, huntAnimal, huntParamsFrom, photoParamsFrom, photoPose, photoX, replayWildP, snapScore, trapParamsFrom, trapPath, tri, zoomAt,
+  type HuntParams, type PhotoParams, type TrapParams, type WildReplay,
 } from "@/lib/game/realm/minigames";
 import { DODGE_HELP, WILD_HELP } from "@/lib/game/realm/mg-copy";
 import { speciesOf } from "@/lib/game/realm/model";
 import type { WildRound } from "@/lib/game/realm/rpc";
-import { TickClock } from "@/lib/game/fishing/net";
+import { GATE_GUARD_MS, liveTick, useLive, type LiveEvents, type LiveSync } from "@/lib/game/mglive";
 import { isTyping } from "@/lib/game/keys";
 
 const W = 320, H = 160;
 type Ctx = CanvasRenderingContext2D;
 
-export interface WildView { round: WildRound; phase: "playing" | "sending" | "done"; message: string; night: boolean }
+export interface WildView {
+  round: WildRound; phase: "playing" | "sending" | "done"; message: string; night: boolean;
+  /** 0087: the round's live channel (mg_sync('world')); null in a test render. */
+  live: LiveSync | null;
+}
 
 interface Sim { tick: number; a: number[]; b: number[]; rep: WildReplay; flash: number }
 
 const isNet = (r: WildRound) => r.game === "trap" && (r.species === "bird" || r.species === "firefly");
+const OPEN: WildReplay = { outcome: "open", ticks: null, score: 0, used: 0, dodged: false };
+
+/** The round's parameters from what mg_sync revealed (null: the animal has not shown yet). */
+function paramsOf(r: WildRound, ev: LiveEvents): HuntParams | TrapParams | PhotoParams | null {
+  return r.game === "hunt" ? huntParamsFrom(r.reticle, ev) : r.game === "trap" ? trapParamsFrom(r.species, ev) : photoParamsFrom(ev);
+}
 
 function sprite(c: Ctx, sp: WildRound["species"], x: number, y: number, scale: number, left: boolean, step: number, night: boolean, t: number, flip = false) {
   c.save();
@@ -42,63 +54,81 @@ function sky(c: Ctx, night: boolean) {
   for (let x = 0; x < W; x += 12) c.fillRect(x + ((x / 12) % 2) * 5, 104 + ((x * 7) % 11), 3, 2);
 }
 
-function drawHunt(c: Ctx, r: WildRound, s: Sim, night: boolean, reduced: boolean) {
-  const p = huntParams(r.seed, r.species);
+/** The bushes the animal will come out of (before it shows). */
+function lurk(c: Ctx, t: number, reduced: boolean) {
+  c.fillStyle = "#3f7a34";
+  for (let k = 0; k < 5; k++) {
+    const sway = reduced ? 0 : Math.round(Math.sin(t / 7 + k) * 1.5);
+    c.fillRect(30 + k * 62 + sway, 86, 26, 14);
+    c.fillRect(34 + k * 62 + sway, 80, 18, 8);
+  }
+  c.fillStyle = "#1d1a14";
+  c.font = "10px monospace";
+  c.textAlign = "center";
+  c.fillText("… đang rình …", W / 2, 60);
+}
+
+function drawHunt(c: Ctx, r: WildRound, p: HuntParams | null, s: Sim, night: boolean, reduced: boolean) {
   const t = s.tick;
   sky(c, night);
   const done = s.rep.outcome !== "open" && t >= (s.rep.ticks ?? Infinity) - 1;
-  const ax = (huntAnimal(p, t) / 1000) * W;
-  const dir = huntAnimal(p, t + 1) - huntAnimal(p, t);
-  const hit = s.rep.outcome === "hit" && t >= (s.rep.ticks ?? 0) - 1;
-  // the charge: the animal grows toward you in the warning
-  const charging = r.danger && t >= p.charge - 50 && t <= p.charge && !(s.rep.outcome === "hit" && (s.rep.ticks ?? 0) <= p.charge);
-  const grow = charging ? 1 + (t - (p.charge - 50)) / 25 : 0;
-  const y = charging ? 110 + grow * 10 : 100;
-  sprite(c, r.species, ax, y, hit ? 3 : 3 + grow, dir < 0, reduced || hit ? 0 : Math.floor(t / 8) % 2, night, t * 16, hit);
-  if (hit && !reduced) {
-    c.fillStyle = "#ffe066";
-    for (let k = 0; k < 5; k++) c.fillRect(ax + Math.cos(t / 6 + k) * 14, 78 + Math.sin(t / 6 + k) * 6, 2, 2);
+  if (p) {
+    const ax = (huntAnimal(p, t) / 1000) * W;
+    const dir = huntAnimal(p, t + 1) - huntAnimal(p, t);
+    const hit = s.rep.outcome === "hit" && t >= (s.rep.ticks ?? 0) - 1;
+    // the charge: the animal grows toward you in the warning
+    const charging = r.danger && t >= p.charge - 50 && t <= p.charge && !(s.rep.outcome === "hit" && (s.rep.ticks ?? 0) <= p.charge);
+    const grow = charging ? 1 + (t - (p.charge - 50)) / 25 : 0;
+    const y = charging ? 110 + grow * 10 : 100;
+    sprite(c, r.species, ax, y, hit ? 3 : 3 + grow, dir < 0, reduced || hit ? 0 : Math.floor(t / 8) % 2, night, t * 16, hit);
+    if (hit && !reduced) {
+      c.fillStyle = "#ffe066";
+      for (let k = 0; k < 5; k++) c.fillRect(ax + Math.cos(t / 6 + k) * 14, 78 + Math.sin(t / 6 + k) * 6, 2, 2);
+    }
+    // arrows in flight
+    for (const sh of s.a) {
+      if (t < sh || t > sh + WG.flight) continue;
+      const k = (t - sh) / WG.flight;
+      const tx = ((tri(p.reticle, sh) + p.wind) / 1000) * W;
+      const x = W / 2 + (tx - W / 2) * k, yy = 150 - 60 * k - 20 * Math.sin(Math.PI * k);
+      c.fillStyle = "#5a3a24";
+      c.fillRect(Math.round(x) - 1, Math.round(yy) - 4, 2, 8);
+      c.fillStyle = "#e8e8e8";
+      c.fillRect(Math.round(x) - 1, Math.round(yy) - 5, 2, 2);
+    }
+    if (charging) {
+      c.fillStyle = Math.floor(t / 6) % 2 && !reduced ? "#ff3030" : "#ffd040";
+      c.textAlign = "center";
+      c.font = "12px monospace";
+      c.fillText(s.b.some((d) => d >= p.charge - WG.dodgeWin && d <= p.charge) ? "NÉ ĐƯỢC!" : "⚠ LAO TỚI — NÉ (E)!", W / 2, 40);
+    }
+  } else {
+    lurk(c, t, reduced);
   }
-  // arrows in flight
-  for (const sh of s.a) {
-    if (t < sh || t > sh + WG.flight) continue;
-    const k = (t - sh) / WG.flight;
-    const tx = ((huntAim(p, sh) + p.wind) / 1000) * W;
-    const x = W / 2 + (tx - W / 2) * k, yy = 150 - 60 * k - 20 * Math.sin(Math.PI * k);
-    c.fillStyle = "#5a3a24";
-    c.fillRect(Math.round(x) - 1, Math.round(yy) - 4, 2, 8);
-    c.fillStyle = "#e8e8e8";
-    c.fillRect(Math.round(x) - 1, Math.round(yy) - 5, 2, 2);
-  }
-  // the aim and where it lands (with the wind)
-  const aim = (huntAim(p, t) / 1000) * W, land = ((huntAim(p, t) + p.wind) / 1000) * W;
+  // the aim (and, once the wind is known, where it lands)
+  const aim = (tri(r.reticle, t) / 1000) * W;
   if (!done) {
     c.strokeStyle = "#d83a3a";
     c.lineWidth = 1;
     c.strokeRect(Math.round(aim) - 6, 88, 12, 12);
     c.fillStyle = "#d83a3a";
     c.fillRect(Math.round(aim), 84, 1, 20);
-    c.globalAlpha = 0.45;
-    c.fillStyle = "#fff4d0";
-    c.fillRect(Math.round(land) - 1, 92, 3, 3);
-    c.globalAlpha = 1;
+    if (p) {
+      const land = ((tri(r.reticle, t) + p.wind) / 1000) * W;
+      c.globalAlpha = 0.45;
+      c.fillStyle = "#fff4d0";
+      c.fillRect(Math.round(land) - 1, 92, 3, 3);
+      c.globalAlpha = 1;
+    }
   }
-  // the wind
   c.fillStyle = "#1d1a14";
   c.font = "8px monospace";
   c.textAlign = "left";
-  c.fillText(`Gió ${p.wind < 0 ? "←" : "→"} ${Math.abs(p.wind)}`, 6, 12);
+  c.fillText(p ? `Gió ${p.wind < 0 ? "←" : "→"} ${Math.abs(p.wind)}` : "Gió ?", 6, 12);
   c.fillText(`Tên: ${WG.shots - s.a.length}`, 6, 22);
-  if (charging) {
-    c.fillStyle = Math.floor(t / 6) % 2 && !reduced ? "#ff3030" : "#ffd040";
-    c.textAlign = "center";
-    c.font = "12px monospace";
-    c.fillText(s.b.some((d) => d >= p.charge - WG.dodgeWin && d <= p.charge) ? "NÉ ĐƯỢC!" : "⚠ LAO TỚI — NÉ (E)!", W / 2, 40);
-  }
 }
 
-function drawTrap(c: Ctx, r: WildRound, s: Sim, path: number[], night: boolean, reduced: boolean) {
-  const p = trapParams(r.seed, r.species);
+function drawTrap(c: Ctx, r: WildRound, p: TrapParams, s: Sim, path: number[], night: boolean, reduced: boolean) {
   const t = Math.min(s.tick, path.length - 1);
   sky(c, night);
   const net = isNet(r);
@@ -149,19 +179,22 @@ function drawTrap(c: Ctx, r: WildRound, s: Sim, path: number[], night: boolean, 
   c.fillText(net ? "Lưới" : "Bẫy", 6, 12);
 }
 
-function drawPhoto(c: Ctx, r: WildRound, s: Sim, night: boolean, reduced: boolean) {
-  const p = photoParams(r.seed, r.species);
+function drawPhoto(c: Ctx, r: WildRound, p: PhotoParams | null, s: Sim, night: boolean, reduced: boolean) {
   const t = s.tick;
   const zoom = zoomAt(s.b, t);
   sky(c, night);
-  const x = (photoX(p, t) / 1000) * W;
-  const scale = zoom ? 5 : 3;
-  const pose = photoPose(p, t);
-  const dir = photoX(p, t + 1) - photoX(p, t);
-  sprite(c, r.species, W / 2 + (x - W / 2) * (zoom ? 2 : 1), 112, scale, pose ? false : dir < 0, pose || reduced ? 0 : Math.floor(t / 8) % 2, night, t * 16);
-  if (pose && !reduced) {
-    c.fillStyle = "#fff4a0";
-    c.fillRect(W / 2 + (x - W / 2) * (zoom ? 2 : 1) + 10, 70, 2, 2);
+  if (p) {
+    const x = (photoX(p, t) / 1000) * W;
+    const scale = zoom ? 5 : 3;
+    const pose = photoPose(p, t);
+    const dir = photoX(p, t + 1) - photoX(p, t);
+    sprite(c, r.species, W / 2 + (x - W / 2) * (zoom ? 2 : 1), 112, scale, pose ? false : dir < 0, pose || reduced ? 0 : Math.floor(t / 8) % 2, night, t * 16);
+    if (pose && !reduced) {
+      c.fillStyle = "#fff4a0";
+      c.fillRect(W / 2 + (x - W / 2) * (zoom ? 2 : 1) + 10, 70, 2, 2);
+    }
+  } else {
+    lurk(c, t, reduced);
   }
   // the viewfinder: the centre box (tolerance) and the corners
   c.strokeStyle = "#fff4d0";
@@ -184,9 +217,7 @@ function drawPhoto(c: Ctx, r: WildRound, s: Sim, night: boolean, reduced: boolea
 function Playing({ view, onEnd }: { view: WildView; onEnd: (a: number[], b: number[], ticks: number) => void }) {
   const r = view.round;
   const reduced = useMemo(() => (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) ?? false, []);
-  const path = useMemo(() => (r.game === "trap" ? trapPath(trapParams(r.seed, r.species), WG.maxTicks) : []), [r]);
-  const empty: WildReplay = { outcome: "open", ticks: null, score: 0, used: 0, dodged: false };
-  const [s, setS] = useState<Sim>({ tick: 0, a: [], b: [], rep: empty, flash: 0 });
+  const [s, setS] = useState<Sim>({ tick: 0, a: [], b: [], rep: OPEN, flash: 0 });
   const want = useRef({ a: false, b: false });
   const cur = useRef<Sim>(s);
   const over = useRef(false);
@@ -196,20 +227,38 @@ function Playing({ view, onEnd }: { view: WildView; onEnd: (a: number[], b: numb
     cb.current = onEnd;
   });
   const [lastSnap, setLastSnap] = useState<number | null>(null);
+  const live = useLive(view.live, () => [cur.current.a, cur.current.b]);
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  });
 
-  const stop = useCallback(() => {
+  const end = useCallback((a: number[], b: number[], ticks: number) => {
     if (over.current) return;
     over.current = true;
-    const x = cur.current;
-    cb.current(x.a.slice(), x.b.slice(), Math.max(1, x.tick));
+    liveRef.current.stop();
+    cb.current(a, b, ticks);
   }, []);
+  const stop = useCallback(() => {
+    const x = cur.current;
+    end(x.a.slice(), x.b.slice(), Math.max(1, x.tick));
+  }, [end]);
+  useEffect(() => {
+    if (live.failed) stop();
+  }, [live.failed, stop]);
 
   useEffect(() => {
-    const clock = new TickClock(performance.now());
+    if (!live.ready) return;
+    const t0 = live.t0;
     const maxA = r.game === "trap" ? 1 : r.game === "hunt" ? WG.shots : WG.snaps;
     const maxB = r.game === "hunt" ? WG.dodges : r.game === "photo" ? WG.zooms : 0;
     let raf = requestAnimationFrame(function loop(now: number) {
-      const due = clock.advance(now);
+      const due = liveTick(t0, now);
+      const ev = liveRef.current.ev.current ?? {};
+      const p = paramsOf(r, ev);
+      // a shot / a snap only once the animal has been on screen a moment (the server refuses a blind one)
+      const seenAt = liveRef.current.at.current?.[1];
+      const canAct = r.game === "trap" || (p !== null && seenAt !== undefined && now - seenAt >= GATE_GUARD_MS);
       let x = cur.current;
       while (x.tick < due && !over.current) {
         const t = x.tick;
@@ -217,11 +266,11 @@ function Playing({ view, onEnd }: { view: WildView; onEnd: (a: number[], b: numb
         // a shot / pull the replay would still count: a hunt before its hit or miss (and before the charge), a trap
         // before the animal is past
         const o = x.rep.outcome, before = x.rep.ticks === null || t < x.rep.ticks - 1;
-        const live = r.game === "photo" || o === "open" || (before && (o === "charged" || o === "escaped"));
-        if (want.current.a && a.length < maxA && (a.length === 0 || t - a[a.length - 1] >= 60) && live) {
+        const open = r.game === "photo" || o === "open" || (before && (o === "charged" || o === "escaped"));
+        if (want.current.a && canAct && a.length < maxA && (a.length === 0 || t - a[a.length - 1] >= 60) && open) {
           a = [...a, t];
           changed = true;
-          if (r.game === "photo") { flash = 10; setLastSnap(snapScore(photoParams(r.seed, r.species), b, t)); }
+          if (r.game === "photo" && p) { flash = 10; setLastSnap(snapScore(p as PhotoParams, b, t)); }
         }
         want.current.a = false;
         if (want.current.b && b.length < maxB && (r.game === "hunt" ? b.length === 0 || t - b[b.length - 1] >= 60 : b.length < 2 || t - b[b.length - 2] >= 60)) {
@@ -229,18 +278,17 @@ function Playing({ view, onEnd }: { view: WildView; onEnd: (a: number[], b: numb
           changed = true;
         }
         want.current.b = false;
-        const rep = changed || x.tick === 0 ? replayWild(r.game, r.seed, r.species, r.danger, a, b) : x.rep;
+        const rep = p ? replayWildP(r.game, p, r.danger, a, b) : OPEN;
         x = { tick: t + 1, a, b, rep, flash };
+        if (changed) liveRef.current.flush();
         if (rep.outcome !== "open" && rep.ticks !== null && x.tick >= rep.ticks) {
-          over.current = true;
           cur.current = x;
-          cb.current(a.slice(), b.slice(), rep.ticks);
+          end(a.slice(), b.slice(), rep.ticks);
           break;
         }
         if (x.tick >= WG.maxTicks) {
-          over.current = true;
           cur.current = x;
-          cb.current(a.slice(), b.slice(), WG.maxTicks);
+          end(a.slice(), b.slice(), WG.maxTicks);
           break;
         }
       }
@@ -249,14 +297,14 @@ function Playing({ view, onEnd }: { view: WildView; onEnd: (a: number[], b: numb
       const c = canvas.current?.getContext("2d");
       if (c) {
         c.imageSmoothingEnabled = false;
-        if (r.game === "hunt") drawHunt(c, r, x, view.night, reduced);
-        else if (r.game === "trap") drawTrap(c, r, x, path, view.night, reduced);
-        else drawPhoto(c, r, x, view.night, reduced);
+        if (r.game === "hunt") drawHunt(c, r, p as HuntParams | null, x, view.night, reduced);
+        else if (r.game === "trap") drawTrap(c, r, p as TrapParams, x, trapPath(p as TrapParams, x.tick + 1), view.night, reduced);
+        else drawPhoto(c, r, p as PhotoParams | null, x, view.night, reduced);
       }
       if (!over.current) raf = requestAnimationFrame(loop);
     });
     return () => cancelAnimationFrame(raf);
-  }, [r, path, reduced, view.night]);
+  }, [r, reduced, view.night, live.ready, live.t0, end]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -275,6 +323,7 @@ function Playing({ view, onEnd }: { view: WildView; onEnd: (a: number[], b: numb
     <>
       <canvas ref={canvas} width={W} height={H} aria-hidden="true" onPointerDown={() => { want.current.a = true; }}
         className="w-full max-w-[640px] touch-none select-none rounded border-2 border-[#3a2418] [image-rendering:pixelated]" />
+      {!live.ready && <p role="status">Chuẩn bị…</p>}
       <p className="text-base opacity-80">{help}{r.danger ? ` ${DODGE_HELP}` : ""}</p>
       {r.game === "photo" && lastSnap !== null && <p role="status">Kiểu vừa chụp: {lastSnap} điểm</p>}
       <div className="flex gap-2">

@@ -186,19 +186,21 @@ describe("the treasure detector and dig", () => {
 
 describe("the parsers", () => {
   it("row start / finish", () => {
-    expect(parseRowStart({ row: { dir: "out", seed: 5, need: 8 } })).toEqual({ dir: "out", seed: 5, need: 8 });
+    expect(parseRowStart({ row: { dir: "out", need: 8, live: "row" } })).toEqual({ dir: "out", need: 8 });
     expect(parseRowStart({})).toBeNull();
     expect(parseRowFinish({ result: "arrived", hits: 9, need: 8, pass: true, to: { map: "song_cai", x: 80, y: 240, dir: "right" } }))
       .toEqual({ result: "arrived", hits: 9, need: 8, pass: true, to: { map: "song_cai", x: 80, y: 240, dir: "right" } });
     expect(parseRowFinish({ result: "drift", why: "missed", hits: 3, need: 8 })).toEqual({ result: "drift", why: "missed", hits: 3, need: 8 });
+    expect(parseRowFinish({ result: "drift", why: "late" })).toEqual({ result: "drift", why: "late", hits: 0, need: 0 });
   });
   it("ping / dig", () => {
     expect(parsePing({ band: 3 })).toEqual({ band: 3 });
     expect(parsePing({ band: null, wait: true })).toEqual({ wait: true });
     expect(parsePing({ band: null, heat: "wrong_map" })).toEqual({ wrongMap: true });
-    expect(parseDigStart({ result: "dig", dig: { seed: 9, need: 3, win: 120 } })).toEqual({ result: "dig", seed: 9, need: 3, win: 120 });
+    expect(parseDigStart({ result: "dig", dig: { period: 99, need: 3, win: 120, live: "dig" } })).toEqual({ result: "dig", period: 99, need: 3, win: 120 });
     expect(parseDigStart({ result: "miss", heat: "warm" })).toEqual({ result: "miss", heat: "warm" });
     expect(parseDigFinish({ result: "found", loot: 900, jackpot: false, clean: true })).toEqual({ result: "found", loot: 900, jackpot: false, clean: true });
     expect(parseDigFinish({ result: "lost", why: "gave_up" })).toEqual({ result: "lost", why: "gave_up" });
+    expect(parseDigFinish({ result: "lost", why: "late" })).toEqual({ result: "lost", why: "late" });
   });
 });
