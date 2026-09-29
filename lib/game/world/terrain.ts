@@ -73,11 +73,11 @@ export const PAGODA = { x: 3800, y: 1180 } as const;
 /** Kênh rạch: the canals crossing the delta, joined to the river (their water is the river's level). World px. */
 export const CANALS: readonly (readonly Vec[])[] = [
   [{ x: -200, y: 300 }, { x: 700, y: 320 }, { x: 1700, y: 290 }, { x: 2700, y: 330 }, { x: 3600, y: 300 }, { x: 4400, y: 320 }],
-  [{ x: 876, y: 300 }, { x: 880, y: 900 }, { x: 874, y: 1300 }, { x: 880, y: 1480 }],
+  [{ x: 560, y: 1080 }, { x: 650, y: 1250 }, { x: 700, y: 1400 }, { x: 760, y: 1580 }, { x: 830, y: 1880 }],
   [{ x: 2150, y: 900 }, { x: 2210, y: 1150 }, { x: 2250, y: 1400 }, { x: 2250, y: 1790 }],
   [{ x: 3340, y: 900 }, { x: 3330, y: 1300 }, { x: 3360, y: 1600 }, { x: 3320, y: 1870 }],
   [{ x: 4060, y: 300 }, { x: 4080, y: 800 }, { x: 4130, y: 1000 }, { x: 4300, y: 1100 }],
-  [{ x: 60, y: 1100 }, { x: 300, y: 1250 }, { x: 420, y: 1500 }, { x: 424, y: 1890 }],
+  [{ x: 60, y: 1100 }, { x: 250, y: 1300 }, { x: 300, y: 1600 }, { x: 310, y: 1800 }],
 ];
 const CANAL_CUM = CANALS.map((c) => cumulative(c));
 export const CANAL_HALF_W = 13;

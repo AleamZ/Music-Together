@@ -7,11 +7,12 @@ import { zoneAt } from "@/lib/game/world/zones";
 describe("the delta's life along the water", () => {
   it("bridges every road and trail over the canals (walkable decks over real water)", () => {
     const c = canalCrossings();
-    expect(c.length).toBeGreaterThan(3);
+    expect(c.length).toBeGreaterThanOrEqual(2);
     expect(c.some((x) => x.monkey)).toBe(true);                               // a cầu khỉ on a trail
     for (const b of c) {
       expect(waterAt(b.x, b.y), `${b.x | 0},${b.y | 0}`).toBe(RIVER_LEVEL);
       expect(wildBlocked(b.x, b.y)).toBe(false);
+      expect(b.len, "a crossing, not a path running along a canal").toBeLessThan(120);
       expect(standHeight(b.x, b.y)).toBeGreaterThan(RIVER_LEVEL);
     }
   });

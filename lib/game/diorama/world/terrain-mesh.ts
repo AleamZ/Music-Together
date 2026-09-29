@@ -20,8 +20,8 @@ const UNDER_ZONE = 0.45;
 
 const C = {
   meadow: new THREE.Color(0x86b64c), meadowDark: new THREE.Color(0x5f9a3c), hay: new THREE.Color(0xb7c064),
-  forest: new THREE.Color(0x4a7f36), zoneGrass: new THREE.Color(0x6aa23c), sand: new THREE.Color(0xdcc38c),
-  bed: new THREE.Color(0x5b7f70), rock: new THREE.Color(0x9c9a86), rockDark: new THREE.Color(0x7f8270),
+  forest: new THREE.Color(0x4a7f36), zoneGrass: new THREE.Color(0x6aa23c), sand: new THREE.Color(0xb8a878),
+  bed: new THREE.Color(0x8a8458), rock: new THREE.Color(0x9c9a86), rockDark: new THREE.Color(0x7f8270),
   peak: new THREE.Color(0xc9c7bd), road: new THREE.Color(0xc79a5f), trail: new THREE.Color(0xb89c6c),
   rice: new THREE.Color(0x9ccc48), riceRipe: new THREE.Color(0xd8c457), paddyWater: new THREE.Color(0x7a9a70),
   dike: new THREE.Color(0x8a8a4a), tramFloor: new THREE.Color(0x6a8446),

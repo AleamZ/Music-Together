@@ -108,7 +108,7 @@ export class WorldView implements View3D {
   private horizon: THREE.Mesh | null = null;
   private sea: THREE.Mesh | null = null;
   /** The muddy brown-green water of the delta (the river mouths, the canals). */
-  private readonly seaMat = toon({ color: 0x8a8a52 });
+  private readonly seaMat = toon({ color: 0x8a8a52, transparent: true, opacity: 0.9 });
   private readonly zones: ZoneScene[] = [];
   private readonly mergedGeos: THREE.BufferGeometry[] = [];
   private readonly mergedMats: THREE.Material[] = [];
@@ -300,6 +300,7 @@ export class WorldView implements View3D {
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(2 * reach + (DOMAIN.x1 - DOMAIN.x0), 2 * reach + (DOMAIN.y1 - DOMAIN.y0)).rotateX(-Math.PI / 2), this.seaMat);
     sea.position.set((DOMAIN.x0 + DOMAIN.x1) / 32, RIVER_LEVEL - 0.05, (DOMAIN.y0 + DOMAIN.y1) / 32);
     sea.name = "sea";
+    sea.renderOrder = -1;                                                  // under the river's ribbon, always
     sea.receiveShadow = true;
     this.sea = sea;
     this.scene.add(sea);
@@ -336,6 +337,13 @@ export class WorldView implements View3D {
   /** The field's plots (the crops by stage). */
   setPlots(plots: ReadonlyArray<PlotDraw>): void {
     this.zones.find((z) => z.id === "field")?.built.setPlots?.(plots, Date.now());
+  }
+
+  /** Dev screenshots: put the free camera exactly here (units), looking along yaw/pitch, with no keys held. */
+  setFly(pos: V3, yaw: number, pitch: number): void {
+    this.setCameraMode("free");
+    this.flyIn = { f: false, b: false, l: false, r: false, u: false, d: false, fast: false };
+    this.fly = { pos: { ...pos }, yaw, pitch };
   }
 
   setCameraMode(m: CameraMode): void {

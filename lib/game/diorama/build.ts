@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { POND_CX, POND_CY, POND_RX, POND_RY, pondEdge } from "@/lib/game/maps/pond";
 import { pxLen, pxToWorld } from "./coords";
 import { rng, type Building, type DioramaLayout, type Ground, type Plant } from "./layout";
 
@@ -9,9 +10,9 @@ import { rng, type Building, type DioramaLayout, type Ground, type Plant } from 
 // no model or texture files. Flat, stylized toon colours (flat-shaded Lambert).
 
 const GROUND_COL: Record<Ground, number> = {
-  grass: 0x6aa23c, path: 0xc89a5e, soil: 0x6e4a2a, sand: 0xdcc08a, water: 0x3f7f86, deep: 0x2f6470, bamboo: 0x4f8a30,
+  grass: 0x6aa23c, path: 0xc89a5e, soil: 0x6e4a2a, sand: 0x8a8a4e, water: 0x5f6a44, deep: 0x4a5436, bamboo: 0x4f8a30,
 };
-const GROUND_TOP: Record<Ground, number> = { grass: 0, path: -0.03, soil: -0.02, sand: -0.08, water: -0.7, deep: -1.0, bamboo: 0.02 };
+const GROUND_TOP: Record<Ground, number> = { grass: 0, path: -0.03, soil: -0.02, sand: -0.3, water: -0.7, deep: -1.0, bamboo: 0.02 };
 /** The terrain block's floor (every tile runs from here up to its top). */
 const FLOOR = -1.4;
 export const WATER_Y = -0.22;
@@ -105,13 +106,60 @@ export function buildDiorama(L: DioramaLayout): Built {
   const wa = W(minX - 6, minY - 6), wb = W(maxX + 6, maxY + 6);
   const wGeo = g(new THREE.PlaneGeometry(wb.x - wa.x, wb.z - wa.z, 64, 40));
   wGeo.rotateX(-Math.PI / 2);
-  const waterMat = new THREE.MeshPhongMaterial({ color: 0x4aa3c8, transparent: true, opacity: 0.82, shininess: 90, specular: 0x9fd8ff, flatShading: true });
+  // the delta's water family (the river's brown-green silt), the pond a little clearer and greener; lighter in the
+  // shallows at the shore, deeper in the middle (vertex colours: no hard seam against the bank or the world's water)
+  {
+    const pos = wGeo.getAttribute("position") as THREE.BufferAttribute, cols = new Float32Array(pos.count * 3);
+    const deep = new THREE.Color(0x6f8456), shallow = new THREE.Color(0xa9a674), c = new THREE.Color();
+    const cx0 = (wa.x + wb.x) / 2, cz0 = (wa.z + wb.z) / 2;
+    for (let i = 0; i < pos.count; i++) {
+      const px = (pos.getX(i) + cx0) * 16 + L.width / 2, py = (pos.getZ(i) + cz0) * 16 + L.height / 2;
+      const dx = (px - POND_CX) / POND_RX, dy = (py - POND_CY) / POND_RY, q = Math.hypot(dx, dy) / pondEdge(Math.atan2(dy, dx));
+      c.copy(deep).lerp(shallow, Math.max(0, Math.min(1, (q - 0.55) / 0.45)) ** 1.5);
+      cols.set([c.r, c.g, c.b], i * 3);
+    }
+    wGeo.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+  }
+  const waterMat = new THREE.MeshPhongMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: 0.86, shininess: 60, specular: 0x8a9a70, flatShading: true });
   mats.set("water", waterMat);
   const water = new THREE.Mesh(wGeo, waterMat);
   water.position.set((wa.x + wb.x) / 2, WATER_Y, (wa.z + wb.z) / 2);
   water.receiveShadow = true;
   root.add(water);
   const waterBase = Float32Array.from((wGeo.attributes.position as THREE.BufferAttribute).array);
+
+  // the bank: one smooth ring round the shore — grass-edge mud outside easing down to a silty lip under the water — in
+  // place of stepped tan tiles. Floats a hair over the grass with a polygon offset (no fight with the ground tiles).
+  {
+    const n = L.shore.length, pos: number[] = [], cols: number[] = [], idx: number[] = [];
+    const bands: Array<[number, number, number]> = [[14, 0.035, 0x7f8a48], [4, 0.0, 0x8e8456], [-6, -0.2, 0x7a7048], [-18, -0.45, 0x5f6a44]];
+    const c = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      const s = L.shore[i], nx = s.x - POND_CX, ny = (s.y - POND_CY) * (POND_RX / POND_RY), l = Math.hypot(nx, ny) || 1;
+      for (const [off, y, hex] of bands) {
+        const p = W(s.x + (nx / l) * off, s.y + (ny / l) * off * (POND_RY / POND_RX));
+        pos.push(p.x, y, p.z);
+        c.setHex(hex).offsetHSL(0, 0, ((i * 37) % 7 - 3) * 0.006);
+        cols.push(c.r, c.g, c.b);
+      }
+    }
+    const B = bands.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      for (let b = 0; b < B - 1; b++) { const a0 = i * B + b, a1 = j * B + b; idx.push(a0, a0 + 1, a1, a1, a0 + 1, a1 + 1); }
+    }
+    const bg = g(new THREE.BufferGeometry());
+    bg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    bg.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+    bg.setIndex(idx);
+    bg.computeVertexNormals();
+    const bankMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    mats.set("bank", bankMat);
+    const bank = new THREE.Mesh(bg, bankMat);
+    bank.receiveShadow = true;
+    bank.userData.keep = true;
+    root.add(bank);
+  }
 
   // lily pads and their flowers
   const padGeo = g(new THREE.CylinderGeometry(0.28, 0.28, 0.03, 9, 1, false, 0.5, Math.PI * 1.8));

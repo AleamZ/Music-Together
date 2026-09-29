@@ -17,6 +17,8 @@ import { buildWorld } from "@/lib/game/world/compose";
 import { MINE } from "@/lib/game/world/mine";
 import { TRAILS } from "@/lib/game/world/roads";
 import { toWorld } from "@/lib/game/world/zones";
+import { canalCrossings, FLOATING_MARKET, stiltHouses } from "@/lib/game/world/delta";
+import { heightAt } from "@/lib/game/world/terrain";
 import type { WeatherKind } from "@/lib/game/weather/model";
 
 // Dev only (/dev/world): the unified world in 3D — no login, no network. Overview orbits the whole world; follow rides
@@ -25,6 +27,28 @@ import type { WeatherKind } from "@/lib/game/weather/model";
 
 const KINDS: ReadonlyArray<WeatherKind | "none"> = ["none", "clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
 const MODE_LABEL: Record<CameraMode, string> = { follow: "Theo người", overview: "Toàn cảnh", free: "Bay tự do" };
+
+/** Dev camera presets (units, yaw, pitch) for the screenshots: the delta's landmarks up close. */
+function camPresets(): Record<string, { pos: { x: number; y: number; z: number }; yaw: number; pitch: number }> {
+  const look = (x: number, y: number, dist: number, height: number, yaw = 0.5) => ({
+    pos: { x: x / 16 + Math.sin(yaw) * dist, y: heightAt(x, y) + height, z: y / 16 + Math.cos(yaw) * dist }, yaw, pitch: -Math.atan2(height, dist),
+  });
+  const cr = canalCrossings(), monkey = cr.find((c) => c.monkey) ?? cr[0], road = cr.find((c) => !c.monkey) ?? cr[0];
+  const h = stiltHouses()[3] ?? stiltHouses()[0];
+  return {
+    overview: { pos: { x: 130, y: 120, z: 230 }, yaw: 0, pitch: -0.75 },
+    caukhi: look(monkey.x, monkey.y, 9, 4),
+    bridge: look(road.x, road.y, 11, 5, 1.1),
+    market: look(FLOATING_MARKET.x, FLOATING_MARKET.y, 16, 7, 0.3),
+    houses: look(h.x, h.y, 12, 6, 0.8),
+    river: { pos: { x: 30, y: 45, z: 150 }, yaw: -Math.PI / 2 + 0.35, pitch: -0.5 },
+    paddies: { pos: { x: 40, y: 30, z: 40 }, yaw: -2.4, pitch: -0.45 },
+    tram: look(1700, 250, 20, 10),
+    hill: look(3780, 1232, 60, 25, -0.9),
+    pond: look(1260, 1260, 18, 11, 0.2),
+    pondedge: look(1290, 1470, 16, 6, 0.1),
+  };
+}
 
 function hourToMs(hour: number): number {
   const d = new Date();
@@ -107,6 +131,21 @@ export default function WorldPreview({ init = {} }: { init?: WorldPreviewInit })
         teleport: (i: number) => { me.pos = { ...stops[i % stops.length] }; me.display = { ...me.pos }; me.path = null; meI = (i + 1) % stops.length; },
         /** The canvas as a PNG data URL, drawn now (dev screenshots). */
         snap: () => { if (lastFrame) v.render({ ...lastFrame, t: performance.now() }); return canvas.toDataURL("image/png"); },
+        /** A shot from a named camera (camPresets) drawn and read back in one go — nothing else can move the camera
+         *  in between (other sessions driving the browser). JPEG data URL, small enough to hand back. */
+        snapAt: (name: string, quality = 0.85) => {
+          const p = camPresets()[name];
+          if (!p) return `unknown preset; try ${Object.keys(camPresets()).join(", ")}`;
+          v.setFly(p.pos, p.yaw, p.pitch);
+          for (let i = 0; i < 3; i++) if (lastFrame) v.render({ ...lastFrame, t: performance.now() + i * 16 });
+          return canvas.toDataURL("image/jpeg", quality);
+        },
+        /** snapAt, saved by the dev route to <os tmp>/world-snaps/<file>.jpg; resolves to where. */
+        saveSnap: async (name: string, file = name) => {
+          const w = (window as unknown as { __world: { snapAt: (n: string) => string } }).__world;
+          const r = await fetch("/dev/world/snap", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: file, data: w.snapAt(name) }) });
+          return r.ok ? ((await r.json()) as { file: string }).file : `failed ${r.status}`;
+        },
         bench: (n = 120) => {
           const t = performance.now();
           const f = { t, focus: me.display, billboards: [], night: 0, warm: 0, weather: null, windKmh: 10, fx: 3 as WeatherFx, reduced: false };

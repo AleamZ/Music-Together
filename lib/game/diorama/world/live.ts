@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { CO_TU_LOOK } from "@/lib/game/look";
 import { LOTS } from "@/lib/game/maps/khu-nha";
-import { POND_CX, POND_CY, POND_RX, POND_RY } from "@/lib/game/maps/pond";
+import { pondDuckAt } from "@/lib/game/world/pond-life";
 import { RIVER } from "@/lib/game/river/geometry";
 import type { Facing } from "@/lib/game/types";
 import { RIVER_LEVEL, ZONE_ELEV } from "@/lib/game/world/terrain";
@@ -73,7 +73,7 @@ export class LiveLayer {
     for (let i = 0; i < 3; i++) {
       const c = duckModel(this.mats);
       this.root.add(c.root);
-      this.ambient.ducks.push({ c, a: i * 2.1, r: 0.45 + i * 0.12, speed: 0.05 + i * 0.015 });
+      this.ambient.ducks.push({ c, a: i * 2.1, r: i / 2, speed: 0.05 + i * 0.015 });
     }
   }
 
@@ -485,9 +485,9 @@ export class LiveLayer {
     const pond = ZONES.pond;
     for (const d of this.ambient.ducks) {
       if (!reduced) d.a += d.speed * dt;
-      const x = pond.ox + POND_CX + Math.cos(d.a) * POND_RX * d.r, y = pond.oy + POND_CY + Math.sin(d.a) * POND_RY * d.r;
-      d.c.root.position.set(U(x), POND_WATER - 0.2 + (reduced ? 0 : Math.sin(t / 500 + d.a * 9) * 0.02), U(y));
-      d.c.root.rotation.y = Math.atan2(-Math.sin(d.a) * POND_RX, Math.cos(d.a) * POND_RY);
+      const p = pondDuckAt(d.r, d.a);                                     // north of the jetty, clear of its deck
+      d.c.root.position.set(U(pond.ox + p.x), POND_WATER - 0.2 + (reduced ? 0 : Math.sin(t / 500 + d.a * 9) * 0.02), U(pond.oy + p.y));
+      d.c.root.rotation.y = p.yaw;
     }
   }
 
