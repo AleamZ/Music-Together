@@ -1,14 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { appMode } from "@/lib/app-mode";
-import { devtoolsDocked, isDevtoolsShortcut } from "@/components/DevtoolsGuard";
+import { devtoolsDocked, isDevtoolsShortcut, nextFloor, type Gaps } from "@/components/DevtoolsGuard";
 
 describe("devtoolsDocked", () => {
-  it("a wide browser sidebar at load is the baseline, not DevTools", () => {
-    expect(devtoolsDocked({ w: 320, h: 90 }, { w: 320, h: 90 })).toBe(false);
+  /** Feeds a sequence of window strips the way the guard does; returns whether each reading counts as open. */
+  const run = (seq: Gaps[]) => {
+    let floor: Gaps | null = null;
+    return seq.map((g) => { floor = nextFloor(floor, g); return devtoolsDocked(floor, g); });
+  };
+  it("a wide browser sidebar or tall chrome is not DevTools", () => {
+    expect(run([{ w: 300, h: 90 }, { w: 300, h: 90 }])).toEqual([false, false]);
+    expect(run([{ w: 16, h: 140 }])).toEqual([false]);
   });
   it("a panel opening beside or under the page is caught", () => {
-    expect(devtoolsDocked({ w: 16, h: 90 }, { w: 516, h: 90 })).toBe(true);
-    expect(devtoolsDocked({ w: 16, h: 90 }, { w: 16, h: 390 })).toBe(true);
+    expect(run([{ w: 16, h: 90 }, { w: 516, h: 90 }])).toEqual([false, true]);
+    expect(run([{ w: 16, h: 90 }, { w: 16, h: 390 }])).toEqual([false, true]);
+  });
+  it("DevTools already open at load is caught, and closing then reopening is caught again", () => {
+    expect(run([{ w: 16, h: 480 }, { w: 16, h: 90 }, { w: 16, h: 480 }])).toEqual([true, false, true]);
+    expect(run([{ w: 520, h: 90 }, { w: 16, h: 90 }, { w: 16, h: 90 }, { w: 400, h: 90 }])).toEqual([true, false, false, true]);
+  });
+  it("chrome shrinking (fullscreen exit, a bar closing) never counts", () => {
+    expect(run([{ w: 16, h: 130 }, { w: 16, h: 90 }, { w: 16, h: 130 }])).toEqual([false, false, false]);
   });
 });
 

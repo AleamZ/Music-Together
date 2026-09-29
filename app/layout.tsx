@@ -34,9 +34,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="min-h-full">
         <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('music-together:theme');if(t==='cozy'||t==='dragon')document.documentElement.setAttribute('data-theme',t)}catch(e){}" }} />
         {IS_PROD && <script dangerouslySetInnerHTML={{ __html: DISABLE_REACT_DEVTOOLS_SCRIPT }} />}
-        <Providers>{children}</Providers>
-        <OutdatedBanner />
-        <DevtoolsGuard />
+        <DevtoolsGuard>
+          <Providers>{children}</Providers>
+          <OutdatedBanner />
+        </DevtoolsGuard>
       </body>
     </html>
   );
