@@ -6,6 +6,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoom } from "@/hooks/useRoom";
 import AuthScreen from "@/components/auth/AuthScreen";
 import JoinGate from "@/components/room/JoinGate";
+import ClosedRoom from "@/components/room/ClosedRoom";
+import { isRoomClosedFor } from "@/lib/halls";
 import RoomSession from "@/components/room/RoomSession";
 import BrandSpinner from "@/components/brand/BrandSpinner";
 
@@ -24,6 +26,7 @@ export default function RoomClient({ code }: { code: string }) {
       <Link href="/" className="text-burgundy-accent underline">Về trang chủ</Link>
     </main>
   );
-  if (!view.myMemberId) return <JoinGate code={code} token={view.token} onJoined={() => force((n) => n + 1)} />;
+  if (isRoomClosedFor(view.state.room, { isRoot: !!account.isRoot, isAdmin: view.role.isAdmin })) return <ClosedRoom name={view.state.room.name} />;
+  if (!view.myMemberId) return <JoinGate code={code} token={view.token} name={view.state.room.name} isPublic={view.state.room.kind === "public"} onJoined={() => force((n) => n + 1)} />;
   return <RoomSession view={view} />;
 }

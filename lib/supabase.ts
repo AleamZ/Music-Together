@@ -33,7 +33,10 @@ export interface Room {
   max_duration_seconds: number; require_approval: boolean; banned_keywords: string[];
   max_orders_per_member: number;
   auto_replay_history: boolean;
+  /** 0093: 'public' halls are open to all; any other room is closed to all but its admin and root. */
+  kind?: RoomKind; pinned_order?: number | null;
 }
+export type RoomKind = "public" | "private";
 export interface Member { id: string; room_id: string; account_id: string; joined_at: string; username?: string; }
 export type QueueStatus = "pending" | "approved";
 export interface QueueItem {
