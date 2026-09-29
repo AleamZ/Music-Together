@@ -1,100 +1,38 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { DOMAIN, fbm, hashAt, RIVER_LEVEL, RIVER_PTS, smoothstep } from "@/lib/game/world/terrain";
-import { WORLD_H, WORLD_W } from "@/lib/game/world/zones";
+import { rimHills } from "@/lib/game/world/rim";
+import { DOMAIN, fbm, hashAt, heightAt, waterAt } from "@/lib/game/world/terrain";
+import { landColor } from "./terrain-mesh";
 
-// The backdrop round the playable world (view only: no collision, not on the minimap, all of it beyond DOMAIN). Few
-// draw calls, no LOD:
-//   - the far land (one vertex-coloured grid): the delta going on — paddies in blocks, dikes, darker orchard strips —
-//     cut by the two river mouths' continuations and a far river winding off east; south-west it opens into a wide
-//     estuary / the sea (below the sea plane there, so the sea shows);
-//   - palm / dừa tree lines along the far canals and dikes (two instanced meshes: trunks, crowns);
-//   - mountain ranges on the north and east horizon: three layered ridgelines (one merged mesh, unlit, fading into
-//     the haze colour with distance; the fog does the rest), cloud caps on the peaks toward Núi Mây Xanh (north-east).
-// World px in, three units out (1 unit = 16 px), as the rest of the world view.
+// The land past the rendered chunks (view only: beyond DOMAIN, no collision, not on the minimap) — the same seamless
+// heightfield as the world's (terrain.ts heightAt, with rim.ts folded in: Thất Sơn's forested hills round the north
+// and east, paddies and canals on the low land, the far rivers and the south-west estuary), coloured by the same
+// landColor on the same lit terrain material, fading into the fog at the far edge. Its trees: instanced tropical kinds
+// (broadleaf canopy on the hills, bamboo and coconuts at their feet, dừa groves and thốt nốt on the paddies), in two
+// levels: low-poly models in the near band, a single-crown impostor farther out. Few draw calls, built once.
 
 const U = 16;
+/** How far the far land reaches past DOMAIN (px), and its grid (px). */
+const REACH = 12000, STEP = 200;
+/** Trees: out to this far past DOMAIN; low-poly models inside NEAR_TREES, crowns only beyond. */
+const TREES_OUT = 6400, NEAR_TREES = 2600, TREE_STEP = 100;
 
-/** The far river: the main river's east end winding on to the horizon (world px). */
-const FAR_RIVER: { x: number; y: number }[] = [
-  RIVER_PTS[RIVER_PTS.length - 1], { x: 7200, y: 1500 }, { x: 9200, y: 2100 }, { x: 11400, y: 1300 }, { x: 13800, y: 1700 }, { x: 17000, y: 900 },
-];
-/** …and the west end out to the estuary. */
-const WEST_RIVER: { x: number; y: number }[] = [
-  RIVER_PTS[0], { x: -3000, y: 1900 }, { x: -4800, y: 2700 }, { x: -6500, y: 3800 },
-];
-/** The far canals (straight, as the delta's are), for the tree lines and the water. */
-const FAR_CANALS: { x: number; y: number }[][] = [
-  [{ x: -9000, y: 300 }, { x: -1200, y: 310 }],
-  [{ x: 5200, y: 320 }, { x: 14000, y: 380 }],
-  [{ x: 2000, y: -1200 }, { x: 2100, y: -9000 }],
-  [{ x: -2400, y: -2200 }, { x: 7000, y: -2600 }],
-  [{ x: 6200, y: -800 }, { x: 6400, y: 5200 }],
-  [{ x: 1000, y: 3500 }, { x: 9000, y: 3900 }],
-];
-
-function segDist(pts: readonly { x: number; y: number }[], x: number, y: number): number {
-  let d = Infinity;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1], l2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-    const t = Math.max(0, Math.min(1, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / l2));
-    d = Math.min(d, Math.hypot(x - a.x - t * (b.x - a.x), y - a.y - t * (b.y - a.y)));
-  }
-  return d;
+function outDomain(x: number, y: number): number {
+  return Math.max(DOMAIN.x0 - x, x - DOMAIN.x1, DOMAIN.y0 - y, y - DOMAIN.y1, 0);
 }
-
-/** The estuary: the south-west opens into the sea. 1 = open water. */
-function estuary(x: number, y: number): number {
-  const d = Math.hypot((x + 7000) / 1.4, y - 6200);
-  return 1 - smoothstep(5200, 6400, d + fbm(x / 1400, y / 1400, 2) * 900);
-}
-
-/** How wet far px (x, y) is, 0…1 (smooth across the banks, so the grid shows no steps), and how much of it is sea. */
-export function backdropWet(x: number, y: number): { wet: number; sea: number } {
-  const sea = smoothstep(0.3, 0.7, estuary(x, y));
-  const w = 180 + Math.max(0, Math.hypot(x - WORLD_W / 2, y - WORLD_H / 2) - 3000) * 0.02;
-  const river = Math.max(1 - smoothstep(w - 160, w + 160, segDist(FAR_RIVER, x, y)), 1 - smoothstep(w * 1.4 - 160, w * 1.4 + 160, segDist(WEST_RIVER, x, y)));
-  let canal = 0;
-  for (const c of FAR_CANALS) canal = Math.max(canal, 1 - smoothstep(20, 180, segDist(c, x, y)));
-  return { wet: Math.max(sea, river, canal * 0.8), sea };
-}
-
-/** Is far px (x, y) water? */
-export function backdropWater(x: number, y: number): boolean {
-  return backdropWet(x, y).wet > 0.5;
-}
-
-const C = {
-  rice: new THREE.Color(0x8fbf4a), ripe: new THREE.Color(0xc7c255), young: new THREE.Color(0x6fae45),
-  dike: new THREE.Color(0x7d8a4a), orchard: new THREE.Color(0x4f7f3a), sand: new THREE.Color(0xcdbf8a),
-  haze: new THREE.Color(0x9fb8b0), river: new THREE.Color(0x5f96a8), sea: new THREE.Color(0x3f86b8),
-};
-
-const tmpW = new THREE.Color();
 
 function farLand(): THREE.Mesh {
-  const step = 200, reach = 12000;
-  const x0 = DOMAIN.x0 - reach, y0 = DOMAIN.y0 - reach;
-  const nx = Math.ceil((DOMAIN.x1 - DOMAIN.x0 + 2 * reach) / step), ny = Math.ceil((DOMAIN.y1 - DOMAIN.y0 + 2 * reach) / step);
+  const x0 = DOMAIN.x0 - REACH, y0 = DOMAIN.y0 - REACH;
+  const nx = Math.round((DOMAIN.x1 - DOMAIN.x0 + 2 * REACH) / STEP), ny = Math.round((DOMAIN.y1 - DOMAIN.y0 + 2 * REACH) / STEP);
   const pos = new Float32Array((nx + 1) * (ny + 1) * 3), col = new Float32Array((nx + 1) * (ny + 1) * 3);
   const c = new THREE.Color();
   for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
-    const x = x0 + i * step, y = y0 + j * step, k = (j * (nx + 1) + i) * 3;
-    const out = Math.max(DOMAIN.x0 - x, x - DOMAIN.x1, DOMAIN.y0 - y, y - DOMAIN.y1, 0);
-    const inside = out === 0;
-    const { wet, sea } = backdropWet(x, y);
-    // the land a hand above the water; the far rim rises gently so the eye reads distance
-    const land = RIVER_LEVEL + 0.35 + smoothstep(4000, 14000, out) * 3;
-    const h = inside ? -30 : land + (RIVER_LEVEL + 0.08 - land) * wet;   // water: its own surface, over the sea plane
+    const x = x0 + i * STEP, y = y0 + j * STEP, k = (j * (nx + 1) + i) * 3;
+    // strictly inside DOMAIN the chunks draw the land: sink it out of sight; ON the boundary share their height
+    const inside = x > DOMAIN.x0 && x < DOMAIN.x1 && y > DOMAIN.y0 && y < DOMAIN.y1;
+    const h = inside ? heightAt(x, y) - 40 : heightAt(x, y);
     pos.set([x / U, h, y / U], k);
-    // paddy blocks (each ~1.2 km a tone), dikes between, orchard strips, sand on the estuary's shore
-    const bx = Math.floor(x / 1200), by = Math.floor(y / 900), t = hashAt(bx, by, 17);
-    c.copy(C.rice).lerp(t < 0.35 ? C.ripe : t < 0.7 ? C.young : C.rice, 0.6);
-    if (hashAt(bx, by, 29) > 0.8) c.copy(C.orchard);
-    if (Math.abs(((x % 1200) + 1200) % 1200 - 600) > 560 || Math.abs(((y % 900) + 900) % 900 - 450) > 410) c.lerp(C.dike, 0.6);
-    if (estuary(x, y) > 0.2) c.lerp(C.sand, 0.7);
-    c.lerp(tmpW.copy(C.river).lerp(C.sea, sea), wet);
-    c.lerp(C.haze, Math.min(0.55, out / 16000));
+    landColor(x, y, h, 0.3, c);
     col.set([c.r, c.g, c.b], k);
   }
   const idx: number[] = [];
@@ -109,96 +47,97 @@ function farLand(): THREE.Mesh {
   g.computeVertexNormals();
   const m = new THREE.Mesh(g);
   m.name = "horizon";
+  m.receiveShadow = false;
   return m;
 }
 
-/** Palm / dừa lines along the far canals and a few dikes. */
-function palms(): { trunks: THREE.InstancedMesh; crowns: THREE.InstancedMesh } {
-  const spots: { x: number; y: number; s: number }[] = [];
-  const line = (a: { x: number; y: number }, b: { x: number; y: number }, off: number) => {
-    const len = Math.hypot(b.x - a.x, b.y - a.y), n = Math.floor(len / 70);
-    const nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
-    for (let i = 0; i < n; i++) {
-      const t = (i + hashAt(i, off, 3) * 0.6) / n, x = a.x + (b.x - a.x) * t + nx * off, y = a.y + (b.y - a.y) * t + ny * off;
-      const out = Math.max(DOMAIN.x0 - x, x - DOMAIN.x1, DOMAIN.y0 - y, y - DOMAIN.y1, 0);
-      if (out < 200 || out > 9000 || backdropWater(x, y) || hashAt(x, y, 5) < 0.25) continue;
-      spots.push({ x, y, s: 0.8 + hashAt(x, y, 9) * 0.6 });
-    }
-  };
-  for (const c of FAR_CANALS) { line(c[0], c[1], 70); line(c[0], c[1], -70); }
-  for (const r of [FAR_RIVER, WEST_RIVER]) for (let i = 0; i < r.length - 1; i++) { line(r[i], r[i + 1], 320); line(r[i], r[i + 1], -320); }
-  // the world's rim: a tree line just past the channel round it
-  const e = 1400;
-  const rim = [{ x: DOMAIN.x0 - e, y: DOMAIN.y0 - e }, { x: DOMAIN.x1 + e, y: DOMAIN.y0 - e }, { x: DOMAIN.x1 + e, y: DOMAIN.y1 + e }, { x: DOMAIN.x0 - e, y: DOMAIN.y1 + e }];
-  for (let i = 0; i < 4; i++) line(rim[i], rim[(i + 1) % 4], 0);
-  const trunkGeo = new THREE.CylinderGeometry(0.12, 0.2, 5, 5).translate(0, 2.5, 0);
-  const crownGeo = new THREE.ConeGeometry(2.2, 1.6, 6).translate(0, 5.2, 0);
-  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: 0x7a5a3a, flatShading: true }), spots.length);
-  const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshLambertMaterial({ color: 0x3f7a35, flatShading: true }), spots.length);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), ax = new THREE.Vector3(0, 1, 0);
-  spots.forEach((o, i) => {
-    q.setFromAxisAngle(ax, hashAt(o.x, o.y, 11) * Math.PI * 2);
-    m.compose(p.set(o.x / U, RIVER_LEVEL + 0.3, o.y / U), q, s.setScalar(o.s * 1.6));
-    trunks.setMatrixAt(i, m);
-    crowns.setMatrixAt(i, m);
-  });
-  trunks.name = "backdrop-palms";
-  return { trunks, crowns };
+type Kind = "broad" | "palm" | "bamboo";
+const PAL: Record<Kind, number[]> = {
+  broad: [0x3f7a35, 0x4f8a3a, 0x36702f, 0x5b9a42],
+  palm: [0x4f8f3a, 0x5f9f45, 0x467f35],
+  bamboo: [0x6fa545, 0x7fb54f],
+};
+
+function painted(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
+  const c = new THREE.Color(hex);
+  const out = g.index ? g.toNonIndexed() : g;
+  const m = out.getAttribute("position").count, b = new Float32Array(m * 3);
+  for (let i = 0; i < m; i++) b.set([c.r, c.g, c.b], i * 3);
+  out.setAttribute("color", new THREE.BufferAttribute(b, 3));
+  out.deleteAttribute("uv");
+  if (out.getAttribute("normal")) out.deleteAttribute("normal");
+  return out;
+}
+const WHITE = 0xffffff, TRUNK = 0x6b4e33;
+/** Low-poly models (1 unit = 16 px), leaves white (tinted per instance), trunks brown. */
+function model(kind: Kind, near: boolean): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  if (kind === "broad") {
+    if (near) parts.push(painted(new THREE.CylinderGeometry(0.18, 0.28, 2.2, 5).translate(0, 1.1, 0), TRUNK));
+    parts.push(painted(new THREE.IcosahedronGeometry(near ? 1.9 : 2.1, near ? 1 : 0).scale(1, 0.8, 1).translate(0, 3.1, 0), WHITE));
+    if (near) parts.push(painted(new THREE.IcosahedronGeometry(1.3, 0).translate(0.9, 3.8, 0.4), WHITE));
+  } else if (kind === "palm") {
+    if (near) {
+      parts.push(painted(new THREE.CylinderGeometry(0.1, 0.16, 6, 5).translate(0, 3, 0).rotateZ(0.08), TRUNK));
+      for (let i = 0; i < 7; i++) parts.push(painted(new THREE.ConeGeometry(0.28, 2.4, 3).translate(0, 1.2, 0).rotateZ(1.15).rotateY((i / 7) * Math.PI * 2).translate(0.25, 5.9, 0), WHITE));
+    } else parts.push(painted(new THREE.ConeGeometry(1.8, 1.1, 6).translate(0, 5.8, 0), WHITE), painted(new THREE.CylinderGeometry(0.12, 0.12, 5.4, 3).translate(0, 2.7, 0), TRUNK));
+  } else {
+    const n = near ? 6 : 1;
+    for (let i = 0; i < n; i++) parts.push(painted(new THREE.ConeGeometry(near ? 0.55 : 1.5, 5.5, 4).translate(Math.cos(i * 2.2) * 0.5, 2.75, Math.sin(i * 2.2) * 0.5), WHITE));
+  }
+  const g = mergeGeometries(parts)!;
+  parts.forEach((p) => p.dispose());
+  g.computeVertexNormals();
+  return g;
 }
 
-/** Three ridgelines on the north / east horizon (a quarter ring from west-north-west round to south-east). */
-function ranges(): { mesh: THREE.Mesh; clouds: THREE.Mesh } {
-  const cx = WORLD_W / 2, cy = WORLD_H / 2;
-  const parts: THREE.BufferGeometry[] = [], cloudParts: THREE.BufferGeometry[] = [];
-  const layers = [
-    { r: 6800, h: 40, col: 0x5f7f78 }, { r: 9000, h: 65, col: 0x809e9e }, { r: 12000, h: 100, col: 0xa6bcc2 },
-  ];
-  const a0 = -Math.PI * 0.95, a1 = Math.PI * 0.2, n = 160;   // from the west-north-west over the north to the south-east
-  const c = new THREE.Color();
-  layers.forEach((L, li) => {
-    const pos: number[] = [], cols: number[] = [], idx: number[] = [];
-    const peakAt = (i: number) => Math.pow(Math.max(0, fbm(i / 9 + li * 13, li * 7.7, 4) * 0.9 + 0.55), 1.6) * L.h * (0.55 + 0.45 * Math.sin((i / n) * Math.PI));
-    for (let i = 0; i <= n; i++) {
-      const a = a0 + (a1 - a0) * (i / n);
-      const peak = peakAt(i);
-      const x = cx + Math.cos(a) * L.r, y = cy + Math.sin(a) * L.r * 0.8;
-      // both ends taper down into the haze (the west end most: it shows past the estuary), no cut against the sky
-      const tn = i / n, env = smoothstep(0, 0.3, tn) * smoothstep(0, 0.15, 1 - tn);
-      pos.push(x / U, -2, y / U, x / U, RIVER_LEVEL - 1 + (7 + peak) * env, y / U);
-      c.set(L.col).lerp(C.haze, 1 - env);
-      cols.push(c.r * 0.85, c.g * 0.85, c.b * 0.85);
-      c.lerp(new THREE.Color(0xe6eef0), li === 2 ? 0.35 : peak > L.h * 0.8 ? 0.25 : 0);   // pale tops far off
-      cols.push(c.r, c.g, c.b);
-      if (i < n) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
-      // cloud caps on the high peaks toward Núi Mây Xanh (the north-east)
-      // (on a summit only: higher than both neighbours; the cap sits on it, wrapped round the ridge)
-      if (li < 2 && peak > L.h * 0.6 && peak > peakAt(i - 1) && peak > peakAt(i + 1) && a > -Math.PI * 0.6 && a < 0) {
-        const cl = new THREE.IcosahedronGeometry(1, 1).scale(L.h * 0.3, L.h * 0.07, L.h * 0.3);
-        cl.translate(x / U, RIVER_LEVEL + 6 + peak - L.h * 0.02, y / U);
-        cloudParts.push(cl);
-      }
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
-    g.setIndex(idx);
-    parts.push(g);
-  });
-  const mesh = new THREE.Mesh(mergeGeometries(parts)!, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false }));
-  mesh.name = "backdrop-ranges";
-  parts.forEach((p) => p.dispose());
-  const clouds = new THREE.Mesh(cloudParts.length ? mergeGeometries(cloudParts.map((g) => g.toNonIndexed()))! : new THREE.BufferGeometry(),
-    new THREE.MeshBasicMaterial({ color: 0xf4f7f8, transparent: true, opacity: 0.85, fog: false }));
-  clouds.name = "backdrop-clouds";
-  cloudParts.forEach((p) => p.dispose());
-  return { mesh, clouds };
+interface TreeSpot { x: number; y: number; h: number; kind: Kind; s: number; rot: number; tint: number; near: boolean }
+
+function scatter(): TreeSpot[] {
+  const out: TreeSpot[] = [];
+  const x0 = DOMAIN.x0 - TREES_OUT, y0 = DOMAIN.y0 - TREES_OUT, x1 = DOMAIN.x1 + TREES_OUT, y1 = DOMAIN.y1 + TREES_OUT;
+  for (let gy = y0; gy < y1; gy += TREE_STEP) for (let gx = x0; gx < x1; gx += TREE_STEP) {
+    const o = outDomain(gx, gy);
+    if (o <= 0) continue;
+    const roll = hashAt(gx, gy, 61), k = hashAt(gx, gy, 62);
+    const x = gx + (hashAt(gx, gy, 63) - 0.5) * TREE_STEP * 0.9, y = gy + (hashAt(gx, gy, 64) - 0.5) * TREE_STEP * 0.9;
+    const hill = rimHills(x, y);
+    let kind: Kind | null = null;
+    if (hill > 2.5) kind = roll < 0.75 ? (k < 0.85 ? "broad" : "bamboo") : null;                // the hills' canopy
+    else if (hill > 0.6) kind = roll < 0.4 ? (k < 0.5 ? "bamboo" : "palm") : null;
+    else if (fbm(x / 700 + 11, y / 700 - 5, 2) > 0.25) kind = roll < 0.45 ? (k < 0.75 ? "palm" : "broad") : null;   // dừa groves, orchards
+    else if (Math.abs(((x + 40960) % 1200) - 600) > 560 && roll < 0.25) kind = "palm";         // thốt nốt on the dikes
+    if (!kind || waterAt(x, y) !== null) continue;
+    out.push({ x, y, h: heightAt(x, y), kind, s: 0.8 + hashAt(gx, gy, 65) * 0.5, rot: hashAt(gx, gy, 66) * Math.PI * 2, tint: hashAt(gx, gy, 67), near: o < NEAR_TREES });
+  }
+  return out;
+}
+
+function trees(mat: THREE.Material): THREE.InstancedMesh[] {
+  const spots = scatter();
+  const meshes: THREE.InstancedMesh[] = [];
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), c = new THREE.Color();
+  for (const kind of ["broad", "palm", "bamboo"] as Kind[]) for (const near of [true, false]) {
+    const mine = spots.filter((t) => t.kind === kind && t.near === near);
+    if (!mine.length) continue;
+    const im = new THREE.InstancedMesh(model(kind, near), mat, mine.length);
+    mine.forEach((t, i) => {
+      m.compose(p.set(t.x / U, t.h - 0.1, t.y / U), q.setFromAxisAngle(up, t.rot), s.setScalar(t.s * 1.3));
+      im.setMatrixAt(i, m);
+      im.setColorAt(i, c.setHex(PAL[kind][Math.floor(t.tint * PAL[kind].length)]));
+    });
+    im.name = `backdrop-${kind}-${near ? "near" : "far"}`;
+    im.computeBoundingSphere();
+    meshes.push(im);
+  }
+  return meshes;
 }
 
 export interface Backdrop {
-  /** The far land (uses the terrain's material: set it on `land.material`). */
+  /** The far land (the view sets the terrain's material on it). */
   land: THREE.Mesh;
   root: THREE.Group;
-  /** The far ranges and their clouds take the sky: haze toward the horizon colour, dark at night. */
+  /** Kept for the view's sky hook: the backdrop is lit like the land, nothing to tint. */
   tint(horizon: THREE.Color, night: number): void;
   dispose(): void;
 }
@@ -207,26 +146,19 @@ export function buildBackdrop(): Backdrop {
   const land = farLand();
   const root = new THREE.Group();
   root.name = "backdrop";
-  const { trunks, crowns } = palms();
-  const { mesh, clouds } = ranges();
-  root.add(trunks, crowns, mesh, clouds);
-  for (const o of [trunks, crowns, mesh, clouds, land]) { o.matrixAutoUpdate = false; o.updateMatrix(); o.frustumCulled = o !== trunks && o !== crowns; }
-  const rm = mesh.material as THREE.MeshBasicMaterial, cm = clouds.material as THREE.MeshBasicMaterial;
-  const white = new THREE.Color(1, 1, 1);
+  const treeMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const ims = trees(treeMat);
+  root.add(...ims);
+  for (const o of [land, ...ims]) { o.matrixAutoUpdate = false; o.updateMatrix(); }
   return {
     land, root,
-    tint(horizon, night) {
-      rm.color.copy(white).lerp(horizon, 0.25).multiplyScalar(1 - 0.75 * night);
-      cm.color.copy(white).lerp(horizon, 0.3).multiplyScalar(1 - 0.7 * night);
-    },
+    tint() { /* lit by the scene's sun and fog */ },
     dispose() {
       land.geometry.dispose();
-      root.traverse((o) => {
-        const x = o as THREE.Mesh;
-        if (!x.isMesh) return;
-        x.geometry.dispose();
-        (x.material as THREE.Material).dispose();
-      });
+      for (const im of ims) { im.geometry.dispose(); im.dispose(); }
+      treeMat.dispose();
     },
   };
 }
+
+export const BACKDROP_TREES_OUT = TREES_OUT;

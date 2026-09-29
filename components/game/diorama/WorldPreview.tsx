@@ -40,6 +40,7 @@ function camPresets(): Record<string, { pos: { x: number; y: number; z: number }
     backdrop: { pos: { x: 130, y: 180, z: 300 }, yaw: 0, pitch: -0.3 },                 // the world and the ranges past it
     horizon: { pos: { x: 60, y: 6, z: 118 }, yaw: 0.3, pitch: 0.02 },                  // ground level, looking north
     ranges: { pos: { x: 250, y: 30, z: 40 }, yaw: -0.8, pitch: 0.05 },                  // the north-east ranges
+    sanh: { pos: { x: 1280 / 16, y: heightAt(1280, 430) + 2.4, z: 430 / 16 }, yaw: 0, pitch: 0.04 },   // a player by Sảnh, looking north
     estuary: { pos: { x: -40, y: 45, z: 140 }, yaw: 1.25, pitch: -0.2 },                  // the south-west, out to sea
     caukhi: look(monkey.x, monkey.y, 9, 4),
     bridge: look(road.x, road.y, 11, 5, 1.1),

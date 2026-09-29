@@ -112,13 +112,21 @@ describe("world terrain", () => {
     expect(riverAt(end.x, end.y).d).toBeLessThan(riverAt(end.x, end.y).hw);
   });
 
-  it("is a flat delta ringed by the river mouths' water, with one mountain in the east", () => {
-    let wet = 0, n = 0;
-    for (let x = DOMAIN.x0; x <= DOMAIN.x1; x += 160) for (const y of [DOMAIN.y0 + 200, DOMAIN.y1 - 200]) {
-      n++;
-      if (waterAt(x, y) === RIVER_LEVEL && heightAt(x, y) < RIVER_LEVEL) wet++;
+  it("is a flat delta in a seamless rim: Thất Sơn's hills north and east, the river's mouths and the SW estuary wet", () => {
+    // the rim (rim.ts) past the edge: land (a hill) to the north-east, water at both river mouths and the estuary
+    expect(waterAt(4700, -700)).toBeNull();
+    expect(heightAt(4950, -900)).toBeGreaterThan(RIVER_LEVEL + 12);
+    expect(heightAt(2000, -1100)).toBeGreaterThan(RIVER_LEVEL + 4);
+    for (const p of [RIVER_PTS[0], RIVER_PTS[RIVER_PTS.length - 1]]) {
+      expect(waterAt(p.x, p.y), `mouth ${p.x}`).toBe(RIVER_LEVEL);
+      expect(heightAt(p.x, p.y)).toBeLessThan(RIVER_LEVEL);
     }
-    expect(wet / n).toBeGreaterThan(0.9);
+    expect(waterAt(DOMAIN.x0 + 100, DOMAIN.y1 - 100)).toBe(RIVER_LEVEL);            // the estuary reaches the SW corner
+    // seamless: no cliff at the world's edge (across it the land steps less than a unit per 40 px)
+    for (let x = 200; x < WORLD_W - 200; x += 180) {
+      if (riverAt(x, 0).d < riverAt(x, 0).hw + 80) continue;
+      expect(Math.abs(heightAt(x, -20) - heightAt(x, 20)), `edge ${x}`).toBeLessThan(1);
+    }
     // no mountains: the open land stays within a few units of the river; only the eastern hills rise, and gently
     let top = 0;
     for (let y = 40; y < WORLD_H; y += 80) for (let x = 40; x < WORLD_W; x += 80) {

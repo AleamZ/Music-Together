@@ -309,6 +309,7 @@ export class WorldView implements View3D {
     this.backdrop.land.material = this.terrainMat;
     this.horizon = this.backdrop.land;
     this.scene.add(this.horizon, this.backdrop.root);
+    pixelizeTree(this.backdrop.root);
     // the delta's one water table: the river mouths out to the horizon, and every canal carved below it in the land
     // (the river's own ribbon lies on top of it, a hair higher)
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(2 * reach + (DOMAIN.x1 - DOMAIN.x0), 2 * reach + (DOMAIN.y1 - DOMAIN.y0)).rotateX(-Math.PI / 2), this.seaMat);

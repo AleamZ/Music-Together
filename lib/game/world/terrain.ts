@@ -2,6 +2,7 @@ import type { Vec } from "@/lib/game/types";
 import { MINE, MINE_HILL } from "./mine";
 import { LAKE, nuiHeight } from "./nuicam";
 import { cumulative, nearestOn, ROADS, TRAILS, type Road, type Trail } from "./roads";
+import { rimHills, rimWet } from "./rim";
 import { WORLD_CELL, WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId } from "./zones";
 
 // The world's landform (spec §1, P2/P3's visual part): one deterministic heightmap over the whole 4160 × 2240 px world
@@ -251,9 +252,14 @@ export function naturalHeight(x: number, y: number): number {
   const r = riverAt(x, y);
   const v = 1 - smoothstep(r.hw, r.hw + 560, r.d);
   h = lerp(h, RIVER_BANK + 0.4 + 0.5 * fbm(x / 160, y / 160, 2), v * 0.96);
-  // the edge: a mangrove shore, then the open water of the river mouths
-  const inEdge = Math.min(x, WORLD_W - x, y, WORLD_H - y);
-  if (inEdge < 90) h = lerp(h, RIVER_LEVEL - 1.6, smoothstep(90, -120, inEdge));
+  // the rim (rim.ts): past the edge the delta goes on — Thất Sơn's hills round the north and east, the far rivers,
+  // canals and the south-west estuary sinking to their beds (the world's own edge stays land: one seamless field)
+  const out = outside(x, y);
+  if (out > 0) {
+    h += rimHills(x, y);
+    const w = rimWet(x, y);
+    if (w.wet > 0) h = lerp(h, RIVER_LEVEL - 1.6 - 1.4 * w.sea, w.wet);
+  }
   return h;
 }
 
@@ -320,7 +326,7 @@ export function waterAt(x: number, y: number): number | null {
   if (zoneUnder(x, y)) return null;
   const r = riverAt(x, y);
   if (!r.inZone && r.d < r.hw) return RIVER_LEVEL;
-  if (outside(x, y) > 0) return RIVER_LEVEL;
+  if (outside(x, y) > 0 && rimWet(x, y).wet > 0.5) return RIVER_LEVEL;   // the rim's rivers, canals, estuary
   if (Math.hypot(x - LAKE.x, y - LAKE.y) < LAKE.r) return LAKE.level;
   if (canalDist(x, y) < CANAL_HALF_W) return RIVER_LEVEL;
   const st = streamAt(x, y);
