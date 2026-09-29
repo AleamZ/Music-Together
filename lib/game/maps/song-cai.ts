@@ -30,6 +30,7 @@ export const SC_PROPS: PropPlacement[] = [
   { kind: "palm", x: 300, y: 450, h: 66, lean: -0.3, seed: 43 },
   { kind: "palm", x: 640, y: 456, h: 62, lean: 0.25, seed: 47 },
   { kind: "palm", x: 900, y: 452, h: 68, lean: -0.35, seed: 53 },
+  { kind: "palm", x: 624, y: 238, h: 52, lean: 0.2, seed: 59 },          // the island's palm
   { kind: "banana", x: 520, y: 60 },
   { kind: "banana", x: 120, y: 448 },
   { kind: "banana", x: 780, y: 446 },

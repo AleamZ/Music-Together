@@ -108,7 +108,8 @@ function Playing({ view, onEnd, onQuit }: { view: RowView; onEnd: (strokes: read
     let raf = requestAnimationFrame(function loop(now: number) {
       const due = clock.advance(now);
       while (cur.tick < due && cur.outcome === "open") {
-        const want = pending.current !== null && canStroke(cur) ? pending.current : null;
+        // strokes during the countdown are ignored here (never sent), so an eager tap is not a stray
+        const want = pending.current !== null && canStroke(cur) && cur.tick >= ROW.lead - ROW.win - 4 ? pending.current : null;
         pending.current = null;
         const before = cur.hits;
         cur = stepRow(cur, want);

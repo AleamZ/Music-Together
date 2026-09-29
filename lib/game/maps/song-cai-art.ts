@@ -29,11 +29,8 @@ function paintGround(c: Ctx): void {
   rect(c, C.grass, 0, 0, RIVER_W, RIVER_H);
   for (let k = 0; k < 5200; k++) px(c, r() < 0.5 ? C.grassLight : C.grassDark, Math.floor(r() * RIVER_W), Math.floor(r() * RIVER_H));
   // the water, row by row, with a muddy lip that wanders a little into the land
-  for (let y = 0; y < RIVER_H; y++) {
-    for (let x = 0; x < RIVER_W; x++) {
-      if (riverWater(x, y)) px(c, waterAt(y), x, y);
-    }
-  }
+  // (the rocks and the island are painted over it afterwards)
+  for (let y = RIVER.y0; y <= RIVER.y1; y++) rect(c, waterAt(y), RIVER.x0, y, RIVER.x1 - RIVER.x0 + 1, 1);
   for (let x = 0; x < RIVER_W; x++) {
     const n = Math.round(2 + 2 * Math.sin(x / 37) + Math.sin(x / 11));
     rect(c, R.mud, x, RIVER.y0 - n - 2, 1, n + 2);

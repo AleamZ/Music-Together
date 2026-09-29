@@ -51,7 +51,7 @@ export function drawBoatRider(c: Ctx, x: number, y: number, facing: Facing, t: n
   // the boat's shadow on the water
   c.fillStyle = H.shadow;
   if (side) c.fillRect(x - 19, y + 2, 38, 3); else c.fillRect(x - 10, y + 1, 20, 4);
-  const hy = y - 6 + bob;                       // the hull's top edge
+  const hy = y - 8 + bob;                       // the hull's top edge (the hull sits on the water at the feet)
   if (side) {
     // the far gunwale behind the rower
     fill(c, H.outline, x - 18, hy - 1, 36, 2);
@@ -60,7 +60,13 @@ export function drawBoatRider(c: Ctx, x: number, y: number, facing: Facing, t: n
     fill(c, H.outline, x - 9, hy - 7, 18, 8);
     fill(c, H.deck, x - 8, hy - 6, 16, 6);
   }
-  drawRider(8 + bob);                           // sunk to the waist
+  // the rower, sunk a little and cut at the gunwale: only the body above the boat shows
+  c.save();
+  c.beginPath();
+  c.rect(x - 24, y - 80, 48, hy + 2 - (y - 80));
+  c.clip();
+  drawRider(4 + bob);
+  c.restore();
   // the paddle: dips on alternate sides while moving, rests across the boat otherwise
   const stroke = moving && !reduced ? Math.floor(t / 260) % 2 : -1;
   if (side) {
@@ -71,10 +77,10 @@ export function drawBoatRider(c: Ctx, x: number, y: number, facing: Facing, t: n
       fill(c, H.blade, px - 1, hy + 2, 3, 4);
     } else fill(c, H.paddle, x - 14, hy - 3, 28, 1);
     // the near hull: pointed bow and stern
-    fill(c, H.outline, x - 20, hy, 40, 7);
-    fill(c, H.hull, x - 18, hy + 1, 36, 5);
+    fill(c, H.outline, x - 20, hy, 40, 10);
+    fill(c, H.hull, x - 18, hy + 1, 36, 8);
     fill(c, H.hullLight, x - 16, hy + 1, 32, 1);
-    fill(c, H.hullDark, x - 18, hy + 5, 36, 1);
+    fill(c, H.hullDark, x - 18, hy + 7, 36, 2);
     fill(c, H.outline, x + dir * 20, hy - 2, 2, 3);                 // the bow's raised tip
     fill(c, H.outline, x - dir * 21, hy - 1, 2, 2);
     fill(c, H.rim, x - 6, hy + 2, 12, 1);
@@ -85,11 +91,11 @@ export function drawBoatRider(c: Ctx, x: number, y: number, facing: Facing, t: n
       fill(c, H.blade, px - 1, hy + 3, 3, 4);
     }
     // seen end-on: a short, deep hull with a pointed end towards the viewer
-    fill(c, H.outline, x - 10, hy, 20, 9);
-    fill(c, H.hull, x - 9, hy + 1, 18, 6);
-    fill(c, H.hullLight, x - 8, hy + 1, 16, 1);
-    fill(c, H.hullDark, x - 7, hy + 7, 14, 1);
-    fill(c, H.outline, x - 3, hy + 9, 6, 1);
+    fill(c, H.outline, x - 11, hy, 22, 10);
+    fill(c, H.hull, x - 10, hy + 1, 20, 8);
+    fill(c, H.hullLight, x - 9, hy + 1, 18, 1);
+    fill(c, H.hullDark, x - 8, hy + 7, 16, 2);
+    fill(c, H.outline, x - 3, hy + 10, 6, 1);
     fill(c, H.rim, x - 1, hy + 3, 2, 3);
   }
 }
