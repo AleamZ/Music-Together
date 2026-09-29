@@ -16,7 +16,7 @@ export const PARK_NAME = "KHU DU LỊCH NÚI MÂY XANH";
 
 export const TEMPLE = { x: 3700, y: 1036, yaw: 0 } as const;
 export const TOWER = { x: 3752, y: 1060 } as const;
-export const DI_LAC = { x: 3760, y: 1150, yaw: 0.9 } as const;
+export const DI_LAC = { x: 3760, y: 1150, yaw: -2.09 } as const;          // facing the lake
 /** The red footbridge across the lake's west inlet (its middle, heading, span px). */
 export const FOOTBRIDGE = { x: 3643, y: 1112, yaw: 0, len: 44 } as const;
 export const WATERFALL = { x: 3860, y: 1330, yaw: -0.4 } as const;

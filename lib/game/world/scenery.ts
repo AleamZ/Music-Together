@@ -1,7 +1,7 @@
 import type { Vec } from "@/lib/game/types";
 import { gardenSpots, lotusPonds, stiltHouses } from "./delta";
 import { MINE } from "./mine";
-import { LAKE, NUI, NUI_SOLIDS, SUMMIT, WATERFALL } from "./nuicam";
+import { DI_LAC, LAKE, NUI, NUI_SOLIDS, SUMMIT, WATERFALL } from "./nuicam";
 import { cumulative, nearestOn, ROADS, TRAILS } from "./roads";
 import {
   CANAL_HALF_W, canalDist, DOMAIN, fbm, hashAt, heightAt, rectDistance, riverAt, RIVER_LEVEL, smoothstep, streamAt, STREAM_HALF_W, waterAt,
@@ -48,7 +48,7 @@ export const LANDMARKS: readonly Landmark[] = [
   { kind: "flag", x: 1290, y: 456, yaw: 0 },            // the national flag, on the rise behind the hall
   { kind: "arch", x: 1722, y: 724, yaw: 0 },            // cổng chợ over the road into the market
   { kind: "tower", x: 2440, y: 420, yaw: 0.2 },         // the dojo's watchtower behind the market
-  { kind: "headframe", x: 3716, y: 1150, yaw: 0.3 },    // the mine's headframe, on the hill above the mouth (P2)
+  { kind: "headframe", x: 3700, y: 1330, yaw: 0.3 },    // the mine's headframe, on the hill above the mouth (P2)
   { kind: "mine", x: MINE.mouth.x, y: MINE.mouth.y, yaw: -1.05 },   // the mine mouth, facing west-south-west (the road, the camera)
 ];
 
@@ -84,7 +84,7 @@ export function sceneryFree(x: number, y: number, pad: number): boolean {
   if (s.d < STREAM_HALF_W + pad) return false;
   if (waterAt(x, y) !== null) return false;
   if (stiltHouses().some((h) => Math.hypot(h.x - x, h.y - y) < 40 + pad)) return false;
-  if (NUI_SOLIDS.some((s) => Math.hypot(s.x - x, s.y - y) < s.r + 16 + pad) || Math.hypot(LAKE.x - x, LAKE.y - y) < LAKE.r + 30 + pad) return false;
+  if (NUI_SOLIDS.some((s) => Math.hypot(s.x - x, s.y - y) < s.r + 16 + pad) || Math.hypot(DI_LAC.x + Math.sin(DI_LAC.yaw) * 90 - x, DI_LAC.y + Math.cos(DI_LAC.yaw) * 90 - y) < 80 || Math.hypot(LAKE.x - x, LAKE.y - y) < LAKE.r + 30 + pad) return false;
   if (Math.hypot(SUMMIT.x - x, SUMMIT.y - y) < 40 || Math.hypot(WATERFALL.x - x, WATERFALL.y - y) < 40) return false;
   return !LANDMARKS.some((l) => Math.hypot(l.x - x, l.y - y) < 70 + pad);
 }
