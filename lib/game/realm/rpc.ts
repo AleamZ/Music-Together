@@ -122,9 +122,24 @@ async function call(fn: string, args: Record<string, unknown>): Promise<R> {
 export const worldState = async (token: string, roomId: string, map: MapId) =>
   parseWorld(await call("world_state", { p_session_token: token, p_room_id: roomId, p_map: map }));
 
-export const wildAct = async (token: string, spawn: number, action: WildAction, map: MapId, x: number, y: number) => {
-  const r = await call("wild_act", { p_session_token: token, p_spawn: spawn, p_action: action, p_map: map, p_x: Math.round(x), p_y: Math.round(y) });
-  return { ok: r.ok === true, item: isWildItem(r.item) ? r.item : null, qty: num(r.qty), knocked: r.knocked === true, fainted: r.fainted === true, wild: parseWild(r.wild) };
+// v22 (0083): the wild minigames — a start (the server's seed) and a finish (only my input ticks; the server replays)
+export interface WildRound { game: WildAction; spawn: number; species: WildSpeciesId; danger: boolean; seed: number }
+export interface WildResult {
+  result: "ok" | "fail" | "lost"; why: string | null; outcome: string | null; score: number; chance: number;
+  item: WildItemId | null; qty: number; xp: number; saved: boolean; knocked: boolean; fainted: boolean; wild: WildState | null;
+}
+export const wildStart = async (token: string, spawn: number, action: WildAction, map: MapId, x: number, y: number): Promise<WildRound> => {
+  const r = obj((await call("wild_start", { p_session_token: token, p_spawn: spawn, p_action: action, p_map: map, p_x: Math.round(x), p_y: Math.round(y) })).round);
+  return { game: action, spawn: num(r.spawn), species: speciesOf(String(r.species))?.id ?? "rabbit", danger: r.danger === true, seed: num(r.seed) };
+};
+export const wildFinish = async (token: string, a: readonly number[], b: readonly number[], ticks: number): Promise<WildResult> => {
+  const r = await call("wild_finish", { p_session_token: token, p_a: a, p_b: b, p_ticks: ticks });
+  const res = r.result === "ok" || r.result === "fail" ? r.result : "lost";
+  return {
+    result: res, why: str(r.why), outcome: str(r.outcome), score: num(r.score), chance: num(r.chance),
+    item: isWildItem(r.item) ? r.item : null, qty: num(r.qty), xp: num(r.xp), saved: r.saved === true,
+    knocked: r.knocked === true, fainted: r.fainted === true, wild: parseWild(r.wild),
+  };
 };
 export const wildSell = async (token: string, item: WildItemId, qty: number) => {
   const r = await call("wild_sell", { p_session_token: token, p_item: item, p_qty: qty });
@@ -140,19 +155,30 @@ export const partyLeave = (token: string) => party("party_leave", { p_session_to
 export const partyKick = (token: string, account: string) => party("party_kick", { p_session_token: token, p_account: account });
 export const partySay = (token: string, body: string) => party("party_say", { p_session_token: token, p_body: body });
 
-export const bossAttack = async (token: string, fight: number, map: MapId, x: number, y: number) => {
-  const r = await call("boss_attack", { p_session_token: token, p_fight: fight, p_map: map, p_x: Math.round(x), p_y: Math.round(y) });
-  return { dmg: num(r.dmg), combo: num(r.combo), slam: r.slam === true, hp: num(r.hp), phase: num(r.phase, 1), killed: r.killed === true, myDmg: num(r.my_dmg), cap: num(r.cap) };
+// v22 (0083): the combo strike (bosses and the dungeon) — six rhythm arrows and a slam to dodge, replayed by the server
+export type ComboKind = "boss" | "dungeon";
+export interface ComboRound { kind: ComboKind; ref: number; target: number; seed: number }
+export interface ComboResult {
+  result: "ok" | "lost"; why: string | null; dmg: number; judges: string[]; best: number; stunned: boolean;
+  hp: number; killed: boolean; myDmg: number; cap: number; cleared: boolean; target: number;
+}
+export const comboStart = async (token: string, kind: ComboKind, ref: number, target: number, map: MapId, x: number, y: number): Promise<ComboRound> => {
+  const r = obj((await call("combo_start", { p_session_token: token, p_kind: kind, p_ref: ref, p_target: target, p_map: map, p_x: Math.round(x), p_y: Math.round(y) })).round);
+  return { kind, ref: num(r.ref), target: num(r.target), seed: num(r.seed) };
+};
+export const comboFinish = async (token: string, keys: readonly number[], dodges: readonly number[], ticks: number): Promise<ComboResult> => {
+  const r = await call("combo_finish", { p_session_token: token, p_keys: keys, p_dodges: dodges, p_ticks: ticks });
+  return {
+    result: r.result === "ok" ? "ok" : "lost", why: str(r.why), dmg: num(r.dmg), judges: arr(r.judges).map(String), best: num(r.best),
+    stunned: r.stunned === true, hp: num(r.hp), killed: r.killed === true, myDmg: num(r.my_dmg), cap: num(r.cap),
+    cleared: r.cleared === true, target: num(r.target),
+  };
 };
 export const bossSummon = (token: string, map: MapId, x: number, y: number) =>
   call("boss_summon", { p_session_token: token, p_map: map, p_x: Math.round(x), p_y: Math.round(y) });
 
 export const dungeonStart = async (token: string) => parseDungeon(await call("dungeon_start", { p_session_token: token }));
 export const dungeonJoin = async (token: string, run: number) => parseDungeon(await call("dungeon_join", { p_session_token: token, p_run: run }));
-export const dungeonAttack = async (token: string, run: number, target: number) => {
-  const r = await call("dungeon_attack", { p_session_token: token, p_run: run, p_target: target });
-  return { dmg: num(r.dmg), target: num(r.target), combo: num(r.combo), bitten: r.bitten === true, cleared: r.cleared === true, ...parseDungeon(r) };
-};
 
 export const snowStart = (token: string, roomId: string, minutes: number) =>
   call("snow_event_start", { p_session_token: token, p_room_id: roomId, p_minutes: minutes });
@@ -195,6 +221,11 @@ const TEXTS: Record<string, string> = {
   "too thirsty": "Bạn khát quá, uống gì đã.",
   exhausted: "Hôm nay bạn kiệt sức rồi.",
   "account locked": "Tài khoản đang bị tạm khóa.",
+  outdated: "Trò chơi đã cập nhật — tải lại trang nhé.",                        // v22 (0083)
+  stunned: "Bạn đang choáng — đợi một chút!",
+  "round not found": "Lượt chơi đã hết.",
+  "too tired": "Bạn mệt quá — nghỉ một lát đã.",
+  "no boss": "Boss đã đi.",
 };
 export function worldErrorText(err: unknown): string {
   const m = err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string" ? (err as { message: string }).message : "";

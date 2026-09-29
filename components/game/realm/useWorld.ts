@@ -9,10 +9,13 @@ import { drawAnimal, drawBoss, drawBossBar, drawGate, drawStall } from "@/lib/ga
 import { GATE, STALL, speciesOf, wildXY, type WildAction, type WildItemId } from "@/lib/game/realm/model";
 import { setPartyDots } from "@/lib/game/realm/party-dots";
 import {
-  bossAttack, bossSummon, dungeonAttack, dungeonJoin, dungeonStart, partyAccept, partyCreate, partyDecline, partyInvite,
-  partyKick, partyLeave, partySay, snowStart, snowStop, wildAct, wildSell, worldErrorText, worldState,
+  bossSummon, comboFinish, comboStart, dungeonJoin, dungeonStart, partyAccept, partyCreate, partyDecline, partyInvite,
+  partyKick, partyLeave, partySay, snowStart, snowStop, wildFinish, wildSell, wildStart, worldErrorText, worldState,
   type BossFight, type WildAnimal, type WorldState,
 } from "@/lib/game/realm/rpc";
+import { noLine, okLine } from "@/lib/game/realm/mg-copy";
+import type { WildView } from "./WildGame";
+import type { ComboView } from "./ComboGame";
 import { WILD_ITEMS } from "@/lib/game/realm/model";
 import type { MapId } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
@@ -48,6 +51,10 @@ export function useWorld(o: WorldOpts) {
   const stateRef = useRef<WorldState | null>(null);
   const offsetRef = useRef(0);
   const hurtRef = useRef(-Infinity);
+  /** v22: the damage numbers floating over the boss (performance ms). */
+  const floatsRef = useRef<Array<{ dmg: number; at: number }>>([]);
+  const [wild, setWild] = useState<WildView | null>(null);
+  const [combo, setCombo] = useState<ComboView | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -84,7 +91,8 @@ export function useWorld(o: WorldOpts) {
         for (const a of s.wild.animals) {
           if (now >= a.expiresMs) continue;
           const p = animalAt(a, now), q = animalAt(a, now - 120);
-          const step = reduced ? 0 : Math.floor(t / 200) % 2;
+          const moving = Math.hypot(p.x - q.x, p.y - q.y) > 0.6;                          // v22: idle when it barely moves
+          const step = reduced || !moving ? 0 : Math.floor(t / 200) % 2;
           out.push({ x: p.x, y: p.y, draw: (b, cx, cy) => drawAnimal(b, a.species, Math.round(p.x) - cx, Math.round(p.y) - cy, p.x < q.x, step, s.night, t) });
         }
       }
@@ -93,8 +101,24 @@ export function useWorld(o: WorldOpts) {
         const p = bossSpot(f);
         out.push({
           x: p.x, y: p.y, draw: (b, cx, cy) => {
-            drawBoss(b, f.boss, Math.round(p.x) - cx, Math.round(p.y) - cy, t, performance.now() - hurtRef.current < 150, f.phase, reduced);
-            drawBossBar(b, f.name, Math.round(p.x) - cx, Math.round(p.y) - cy, f.hp, f.maxHp);
+            const since = performance.now() - hurtRef.current;
+            const shake = !reduced && since < 300 ? Math.round(Math.sin(since / 20) * 2) : 0;   // v22: the hit shakes it
+            drawBoss(b, f.boss, Math.round(p.x) - cx + shake, Math.round(p.y) - cy, t, since < 150, f.phase, reduced);
+            drawBossBar(b, f.name, Math.round(p.x) - cx + shake, Math.round(p.y) - cy, f.hp, f.maxHp);
+            // v22: damage numbers rise and fade
+            for (const fl of floatsRef.current) {
+              const age = performance.now() - fl.at;
+              if (age > 1400) continue;
+              const fy = Math.round(p.y) - cy - 70 - (reduced ? 0 : Math.round(age / 40));
+              b.globalAlpha = Math.max(0, 1 - age / 1400);
+              b.font = "bold 10px monospace";
+              b.textAlign = "center";
+              b.fillStyle = "#1d1a14";
+              b.fillText(`-${fl.dmg}`, Math.round(p.x) - cx + 1, fy + 1);
+              b.fillStyle = "#ff5040";
+              b.fillText(`-${fl.dmg}`, Math.round(p.x) - cx, fy);
+              b.globalAlpha = 1;
+            }
           },
         });
       }
@@ -129,31 +153,90 @@ export function useWorld(o: WorldOpts) {
 
   const posNow = () => canvas()?.localPos() ?? null;
 
+  // v22 (0083): the wild minigames — start (the server's seed), play (WildGame), finish (the inputs only)
   const act = (a: WildAnimal, action: WildAction) => {
     const p = posNow();
-    if (!p) return;
-    const sp = speciesOf(a.species);
-    void run(() => wildAct(token, a.id, action, mapId, p.x, p.y), (r) => {
-      if (action === "photo") toast(`📷 Đã chụp ${sp?.name ?? "con vật"} — thêm vào album!`);
-      else if (r.ok && r.item) toast(`🎯 Bắt được ${sp?.name}: +${r.qty} ${WILD_ITEMS[r.item].name}`);
-      else if (r.fainted) toast(`💥 ${sp?.name} quật ngã bạn — bạn ngất đi!`);
-      else if (r.knocked) toast(`💥 ${sp?.name} phản công! Bạn bị hất văng (đói, khát −8).`);
-      else toast(action === "trap" ? "Bẫy trượt rồi…" : `${sp?.name} né được!`);
+    if (!p || busy || wild || combo) return;
+    void run(() => wildStart(token, a.id, action, mapId, p.x, p.y), (round) => {
+      setWild({ round, phase: "playing", message: "", night: stateRef.current?.night ?? false });
     });
   };
+  const wildEnd = (a: number[], b: number[], ticks: number) => {
+    const v = wild;
+    if (!v || v.phase !== "playing") return;
+    setWild({ ...v, phase: "sending" });
+    const sp = speciesOf(v.round.species);
+    const net = v.round.game === "trap" && (v.round.species === "bird" || v.round.species === "firefly");
+    const key = net ? "net" : v.round.game;
+    void (async () => {
+      let message: string;
+      try {
+        const r = await wildFinish(token, a, b, ticks);
+        const lines: string[] = [];
+        if (v.round.game === "photo") {
+          lines.push(r.saved ? `${okLine("photo", v.round.seed)} 📷 ${sp?.name} vào album (${r.score} điểm, +${r.xp} XP)`
+            : r.result === "lost" ? "Lượt này không được tính." : `${noLine("photo", v.round.seed)} (${r.score} điểm — cần 250)`);
+        } else if (r.result === "ok" && r.item) {
+          lines.push(`${okLine(key, v.round.seed)} +${r.qty} ${WILD_ITEMS[r.item].name} (+${r.xp} XP)`);
+        } else if (r.result === "lost") {
+          lines.push(r.why === "gone" ? "Con vật đã chạy mất." : r.why === "expired" ? "Hết giờ rồi." : "Lượt này không được tính.");
+        } else if (r.outcome === "hit" || r.outcome === "caught") {
+          lines.push(`Trúng ${r.score} điểm nhưng ${sp?.name} vùng thoát được (${r.chance}%)…`);
+        } else {
+          lines.push(noLine(key, v.round.seed));
+        }
+        if (v.round.danger) lines.push(r.knocked ? `${noLine("dodge", v.round.seed)} 💥 Đói, khát −8${r.fainted ? " — bạn ngất đi!" : ""}` : okLine("dodge", v.round.seed));
+        message = lines.join("\n");
+      } catch (e) {
+        message = worldErrorText(e);
+      }
+      setWild((cur) => (cur ? { ...cur, phase: "done", message } : cur));
+      void reload();
+    })();
+  };
+  const wildClose = () => setWild(null);
+
   const sell = (item: WildItemId, qty: number) =>
     void run(() => wildSell(token, item, qty), (r) => { toast(`💰 Bán được ${r.earned} xu`); onCoins(); });
 
-  const attack = (f: BossFight) => {
+  // v22 (0083): the combo strike (bosses and the dungeon)
+  const startCombo = (kind: "boss" | "dungeon", ref: number, target: number, view: Pick<ComboView, "name" | "boss" | "icon">) => {
     const p = posNow();
-    if (!p || busy) return;
-    hurtRef.current = performance.now();
-    void run(() => bossAttack(token, f.id, mapId, p.x, p.y), (r) => {
-      setLastHit({ dmg: r.dmg, combo: r.combo, at: Date.now() });
-      if (r.slam) toast(`💢 ${f.name} phản đòn! (đói, khát −3)`);
-      if (r.killed) { toast(`🏆 ${f.name} đã bị hạ! Phần thưởng chia theo công sức.`); onCoins(); }
-    });
+    if (!p || busy || wild || combo) return;
+    void run(() => comboStart(token, kind, ref, target, mapId, p.x, p.y), (round) => setCombo({ ...view, round, phase: "playing", message: "", dmg: null }));
   };
+  const attack = (f: BossFight) => startCombo("boss", f.id, 0, { name: f.name, boss: f.boss, icon: "👹" });
+  const comboEnd = (keys: number[], dodges: number[], ticks: number) => {
+    const v = combo;
+    if (!v || v.phase !== "playing") return;
+    setCombo({ ...v, phase: "sending" });
+    void (async () => {
+      let message: string, dmg: number | null = null;
+      try {
+        const r = await comboFinish(token, keys, dodges, ticks);
+        dmg = r.dmg;
+        const hits = r.judges.filter((j) => j !== "miss").length;
+        const lines = [r.result === "ok"
+          ? `${hits >= 4 ? okLine("combo", v.round.seed) : noLine("combo", v.round.seed)} ${hits}/6 nhịp, chuỗi ×${r.best} → ${r.dmg} sát thương`
+          : r.why === "expired" ? "Hết giờ rồi." : r.why === "boss not up" ? "Boss đã đi." : r.why === "run over" ? "Lượt hầm ngục đã kết thúc." : "Lượt này không được tính."];
+        if (r.stunned) lines.push(`💢 ${noLine("dodge", v.round.seed + 1)} Choáng 3 giây (đói, khát −3)`);
+        if (r.killed) { lines.push(`🏆 ${v.name} đã bị hạ! Phần thưởng chia theo công sức.`); onCoins(); }
+        if (r.cleared) { lines.push("🏆 Hạ Dơi Chúa — hầm ngục đã được dọn sạch!"); onCoins(); }
+        if (r.dmg > 0) {
+          const now = performance.now();
+          hurtRef.current = now;
+          floatsRef.current = [...floatsRef.current.filter((x) => now - x.at < 1400), { dmg: r.dmg, at: now }];
+          setLastHit({ dmg: r.dmg, combo: r.best, at: Date.now() });
+        }
+        message = lines.join("\n");
+      } catch (e) {
+        message = worldErrorText(e);
+      }
+      setCombo((cur) => (cur ? { ...cur, phase: "done", message, dmg } : cur));
+      void reload();
+    })();
+  };
+  const comboClose = () => setCombo(null);
   const summon = () => {
     const p = posNow();
     if (!p) return;
@@ -162,12 +245,11 @@ export function useWorld(o: WorldOpts) {
 
   const dgStart = () => void run(() => dungeonStart(token), () => { toast(`🕳️ Vào hầm ngục!`); onCoins(); });
   const dgJoin = (id: number) => void run(() => dungeonJoin(token, id), () => onCoins());
-  const dgAttack = (id: number, target: number) =>
-    void run(() => dungeonAttack(token, id, target), (r) => {
-      setLastHit({ dmg: r.dmg, combo: r.combo, at: Date.now() });
-      if (r.bitten) toast("🦇 Bạn bị cắn! (đói, khát −3)");
-      if (r.cleared) { toast("🏆 Hạ Dơi Chúa — hầm ngục đã được dọn sạch!"); onCoins(); }
-    });
+  const dgAttack = (id: number, target: number) => {
+    const room = stateRef.current?.dungeon?.room ?? 1;
+    const icon = room === 3 ? "🕷️" : room === 2 ? "🐍" : "🦇";
+    startCombo("dungeon", id, target, { name: room === 4 ? "Dơi Chúa" : `Quái hầm ngục #${target}`, boss: null, icon });
+  };
 
   const party = {
     create: () => void run(() => partyCreate(token)),
@@ -184,7 +266,7 @@ export function useWorld(o: WorldOpts) {
     stop: () => void run(() => snowStop(token, roomId), () => onWeather()),
   };
 
-  return { state, offset, here, busy, lastHit, act, sell, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload };
+  return { state, offset, here, busy, lastHit, act, sell, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
 }
 
 export type World = ReturnType<typeof useWorld>;

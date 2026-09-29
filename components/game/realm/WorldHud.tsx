@@ -12,6 +12,8 @@ import type { WildAnimal } from "@/lib/game/realm/rpc";
 import { animalAt, useWorld } from "./useWorld";
 import WorldPanel, { type WorldTab } from "./WorldPanel";
 import KeyBadge from "../KeyBadge";
+import WildGame from "./WildGame";
+import ComboGame from "./ComboGame";
 
 const clock = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -37,7 +39,10 @@ export default function WorldHud(props: {
   const { mapId, blocked, onPanel } = props;
   const w = useWorld(props);
   const [tab, setTab] = useState<WorldTab | null>(null);
-  const open = (t: WorldTab | null) => { setTab(t); onPanel(t !== null); };
+  const open = (t: WorldTab | null) => setTab(t);
+  // v22: a minigame holds the input like a panel
+  const gameOpen = w.wild !== null || w.combo !== null;
+  useEffect(() => { onPanel(tab !== null || gameOpen); }, [gameOpen, tab, onPanel]);
 
   const s = w.state;
   const now = w.here.now + w.offset;
@@ -58,7 +63,7 @@ export default function WorldHud(props: {
   const b = beat(since);
 
   // K strikes the boss in whose arena I stand
-  const canStrike = fight !== null && !blocked && !w.busy && b !== "wait";
+  const canStrike = fight !== null && !blocked && !w.busy && !gameOpen && b !== "wait";
   useEffect(() => {
     if (!canStrike || !fight) return;
     const onKey = (e: KeyboardEvent) => {
@@ -110,7 +115,7 @@ export default function WorldHud(props: {
         </div>
       </div>
 
-      {!blocked && target && sp && !fight && (
+      {!blocked && !gameOpen && target && sp && !fight && (
         <div className="pch pointer-events-auto absolute bottom-36 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 px-2 py-1 font-vt text-base">
           <span className="mr-1">{sp.name}{danger ? " ⚠️ nguy hiểm" : ""}</span>
           {sp.hunt > 0 && actBtn("hunt", "🏹 Săn", target.d <= ACT_RANGE.hunt)}
@@ -119,7 +124,7 @@ export default function WorldHud(props: {
         </div>
       )}
 
-      {!blocked && fight && (
+      {!blocked && !gameOpen && fight && (
         <div className="pointer-events-auto absolute bottom-36 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1 font-vt">
           <div className="pch px-2 py-0.5 text-sm tabular-nums">
             Góp {fight.myDmg}/{fight.cap} · combo {fight.myCombo}/{MAX_COMBO}
@@ -127,11 +132,14 @@ export default function WorldHud(props: {
           </div>
           <button type="button" disabled={!canStrike || fight.myDmg >= fight.cap}
             className={`pch-btn pch-btn-primary px-4 py-1 text-xl ${b === "beat" ? "ring-4 ring-amber-400" : ""}`}
-            onClick={() => w.attack(fight)} title="Đánh đúng nhịp (0,9–2 giây sau cú trước) để tăng combo">
+            onClick={() => w.attack(fight)} title="Tung chuỗi đòn: bấm mũi tên đúng nhịp, né khi boss vung đòn">
             ⚔️ Đánh <span className="pointer-coarse:hidden">(K)</span>
           </button>
         </div>
       )}
+
+      {w.wild && <WildGame view={w.wild} onEnd={w.wildEnd} onClose={w.wildClose} />}
+      {w.combo && <ComboGame view={w.combo} onEnd={w.comboEnd} onClose={w.comboClose} />}
 
       {tab && s && (
         <WorldPanel tab={tab} onTab={setTab} onClose={() => open(null)} world={w} state={s} now={now} mapId={mapId} pos={pos}
