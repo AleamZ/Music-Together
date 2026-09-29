@@ -66,7 +66,9 @@ import type { CharAct } from "@/lib/game/diorama/character/pose";
 import { getMap } from "@/lib/game/maps/registry";
 import { interactablesNear, npcsNear, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { toWorld, zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
-import { worldSwimMap } from "@/lib/game/world/swim";                                          // P3
+import { cardSeatMap, seatPeople, type CardSeatIn, type SeatAnchor } from "@/lib/game/diorama/zones/seats";
+import { worldSwimMap } from "@/lib/game/world/swim";
+import { boatWater, wildBoatInteractable, worldBoatMap } from "@/lib/game/world/boat";                           // 0095                                          // P3
 import { gateNear, type WorldGate } from "@/lib/game/world/gates";                              // P3
 
 export type { RosterEntry } from "@/lib/game/world";
@@ -207,6 +209,7 @@ export class GameEngine {
   /** v18.13: my lift, since when (this world) and when the partner was last seen here (performance ms). */
   private lift: (LocalLift & { since: number; seenAt: number }) | null = null;
   private pendingInteract: Interactable | null = null;
+  private workAct: "chop" | "cook" | null = null;
   private prompt: Interactable | null = null;
   private lastSent = { mv: false, vx: 0, vy: 0, at: 0 };
   private fishing: Required<LocalFishing> = { phase: "idle", tint: null, glow: false };
@@ -372,6 +375,9 @@ export class GameEngine {
       const ph = this.world.fishing(id, t).phase;
       if (ph === 3) return "reel";
       if (ph !== 0) return "cast";
+      const fa = this.world.farmAnim(id, t);                                            // 0097: chopping / cooking, as they told us
+      if (fa === FARM_ANIM.chop) return "chop";
+      if (fa === FARM_ANIM.cook) return "cook";
       return waved.has(id) ? "wave" : undefined;
     };
     for (const e of this.world.roster.values()) {
@@ -396,8 +402,8 @@ export class GameEngine {
       const f = walkFrame(me);
       const ph = this.fishing.phase;
       const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim"
-        : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : waved.has(this.opts.localId) ? "wave" : undefined;
-      const boat = this.onBoat(me.display);                                               // P3: rowing Sông Cái
+        : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : this.workAct ?? (waved.has(this.opts.localId) ? "wave" : undefined);
+      const boat = this.worldMap !== null && this.afloatAt(me.pos);                                               // P3: rowing Sông Cái
       out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
         act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined) });
     }
@@ -407,8 +413,14 @@ export class GameEngine {
       this.lightingAt = wallNow;
     }
     const night = this.lighting.night;
+    // real seats (zones/seats.ts): card players at their table, the hammock, the café chairs — mine and everyone's
+    const hall = this.worldMap ? zoneRect("hall") : this.map.id === "hall" ? { ox: 0, oy: 0 } : null;
+    const seated = hall ? seatPeople(out, {
+      cards: this.cardSeatMap, origin: { x: hall.ox, y: hall.oy },
+      hammock: new Set(out.filter((b) => (b.me ? lying : this.world.hammock(b.id))).map((b) => b.id)),
+    }) : out;
     return {
-      t, focus: { x: me.display.x, y: me.display.y }, billboards: out,
+      t, focus: { x: me.display.x, y: me.display.y }, billboards: seated,
       night, warm: night > 0 && night < 1 ? Math.max(0, 1 - Math.abs(night - 0.5) * 2) : 0,
       weather: INDOOR_MAPS.has(this.here as MapId) ? null : this.weather?.kind ?? null, windKmh: this.weather?.windKmh ?? 0,
       fx: this.weatherFx, reduced,
@@ -418,10 +430,18 @@ export class GameEngine {
 
   /** P3: is a world point on Sông Cái's water (a boat there)? World mode only. */
   private onBoat(p: Vec): boolean {
-    if (!this.worldMap || zoneAt(p) !== "song_cai") return false;
-    const q = this.toZone(p, "song_cai");
-    return riverWater(q.x, q.y);
+    // 0095: Sông Cái, the river, the canals — but not someone walking a bridge or causeway over them
+    return this.worldMap !== null && boatWater(p.x, p.y) && (zoneAt(p) === "song_cai" || isBlockedAt(this.map, p.x, p.y));
   }
+  /** 0095: am I in the boat? On boat water where nobody walks; over a bridge, only if I rowed onto it (sticky). */
+  private afloat = false;
+  private afloatAt(p: Vec): boolean {
+    if (!boatWater(p.x, p.y)) return (this.afloat = false);
+    if (zoneAt(p) === "song_cai" || isBlockedAt(this.map, p.x, p.y)) return (this.afloat = true);
+    return this.afloat;
+  }
+  /** 0095: the world grid with only the boat water open (built on first use). */
+  private boatMap: GameMap | null = null;
 
   /** P3: the rats, dogs, leaping fish and shut gates the 3D world draws (world px). */
   private gameplayFrame(t: number): GameplayFrame {
@@ -434,7 +454,21 @@ export class GameEngine {
         return { x: l.x0 + (l.x1 - l.x0) * k, y: l.y0 + (l.y1 - l.y0) * k, h: k >= 1 ? 0 : Math.sin(k * Math.PI) };
       }),
       gates: (this.worldMap?.gates ?? []).map((g) => ({ id: g.id, at: g.at, barrier: g.barrier })),
+      pets: this.pets.drawn().map((p) => ({ ownerId: p.id, species: p.look.species, x: p.x, y: p.y })),        // P4
+      anglers: this.anglersFrame(t),                                                                            // P4
     };
+  }
+
+  /** P4: everyone with a line in the water (mine and the others'), feet + facing + phase code (1 wait, 2 bite, 3 reel). */
+  private anglersFrame(t: number): GameplayFrame["anglers"] {
+    const out: Array<NonNullable<GameplayFrame["anglers"]>[number]> = [];
+    const mine = phaseCode(this.fishing.phase);
+    if (mine > 0) out.push({ id: this.opts.localId, x: this.local.display.x, y: this.local.display.y, facing: this.local.facing, phase: mine as 1 | 2 | 3 });
+    for (const [id, a] of this.world.actors) {
+      const ph = this.world.fishing(id, t).phase;
+      if (ph > 0 && this.visible(id, t)) out.push({ id, x: a.display.x, y: a.display.y, facing: a.facing, phase: ph as 1 | 2 | 3 });
+    }
+    return out;
   }
 
   /** v18.8: the room's weather (null = unknown: no effects, lighting by the local clock). */
@@ -591,6 +625,11 @@ export class GameEngine {
   showReaction(id: string | null, emoji: string): void {
     this.reactions.push({ id: id ?? null, emoji, born: performance.now(), dx: Math.round((Math.random() - 0.5) * 12) });
     if (this.reactions.length > 40) this.reactions.shift();
+  }
+
+  /** 0096: what my hands are busy with (chopping a tree, cooking) — the 3D chibi's action while a minigame runs. */
+  setWork(a: "chop" | "cook" | null): void {
+    this.workAct = a;
   }
 
   /** Scales the local walk speed (hunger/thirst slowdown), clamped to [0.1, 1]. */
@@ -993,6 +1032,12 @@ export class GameEngine {
     return this.interactMap;
   }
 
+  /** Who sits where at the card tables (card_lobby): the 3D view seats them on their table's real seats. */
+  private cardSeatMap: ReadonlyMap<string, SeatAnchor> = new Map();
+  setCardSeats(seats: ReadonlyArray<CardSeatIn>): void {
+    this.cardSeatMap = cardSeatMap(seats);
+  }
+
   /** The card tables' labels from card_lobby (v16 spec §5): one line over each table of the hall. */
   setCardTables(labels: Readonly<Partial<Record<CardGame, string>>>): void {
     this.cardTables = { ...labels };
@@ -1190,6 +1235,7 @@ export class GameEngine {
 
   /** The collision grid I move on: the swim grid while swimming. */
   private get moveMap(): GameMap {
+    if (this.worldMap && this.afloatAt(this.local.pos)) return (this.boatMap ??= worldBoatMap(this.worldMap));   // 0095: the boat rows the whole river
     return this.swimming && this.swimMap ? this.swimMap : this.map;
   }
 
@@ -1488,6 +1534,11 @@ export class GameEngine {
     if (!near && !this.rodOut && !this.swimming && !locked && this.here === "song_cai") {
       const river = this.fromZoneIt(riverInteractable(this.toZone(this.local.pos), this.local.facing));
       near = river && this.prompt?.id === river.id && this.prompt.face === river.face ? this.prompt : river;
+    }
+    // 0095: …and from the boat anywhere on the wild river and its canals (map wild, world px)
+    if (!near && !this.rodOut && !this.swimming && !locked && this.worldMap && this.here === "wild") {
+      const w = wildBoatInteractable(this.local.pos.x, this.local.pos.y, this.local.facing);
+      near = w && this.prompt?.id === w.id && this.prompt.face === w.face ? this.prompt : w;
     }
     // the hammock's prompt: "Dậy" while I lie in it (always, wherever the nearest is), "Có người đang nằm" when taken
     if (this.hammockSince !== null && this.hammockIt) near = hammockPrompt(this.hammockIt, true, false);
@@ -2174,3 +2225,5 @@ export class GameEngine {
     return badges ? `${badges} ${name}` : name;
   }
 }
+
+

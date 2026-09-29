@@ -17,6 +17,7 @@ import { GENDERS, HAIR_COLORS, HAIR_STYLES, SKIN_TONES, type Look } from "@/lib/
 
 const ACT_LABEL: Record<CharAct, string> = {
   idle: "Đứng thở", walk: "Đi bộ", run: "Chạy", sit: "Ngồi", cast: "Quăng cần", reel: "Kéo cần", swim: "Bơi", ride: "Cưỡi xe", wave: "Vẫy tay",
+  chop: "Chặt cây", cook: "Nấu ăn",
 };
 const SLOT_LABEL: Record<LookSlot, string> = {
   hat: "Mũ", top: "Áo", bottom: "Quần/váy", outfit: "Bộ đồ", shoes: "Giày", neck: "Cổ", wrist: "Cổ tay", hairpin: "Kẹp tóc",

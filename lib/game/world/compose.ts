@@ -152,6 +152,7 @@ export function buildWorld(unlocked: Iterable<ZoneId> = [...ZONE_IDS, "mo_da"]):
     // 4. its things, in world px
     for (const it of m.interactables) {
       if (isPortal(it) && OPENINGS.some((q) => q.zone === id && q.portal === it.id)) continue;   // an opening now
+      if (it.only2d) continue;                                                            // 0097: Rừng tràm's gate (2D only)
       const w: Zoned<Interactable> = { ...it, zone: id, rect: mvRect(it.rect, o), use: mv(it.use, o) };
       interactables.push(w);
     }

@@ -15,6 +15,7 @@ const MAP_NAMES: Record<MapId, string> = {
   bai_dat: "Bãi đất trống",
   ham_ngam: "Hầm đấu ngầm",
   mo_da: "Mỏ đá",
+  rung_tram: "Rừng tràm",
   song_cai: "Sông Cái",
 };
 

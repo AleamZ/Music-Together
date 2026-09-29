@@ -57,8 +57,11 @@ export const rowFinish = async (roomId: string, token: string, strokes: readonly
   parseRowFinish(await call("river_row_finish", { p_room_id: roomId, p_session_token: token, p_strokes: strokes, p_ticks: ticks }));
 
 /** start_river_cast: start_cast's answer from the boat on Sông Cái; the cast then goes on through hook_cast / finish_cast. */
-export async function startRiverCast(roomId: string, token: string, x: number, y: number): Promise<StartCast> {
-  const r = await call("start_river_cast", { p_room_id: roomId, p_session_token: token, p_x: Math.round(x), p_y: Math.round(y) });
+export async function startRiverCast(roomId: string, token: string, x: number, y: number, map: "song_cai" | "wild" = "song_cai"): Promise<StartCast> {
+  // 0095: from the boat on the wild river / canals: start_river_cast_w with map wild (world px)
+  const r = map === "wild"
+    ? await call("start_river_cast_w", { p_room_id: roomId, p_session_token: token, p_map: "wild", p_x: Math.round(x), p_y: Math.round(y) })
+    : await call("start_river_cast", { p_room_id: roomId, p_session_token: token, p_x: Math.round(x), p_y: Math.round(y) });
   publishVitals(r.vitals);
   const state = parseFishingState(r.state);
   if (!state) throw new Error("bad fishing state");

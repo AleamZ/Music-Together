@@ -119,7 +119,7 @@ async function call(fn: string, args: Record<string, unknown>): Promise<R> {
   return obj(data);
 }
 
-export const worldState = async (token: string, roomId: string, map: MapId) =>
+export const worldState = async (token: string, roomId: string, map: MapId | "wild") =>
   parseWorld(await call("world_state", { p_session_token: token, p_room_id: roomId, p_map: map }));
 
 // v22 (0083): the wild minigames — a start and a finish (only my input ticks; the server replays). 0087: the round stays
@@ -131,7 +131,7 @@ export interface WildResult {
   result: "ok" | "fail" | "lost"; why: string | null; outcome: string | null; score: number; chance: number;
   item: WildItemId | null; qty: number; xp: number; saved: boolean; knocked: boolean; fainted: boolean; wild: WildState | null;
 }
-export const wildStart = async (token: string, spawn: number, action: WildAction, map: MapId, x: number, y: number): Promise<WildRound> => {
+export const wildStart = async (token: string, spawn: number, action: WildAction, map: MapId | "wild", x: number, y: number): Promise<WildRound> => {
   const r = obj((await call("wild_start", { p_session_token: token, p_spawn: spawn, p_action: action, p_map: map, p_x: Math.round(x), p_y: Math.round(y) })).round);
   return { game: action, spawn: num(r.spawn), species: speciesOf(String(r.species))?.id ?? "rabbit", danger: r.danger === true, reticle: num(r.reticle, 120), nonce: nonce() };
 };
@@ -189,6 +189,8 @@ export const snowStop = (token: string, roomId: string) => call("snow_event_stop
 
 const TEXTS: Record<string, string> = {
   "too far": "Còn xa quá — lại gần hơn nhé.",
+  "not in forest": "Muốn săn thì vô rừng tràm nha!",   // 0096 (0097: forest-content copy)
+  "no bow": "Cần có cung mới đi săn được nghen!",   // 0097
   gone: "Con vật đã chạy mất.",
   cooldown: "Chậm lại một nhịp…",
   cannot: "Không làm vậy với con này được.",

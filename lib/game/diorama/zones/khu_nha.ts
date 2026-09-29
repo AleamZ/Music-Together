@@ -1,7 +1,7 @@
 import type * as THREE from "three";
 import { APT_BLOCK, APT_LOBBY, ESTATE_DOOR, ESTATE_OFFICE, KHU_H, KHU_W, LOTS, TOWNHOUSES } from "@/lib/game/maps/khu-nha";
 import type { GameMap } from "@/lib/game/maps/types";
-import { COL, ZoneKit, type ZGround, type ZoneLayout, type ZoneOpts } from "./kit";
+import { COL, DECAL_LIFT, ZoneKit, type ZGround, type ZoneLayout, type ZoneOpts } from "./kit";
 import { renderZone } from "./render";
 
 // Khu nhà — the residential quarter as a diorama, from khu-nha.ts (collision, props, interactables) and khu-nha-art.ts
@@ -56,7 +56,8 @@ export function khuNhaLayout(map: GameMap, opts: ZoneOpts = {}): ZoneLayout {
   k.box(b.x, face - 20, b.w, 20, TOP - GF, COL.cream, { z0: GF, roof: porchRoof });
   k.box(b.x - 3, b.y - 3, b.w + 6, b.h + 6, 4, 0xcbb88e, { z0: TOP });
   k.box(b.x + b.w - 40, b.y + 10, 24, 16, 14, COL.grey, { z0: TOP + 4 });
-  k.box(b.x + 72, face - 1, 112, 2, 12, COL.teal, { z0: TOP - 16, glow: true, roof: porchRoof });
+  k.box(b.x + 72, face - 1, 112, 2, 14, COL.teal, { z0: TOP - 17, glow: true, roof: porchRoof });
+  k.signFace(b.x + 128, face + 1 + DECAL_LIFT, TOP - 10, { lines: ["CHUNG CƯ PHÚ MỸ"], icon: "home", bg: COL.teal, fg: COL.white, rim: COL.tealDark }, "s", 104);
   for (let f = 0; f < 2; f++) {
     const z = GF + f * FL;
     k.windows(b.x, face, b.w, [z + 12], 4, (u) => (u + f) % 3 !== 0, 16, 36);
@@ -89,7 +90,8 @@ export function khuNhaLayout(map: GameMap, opts: ZoneOpts = {}): ZoneLayout {
   k.box(desk.x + 4, of - 20, desk.w - 8, 8, 12, 0xcbb88e);
   k.bulb(desk.x + 12, of - 16, 16, COL.goldLight, 1.6);
   k.gable(o.x - 4, o.y - 2, o.w + 8, o.h + 6, OH, 22, COL.tile, "x", k.roofGroup("estate", { x: o.x, y: o.y, w: o.w, h: o.h - 40 }));
-  k.box(o.x + 14, of - 1, 100, 2, 12, COL.redDark, { z0: OH - 16, glow: true });
+  k.box(o.x + 14, of - 1, 100, 2, 14, COL.redDark, { z0: OH - 17, glow: true });
+  k.signFace(o.x + 64, of + 1 + DECAL_LIFT, OH - 10, { lines: ["SÀN BẤT ĐỘNG SẢN"], icon: "home", bg: COL.redDark, fg: COL.goldLight, rim: COL.gold }, "s", 94);
   for (const wx of [o.x + 8, o.x + 84]) if (wx + 36 <= ESTATE_DOOR.x || wx >= desk.x + desk.w) {
     k.box(wx, of - 1, 36, 1.5, 36, COL.glassDim, { z0: 10 });
     for (let j = 0; j < 4; j++) k.box(wx + 3 + (j % 2) * 17, of - 0.2, 14, 1, 13, COL.paper, { z0: 12 + Math.floor(j / 2) * 17 });
@@ -109,14 +111,12 @@ export function khuNhaLayout(map: GameMap, opts: ZoneOpts = {}): ZoneLayout {
   // the eight lots: a fence around, a board on a post in the middle
   LOTS.forEach((r, i) => {
     k.fenceRect(r);
-    k.boxC(r.x + r.w / 2, r.y + r.h / 2 + 4, 2, 2, 20, COL.woodDeep);
-    k.boxC(r.x + r.w / 2, r.y + r.h / 2 + 4, 28, 2, 12, COL.paper, { z0: 12 });
-    k.boxC(r.x + r.w / 2 - 6 + (i % 4) * 3, r.y + r.h / 2 + 3, 8, 0.5, 3, COL.outline, { z0: 16 });
+    k.signboard(r.x + r.w / 2, r.y + r.h / 2 + 4, { lines: [`LÔ ${i + 1}`, "ĐẤT NỀN"], icon: "home", bg: COL.paper, fg: COL.redDark }, { z0: 11, w: 24, cap: COL.woodDark });
   });
 
   // the park: the stone path, two benches, flowers along the edge (all low: the park stays walkable)
   for (let y = PARK.y + 4; y < PARK.y + PARK.h; y += 10) k.box(394, y, 12, 7, 0.6, 0xc8b89e);
-  for (const bx of [330, 446]) { k.box(bx, 327, 24, 7, 6, COL.wood); k.box(bx, 326, 24, 2, 9, COL.woodDark); }
+  for (const bx of [330, 446]) k.bench(bx, 327, 24);
   for (let x = PARK.x + 6; x < PARK.x + PARK.w; x += 9) k.box(x, PARK.y + 3, 3, 3, 3, [COL.red, COL.gold, 0xd4758f][Math.floor(k.R() * 3)]);
 
   for (const p of map.props) k.prop(p);
@@ -129,3 +129,4 @@ export function buildKhuNha(map: GameMap, opts: ZoneOpts = {}): THREE.Group {
   built.root.userData.built = built;
   return built.root;
 }
+

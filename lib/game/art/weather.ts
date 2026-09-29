@@ -240,6 +240,7 @@ function waterPoint(map: MapId, u: number, v: number, out: Vec): boolean {
       out.x = u * 800; out.y = 3 + v * 16; return true;
     case "ham_ngam":                             // v20.4: indoors — no water, no weather
     case "mo_da":                                // v21 #19: a cave
+    case "rung_tram":                            // 0097: the forest floor (no open water drawn)
       return false;
     case "song_cai": {                           // v22 (0086): the river
       const x = RIVER.x0 + u * (RIVER.x1 - RIVER.x0), y = RIVER.y0 + v * (RIVER.y1 - RIVER.y0);

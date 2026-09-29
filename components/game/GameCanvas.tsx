@@ -4,15 +4,16 @@ import { useEffect, useImperativeHandle, useRef, useSyncExternalStore, type Ref 
 import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/diorama/flag";
 import { DioramaView } from "@/lib/game/diorama/view";
 import { WorldView } from "@/lib/game/diorama/world/view";
-import { ZoneChannels } from "@/lib/game/net/world-channels";
+import { LiveFeed, type LiveHouseIn, type LiveInputs } from "@/lib/game/diorama/world/live-feed";
+import { GridChannels } from "@/lib/game/net/grid-channels";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap } from "@/lib/game/maps/types";
-import { aoiStep, aoiZones, nearestZone } from "@/lib/game/world/aoi";
+import { cellZones } from "@/lib/game/world/grid";
 import { buildWorld, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { isZone, toWorld, zoneRect, type ZoneId } from "@/lib/game/world/zones";
-import { IS_PROD } from "@/lib/app-mode";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
+import type { CardSeatIn } from "@/lib/game/diorama/zones/seats";
 import type { HouseDraw } from "@/lib/game/housing/lot";
 import { GameEngine, type WorldExtras, type HeatProbe, type LocalFishing, type LocalInfo, type RosterEntry } from "@/lib/game/engine";
 import type { UmbrellaKind } from "@/lib/game/rain/model";
@@ -25,6 +26,8 @@ import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import { budgetKind, createBudget, GAME_LIMITS } from "@/lib/game/net/budget";
 import { joinGameChannel } from "@/lib/game/net/channel";
 import { FARM_ANIM, type FarmAnim, type FishPhase, type GameMessage } from "@/lib/game/net/protocol";
+import { felledKeys, subscribeFelled } from "@/lib/game/forest/felled-store";
+import { felledPoints } from "@/lib/game/forest/near";
 import { createReplyScheduler, replyWindowMs, type ReplyScheduler } from "@/lib/game/net/replies";
 import type { VehicleId } from "@/lib/game/travel/vehicles";
 import type { LocalLift } from "@/lib/game/engine";
@@ -109,8 +112,10 @@ export interface GameCanvasHandle {
   plotChanged: (p: number) => void;
   /** The hall's card-table labels (v16 spec §5). */
   setCardTables: (labels: Readonly<Partial<Record<CardGame, string>>>) => void;
+  /** Who sits at which card table seat (card_lobby): the 3D view seats them on the real seats. */
+  setCardSeats: (seats: ReadonlyArray<CardSeatIn>) => void;
   /** v19.3: Khu nhà's lots and their houses. */
-  setHouses: (houses: ReadonlyArray<HouseDraw>) => void;
+  setHouses: (houses: ReadonlyArray<LiveHouseIn>) => void;
   /** v18.11: the unread dot on the Báo Làng stand. */
   setNewsUnread: (unread: boolean) => void;
   /** v20.3: the labels over Bãi đất trống's rings (index = ring − 1). */
@@ -147,7 +152,13 @@ export interface GameCanvasHandle {
   nearForLift: (id: string) => boolean;
   /** P2 world mode: where I stand in world px (the world minimap / city map), or null; and the zone my feet are in. */
   worldPos: () => Vec | null;
+  /** P4: the game state the 3D world draws besides the people (zone-local, as the hooks have it): the rented stalls,
+   *  the realm's animals and bosses, a treasure dig, Khu nhà's owners… Each key replaces the last; houses and the
+   *  rings' labels come in through setHouses / setRingLabels too. */
+  setLiveInputs?: (patch: LiveInputs) => void;
   zone: () => ZoneId | null;
+  /** 0096: my chibi chops or cooks while that minigame runs (null: done). */
+  setWork?: (a: "chop" | "cook" | null) => void;
 }
 
 export interface GameCanvasProps {
@@ -199,8 +210,8 @@ export interface GameCanvasProps {
   arriveWorld?: Spot | null;
   /** P2 world mode: my feet crossed into another zone (or the wild). */
   onZoneChange?: (zone: ZoneId) => void;
-  /** P2 world mode: the zones whose topics I listen to (mine first). */
-  onAoiChange?: (zones: ZoneId[]) => void;
+  /** World mode: the zones my listened grid cells overlap, the wild included (who may be "here"); P4: my own cell. */
+  onAoiChange?: (zones: ZoneId[], cell?: number) => void;
   /** P2: the world could not start (no WebGL): the shell goes back to the per-map game. */
   onWorldFailed?: () => void;
   /** P3 world mode: I walked up to the shut level gate of map (the shell says "Cần cấp N"). */
@@ -278,11 +289,26 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
   const view3dRef = useRef<{ setPlots(p: ReadonlyArray<PlotDraw>): void } | null>(null);   // the diorama (or P2 world view) drawing this world
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
+  const cardSeatsRef = useRef<ReadonlyArray<CardSeatIn>>([]);
   const housesRef = useRef<ReadonlyArray<HouseDraw>>([]);                           // v19.3
   const newsUnreadRef = useRef(false);
   const ringLabelsRef = useRef<ReadonlyArray<string | null>>([]);
   const hiddenRef = useRef<readonly string[]>([]);
   const gatherRef = useRef<ReadonlyArray<{ id: string; ready: boolean }>>([]);
+  // P4: the world view's live feed (kept across worlds) and the world view up now
+  const feedRef = useRef<LiveFeed | null>(null);
+  const worldViewRef = useRef<WorldView | null>(null);
+  /** 0097: the chop / cook animation's re-send timer. */
+  const workTimerRef = useRef(0);
+  // 0097: the felled trees (the shared store, fed by the forest HUD's polls) are stumps in the 3D world; a respawn
+  // is caught by the 10 s refresh
+  useEffect(() => {
+    const push = () => { const wv = worldViewRef.current; if (wv) wv.setFelled(felledPoints(felledKeys())); };   // only the 3D world pays for the scatter
+    push();
+    const off = subscribeFelled(push);
+    const id = window.setInterval(push, 10_000);
+    return () => { off(); window.clearInterval(id); window.clearInterval(workTimerRef.current); };
+  }, []);
   // v17: my dog (from the latest setLocal), the field's rats and my last input, kept across worlds
   const dogRef = useRef<Pick<LocalInfo, "dog" | "dogHungry">>({});
   // v18.12: my following pet, kept across worlds
@@ -303,6 +329,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   });
 
   useImperativeHandle(ref, () => {
+    // P4: a state change reaches the world view at once (the moving part follows each frame: see the view's wrapper)
+    const feed = (patch: LiveInputs) => {
+      feedRef.current ??= new LiveFeed();
+      feedRef.current.set(patch);
+      worldViewRef.current?.setLive(feedRef.current.at(Date.now()));
+    };
     // P2 world mode: the shell and the RPCs speak zone-local; the engine world px (identity on a single map)
     const fromZ = (p: Vec): Vec => engineRef.current?.fromZone(p) ?? p;
     const sendFs = (c?: [string, number]) => {
@@ -450,13 +482,19 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
         cardTablesRef.current = labels;
         engineRef.current?.setCardTables(labels);
       },
+      setCardSeats: (seats) => {
+        cardSeatsRef.current = seats;
+        engineRef.current?.setCardSeats(seats);
+      },
       setHouses: (houses) => {
         housesRef.current = houses;
         engineRef.current?.setHouses(houses);
+        feed({ houses });
       },
       setRingLabels: (labels) => {
         ringLabelsRef.current = labels;
         engineRef.current?.setRingLabels(labels);
+        feed({ ringLabels: labels });
       },
       setHidden: (ids) => {
         hiddenRef.current = ids;
@@ -494,6 +532,18 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       },
       worldPos: () => (engineRef.current?.isWorld() ? engineRef.current.localPos() : null),
       zone: () => (engineRef.current?.isWorld() ? engineRef.current.currentZone() : null),
+      setWork: (a) => {
+        // 0097: my chibi works; the others see it too — the farm animation code, re-sent while it lasts (it plays 2.5 s)
+        engineRef.current?.setWork(a);
+        window.clearInterval(workTimerRef.current);
+        const code = a === "chop" ? FARM_ANIM.chop : a === "cook" ? FARM_ANIM.cook : FARM_ANIM.stop;
+        const send = () => {
+          engineRef.current?.showFarmAnim(code);
+          sendRef.current?.({ t: "fa", id: localId, a: code });
+        };
+        send();
+        if (a) workTimerRef.current = window.setInterval(send, 2000);
+      },
       lastInputAt: () => inputAtRef.current,
       setZoom: (zoom: number) => {
         zoomRef.current = zoom;
@@ -507,6 +557,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       sendLift: (m) => sendRef.current?.({ ...m, id: localId } as GameMessage),
       liftCandidate: () => engineRef.current?.liftCandidate() ?? null,
       nearForLift: (id) => engineRef.current?.nearForLift(id) ?? false,
+      setLiveInputs: feed,
     };
   }, [localId]);
 
@@ -523,9 +574,18 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     let engine: GameEngine;
     // the broadcast: one channel (a map) or my zone + its neighbours (the world); `send` goes to mine
     let channel: { send: (msg: GameMessage) => void; leave: (last?: GameMessage) => void };
-    let zones: ZoneChannels | null = null;
-    let aoiNow: ZoneId[] = [];                                                           // P3: the zones listened to now
+    let grid: GridChannels | null = null;                                                // P4: the AOI grid cells
     let aoiTimer = 0;
+    // P4: step the grid (own cell with hysteresis, the neighbours, the 2D clients' zone topics) — hello to newly joined
+    // cells (a zone topic says hello once it is subscribed: onStatus below)
+    const stepGrid = () => {
+      if (!grid) return;
+      grid.setVisible(engine.walkers());
+      const s = grid.update(engine.localPos(), engine.currentZone());
+      if (s.cellChanged || s.sendZoneChanged) grid.send(engine.snapshot());
+      for (const c of s.added) if (c !== s.cell) grid.send({ t: "hello", id: localId }, c);
+      if (s.cellChanged) propsRef.current.onAoiChange?.(cellZones(grid.wanted()), s.cell);
+    };
     try {
       const art = wmap ? blankArt() : paintMap(map);
       const fontVar = getComputedStyle(document.documentElement).getPropertyValue("--font-vt323").trim();
@@ -555,15 +615,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           propsRef.current.onLiftLost?.();
         },
         onZoneChange: (z) => {
-          // P2: a new zone — listen around it, tell its topic where I am, ask the new neighbours for theirs
-          if (!zones) return;
-          const before = new Set(zones.zones());
-          const next = aoiZones(z, engine.localPos(), aoiNow);
-          aoiNow = next;
-          zones.setZones(next, nearestZone(engine.localPos()));                          // P3: the wild's fallback topic
-          zones.send(engine.snapshot());
-          for (const n of next) if (!before.has(n) && n !== z) zones.send({ t: "hello", id: localId }, n);
-          propsRef.current.onAoiChange?.(next);
+          // P4: a new zone — the grid follows my position (my send zone for the 2D clients follows the zone)
+          if (!grid) return;
+          stepGrid();
           propsRef.current.onZoneChange?.(z);
         },
         onGate: (m) => propsRef.current.onGate?.(m),                                    // P3
@@ -592,6 +646,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     engine.setWeatherFx(weatherFxRef.current);
     engine.setPlots(plotsRef.current);
     engine.setCardTables(cardTablesRef.current);
+    engine.setCardSeats(cardSeatsRef.current);
     engine.setHouses(housesRef.current);
     engine.setNewsUnread(newsUnreadRef.current);
     engine.setRingLabels(ringLabelsRef.current);
@@ -657,46 +712,32 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       }
     };
     if (wmap) {
-      // P2: my zone's topic and its neighbours' (lib/game/world/aoi.ts); zone-local on the wire
-      const zc = new ZoneChannels(roomId, {
+      // P4: the AOI grid (lib/game/world/grid.ts): my cell's topic + its neighbours', world px on the wire; the
+      // zone topic carries a zone-local copy of my movement for the per-map clients
+      const gc = new GridChannels(roomId, {
         onMessage: (msg) => onMessage(msg),
-        onStatus: (z, connected) => {
-          if (z !== engine.currentZone()) {
-            if (connected) zc.send({ t: "hello", id: localId }, z);                     // a neighbour: who is there?
+        onStatus: (key, connected) => {
+          if (typeof key === "string") {
+            // a zone topic (the 2D players there): who is there? and where I am (its zone-local copy)
+            if (!connected) return;
+            gc.send({ t: "hello", id: localId }, key);
+            if (key === gc.zoneOut()) gc.send(engine.snapshot(), key);
             return;
           }
+          if (key !== gc.cell()) return;                                                // a neighbour: hello went out on join
           propsRef.current.onConnectionChange(connected);
           if (!connected) return;
-          zc.send({ t: "hello", id: localId });
-          zc.send(engine.snapshot());
+          gc.send({ t: "hello", id: localId });
+          gc.send(engine.snapshot());
         },
       }, joinChannel);
-      const first = aoiZones(engine.currentZone(), engine.localPos());
-      zc.setZones(first, nearestZone(engine.localPos()));
-      aoiNow = first;
-      zones = zc;
-      // P3: walking the wild, the zones in reach change without a zone change: listen around me every half second
-      aoiTimer = window.setInterval(() => {
-        if (engine.currentZone() !== "wild") return;
-        const pos = engine.localPos(), fb = nearestZone(pos);
-        const next = aoiStep(aoiNow, "wild", pos);
-        if (!next) {
-          if (zc.fallbackZone() !== fb) {
-            zc.setZones(aoiNow, fb);
-            zc.send(engine.snapshot());
-            propsRef.current.onAoiChange?.(aoiNow);                                      // the presence's fallback zone
-          }
-          return;
-        }
-        const before = new Set(aoiNow);
-        aoiNow = next;
-        zc.setZones(next, fb);
-        zc.send(engine.snapshot());
-        for (const n of next) if (!before.has(n)) zc.send({ t: "hello", id: localId }, n);
-        propsRef.current.onAoiChange?.(next);
-      }, 500);
-      channel = { send: (msg) => zc.send(msg), leave: (last) => zc.leave(last) };
-      propsRef.current.onAoiChange?.(first);
+      grid = gc;
+      const first = gc.update(engine.localPos(), engine.currentZone());
+      for (const c of first.added) if (c !== first.cell) gc.send({ t: "hello", id: localId }, c);
+      // the cells change without a zone change: step every quarter second (hysteresis keeps a border quiet)
+      aoiTimer = window.setInterval(() => stepGrid(), 250);
+      channel = { send: (msg) => gc.send(msg), leave: (last) => gc.leave(last) };
+      propsRef.current.onAoiChange?.(cellZones(gc.wanted()), first.cell);
       propsRef.current.onZoneChange?.(engine.currentZone());
     } else {
       channel = joinChannel(roomId, map, {
@@ -730,14 +771,27 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     if (use3d && c3) {
       try {
         if (wmap) {
-          const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+          // the game's camera: third person (near / mid / far, wheel or pinch zoom) or first person; never the free
+          // camera (only the /dev pages allow it)
+          const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: false, gameCamera: true });
           wv.setCameraMode("follow");
           view = wv;
+          // P4: the live feed (stalls, rings, houses, digs, the realm's animals and bosses); what moves by itself is
+          // brought up to time each frame, the rest on a state change
+          const lf = (feedRef.current ??= new LiveFeed());
+          wv.setLive(lf.at(Date.now()));
+          worldViewRef.current = wv;
+          wv.setFelled(felledPoints(felledKeys()));                                     // 0097
           // P3: the world view draws the frame's gameplay itself (vehicles and the boat under riders, rats, dogs,
-          // leaping fish, gate barriers: DioramaFrame.gameplay + Billboard.vehicle)
-          engine.setView3D(wv);
+          // leaping fish, gate barriers, P4 pets and bobbers: DioramaFrame.gameplay + Billboard.vehicle)
+          engine.setView3D({
+            render: (f) => {
+              if (lf.moving()) wv.setLive(lf.at(Date.now()));
+              wv.render(f);
+            },
+          });
         } else {
-          view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+          view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: false });
           engine.setView3D(view);
         }
         view.setPlots(plotsRef.current);
@@ -751,6 +805,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     return () => {
       if (view) {
         if (view3dRef.current === view) view3dRef.current = null;
+        if (worldViewRef.current === view) worldViewRef.current = null;
         engine.setView3D(null);
         view.dispose();
       }
@@ -785,3 +840,5 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     </>
   );
 }
+
+

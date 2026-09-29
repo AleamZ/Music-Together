@@ -86,6 +86,26 @@ export function drawFarmAnim(c: Ctx, feet: Vec, facing: Facing, a: FarmAnim, t: 
   const beat = reduced ? 1 : Math.floor(t / 180) % 4;
   const flow = reduced ? 0.5 : (t % 720) / 720;
   switch (a) {
+    case FARM_ANIM.chop: {
+      // 0097: the axe raised over the shoulder, then down into the trunk in front; chips fly on the stroke
+      const up = beat < 2;
+      const head = { x: hand.x + (up ? -2 : 6) * flip, y: hand.y + (up ? -9 : 1) };
+      line(c, COL.handle, hand, head, 6);
+      c.fillStyle = COL.blade;
+      c.fillRect(Math.round(head.x) - 1, Math.round(head.y) - 2, 3, 4);
+      px(c, COL.edge, head.x + flip, head.y);
+      if (!up) for (let k = 0; k < 3; k++) px(c, COL.straw, g.x + (k - 1) * 3 * flip, g.y - 4 - ((beat + k) % 3));
+      break;
+    }
+    case FARM_ANIM.cook: {
+      // 0097: the pan held out, the ladle stirring, steam curling up
+      c.fillStyle = COL.band;
+      c.fillRect(Math.round(g.x) - 4, Math.round(g.y) - 3, 8, 2);
+      line(c, COL.handle, { x: g.x + 4 * flip, y: g.y - 3 }, hand, 3);
+      px(c, COL.fork, g.x - 1 + (beat % 2) * 2, g.y - 5);
+      for (let k = 0; k < 3; k++) px(c, COL.mist, g.x - 2 + k * 2, g.y - 7 - ((beat + k) % 3) * 2);
+      break;
+    }
     case FARM_ANIM.transplant:
       bunch(c, hand, COL.seedling, COL.seedlingDark);
       // the hills set so far in front

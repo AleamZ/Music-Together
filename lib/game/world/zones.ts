@@ -16,7 +16,7 @@ export const WORLD_CELL = 8;
 
 export type ZoneId = MapId | "wild";
 /** A map that is a zone of the world (every map but the interiors). */
-export type OutdoorMapId = Exclude<MapId, "ham_ngam" | "mo_da">;
+export type OutdoorMapId = Exclude<MapId, "ham_ngam" | "mo_da" | "rung_tram">;   // 0097: Rừng tràm is a 2D window, no zone
 
 export interface ZoneRect { ox: number; oy: number; w: number; h: number }
 
@@ -38,7 +38,7 @@ export const WILD: ZoneRect = { ox: 0, oy: 0, w: WORLD_W, h: WORLD_H };
 export const ZONE_IDS: readonly OutdoorMapId[] = ["field", "hall", "pond", "market", "khu_nha", "bai_dat", "song_cai"];
 
 /** Maps entered by a door, a hatch or the mine's tunnel: no place in the world (their own map and topic). */
-export const INTERIORS: readonly MapId[] = ["ham_ngam", "mo_da"];
+export const INTERIORS: readonly MapId[] = ["ham_ngam", "mo_da", "rung_tram"];
 
 export function isInterior(map: ZoneId): boolean {
   return (INTERIORS as readonly string[]).includes(map);

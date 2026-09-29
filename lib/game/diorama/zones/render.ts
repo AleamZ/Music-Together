@@ -4,6 +4,7 @@ import { WATER_Y, type Built } from "../build";
 import { pxLen, pxToWorld } from "../coords";
 import { rng } from "../layout";
 import type { ZGround, ZoneLayout, ZoneOpts, ZPlant } from "./kit";
+import { faceAxes, signMesh } from "./signmesh";
 
 // Browser only (Three.js): a zone's diorama from its ZoneLayout — the terrain block on its plinth, water, the boxes and
 // pitched roofs merged per material, instanced plants and bulbs, markers over the interactables, night lights. The same
@@ -137,6 +138,55 @@ export function renderZone(L: ZoneLayout, opts: ZoneOpts = {}): Built {
     m.receiveShadow = true;
     root.add(m);
   }
+  // cylinders (legs, stools, round tops, chips, cones): one unit geometry per (segments, taper), scaled; merged below
+  const cylGeos = new Map<string, THREE.BufferGeometry>();
+  const cylGeo = (seg: number, taper: number) => {
+    const key = `${seg}|${taper.toFixed(2)}`;
+    let geo = cylGeos.get(key);
+    if (!geo) { geo = g(new THREE.CylinderGeometry(taper, 1, 1, seg)); cylGeos.set(key, geo); }
+    return geo;
+  };
+  for (const cy of L.cyls) {
+    const c = W(cy.x, cy.y);
+    const mat = cy.roof ? roofMat(cy.roof, cy.color) : cy.glow ? glowLam(cy.color) : lam(cy.color);
+    const m = new THREE.Mesh(cylGeo(cy.seg ?? 8, cy.taper ?? 1), mat);
+    if (cy.axis === "y") {                                  // lying along y: its disc faces south
+      m.rotation.x = Math.PI / 2;
+      m.scale.set(U(cy.r), U(cy.h), U(cy.ry ?? cy.r));
+      m.position.set(c.x, U(cy.z0 + (cy.ry ?? cy.r)), c.z);
+    } else {
+      m.scale.set(U(cy.r), U(cy.h), U(cy.ry ?? cy.r));
+      m.position.set(c.x, U(cy.z0 + cy.h / 2), c.z);
+    }
+    m.castShadow = cy.h > 1.5 && !cy.glow;
+    m.receiveShadow = true;
+    root.add(m);
+  }
+  // beams (ropes, wires, struts): a unit box stretched between two points
+  const va = new THREE.Vector3(), vb = new THREE.Vector3(), dir = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
+  for (const b of L.beams) {
+    const a = W(b.x1, b.y1), c = W(b.x2, b.y2);
+    va.set(a.x, U(b.z1), a.z); vb.set(c.x, U(b.z2), c.z);
+    const len = va.distanceTo(vb);
+    if (len < 1e-4) continue;
+    const m = new THREE.Mesh(unitBox, lam(b.color));
+    m.position.copy(va).add(vb).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(Y, dir.subVectors(vb, va).normalize());
+    m.scale.set(U(b.t), len, U(b.t));
+    m.castShadow = false;
+    root.add(m);
+  }
+  // painted sign faces: one atlas, one mesh
+  const signs = signMesh(L.signs.map((s) => {
+    const p = W(s.x, s.y), ax = faceAxes(s.face);
+    return { center: new THREE.Vector3(p.x, U(s.z), p.z), right: ax.right, up: ax.up, w: U(s.w), h: U(s.h), art: s.art };
+  }));
+  if (signs) {
+    g(signs.geometry);
+    mats.set("signs", signs.material);
+    root.add(signs.mesh);
+  }
+
   const prism = g(prismGeometry());
   for (const gb of L.gables) {
     const c = W(gb.x + gb.w / 2, gb.y + gb.d / 2);
@@ -297,6 +347,7 @@ export function renderZone(L: ZoneLayout, opts: ZoneOpts = {}): Built {
       root.traverse((o) => { if (o instanceof THREE.InstancedMesh) o.dispose(); });
       for (const x of geos) x.dispose();
       for (const m of mats.values()) m.dispose();
+      signs?.texture.dispose();
       root.clear();
     },
   };

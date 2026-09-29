@@ -8,6 +8,7 @@ import { zoneHeightAt, type ZoneLayout, type ZoneOpts } from "./kit";
 import { marketLayout } from "./market";
 import { outdoorScene } from "./outdoor";
 import { renderZone } from "./render";
+import { pixelizeTree } from "../pixeltex";
 
 // Browser only: which diorama a map gets. The pond keeps its own builder (layout.ts + build.ts); the zones (the hall,
 // Chợ Lớn, Khu nhà) go through ZoneLayout + renderZone.
@@ -24,7 +25,14 @@ export interface MapScene {
   heightAt: (x: number, y: number) => number;
 }
 
+/** Every map scene with the pixel texels (pixeltex.ts). */
 export function buildMapScene(map: GameMap, opts: ZoneOpts = {}): MapScene {
+  const s = buildMapSceneRaw(map, opts);
+  pixelizeTree(s.built.root);
+  return s;
+}
+
+function buildMapSceneRaw(map: GameMap, opts: ZoneOpts): MapScene {
   const outdoor = outdoorScene(map, opts);                  // field, Bãi đất, Mỏ đá, Sông Cái (zones/outdoor.ts)
   if (outdoor) return outdoor;
   const zone = ZONE_LAYOUTS[map.id];

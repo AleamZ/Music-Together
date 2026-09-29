@@ -44,6 +44,12 @@ export const HAM_ARRIVE: Spot = { x: 48, y: 84, dir: "down" };
 /** v20.4: on the pavement over the manhole, facing it (back up the ladder). */
 export const MARKET_HATCH_ARRIVE: Spot = { x: 640, y: 350, dir: "down" };
 
+/** 0097: just inside Rừng tràm (from Bãi đất trống's south gate), on the path, facing into the forest. */
+export const RUNG_TRAM_ARRIVE: Spot = { x: 40, y: 224, dir: "right" };
+
+/** 0097: on Bãi đất trống, inside its south gate, back from Rừng tràm. */
+export const BAI_DAT_FROM_RUNG: Spot = { x: 455, y: 360, dir: "up" };
+
 /** v21 #19: just inside Mỏ đá's gate (from Bãi đất trống), facing into the cave. */
 export const MO_DA_ARRIVE: Spot = { x: 44, y: 200, dir: "right" };
 

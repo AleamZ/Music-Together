@@ -8,7 +8,7 @@ import { ZONES } from "./zones";
 // reaches a map the account's level has not opened, a bamboo barrier and a guard stand in the way. The server refuses
 // the claim as before (0078's map_locked); this is what the world shows and says ("Cần cấp N"). World px. Pure data;
 // compose.ts stamps a locked gate's barrier into the collision grid and puts its guard among the NPCs, the engine says
-// the toast when I walk up to it, lib/game/diorama/gameplay3d.ts draws the barrier.
+// the toast when I walk up to it, the 3D world view draws the barrier (live.ts).
 
 export interface WorldGate {
   id: string;

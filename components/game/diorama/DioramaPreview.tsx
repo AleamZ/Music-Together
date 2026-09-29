@@ -5,6 +5,7 @@ import { createActor, setKeyboard, setPath, tickActor, walkFrame, idleFrame, typ
 import { lightingFor, type WeatherFx } from "@/lib/game/art/weather";
 import { CAMERA_MODES } from "@/lib/game/diorama/camera";
 import type { Billboard, CameraMode, Quality } from "@/lib/game/diorama/types";
+import { cardSeatMap, seatPeople, type CardSeatIn } from "@/lib/game/diorama/zones/seats";
 import { DioramaView, type DioramaStats } from "@/lib/game/diorama/view";
 import { CHU_TAM_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
 import { DIORAMA_MAPS } from "@/lib/game/diorama/flag";
@@ -21,7 +22,7 @@ import type { WeatherKind } from "@/lib/game/weather/model";
 
 const KINDS: ReadonlyArray<WeatherKind | "none"> = ["none", "clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
 const MODE_LABEL: Record<CameraMode, string> = { follow: "Theo người", overview: "Toàn cảnh", free: "Bay tự do" };
-const MAP_LABEL: Partial<Record<MapId, string>> = { pond: "Ao cá", hall: "Đình làng", market: "Chợ Lớn", khu_nha: "Khu nhà",
+const MAP_LABEL: Partial<Record<MapId, string>> = { pond: "Ao cá", hall: "Sảnh", market: "Chợ Lớn", khu_nha: "Khu nhà",
   field: "Đồng lúa", bai_dat: "Bãi đất", mo_da: "Mỏ đá", song_cai: "Sông Cái",
 };
 /** The map in the URL (?map=hall); the pond by default (and on the server). */
@@ -111,6 +112,20 @@ export default function DioramaPreview() {
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKey);
+    const demoSeats = mapId === "hall" && new URLSearchParams(window.location.search).has("seated") ? (() => {
+      const looks = [DEFAULT_LOOK, CHU_TAM_LOOK];
+      const at: CardSeatIn[] = [
+        ...[1, 2, 3, 4, 5, 6].map((s) => ({ game: "poker" as const, seat: s, id: `pk${s}` })),
+        ...[1, 2, 3, 4].map((s) => ({ game: "tienlen" as const, seat: s, id: `tl${s}` })),
+        ...[1, 3, 5, 7].map((s) => ({ game: "xidach" as const, seat: s, id: `xd${s}` })),
+        ...[1, 4, 7, 10, 13].map((s) => ({ game: "cao" as const, seat: s, id: `ca${s}` })),
+      ];
+      const cards = cardSeatMap(at);
+      const people: Billboard[] = at.map((s, i) => { const a = cards.get(s.id)!; return { id: s.id, look: looks[i % 2], x: a.x, y: a.y + 4, facing: "down", frame: 0, name: s.id }; });
+      people.push({ id: "h1", look: DEFAULT_LOOK, x: 128, y: 212, facing: "down", frame: 0, name: "võng" });
+      return { cards, people };
+    })() : null;
+    if (demoSeats) { me.pos = { x: 190, y: 262 }; me.display = { ...me.pos }; }
     let raf = 0, last = now0, statsAt = 0;
     const loop = (t: number) => {
       const dt = Math.min(0.05, (t - last) / 1000);
@@ -127,6 +142,8 @@ export default function DioramaPreview() {
         ...map.npcs.map((n): Billboard => ({ id: n.id, look: n.look, x: n.spot.x, y: n.spot.y, facing: n.spot.dir, frame: idleFrame(t, n.id.length * 200), name: n.name })),
         { id: "me", look: DEFAULT_LOOK, x: me.display.x, y: me.display.y, facing: me.facing, frame: frameOf(me), name: "Bạn", me: true },
       ];
+      // ?seated=1 (the hall): demo players seated at the card tables and in the café (zones/seats.ts), as real players are
+      if (demoSeats) billboards.push(...seatPeople(demoSeats.people, { cards: demoSeats.cards, hammock: new Set(["h1"]), origin: { x: 0, y: 0 } }));
       const w = env.kind === "none" ? null : { kind: env.kind, code: 0, isDay: true, sunriseMs: hourToMs(6), sunsetMs: hourToMs(18), rainMm: 0, windKmh: env.wind, updatedAtMs: 0 };
       const light = lightingFor(hourToMs(env.hour), w, env.fx);
       const night = light.night;

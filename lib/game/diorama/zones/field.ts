@@ -6,7 +6,8 @@ import {
 import type { GameMap, PlotGeom, Rect } from "@/lib/game/maps/types";
 import { pxLen } from "../coords";
 import { rng } from "../layout";
-import { inRect, Kit, type Inst, type OutdoorOptions } from "./outdoor-kit";
+import { inRect, Kit, labelNear, type Inst, type OutdoorOptions } from "./outdoor-kit";
+import type { SignIcon } from "./signart";
 
 // Đồng lúa ("field") as a diorama: the paddies sunk between grassy bunds, the canal (Mương) with its two plank bridges
 // and Cầu khỉ, the bamboo band along the north, the Hợp tác xã under its tiled roof, the farm shop's striped awning, the
@@ -475,7 +476,7 @@ export function buildFieldZone(map: GameMap, opts: OutdoorOptions = {}): THREE.G
       }
       case "palm": k.palm(p.x, p.y, p.h, p.lean, p.seed); break;
       case "banana": k.banana(p.x, p.y); break;
-      case "sign": k.sign(p.x, p.y); break;
+      case "sign": k.sign(p.x, p.y, "sign", labelNear(map, p.x, p.y - 12), (p as { icon?: SignIcon }).icon); break;
       case "city_map_post": k.sign(p.x, p.y, "city"); break;
       default: break;
     }
@@ -527,3 +528,5 @@ export function demoFieldPlots(): PlotDraw[] {
   ];
   return looks.map((l, i) => ({ no: i + 1, look: l, label: `${i + 1}`, urgent: false, parts: 0, harvester: null }));
 }
+
+

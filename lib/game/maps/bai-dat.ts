@@ -1,4 +1,4 @@
-import { BAI_DAT_ARRIVE, MARKET_BRIDGE_ARRIVE, MO_DA_ARRIVE } from "./arrivals";
+import { BAI_DAT_ARRIVE, MARKET_BRIDGE_ARRIVE, MO_DA_ARRIVE, RUNG_TRAM_ARRIVE } from "./arrivals";
 import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
 import type { GameMap, Interactable, PropPlacement, Rect } from "./types";
@@ -66,6 +66,11 @@ export const BAI_INTERACTABLES: Interactable[] = [
   {
     id: "bai_dat_exit", kind: "portal", label: "Về Chợ Lớn", prompt: "Qua cầu về Chợ Lớn", rect: { x: 388, y: 0, w: 24, h: 24 },
     use: { x: 400, y: 36 }, face: "up", to: { map: "market", arrive: MARKET_BRIDGE_ARRIVE },
+  },
+  // 0097: a gap in the south fence leads down the path into Rừng tràm (the 2D game's forest)
+  {
+    id: "rung_tram_gate", kind: "portal", label: "Rừng tràm", prompt: "Vào Rừng tràm", rect: { x: 440, y: 372, w: 30, h: 28 },
+    use: { x: 455, y: 368 }, face: "down", to: { map: "rung_tram", arrive: RUNG_TRAM_ARRIVE }, only2d: true,
   },
   // v21 #19: the gap in the broken east wall leads into Mỏ đá
   {

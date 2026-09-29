@@ -60,7 +60,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'jump_in(uuid,text,integer,integer)', 'rescue_swimmer(uuid,text,uuid,integer,integer)', 'leave_water(uuid,text)',
      'warm_up_start(uuid,text,integer,integer)', 'warm_up_finish(uuid,text)', 'skip_trip(text)',
      -- the character, the wardrobe and the home: spending or moving one's own things, no income
-     'save_character(text,text,text,text,text,text,text,text,text,text,text,text,text)', 'salon_style(text,text,text)',
+     'save_character(text,text,text,text,text,text,text,text,text,text,text,text,text,jsonb)', 'salon_style(text,text,text)',
      'buy_fashion_item(text,text)', 'sell_fashion_item(text,text)', 'transfer_fashion_item(text,uuid,text)',
      'fight_wear_uniform(text,text)', 'fight_unwear_uniform(text)',
      'buy_vehicle(text,text)', 'sell_vehicle(text,text)', 'umbrella_buy(text,text)', 'umbrella_hold(text,bigint)',

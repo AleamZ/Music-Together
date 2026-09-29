@@ -51,8 +51,10 @@ export interface PresenceHandle {
   unsubscribe: () => void;
   setMode: (mode: PresenceMode) => void;
   /** The game map I walk on (v14). Published only while the mode is "game" (classic → map null). P3: in the wild,
-   *  `near` is the zone published as `map` for the older clients (which know no "wild"), with `w: 1` for the new ones. */
-  setMap: (map: PresenceMap, near?: MapId) => void;
+   *  `near` is the zone published as `map` for the older clients (which know no "wild"), with `w: 1` for the new ones.
+   *  P4: `cell` (world mode) is my grid cell, published as `c` with the next publish — a cell change alone never
+   *  publishes (presence goes out on a zone change). */
+  setMap: (map: PresenceMap, near?: MapId, cell?: number | null) => void;
   /** My dog (v17 §7.3), or null. Published only while the mode is "game" (classic → dog null). */
   setDog: (dog: PresenceDog | null) => void;
 }
@@ -74,6 +76,7 @@ export function trackPresence(
   let mode: PresenceMode = me.mode;          // what other members should see…
   let map: PresenceMap = me.map ?? "hall";
   let near: MapId = "hall";                  // P3: the wild's fallback zone
+  let cell: number | null = null;            // P4: my grid cell (world mode): rides along, never publishes alone
   let dog: PresenceDog | null = me.dog ?? null;
   let published: Published | null = null;    // …and the last state the server acknowledged with 'ok'
   const wanted = (): Published => ({ mode, map: mode === "game" ? map : null, dog: mode === "game" ? dog : null, near });
@@ -106,6 +109,7 @@ export function trackPresence(
       name: me.name, online_at: new Date(now).toISOString(), mode: next.mode,
       // P3: an older client maps "wild" to the hall — it gets the nearest zone; `w: 1` says the wild to the new ones
       ...(next.map === "wild" ? { map: next.near, w: 1 } : { map: next.map }),
+      ...(next.map !== null && cell !== null ? { c: cell } : {}),
       dog: next.dog ? { n: next.dog.name, c: next.dog.coat } : null,
     }).catch(() => "error" as const);
     sending = false;
@@ -146,7 +150,8 @@ export function trackPresence(
       // The 1 s delay merges rapid toggles; A→B→A inside it sends nothing because the wanted state is published.
       schedule(1000);
     },
-    setMap: (next, nearZone) => {
+    setMap: (next, nearZone, nextCell) => {
+      if (nextCell !== undefined) cell = nextCell;
       const nextNear = next === "wild" ? nearZone ?? near : near;
       if (closed || (next === map && nextNear === near)) return;
       map = next;

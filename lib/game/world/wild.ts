@@ -1,5 +1,7 @@
 import { MO_DA_ARRIVE } from "@/lib/game/maps/arrivals";
 import { MINE, MINE_SOLID } from "./mine";
+import { deltaSolid } from "./delta";
+import { NUI_SOLIDS } from "./nuicam";
 export { MINE, MINE_HILL, MINE_SOLID } from "./mine";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
@@ -97,7 +99,7 @@ function nearSongCai(x: number, y: number): boolean {
 }
 
 /** P3: the landmarks' solid footprints (world px circles, from the 3D models in lib/game/diorama/world/props.ts): the
- *  windmills' towers (base radius 1.5 units), the đình's flag plinth, the market arch's two posts (the road runs
+ *  windmills' towers (base radius 1.5 units), the hall flag's plinth, the market arch's two posts (the road runs
  *  between them), the dojo tower's plinth, the headframe's engine house. The mine mouth is MINE_SOLID. */
 export const LANDMARK_SOLIDS: ReadonlyArray<{ x: number; y: number; r: number }> = LANDMARKS.flatMap((l) => {
   switch (l.kind) {
@@ -107,6 +109,7 @@ export const LANDMARK_SOLIDS: ReadonlyArray<{ x: number; y: number; r: number }>
     case "headframe": return [{ x: l.x, y: l.y, r: 30 }];
     case "arch": return [-1, 1].map((s) => ({ x: l.x + Math.sin(l.yaw) * s * 33.6, y: l.y + Math.cos(l.yaw) * s * 33.6, r: 10 }));
     case "mine": return [];
+    case "pagoda": return [{ x: l.x, y: l.y, r: 36 }];
   }
 });
 
@@ -119,6 +122,8 @@ export function wildBlocked(x: number, y: number): boolean {
   if (x >= MINE_SOLID.x && x < MINE_SOLID.x + MINE_SOLID.w && y >= MINE_SOLID.y && y < MINE_SOLID.y + MINE_SOLID.h) return true;
   if (LANDMARK_SOLIDS.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 <= s.r ** 2)) return true;
   if (KNOLLS.some((h) => (x - h.x) ** 2 + (y - h.y) ** 2 <= h.r ** 2)) return true;
+  if (deltaSolid(x, y)) return true;
+  if (NUI_SOLIDS.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 <= s.r ** 2)) return true;   // the mountain's temple, statue, stations, gate                                           // the stilt houses on the banks
   const g = heightGrid(), c = Math.floor(x / WORLD_CELL), r = Math.floor(y / WORLD_CELL);
   if (g.h[r * g.cols + c] > MAX_WALK_HEIGHT) return true;
   return slopeAtCell(g, c, r) > MAX_WALK_SLOPE;

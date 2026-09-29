@@ -64,6 +64,8 @@ export class CharacterLayer {
   private cullFrom: THREE.Vector3 | null = null;
   private cullDist = Infinity;
   private lifts: ReadonlyMap<string, number> = new Map();
+  /** First person: my own head, hat and name tag are not drawn (the camera is inside them). */
+  private hideMyHead = false;
 
   constructor(size: MapSize, groundAt: (x: number, y: number) => number) {
     this.size = size;
@@ -89,6 +91,10 @@ export class CharacterLayer {
   setCull(eye: THREE.Vector3 | null, dist = Infinity): void {
     this.cullFrom = eye;
     this.cullDist = dist;
+  }
+
+  setHideMyHead(on: boolean): void {
+    this.hideMyHead = on;
   }
 
   /** Per person: how far above the ground their feet are drawn (units): on a vehicle's seat, in a boat. */
@@ -174,14 +180,14 @@ export class CharacterLayer {
       a.x = b.x; a.y = b.y;
       const act: CharAct = b.act ?? locomotion(a.speed);
       const moving = act === "walk" || act === "run" || (act === "swim" && dist > 0.05);
-      const target = moving && dist > 0.05 && dist <= 40 ? yawOf(dx, dy) : FACING_YAW[b.facing];
+      const target = moving && dist > 0.05 && dist <= 40 ? yawOf(dx, dy) : b.yaw ?? FACING_YAW[b.facing];
       a.yaw = dt > 0 ? turnToward(a.yaw, target, dt) : target;
       a.walkT += dt * (act === "walk" || act === "run" ? Math.max(0.6, a.speed / 70) : 1);
       const ground = this.groundAt(b.x, b.y);
       const swim = act === "swim" || (b.act === undefined && ground < WATER_DEPTH);
       a.rig.apply(poseAt(swim ? "swim" : act, a.walkT, a.phase, reduced));
       const w = pxToWorld(b, this.size);
-      a.rig.root.position.set(w.x, (swim && ground < WATER_DEPTH ? ground + SWIM_LIFT : ground) + (this.lifts.get(b.id) ?? 0), w.z);
+      a.rig.root.position.set(w.x, (swim && ground < WATER_DEPTH ? ground + SWIM_LIFT : ground) + (this.lifts.get(b.id) ?? b.lift ?? 0), w.z);
       a.rig.root.rotation.y = a.yaw;
       a.blob.visible = !swim;
       if (b.name !== a.tagText) {
@@ -200,7 +206,9 @@ export class CharacterLayer {
       a.tag?.position.set(a.rig.root.position.x, a.rig.root.position.y + TAG_Y, a.rig.root.position.z);
       const shown = !this.cullFrom || !!b.me || a.rig.root.position.distanceTo(this.cullFrom) < this.cullDist;
       a.rig.root.visible = shown;
-      if (a.tag) a.tag.visible = shown;
+      const headless = !!b.me && this.hideMyHead;
+      a.rig.setHeadVisible(!headless);
+      if (a.tag) a.tag.visible = shown && !headless;
     }
     for (const [id, a] of this.actors) {
       if (a.seen === n) continue;
@@ -233,3 +241,4 @@ export class CharacterLayer {
     this.blobMat.dispose();
   }
 }
+

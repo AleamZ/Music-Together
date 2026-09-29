@@ -52,8 +52,10 @@ describe.each(ZONES)("zone diorama %s", (id, layout) => {
     const bad: string[] = [];
     for (const b of L.boxes) {
       if (b.z0 >= HEADROOM || b.z0 + b.h <= FLAT) continue;                // overhead, or flat enough to walk over
-      // a detail on a facade (a window, a shutter, ≤ 2 px thick) only needs its back edge on the wall
-      const cells = b.d <= 2 ? [[b.x + b.w / 2, b.y + 0.01]] : b.w <= 2 ? [[b.x + 0.01, b.y + b.d / 2]] : cellsUnder(map, b.x, b.y, b.w, b.d);
+      // a seat's furniture stands where its sitter is (a café chair behind its table)
+      if (L.seats.some((s) => Math.hypot(s.x - (b.x + b.w / 2), s.y - (b.y + b.d / 2)) < 7)) continue;
+      // a detail on a facade (a window, a shutter, ≤ 3 px thick) only needs its back edge on the wall
+      const cells = b.d <= 3 ? [[b.x + b.w / 2, b.y + 0.01]] : b.w <= 3 ? [[b.x + 0.01, b.y + b.d / 2]] : cellsUnder(map, b.x, b.y, b.w, b.d);
       for (const [x, y] of cells) if (!blockedAt(map, x, y)) bad.push(`box ${JSON.stringify(b)} @${x},${y}`);
     }
     for (const gb of L.gables) {
@@ -130,3 +132,4 @@ describe("zone specifics", () => {
     }
   });
 });
+

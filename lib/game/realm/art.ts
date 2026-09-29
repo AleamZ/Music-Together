@@ -75,6 +75,46 @@ export function drawAnimal(b: Ctx, sp: WildSpeciesId, x: number, y: number, left
       for (const [dx, k] of [[-9, 0], [-5, 1], [2, 0], [6, 1]] as const) r(dx, -4, 3, step === k ? 4 : 3, "#2c1f18");
       break;
     }
+    // 0097 (forest-content): the rừng tràm's own
+    case "chuot_dong": {
+      shadow(b, x, y, 8);
+      r(-4, -5, 8, 4, "#8a6a4a"); r(-3, -2, 6, 1, "#d8c4a8"); r(3, -6, 3, 3, "#8a6a4a"); r(4, -7, 1, 1, "#e0a8a0");
+      r(5, -5, 1, 1, "#1d1a14"); r(-8, -3 - step, 4, 1, "#c8a090");
+      break;
+    }
+    case "ga_rung": {
+      shadow(b, x, y, 10);
+      r(-4, -9, 8, 5, "#b8402a"); r(-3, -5, 6, 1, "#5a3a20"); r(3, -12, 3, 4, "#d84a2a"); r(4, -13, 1, 1, "#e02a2a");
+      r(6, -11, 1, 1, "#e0c070"); r(4, -11, 1, 1, "#1d1a14"); r(-8, -12, 4, 4, "#2a4a3a");
+      r(-1, -4, 1, step ? 4 : 3, "#c8a050"); r(2, -4, 1, step ? 3 : 4, "#c8a050");
+      break;
+    }
+    case "ran_ri_ca": {
+      shadow(b, x, y, 14);
+      const w = step ? 1 : -1;
+      r(-8, -2, 4, 2, "#4a5a2a"); r(-4, -3 + w, 4, 2, "#4a5a2a"); r(0, -2, 4, 2, "#4a5a2a"); r(4, -3 - w, 3, 2, "#4a5a2a");
+      r(6, -4, 3, 3, "#3a4a20"); r(8, -3, 1, 1, "#1d1a14"); r(-6, -2, 1, 1, "#2e3a1a"); r(2, -2, 1, 1, "#2e3a1a");
+      break;
+    }
+    case "cay_huong": {
+      shadow(b, x, y, 12);
+      r(-6, -7, 11, 4, "#8a7a5a"); for (const dx of [-4, -1, 2]) r(dx, -7, 1, 3, "#3a3020");
+      r(4, -9, 4, 4, "#8a7a5a"); r(7, -7, 2, 2, "#f0e8d8"); r(6, -8, 1, 1, night ? "#ffe066" : "#1d1a14");
+      r(-12, -6 - step, 6, 2, "#3a3020"); r(-4, -3, 1, step ? 3 : 2, "#2a2418"); r(3, -3, 1, step ? 2 : 3, "#2a2418");
+      break;
+    }
+    case "co_trang": {
+      shadow(b, x, y, 8);
+      r(-3, -14, 6, 5, "#f4f2ea"); r(2, -19, 2, 6, "#f4f2ea"); r(3, -20, 3, 2, "#f8f6ee"); r(6, -19, 3, 1, "#e0b030");
+      r(4, -20, 1, 1, "#1d1a14"); r(-4, -12, 2, 2, "#e8e6de"); r(-1, -9, 1, 9, "#3a3a30"); r(1, -9, 1, step ? 9 : 8, "#3a3a30");
+      break;
+    }
+    case "rua_hop_lung_den": {
+      shadow(b, x, y, 10);
+      r(-5, -6, 10, 4, "#2a2a22"); r(-4, -7, 8, 1, "#3a3428"); r(-5, -2, 10, 1, "#c8b070");
+      r(5, -5 + (step ? 0 : 1), 3, 2, "#8a7a4a"); r(7, -5, 1, 1, "#1d1a14"); r(-4, -2, 2, 2, "#8a7a4a"); r(3, -2, 2, 2, "#8a7a4a");
+      break;
+    }
     case "firefly": {
       const fy = y - 10 + Math.round(Math.sin(t / 400 + x) * 4);
       const on = 0.5 + 0.5 * Math.sin(t / 220 + y);

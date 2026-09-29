@@ -4,7 +4,8 @@ import type { GameMap, Rect } from "@/lib/game/maps/types";
 import { GATE, RAID_ARENA, STALL } from "@/lib/game/realm/model";
 import { pxLen } from "../coords";
 import { rng } from "../layout";
-import { inRect, Kit, type Inst, type OutdoorOptions } from "./outdoor-kit";
+import { inRect, Kit, labelNear, type Inst, type OutdoorOptions } from "./outdoor-kit";
+import type { SignIcon } from "./signart";
 
 // Bãi đất trống ("bai_dat") as a diorama: packed dirt with weeds and tyre ruts, the canal and its little bridge to the
 // north, the four boxing rings on raised plank floors (canvas mats, three ropes, red corner posts on the west and blue
@@ -235,7 +236,7 @@ export function buildBaiDatZone(map: GameMap, opts: OutdoorOptions = {}): THREE.
   }
 
   // ---- the records board ("Bảng thành tích")
-  k.sign(RECORDS_BOARD.x, RECORDS_BOARD.y, "board");
+  k.sign(RECORDS_BOARD.x, RECORDS_BOARD.y, "board", "Bảng thành tích", "star");
 
   // ---- the hunter's stall (the night market by night): a plank counter, a leaf awning, pelts and antlers
   {
@@ -281,7 +282,7 @@ export function buildBaiDatZone(map: GameMap, opts: OutdoorOptions = {}): THREE.
 
   // ---- signs, the city post
   for (const p of map.props) {
-    if (p.kind === "sign") k.sign(p.x, p.y);
+    if (p.kind === "sign") k.sign(p.x, p.y, "sign", labelNear(map, p.x, p.y - 12), (p as { icon?: SignIcon }).icon);
     else if (p.kind === "city_map_post") k.sign(p.x, p.y, "city");
   }
   for (const l of L.lights) k.lamp(l.x, l.y, l.r, l === L.lights[L.lights.length - 1] ? 1.4 : 3.1);
@@ -293,4 +294,6 @@ export function buildBaiDatZone(map: GameMap, opts: OutdoorOptions = {}): THREE.
     },
   });
 }
+
+
 

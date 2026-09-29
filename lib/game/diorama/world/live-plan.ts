@@ -1,7 +1,8 @@
 import type { PetSpecies } from "@/lib/game/pets/catalog";
 import type { BossId, WildSpeciesId } from "@/lib/game/realm/model";
 import type { Roof } from "@/lib/game/housing/lot";
-import type { DioramaFrame } from "../types";
+import { bobberPoint } from "@/lib/game/fishing/geometry";
+import type { DioramaFrame, GameplayFrame } from "../types";
 
 // The world's live things in 3D — pure part: what the engine hands the view (world px, like the billboards), and the
 // small kinematics the models use (gaits, heading smoothing, the boat's wake, leaping fish, seats on vehicles). No
@@ -134,5 +135,14 @@ export function liveFromFrame(f: Pick<DioramaFrame, "billboards" | "gameplay">, 
     rats: [...(extra.rats ?? []), ...g.rats.map((r) => ({ id: r.key, x: r.x, y: r.y, fallen: r.fallen }))],
     dogs: [...(extra.dogs ?? []), ...g.dogs.map((d) => ({ id: d.id, x: d.x, y: d.y }))],
     leaps: [...(extra.leaps ?? []), ...g.leaps],
+    // P4: the pets at their owners' heels and everyone's bobbers (mine and the others' from realtime)
+    pets: [...(extra.pets ?? []), ...(g.pets ?? []).map((p) => ({ id: `pet:${p.ownerId}`, ownerId: p.ownerId, species: p.species, x: p.x, y: p.y }))],
+    fishing: [...(extra.fishing ?? []), ...(g.anglers ?? []).map(castLive)],
   };
+}
+
+/** P4: an angler's bobber: out in front of the feet (the 2D bobberPoint), a fish on from the bite, pulling hard reeling. */
+export function castLive(a: NonNullable<GameplayFrame["anglers"]>[number]): LiveFishing {
+  const p = bobberPoint(a, a.facing);
+  return { id: `cast:${a.id}`, x: p.x, y: p.y, hooked: a.phase >= 2, tension: a.phase === 3 ? 0.9 : a.phase === 2 ? 0.4 : 0 };
 }

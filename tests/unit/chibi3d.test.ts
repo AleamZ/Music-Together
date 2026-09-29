@@ -106,11 +106,11 @@ describe("chibi factory", () => {
     }
     const { parts } = f.acquire(chibiSpec(DEFAULT_LOOK), "high");
     const tris = SEGS.reduce((n, s) => n + parts[s].getAttribute("position").count / 3, 0);
-    expect(tris).toBeLessThan(8000);                                           // sculpted pieces + the ink hull
+    expect(tris).toBeLessThan(16000);                                          // smoothed pieces, skinned cloth rings + the ink hull
     const tex = (p: typeof parts) => (p.material as THREE.MeshLambertMaterial).map as THREE.DataTexture;
     const low = f.acquire(chibiSpec(DEFAULT_LOOK), "low").parts;
     expect(tex(low).image.width * tex(low).image.height).toBeLessThan(tex(parts).image.width * tex(parts).image.height);
-    expect(tex(parts).magFilter).toBe(THREE.NearestFilter);
+    expect(tex(parts).magFilter).toBe(THREE.LinearFilter);                    // flat colours, smooth edges
     for (const e of ["open", "blink", "happy"] as const) expect(parts.faces[e]).toBeTruthy();
     f.dispose();
   }, 30_000);                                                                   // every look twice: slow under a full parallel run

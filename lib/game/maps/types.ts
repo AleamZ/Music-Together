@@ -4,8 +4,8 @@ import type { Facing, Look, Vec } from "@/lib/game/types";
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Spot { x: number; y: number; dir: Facing }
 
-export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat" | "ham_ngam" | "mo_da" | "song_cai";
-export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam", "mo_da", "song_cai"];
+export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat" | "ham_ngam" | "mo_da" | "song_cai" | "rung_tram";
+export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam", "mo_da", "song_cai", "rung_tram"];
 
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
@@ -73,6 +73,8 @@ export interface Interactable {
   face?: Facing;
   /** portal: where it leads. */
   to?: { map: MapId; arrive: Spot };
+  /** 0097: the 2D game only (the 3D world leaves it out: Rừng tràm's gate — the 3D forest is the real one). */
+  only2d?: true;
   /** plot: its number (1–10). */
   plot?: number;
   /** card_table: its game (v16). */

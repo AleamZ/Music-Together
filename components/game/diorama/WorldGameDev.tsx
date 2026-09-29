@@ -2,18 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import GameCanvas, { type GameCanvasHandle } from "@/components/game/GameCanvas";
+import Camera3dControl from "@/components/game/Camera3dControl";
+import { addFelled, setFelled } from "@/lib/game/forest/felled-store";
+import { cellTrees } from "@/lib/game/forest/near";
+import { cyclePreset, getCam, setCam, toggleView } from "@/lib/game/diorama/world/game-camera";
 import WorldMiniMap from "@/components/game/WorldMiniMap";
 import ZoneToast from "@/components/game/ZoneToast";
+import { useDevLive } from "./useDevLive";
 import { CO_BA_LOOK, CO_UT_LOOK, CHU_TU_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
-import type { GameChannelHandlers, GameChannelHandle } from "@/lib/game/net/channel";
+import { FakeBus } from "@/lib/game/net/fake-bus";
 import type { GameMessage } from "@/lib/game/net/protocol";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
 import type { RosterEntry } from "@/lib/game/engine";
 import type { GameMap } from "@/lib/game/maps/types";
 import type { Look, Vec } from "@/lib/game/types";
-import { toZoneMsg } from "@/lib/game/world/aoi";
+import { cellAt, cellTopicId } from "@/lib/game/world/grid";
 import { buildWorld } from "@/lib/game/world/compose";
 import { zoneName } from "@/lib/game/world/minimap";
 import { MINE, worldArrival } from "@/lib/game/world/wild";
@@ -21,33 +26,9 @@ import { isZone, toWorld, zoneAt, ZONE_IDS, type ZoneId } from "@/lib/game/world
 
 // Dev only (/dev/world-game): the REAL game engine in P2 world mode — GameCanvas, the engine, the zone channels, the
 // WorldView with the chibi characters — with no login and no network: the realtime channels are a local in-page bus, and
-// three fake players walk the roads on it (their `pa`s zone-local on their zone's topic, exactly as the wire carries
-// them). A mini shell handles the portals (the mine mouth down to the cave and back up), the rest just toasts. The
+// three fake players walk the roads on it (P4: their `pa`s in world px on their grid cell's topic, as the wire carries
+// them; lib/game/net/fake-bus.ts). A mini shell handles the portals (the mine mouth down to the cave and back up), the rest just toasts. The
 // window's __worldDev lets the screenshots jump: __worldDev.go("market") / .at(x, y).
-
-type Handlers = GameChannelHandlers & { zone: string };
-
-/** The in-page realtime: topics by zone; a send reaches every other listener of that topic (never the sender). */
-class FakeBus {
-  private subs = new Set<Handlers>();
-  join = (_room: string, map: { id: string; width: number; height: number }, h: GameChannelHandlers): GameChannelHandle => {
-    const me: Handlers = { ...h, zone: map.id };
-    this.subs.add(me);
-    const t = window.setTimeout(() => h.onStatus(true), 40);
-    return {
-      send: (msg) => { for (const s of this.subs) if (s !== me && s.zone === map.id) s.onMessage(msg); },
-      leave: (last) => {
-        window.clearTimeout(t);
-        this.subs.delete(me);
-        if (last) for (const s of this.subs) if (s.zone === map.id) s.onMessage(last);
-      },
-    };
-  };
-  /** A bot's broadcast on its zone's topic (already zone-local). */
-  emit(zone: string, msg: GameMessage): void {
-    for (const s of this.subs) if (s.zone === zone) s.onMessage(msg);
-  }
-}
 
 interface Bot { id: string; name: string; look: Look; pos: Vec; path: Vec[]; nextAt: number }
 
@@ -107,9 +88,9 @@ export default function WorldGameDev() {
           const cells = findPath(world, b.pos, goal);
           if (cells) {
             b.path = smoothPath(world, b.pos, cells).slice(0, 24);
-            const z = zoneAt(b.pos);
+            const cell = cellTopicId(cellAt(b.pos));
             const msg: GameMessage = { t: "pa", id: b.id, x: Math.round(b.pos.x), y: Math.round(b.pos.y), pts: b.path.map((p) => [Math.round(p.x), Math.round(p.y)] as [number, number]), h: null };
-            bus.emit(z, toZoneMsg(msg, z));
+            bus.emit(cell, msg);
           }
           b.nextAt = now + 3000 + Math.random() * 4000;
         }
@@ -126,15 +107,18 @@ export default function WorldGameDev() {
   useEffect(() => {
     const id = window.setInterval(() => {
       for (const b of bots.current) {
-        const z = zoneAt(b.pos);
+        const cell = cellTopicId(cellAt(b.pos));
         const msg: GameMessage = b.path.length
           ? { t: "pa", id: b.id, x: Math.round(b.pos.x), y: Math.round(b.pos.y), pts: b.path.map((p) => [Math.round(p.x), Math.round(p.y)] as [number, number]), h: null }
           : { t: "st", id: b.id, x: Math.round(b.pos.x), y: Math.round(b.pos.y), d: "d", mv: false, vx: 0, vy: 0, h: null };
-        bus.emit(z, toZoneMsg(msg, z));
+        bus.emit(cell, msg);
       }
     }, 2000);
     return () => window.clearInterval(id);
   }, [bus]);
+
+  // P4: a fake game state through the real live feed (stalls, animals, a boss, houses, rings, my pet)
+  useDevLive(canvasRef, isZone(travel.mapId) ? travel.mapId : "hall");
 
   // screenshots: jump anywhere
   useEffect(() => {
@@ -144,11 +128,30 @@ export default function WorldGameDev() {
       at: (x: number, y: number) => setTravel((t) => ({ mapId: isZone(zoneAt({ x, y })) ? (zoneAt({ x, y }) as MapId) : "bai_dat", arrive: null, key: t.key + 1, world: { x, y, dir: "down" } })),
       mine: () => setTravel((t) => ({ mapId: "bai_dat", arrive: null, key: t.key + 1, world: { ...MINE.exit, dir: "right" } })),
       interact: () => canvasRef.current?.interact(),
+      fish: (phase: "idle" | "waiting" | "bite" | "reeling") => canvasRef.current?.setFishing({ phase }),
       pos: () => canvasRef.current?.worldPos() ?? canvasRef.current?.localPos(),
       zone: () => canvasRef.current?.zone(),
       travel: () => travel,
+      // 0097 playtest: my chibi chops / cooks (the fa broadcast too); fell the tràm nearest (x, y) for 20 s, or clear
+      work: (a: "chop" | "cook" | null) => canvasRef.current?.setWork?.(a),
+      fell: (x: number, y: number) => {
+        const cx = Math.floor(x / 64), cy = Math.floor(y / 64);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++)
+          cellTrees(cx + dx, cy + dy).forEach((_t, k) => addFelled(`${cx + dx}:${cy + dy}:${k}`, Date.now() + 20_000));
+      },
+      unfell: () => setFelled([], Date.now()),
     };
   }, [travelTo, travel]);
+
+  // the game's camera keys (the shell's hotkeys are not on this page): Z cycles the preset, 8 first / third person
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.code === "KeyZ") setCam(cyclePreset(getCam()));
+      if (e.code === "Digit8" || e.code === "Numpad8") setCam(toggleView(getCam()));
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
 
   return (
     <div className="game-ui fixed inset-0 overflow-hidden bg-[#2f6e8f] text-ink">
@@ -184,6 +187,7 @@ export default function WorldGameDev() {
           <p>Đang ở: {isZone(travel.mapId) ? (zone ? zoneName(zone) : "…") : `${travel.mapId} (bên trong)`}</p>
           <p className="opacity-70">WASD/chạm để đi · E tương tác · cửa hầm mỏ trên đồi phía đông</p>
         </div>
+        <div className="pointer-events-auto"><Camera3dControl /></div>
         {isZone(travel.mapId) && <WorldMiniMap getWorldPos={() => canvasRef.current?.worldPos() ?? null} zone={zone} />}
       </div>
       {prompt && (

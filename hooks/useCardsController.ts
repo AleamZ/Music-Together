@@ -95,6 +95,8 @@ export function useCardsController({ token, roomId, accountId, mapId, canvas, to
   useEffect(() => {
     if (!lobby) return;
     canvas()?.setCardTables(Object.fromEntries(lobby.tables.map((t) => [t.game, hallLabel(t)])));
+    // everyone seated (the lobby lists every table's seats): the 3D view sits them on their real seats
+    canvas()?.setCardSeats(lobby.tables.flatMap((t) => t.seats.map((s) => ({ game: t.game, seat: s.seat, id: s.id }))));
   }, [lobby, canvas]);
 
   // --- a toast once per turn while that table's panel is closed
@@ -161,3 +163,4 @@ export function useCardsController({ token, roomId, accountId, mapId, canvas, to
     table, seated: seatGame, seatTable: first, act, interact,
   }), [lobby, notOpen, panel, rules, openRules, table, seatGame, first, act, interact]);
 }
+

@@ -10,11 +10,14 @@ import type { VehicleKind } from "./live-plan";
 // coloured geometry (one draw call); only what moves (legs, wings, wheels, oars, the barrier's pole) is its own mesh.
 // Units: 1 = 16 px; +z is "forward" (yaw 0 faces +z, like the chibis).
 
-/** Colour-baked parts, merged into one geometry. */
+/** Colour-baked parts, merged into one geometry. `grain` (0…) varies each facet's colour a little (a painted,
+ *  pixel-ish texture without a texture). */
 export class Paint {
   private readonly parts: THREE.BufferGeometry[] = [];
   private readonly e = new THREE.Euler();
   private readonly m = new THREE.Matrix4();
+
+  constructor(private readonly grain = 0) {}
 
   add(geo: THREE.BufferGeometry, hex: number, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1): this {
     let g = geo.index ? geo.toNonIndexed() : geo;
@@ -22,7 +25,16 @@ export class Paint {
     if (g.getAttribute("uv")) g.deleteAttribute("uv");
     if (g.getAttribute("uv1")) g.deleteAttribute("uv1");
     const n = g.getAttribute("position").count, col = new Float32Array(n * 3), c = new THREE.Color(hex);
-    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    const seed = this.parts.length * 7919 + 17;
+    for (let i = 0; i < n; i++) {
+      let k = 1;
+      if (this.grain > 0) {
+        let h = Math.imul(Math.floor(i / 3) + seed * 31, 2654435761) ^ seed;
+        h = Math.imul(h ^ (h >>> 15), 2246822519);
+        k = 1 + (((h >>> 0) % 1000) / 1000 - 0.5) * 2 * this.grain;
+      }
+      col[i * 3] = Math.min(1, c.r * k); col[i * 3 + 1] = Math.min(1, c.g * k); col[i * 3 + 2] = Math.min(1, c.b * k);
+    }
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
     this.m.compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(this.e.set(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
     g = g.applyMatrix4(this.m);
@@ -38,10 +50,29 @@ export class Paint {
     return this.parts.length === 0;
   }
 
-  geometry(): THREE.BufferGeometry {
+  /** The merged geometry; with `outline`, every triangle also gets a reversed twin flagged `outline` = 1 (the
+   *  creature material pushes those out along their normals and inks them: the outline in the same draw call). */
+  geometry(outline = false): THREE.BufferGeometry {
     const g = mergeGeometries(this.parts, false) ?? new THREE.BufferGeometry();
     for (const p of this.parts) p.dispose();
     this.parts.length = 0;
+    if (outline && g.getAttribute("position")) {
+      const n = g.getAttribute("position").count;
+      const flag = new Float32Array(n * 2);
+      flag.fill(1, n);
+      for (const name of ["position", "normal", "color"] as const) {
+        const a = g.getAttribute(name);
+        if (!a) continue;
+        const src = a.array as Float32Array, out = new Float32Array(src.length * 2);
+        out.set(src);
+        for (let t = 0; t < n; t += 3) for (let v = 0; v < 3; v++) {
+          const from = (t + (v === 0 ? 0 : 3 - v)) * 3, to = (n + t + v) * 3;       // a, c, b: reversed winding
+          out[to] = src[from]; out[to + 1] = src[from + 1]; out[to + 2] = src[from + 2];
+        }
+        g.setAttribute(name, new THREE.BufferAttribute(out, 3));
+      }
+      g.setAttribute("outline", new THREE.BufferAttribute(flag, 1));
+    }
     g.computeBoundingSphere();
     return g;
   }
@@ -50,6 +81,8 @@ export class Paint {
 /** The shared materials of every live model (the layer disposes them). */
 export class ModelMats {
   readonly baked = toonMat({ vertexColors: true });
+  /** The animals' look: toon-lit vertex colours with the ink outline baked into the geometry. */
+  readonly creature = outlined(softMat(), INK_W);
   readonly glow = new THREE.MeshBasicMaterial({ color: 0xffe27a });
   readonly eyes = new THREE.MeshBasicMaterial({ color: 0xff3a2a });
   readonly decal = new THREE.MeshBasicMaterial({ color: 0xe0342a, transparent: true, opacity: 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, side: THREE.DoubleSide });
@@ -69,6 +102,11 @@ export class ModelMats {
     return p.empty ? null : this.mesh(p.geometry(), this.baked, shadow);
   }
 
+  /** A paint job as an outlined creature mesh (null if nothing was painted). */
+  creature1(p: Paint, shadow = true): THREE.Mesh | null {
+    return p.empty ? null : this.mesh(p.geometry(true), this.creature, shadow);
+  }
+
   forget(g: THREE.BufferGeometry): void {
     this.geos.delete(g);
     g.dispose();
@@ -77,8 +115,38 @@ export class ModelMats {
   dispose(): void {
     for (const g of this.geos) g.dispose();
     this.geos.clear();
-    for (const m of [this.baked, this.glow, this.eyes, this.decal, this.foam, this.windows]) m.dispose();
+    for (const m of [this.baked, this.creature, this.glow, this.eyes, this.decal, this.foam, this.windows]) m.dispose();
   }
+}
+
+/** Adds the one-draw-call ink outline to a material: vertices flagged `outline` are pushed out and drawn flat ink. */
+function outlined(mat: THREE.MeshToonMaterial, width: number, ink = 0x2a1c18): THREE.MeshToonMaterial {
+  const color = new THREE.Color(ink);
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uOutlineW = { value: width };
+    sh.uniforms.uOutlineC = { value: color };
+    sh.vertexShader = ["attribute float outline;", "uniform float uOutlineW;", "varying float vOutline;", sh.vertexShader.replace(
+      "#include <begin_vertex>",
+      ["#include <begin_vertex>", "transformed += normalize(objectNormal) * outline * uOutlineW;", "vOutline = outline;"].join("\n"),
+    )].join("\n");
+    sh.fragmentShader = ["uniform vec3 uOutlineC;", "varying float vOutline;", sh.fragmentShader.replace(
+      "#include <opaque_fragment>",
+      ["if (vOutline > 0.5) outgoingLight = uOutlineC;", "#include <opaque_fragment>"].join("\n"),
+    )].join("\n");
+  };
+  mat.customProgramCacheKey = () => "creature-outline";
+  return mat;
+}
+
+let softRamp: THREE.DataTexture | null = null;
+/** The creatures' soft shading (the characters' ramp): flat colours, shade blending smoothly into light. */
+function softMat(): THREE.MeshToonMaterial {
+  if (!softRamp) {
+    softRamp = new THREE.DataTexture(new Uint8Array([168, 168, 172, 255, 206, 206, 208, 255, 240, 240, 240, 255, 255, 255, 255, 255]), 4, 1, THREE.RGBAFormat);
+    softRamp.minFilter = softRamp.magFilter = THREE.LinearFilter;
+    softRamp.needsUpdate = true;
+  }
+  return new THREE.MeshToonMaterial({ gradientMap: softRamp, vertexColors: true });
 }
 
 let rampTex: THREE.DataTexture | null = null;
@@ -94,6 +162,11 @@ function toonMat(p: THREE.MeshToonMaterialParameters): THREE.MeshToonMaterial {
 }
 
 // ---------------------------------------------------------------- animals
+//
+// Cute, chibi-proportioned toon animals in the characters' family: rounded bodies with haunches, big heads with big
+// glossy eyes (a white glint each), soft snouts and noses, species ears and tails, tapered legs with paws — every part
+// painted with a faint per-facet grain (the small pixel texture) and wrapped in the ink outline (one inverted hull in
+// the same draw call). A creature is ~7 draw calls: trunk, head, four legs, tail.
 
 export interface Creature {
   root: THREE.Group;
@@ -110,138 +183,272 @@ export interface Creature {
   flies: boolean;
   /** Units: the height of its back (labels, hp bars go above). */
   height: number;
+  /** The torso mesh (breathes while idle). */
+  trunk?: THREE.Object3D;
+  /** Waddles side to side instead of swinging legs (ducks). */
+  waddle?: boolean;
 }
 
+type Ears = "long" | "point" | "round" | "floppy" | "tall";
+type Tail = "puff" | "bushy" | "plume" | "thin" | "curl" | "stub";
+
 interface QuadSpec {
-  body: [number, number, number]; color: number; belly?: number;
-  head: [number, number, number]; headColor?: number; neck?: number; snout?: number; snoutColor?: number;
-  leg: number; legW?: number; legColor?: number;
-  ears?: "long" | "point" | "round" | "floppy"; earColor?: number;
-  tail?: "puff" | "bushy" | "thin" | "curl" | "stub"; tailColor?: number; tailTip?: number;
-  antlers?: boolean; horns?: number; tusks?: boolean; mane?: number; spots?: number; stripes?: number;
+  /** Body ellipsoid diameters: width, height, length. */
+  body: [number, number, number]; color: number; belly?: number; back?: number;
+  /** Head radius; `neck` lifts it (deer, wolves); `mask` paints a lighter muzzle/cheek patch. */
+  head: number; headColor?: number; neck?: number; mask?: number;
+  snout?: number; snoutColor?: number; nose?: number;
+  leg: number; legW?: number; legColor?: number; paw?: number;
+  ears?: Ears; earColor?: number; earInner?: number;
+  tail?: Tail; tailColor?: number; tailTip?: number;
+  antlers?: boolean; horns?: number; tusks?: boolean; mane?: number; ridge?: number; spots?: number; stripes?: number;
+  collar?: number; cheeks?: boolean; eye?: number;
   hop?: boolean; glowEyes?: boolean;
 }
 
 const EYE = 0x1c1410;
+const PINK = 0xf2a4a8;
+const INK_W = 0.02;
+
+const sph = (w = 10, h = 7) => new THREE.SphereGeometry(0.5, w, h);
+type V = readonly [number, number, number];
+
+/** An ellipsoid of diameters `d` at `c` (rotated by `r`). */
+function ell(p: Paint, hex: number, d: V, c: V, r: V = [0, 0, 0], seg: [number, number] = [10, 7]): Paint {
+  return p.add(sph(seg[0], seg[1]), hex, c[0], c[1], c[2], r[0], r[1], r[2], d[0], d[1], d[2]);
+}
+
+/** A tube along a smooth curve through `pts`, capped with a ball at the tip. */
+function tube(p: Paint, hex: number, pts: readonly V[], r: number, tipR = r): Paint {
+  const curve = new THREE.CatmullRomCurve3(pts.map((q) => new THREE.Vector3(...q)));
+  p.add(new THREE.TubeGeometry(curve, Math.max(4, pts.length * 3), r, 5, false), hex);
+  const e = pts[pts.length - 1], s = pts[0];
+  return p.add(sph(6, 4), hex, e[0], e[1], e[2], 0, 0, 0, tipR * 2, tipR * 2, tipR * 2).add(sph(6, 4), hex, s[0], s[1], s[2], 0, 0, 0, r * 2, r * 2, r * 2);
+}
+
+/** Big glossy eyes with a white glint (up and toward the viewer's left on both). */
+function eyes(p: Paint, y: number, z: number, spread: number, size: number): void {
+  for (const sd of [-1, 1]) {
+    ell(p, EYE, [size * 0.9, size * 1.1, size * 0.55], [sd * spread, y, z], [0, sd * 0.35, 0], [8, 6]);
+    ell(p, 0xffffff, [size * 0.36, size * 0.36, size * 0.2], [sd * spread - size * 0.16, y + size * 0.24, z + size * 0.24], [0, 0, 0], [6, 4]);
+  }
+}
 
 function quad(mats: ModelMats, s: QuadSpec, scale = 1): Creature {
   const root = new THREE.Group(), body = new THREE.Group();
   root.add(body);
-  const [bw, bh, bl] = s.body, [hw, hh, hl] = s.head, legW = s.legW ?? Math.min(bw, bl) * 0.28;
+  const [bw, bh, bl] = s.body, hr = s.head, legW = s.legW ?? Math.min(bw, bl) * 0.3;
   const y0 = s.leg + bh / 2;
-  const p = new Paint().box(bw, bh, bl, s.color, 0, y0, 0);
-  if (s.belly !== undefined) p.box(bw * 0.8, bh * 0.3, bl * 0.8, s.belly, 0, y0 - bh * 0.38, 0);
-  if (s.mane !== undefined) p.box(bw * 1.08, bh * 1.1, bl * 0.35, s.mane, 0, y0 + bh * 0.05, bl * 0.3);
-  if (s.stripes !== undefined) for (let i = -1; i <= 1; i++) p.box(bw * 1.02, bh * 0.9, bl * 0.07, s.stripes, 0, y0 + bh * 0.04, i * bl * 0.22);
-  if (s.spots !== undefined) for (let i = 0; i < 3; i++) p.box(bw * 1.03, bh * 0.35, bl * 0.18, s.spots, 0, y0 + bh * (0.15 - i * 0.12), bl * (0.25 - i * 0.28));
-  if (s.tusks) p.add(new THREE.ConeGeometry(0.04, 0.2, 4), 0xf4ecd8, hw * 0.35, y0 + (s.neck ?? 0) - hh * 0.15, bl / 2 + hl * 0.95, 1.2, 0, 0)
-    .add(new THREE.ConeGeometry(0.04, 0.2, 4), 0xf4ecd8, -hw * 0.35, y0 + (s.neck ?? 0) - hh * 0.15, bl / 2 + hl * 0.95, 1.2, 0, 0);
-  const bodyMesh = mats.baked1(p)!;
-  body.add(bodyMesh);
+  const hc = s.headColor ?? s.color, lc = s.legColor ?? s.color;
 
-  // the head, on its own pivot (it bobs while grazing)
-  const head = new THREE.Group();
-  head.position.set(0, y0 + (s.neck ?? 0), bl / 2);
-  const hp = new Paint().box(hw, hh, hl, s.headColor ?? s.color, 0, 0, hl * 0.4);
-  if (s.neck) hp.box(hw * 0.6, s.neck, hw * 0.6, s.headColor ?? s.color, 0, -s.neck / 2, 0);
-  if (s.snout) hp.box(hw * 0.6, hh * 0.5, s.snout, s.snoutColor ?? s.headColor ?? s.color, 0, -hh * 0.18, hl * 0.9 + s.snout / 2 - 0.02)
-    .box(hw * 0.2, hh * 0.14, 0.03, EYE, 0, -hh * 0.05, hl * 0.9 + s.snout);
-  if (!s.glowEyes) hp.box(0.05, 0.06, 0.02, EYE, hw * 0.28, hh * 0.12, hl * 0.9 + 0.01).box(0.05, 0.06, 0.02, EYE, -hw * 0.28, hh * 0.12, hl * 0.9 + 0.01);
-  const ec = s.earColor ?? s.headColor ?? s.color;
+  // the trunk: a rounded body with haunches and shoulders, a lighter belly, a darker saddle, species markings
+  const p = new Paint();
+  ell(p, s.color, [bw, bh, bl], [0, y0, 0], [0, 0, 0], [12, 9]);
   for (const sd of [-1, 1]) {
-    if (s.ears === "long") hp.box(hw * 0.2, hh * 1.3, hw * 0.12, ec, sd * hw * 0.22, hh * 1.1, hl * 0.2, 0, 0, sd * -0.12);
-    else if (s.ears === "point") hp.add(new THREE.ConeGeometry(hw * 0.18, hh * 0.55, 4), ec, sd * hw * 0.3, hh * 0.72, hl * 0.25, 0, Math.PI / 4, 0);
-    else if (s.ears === "round") hp.add(new THREE.SphereGeometry(hw * 0.17, 6, 4), ec, sd * hw * 0.38, hh * 0.52, hl * 0.2);
-    else if (s.ears === "floppy") hp.box(hw * 0.14, hh * 0.6, hl * 0.3, ec, sd * hw * 0.55, hh * 0.05, hl * 0.25, 0, 0, sd * 0.25);
-    if (s.antlers) {
-      hp.box(0.04, 0.5, 0.04, 0x7a5a3a, sd * hw * 0.3, hh * 0.8, hl * 0.2, 0, 0, sd * -0.35)
-        .box(0.04, 0.26, 0.04, 0x7a5a3a, sd * hw * 0.55, hh * 1.05, hl * 0.28, 0.4, 0, sd * -0.9);
-    }
-    if (s.horns) hp.add(new THREE.TorusGeometry(s.horns, s.horns * 0.16, 4, 8, Math.PI * 0.9), 0xe8dcc0, sd * hw * 0.5, hh * 0.45, hl * 0.3, 0, Math.PI / 2, sd > 0 ? 0 : Math.PI);
+    ell(p, s.color, [bw * 0.42, bh * 0.74, bl * 0.42], [sd * bw * 0.25, y0 - bh * 0.07, -bl * 0.24]);
+    ell(p, s.color, [bw * 0.34, bh * 0.6, bl * 0.32], [sd * bw * 0.24, y0 - bh * 0.1, bl * 0.26]);
   }
-  head.add(mats.baked1(hp)!);
+  if (s.belly !== undefined) ell(p, s.belly, [bw * 0.78, bh * 0.6, bl * 0.8], [0, y0 - bh * 0.2, 0.02]);
+  if (s.back !== undefined) ell(p, s.back, [bw * 0.8, bh * 0.5, bl * 0.84], [0, y0 + bh * 0.24, -0.01]);
+  if (s.mane !== undefined) p.add(sph(10, 7), s.mane, 0, y0 + bh * 0.1, bl * 0.3, 0, 0, 0, bw * 1.08, bh * 1.08, bl * 0.46);
+  if (s.ridge !== undefined) for (let i = 0; i < 5; i++) {
+    const z = bl * (0.3 - i * 0.13);
+    p.add(new THREE.ConeGeometry(0.5, 1, 5), s.ridge, 0, y0 + bh * 0.5 * Math.sqrt(Math.max(0, 1 - (2 * z / bl) ** 2)) + bh * 0.04, z, -0.3, 0, 0, bw * 0.16, bh * 0.28, bw * 0.16);
+  }
+  if (s.stripes !== undefined) for (const f of [-0.28, -0.08, 0.12]) {
+    const k = Math.sqrt(1 - (2 * f) ** 2) * 1.02;
+    p.add(new THREE.TorusGeometry(1, 0.06, 4, 12, Math.PI), s.stripes, 0, y0, f * bl, 0, 0, 0, (bw / 2) * k, (bh / 2) * k, 0.5);
+  }
+  if (s.spots !== undefined) for (const [fx, fz] of [[0.28, 0.12], [-0.3, -0.05], [0.22, -0.26], [-0.2, 0.26], [0.05, -0.12]] as const) {
+    const x = fx * bw, z = fz * bl, yy = y0 + (bh / 2) * Math.sqrt(Math.max(0, 1 - (2 * x / bw) ** 2 - (2 * z / bl) ** 2)) - 0.01;
+    ell(p, s.spots, [bw * 0.12, bh * 0.07, bw * 0.12], [x, yy, z], [0, 0, 0], [6, 4]);
+  }
+  const trunk = mats.creature1(p)!;
+  body.add(trunk);
+
+  // the head, on its own pivot at the neck (it bobs while grazing, looks around while idle)
+  const head = new THREE.Group();
+  const neck = s.neck ?? 0;
+  head.position.set(0, y0 + bh * 0.2, bl * 0.36);
+  const hp = new Paint();
+  const cx = 0, cy = neck + hr * 0.3, cz = neck * 0.38 + hr * 0.5;
+  if (neck) ell(hp, hc, [hr * 1.05, neck + hr * 0.9, hr * 1.1], [0, neck * 0.45, neck * 0.18], [0.35, 0, 0], [8, 6]);
+  ell(hp, hc, [hr * 2, hr * 1.84, hr * 1.9], [cx, cy, cz], [0, 0, 0], [12, 9]);
+  if (s.mask !== undefined) ell(hp, s.mask, [hr * 1.5, hr * 1.0, hr * 1.2], [cx, cy - hr * 0.36, cz + hr * 0.4]);
+  let tipZ = cz + hr * 0.9;
+  if (s.snout) {
+    const sl = s.snout;
+    ell(hp, s.snoutColor ?? hc, [hr * 0.9, hr * 0.7, sl * 2 + hr * 0.5], [cx, cy - hr * 0.32, cz + hr * 0.62 + sl * 0.45]);
+    tipZ = cz + hr * 0.62 + sl * 0.45 + sl + hr * 0.25;
+    ell(hp, s.nose ?? EYE, [hr * 0.36, hr * 0.26, hr * 0.22], [cx, cy - hr * 0.18, tipZ - hr * 0.06], [0, 0, 0], [8, 5]);
+  } else ell(hp, s.nose ?? 0xd07a7a, [hr * 0.24, hr * 0.18, hr * 0.14], [cx, cy - hr * 0.2, cz + hr * 0.9], [0, 0, 0], [6, 4]);
+  if (!s.glowEyes) eyes(hp, cy + hr * 0.12, cz + hr * 0.68, hr * 0.47, hr * 0.42 * (s.eye ?? 1));
+  if (s.cheeks) for (const sd of [-1, 1]) ell(hp, PINK, [hr * 0.36, hr * 0.2, hr * 0.12], [sd * hr * 0.6, cy - hr * 0.2, cz + hr * 0.66], [0, sd * 0.6, 0], [6, 4]);
+  const ec = s.earColor ?? hc, ei = s.earInner ?? PINK;
+  for (const sd of [-1, 1]) {
+    switch (s.ears) {
+      case "long":
+        hp.add(new THREE.CapsuleGeometry(0.5, 1, 3, 8), ec, sd * hr * 0.32, cy + hr * 1.55, cz - hr * 0.12, -0.12, 0, sd * -0.16, hr * 0.46, hr * 0.95, hr * 0.22);
+        hp.add(new THREE.CapsuleGeometry(0.5, 1, 3, 8), ei, sd * hr * 0.33, cy + hr * 1.5, cz - hr * 0.04, -0.12, 0, sd * -0.16, hr * 0.26, hr * 0.72, hr * 0.12);
+        break;
+      case "point":
+      case "tall": {
+        const tall = s.ears === "tall";
+        const [x, y, rz] = tall ? [hr * 0.82, cy + hr * 0.62, sd * -1.05] : [hr * 0.52, cy + hr * 0.86, sd * -0.26];
+        hp.add(new THREE.ConeGeometry(0.5, 1, 8), ec, sd * x, y, cz - hr * 0.08, 0, 0, rz, hr * 0.62, hr * (tall ? 0.95 : 0.85), hr * 0.3);
+        hp.add(new THREE.ConeGeometry(0.5, 1, 8), ei, sd * x, y - hr * 0.08, cz - hr * 0.0, 0, 0, rz, hr * 0.36, hr * (tall ? 0.62 : 0.55), hr * 0.14);
+        break;
+      }
+      case "round":
+        ell(hp, ec, [hr * 0.6, hr * 0.6, hr * 0.26], [sd * hr * 0.64, cy + hr * 0.74, cz - hr * 0.1], [0, 0, sd * -0.3], [8, 6]);
+        ell(hp, ei, [hr * 0.34, hr * 0.34, hr * 0.12], [sd * hr * 0.66, cy + hr * 0.72, cz - hr * 0.0], [0, 0, sd * -0.3], [6, 4]);
+        break;
+      case "floppy":
+        hp.add(new THREE.CapsuleGeometry(0.5, 1, 3, 8), ec, sd * hr * 0.88, cy + hr * 0.08, cz - hr * 0.05, 0.1, 0, sd * 0.32, hr * 0.46, hr * 0.62, hr * 0.2);
+        break;
+      default: break;
+    }
+    if (s.antlers) {
+      const b = (x: number, y: number, z: number): V => [sd * x * hr, cy + y * hr, cz + z * hr];
+      tube(hp, 0x8a6440, [b(0.35, 0.8, -0.1), b(0.6, 1.5, -0.25), b(0.95, 2.3, -0.3), b(1.0, 2.9, -0.05)], hr * 0.07, hr * 0.08);
+      tube(hp, 0x8a6440, [b(0.62, 1.6, -0.25), b(0.55, 2.1, 0.15), b(0.45, 2.4, 0.35)], hr * 0.06, hr * 0.07);
+      tube(hp, 0x8a6440, [b(0.85, 2.1, -0.3), b(1.35, 2.4, -0.25), b(1.55, 2.75, -0.1)], hr * 0.055, hr * 0.065);
+    }
+    if (s.horns) {
+      const k = s.horns / 0.45;
+      const b = (x: number, y: number, z: number): V => [sd * x * hr, cy + y * hr, cz + z * hr];
+      tube(hp, 0xe8dcc0, [b(0.55, 0.55, 0), b(1.15 * k, 0.62, -0.1), b(1.6 * k, 0.95, -0.2), b(1.55 * k, 1.35 * k, -0.05)], hr * 0.15, hr * 0.15);
+      hp.add(new THREE.ConeGeometry(0.5, 1, 8), 0xf4ecd8, sd * 1.5 * k * hr, cy + (1.35 * k + 0.22) * hr, cz - 0.05 * hr, 0, 0, sd * 0.35, hr * 0.28, hr * 0.46, hr * 0.28);
+    }
+    if (s.tusks) tube(hp, 0xf4ecd8, [[sd * hr * 0.32, cy - hr * 0.42, tipZ - hr * 0.35], [sd * hr * 0.46, cy - hr * 0.3, tipZ - hr * 0.12], [sd * hr * 0.44, cy + hr * 0.02, tipZ - hr * 0.02]], hr * 0.07, hr * 0.03);
+  }
+  if (s.collar !== undefined) {
+    hp.add(new THREE.TorusGeometry(1, 0.13, 5, 16), s.collar, 0, neck * 0.2 - hr * 0.22, hr * 0.05, Math.PI / 2 - 0.55, 0, 0, hr * 0.8, hr * 0.8, hr * 0.8);
+    ell(hp, 0xf0c040, [hr * 0.24, hr * 0.24, hr * 0.12], [0, neck * 0.2 - hr * 0.62, hr * 0.62], [0, 0, 0], [6, 4]);
+  }
+  head.add(mats.creature1(hp)!);
   if (s.glowEyes) for (const sd of [-1, 1]) {
-    const e = mats.mesh(new THREE.BoxGeometry(0.07, 0.06, 0.02), mats.eyes, false);
-    e.position.set(sd * hw * 0.28, hh * 0.12, hl * 0.9 + 0.012);
+    const e = mats.mesh(new THREE.SphereGeometry(0.5, 8, 5), mats.eyes, false);
+    e.scale.set(hr * 0.32, hr * 0.22, hr * 0.14);
+    e.position.set(sd * hr * 0.44, cy + hr * 0.12, cz + hr * 0.78);
+    e.rotation.set(0, sd * 0.35, sd * -0.25);
     head.add(e);
   }
   body.add(head);
 
-  // legs: hip pivots with the leg hanging below
+  // legs: hip pivots with a tapered leg and a paw hanging below
   const legs: THREE.Object3D[] = [];
-  const legGeo = new Paint().box(legW, s.leg, legW, s.legColor ?? s.color, 0, -s.leg / 2, 0)
-    .box(legW * 1.05, s.leg * 0.14, legW * 1.1, darker(s.legColor ?? s.color, 0.7), 0, -s.leg + s.leg * 0.07, legW * 0.04).geometry();
+  const legLen = s.leg + bh * 0.26;
+  const legGeo = new Paint()
+    .add(new THREE.CylinderGeometry(legW * 0.52, legW * 0.4, legLen - legW * 0.3, 8, 1, true), lc, 0, -legLen / 2 + legW * 0.05, 0)
+    .add(sph(8, 5), lc, 0, 0, 0, 0, 0, 0, legW * 1.04, legW * 1.04, legW * 1.04)
+    .add(sph(8, 5), s.paw ?? darker(lc, 0.82), 0, -legLen + legW * 0.26, legW * 0.14, 0, 0, 0, legW * 1.02, legW * 0.6, legW * 1.28)
+    .geometry(true);
   mats.mesh(legGeo);                                              // registers it for disposal
   for (const [fx, fz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
     const hip = new THREE.Group();
-    hip.position.set(fx * (bw / 2 - legW * 0.55), s.leg, fz * (bl / 2 - legW * 0.8));
-    const leg = new THREE.Mesh(legGeo, mats.baked);
+    hip.position.set(fx * bw * 0.27, legLen, fz * bl * 0.27);
+    const leg = new THREE.Mesh(legGeo, mats.creature);
     leg.castShadow = true;
     hip.add(leg);
     body.add(hip);
     legs.push(hip);
   }
 
-  // the tail
+  // the tail, on a pivot at the rump (wags)
   let tail: THREE.Object3D | null = null;
   if (s.tail) {
     const t = new THREE.Group();
-    t.position.set(0, y0 + bh * 0.3, -bl / 2);
+    t.position.set(0, y0 + bh * 0.16, -bl * 0.44);
     const tc = s.tailColor ?? s.color, tp = new Paint();
-    if (s.tail === "puff") tp.add(new THREE.IcosahedronGeometry(bw * 0.2, 0), tc, 0, 0, -0.03);
-    else if (s.tail === "bushy") tp.add(new THREE.CapsuleGeometry(bw * 0.2, bl * 0.35, 2, 5), tc, 0, -0.08, -bl * 0.3, -1.1).add(new THREE.IcosahedronGeometry(bw * 0.2, 0), s.tailTip ?? tc, 0, -0.26, -bl * 0.52);
-    else if (s.tail === "thin") tp.box(0.05, 0.05, bl * 0.6, tc, 0, 0.05, -bl * 0.28, -0.5);
-    else if (s.tail === "curl") tp.add(new THREE.TorusGeometry(bw * 0.18, 0.035, 4, 8, Math.PI * 1.5), tc, 0, bw * 0.2, -0.06, 0, Math.PI / 2, 0);
-    else tp.box(bw * 0.25, bw * 0.2, 0.12, tc, 0, 0, -0.05, 0.4);
-    t.add(mats.baked1(tp)!);
+    switch (s.tail) {
+      case "puff": tp.add(new THREE.IcosahedronGeometry(0.5, 1), tc, 0, 0.02, -bw * 0.06, 0, 0, 0, bw * 0.42, bw * 0.4, bw * 0.38); break;
+      case "bushy": {
+        const L = bl * 0.62, a = -0.55;
+        ell(tp, tc, [bw * 0.44, bw * 0.44, L], [0, Math.sin(a) * L * 0.42, -Math.cos(a) * L * 0.42], [-a, 0, 0]);
+        ell(tp, s.tailTip ?? tc, [bw * 0.34, bw * 0.34, L * 0.42], [0, Math.sin(a) * L * 0.86, -Math.cos(a) * L * 0.86], [-a, 0, 0], [8, 6]);
+        break;
+      }
+      case "plume":
+        ell(tp, tc, [bw * 0.6, bh * 1.7, bw * 0.62], [0, bh * 0.72, -bw * 0.3], [-0.3, 0, 0]);
+        ell(tp, s.tailTip ?? tc, [bw * 0.5, bw * 0.5, bw * 0.6], [0, bh * 1.52, -bw * 0.05], [0, 0, 0], [8, 6]);
+        break;
+      case "thin": tube(tp, tc, [[0, 0, 0], [0, -0.05, -bl * 0.3], [0, 0.02, -bl * 0.62], [0, 0.12, -bl * 0.78]], Math.max(0.014, bw * 0.06), Math.max(0.012, bw * 0.05)); break;
+      case "curl": tp.add(new THREE.TorusGeometry(bw * 0.17, bw * 0.07, 5, 12, Math.PI * 1.6), tc, 0, bw * 0.18, -0.04, 0, Math.PI / 2, 0); break;
+      default: ell(tp, tc, [bw * 0.26, bw * 0.24, bw * 0.3], [0, 0.02, -bw * 0.04], [0, 0, 0], [8, 5]); break;
+    }
+    t.add(mats.creature1(tp)!);
     body.add(t);
     tail = t;
   }
   root.scale.setScalar(scale);
-  return { root, body, legs, wings: [], head, tail, hop: !!s.hop, flies: false, height: (y0 + bh / 2 + (s.neck ?? 0) + hh / 2) * scale };
+  return { root, body, legs, wings: [], head, tail, hop: !!s.hop, flies: false, height: (y0 + bh / 2 + neck + hr * 1.4) * scale, trunk };
 }
 
-function bird(mats: ModelMats, color: number, wing: number, beak = 0xf0a030, head = color, scale = 1): Creature {
+interface BirdOpts { color: number; wing: number; beak?: number; head?: number; belly?: number; tail?: number; duck?: boolean; crest?: number }
+
+function bird(mats: ModelMats, o: BirdOpts, scale = 1): Creature {
   const root = new THREE.Group(), body = new THREE.Group();
   root.add(body);
-  const p = new Paint()
-    .add(new THREE.SphereGeometry(0.2, 7, 5), color, 0, 0.32, 0, 0, 0, 0, 1, 0.9, 1.3)
-    .add(new THREE.SphereGeometry(0.13, 7, 5), head, 0, 0.5, 0.2)
-    .add(new THREE.ConeGeometry(0.04, 0.12, 4), beak, 0, 0.48, 0.36, Math.PI / 2)
-    .box(0.03, 0.04, 0.02, EYE, 0.08, 0.53, 0.3).box(0.03, 0.04, 0.02, EYE, -0.08, 0.53, 0.3)
-    .box(0.14, 0.03, 0.2, darker(color, 0.8), 0, 0.34, -0.3, 0.3)
-    .box(0.03, 0.14, 0.03, beak, 0.07, 0.07, 0).box(0.03, 0.14, 0.03, beak, -0.07, 0.07, 0);
-  body.add(mats.baked1(p)!);
+  const beak = o.beak ?? 0xf0a030, hc = o.head ?? o.color;
+  const p = new Paint();
+  ell(p, o.color, [0.36, 0.32, 0.5], [0, 0.32, 0], [-0.15, 0, 0], [12, 8]);
+  ell(p, o.belly ?? darker(o.color, 1.12), [0.3, 0.24, 0.36], [0, 0.26, 0.08], [-0.15, 0, 0]);
+  ell(p, hc, [0.3, 0.29, 0.29], [0, 0.56, 0.17], [0, 0, 0], [12, 8]);
+  if (o.duck) ell(p, beak, [0.15, 0.05, 0.2], [0, 0.52, 0.36], [0.1, 0, 0], [8, 5]);
+  else p.add(new THREE.ConeGeometry(0.045, 0.13, 6), beak, 0, 0.54, 0.37, Math.PI / 2, 0, 0);
+  eyes(p, 0.59, 0.28, 0.085, 0.07);
+  if (o.crest !== undefined) p.add(new THREE.ConeGeometry(0.04, 0.14, 5), o.crest, 0, 0.73, 0.14, -0.4, 0, 0);
+  // the tail fan and the little legs with feet
+  p.add(new THREE.ConeGeometry(0.5, 1, 6), o.tail ?? darker(o.wing, 0.9), 0, 0.38, -0.3, -Math.PI / 2 - 0.5, 0, 0, 0.2, 0.2, 0.05);
+  for (const sd of [-1, 1]) {
+    p.add(new THREE.CylinderGeometry(0.018, 0.018, 0.14, 5), beak, sd * 0.07, 0.1, 0.02);
+    ell(p, beak, [0.07, 0.025, 0.1], [sd * 0.07, 0.025, 0.05], [0, 0, 0], [6, 4]);
+  }
+  const trunk = mats.creature1(p)!;
+  body.add(trunk);
   const wings: THREE.Object3D[] = [];
-  const wg = new Paint().box(0.3, 0.03, 0.2, wing, 0.15, 0, 0).geometry();
-  mats.mesh(wg);
+  const wg = new Paint();
+  ell(wg, o.wing, [0.06, 0.2, 0.34], [0.03, -0.04, -0.03], [0.25, 0, 0]);
+  ell(wg, darker(o.wing, 0.78), [0.05, 0.12, 0.16], [0.035, -0.08, -0.17], [0.4, 0, 0], [6, 4]);
+  const wgeo = wg.geometry(true);
+  mats.mesh(wgeo);
   for (const sd of [-1, 1]) {
     const w = new THREE.Group();
-    w.position.set(sd * 0.14, 0.38, 0);
-    const m = new THREE.Mesh(wg, mats.baked);
+    w.position.set(sd * 0.16, 0.38, 0.02);
+    const m = new THREE.Mesh(wgeo, mats.creature);
+    m.castShadow = true;
     m.scale.x = sd;
     w.add(m);
     body.add(w);
     wings.push(w);
   }
   root.scale.setScalar(scale);
-  return { root, body, legs: [], wings, head: null, tail: null, hop: true, flies: true, height: 0.6 * scale };
+  return { root, body, legs: [], wings, head: null, tail: null, hop: true, flies: true, height: 0.72 * scale, trunk };
 }
 
 function darker(hex: number, k: number): number {
-  return new THREE.Color(hex).multiplyScalar(k).getHex();
+  const c = new THREE.Color(hex).multiplyScalar(k);
+  return c.setRGB(Math.min(1, c.r), Math.min(1, c.g), Math.min(1, c.b)).getHex();
 }
 
-const WILD: Record<Exclude<WildSpeciesId, "bird" | "firefly">, [QuadSpec, number]> = {
-  rabbit: [{ body: [0.34, 0.3, 0.46], color: 0xb8a48a, belly: 0xece4d4, head: [0.28, 0.26, 0.26], ears: "long", leg: 0.12, tail: "puff", tailColor: 0xffffff, hop: true, snout: 0.05, snoutColor: 0xe8dccb }, 1],
-  deer: [{ body: [0.46, 0.44, 0.95], color: 0xb07a44, belly: 0xe8d2b0, head: [0.24, 0.26, 0.34], neck: 0.4, ears: "point", leg: 0.78, legW: 0.1, tail: "stub", tailColor: 0xffffff, antlers: true, spots: 0xd8b07a, snout: 0.12 }, 1],
-  fox: [{ body: [0.3, 0.3, 0.7], color: 0xd8702c, belly: 0xf4e4d0, head: [0.28, 0.26, 0.26], ears: "point", earColor: 0x3a2418, leg: 0.3, legColor: 0x3a2418, tail: "bushy", tailTip: 0xffffff, snout: 0.16, snoutColor: 0xf4e4d0 }, 1],
-  wolf: [{ body: [0.42, 0.44, 0.95], color: 0x7a7d86, belly: 0xc8c8c8, head: [0.34, 0.32, 0.32], ears: "point", leg: 0.5, tail: "bushy", tailColor: 0x6a6d76, snout: 0.2, snoutColor: 0xb8b8b8, mane: 0x8a8d96 }, 1],
-  bear: [{ body: [0.85, 0.78, 1.25], color: 0x5a3a24, head: [0.52, 0.48, 0.44], ears: "round", leg: 0.42, legW: 0.26, tail: "stub", snout: 0.18, snoutColor: 0xb89a74 }, 1],
+const WILD: Record<Exclude<WildSpeciesId, "bird" | "firefly" | "ga_rung" | "co_trang">, [QuadSpec, number]> = {
+  rabbit: [{ body: [0.36, 0.34, 0.46], color: 0xc2ab8e, belly: 0xf1e9dc, head: 0.18, mask: 0xf1e9dc, ears: "long", earInner: 0xf0b8b8, leg: 0.08, legW: 0.1, paw: 0xf1e9dc, tail: "puff", tailColor: 0xffffff, hop: true, nose: 0xe08a8a, eye: 1.1 }, 1],
+  deer: [{ body: [0.44, 0.44, 0.84], color: 0xb87c46, belly: 0xf0dcbc, head: 0.19, neck: 0.36, mask: 0xf0dcbc, snout: 0.1, snoutColor: 0xd9b48a, nose: 0x3a2418, ears: "tall", earInner: 0xf0d0b0, leg: 0.62, legW: 0.1, paw: 0x3a2a1a, tail: "stub", tailColor: 0xffffff, antlers: true, spots: 0xfbf2e0 }, 1],
+  fox: [{ body: [0.32, 0.3, 0.6], color: 0xe07a32, belly: 0xfbeee0, head: 0.2, mask: 0xfbeee0, snout: 0.13, snoutColor: 0xfbeee0, ears: "point", earColor: 0xe07a32, earInner: 0x3a2418, leg: 0.24, legW: 0.09, legColor: 0x3a2418, tail: "bushy", tailTip: 0xffffff, eye: 1.05 }, 1],
+  wolf: [{ body: [0.42, 0.42, 0.84], color: 0x7d808c, belly: 0xd8d8de, head: 0.24, neck: 0.08, mask: 0xd8d8de, snout: 0.18, snoutColor: 0xc8c8d0, ears: "point", earInner: 0x4a4c56, leg: 0.4, legW: 0.12, paw: 0x5e6170, tail: "bushy", tailColor: 0x6e717c, tailTip: 0xd8d8de, mane: 0x9a9daa }, 1],
+  bear: [{ body: [0.82, 0.76, 1.1], color: 0x6a4428, belly: 0x8a6040, head: 0.36, mask: 0xc8a57c, snout: 0.12, snoutColor: 0xc8a57c, ears: "round", earInner: 0x8a6040, leg: 0.34, legW: 0.26, paw: 0x4a2e1a, tail: "stub", eye: 0.9 }, 1],
+  // 0097 (forest-content): the rừng tràm's own
+  chuot_dong: [{ body: [0.26, 0.24, 0.42], color: 0x8a6a4a, belly: 0xd8c4a8, head: 0.14, mask: 0xd8c4a8, ears: "round", earInner: 0xe0a8a0, leg: 0.06, legW: 0.07, tail: "thin", nose: 0xe08a8a, eye: 1.1 }, 0.9],
+  ran_ri_ca: [{ body: [0.16, 0.14, 1.2], color: 0x4a5a2a, belly: 0xc8c090, stripes: 0x2e3a1a, head: 0.12, snout: 0.08, snoutColor: 0x4a5a2a, leg: 0.02, legW: 0.02, legColor: 0x4a5a2a, tail: "thin", eye: 0.8 }, 1],
+  cay_huong: [{ body: [0.3, 0.3, 0.62], color: 0x8a7a5a, belly: 0xd8ccb0, stripes: 0x3a3020, head: 0.17, mask: 0xf0e8d8, snout: 0.11, snoutColor: 0x3a3020, ears: "round", earInner: 0x3a3020, leg: 0.16, legW: 0.08, legColor: 0x2a2418, tail: "thin", tailColor: 0x3a3020, eye: 1.05 }, 1],
+  rua_hop_lung_den: [{ body: [0.46, 0.26, 0.56], color: 0x2a2a22, back: 0x3a3428, belly: 0xc8b070, head: 0.11, headColor: 0x8a7a4a, leg: 0.06, legW: 0.1, legColor: 0x8a7a4a, tail: "stub", eye: 0.8 }, 1],
 };
 
 export function wildAnimal(mats: ModelMats, sp: WildSpeciesId): Creature {
-  if (sp === "bird") return bird(mats, 0x8a6a4a, 0x6a4a2a, 0xf0a030, 0x8a6a4a, 1);
+  if (sp === "bird") return bird(mats, { color: 0x9a7452, wing: 0x6e4c2e, belly: 0xe8d4b4, head: 0x8a6446, beak: 0xf0a030 }, 1);
+  if (sp === "ga_rung") return bird(mats, { color: 0xb8402a, wing: 0x3a4a2a, belly: 0x5a3a20, head: 0xd84a2a, beak: 0xe0c070, crest: 0xe02a2a, tail: 0x2a4a3a }, 1.3);   // 0097
+  if (sp === "co_trang") return bird(mats, { color: 0xf4f2ea, wing: 0xe8e6de, belly: 0xffffff, head: 0xf8f6ee, beak: 0xe0b030 }, 1.5);   // 0097
   if (sp === "firefly") {
     const root = new THREE.Group(), body = new THREE.Group();
     root.add(body);
@@ -255,15 +462,15 @@ export function wildAnimal(mats: ModelMats, sp: WildSpeciesId): Creature {
 }
 
 const PETS: Record<Exclude<PetSpecies, "vet">, QuadSpec> = {
-  hamster: { body: [0.3, 0.24, 0.32], color: 0xe0b070, belly: 0xfff4e0, head: [0.24, 0.22, 0.18], ears: "round", earColor: 0xf0a0a0, leg: 0.06, tail: "stub", hop: true },
-  tho: { body: [0.3, 0.28, 0.4], color: 0xf4f0ea, head: [0.26, 0.24, 0.24], ears: "long", earColor: 0xf6d4d4, leg: 0.1, tail: "puff", hop: true, snout: 0.04, snoutColor: 0xf6d4d4 },
-  soc: { body: [0.22, 0.24, 0.36], color: 0xa0522d, belly: 0xf0d8b0, head: [0.22, 0.22, 0.2], ears: "point", leg: 0.12, tail: "bushy", tailColor: 0xb8663a, hop: true },
-  meo: { body: [0.26, 0.26, 0.52], color: 0xe8a050, belly: 0xfff4e0, stripes: 0xc87830, head: [0.28, 0.26, 0.22], ears: "point", leg: 0.22, tail: "thin", snout: 0.05, snoutColor: 0xfff4e0 },
-  cho: { body: [0.3, 0.3, 0.56], color: 0xd9a55a, belly: 0xf4e4c8, head: [0.3, 0.28, 0.26], ears: "floppy", earColor: 0xa8783a, leg: 0.26, tail: "curl", snout: 0.12, snoutColor: 0xf4e4c8 },
+  hamster: { body: [0.34, 0.3, 0.36], color: 0xe6b476, belly: 0xfff4e2, head: 0.17, mask: 0xfff4e2, ears: "round", earInner: 0xf0a0a0, leg: 0.05, legW: 0.07, paw: 0xf6c8c0, tail: "stub", hop: true, cheeks: true, eye: 1.1 },
+  tho: { body: [0.32, 0.3, 0.4], color: 0xf6f2ec, belly: 0xffffff, head: 0.17, ears: "long", earInner: 0xf6c4c8, leg: 0.07, legW: 0.09, tail: "puff", hop: true, nose: 0xe89098, cheeks: true, eye: 1.15 },
+  soc: { body: [0.24, 0.26, 0.34], color: 0xa85a32, belly: 0xf3dcb4, head: 0.15, mask: 0xf3dcb4, ears: "point", earInner: 0xe0a080, leg: 0.1, legW: 0.07, tail: "plume", tailColor: 0xb8663a, tailTip: 0xd08050, hop: true, eye: 1.1 },
+  meo: { body: [0.28, 0.28, 0.48], color: 0xeaa456, belly: 0xfff4e2, stripes: 0xc87a32, head: 0.19, mask: 0xfff4e2, ears: "point", earInner: 0xf4b8b0, leg: 0.18, legW: 0.08, paw: 0xfff4e2, tail: "thin", collar: 0xd23a4a, nose: 0xe88a90, cheeks: true, eye: 1.15 },
+  cho: { body: [0.32, 0.32, 0.52], color: 0xdaa65c, belly: 0xf6e6ca, head: 0.21, mask: 0xf6e6ca, snout: 0.09, snoutColor: 0xf6e6ca, ears: "floppy", earColor: 0xa8783a, leg: 0.2, legW: 0.1, paw: 0xf6e6ca, tail: "curl", collar: 0x2a7ad2, eye: 1.05 },
 };
 
 export function petModel(mats: ModelMats, sp: PetSpecies): Creature {
-  if (sp === "vet") return bird(mats, 0x3cb043, 0x2a8a36, 0xf0c040, 0xe0402a, 1.1);
+  if (sp === "vet") return bird(mats, { color: 0x3cb043, wing: 0x2a8a36, beak: 0xf0c040, head: 0xe0402a, belly: 0x8ad05a, tail: 0x2a6ad0, crest: 0xe0402a }, 1.1);
   return quad(mats, PETS[sp], 1);
 }
 
@@ -272,20 +479,21 @@ const DOG_COAT: Record<string, [number, number | undefined, number | undefined]>
 };
 export function dogModel(mats: ModelMats, coat = "vang"): Creature {
   const [c, stripes, spots] = DOG_COAT[coat] ?? DOG_COAT.vang;
-  return quad(mats, { body: [0.36, 0.36, 0.72], color: c, stripes, spots, head: [0.34, 0.32, 0.3], ears: "floppy", leg: 0.34, tail: "curl", snout: 0.16, snoutColor: c === 0x2a2320 ? 0x4a3a30 : 0xf4e4c8 }, 1);
+  const light = c === 0x2a2320 ? 0x4a3a30 : 0xf4e4c8;
+  return quad(mats, { body: [0.36, 0.36, 0.64], color: c, belly: light, stripes, spots, head: 0.24, mask: light, snout: 0.12, snoutColor: light, ears: "floppy", earColor: darker(c, 0.8), leg: 0.26, legW: 0.11, paw: light, tail: "curl", collar: 0xd23a4a }, 1);
 }
 
 export function ratModel(mats: ModelMats): Creature {
-  return quad(mats, { body: [0.16, 0.14, 0.3], color: 0x6f6660, head: [0.14, 0.12, 0.12], ears: "round", earColor: 0xd8a0a0, leg: 0.05, tail: "thin", tailColor: 0xd8a0a0, snout: 0.07 }, 1);
+  return quad(mats, { body: [0.18, 0.16, 0.3], color: 0x7a706a, belly: 0xb8aea8, head: 0.1, snout: 0.07, snoutColor: 0x8a807a, nose: 0xe89098, ears: "round", earColor: 0xd8a0a0, earInner: 0xf0b8b8, leg: 0.04, legW: 0.05, paw: 0xe8b0b0, tail: "thin", tailColor: 0xd8a0a0 }, 1);
 }
 
 // ---------------------------------------------------------------- bosses
 
 export function bossModel(mats: ModelMats, kind: BossId): Creature {
   switch (kind) {
-    case "trau_tinh": return quad(mats, { body: [1.1, 0.95, 1.7], color: 0x3d3f4a, belly: 0x55576a, head: [0.7, 0.62, 0.6], ears: "floppy", leg: 0.7, legW: 0.3, tail: "thin", horns: 0.45, snout: 0.22, snoutColor: 0x6a6070, glowEyes: true, mane: 0x2a2c36 }, 2.2);
-    case "soi_ma": return quad(mats, { body: [0.5, 0.5, 1.1], color: 0x8fa6e0, belly: 0xdfe8ff, head: [0.4, 0.36, 0.36], ears: "point", leg: 0.6, tail: "bushy", tailColor: 0xb8c8f0, tailTip: 0xffffff, snout: 0.24, snoutColor: 0xc8d4f4, mane: 0x6f86c8, glowEyes: true }, 2.6);
-    case "heo_rung": return quad(mats, { body: [0.8, 0.72, 1.3], color: 0x5a4030, belly: 0x7a5a44, head: [0.56, 0.5, 0.46], ears: "point", leg: 0.36, legW: 0.22, tail: "curl", tusks: true, snout: 0.2, snoutColor: 0xc88a7a, mane: 0x3a2818, glowEyes: true }, 2.4);
+    case "trau_tinh": return quad(mats, { body: [1.1, 0.95, 1.55], color: 0x3d3f4a, belly: 0x55576a, head: 0.5, mask: 0x6a6070, snout: 0.16, snoutColor: 0x6a6070, nose: 0x2a2a30, ears: "floppy", leg: 0.6, legW: 0.3, paw: 0x22232a, tail: "thin", horns: 0.45, glowEyes: true, mane: 0x2a2c36 }, 2.2);
+    case "soi_ma": return quad(mats, { body: [0.5, 0.5, 1.0], color: 0x8fa6e0, belly: 0xdfe8ff, head: 0.3, neck: 0.1, mask: 0xdfe8ff, snout: 0.2, snoutColor: 0xc8d4f4, ears: "point", earInner: 0x4a5a9a, leg: 0.5, legW: 0.14, tail: "bushy", tailColor: 0xb8c8f0, tailTip: 0xffffff, mane: 0x6f86c8, glowEyes: true }, 2.6);
+    case "heo_rung": return quad(mats, { body: [0.8, 0.72, 1.2], color: 0x5a4030, belly: 0x7a5a44, head: 0.4, snout: 0.16, snoutColor: 0xc88a7a, nose: 0xa05a50, ears: "point", earInner: 0x3a2818, leg: 0.3, legW: 0.22, paw: 0x2a1e14, tail: "curl", tusks: true, ridge: 0x2a1c10, glowEyes: true }, 2.4);
     case "nguoi_tuyet": {
       const root = new THREE.Group(), body = new THREE.Group();
       root.add(body);
@@ -544,17 +752,77 @@ export function bobberModel(mats: ModelMats): THREE.Group {
 
 export function fishModel(mats: ModelMats, color: number): THREE.Group {
   const g = new THREE.Group();
-  g.add(mats.baked1(new Paint().add(new THREE.SphereGeometry(0.2, 7, 5), color, 0, 0, 0, 0, 0, 0, 0.6, 0.8, 1.6)
-    .add(new THREE.ConeGeometry(0.16, 0.26, 3), darker(color, 0.8), 0, 0, -0.38, -Math.PI / 2)
-    .box(0.02, 0.04, 0.04, EYE, 0.1, 0.05, 0.2).box(0.02, 0.04, 0.04, EYE, -0.1, 0.05, 0.2), false)!);
+  const p = new Paint();
+  ell(p, color, [0.2, 0.26, 0.5], [0, 0, 0], [0, 0, 0], [10, 7]);
+  ell(p, darker(color, 1.25), [0.16, 0.14, 0.4], [0, -0.06, 0.02]);
+  p.add(new THREE.ConeGeometry(0.5, 1, 6), darker(color, 0.8), 0, 0, -0.33, -Math.PI / 2, 0, 0, 0.05, 0.2, 0.3);
+  p.add(new THREE.ConeGeometry(0.5, 1, 5), darker(color, 0.8), 0, 0.14, -0.02, -0.5, 0, 0, 0.04, 0.12, 0.2);
+  eyes(p, 0.04, 0.15, 0.075, 0.07);
+  g.add(mats.creature1(p, false)!);
   return g;
 }
 
 export function duckModel(mats: ModelMats): Creature {
-  const c = bird(mats, 0xf4f0e6, 0xe8e4d8, 0xf0a030, 0xf4f0e6, 1.2);
+  const c = bird(mats, { color: 0xf6f2e8, wing: 0xe8e2d4, beak: 0xf0a030, head: 0xf6f2e8, belly: 0xffffff, tail: 0xe8e2d4, duck: true }, 1.2);
   c.hop = false;
   c.flies = false;
+  c.waddle = true;
   return c;
+}
+
+/** Poses a creature for a frame: `phase` is its gait phase (radians), `gait` its stride (freq 0 = standing), `t` ms.
+ *  Walks swing diagonal leg pairs with a small double-time bob; fleeing quadrupeds gallop (front pair, then back
+ *  pair, the body rocking); hoppers tuck all four legs in each bound; standing animals breathe, look about, graze
+ *  now and then and wag; birds flap in the air; ducks waddle. */
+export function poseCreature(c: Creature, phase: number, gait: { freq: number; amp: number }, t: number, fleeing: boolean, reduced: boolean): void {
+  const amp = gait.freq > 0 ? gait.amp : 0;
+  const moving = amp > 0 && !reduced;
+  const k = amp, s = Math.sin(phase);
+  c.body.rotation.set(0, 0, 0);
+  let bob = 0;
+  if (c.legs.length === 4) {
+    const [fl, fr, bl, br] = c.legs;
+    if (!moving) for (const l of c.legs) l.rotation.x = 0;
+    else if (c.hop) {
+      const air = Math.abs(Math.sin(phase / 2));
+      fl.rotation.x = fr.rotation.x = -0.9 * air * Math.min(1, k + 0.3);
+      bl.rotation.x = br.rotation.x = 1.0 * air * Math.min(1, k + 0.3);
+      bob = air * 0.18;
+      c.body.rotation.x = -0.25 * Math.cos(phase / 2) * air;
+    } else if (fleeing) {
+      const f = Math.sin(phase), b = Math.sin(phase - 1.6);
+      fl.rotation.x = f * k; fr.rotation.x = Math.sin(phase + 0.4) * k;
+      bl.rotation.x = b * k; br.rotation.x = Math.sin(phase - 1.2) * k;
+      bob = Math.abs(Math.sin(phase + 0.5)) * 0.07 * (1 + k);
+      c.body.rotation.x = -0.06 + Math.sin(phase + 0.8) * 0.09 * k;
+    } else {
+      fl.rotation.x = br.rotation.x = s * k;
+      fr.rotation.x = bl.rotation.x = -s * k;
+      bob = Math.abs(Math.cos(phase)) * 0.025 * (1 + k);
+    }
+  } else if (c.waddle && moving) c.body.rotation.z = Math.sin(phase) * 0.14;
+  else if (c.hop && moving) bob = Math.abs(Math.sin(phase / 2)) * 0.18;
+  c.body.position.y = bob;
+  // idle life: breathing, looking about, grazing
+  const idle = reduced ? 0 : 1;
+  if (c.trunk) c.trunk.scale.y = 1 + (moving ? 0 : Math.sin(t / 520 + phase) * 0.018 * idle);
+  if (c.head) {
+    if (moving) { c.head.rotation.x = Math.sin(phase * 2) * 0.05; c.head.rotation.y = 0; }
+    else {
+      c.head.rotation.x = Math.max(0, Math.sin(t / 1400 + phase)) * 0.5 * idle;
+      c.head.rotation.y = Math.sin(t / 2300 + phase * 1.7) * 0.4 * idle * (c.head.rotation.x > 0.1 ? 0.3 : 1);
+    }
+  }
+  if (c.tail) c.tail.rotation.y = reduced ? 0 : Math.sin(t / (fleeing ? 90 : moving ? 160 : 260)) * (moving ? 0.4 : 0.28);
+  if (c.wings.length) {
+    const air = c.flies && (fleeing || gait.freq > 2.5);
+    const flap = air && !reduced ? Math.sin(t / 55) * 0.9 : c.waddle && moving ? 0.25 + Math.sin(phase * 2) * 0.1 : 0.1;
+    c.wings[0].rotation.z = flap; c.wings[1].rotation.z = -flap;
+    if (air) {
+      c.body.position.y = Math.min(2.5, c.body.position.y + 0.5 + Math.sin(t / 300) * 0.2);
+      c.body.rotation.x = -0.15;
+    }
+  }
 }
 
 /** A text label as a sprite (cached textures by text + style). */

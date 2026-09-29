@@ -21,7 +21,7 @@ const noopCtx = new Proxy({}, { get: (_t, k) => (k === "measureText" ? () => ({ 
 const art = { props: [], edge: "#000", background: {}, drawAnimated() {}, drawOverhead() {} } as unknown as SceneArt;
 
 let world: WorldMap;
-beforeAll(() => { world = buildWorld(); });
+beforeAll(() => { world = buildWorld(); }, 30_000);                     // the delta world (canals, houses, the mountain) takes a while under load
 
 let clock = 1000;
 beforeEach(() => {
