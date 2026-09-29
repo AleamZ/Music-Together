@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import type { Gender } from "@/lib/game/types";
 import type { ChibiHat, ChibiSpec } from "./spec";
-import { FACE_EXPRS, FACE_H, FACE_W, facePixels, type FaceExpr } from "./voxel-face";
+import { EYE_COLOR_HEX, type BodyShape } from "@/lib/game/body";
+import { FACE_EXPRS, FACE_H, FACE_W, facePixels, type FaceExpr, type FaceEyes } from "./voxel-face";
 import { VoxelModel, around, type Painter, type RGB, type Shape, type Texel } from "./voxel-atlas";
 import { lathe, roundBlock, smoothRings, spow, strand, type Ring } from "./voxel-shapes";
 import { mix, painted, pixelTexture, rgb, shade, solid, tone, voxelMaterial } from "./voxel-material";
@@ -38,13 +39,113 @@ export const RIG = {
   calfLen: 6 * VOX,
 } as const;
 
-/** Per body type: where the arms and legs hang and how big the head is drawn. Boys: broader shoulders, a touch
- *  wider stance; girls: narrower shoulders, a slightly bigger head on a slimmer body. */
-export interface BodyDims { shoulderX: number; legX: number; headScale: number }
-export const BODY: Record<Gender, BodyDims> = {
-  nam: { shoulderX: 4.85 * VOX, legX: 1.8 * VOX, headScale: 1.3 },
-  nu: { shoulderX: 4.05 * VOX, legX: 1.7 * VOX, headScale: 1.34 },
+/** Posture a body type adds to every pose (radians): arms out (+), stance width (+), a relaxed elbow. */
+export interface Posture { armZ: number; legZ: number; elbow: number }
+
+/** The rig's measurements for one look (world units): where the limbs attach and how long each bone is, the head's
+ *  size (uniform, then width/height for the face shape) and the whole body's scale (height). */
+export interface BodyDims {
+  shoulderX: number; shoulderY: number; legX: number; hipY: number; neckY: number;
+  upperLen: number; foreLen: number; thighLen: number; calfLen: number;
+  /** Ankle → sole (the foot's height). */
+  footH: number;
+  headScale: number; headX: number; headY: number;
+  scale: number;
+  posture: Posture;
+}
+
+/** A look's proportions: the rig's dims plus the sculpting factors (torso zones, limb thickness and length, hands,
+ *  feet, jaw). The body type sets the base — boys: broad square shoulders, a straight wide torso, a thick neck, big
+ *  hands and feet, a square jaw, a wider stance; girls: narrow sloped shoulders, a clear waist and wider hips, slim
+ *  limbs, small hands and feet, a round soft chin, a bigger head — and the Look's body sliders (lib/game/body.ts)
+ *  scale it within ranges that keep every mix cute and every animation intact. */
+export interface Proportions {
+  dims: BodyDims;
+  shoulders: number; waist: number; hips: number; depth: number; square: number;
+  /** The chest's forward volume (units): girls a soft stylised bust (the "Vòng 1" slider), boys the pecs (muscle). */
+  chest: number;
+  arm: number; leg: number; hand: number; foot: number; neck: number;
+  armLen: number; legLen: number;
+  jaw: number; headE: number;
+}
+
+const BASE: Record<Gender, { shoulders: number; waist: number; hips: number; depth: number; square: number; arm: number; leg: number; hand: number; foot: number;
+  neck: number; jaw: number; headE: number; shoulderX: number; shoulderY: number; legX: number; head: number; posture: Posture }> = {
+  nam: { shoulders: 1.08, waist: 1.05, hips: 0.96, depth: 1.03, square: 0.64, arm: 1.07, leg: 1.05, hand: 1.14, foot: 1.08, neck: 1.08, jaw: 0.12, headE: 0.56,
+    shoulderX: 5.1, shoulderY: 8.35, legX: 1.85, head: 1.28, posture: { armZ: 0.07, legZ: 0.035, elbow: 0.06 } },
+  nu: { shoulders: 0.9, waist: 0.88, hips: 1.1, depth: 0.97, square: 0.8, arm: 0.84, leg: 0.9, hand: 0.84, foot: 0.88, neck: 0.86, jaw: 0.2, headE: 0.72,
+    shoulderX: 3.95, shoulderY: 7.9, legX: 1.72, head: 1.37, posture: { armZ: -0.01, legZ: -0.02, elbow: 0.18 } },
 };
+
+/** The torso splits here (units above the hip joints): above rigid, below the skinned pelvis. */
+const HIP_CUT = 0.8;
+
+/** A lathe profile with `n` rings per span (linear): enough rows for skinned cloth to bend smoothly. */
+function densify(rings: readonly Ring[], n: number): Ring[] {
+  const out: Ring[] = [];
+  for (let i = 0; i < rings.length - 1; i++) {
+    const a = rings[i], b = rings[i + 1];
+    const cap = (a.rx === 0 && a.rz === 0) || (b.rx === 0 && b.rz === 0);
+    const m = cap ? 1 : n;
+    for (let j = 0; j < m; j++) {
+      const t = j / m, L = (p: number, q: number) => p + (q - p) * t;
+      out.push({ y: L(a.y, b.y), rx: L(a.rx, b.rx), rz: L(a.rz, b.rz), x: L(a.x ?? 0, b.x ?? 0), z: L(a.z ?? 0, b.z ?? 0) });
+    }
+  }
+  out.push(rings[rings.length - 1]);
+  return out;
+}
+
+/** Skin weights for a pelvis/skirt point (units, hips space): pelvis, left thigh, right thigh. Lower = more thigh; the
+ *  front follows the thighs more than the back (which stays on the seat); left/right blend across the middle. */
+export function hipWeights(x: number, y: number, z: number): [number, number, number] {
+  const ss = (a: number, b: number, v: number) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const th = ss(0.4, -2.6, y) * Math.max(0.3, Math.min(1, 0.6 + z / 3.2));
+  const wl = 1 / (1 + Math.exp(x / 0.6));
+  return [1 - th, th * wl, th * (1 - wl)];
+}
+
+/** Adds skinIndex/skinWeight to the hips geometry (positions in world units at `unit` per model unit). */
+function skinHips(g: THREE.BufferGeometry, unit: number): void {
+  const pos = g.getAttribute("position"), n = pos.count;
+  const idx = new Uint16Array(n * 4), wt = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const [p0, l, r] = hipWeights(pos.getX(i) / unit, pos.getY(i) / unit, pos.getZ(i) / unit);
+    idx.set([0, 1, 2, 0], i * 4);
+    wt.set([p0, l, r, 0], i * 4);
+  }
+  g.setAttribute("skinIndex", new THREE.BufferAttribute(idx, 4));
+  g.setAttribute("skinWeight", new THREE.BufferAttribute(wt, 4));
+}
+
+/** Knee → ankle and ankle → sole, in units (the thigh is 6). */
+const CALF = 6.2, FOOT = 1.85;
+
+export function proportions(spec: Pick<ChibiSpec, "gender" | "body">): Proportions {
+  const g = BASE[spec.gender] ?? BASE.nam, b = spec.body;
+  const build = 1 + 0.05 * b.build;
+  const armLen = 1 + 0.15 * b.arms, legLen = 1 + 0.16 * b.legs;
+  const thigh = 6 * legLen, calf = CALF * legLen;
+  return {
+    shoulders: g.shoulders * (1 + 0.12 * b.shoulders) * build * (1 + 0.04 * b.muscle),
+    waist: g.waist * (1 + 0.15 * b.waist) * build,
+    hips: g.hips * (1 + 0.12 * b.hips) * build,
+    depth: g.depth * (1 + 0.12 * b.build),
+    chest: (spec.gender === "nu" ? 0.5 + 0.3 * b.bust : 0.08 + 0.16 * b.muscle),
+    square: g.square,
+    arm: g.arm * (1 + 0.15 * b.build) * (1 + 0.14 * b.muscle), leg: g.leg * (1 + 0.15 * b.build),
+    hand: g.hand * (1 + 0.06 * b.build), foot: g.foot * (1 + 0.05 * b.build), neck: g.neck * (1 + 0.1 * b.build),
+    armLen, legLen, jaw: g.jaw, headE: g.headE,
+    dims: {
+      shoulderX: g.shoulderX * (1 + 0.12 * b.shoulders) * build * VOX, shoulderY: g.shoulderY * VOX, legX: g.legX * (1 + 0.1 * b.hips) * VOX,
+      hipY: (thigh + calf + FOOT * g.foot * (1 + 0.05 * b.build)) * VOX, neckY: 10 * VOX,
+      upperLen: 5 * armLen * VOX, foreLen: 4.35 * armLen * VOX, thighLen: thigh * VOX, calfLen: calf * VOX, footH: FOOT * g.foot * (1 + 0.05 * b.build) * VOX,
+      headScale: g.head * (1 + 0.1 * b.head), headX: 1 - 0.06 * b.face, headY: 1 + 0.08 * b.face,
+      scale: 1 + 0.08 * b.height,
+      posture: g.posture,
+    },
+  };
+}
 
 /** Lathe smoothing (extra rings between the sculpted ones) for the model being built: high detail only. */
 let SMOOTH = 2;
@@ -52,7 +153,9 @@ let SMOOTH = 2;
 /** The ink outline's width (world units). */
 const OUTLINE = 0.011;
 
-const SEGS = ["head", "torso", "upperL", "upperR", "foreL", "foreR", "thighL", "thighR", "calfL", "calfR", "rod"] as const;
+/** "hips" is the one skinned segment: the pelvis, the pants' seat and any skirt, bound to the pelvis and both thighs
+ *  (skinIndex 0 = pelvis, 1 = left thigh, 2 = right thigh) so cloth follows the legs when walking and sitting. */
+const SEGS = ["head", "torso", "hips", "upperL", "upperR", "foreL", "foreR", "thighL", "thighR", "calfL", "calfR", "footL", "footR", "rod"] as const;
 export type Seg = (typeof SEGS)[number];
 
 export interface ChibiParts extends Record<Seg, THREE.BufferGeometry> {
@@ -61,7 +164,7 @@ export interface ChibiParts extends Record<Seg, THREE.BufferGeometry> {
   /** The face decal (shared) and its expressions for this body type (shared). */
   faceGeo: THREE.BufferGeometry;
   faces: Record<FaceExpr, THREE.Material>;
-  /** Where this body type's limbs attach. */
+  /** This look's bone lengths and attachment points (body type + sliders). */
   dims: BodyDims;
 }
 
@@ -74,10 +177,7 @@ const rings = (pts: readonly (readonly [number, number])[], kz = 1, x = 0, z = 0
 
 // ---- head (head space: chin at y 0, face toward +z) ----
 
-const HEAD = { cy: 4.7, rx: 4.2, ry: 4.8, rz: 4.1, e: 0.62, flat: 3.7 } as const;
-
-/** How much the jaw narrows toward the chin: a squarer jaw for boys, a softer, rounder-pointed chin for girls. */
-const JAW: Record<Gender, number> = { nam: 0.17, nu: 0.27 };
+const HEAD = { cy: 4.7, rx: 4.2, ry: 4.8, rz: 4.1, flat: 3.7 } as const;
 
 /** The jaw narrows the lower head; the face is pressed flat. */
 function headDeform(jaw: number): (p: THREE.Vector3) => void {
@@ -92,10 +192,10 @@ function headDeform(jaw: number): (p: THREE.Vector3) => void {
 }
 
 /** The head surface's z at (x, y) on the front (for the face decal), or null off the head. */
-export function headFrontZ(x: number, y: number, jaw = JAW.nam): number | null {
+export function headFrontZ(x: number, y: number, jaw = BASE.nam.jaw, e = BASE.nam.headE): number | null {
   const k = y < HEAD.cy ? (HEAD.cy - y) / HEAD.ry : 0;
   const jx = 1 - jaw * k * k, jz = 1 - 0.06 * k * k;
-  const p = 2 / HEAD.e;
+  const p = 2 / e;
   const rest = 1 - Math.pow(Math.abs(x / jx / HEAD.rx), p) - Math.pow(Math.abs((y - HEAD.cy) / HEAD.ry), p);
   if (rest <= 0) return null;
   let z = HEAD.rz * Math.pow(rest, 1 / p) * jz;
@@ -116,7 +216,7 @@ function hairPainter(s: ChibiSpec): Painter {
 
 /** The skull cap of hair: a shell over the head whose lower edge follows a hairline (front / side / back heights). */
 function hairCap(front: number, side: number, back: number, grow = 1): Shape {
-  const cy = HEAD.cy + 0.3, rx = (HEAD.rx + 0.3) * grow, ry = (HEAD.ry + 0.45) * grow, rz = (HEAD.rz + 0.5) * grow, e = HEAD.e;
+  const cy = HEAD.cy + 0.3, rx = (HEAD.rx + 0.3) * grow, ry = (HEAD.ry + 0.45) * grow, rz = (HEAD.rz + 0.5) * grow, e = 0.62;
   const line = (th: number) => {
     const s = Math.sin(th);
     return s > 0 ? side + (front - side) * s * s : side + (back - side) * s * s;
@@ -133,9 +233,9 @@ function hairCap(front: number, side: number, back: number, grow = 1): Shape {
   return { at, center: () => new THREE.Vector3(0, HEAD.cy, 0), sizeU: 2 * Math.PI * rx * 1.1, sizeV: ry * 2.4, segU: 22, segV: 8 };
 }
 
-function buildHead(m: M, s: ChibiSpec): void {
+function buildHead(m: M, s: ChibiSpec, P: Proportions): void {
   const skin = rgb(s.skin), skinSh = rgb(s.skinShade);
-  m.surface("head", roundBlock([0, HEAD.cy, 0], [HEAD.rx, HEAD.ry, HEAD.rz], HEAD.e, { seg: [20, 12], deform: headDeform(JAW[s.gender] ?? JAW.nam) }),
+  m.surface("head", roundBlock([0, HEAD.cy, 0], [HEAD.rx, HEAD.ry, HEAD.rz], P.headE, { seg: [20, 12], deform: headDeform(P.jaw) }),
     painted((t) => (t.n[1] < -0.8 && t.y < 1.2 ? mix(skin, skinSh, 0.35) : skin), 0.02));
   // ears: a rounded shell with a darker inner fold
   for (const sx of [-1, 1]) {
@@ -143,7 +243,10 @@ function buildHead(m: M, s: ChibiSpec): void {
       painted((t) => (t.x * sx > 4.2 && Math.abs(t.y - 4.3) < 0.45 && Math.abs(t.z - 0.1) < 0.3 ? mix(skin, skinSh, 0.6) : skin), 0.02));
   }
   const hp = hairPainter(s);
-  buildHair(m, s, hp, !!s.hat);
+  // under a nón lá the hair is pressed down below the cone (nothing pokes through the palm leaf)
+  const ceil = s.hat?.shape === "nonla" ? (r: number) => nonlaY(r) - 0.45 : null;
+  const hm = ceil ? ({ surface: (seg: Seg, shape: Shape, paint: Painter, mat?: THREE.Matrix4) => m.surface(seg, underCeiling(shape, ceil), paint, mat) } as unknown as M) : m;
+  buildHair(hm, s, hp, !!s.hat);
   if (s.hat) buildHat(m, s.hat);
   buildHairpin(m, s);
 }
@@ -241,12 +344,30 @@ function buildHair(m: M, s: ChibiSpec, hp: Painter, hatted: boolean): void {
   }
 }
 
-function strawPainter(main: string, shadeHex: string, band: string): Painter {
-  const a = rgb(main), b = rgb(shadeHex), c = rgb(band);
+/** The nón lá's size (head units): brim radius, the rim's height (at the brows) and the apex. */
+export const NONLA = { R: 9.3, rim: 5.4, top: 5.4 + 1.05 * 9.3 } as const;
+/** The nón lá's outer surface height at distance r from the head's axis. */
+export const nonlaY = (r: number): number => NONLA.top - (NONLA.top - NONLA.rim) * (r / NONLA.R);
+
+/** A shape with every point pushed down under a ceiling y = ceil(distance from the head's axis). */
+function underCeiling(shape: Shape, ceil: (r: number) => number): Shape {
+  return { ...shape, at: (u, v) => { const p = shape.at(u, v), c = ceil(Math.hypot(p.x, p.z)); if (p.y > c) p.y = c; return p; } };
+}
+
+/** The nón lá's dried palm leaf: a muted, slightly grey warm beige in flat colour, fine leaf strips running from the
+ *  apex to the brim (each strip a touch lighter or darker, a thin line between them), four rib rings, a darker brim
+ *  edge; the underside in its own shade. */
+function strawPainter(main: string, shadeHex: string): Painter {
+  const a = mix(mix(rgb(main), [190, 172, 136], 0.55), [0, 0, 0], 0.06), b = mix(rgb(shadeHex), [120, 104, 78], 0.4);
+  const STRIPS = 40;
   return (t) => {
-    if (t.y > 9.95 && t.y < 10.45 && t.n[1] > 0) return shade(c, tone(t, 0.04));
-    const ring = Math.floor((14 - t.y) * 0.8);                                   // a few flat woven rings
-    return shade(ring % 2 === 1 && t.n[1] > 0 ? mix(a, b, 0.3) : a, tone(t, 0.05));
+    if (t.n[1] < 0) return mix(a, b, 0.4);
+    const r = Math.hypot(t.x, t.z), f = ((Math.atan2(t.z, t.x) / (Math.PI * 2)) + 1) * STRIPS, strip = Math.floor(f), edge = f - strip;
+    let c: RGB = shade(a, 1 + (((strip * 7919) % 5) - 2) * 0.018);
+    if (edge < 0.2 && r > 0.8) c = mix(c, b, 0.26);                                  // the line between two strips
+    if ([0.25, 0.45, 0.65, 0.84].some((k) => Math.abs(r - k * NONLA.R) < 0.12)) c = mix(c, b, 0.42);
+    if (r > 0.93 * NONLA.R) c = mix(c, b, 0.35);                                     // the brim edge
+    return c;
   };
 }
 
@@ -265,9 +386,26 @@ function banded(base: string, band: string, y0: number, y1: number): Painter {
 function buildHat(m: M, h: ChibiHat): void {
   const surf = (s: Shape, p: Painter) => m.surface("head", s, p);
   switch (h.shape) {
-    case "nonla":
-      surf(lathe(rings([[14.2, 0], [13.9, 0.45], [9.7, 6.9], [9.45, 7.0], [9.35, 6.7], [9.9, 4.5], [10.1, 0]]), 1, 18), strawPainter(h.main, h.shade, h.accent));
+    case "nonla": {
+      // a real nón lá: a tall pointed cone (height ≈ 1.05× the brim radius, ~45° sides, brim ≈ 2.2× the head's width)
+      // sitting deep on the head — the brim at the brows, the whole skull inside — with a thin rolled rim, a few faint
+      // rib rings, and a thin chin strap (quai) under the jaw
+      const { R, top, rim } = NONLA;
+      const cone = (r: number) => nonlaY(r);
+      const T = 0.18;                                                             // the leaf's thickness
+      surf(lathe([
+        { y: top + 0.1, rx: 0, rz: 0 }, { y: top - 0.05, rx: 0.14, rz: 0.14 }, ...[0.1, 0.3, 0.5, 0.7, 0.9].map((k) => ({ y: cone(R * k), rx: R * k, rz: R * k })),
+        { y: rim, rx: R, rz: R },
+        ...[0.9, 0.6, 0.3, 0.08].map((k) => ({ y: cone(R * k) - T * 1.4, rx: R * k, rz: R * k })), { y: top - 0.5, rx: 0, rz: 0 },
+      ], 1, 28), strawPainter(h.main, h.shade));
+      // the rolled rim ring
+      surf(lathe(rings([[rim + 0.16, R - 0.12], [rim + 0.2, R + 0.05], [rim + 0.02, R + 0.22], [rim - 0.18, R + 0.08], [rim - 0.2, R - 0.12]]), 1, 28),
+        solid("#8a7858", 0.02));
+      for (const sx of [-1, 1]) {
+        m.surface("head", strand([sx * 3.95, 5.6, 0.5], [sx * 5.6, 1.8, 1.9], [sx * 0.35, -0.4, 1.9], [0.14, 0.12], [0.1, 0.08], [0, 0, 1], [4, 8]), solid(h.accent));
+      }
       break;
+    }
     case "cap":
       surf(roundBlock([0, 8.7, -0.1], [4.75, 2.9, 4.7], 0.75, { seg: [16, 8], deform: (p) => { if (p.y < 7.6) p.y = 7.6; } }), banded(h.main, h.shade, 7.5, 7.9));
       surf(roundBlock([0, 7.85, 5.1], [3.6, 0.28, 2.3], 0.4, { seg: [12, 4] }), solid(h.brim));
@@ -283,7 +421,7 @@ function buildHat(m: M, h: ChibiHat): void {
       surf(lathe(hatProfile(12.6, 4.2, 9.1, 6.6), 0.9, 16, (p) => { if (p.y > 12 && Math.abs(p.x) < 1) p.y -= 0.5 * (1 - Math.abs(p.x)); }), banded(h.main, h.accent, 9.4, 10.3));
       break;
     case "sunhat":
-      surf(lathe(hatProfile(12.2, 4.4, 9.1, 7.7), 1, 18), banded(h.main, h.brim, 9.4, 10.2));
+      surf(lathe(hatProfile(12.2, 4.5, 9.1, 8.6), 1, 22), banded(h.main, h.brim, 9.4, 10.2));
       surf(roundBlock([3.4, 10.1, 3.1], [0.9, 0.9, 0.6], 0.7, { seg: [8, 6] }), solid(h.accent));
       break;
     case "helmet":
@@ -424,7 +562,15 @@ function skirtPainter(base: string, shadeHex: string, pleats: boolean, placket?:
   };
 }
 
-function buildTorso(m: M, s: ChibiSpec): void {
+/** Shapes a torso ring by zone: shoulders (top), waist (middle), hips (bottom) widths and the build's depth. */
+function zoned(r: Ring, P: Proportions): Ring {
+  const ss = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const ws = ss(5.6, 8.2, r.y), wh = ss(3.2, 0.8, r.y), ww = Math.max(0, 1 - ws - wh);
+  const k = ws * P.shoulders + wh * P.hips + ww * P.waist;
+  return { ...r, rx: r.rx * k, rz: r.rz * P.depth };
+}
+
+function buildTorso(m: M, s: ChibiSpec, P: Proportions): void {
   const nu = s.gender === "nu";
   const chest = chestPainter(s), hips = hipsPainter(s);
   // a sculpted profile, then smoothed: boys straighter and V-shaped (broad shoulders, flat chest, narrow hips); girls
@@ -432,16 +578,49 @@ function buildTorso(m: M, s: ChibiSpec): void {
   // into the shoulders so the arms' deltoids meet the torso in a curve, not a step.
   const body: Ring[] = nu
     ? [{ y: 9.6, rx: 0, rz: 0 }, { y: 9.6, rx: 1.5, rz: 1.1 }, { y: 9.35, rx: 2.45, rz: 1.55 }, { y: 8.85, rx: 3.15, rz: 1.85 }, { y: 8.0, rx: 3.3, rz: 1.95 },
-      { y: 6.8, rx: 3.15, rz: 2.3, z: 0.2 }, { y: 5.6, rx: 2.9, rz: 2.05, z: 0.1 }, { y: 4.2, rx: 2.5, rz: 1.72 }, { y: 2.6, rx: 2.9, rz: 1.85 },
+      { y: 6.8, rx: 3.15, rz: 2.1, z: 0.05 }, { y: 5.6, rx: 2.9, rz: 1.95, z: 0.03 }, { y: 4.2, rx: 2.5, rz: 1.72 }, { y: 2.6, rx: 2.9, rz: 1.85 },
       { y: 1.0, rx: 3.45, rz: 2.05 }, { y: 0, rx: 3.55, rz: 2.1 }, { y: -1.2, rx: 3.2, rz: 2.0 }, { y: -2.0, rx: 2.3, rz: 1.55 }, { y: -2.35, rx: 0, rz: 0 }]
     : [{ y: 9.7, rx: 0, rz: 0 }, { y: 9.7, rx: 1.8, rz: 1.3 }, { y: 9.45, rx: 2.95, rz: 1.8 }, { y: 8.9, rx: 3.95, rz: 2.1 }, { y: 8.0, rx: 4.15, rz: 2.2 },
       { y: 6.6, rx: 3.95, rz: 2.25, z: 0.1 }, { y: 5.0, rx: 3.55, rz: 2.0 }, { y: 3.4, rx: 3.3, rz: 1.9 }, { y: 1.8, rx: 3.3, rz: 1.95 },
       { y: 0, rx: 3.35, rz: 2.0 }, { y: -1.3, rx: 3.0, rz: 1.9 }, { y: -2.0, rx: 2.2, rz: 1.5 }, { y: -2.35, rx: 0, rz: 0 }];
-  m.surface("torso", lathe(smoothRings(body, SMOOTH), 0.74, 20), (t) => (t.y >= 1.5 ? chest(t) : hips(t)));
+  // the chest's forward volume: a soft, stylised curve on the front only (girls lower and rounder, boys flatter pecs)
+  // two soft rounded volumes (the clothes are painted on the same surface, so they drape over it), a faint
+  // flat-colour shadow line under them for girls
+  const [cy, sy, lx, lw] = nu ? [6.45, 1.05, 1.3, 1.05] : [7.0, 1.1, 1.35, 1.35];
+  const lobes = (x: number) => Math.exp(-(((x - lx) / lw) ** 2)) + Math.exp(-(((x + lx) / lw) ** 2));
+  const front = (p: THREE.Vector3) => {
+    if (p.z <= 0 || nu) return;
+    const y = p.y - cy, wy = Math.exp(-((y / (y < 0 ? sy * 0.8 : sy * 1.25)) ** 2));
+    p.z += P.chest * wy * Math.min(1, lobes(p.x)) * Math.min(1, p.z / 1.4);
+  };
+  const all = smoothRings(body.map((r) => zoned(r, P)), SMOOTH);
+  const cut = HIP_CUT, i = all.findIndex((r) => r.y < cut), a = all[i - 1], b = all[i], k = (a.y - cut) / (a.y - b.y);
+  const mid: Ring = { y: cut, rx: a.rx + (b.rx - a.rx) * k, rz: a.rz + (b.rz - a.rz) * k, x: 0, z: (a.z ?? 0) + ((b.z ?? 0) - (a.z ?? 0)) * k };
+  const paintBody: Painter = (t) => (t.y >= 1.5 ? chest(t) : hips(t));
+  m.surface("torso", lathe([...all.slice(0, i), mid], P.square, 24, front), paintBody);
+  m.surface("hips", lathe(densify([mid, ...all.slice(i)], 2), P.square, 24), paintBody);
+  if (nu) {
+    // girls: two soft, slightly flattened ellipsoids blended into the chest (finely subdivided: smooth, never pointy),
+    // clothed in the top's colours, with a soft flat shadow along their rounded underside
+    const v = P.chest, rz = 0.7 + 0.22 * v, rx = 1.22 + 0.1 * v, ry = 1.3 + 0.08 * v, cz = 1.8 * P.depth + v - rz;
+    for (const sx of [-1, 1]) {
+      m.surface("torso", roundBlock([sx * (lx - 0.08), cy - 0.1, cz], [rx, ry, rz], 1, { seg: [16, 12] }), (t) => {
+        const c = chest(t);
+        return c && t.n[1] < -0.5 ? shade(c, 0.88) : c;
+      });
+    }
+  }
   // the neck flares into the trapezius
-  const nk = nu ? 0.88 : 1;
+  const nk = P.neck;
   m.surface("torso", lathe(rings([[11.3, 0], [11.3, 1.05 * nk], [10.4, 1.1 * nk], [9.7, 1.3 * nk], [9.2, 1.85 * nk], [8.8, 0]]), 1, 12), solid(s.skinShade, 0.02));
-  const skirt = (r: readonly (readonly [number, number, number])[], p: Painter) => m.surface("torso", lathe(r.map(([y, rx, rz]) => ({ y, rx, rz })), 0.8, 16), p);
+  // skirts hang from the waist (open at the hem: a thin inturned lip), finely ringed so they bend smoothly with the legs
+  const skirt = (r: readonly (readonly [number, number, number])[], p: Painter) => {
+    const w = Math.max(P.hips, P.waist);
+    const rr: Ring[] = r.filter(([, rx]) => rx > 0).map(([y, rx, rz]) => ({ y, rx: rx * w, rz: rz * P.depth }));
+    const hem = rr[rr.length - 1];
+    rr.push({ y: hem.y + 0.05, rx: hem.rx * 0.93, rz: hem.rz * 0.93 });
+    m.surface("hips", lathe(densify(rr.slice(0, -1), 5).concat(rr.slice(-1)), 0.8, 20), p);
+  };
   switch (s.lower) {
     case "skirt": skirt([[2.2, 3.15, 1.95], [-4.2, 4.3, 2.9], [-4.45, 4.0, 2.7], [-4.45, 0, 0]], skirtPainter(s.bottom, s.bottomShade, false)); break;
     case "pleated": skirt([[2.2, 3.15, 1.95], [-4.8, 4.5, 3.0], [-5.05, 4.2, 2.8], [-5.05, 0, 0]], skirtPainter(s.bottom, s.bottomShade, true)); break;
@@ -450,8 +629,8 @@ function buildTorso(m: M, s: ChibiSpec): void {
     default: break;
   }
   if (s.belt) {
-    m.surface("torso", roundBlock([0.9, -0.9, 2.05], [0.35, 1.5, 0.2], 0.6, { seg: [6, 5] }), solid(s.belt));
-    m.surface("torso", roundBlock([-0.1, -0.6, 2.05], [0.35, 1.2, 0.2], 0.6, { seg: [6, 5] }), solid(s.belt));
+    m.surface("hips", roundBlock([0.9, -0.9, 2.05], [0.35, 1.5, 0.2], 0.6, { seg: [6, 5] }), solid(s.belt));
+    m.surface("hips", roundBlock([-0.1, -0.6, 2.05], [0.35, 1.2, 0.2], 0.6, { seg: [6, 5] }), solid(s.belt));
   }
   if (s.neck?.kind === "scarf") {
     m.surface("torso", lathe(rings([[10.1, 0], [10.1, 1.6], [9.6, 2.35], [8.5, 2.5], [8.3, 0]], 0.85), 0.85, 14), solid(s.neck.main));
@@ -461,85 +640,98 @@ function buildTorso(m: M, s: ChibiSpec): void {
 
 // ---- limbs (each hangs down, -y, from its pivot) ----
 
-function buildArm(m: M, s: ChibiSpec, side: -1 | 1): void {
+/** A lathe profile (y, r) list scaled in length below the pivot (y < 0) and in thickness. */
+const limb = (pts: readonly (readonly [number, number])[], len: number, k: number): [number, number][] => pts.map(([y, r]) => [y < 0 ? y * len : y, r * k]);
+
+/** A rounded end: rings of a quarter ellipse from radius r at y down (dir -1) or up (+1) by depth d, closed. */
+function roundEnd(y: number, r: number, d: number, dir: -1 | 1): [number, number][] {
+  return [0.35, 0.65, 0.88, 1].map((a) => [y + dir * d * Math.sin((a * Math.PI) / 2), a === 1 ? 0 : r * Math.cos((a * Math.PI) / 2)]);
+}
+
+function buildArm(m: M, s: ChibiSpec, P: Proportions, side: -1 | 1): void {
   const up: Seg = side < 0 ? "upperL" : "upperR", fo: Seg = side < 0 ? "foreL" : "foreR";
-  const nu = s.gender === "nu";
-  const k = nu ? 0.86 : 1.04, hk = nu ? 0.9 : 1.08;                            // limb and hand thickness
+  const k = P.arm, hk = P.hand, L = P.armLen;
   const sleeveC = rgb(s.sleeveColor), skin = rgb(s.skin), skinSh = rgb(s.skinShade);
   const long = s.sleeve === "long";
-  // upper arm: a round deltoid cap tapering to the elbow
-  m.surface(up, lathe(rings([[1.2, 0], [1.1, 0.72 * k], [0.65, 1.1 * k], [0, 1.18 * k], [-1.4, 1.08 * k], [-3.2, 0.98 * k], [-4.6, 0.9 * k], [-5.15, 0.62 * k], [-5.3, 0]]), 0.85, 12),
-    painted(() => (long ? sleeveC : skin), 0.04));
+  // upper arm: a round deltoid cap tapering to a rounded elbow (it overlaps the forearm's dome: no gap when bent)
+  const upper = limb([[1.2, 0], [1.1, 0.72], [0.65, 1.1], [0, 1.18], [-1.4, 1.08], [-3.2, 0.98], [-4.7, 0.9]], L, k);
+  m.surface(up, lathe(rings([...upper, ...roundEnd(-4.7 * L, 0.9 * k, 0.8, -1)]), 0.85, 12), painted(() => (long ? sleeveC : skin), 0.04));
   if (s.sleeve === "short") {
-    m.surface(up, lathe(rings([[1.45, 0], [1.35, 0.9 * k], [0.8, 1.38 * k], [0, 1.45 * k], [-2.2, 1.36 * k], [-2.55, 1.12 * k], [-2.6, 0]]), 0.85, 12),
-      painted((t) => (t.y < -2.0 ? shade(sleeveC, 0.84) : sleeveC), 0.04));
+    m.surface(up, lathe(rings(limb([[1.45, 0], [1.35, 0.9], [0.8, 1.38], [0, 1.45], [-2.2, 1.36], [-2.55, 1.12], [-2.6, 0]], L, k)), 0.85, 12),
+      painted((t) => (t.y < -2.0 * L ? shade(sleeveC, 0.84) : sleeveC), 0.04));
   }
-  m.surface(fo, lathe(rings([[0.7, 0], [0.55, 0.72 * k], [0, 0.95 * k], [-1.2, 0.98 * k], [-2.8, 0.85 * k], [-3.8, 0.74 * k], [-4.25, 0.52 * k], [-4.35, 0]]), 0.85, 12),
-    painted((t) => (long ? (t.y < -3.3 ? shade(sleeveC, 0.85) : sleeveC) : skin), 0.04));
+  // forearm: a dome at the elbow, tapering to the wrist
+  const fore = limb([[0, 0.98], [-1.2, 0.98], [-2.8, 0.85], [-3.8, 0.74], [-4.25, 0.56]], L, k);
+  m.surface(fo, lathe(rings([...roundEnd(0, 0.98 * k, 0.85, 1).reverse(), ...fore, [-4.35 * L, 0]]), 0.85, 12),
+    painted((t) => (long ? (t.y < -3.3 * L ? shade(sleeveC, 0.85) : sleeveC) : skin), 0.04));
   // the hand: a soft palm with the fingers drawn in (creases toward the tips), and a curved thumb in front
-  const inner = -side;
-  m.surface(fo, roundBlock([0, -5.2, 0.05], [0.66 * hk, 1.05 * hk, 0.88 * hk], 0.72, { seg: [12, 8] }),
+  const inner = -side, hy = -4.35 * L - 0.85;
+  m.surface(fo, roundBlock([0, hy, 0.05], [0.66 * hk, 1.05 * hk, 0.88 * hk], 0.72, { seg: [12, 8] }),
     painted((t) => {
-      const tip = t.y < -5.55;
+      const tip = t.y < hy - 0.35;
       if (tip && [-0.32, 0.12, 0.52].some((zc) => Math.abs(t.z - zc * hk) < 0.08)) return mix(skin, skinSh, 0.75);
       return tip ? mix(skin, skinSh, 0.25) : skin;
     }, 0.02));
-  m.surface(fo, strand([inner * 0.45 * hk, -4.7, 0.55 * hk], [inner * 0.72 * hk, -5.15, 0.95 * hk], [inner * 0.5 * hk, -5.75, 1.0 * hk], [0.3 * hk, 0.22 * hk], [0.28 * hk, 0.2 * hk], [1, 0, 0], [6, 5]),
+  m.surface(fo, strand([inner * 0.45 * hk, hy + 0.5, 0.55 * hk], [inner * 0.72 * hk, hy + 0.05, 0.95 * hk], [inner * 0.5 * hk, hy - 0.55, 1.0 * hk], [0.3 * hk, 0.22 * hk], [0.28 * hk, 0.2 * hk], [1, 0, 0], [6, 5]),
     solid(s.skin, 0.02));
   if (side > 0 && s.wrist) {
-    m.surface(fo, lathe(rings([[-3.2, 0.9 * k], [-3.85, 0.86 * k]], 1), 0.85, 12), solid(s.wrist.main));
-    if (s.wrist.kind === "watch") m.surface(fo, roundBlock([0, -3.5, 0.88 * k], [0.45, 0.42, 0.22], 0.5, { seg: [6, 4] }), solid(s.wrist.accent));
+    m.surface(fo, lathe(rings([[-3.2 * L, 0.9 * k], [-3.85 * L, 0.86 * k]], 1), 0.85, 12), solid(s.wrist.main));
+    if (s.wrist.kind === "watch") m.surface(fo, roundBlock([0, -3.5 * L, 0.88 * k], [0.45, 0.42, 0.22], 0.5, { seg: [6, 4] }), solid(s.wrist.accent));
   }
 }
 
-function buildLeg(m: M, s: ChibiSpec, side: -1 | 1): void {
-  const th: Seg = side < 0 ? "thighL" : "thighR", ca: Seg = side < 0 ? "calfL" : "calfR";
+function buildLeg(m: M, s: ChibiSpec, P: Proportions, side: -1 | 1): void {
+  const th: Seg = side < 0 ? "thighL" : "thighR", ca: Seg = side < 0 ? "calfL" : "calfR", ft: Seg = side < 0 ? "footL" : "footR";
   const nu = s.gender === "nu";
   const skin = rgb(s.skin), bottom = rgb(s.bottom);
   const long = s.calf !== s.skin;
   const shorts = !long && s.thigh !== s.skin;
   const briefs = !long && !shorts && s.lower === "pants";
-  // girls: fuller at the hip, slimmer at the knee; boys: straighter
-  const thigh: readonly (readonly [number, number])[] = nu
-    ? [[0.9, 0], [0.8, 1.35], [0.3, 1.86], [-1.5, 1.78], [-3.5, 1.5], [-5.3, 1.22], [-6.05, 1.0], [-6.4, 0]]
-    : [[0.9, 0], [0.8, 1.3], [0.3, 1.74], [-1.5, 1.7], [-3.5, 1.56], [-5.3, 1.36], [-6.05, 1.1], [-6.4, 0]];
-  m.surface(th, lathe(rings(thigh, 0.95), 0.85, 12), painted((t) => {
+  const k = P.leg, L = P.legLen;
+  // thigh: girls fuller at the hip and slimmer at the knee, boys straighter; a rounded knee end
+  const thigh = limb(nu
+    ? [[0.9, 0], [0.8, 1.35], [0.3, 1.86], [-1.5, 1.78], [-3.5, 1.5], [-5.3, 1.2]]
+    : [[0.9, 0], [0.8, 1.3], [0.3, 1.74], [-1.5, 1.7], [-3.5, 1.56], [-5.3, 1.34]], L, k);
+  m.surface(th, lathe(rings([...thigh, ...roundEnd(-5.3 * L, (nu ? 1.2 : 1.34) * k, 1.0, -1)], 0.95), 0.85, 12), painted((t) => {
     if (long) return rgb(s.thigh);
     if (briefs && t.y > -1.1) return t.y < -0.8 ? shade(bottom, 0.85) : bottom;
     return skin;
   }, 0.04));
   if (shorts) {
     const cloth = rgb(s.thigh);
-    m.surface(th, lathe(rings([[1.3, 0], [1.2, 1.6], [0.4, 2.05], [-3.3, 1.98], [-3.6, 1.55], [-3.6, 0]], 0.95), 0.85, 12), painted((t) => {
-      if (t.y < -3.1) return shade(cloth, 0.78);
-      return cloth;
-    }, 0.04));
+    m.surface(th, lathe(rings(limb([[1.3, 0], [1.2, 1.6], [0.4, 2.05], [-3.3, 1.98], [-3.6, 1.55], [-3.6, 0]], L, k), 0.95), 0.85, 12),
+      painted((t) => (t.y < -3.1 * L ? shade(cloth, 0.78) : cloth), 0.04));
   }
-  // calf and foot
+  // calf: a dome at the knee (under the thigh's end), down to the ankle, closed inside the shoe
   const sh = s.shoe, main = rgb(sh.main), sole = rgb(sh.sole);
   const boots = sh.shape === "boots", sneakers = sh.shape === "sneakers";
-  const ck = nu ? 0.93 : 1;
-  m.surface(ca, lathe(rings([[0.6, 0], [0.5, 1.15 * ck], [0, 1.36 * ck], [-1.4, 1.46 * ck], [-3.0, 1.3 * ck], [-4.6, 1.08 * ck], [-5.8, 0.98 * ck], [-6.2, 0.82 * ck], [-6.35, 0]], 0.95), 0.85, 12), painted((t) => {
-    if (long) return t.y < -5.2 ? shade(rgb(s.calf), 0.85) : rgb(s.calf);
-    if (sneakers && t.y < -4.9) return rgb("#f2eee6");
+  const ck = k * (nu ? 0.93 : 1), A = CALF * L;                                     // A: knee → ankle
+  const calf = limb([[0, 1.36], [-1.4, 1.46], [-3.0, 1.3], [-4.6, 1.08], [-5.8, 0.98], [-6.2, 0.9]], L, ck);
+  m.surface(ca, lathe(rings([...roundEnd(0, 1.36 * ck, 0.7, 1).reverse(), ...calf, ...roundEnd(-A, 0.9 * ck, 0.5, -1)], 0.95), 0.85, 12), painted((t) => {
+    if (long) return t.y < -A + 1.0 ? shade(rgb(s.calf), 0.85) : rgb(s.calf);
+    if (sneakers && t.y < -A + 1.3) return rgb("#f2eee6");
     return skin;
   }, 0.04));
   if (boots) {
-    m.surface(ca, lathe(rings([[-2.2, 0], [-2.2, 1.72], [-3.1, 1.72], [-3.1, 1.52], [-6.4, 1.3], [-6.4, 0]], 0.97), 0.75, 12),
-      painted((t) => (t.y > -3.15 ? sole : main), 0.04));
+    m.surface(ca, lathe(rings([[-2.2 * L, 0], [-2.2 * L, 1.72 * ck], [-3.1 * L, 1.72 * ck], [-3.1 * L, 1.52 * ck], [-A - 0.2, 1.3 * ck], [-A - 0.2, 0]], 0.97), 0.75, 12),
+      painted((t) => (t.y > -3.15 * L ? sole : main), 0.04));
   }
+  // the foot, on its own ankle pivot (y 0 = the ankle; it rolls heel-to-toe): the shoe or bare foot and sandal
+  const f = P.foot, fb = (c: V3, r: V3, e: number, seg: [number, number], deform?: (p: THREE.Vector3) => void) =>
+    roundBlock([c[0] * f, c[1] * f, c[2] * f], [r[0] * f, r[1] * f, r[2] * f], e, { seg, deform });
+  const toe = (z0: number, k2: number) => (p: THREE.Vector3) => { if (p.z > z0 * f) p.y -= (p.z - z0 * f) * k2; };
   if (sh.shape === "dep" || sh.shape === "sandals") {
-    m.surface(ca, roundBlock([0, -7.05, 0.5], [1.26, 0.78, 1.92], 0.62, { seg: [12, 7], deform: (p) => { if (p.z > 1.1) p.y -= (p.z - 1.1) * 0.15; } }), solid(s.skin, 0.02));
-    m.surface(ca, roundBlock([0, -7.8, 0.5], [1.48, 0.24, 2.2], 0.4, { seg: [12, 4] }), solid(sh.sole));
-    m.surface(ca, roundBlock([0, -6.75, 1.0], [1.36, 0.26, 0.55], 0.5, { seg: [8, 4] }), solid(sh.main));
-    if (sh.shape === "sandals") m.surface(ca, roundBlock([0, -6.3, -0.9], [1.25, 0.24, 0.6], 0.5, { seg: [8, 4] }), solid(sh.main));
+    m.surface(ft, fb([0, -0.85, 0.5], [1.26, 0.78, 1.92], 0.62, [12, 7], toe(1.1, 0.15)), solid(s.skin, 0.02));
+    m.surface(ft, fb([0, -1.6, 0.5], [1.48, 0.24, 2.2], 0.4, [12, 4]), solid(sh.sole));
+    m.surface(ft, fb([0, -0.55, 1.0], [1.36, 0.26, 0.55], 0.5, [8, 4]), solid(sh.main));
+    if (sh.shape === "sandals") m.surface(ft, fb([0, -0.1, -0.9], [1.25, 0.24, 0.6], 0.5, [8, 4]), solid(sh.main));
   } else {
-    m.surface(ca, roundBlock([0, -6.95, 0.6], [1.45, 1.0, 2.15], 0.58, { seg: [14, 8], deform: (p) => { if (p.z > 1.2) p.y -= (p.z - 1.2) * 0.12; } }), painted((t) => {
-      if (sneakers && t.n[1] > 0.4 && Math.abs(t.x) < 0.55 && t.z > 0.6 && t.z < 1.9) return rgb("#f4f1ea");     // the laces panel
-      if (sneakers && t.z > 1.9) return rgb("#f4f1ea");                                                        // the toe cap
+    m.surface(ft, fb([0, -0.75, 0.6], [1.45, 1.0, 2.15], 0.58, [14, 8], toe(1.2, 0.12)), painted((t) => {
+      if (sneakers && t.n[1] > 0.4 && Math.abs(t.x) < 0.55 * f && t.z > 0.6 * f && t.z < 1.9 * f) return rgb("#f4f1ea");     // the laces panel
+      if (sneakers && t.z > 1.9 * f) return rgb("#f4f1ea");                                                              // the toe cap
       return main;
     }, 0.04));
-    m.surface(ca, roundBlock([0, -7.75, 0.6], [1.56, 0.3, 2.28], 0.4, { seg: [14, 4] }), solid(sh.sole));
+    m.surface(ft, fb([0, -1.55, 0.6], [1.56, 0.3, 2.28], 0.4, [14, 4]), solid(sh.sole));
   }
 }
 
@@ -551,12 +743,12 @@ function buildRod(m: M): void {
 
 /** The face decal: the head front's 8×9-unit face area as a grid hugging the flattened face. */
 function buildFaceGeo(g0: Gender): THREE.BufferGeometry {
-  const jaw = JAW[g0] ?? JAW.nam;
+  const { jaw, headE } = BASE[g0] ?? BASE.nam;
   const g = new THREE.PlaneGeometry(8 * VOX, 9 * VOX, 16, 18);
   const pos = g.getAttribute("position"), uv = g.getAttribute("uv");
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) / VOX, y = pos.getY(i) / VOX + 4.5;
-    const z = headFrontZ(x, y, jaw);
+    const z = headFrontZ(x, y, jaw, headE);
     pos.setXYZ(i, x * VOX, y * VOX, ((z ?? 0) + 0.05) * VOX);
     uv.setY(i, 1 - uv.getY(i));                                                   // the decal's row 0 is its top
   }
@@ -569,14 +761,17 @@ function buildFaceGeo(g0: Gender): THREE.BufferGeometry {
 export function buildChibi(spec: ChibiSpec, detail: Detail): { geos: Record<Seg, THREE.BufferGeometry>; pixels: Uint8Array; width: number; height: number } {
   const m = new VoxelModel<Seg>(SEGS);
   SMOOTH = detail === "high" ? 2 : 1;
-  buildHead(m, spec);
-  buildTorso(m, spec);
-  buildArm(m, spec, -1);
-  buildArm(m, spec, 1);
-  buildLeg(m, spec, -1);
-  buildLeg(m, spec, 1);
+  const P = proportions(spec);
+  buildHead(m, spec, P);
+  buildTorso(m, spec, P);
+  buildArm(m, spec, P, -1);
+  buildArm(m, spec, P, 1);
+  buildLeg(m, spec, P, -1);
+  buildLeg(m, spec, P, 1);
   buildRod(m);
-  return detail === "high" ? m.build(3, VOX, 1, true) : m.build(1, VOX, 0.6, false);
+  const out = detail === "high" ? m.build(3, VOX, 1, true) : m.build(1, VOX, 0.6, false);
+  skinHips(out.geos.hips, VOX);
+  return out;
 }
 
 interface Entry { parts: ChibiParts; tex: THREE.Texture; refs: number }
@@ -586,7 +781,7 @@ interface Entry { parts: ChibiParts; tex: THREE.Texture; refs: number }
 export class ChibiFactory {
   private readonly entries = new Map<string, Entry>();
   private readonly faceGeos = new Map<Gender, THREE.BufferGeometry>();
-  private readonly faceMats = new Map<Gender, Record<FaceExpr, THREE.Material>>();
+  private readonly faceMats = new Map<string, Record<FaceExpr, THREE.Material>>();
 
   constructor(private readonly max = 120) {}
 
@@ -596,17 +791,21 @@ export class ChibiFactory {
     return geo;
   }
 
-  private faces(g: Gender): Record<FaceExpr, THREE.Material> {
-    let f = this.faceMats.get(g);
+  /** The face materials for a body type and eyes (size, spacing, colour), shared by every look with them. */
+  private faces(g: Gender, body: BodyShape, hair: string): Record<FaceExpr, THREE.Material> {
+    const beard = g === "nam" ? body.beard : "none";
+    const eyes: FaceEyes = { size: 1 + 0.14 * body.eyeSize, spacing: 0.22 * body.eyeSpacing, iris: EYE_COLOR_HEX[body.eyeColor] ?? EYE_COLOR_HEX.nau, beard, beardColor: hair };
+    const key = `${g}|${body.eyeSize}|${body.eyeSpacing}|${body.eyeColor}|${beard}|${beard === "none" ? "" : hair}`;
+    let f = this.faceMats.get(key);
     if (!f) {
       const out = {} as Record<FaceExpr, THREE.Material>;
       for (const e of FACE_EXPRS) {
-        const mat = voxelMaterial(pixelTexture(facePixels(e, g), FACE_W, FACE_H), { transparent: true });
+        const mat = voxelMaterial(pixelTexture(facePixels(e, g, eyes), FACE_W, FACE_H), { transparent: true });
         mat.polygonOffset = true;
         mat.polygonOffsetFactor = -2;
         out[e] = mat;
       }
-      this.faceMats.set(g, (f = out));
+      this.faceMats.set(key, (f = out));
     }
     return f;
   }
@@ -618,7 +817,7 @@ export class ChibiFactory {
     else {
       const b = buildChibi(spec, detail);
       const tex = pixelTexture(b.pixels, b.width, b.height);
-      e = { refs: 0, tex, parts: { ...b.geos, material: voxelMaterial(tex, { outline: detail === "high" ? OUTLINE : 0 }), faceGeo: this.faceGeo(spec.gender), faces: this.faces(spec.gender), dims: BODY[spec.gender] ?? BODY.nam } };
+      e = { refs: 0, tex, parts: { ...b.geos, material: voxelMaterial(tex, { outline: detail === "high" ? OUTLINE : 0 }), faceGeo: this.faceGeo(spec.gender), faces: this.faces(spec.gender, spec.body, spec.hair.main), dims: proportions(spec).dims } };
     }
     e.refs++;
     this.entries.set(key, e);

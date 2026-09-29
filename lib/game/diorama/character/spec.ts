@@ -5,6 +5,7 @@ import type { HairpinKind, NeckStyle, WristKind } from "@/lib/game/art/accessori
 import { ITEM_ART } from "@/lib/game/art/items";
 import { HAIR_COLOR, SKIN } from "@/lib/game/art/palettes";
 import { HAIR_STYLES, type Gender, type HairStyle, type Look } from "@/lib/game/types";
+import { bodyKey, normalizeBody, type BodyShape } from "@/lib/game/body";
 
 // Pure: a Look → the parts of a 3D chibi and their colours. It goes through the 2D compositor's own resolution
 // (`resolveWear`: the same palette regions, sleeves, skirt lengths and shoe shapes), so every catalog item that the 2D
@@ -52,6 +53,8 @@ export interface ChibiSpec {
   neck: ChibiNeck | null;
   wrist: ChibiWrist | null;
   hairpin: ChibiHairpin | null;
+  /** The body proportions (Look.body, normalized; all 0 = the body type's defaults). */
+  body: BodyShape;
 }
 
 const LOWERS: readonly Lower[] = ["pants", "skirt", "pleated", "maxi", "robe"];
@@ -96,9 +99,11 @@ function beltOf(look: Look): string | null {
 const specCache = new Map<string, ChibiSpec>();
 const MAX_SPECS = 2000;
 
-/** The chibi's parts for a look (cached by the 2D look key). Never throws: unknown ids fall back to placeholders. */
+/** The chibi's parts for a look (cached by the 2D look key plus the body proportions). Never throws: unknown ids fall
+ *  back to placeholders. */
 export function chibiSpec(look: Look): ChibiSpec {
-  const key = lookKey(look);
+  const bk = bodyKey(look.body, genderOf(look));
+  const key = bk ? `${lookKey(look)}|b${bk}` : lookKey(look);
   const hit = specCache.get(key);
   if (hit) return hit;
   const spec = buildSpec(look, key);
@@ -147,5 +152,6 @@ function buildSpec(look: Look, key: string): ChibiSpec {
     neck: neckOf(look.neck),
     wrist: wristOf(look.wrist),
     hairpin: hairpinOf(look.hairpin),
+    body: normalizeBody(look.body, gender),
   };
 }

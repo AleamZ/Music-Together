@@ -6,8 +6,10 @@ import {
   DEFAULT_HAIR, characterErrorMessage, hairForBody, fetchCatalog, itemFitsGender, rowHeading, saveCharacter, validateLook,
   type CatalogItem, type CatalogSlot, type LookProblem,
 } from "@/lib/game/character";
+import { switchGender } from "@/lib/game/body";
 import { GENDERS, SKIN_TONES, type Gender, type Look } from "@/lib/game/types";
 import { fetchMyWardrobe } from "@/lib/game/store";
+import BodyShapePanel from "./BodyShapePanel";
 import ItemIcon from "./ItemIcon";
 import { ParchmentModal } from "./Parchment";
 import SpritePreview from "./SpritePreview";
@@ -82,6 +84,7 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
   const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState<"clothes" | "body">("clothes");
 
   useEffect(() => {
     let active = true;
@@ -132,6 +135,8 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
     // is not offered falls back to its default; switching back restores the worn style.
     const from: Gender = initial.gender === "nu" ? "nu" : "nam";
     const next: Look = { ...d, gender: g, hair: hairForBody(initial.hair, from, g) };
+    // The other body type's own sliders (and a beard) go back to defaults; shared proportions are kept.
+    if (d.body && (d.gender ?? "nam") !== g) next.body = switchGender(d.body, g);
     // Take off whatever the new body cannot wear: optional slots empty, required ones fall back to a fitting starter.
     for (const row of ITEM_ROWS) {
       const id = next[row.field];
@@ -152,8 +157,22 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
 
   return (
     <ParchmentModal title={mode === "create" ? "Tạo nhân vật" : "Tủ đồ"} onClose={mode === "edit" ? onClose : undefined} className="sm:max-w-5xl">
+      <div className="mb-2 grid grid-cols-2 gap-2 font-vt text-xl" role="tablist" aria-label="Tủ đồ">
+        {([["clothes", "👕 Trang phục"], ["body", "🧍 Dáng người"]] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`rounded-sm border-2 px-3 py-1 leading-none ${tab === id ? "border-burgundy bg-gold-200 font-bold text-burgundy ring-2 ring-gold" : "border-gold-200 bg-cream text-ink"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="flex shrink-0 flex-col items-center gap-2 self-center sm:self-start">
+        {tab === "clothes" && <div className="flex shrink-0 flex-col items-center gap-2 self-center sm:self-start">
           <div className="rounded-sm border-2 border-gold-200 bg-parchment p-2">
             <SpritePreview look={look} mode="walk" scale={3} />
           </div>
@@ -167,8 +186,10 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
               🛍️ Tiệm thời trang
             </button>
           )}
-        </div>
+        </div>}
         <div className="flex min-w-0 flex-1 flex-col gap-2 font-vt text-lg">
+          {tab === "body" && <BodyShapePanel look={look} onChange={(b) => set("body", b)} />}
+          {tab === "clothes" && <>
           <div>
             <p className="leading-none">Giới tính</p>
             <div className="mt-1 grid grid-cols-2 gap-2" role="group" aria-label="Giới tính">
@@ -220,6 +241,7 @@ export default function CharacterEditor({ mode, initial, token, onSaved, onClose
               </div>
             );
           })}
+          </>}
           {error && <p className="text-base text-burgundy-accent" role="alert">{error}</p>}
           <div className="mt-1 flex flex-wrap justify-end gap-2">
             {mode === "create" ? (

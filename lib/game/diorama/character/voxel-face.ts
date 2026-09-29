@@ -18,9 +18,6 @@ type C = readonly [number, number, number, number];
 const LASH: C = [44, 26, 24, 1];
 const BROW: C = [84, 52, 40, 0.92];
 const BROW_M: C = [60, 38, 30, 0.96];
-const TOP: C = [70, 38, 28, 1];
-const IRIS: C = [150, 88, 46, 1];
-const IRIS2: C = [214, 146, 76, 1];
 const PUPIL: C = [34, 18, 16, 1];
 const HI: C = [255, 255, 255, 1];
 const WHITE: C = [250, 246, 240, 1];
@@ -48,8 +45,22 @@ const ring = (e: Sdf, w: number, keep: (x: number, y: number) => boolean): Sdf =
 const both = (a: Sdf, b: Sdf): Sdf => (x, y) => Math.max(a(x, y), b(x, y));
 const either = (a: Sdf, b: Sdf): Sdf => (x, y) => Math.min(a(x, y), b(x, y));
 
+/** The eyes' look (the Look's body sliders): size (×), extra spacing (face units, ±), iris colours (top, bottom). */
+export interface FaceEyes {
+  size: number; spacing: number; iris: readonly [string, string];
+  /** Boys: a beard drawn in the hair colour (flat shapes like everything else). */
+  beard?: "none" | "stubble" | "goatee" | "full"; beardColor?: string;
+}
+const DEFAULT_EYES: FaceEyes = { size: 1, spacing: 0, iris: ["#965830", "#d6924c"] };
+
+const hexC = (h: string, k = 1): C => {
+  const n = parseInt(h.slice(1, 7), 16) || 0;
+  return [((n >> 16) & 255) * k, ((n >> 8) & 255) * k, (n & 255) * k, 1];
+};
+
 /** RGBA bytes, row 0 = top of the face. */
-export function facePixels(expr: FaceExpr, gender: Gender): Uint8Array {
+export function facePixels(expr: FaceExpr, gender: Gender, eyes: FaceEyes = DEFAULT_EYES): Uint8Array {
+  const IRIS = hexC(eyes.iris[0]), IRIS2 = hexC(eyes.iris[1]), TOP = hexC(eyes.iris[0], 0.5);
   const acc = new Float32Array(FACE_W * FACE_H * 4);                              // premultiplied rgb + alpha
   /** Composites a shape over what is there; `soft` feathers the edge (units). `col` may vary per point. */
   const draw = (sdf: Sdf, col: C | ((x: number, y: number) => C), alpha = 1, soft = 0) => {
@@ -69,9 +80,10 @@ export function facePixels(expr: FaceExpr, gender: Gender): Uint8Array {
     }
   };
   const nu = gender === "nu";
-  const rx = nu ? 0.7 : 0.62, ry = nu ? 0.9 : 0.78, cyE = nu ? 4.6 : 4.75;
+  const es = Math.max(0.8, Math.min(1.2, eyes.size));
+  const rx = (nu ? 0.72 : 0.6) * es, ry = (nu ? 0.94 : 0.74) * es, cyE = nu ? 4.6 : 4.75;
   for (const sd of [-1, 1] as const) {
-    const cx = 4 + sd * 1.72, inw = -sd;                                          // inw: toward the nose
+    const cx = 4 + sd * (1.72 + Math.max(-0.25, Math.min(0.25, eyes.spacing))), inw = -sd;                                          // inw: toward the nose
     // brows
     if (nu) {
       draw(either(seg(cx - inw * 0.62, cyE - ry - 0.26, cx, cyE - ry - 0.46, 0.06), seg(cx, cyE - ry - 0.46, cx + inw * 0.5, cyE - ry - 0.38, 0.06)), BROW);
@@ -107,6 +119,18 @@ export function facePixels(expr: FaceExpr, gender: Gender): Uint8Array {
     }
     // blush under the outer eye
     draw(ellipse(cx - inw * 0.2, cyE + ry + 0.5, nu ? 0.55 : 0.45, nu ? 0.24 : 0.18), BLUSH, nu ? 0.5 : 0.2, 0.18);
+  }
+  // the beard, under the mouth (drawn before it)
+  const bc = eyes.beardColor ? hexC(eyes.beardColor) : LASH;
+  const my0 = nu ? 6.95 : 7.05;
+  if (eyes.beard === "stubble") draw(both(ellipse(4, 7.35, 2.1, 1.15), (_x, y) => 6.6 - y), bc, 0.2, 0.35);
+  else if (eyes.beard === "goatee") {
+    draw(ellipse(4, my0 + 0.72, 0.5, 0.42), bc, 0.95);
+    draw(seg(3.55, my0 - 0.3, 4.45, my0 - 0.3, 0.08), bc, 0.9);
+  } else if (eyes.beard === "full") {
+    draw(both(ring(ellipse(4, 6.4, 3.05, 2.1), 1.0, (_x, y) => y > 6.5), ellipse(4, 6.4, 3.6, 2.6)), bc, 0.95);
+    draw(ellipse(4, my0 + 0.7, 0.62, 0.45), bc, 0.95);
+    draw(seg(3.5, my0 - 0.28, 4.5, my0 - 0.28, 0.1), bc, 0.95);
   }
   // nose: a soft hint
   if (nu) draw(ellipse(4, 6.2, 0.07, 0.05), NOSE, 0.45, 0.06);

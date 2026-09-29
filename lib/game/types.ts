@@ -51,4 +51,7 @@ export interface Look {
   /** v21: the character level and the worn achievement title (0070's characters.pg_level / pg_title; server-written). */
   pgLevel?: number | null;
   pgTitle?: string | null;
+  /** v22: body proportions (0094's characters.body; see lib/game/body.ts): sliders in [-1, 1] and an eye colour; absent
+   *  or null reads as the body type's defaults. Only the 3D chibi uses it. */
+  body?: Partial<import("./body").BodyShape> | null;
 }
