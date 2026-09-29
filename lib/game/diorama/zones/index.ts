@@ -6,6 +6,7 @@ import { hallLayout } from "./hall";
 import { khuNhaLayout } from "./khu_nha";
 import { zoneHeightAt, type ZoneLayout, type ZoneOpts } from "./kit";
 import { marketLayout } from "./market";
+import { outdoorScene } from "./outdoor";
 import { renderZone } from "./render";
 
 // Browser only: which diorama a map gets. The pond keeps its own builder (layout.ts + build.ts); the zones (the hall,
@@ -24,6 +25,8 @@ export interface MapScene {
 }
 
 export function buildMapScene(map: GameMap, opts: ZoneOpts = {}): MapScene {
+  const outdoor = outdoorScene(map, opts);                  // field, Bãi đất, Mỏ đá, Sông Cái (zones/outdoor.ts)
+  if (outdoor) return outdoor;
   const zone = ZONE_LAYOUTS[map.id];
   if (zone) {
     const L = zone(map, opts);

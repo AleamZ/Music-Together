@@ -208,6 +208,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const weatherRef = useRef<RoomWeather | null>(null);
   const weatherFxRef = useRef<WeatherFx>(3);
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
+  const view3dRef = useRef<DioramaView | null>(null);                             // the diorama drawing this world
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
   const housesRef = useRef<ReadonlyArray<HouseDraw>>([]);                           // v19.3
   const newsUnreadRef = useRef(false);
@@ -360,6 +361,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       setPlots: (plots) => {
         plotsRef.current = plots;
         engineRef.current?.setPlots(plots);
+        view3dRef.current?.setPlots(plots);                                        // the field's 3D crops
       },
       setGatherSpots: (spots) => {
         gatherRef.current = spots;
@@ -576,6 +578,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       try {
         view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
         engine.setView3D(view);
+        view.setPlots(plotsRef.current);
+        view3dRef.current = view;
       } catch {
         view = null;
       }
@@ -583,6 +587,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     engine.start();
     return () => {
       if (view) {
+        if (view3dRef.current === view) view3dRef.current = null;
         engine.setView3D(null);
         view.dispose();
       }

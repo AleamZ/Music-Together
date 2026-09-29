@@ -8,6 +8,7 @@ import type { Billboard, CameraMode, Quality } from "@/lib/game/diorama/types";
 import { DioramaView, type DioramaStats } from "@/lib/game/diorama/view";
 import { CHU_TAM_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
 import { DIORAMA_MAPS } from "@/lib/game/diorama/flag";
+import { demoFieldPlots } from "@/lib/game/diorama/zones/field";
 import { getMap } from "@/lib/game/maps/registry";
 import type { MapId } from "@/lib/game/maps/types";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
@@ -20,7 +21,9 @@ import type { WeatherKind } from "@/lib/game/weather/model";
 
 const KINDS: ReadonlyArray<WeatherKind | "none"> = ["none", "clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
 const MODE_LABEL: Record<CameraMode, string> = { follow: "Theo người", overview: "Toàn cảnh", free: "Bay tự do" };
-const MAP_LABEL: Partial<Record<MapId, string>> = { pond: "Ao cá", hall: "Đình làng", market: "Chợ Lớn", khu_nha: "Khu nhà" };
+const MAP_LABEL: Partial<Record<MapId, string>> = { pond: "Ao cá", hall: "Đình làng", market: "Chợ Lớn", khu_nha: "Khu nhà",
+  field: "Đồng lúa", bai_dat: "Bãi đất", mo_da: "Mỏ đá", song_cai: "Sông Cái",
+};
 /** The map in the URL (?map=hall); the pond by default (and on the server). */
 function mapFromUrl(search: string): MapId {
   const m = new URLSearchParams(search).get("map") as MapId | null;
@@ -86,6 +89,7 @@ export default function DioramaPreview() {
       return;
     }
     viewRef.current = view;
+    if (mapId === "field") view.setPlots(demoFieldPlots());                          // the crops at their stages
     // dev page only: a handle for benchmarking from the console (window.__diorama.bench())
     (window as unknown as { __diorama?: unknown }).__diorama = {
       view,

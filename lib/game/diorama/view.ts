@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { PlotDraw } from "@/lib/game/art/crops";
 import type { GameMap } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 import { CharacterLayer } from "./character/layer";
@@ -139,6 +140,11 @@ export class DioramaView implements View3D {
   stats(): DioramaStats {
     const info = this.renderer.info.render;
     return { fps: Math.round(this.monitor.fps()), cpuMs: Math.round(this.cpuMs * 10) / 10, quality: this.quality, calls: info.calls, triangles: info.triangles, mode: this.mode };
+  }
+
+  /** The field's plots (the crops by stage); the other maps ignore them. */
+  setPlots(plots: ReadonlyArray<PlotDraw>): void {
+    this.built.setPlots?.(plots, Date.now());
   }
 
   /** Waits for the GPU to finish the queued frames (benchmarks only). */

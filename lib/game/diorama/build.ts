@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { PlotDraw } from "@/lib/game/art/crops";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { pxLen, pxToWorld } from "./coords";
 import { rng, type Building, type DioramaLayout, type Ground, type Plant } from "./layout";
@@ -32,6 +33,10 @@ export interface Built {
   roofs: Array<{ mats: THREE.MeshLambertMaterial[]; x: number; y: number; w: number; h: number }>;
   /** Windows, neon and bulbs that light up at night (the view sets their emissiveIntensity from the night); zones only. */
   glow?: THREE.MeshLambertMaterial[];
+  /** Outdoor zones (zones/outdoor-kit.ts): their own water/fire/drift animation (animateWater hands over to it). */
+  animate?: (t: number, wind: number) => void;
+  /** The field: the plots' crops from the farm state. */
+  setPlots?: (plots: ReadonlyArray<PlotDraw>, now: number) => void;
   dispose(): void;
 }
 
@@ -454,6 +459,7 @@ export function buildDiorama(L: DioramaLayout): Built {
 
 /** Waves: two travelling sines over the water plane's rest heights (a gentle bob, stronger in wind). */
 export function animateWater(b: Built, t: number, wind: number): void {
+  if (b.animate) { b.animate(t, wind); return; }
   const pos = b.water.geometry.attributes.position as THREE.BufferAttribute;
   const arr = pos.array as Float32Array, base = b.waterBase;
   const amp = 0.035 + Math.min(0.08, wind / 900);
