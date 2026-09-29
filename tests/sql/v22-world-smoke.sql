@@ -280,6 +280,8 @@ begin
   -- not joined
   perform pg_temp.put('3', 'bai_dat', 60, 120);
   update public.world_mg set last_start = null where account_id = pg_temp.a('3');
+  -- (the wolf's charge above may have made account 3 faint — a random roll)
+  update public.vitals set hunger = 90, thirst = 90, fainted_until = null where account_id = pg_temp.a('3');
   e := pg_temp.err(format('select public.combo_start(%L, %L, %s, 1, %L, 60, 120)', pg_temp.t('3'), 'dungeon', run, 'bai_dat'));
   assert e = 'not joined', e;
   raise notice 'combo ok';

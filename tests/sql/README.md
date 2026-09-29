@@ -42,13 +42,15 @@ them the privilege checks prove nothing. Afterwards: `pg_ctl -D $D stop -m fast`
    `anticheat-v2-fight-smoke.sql` (0060; `-v secret=…/fight-secret-cases.json -v kata=…/kata-noise-cases.json`),
    `anticheat-v2-farm-smoke.sql` (0061–0063; `-v harvest=… -v crab=… -v sling=…`),
    `anticheat-v2-part3-smoke.sql` (0064–0067; `-v harvest=…/harvest-cases.json -v crab=…/crab-cases.json`), then
-   `anticheat-guards.sql` again. Running one of them alone: re-apply its migration's successors afterwards.
+   **re-apply 0068 … newest** (later migrations re-create some of their functions), then `anticheat-guards.sql` again.
+   Running one of them alone: re-apply its migration's successors afterwards.
 5. The smokes that re-run one older migration and still pass on the full chain — `faint-ladder-smoke.sql` (0045),
    `fishing-hunger-smoke.sql` (0047), `v18-5-depots-smoke.sql` (0028): they put that migration's bodies back, so
    **re-apply 0056 … newest after each** (that restores everything they touch; step 4's last two smokes pass after
    them). `v18-3-smoke.sql` (0025), `v18-10-smoke.sql` (0033) and `v18-11-smoke.sql` (0032) pass too, but they also put
    back bodies that 0048–0055 re-created (0033's `_in_shade` over 0051's breaks `v20-3`), which only a fresh chain
-   restores: run them last.
+   restores: run them last, in the order `v18-10`, `v18-11`, `v18-3` (0025 brings back the old `vitals_tick(text)`
+   overload, and `v18-10` counts one `vitals_tick`).
 
 Every smoke above is re-runnable on the same cluster.
 
@@ -63,6 +65,12 @@ Every smoke above is re-runnable on the same cluster.
    `v20-2`, `v20-3`, `v20-4` and `anticheat-v2-fight-smoke.sql` replay fixtures generated with its numbers.
    0081 (the attack boxes' heights) re-creates `_fx_moves` once more, over 0079's: re-apply it after 0079 every time
    (0080 is news data only and needs no re-apply); the fight fixtures carry 0081's table.
+8. v22, after step 6 on the same cluster: `v22-world-smoke.sql` (0083), `v22-crafting-smoke.sql` (0084),
+   `v22-pets-smoke.sql` (0085), `v22-explore-smoke.sql` (0086) — each re-applies its own migration with `\i` (the
+   bodies that still answered a seed) — then `v22-fixes-smoke.sql` (0087, re-applies it itself: it re-creates bodies of
+   0072, 0078 and 0083–0086, so it must come after all of them) and `anticheat-guards.sql` once more. **Re-apply 0087
+   after any smoke that re-runs 0072, 0078 or 0083–0086** (the v21 crafting / fishing / fixes smokes, the v22 group
+   smokes). Then the three of step 5 that only a fresh chain undoes.
 
 ## The staged smokes
 
@@ -86,4 +94,5 @@ ledger reasons, shop kinds or function overloads predate later rows and migratio
 - `v21-fixes-smoke.sql` (0078: only finish_cast / finish_net emit 'fish_catch' and score a fishing battle; the locked map on ordinary travel; the leaderboard; the company quest's daily cap, arena membership, the photo log and the quest wipe; the dig's timing flag and the pickaxe at the finish; PvP pet XP caps and the knock; the fishing-battle wipe; boss room / dungeon party checks; stamina-short fights and the hammock; `-v fixtures=…/reel-cases.json`): chain-level, re-runs 0078 with `\i`; run after the v21 group smokes and a re-apply of 0078 (step 6).
 - `v22-world-smoke.sql` (0083: the wild hunt / trap / photo minigames and the boss / dungeon combo strike, replayed from `-v cases=…/world-mg-cases.json`; wild_act / boss_attack / dungeon_attack refuse 'outdated'): chain-level, re-runs 0083 twice with `\i`; run after the full chain — and re-apply 0083 after `v21-world-smoke.sql` / `v21-fixes-smoke.sql` (they put 0075's / 0078's strike bodies back).
 - `v22-crafting-smoke.sql` (0084: the cauldron's heat minigame + potion quality, the anvil's hammer timing ±10 pp, the processor's grain sort bonus; the old brew_potion / upgrade_item / process_collect refuse 'outdated'; `-v craft=…/craft-cases.json`): chain-level, re-runs 0084 with `\i`; run after the full chain — and re-apply 0084 after `v21-crafting-smoke` / `v21-fishing-smoke` / `v21-fixes-smoke` (they put 0072's / 0076's / 0078's old bodies back).
+- `v22-fixes-smoke.sql` (0087, the v22 review fixes: no minigame round leaves the server — the parameter sims = the seed sims on every fixture, `_mg_events` = `-v events=…/mg-events-cases.json`; the honest live client (mg_sync reveals, stamped inputs) for the combo, hunt, trap, brew, anvil, sort, feed, the power press, the row, the treasure dig and the mine; the attacks — perfect inputs known in full but not played live (void, `<x>_late`), a peek at the end, a look-back before a gate (hard `<x>_bad_input` 'early'), a key ahead of the server's clock, a rewritten list; the combo's end tick and steady offsets, the anvil's steady offset, the sort flag at 11, the row home's falling need, one chest per treasure map, the no-press pick; `-v world=… -v craft=… -v care=… -v rows=… -v mine=… -v events=…`): chain-level, re-runs 0087 twice with `\i`; run after the v22 group smokes (step 8).
 - `v22-explore-smoke.sql` (0086: Sông Cái — the map, the boat-only trip, the rowing replay from `-v rows=…/row-cases.json`, river casts; the treasure detector bands and the replayed shovel dig; start_boat_cast / board_boat / dig_treasure refuse 'outdated'): chain-level, re-runs 0086 twice with `\i`; run after the full chain — and re-apply 0086 after `v21-fishing-smoke.sql` (it puts 0076's boat / dig bodies back; that smoke also expects them, so run it before 0086).
