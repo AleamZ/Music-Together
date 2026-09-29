@@ -681,7 +681,7 @@ export class WorldView implements View3D {
     (this.scene.background as THREE.Color).copy(hor);
     this.fog.color.copy(hor);
     this.backdrop?.tint(hor, f.night);
-    const base = this.mode === "follow" ? [80, 520] : this.mode === "overview" ? [180, 980] : [90, 760];
+    const base = this.mode === "follow" ? [120, 760] : this.mode === "overview" ? [260, 1400] : [140, 1100];
     const fk = 1 - (1 - (FOG_K[kind] ?? 1)) * fxK;
     this.fog.near = base[0] * fk;
     this.fog.far = base[1] * Math.max(0.25, fk);

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { rimHills } from "@/lib/game/world/rim";
-import { DOMAIN, fbm, hashAt, heightAt, waterAt } from "@/lib/game/world/terrain";
+import { rimHills, rimWet } from "@/lib/game/world/rim";
+import { DOMAIN, fbm, hashAt, heightAt, RIVER_LEVEL, waterAt } from "@/lib/game/world/terrain";
 import { landColor } from "./terrain-mesh";
 
 // The land past the rendered chunks (view only: beyond DOMAIN, no collision, not on the minimap) — the same seamless
@@ -21,6 +21,8 @@ function outDomain(x: number, y: number): number {
   return Math.max(DOMAIN.x0 - x, x - DOMAIN.x1, DOMAIN.y0 - y, y - DOMAIN.y1, 0);
 }
 
+const RIVER_C = new THREE.Color(0x5f96a8), SEA_C = new THREE.Color(0x3f86b8), wc = new THREE.Color();
+
 function farLand(): THREE.Mesh {
   const x0 = DOMAIN.x0 - REACH, y0 = DOMAIN.y0 - REACH;
   const nx = Math.round((DOMAIN.x1 - DOMAIN.x0 + 2 * REACH) / STEP), ny = Math.round((DOMAIN.y1 - DOMAIN.y0 + 2 * REACH) / STEP);
@@ -30,9 +32,12 @@ function farLand(): THREE.Mesh {
     const x = x0 + i * STEP, y = y0 + j * STEP, k = (j * (nx + 1) + i) * 3;
     // strictly inside DOMAIN the chunks draw the land: sink it out of sight; ON the boundary share their height
     const inside = x > DOMAIN.x0 && x < DOMAIN.x1 && y > DOMAIN.y0 && y < DOMAIN.y1;
-    const h = inside ? heightAt(x, y) - 40 : heightAt(x, y);
+    const w = rimWet(x, y);
+    // the far water is this grid's own surface, blended across the shore vertex by vertex (a smooth coastline, not
+    // the jagged cut of the land through the flat sea plane): blue-grey in the rivers, deep blue out in the estuary
+    const land = heightAt(x, y), h = (inside ? land - 40 : land + (RIVER_LEVEL + 0.06 - land) * Math.min(1, w.wet * 1.3));
     pos.set([x / U, h, y / U], k);
-    landColor(x, y, h, 0.3, c);
+    landColor(x, y, land, 0.3, c).lerp(wc.copy(RIVER_C).lerp(SEA_C, w.sea), Math.min(1, w.wet * 1.3));
     col.set([c.r, c.g, c.b], k);
   }
   const idx: number[] = [];
