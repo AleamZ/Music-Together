@@ -145,17 +145,17 @@ describe("rod wear and nets (v18.2)", () => {
   });
 });
 describe("Bộ câu cá (hotfix 0098)", () => {
-  const kit = item({ id: "fishing_kit", kind: "fishing_kit", price: 10_000, capacity: 100 });
+  const kit = item({ id: "fishing_kit", kind: "fishing_kit", price: 50_000, capacity: 100 });
   it("is owned only once both the bait cap and the crate cap reach its capacity", () => {
     expect(ownsItem(S, kit)).toBe(false);
     expect(ownsItem(withS({ baitCap: 100 }), kit)).toBe(false);
     expect(ownsItem(withS({ fishCap: 101 }), kit)).toBe(false);
     expect(ownsItem(withS({ baitCap: 100, fishCap: 101 }), kit)).toBe(true);
   });
-  it("sells for 10.000 xu once", () => {
+  it("sells for 50.000 xu once", () => {
     expect(maxBuyQty(withS({ coins: 9_999 }), kit)).toBe(0);
-    expect(maxBuyQty(withS({ coins: 10_000 }), kit)).toBe(1);
-    expect(maxBuyQty(withS({ coins: 10_000, baitCap: 100, fishCap: 101 }), kit)).toBe(0);
+    expect(maxBuyQty(withS({ coins: 50_000 }), kit)).toBe(1);
+    expect(maxBuyQty(withS({ coins: 50_000, baitCap: 100, fishCap: 101 }), kit)).toBe(0);
   });
   it("owns the 100-tier box and crate by capacity", () => {
     const s = withS({ baitCap: 100, fishCap: 101 });

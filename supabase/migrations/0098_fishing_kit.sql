@@ -1,9 +1,9 @@
 -- =========================================================
--- 0098_fishing_kit.sql — Bộ câu cá (hotfix): tiệm chú Tư sells a kit for 10.000 xu that grants a 100-bait box
+-- 0098_fishing_kit.sql — Bộ câu cá (hotfix): tiệm chú Tư sells a kit for 50.000 xu that grants a 100-bait box
 -- ("Hộp mồi 100") and a 100-fish crate ("Thùng cá 100"). ADDITIVE (no data drop) and re-runnable. Run after 0089
 -- (0088–0097 are reserved by feat/world-p4 / feat/public-rooms). buy_item is copied verbatim from its newest body
 -- (0034) with only the lines marked "kit" added or changed.
---   A. kind 'fishing_kit'; stock: bait_box_100 / bucket_100 (not sold alone, price null) and fishing_kit (10.000 xu).
+--   A. kind 'fishing_kit'; stock: bait_box_100 / bucket_100 (not sold alone, price null) and fishing_kit (50.000 xu).
 --   B. buy_item: a kit is owned once both caps are ≥ its capacity; buying it pays once and grants both items.
 -- =========================================================
 
@@ -16,7 +16,7 @@ alter table public.shop_items add constraint shop_items_kind_check
 insert into public.shop_items (id, kind, name, price, starter, sort_order, capacity) values
   ('bait_box_100', 'bait_box',    'Hộp mồi 100', null,  false, 20, 100),
   ('bucket_100',   'bucket',      'Thùng cá 100', null, false, 30, 100),
-  ('fishing_kit',  'fishing_kit', 'Bộ câu cá',   10000, false, 10, 100)
+  ('fishing_kit',  'fishing_kit', 'Bộ câu cá',   50000, false, 10, 100)
 on conflict (id) do update set
   kind = excluded.kind, name = excluded.name, price = excluded.price, starter = excluded.starter,
   sort_order = excluded.sort_order, capacity = excluded.capacity;

@@ -1,7 +1,7 @@
--- tests/sql/fishing-kit-smoke.sql — 0098 (Bộ câu cá: Hộp mồi 100 + Thùng cá 100 for 10.000 xu). Run as the superuser on
+-- tests/sql/fishing-kit-smoke.sql — 0098 (Bộ câu cá: Hộp mồi 100 + Thùng cá 100 for 50.000 xu). Run as the superuser on
 -- the throwaway cluster after the full chain, from the repo root. It re-runs 0098 twice with \i. Every check is an ASSERT.
---   1. Stock: the kit sells for 10.000 xu; the box and crate are not sold alone; the kind is allowed.
---   2. buy_item: not enough coins refused; a buy pays 10.000 once, grants both, raises bait_cap / fish_cap to 100 / 101;
+--   1. Stock: the kit sells for 50.000 xu; the box and crate are not sold alone; the kind is allowed.
+--   2. buy_item: not enough coins refused; a buy pays 50.000 once, grants both, raises bait_cap / fish_cap to 100 / 101;
 --      a second buy is 'already owned'; the box and crate alone are 'item not available'.
 \set ON_ERROR_STOP on
 set time zone 'UTC';
@@ -18,7 +18,7 @@ insert into kx select 'a', public._auth_account(v)::text from kx where k = 't';
 -- ---------- 1. Stock ----------
 do $$
 begin
-  assert (select price from public.shop_items where id = 'fishing_kit' and kind = 'fishing_kit' and capacity = 100) = 10000, 'kit price';
+  assert (select price from public.shop_items where id = 'fishing_kit' and kind = 'fishing_kit' and capacity = 100) = 50000, 'kit price';
   assert (select count(*) from public.shop_items where id in ('bait_box_100', 'bucket_100') and price is null and capacity = 100) = 2, 'contents';
   assert (select name from public.shop_items where id = 'bait_box_100') = 'Hộp mồi 100'
      and (select name from public.shop_items where id = 'bucket_100') = 'Thùng cá 100'
@@ -31,14 +31,14 @@ do $$
 declare v_t text := (select v from kx where k = 't'); v_a uuid := (select v from kx where k = 'a')::uuid; s jsonb; c0 integer;
 begin
   perform public._wallet_lock(v_a);
-  update public.wallets set coins = 9999 where account_id = v_a;
+  update public.wallets set coins = 49999 where account_id = v_a;
   begin
     perform public.buy_item(v_t, 'fishing_kit', 1);
     assert false, 'poor buy passed';
   exception when sqlstate '22023' then
     assert sqlerrm = 'not enough coins', sqlerrm;
   end;
-  update public.wallets set coins = 12345 where account_id = v_a;
+  update public.wallets set coins = 52345 where account_id = v_a;
   s := public.buy_item(v_t, 'fishing_kit', 1) -> 'state';
   assert (s->>'coins')::integer = 2345, format('paid %s', s->>'coins');
   assert (s->>'bait_cap')::integer = 100 and (s->>'fish_cap')::integer = 101, format('caps %s %s', s->>'bait_cap', s->>'fish_cap');
