@@ -17,12 +17,25 @@ export interface GameCam {
 export const CAM_PRESETS: Readonly<Record<CamPreset, number>> = { near: 16, mid: 30, far: 54 };
 export const CAM_PRESET_ORDER: readonly CamPreset[] = ["near", "mid", "far"];
 export const CAM_PRESET_LABEL: Readonly<Record<CamPreset, string>> = { near: "Gần", mid: "Vừa", far: "Xa" };
-/** The zoom limits (units): never inside the head, never so far the world thins out. */
-export const CAM_ZOOM = { min: 10, max: 70 } as const;
+/** The zoom limits (units): the wheel / a pinch stay between the near and the far presets. */
+export const CAM_ZOOM = { min: CAM_PRESETS.near, max: CAM_PRESETS.far } as const;
+/** The third person's FIXED angle: yaw 0 = the camera south of the walker looking north (the 2D map's own view);
+ *  the pitch grows with the distance (near = lower, far = more top-down). Dragging never changes either. */
+export const CAM_FIXED_YAW = 0;
+export const CAM_PITCH = { near: 0.55, far: 0.9 } as const;
+/** First person: how far the eyes look down / up (radians). */
+export const FP_PITCH = { min: -1.0, max: 0.9 } as const;
 export const DEFAULT_CAM: GameCam = { view: "third", preset: "mid", distance: CAM_PRESETS.mid };
 export const CAM_STORAGE_KEY = "music-together:cam3d";
 
 const clampDist = (d: number): number => Math.min(CAM_ZOOM.max, Math.max(CAM_ZOOM.min, d));
+
+/** The preset closest to a distance (the HUD label follows the wheel / a pinch). */
+export function nearestPreset(d: number): CamPreset {
+  let best: CamPreset = "mid";
+  for (const p of CAM_PRESET_ORDER) if (Math.abs(CAM_PRESETS[p] - d) < Math.abs(CAM_PRESETS[best] - d)) best = p;
+  return best;
+}
 
 /** Next preset (near → mid → far → near), snapping the distance to it. */
 export function cyclePreset(c: GameCam): GameCam {
@@ -38,13 +51,31 @@ export function pickPreset(c: GameCam, preset: CamPreset): GameCam {
 /** The mouse wheel (deltaY > 0 = away). Ignored in first person. */
 export function zoomBy(c: GameCam, deltaY: number): GameCam {
   if (c.view === "first" || !Number.isFinite(deltaY)) return c;
-  return { ...c, distance: clampDist(c.distance * Math.exp(Math.max(-500, Math.min(500, deltaY)) * 0.001)) };
+  const distance = clampDist(c.distance * Math.exp(Math.max(-500, Math.min(500, deltaY)) * 0.001));
+  return { ...c, distance, preset: nearestPreset(distance) };
 }
 
 /** A pinch: `ratio` = the fingers' new spread / the old (> 1 = spreading = closer). Ignored in first person. */
 export function pinchBy(c: GameCam, ratio: number): GameCam {
   if (c.view === "first" || !(ratio > 0) || !Number.isFinite(ratio)) return c;
-  return { ...c, distance: clampDist(c.distance / ratio) };
+  const distance = clampDist(c.distance / ratio);
+  return { ...c, distance, preset: nearestPreset(distance) };
+}
+
+/** The third person's fixed orbit for a camera (no free yaw / tilt: only the distance changes it). */
+export function thirdPersonOrbit(c: GameCam): { yaw: number; pitch: number; distance: number } {
+  const d = clampDist(c.distance);
+  const t = (d - CAM_ZOOM.min) / (CAM_ZOOM.max - CAM_ZOOM.min);
+  return { yaw: CAM_FIXED_YAW, pitch: CAM_PITCH.near + (CAM_PITCH.far - CAM_PITCH.near) * t, distance: d };
+}
+
+export interface LookState { yaw: number; fpPitch: number }
+
+/** A mouse / finger drag (px). Third person: nothing moves (the angle is fixed). First person: look around, the
+ *  pitch clamped to FP_PITCH. */
+export function dragLook(c: GameCam, s: LookState, dx: number, dy: number): LookState {
+  if (c.view !== "first" || !Number.isFinite(dx) || !Number.isFinite(dy)) return s;
+  return { yaw: s.yaw - dx * 0.005, fpPitch: Math.max(FP_PITCH.min, Math.min(FP_PITCH.max, s.fpPitch - dy * 0.004)) };
 }
 
 export function toggleView(c: GameCam): GameCam {

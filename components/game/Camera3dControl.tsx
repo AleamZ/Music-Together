@@ -14,29 +14,31 @@ export default function Camera3dControl() {
   const cam = useSyncExternalStore(subscribeCam, getCam, serverCam);
   const first = cam.view === "first";
   return (
-    <div className="flex gap-1 font-vt text-base leading-none">
+    <div className="flex gap-1 font-vt text-base leading-none" role="group" aria-label="Góc camera" data-testid="cam3d">
       <button
         type="button"
-        className="pch-btn relative flex items-center gap-1 px-2 py-1 text-sm shadow-xs"
+        className={`pch-btn relative flex min-h-9 items-center gap-1 px-2 py-1 text-sm shadow-xs ${first ? "" : "pch-btn-primary"}`}
         data-hotkey="zoom"
-        onClick={() => setCam(cyclePreset(getCam()))}
-        title="Tầm camera: Gần / Vừa / Xa (Z) — lăn chuột hoặc chụm hai ngón để zoom"
-        aria-label="Đổi tầm camera"
+        aria-pressed={!first}
+        onClick={() => setCam(first ? toggleView(getCam()) : cyclePreset(getCam()))}
+        title="Góc 3 (cố định): Gần / Vừa / Xa (Z) — lăn chuột hoặc chụm hai ngón để zoom"
+        aria-label={`Góc thứ ba, tầm ${CAM_PRESET_LABEL[cam.preset]}`}
       >
-        <span>🎥</span>
-        <span>{first ? "Mắt" : CAM_PRESET_LABEL[cam.preset]}</span>
+        <span aria-hidden>👁</span>
+        <span>Góc 3 · {CAM_PRESET_LABEL[cam.preset]}</span>
         <KeyBadge id="zoom" />
       </button>
       <button
         type="button"
-        className={`pch-btn relative flex items-center gap-1 px-2 py-1 text-sm shadow-xs ${first ? "pch-btn-primary" : ""}`}
+        className={`pch-btn relative flex min-h-9 items-center gap-1 px-2 py-1 text-sm shadow-xs ${first ? "pch-btn-primary" : ""}`}
         data-hotkey="camView"
         aria-pressed={first}
         onClick={() => setCam(toggleView(getCam()))}
-        title={first ? "Về góc nhìn thứ ba (8)" : "Góc nhìn thứ nhất (8)"}
-        aria-label="Đổi góc nhìn thứ nhất / thứ ba"
+        title={first ? "Về góc thứ ba (8)" : "Góc thứ nhất — kéo chuột để nhìn quanh (8)"}
+        aria-label="Góc nhìn thứ nhất"
       >
-        <span>{first ? "👁️" : "🧍"}</span>
+        <span aria-hidden>🎥</span>
+        <span>Góc 1</span>
         <KeyBadge id="camView" />
       </button>
     </div>
