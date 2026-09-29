@@ -37,6 +37,10 @@ function camPresets(): Record<string, { pos: { x: number; y: number; z: number }
   const h = stiltHouses()[3] ?? stiltHouses()[0];
   return {
     overview: { pos: { x: 130, y: 120, z: 230 }, yaw: 0, pitch: -0.75 },
+    backdrop: { pos: { x: 130, y: 180, z: 300 }, yaw: 0, pitch: -0.3 },                 // the world and the ranges past it
+    horizon: { pos: { x: 60, y: 6, z: 118 }, yaw: 0.3, pitch: 0.02 },                  // ground level, looking north
+    ranges: { pos: { x: 250, y: 30, z: 40 }, yaw: -0.8, pitch: 0.05 },                  // the north-east ranges
+    estuary: { pos: { x: 0, y: 60, z: 130 }, yaw: 2.4, pitch: -0.15 },                  // the south-west, out to sea
     caukhi: look(monkey.x, monkey.y, 9, 4),
     bridge: look(road.x, road.y, 11, 5, 1.1),
     market: look(FLOATING_MARKET.x, FLOATING_MARKET.y, 16, 7, 0.3),
