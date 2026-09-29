@@ -13,7 +13,7 @@ export interface RoomView {
   loading: boolean; state: RoomState; onlineIds: string[];
   presence: PresenceEntry[]; setPresenceMode: (m: PresenceMode) => void;
   /** The game map I am on (published with the mode; shared presence budget). */
-  setPresenceMap: (m: PresenceMap, near?: MapId) => void;
+  setPresenceMap: (m: PresenceMap, near?: MapId, cell?: number | null) => void;
   /** My dog (v17 §7.3; published with the mode and the map, in game mode only; shared presence budget). */
   setPresenceDog: (d: PresenceDog | null) => void;
   token: string; accountId: string; username: string; myMemberId: string | null;
@@ -32,9 +32,9 @@ export function useRoom(code: string): RoomView {
     presenceRef.current?.setMode(m);
   }, []);
   const mapRef = useRef<PresenceMap>("hall");
-  const setPresenceMap = useCallback((m: PresenceMap, near?: MapId) => {
+  const setPresenceMap = useCallback((m: PresenceMap, near?: MapId, cell?: number | null) => {
     mapRef.current = m;
-    presenceRef.current?.setMap(m, near);
+    presenceRef.current?.setMap(m, near, cell);
   }, []);
   const dogRef = useRef<PresenceDog | null>(null);
   const setPresenceDog = useCallback((d: PresenceDog | null) => {

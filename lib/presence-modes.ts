@@ -6,12 +6,13 @@ export type PresenceMode = ViewMode;
 /** Where a game-mode member is: a map, or (P2 world mode) "wild" — the world between the zones ("Ngoài đồng"). */
 export type PresenceMap = MapId | "wild";
 /** `w` (P3): 1 = out in the wild — `map` then holds the nearest zone, for older clients that know no "wild". */
-export interface PresenceMeta { name?: unknown; online_at?: unknown; mode?: unknown; map?: unknown; dog?: unknown; w?: unknown }
+export interface PresenceMeta { name?: unknown; online_at?: unknown; mode?: unknown; map?: unknown; dog?: unknown; w?: unknown; c?: unknown }
 /** A member's dog as presence carries it (v17 §7.3): `{n, c}` on the wire. */
 export interface PresenceDog { name: string; coat: DogCoat }
 /** `map`: the game map the member walks on (v14); null in the classic view. `dog` (v17): the dog walking with them,
  *  from the same tab as `map`; null in the classic view or without one (absent in hand-made entries). */
-export interface PresenceEntry { accountId: string; name: string; mode: PresenceMode; map: PresenceMap | null; dog?: PresenceDog | null }
+/** `cell` (P4): a world-mode member's grid cell (lib/game/world/grid.ts) as of their last publish — absent otherwise. */
+export interface PresenceEntry { accountId: string; name: string; mode: PresenceMode; map: PresenceMap | null; dog?: PresenceDog | null; cell?: number }
 
 /** A presence `dog` value: `n` a name of 1–16 characters with no hidden character (the names the server stores), and
  *  `c` a known coat; anything else is no dog. */
@@ -27,6 +28,11 @@ const onlineAt = (m: PresenceMeta): number => (typeof m.online_at === "string" ?
 
 /** Every map id (a new one is a type error until it is listed). */
 const KNOWN_MAPS: Record<PresenceMap, true> = { hall: true, pond: true, field: true, market: true, khu_nha: true, bai_dat: true, ham_ngam: true, mo_da: true, song_cai: true, wild: true };
+
+/** A presence `c` value (P4): a grid cell index 0–27, else nothing. */
+export function presenceCell(v: unknown): { cell?: number } {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 28 ? { cell: v } : {};
+}
 
 /** A presence `map` value; anything unknown (an old client) is the hall. */
 export function presenceMap(v: unknown): PresenceMap {
@@ -47,7 +53,7 @@ export function aggregatePresenceModes(state: Record<string, PresenceMeta[] | un
       continue;
     }
     const latest = games.reduce((a, b) => (onlineAt(b) > onlineAt(a) ? b : a));
-    out.push({ accountId, name, mode: "game", map: latest.w === 1 ? "wild" : presenceMap(latest.map), dog: presenceDog(latest.dog) });
+    out.push({ accountId, name, mode: "game", map: latest.w === 1 ? "wild" : presenceMap(latest.map), dog: presenceDog(latest.dog), ...presenceCell(latest.c) });
   }
   return out.sort((a, b) => (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
 }

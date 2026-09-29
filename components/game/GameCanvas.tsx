@@ -5,10 +5,10 @@ import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/dio
 import { DioramaView } from "@/lib/game/diorama/view";
 import { WorldView } from "@/lib/game/diorama/world/view";
 import { LiveFeed, type LiveHouseIn, type LiveInputs } from "@/lib/game/diorama/world/live-feed";
-import { ZoneChannels } from "@/lib/game/net/world-channels";
+import { GridChannels } from "@/lib/game/net/grid-channels";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap } from "@/lib/game/maps/types";
-import { aoiStep, aoiZones, nearestZone } from "@/lib/game/world/aoi";
+import { cellZones } from "@/lib/game/world/grid";
 import { buildWorld, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { isZone, toWorld, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 import { IS_PROD } from "@/lib/app-mode";
@@ -204,8 +204,8 @@ export interface GameCanvasProps {
   arriveWorld?: Spot | null;
   /** P2 world mode: my feet crossed into another zone (or the wild). */
   onZoneChange?: (zone: ZoneId) => void;
-  /** P2 world mode: the zones whose topics I listen to (mine first). */
-  onAoiChange?: (zones: ZoneId[]) => void;
+  /** World mode: the zones my listened grid cells overlap, the wild included (who may be "here"); P4: my own cell. */
+  onAoiChange?: (zones: ZoneId[], cell?: number) => void;
   /** P2: the world could not start (no WebGL): the shell goes back to the per-map game. */
   onWorldFailed?: () => void;
   /** P3 world mode: I walked up to the shut level gate of map (the shell says "Cần cấp N"). */
@@ -540,9 +540,18 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     let engine: GameEngine;
     // the broadcast: one channel (a map) or my zone + its neighbours (the world); `send` goes to mine
     let channel: { send: (msg: GameMessage) => void; leave: (last?: GameMessage) => void };
-    let zones: ZoneChannels | null = null;
-    let aoiNow: ZoneId[] = [];                                                           // P3: the zones listened to now
+    let grid: GridChannels | null = null;                                                // P4: the AOI grid cells
     let aoiTimer = 0;
+    // P4: step the grid (own cell with hysteresis, the neighbours, the 2D clients' zone topics) — hello to newly joined
+    // cells (a zone topic says hello once it is subscribed: onStatus below)
+    const stepGrid = () => {
+      if (!grid) return;
+      grid.setVisible(engine.walkers());
+      const s = grid.update(engine.localPos(), engine.currentZone());
+      if (s.cellChanged || s.sendZoneChanged) grid.send(engine.snapshot());
+      for (const c of s.added) if (c !== s.cell) grid.send({ t: "hello", id: localId }, c);
+      if (s.cellChanged) propsRef.current.onAoiChange?.(cellZones(grid.wanted()), s.cell);
+    };
     try {
       const art = wmap ? blankArt() : paintMap(map);
       const fontVar = getComputedStyle(document.documentElement).getPropertyValue("--font-vt323").trim();
@@ -572,15 +581,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           propsRef.current.onLiftLost?.();
         },
         onZoneChange: (z) => {
-          // P2: a new zone — listen around it, tell its topic where I am, ask the new neighbours for theirs
-          if (!zones) return;
-          const before = new Set(zones.zones());
-          const next = aoiZones(z, engine.localPos(), aoiNow);
-          aoiNow = next;
-          zones.setZones(next, nearestZone(engine.localPos()));                          // P3: the wild's fallback topic
-          zones.send(engine.snapshot());
-          for (const n of next) if (!before.has(n) && n !== z) zones.send({ t: "hello", id: localId }, n);
-          propsRef.current.onAoiChange?.(next);
+          // P4: a new zone — the grid follows my position (my send zone for the 2D clients follows the zone)
+          if (!grid) return;
+          stepGrid();
           propsRef.current.onZoneChange?.(z);
         },
         onGate: (m) => propsRef.current.onGate?.(m),                                    // P3
@@ -674,46 +677,32 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       }
     };
     if (wmap) {
-      // P2: my zone's topic and its neighbours' (lib/game/world/aoi.ts); zone-local on the wire
-      const zc = new ZoneChannels(roomId, {
+      // P4: the AOI grid (lib/game/world/grid.ts): my cell's topic + its neighbours', world px on the wire; the
+      // zone topic carries a zone-local copy of my movement for the per-map clients
+      const gc = new GridChannels(roomId, {
         onMessage: (msg) => onMessage(msg),
-        onStatus: (z, connected) => {
-          if (z !== engine.currentZone()) {
-            if (connected) zc.send({ t: "hello", id: localId }, z);                     // a neighbour: who is there?
+        onStatus: (key, connected) => {
+          if (typeof key === "string") {
+            // a zone topic (the 2D players there): who is there? and where I am (its zone-local copy)
+            if (!connected) return;
+            gc.send({ t: "hello", id: localId }, key);
+            if (key === gc.zoneOut()) gc.send(engine.snapshot(), key);
             return;
           }
+          if (key !== gc.cell()) return;                                                // a neighbour: hello went out on join
           propsRef.current.onConnectionChange(connected);
           if (!connected) return;
-          zc.send({ t: "hello", id: localId });
-          zc.send(engine.snapshot());
+          gc.send({ t: "hello", id: localId });
+          gc.send(engine.snapshot());
         },
       }, joinChannel);
-      const first = aoiZones(engine.currentZone(), engine.localPos());
-      zc.setZones(first, nearestZone(engine.localPos()));
-      aoiNow = first;
-      zones = zc;
-      // P3: walking the wild, the zones in reach change without a zone change: listen around me every half second
-      aoiTimer = window.setInterval(() => {
-        if (engine.currentZone() !== "wild") return;
-        const pos = engine.localPos(), fb = nearestZone(pos);
-        const next = aoiStep(aoiNow, "wild", pos);
-        if (!next) {
-          if (zc.fallbackZone() !== fb) {
-            zc.setZones(aoiNow, fb);
-            zc.send(engine.snapshot());
-            propsRef.current.onAoiChange?.(aoiNow);                                      // the presence's fallback zone
-          }
-          return;
-        }
-        const before = new Set(aoiNow);
-        aoiNow = next;
-        zc.setZones(next, fb);
-        zc.send(engine.snapshot());
-        for (const n of next) if (!before.has(n)) zc.send({ t: "hello", id: localId }, n);
-        propsRef.current.onAoiChange?.(next);
-      }, 500);
-      channel = { send: (msg) => zc.send(msg), leave: (last) => zc.leave(last) };
-      propsRef.current.onAoiChange?.(first);
+      grid = gc;
+      const first = gc.update(engine.localPos(), engine.currentZone());
+      for (const c of first.added) if (c !== first.cell) gc.send({ t: "hello", id: localId }, c);
+      // the cells change without a zone change: step every quarter second (hysteresis keeps a border quiet)
+      aoiTimer = window.setInterval(() => stepGrid(), 250);
+      channel = { send: (msg) => gc.send(msg), leave: (last) => gc.leave(last) };
+      propsRef.current.onAoiChange?.(cellZones(gc.wanted()), first.cell);
       propsRef.current.onZoneChange?.(engine.currentZone());
     } else {
       channel = joinChannel(roomId, map, {

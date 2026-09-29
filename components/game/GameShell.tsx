@@ -256,9 +256,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const presenceAt = inWorld && zone ? zone : travel.mapId;
   // P3: in the wild, the nearest zone goes along for the older clients (they know no "wild"; realtime.ts setMap)
   const [wildNear, setWildNear] = useState<MapId>("hall");
+  // P4: my grid cell rides along with the next presence publish (a cell change alone publishes nothing)
+  const cellRef = useRef<number | null>(null);
   useEffect(() => {
-    setPresenceMap(presenceAt, presenceAt === "wild" ? wildNear : undefined);
-  }, [presenceAt, wildNear, setPresenceMap]);
+    setPresenceMap(presenceAt, presenceAt === "wild" ? wildNear : undefined, inWorld ? cellRef.current : null);
+  }, [presenceAt, wildNear, inWorld, setPresenceMap]);
   // 0057: where I arrive is a position claim (the server checks each claim against the last one it accepted); P2: walking
   // across the world is not an arrival (the heartbeat below reports it)
   useEffect(() => {
@@ -291,8 +293,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     if (isZone(z)) setTravel((t) => (t.mapId === z ? t : { ...t, mapId: z, arrive: null, walked: true, world: null }));
   }, []);
   const onWorldFailed = useCallback(() => setWorldFailed(true), []);
-  const onAoiChange = useCallback((zs: ZoneId[]) => {
-    setAoi(zs);
+  const onAoiChange = useCallback((zs: ZoneId[], cell?: number) => {
+    if (cell !== undefined) cellRef.current = cell;
+    setAoi((cur) => (cur.length === zs.length && cur.every((z, i) => z === zs[i]) ? cur : zs));
     const p = canvasRef.current?.worldPos();
     if (p) setWildNear(nearestZone(p));
   }, []);
