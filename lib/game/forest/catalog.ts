@@ -49,36 +49,84 @@ export const CHOP_COOLDOWN_S = 1.5;
 export const CHOP_STAMINA = 4;
 
 export type ToolKind = "rod" | "hoe" | "pick" | "pan" | "scale" | "hammer" | "saw" | "gloves" | "bow" | "axe";
-export interface ToolDef { id: string; prof: string; name: string; kind: ToolKind; durability: number; power: number; price: number; starter: boolean }
+export interface ToolDef {
+  id: string; prof: string; name: string; kind: ToolKind; durability: number;
+  /** An axe's strike; a bow's / a pan's tier. */
+  power: number; price: number; starter: boolean;
+  /** tool_repair: xu a missing point. */
+  repairPp: number;
+}
 
-/** 0096 _prof_tools_catalog: a starter ("tập sự") tool per nghề and the axes the stall sells. */
+/** 0097 _prof_tools_catalog (forest-content's bow / pot / axe tiers): a starter ("tập sự") tool per nghề, all sold. */
 export const TOOLS: readonly ToolDef[] = [
-  { id: "can_cau_tap_su", prof: "ngu_dan", name: "Cần câu tập sự", kind: "rod", durability: 60, power: 1, price: 0, starter: true },
-  { id: "cuoc_tap_su", prof: "nong_dan", name: "Cuốc tập sự", kind: "hoe", durability: 60, power: 1, price: 0, starter: true },
-  { id: "cuoc_chim_tap_su", prof: "tho_mo", name: "Cuốc chim tập sự", kind: "pick", durability: 60, power: 1, price: 0, starter: true },
-  { id: "chao_tap_su", prof: "dau_bep", name: "Chảo tập sự", kind: "pan", durability: 60, power: 1, price: 0, starter: true },
-  { id: "can_hang_tap_su", prof: "thuong_nhan", name: "Cân hàng tập sự", kind: "scale", durability: 60, power: 1, price: 0, starter: true },
-  { id: "bua_ren_tap_su", prof: "tho_ren", name: "Búa rèn tập sự", kind: "hammer", durability: 60, power: 1, price: 0, starter: true },
-  { id: "cua_tap_su", prof: "tho_moc", name: "Cưa tập sự", kind: "saw", durability: 60, power: 1, price: 0, starter: true },
-  { id: "gang_tay_tap_su", prof: "vo_si", name: "Găng tay tập sự", kind: "gloves", durability: 60, power: 1, price: 0, starter: true },
-  { id: "cung_tap_su", prof: "tho_san", name: "Cung tập sự", kind: "bow", durability: 60, power: 1, price: 0, starter: true },
-  { id: "riu_tap_su", prof: "tieu_phu", name: "Rìu tập sự", kind: "axe", durability: 60, power: 1, price: 80, starter: true },
-  { id: "riu_sat", prof: "tieu_phu", name: "Rìu sắt", kind: "axe", durability: 120, power: 2, price: 450, starter: false },
-  { id: "riu_thep", prof: "tieu_phu", name: "Rìu thép", kind: "axe", durability: 200, power: 3, price: 1600, starter: false },
-  { id: "riu_tinh_luyen", prof: "tieu_phu", name: "Rìu tinh luyện", kind: "axe", durability: 300, power: 4, price: 4500, starter: false },
+  { id: "can_cau_tap_su", prof: "ngu_dan", name: "Cần câu tập sự", kind: "rod", durability: 60, power: 1, price: 60, starter: true, repairPp: 1 },
+  { id: "cuoc_tap_su", prof: "nong_dan", name: "Cuốc tập sự", kind: "hoe", durability: 60, power: 1, price: 60, starter: true, repairPp: 1 },
+  { id: "cuoc_chim_tap_su", prof: "tho_mo", name: "Cuốc chim tập sự", kind: "pick", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
+  { id: "chao_tap_su", prof: "dau_bep", name: "Chảo tập sự", kind: "pan", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
+  { id: "can_hang_tap_su", prof: "thuong_nhan", name: "Cân hàng tập sự", kind: "scale", durability: 60, power: 1, price: 60, starter: true, repairPp: 1 },
+  { id: "bua_ren_tap_su", prof: "tho_ren", name: "Búa rèn tập sự", kind: "hammer", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
+  { id: "cua_tap_su", prof: "tho_moc", name: "Cưa tập sự", kind: "saw", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
+  { id: "gang_tay_tap_su", prof: "vo_si", name: "Găng tay tập sự", kind: "gloves", durability: 60, power: 1, price: 60, starter: true, repairPp: 1 },
+  { id: "cung_tap_su", prof: "tho_san", name: "Cung tập sự", kind: "bow", durability: 60, power: 1, price: 100, starter: true, repairPp: 1 },
+  { id: "riu_tap_su", prof: "tieu_phu", name: "Rìu tập sự", kind: "axe", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
+  { id: "cung_tre", prof: "tho_san", name: "Cung tre", kind: "bow", durability: 60, power: 1, price: 280, starter: false, repairPp: 2 },
+  { id: "cung_go_tram", prof: "tho_san", name: "Cung gỗ tràm", kind: "bow", durability: 110, power: 2, price: 850, starter: false, repairPp: 3 },
+  { id: "cung_go_cung", prof: "tho_san", name: "Cung gỗ cứng", kind: "bow", durability: 180, power: 3, price: 1800, starter: false, repairPp: 4 },
+  { id: "noi_dat", prof: "dau_bep", name: "Nồi đất", kind: "pan", durability: 70, power: 1, price: 240, starter: false, repairPp: 1 },
+  { id: "chao_gang", prof: "dau_bep", name: "Chảo gang", kind: "pan", durability: 130, power: 2, price: 720, starter: false, repairPp: 2 },
+  { id: "noi_gang", prof: "dau_bep", name: "Nồi gang", kind: "pan", durability: 210, power: 3, price: 1500, starter: false, repairPp: 3 },
+  { id: "riu_sat", prof: "tieu_phu", name: "Rìu sắt", kind: "axe", durability: 80, power: 2, price: 300, starter: false, repairPp: 2 },
+  { id: "riu_thep", prof: "tieu_phu", name: "Rìu thép", kind: "axe", durability: 140, power: 3, price: 900, starter: false, repairPp: 3 },
+  { id: "riu_thep_toi", prof: "tieu_phu", name: "Rìu thép tôi", kind: "axe", durability: 220, power: 4, price: 1900, starter: false, repairPp: 4 },
+  { id: "riu_tinh_luyen", prof: "tieu_phu", name: "Rìu tinh luyện", kind: "axe", durability: 300, power: 4, price: 4500, starter: false, repairPp: 4 },
 ];
 export const toolById = (id: string): ToolDef | null => TOOLS.find((t) => t.id === id) ?? null;
 export const starterOf = (prof: string): ToolDef | null => TOOLS.find((t) => t.prof === prof && t.starter) ?? null;
 
-export type RecipeId = "com_thit_tho" | "com_rau_nam";
+export type RecipeId = "ca_loc_nuong_trui" | "canh_chua_ca_loc" | "ca_ro_kho_tieu" | "bong_sung_xao_toi" | "goi_bong_dien_dien"
+  | "chuot_dong_nuong_sa" | "com_tam_suon" | "lau_mam_ca_linh" | "chao_ga_rung" | "chao_ran_dau_xanh";
 export type CookStep = "slice" | "stir" | "fire";
-export interface Recipe { id: RecipeId; name: string; meat: string | null; meatQty: number; fee: number; steps: CookStep[]; price: number; stamina: number }
+/** A dish's timed buff: an existing player_buffs kind, or 0097's hunt_chance. */
+export type DishBuff = "stamina_regen" | "rare_fish" | "speed" | "strength" | "hunt_chance";
+export interface Recipe {
+  id: RecipeId; name: string; meat: string | null; meatQty: number;
+  /** A fish of the catch (fish_species id) and how many. */
+  fish: string | null; fishQty: number;
+  /** The bought ingredients (xu). */
+  fee: number; steps: CookStep[]; price: number; stamina: number;
+  buff: DishBuff | null; buffValue: number; buffMin: number;
+}
 
-/** 0096 _cook_recipes (the Đầu bếp's only). */
+const R = (id: RecipeId, name: string, meat: string | null, meatQty: number, fish: string | null, fishQty: number, fee: number,
+  steps: CookStep[], price: number, stamina: number, buff: DishBuff | null, buffValue: number, buffMin: number): Recipe =>
+  ({ id, name, meat, meatQty, fish, fishQty, fee, steps, price, stamina, buff, buffValue, buffMin });
+
+/** 0097 _cook_recipes — forest-content's ten Mekong dishes (the Đầu bếp's only; a pan needed). */
 export const RECIPES: readonly Recipe[] = [
-  { id: "com_thit_tho", name: "Cơm thịt thỏ", meat: "thit_tho", meatQty: 1, fee: 20, steps: ["slice", "fire"], price: 140, stamina: 15 },
-  { id: "com_rau_nam", name: "Cơm rau nấm", meat: null, meatQty: 0, fee: 60, steps: ["slice", "stir", "fire"], price: 100, stamina: 12 },
+  R("ca_loc_nuong_trui", "Cá lóc nướng trui", null, 0, "ca_loc", 1, 10, ["fire", "slice", "stir"], 155, 12, null, 0, 0),
+  R("canh_chua_ca_loc", "Canh chua cá lóc", null, 0, "ca_loc", 1, 10, ["slice", "fire", "stir"], 175, 16, "stamina_regen", 20, 10),
+  R("ca_ro_kho_tieu", "Cá rô kho tiêu", null, 0, "ca_ro", 2, 10, ["stir", "fire"], 145, 11, "rare_fish", 5, 12),
+  R("bong_sung_xao_toi", "Bông súng xào tỏi", null, 0, null, 0, 80, ["slice", "fire", "stir"], 115, 9, "speed", 5, 10),
+  R("goi_bong_dien_dien", "Gỏi bông điên điển", null, 0, null, 0, 120, ["slice", "fire", "stir"], 175, 13, "strength", 10, 12),
+  R("chuot_dong_nuong_sa", "Chuột đồng nướng sả", "thit_chuot_dong", 2, null, 0, 10, ["slice", "stir", "fire"], 180, 15, "hunt_chance", 3, 12),
+  R("com_tam_suon", "Cơm tấm sườn", null, 0, null, 0, 120, ["slice", "fire", "stir"], 170, 18, null, 0, 0),
+  R("lau_mam_ca_linh", "Lẩu mắm cá linh", null, 0, "ca_sac", 2, 26, ["slice", "fire", "stir"], 265, 22, "rare_fish", 10, 15),
+  R("chao_ga_rung", "Cháo gà rừng", "thit_ga_rung", 1, null, 0, 13, ["slice", "fire", "stir"], 220, 20, "stamina_regen", 30, 12),
+  R("chao_ran_dau_xanh", "Cháo rắn đậu xanh", "thit_ran_ri_ca", 1, null, 0, 16, ["slice", "fire", "stir"], 245, 21, "hunt_chance", 5, 15),
 ];
+/** forest-content's "cooked" toasts. */
+export const COOKED_TOAST: Readonly<Record<RecipeId, string>> = {
+  ca_loc_nuong_trui: "Cá lóc nướng trui thơm phức, xong rồi!",
+  canh_chua_ca_loc: "Canh chua cá lóc nóng hổi đây!",
+  ca_ro_kho_tieu: "Cá rô kho tiêu đậm đà, xong rồi!",
+  bong_sung_xao_toi: "Bông súng xào tỏi giòn ngon đây!",
+  goi_bong_dien_dien: "Gỏi bông điên điển trộn xong rồi!",
+  chuot_dong_nuong_sa: "Chuột đồng nướng sả thơm lừng!",
+  com_tam_suon: "Cơm tấm sườn nóng hổi đây!",
+  lau_mam_ca_linh: "Lẩu mắm cá linh sôi rồi nghen!",
+  chao_ga_rung: "Cháo gà rừng ấm bụng đây!",
+  chao_ran_dau_xanh: "Cháo rắn đậu xanh chín rồi!",
+};
 export const recipeById = (id: string): Recipe | null => RECIPES.find((r) => r.id === id) ?? null;
 
 export const QUALITY_NAME = ["Hỏng", "Đạt", "Ngon", "Tuyệt phẩm"] as const;
@@ -89,3 +137,16 @@ export const cookPct = (q: number): number => (q === 3 ? 150 : q === 2 ? 125 : q
 /** cook_sell's pay for one dish; cook_eat's stamina. */
 export const dishPrice = (r: Recipe, q: number): number => Math.floor((r.price * cookPct(q)) / 100);
 export const dishStamina = (r: Recipe, q: number): number => (q === 0 ? 0 : Math.floor((r.stamina * cookPct(q)) / 100));
+
+export const DISH_BUFF_TEXT: Readonly<Record<DishBuff, (v: number) => string>> = {
+  stamina_regen: (v) => `hồi thể lực +${v}%`, rare_fish: (v) => `+${v}% cá hiếm`, speed: (v) => `+${v}% tốc độ`,
+  strength: (v) => `bớt ${v}% thể lực khi làm`, hunt_chance: (v) => `+${v} điểm % săn`,
+};
+/** cook_eat's buff minutes (× the quality's %; Hỏng: none). */
+export const dishBuffMin = (r: Recipe, q: number): number => (q === 0 || !r.buff ? 0 : Math.floor((r.buffMin * cookPct(q)) / 100));
+/** tool_repair's price: the tool's price a point × the missing points. */
+export const repairCost = (t: ToolDef, durability: number, max: number): number => t.repairPp * Math.max(0, max - durability);
+/** The fish of the catch the dishes use. */
+export const FISH_NAME: Readonly<Record<string, string>> = { ca_loc: "Cá lóc", ca_ro: "Cá rô đồng", ca_sac: "Cá sặc rằn" };
+/** 0097 Rừng tràm (the 2D map): its px + this = world px (_forest_origin). */
+export const RUNG_TRAM_ORIGIN = { x: 2112, y: 1600 } as const;

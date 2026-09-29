@@ -4,7 +4,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  cookPct, cookQuality, dishPrice, dishStamina, RECIPES, starterOf, TOOLS, TREES, treeKey, treeOf,
+  COOKED_TOAST, cookPct, cookQuality, dishBuffMin, dishPrice, dishStamina, RECIPES, repairCost, RUNG_TRAM_ORIGIN, starterOf, TOOLS,
+  TREES, treeKey, treeOf,
 } from "@/lib/game/forest/catalog";
 import {
   CHOP_WIN, chopBlows, chopHits, cookScore, heatAt, parseStep, stepsToParams, type CookStepEv,
@@ -13,11 +14,16 @@ import { parseForest } from "@/lib/game/forest/rpc";
 import { PROFESSIONS } from "@/lib/game/professions/catalog";
 
 const SQL = readFileSync("supabase/migrations/0096_forest_professions.sql", "utf8").replace(/\r\n/g, "\n");
+/** 0097 re-made some of 0096's functions: the newest body wins. */
+const SQL97 = readFileSync("supabase/migrations/0097_forest_complete.sql", "utf8").replace(/\r\n/g, "\n");
 function body(name: string): string {
-  const at = SQL.indexOf(`function public.${name}(`);
-  if (at < 0) throw new Error(`no ${name}`);
-  const start = SQL.indexOf("$$", at);
-  return SQL.slice(start + 2, SQL.indexOf("$$", start + 2));
+  for (const sql of [SQL97, SQL]) {
+    const at = sql.indexOf(`function public.${name}(`);
+    if (at < 0) continue;
+    const start = sql.indexOf("$$", at);
+    return sql.slice(start + 2, sql.indexOf("$$", start + 2));
+  }
+  throw new Error(`no ${name}`);
 }
 const FIXTURES = "tests/fixtures/forest-cases.json";
 
@@ -29,27 +35,36 @@ describe("0096 tables = lib/game/forest/catalog.ts", () => {
     }))).toEqual(TREES);
     expect(body("_tree_of")).toContain("((p_cx::bigint * 7919 + p_cy::bigint * 104729 + p_k::bigint * 1543) % 1000) < t.upto");
   });
-  it("tools: a starter for every nghề, the axes", () => {
-    const rows = [...body("_prof_tools_catalog").matchAll(/\('(\w+)', '(\w+)', '([^']+)', '(\w+)', (\d+), (\d+), (\d+), (true|false)\)/g)];
+  it("tools: a starter for every nghề, the bow / pot / axe tiers (0097)", () => {
+    const rows = [...body("_prof_tools_catalog").matchAll(/\('(\w+)', '(\w+)', '([^']+)', '(\w+)', (\d+), (\d+), (\d+), (true|false), (\d+)\)/g)];
     expect(rows.map((m) => ({
-      id: m[1], prof: m[2], name: m[3], kind: m[4], durability: +m[5], power: +m[6], price: +m[7], starter: m[8] === "true",
+      id: m[1], prof: m[2], name: m[3], kind: m[4], durability: +m[5], power: +m[6], price: +m[7], starter: m[8] === "true", repairPp: +m[9],
     }))).toEqual(TOOLS);
     for (const p of PROFESSIONS) expect(starterOf(p.id)?.durability).toBe(60);
+    expect(repairCost(TOOLS.find((t) => t.id === "riu_tap_su")!, 30, 60)).toBe(30);
+    expect(repairCost(TOOLS.find((t) => t.id === "riu_thep")!, 100, 140)).toBe(120);
+    expect(body("_forest_origin")).toContain(`select ${RUNG_TRAM_ORIGIN.x}, ${RUNG_TRAM_ORIGIN.y}`);
   });
-  it("recipes and qualities", () => {
-    const rows = [...body("_cook_recipes").matchAll(/\('(\w+)', '([^']+)', (null|'\w+'), (\d+), (\d+), array\[([^\]]*)\], (\d+), (\d+)\)/g)];
+  it("recipes (0097: forest-content's ten dishes) and qualities", () => {
+    const q = (x: string) => (x === "null" ? null : x.replace(/'/g, ""));
+    const rows = [...body("_cook_recipes").matchAll(/\('(\w+)', '([^']+)', (null|'\w+'), (\d+), (null|'\w+'), (\d+), (\d+), array\[([^\]]*)\], (\d+), (\d+), (null|'\w+'), (\d+), (\d+)\)/g)];
     expect(rows.map((m) => ({
-      id: m[1], name: m[2], meat: m[3] === "null" ? null : m[3].replace(/'/g, ""), meatQty: +m[4], fee: +m[5],
-      steps: m[6].split(",").map((x) => x.trim().replace(/'/g, "")), price: +m[7], stamina: +m[8],
+      id: m[1], name: m[2], meat: q(m[3]), meatQty: +m[4], fish: q(m[5]), fishQty: +m[6], fee: +m[7],
+      steps: m[8].split(",").map((x) => x.trim().replace(/'/g, "")), price: +m[9], stamina: +m[10],
+      buff: q(m[11]), buffValue: +m[12], buffMin: +m[13],
     }))).toEqual(RECIPES);
     expect(body("_cook_quality")).toContain("when p_score >= 90 then 3 when p_score >= 70 then 2 when p_score >= 40 then 1 else 0");
     expect(body("_cook_pct")).toContain("when 3 then 150 when 2 then 125 when 1 then 100 else 20");
     expect([0, 39, 40, 69, 70, 89, 90, 100].map(cookQuality)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
     expect([0, 1, 2, 3].map(cookPct)).toEqual([20, 100, 125, 150]);
-    const r = RECIPES[0];
-    expect(dishPrice(r, 3)).toBe(210);
+    const r = RECIPES.find((x) => x.id === "chao_ga_rung")!;
+    expect(dishPrice(r, 3)).toBe(330);
     expect(dishStamina(r, 0)).toBe(0);
-    expect(dishStamina(r, 2)).toBe(18);
+    expect(dishStamina(r, 2)).toBe(25);
+    const snake = RECIPES.find((x) => x.id === "chao_ran_dau_xanh")!;
+    expect(dishBuffMin(snake, 3)).toBe(22);
+    expect(dishBuffMin(snake, 0)).toBe(0);
+    for (const x of RECIPES) expect(COOKED_TOAST[x.id]).toBeTruthy();
   });
   it("the xp rules and the Thợ săn / Tiều phu nodes are seeded", () => {
     expect(SQL).toContain("('wild_hunt', '', 'tho_san', 10)");

@@ -8,6 +8,8 @@ export interface ForestState {
   tools: Array<{ item: string; durability: number; max: number }>;
   dishes: Array<{ dish: string; quality: number; qty: number }>;
   meat: Record<string, number>;
+  /** 0097: the catch by fish species (the kitchen's fish). */
+  fish: Record<string, number>;
   main: string | null;
   /** Felled trees until they respawn (server ms). */
   felled: Array<{ tree: string; respawnMs: number }>;
@@ -22,12 +24,15 @@ export function parseForest(raw: unknown): ForestState {
   const o = obj(raw);
   const meat: Record<string, number> = {};
   for (const [k, v] of Object.entries(obj(o.meat))) if (typeof v === "number") meat[k] = v;
+  const fish: Record<string, number> = {};
+  for (const [k, v] of Object.entries(obj(o.fish))) if (typeof v === "number") fish[k] = v;
   return {
     wood: arr(o.wood).flatMap((w) => (typeof w.item === "string" ? [{ item: w.item, qty: num(w.qty), half: num(w.half) }] : [])),
     logsToday: num(o.logs_today),
     tools: arr(o.tools).flatMap((t) => (typeof t.item === "string" ? [{ item: t.item, durability: num(t.durability), max: num(t.max, 1) }] : [])),
     dishes: arr(o.dishes).flatMap((d) => (typeof d.dish === "string" ? [{ dish: d.dish, quality: num(d.quality), qty: num(d.qty) }] : [])),
     meat,
+    fish,
     main: typeof o.main === "string" ? o.main : null,
     felled: arr(o.felled).flatMap((f) => (typeof f.tree === "string" ? [{ tree: f.tree, respawnMs: num(f.respawn_ms) }] : [])),
     serverNowMs: num(o.server_now_ms, Date.now()),
@@ -76,6 +81,11 @@ export const woodSell = async (token: string, item: string, qty: number) => {
   const o = await call("wood_sell", { p_session_token: token, p_item: item, p_qty: qty });
   return { earned: num(o.earned), forest: parseForest(o.forest) };
 };
+/** 0097: repair a tool at the stall (its price a point × the missing points). */
+export const toolRepair = async (token: string, item: string) => {
+  const o = await call("tool_repair", { p_session_token: token, p_item: item });
+  return { cost: num(o.cost), forest: parseForest(o.forest) };
+};
 export const toolBuy = async (token: string, item: string) =>
   parseForest((await call("tool_buy", { p_session_token: token, p_item: item })).forest);
 
@@ -107,9 +117,12 @@ export const cookEat = async (token: string, dish: string, quality: number) => {
 /** A server refusal in words. */
 export function forestErrorText(e: unknown): string {
   const m = e instanceof Error ? e.message : typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : String(e);
-  if (m.includes("not in forest")) return "Phải ở trong rừng tràm mới làm được việc này.";
-  if (m.includes("no axe")) return "Bạn chưa có rìu (hoặc rìu đã mòn) — mua ở Sạp thợ săn.";
-  if (m.includes("felled")) return "Cây này vừa bị đốn, chờ nó mọc lại nhé.";
+  if (m.includes("not in forest")) return "Muốn săn thì vô rừng tràm nha!";
+  if (m.includes("no bow")) return "Cần có cung mới đi săn được nghen!";
+  if (m.includes("no pan")) return "Cần có nồi hoặc chảo mới nấu được nghen!";
+  if (m.includes("nothing to repair")) return "Đồ còn nguyên, chưa cần sửa.";
+  if (m.includes("no axe")) return "Rìu hư rồi, đem đi sửa nha!";
+  if (m.includes("felled")) return "Cây mới đốn, chờ mọc lại nghen!";
   if (m.includes("not a chef")) return "Chỉ Đầu bếp mới nấu được — chọn nghề Đầu bếp (phím 3).";
   if (m.includes("no ingredients")) return "Thiếu nguyên liệu.";
   if (m.includes("too tired")) return "Hết thể lực — nghỉ một lát đã.";

@@ -432,16 +432,23 @@ function darker(hex: number, k: number): number {
   return c.setRGB(Math.min(1, c.r), Math.min(1, c.g), Math.min(1, c.b)).getHex();
 }
 
-const WILD: Record<Exclude<WildSpeciesId, "bird" | "firefly">, [QuadSpec, number]> = {
+const WILD: Record<Exclude<WildSpeciesId, "bird" | "firefly" | "ga_rung" | "co_trang">, [QuadSpec, number]> = {
   rabbit: [{ body: [0.36, 0.34, 0.46], color: 0xc2ab8e, belly: 0xf1e9dc, head: 0.18, mask: 0xf1e9dc, ears: "long", earInner: 0xf0b8b8, leg: 0.08, legW: 0.1, paw: 0xf1e9dc, tail: "puff", tailColor: 0xffffff, hop: true, nose: 0xe08a8a, eye: 1.1 }, 1],
   deer: [{ body: [0.44, 0.44, 0.84], color: 0xb87c46, belly: 0xf0dcbc, head: 0.19, neck: 0.36, mask: 0xf0dcbc, snout: 0.1, snoutColor: 0xd9b48a, nose: 0x3a2418, ears: "tall", earInner: 0xf0d0b0, leg: 0.62, legW: 0.1, paw: 0x3a2a1a, tail: "stub", tailColor: 0xffffff, antlers: true, spots: 0xfbf2e0 }, 1],
   fox: [{ body: [0.32, 0.3, 0.6], color: 0xe07a32, belly: 0xfbeee0, head: 0.2, mask: 0xfbeee0, snout: 0.13, snoutColor: 0xfbeee0, ears: "point", earColor: 0xe07a32, earInner: 0x3a2418, leg: 0.24, legW: 0.09, legColor: 0x3a2418, tail: "bushy", tailTip: 0xffffff, eye: 1.05 }, 1],
   wolf: [{ body: [0.42, 0.42, 0.84], color: 0x7d808c, belly: 0xd8d8de, head: 0.24, neck: 0.08, mask: 0xd8d8de, snout: 0.18, snoutColor: 0xc8c8d0, ears: "point", earInner: 0x4a4c56, leg: 0.4, legW: 0.12, paw: 0x5e6170, tail: "bushy", tailColor: 0x6e717c, tailTip: 0xd8d8de, mane: 0x9a9daa }, 1],
   bear: [{ body: [0.82, 0.76, 1.1], color: 0x6a4428, belly: 0x8a6040, head: 0.36, mask: 0xc8a57c, snout: 0.12, snoutColor: 0xc8a57c, ears: "round", earInner: 0x8a6040, leg: 0.34, legW: 0.26, paw: 0x4a2e1a, tail: "stub", eye: 0.9 }, 1],
+  // 0097 (forest-content): the rừng tràm's own
+  chuot_dong: [{ body: [0.26, 0.24, 0.42], color: 0x8a6a4a, belly: 0xd8c4a8, head: 0.14, mask: 0xd8c4a8, ears: "round", earInner: 0xe0a8a0, leg: 0.06, legW: 0.07, tail: "thin", nose: 0xe08a8a, eye: 1.1 }, 0.9],
+  ran_ri_ca: [{ body: [0.16, 0.14, 1.2], color: 0x4a5a2a, belly: 0xc8c090, stripes: 0x2e3a1a, head: 0.12, snout: 0.08, snoutColor: 0x4a5a2a, leg: 0.02, legW: 0.02, legColor: 0x4a5a2a, tail: "thin", eye: 0.8 }, 1],
+  cay_huong: [{ body: [0.3, 0.3, 0.62], color: 0x8a7a5a, belly: 0xd8ccb0, stripes: 0x3a3020, head: 0.17, mask: 0xf0e8d8, snout: 0.11, snoutColor: 0x3a3020, ears: "round", earInner: 0x3a3020, leg: 0.16, legW: 0.08, legColor: 0x2a2418, tail: "thin", tailColor: 0x3a3020, eye: 1.05 }, 1],
+  rua_hop_lung_den: [{ body: [0.46, 0.26, 0.56], color: 0x2a2a22, back: 0x3a3428, belly: 0xc8b070, head: 0.11, headColor: 0x8a7a4a, leg: 0.06, legW: 0.1, legColor: 0x8a7a4a, tail: "stub", eye: 0.8 }, 1],
 };
 
 export function wildAnimal(mats: ModelMats, sp: WildSpeciesId): Creature {
   if (sp === "bird") return bird(mats, { color: 0x9a7452, wing: 0x6e4c2e, belly: 0xe8d4b4, head: 0x8a6446, beak: 0xf0a030 }, 1);
+  if (sp === "ga_rung") return bird(mats, { color: 0xb8402a, wing: 0x3a4a2a, belly: 0x5a3a20, head: 0xd84a2a, beak: 0xe0c070, crest: 0xe02a2a, tail: 0x2a4a3a }, 1.3);   // 0097
+  if (sp === "co_trang") return bird(mats, { color: 0xf4f2ea, wing: 0xe8e6de, belly: 0xffffff, head: 0xf8f6ee, beak: 0xe0b030 }, 1.5);   // 0097
   if (sp === "firefly") {
     const root = new THREE.Group(), body = new THREE.Group();
     root.add(body);

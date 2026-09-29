@@ -8,21 +8,26 @@ import {
 import { effects, kindOf } from "@/lib/game/weather/model";
 
 const SQL = readFileSync("supabase/migrations/0075_world_bosses.sql", "utf8");
+/** 0097 re-made _wild_species / _wild_items (the forest's animals and meats): the newest body wins. */
+const SQL97 = readFileSync("supabase/migrations/0097_forest_complete.sql", "utf8");
 /** The body of a function (up to its closing $$). */
 function body(name: string): string {
-  const at = SQL.indexOf(`function public.${name}(`);
-  if (at < 0) throw new Error(`no ${name}`);
-  const start = SQL.indexOf("$$", at);
-  return SQL.slice(start + 2, SQL.indexOf("$$", start + 2));
+  for (const sql of [SQL97, SQL]) {
+    const at = sql.indexOf(`function public.${name}(`);
+    if (at < 0) continue;
+    const start = sql.indexOf("$$", at);
+    return sql.slice(start + 2, sql.indexOf("$$", start + 2));
+  }
+  throw new Error(`no ${name}`);
 }
 const all = (re: RegExp, s: string) => [...s.matchAll(re)];
 
 describe("0075 tables = model", () => {
   it("wild species", () => {
-    const rows = all(/\('(\w+)',\s*'(\w+)',\s*array\[([^\]]*)\],\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*'(\w+)',\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/g, body("_wild_species"));
+    const rows = all(/\('(\w+)',\s*'(\w+)',\s*array\[([^\]]*)\],\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(null|'\w+'),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/g, body("_wild_species"));
     expect(rows.map((m) => ({
       id: m[1], active: m[2], maps: m[3].split(",").map((x) => x.trim().replace(/'/g, "")), weight: +m[4], hunt: +m[5], trap: +m[6],
-      danger: +m[7], drop: m[8], dropMin: +m[9], dropMax: +m[10], radius: +m[11], xp: +m[12],
+      danger: +m[7], drop: m[8] === "null" ? null : m[8].replace(/'/g, ""), dropMin: +m[9], dropMax: +m[10], radius: +m[11], xp: +m[12],
     }))).toEqual(WILD_SPECIES.map((sp) => Object.fromEntries(Object.entries(sp).filter(([k]) => k !== "name"))));
   });
   it("items and prices", () => {

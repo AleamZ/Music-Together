@@ -137,7 +137,7 @@ export const SKILL_NODES: readonly SkillNode[] = [
   { id: "l_deep", prof: "tieu_phu", name: "Người rừng sâu", perk: "wood_sell_pct", value: 10, cost: 3, req: "l_gather" },
 ];
 
-export type BuffKey = "speed" | "rare_fish" | "strength" | "stamina_regen" | "luck" | "miner";
+export type BuffKey = "speed" | "rare_fish" | "strength" | "stamina_regen" | "luck" | "miner" | "hunt_chance";
 
 export const BUFF_TEXT: Readonly<Record<BuffKey, { icon: string; name: string; unit: string }>> = {
   speed: { icon: "💨", name: "Nhanh nhẹn", unit: "% tốc độ đi" },
@@ -146,6 +146,7 @@ export const BUFF_TEXT: Readonly<Record<BuffKey, { icon: string; name: string; u
   stamina_regen: { icon: "🔋", name: "Sung sức", unit: "% hồi thể lực" },
   luck: { icon: "✨", name: "May mắn (thuốc)", unit: " bậc" },
   miner: { icon: "⛏️", name: "Thợ mỏ (thuốc)", unit: " quặng" },
+  hunt_chance: { icon: "🏹", name: "Tay săn (món rừng)", unit: " điểm % săn" },   // 0097
 };
 
 /** meal_catalog id → its timed buffs (0077 meal_buffs). */

@@ -4,14 +4,16 @@
 import type { MapId } from "../maps/types";
 import type { Vec } from "../types";
 
-export type WildSpeciesId = "rabbit" | "bird" | "deer" | "fox" | "wolf" | "bear" | "firefly";
+export type WildSpeciesId = "rabbit" | "bird" | "deer" | "fox" | "wolf" | "bear" | "firefly"
+  // 0097 (forest-content): the rừng tràm's own — three for the pot, three for the album only (protected)
+  | "chuot_dong" | "ga_rung" | "ran_ri_ca" | "cay_huong" | "co_trang" | "rua_hop_lung_den";
 export type WildAction = "hunt" | "trap" | "photo";
 
 export interface WildSpecies {
   id: WildSpeciesId;
   name: string;
   active: "day" | "night" | "any";
-  maps: MapId[];
+  maps: Array<MapId | "wild">;
   weight: number;
   /** % a hunt succeeds (0: cannot). */
   hunt: number;
@@ -19,7 +21,8 @@ export interface WildSpecies {
   trap: number;
   /** % a failed hunt at night faints you (> 0 also knocks you back). */
   danger: number;
-  drop: WildItemId;
+  /** null: photo only. */
+  drop: WildItemId | null;
   dropMin: number;
   dropMax: number;
   radius: number;
@@ -34,9 +37,18 @@ export const WILD_SPECIES: readonly WildSpecies[] = [
   { id: "wolf", name: "Sói xám", active: "night", maps: ["field", "bai_dat"], weight: 14, hunt: 40, trap: 0, danger: 10, drop: "da_soi", dropMin: 1, dropMax: 1, radius: 55, xp: 16 },
   { id: "bear", name: "Gấu đen", active: "night", maps: ["bai_dat"], weight: 6, hunt: 25, trap: 0, danger: 20, drop: "vuot_gau", dropMin: 1, dropMax: 2, radius: 35, xp: 24 },
   { id: "firefly", name: "Đom đóm", active: "night", maps: ["pond", "field"], weight: 22, hunt: 0, trap: 90, danger: 0, drop: "dom_dom", dropMin: 1, dropMax: 3, radius: 30, xp: 4 },
+  { id: "chuot_dong", name: "Chuột đồng", active: "any", maps: ["wild"], weight: 26, hunt: 85, trap: 80, danger: 0, drop: "thit_chuot_dong", dropMin: 1, dropMax: 2, radius: 35, xp: 5 },
+  { id: "ga_rung", name: "Gà rừng", active: "day", maps: ["wild"], weight: 14, hunt: 80, trap: 60, danger: 0, drop: "thit_ga_rung", dropMin: 1, dropMax: 2, radius: 50, xp: 12 },
+  { id: "ran_ri_ca", name: "Rắn ri cá", active: "any", maps: ["wild"], weight: 10, hunt: 75, trap: 0, danger: 0, drop: "thit_ran_ri_ca", dropMin: 1, dropMax: 1, radius: 30, xp: 14 },
+  { id: "cay_huong", name: "Cầy hương", active: "night", maps: ["wild"], weight: 8, hunt: 0, trap: 0, danger: 0, drop: null, dropMin: 0, dropMax: 0, radius: 45, xp: 8 },
+  { id: "co_trang", name: "Cò trắng", active: "day", maps: ["wild"], weight: 12, hunt: 0, trap: 0, danger: 0, drop: null, dropMin: 0, dropMax: 0, radius: 60, xp: 6 },
+  { id: "rua_hop_lung_den", name: "Rùa hộp lưng đen", active: "any", maps: ["wild"], weight: 3, hunt: 0, trap: 0, danger: 0, drop: null, dropMin: 0, dropMax: 0, radius: 15, xp: 20 },
 ];
+/** 0097: an animal only the camera may take (protected). */
+export const photoOnly = (sp: WildSpecies): boolean => sp.hunt === 0 && sp.trap === 0;
 
-export type WildItemId = "thit_tho" | "long_vu" | "sung_huou" | "da_cao" | "da_soi" | "vuot_gau" | "dom_dom";
+export type WildItemId = "thit_tho" | "long_vu" | "sung_huou" | "da_cao" | "da_soi" | "vuot_gau" | "dom_dom"
+  | "thit_chuot_dong" | "thit_ga_rung" | "thit_ran_ri_ca";
 export const WILD_ITEMS: Readonly<Record<WildItemId, { name: string; icon: string; price: number }>> = {
   thit_tho: { name: "Thịt thỏ", icon: "🍖", price: 25 },
   long_vu: { name: "Lông vũ", icon: "🪶", price: 12 },
@@ -45,6 +57,9 @@ export const WILD_ITEMS: Readonly<Record<WildItemId, { name: string; icon: strin
   da_soi: { name: "Da sói", icon: "🐺", price: 120 },
   vuot_gau: { name: "Vuốt gấu", icon: "🐾", price: 220 },
   dom_dom: { name: "Hũ đom đóm", icon: "✨", price: 15 },
+  thit_chuot_dong: { name: "Thịt chuột đồng", icon: "🍖", price: 35 },   // 0097
+  thit_ga_rung: { name: "Thịt gà rừng", icon: "🍗", price: 85 },
+  thit_ran_ri_ca: { name: "Thịt rắn ri cá", icon: "🥩", price: 100 },
 };
 export const isWildItem = (v: unknown): v is WildItemId => typeof v === "string" && Object.hasOwn(WILD_ITEMS, v);
 /** The night market pays 30 % more (integer division as in the SQL). */
@@ -56,7 +71,8 @@ export const WILD_AREAS: ReadonlyArray<{ map: MapId; x: number; y: number; w: nu
   { map: "pond", x: 500, y: 60, w: 110, h: 280 }, { map: "pond", x: 20, y: 60, w: 70, h: 280 },
   { map: "bai_dat", x: 100, y: 215, w: 600, h: 30 }, { map: "bai_dat", x: 700, y: 60, w: 40, h: 300 },
 ];
-export const WILD_CAP: Readonly<Partial<Record<MapId, number>>> = { field: 6, pond: 4, bai_dat: 5 };
+/** 0096/0097 _wild_cap: the animals live in the rừng tràm only (the wild; Rừng tràm, the 2D window, shares them). */
+export const WILD_CAP: Readonly<Record<string, number>> = { wild: 24, rung_tram: 24 };
 
 export const speciesOf = (id: string): WildSpecies | null => WILD_SPECIES.find((s) => s.id === id) ?? null;
 

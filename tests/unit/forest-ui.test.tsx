@@ -46,9 +46,9 @@ describe("the overlays", () => {
   });
 
   it("the cooking overlay names the dish and its steps", () => {
-    render(<CookGame view={{ recipe: "com_rau_nam", steps: ["slice", "stir", "fire"], phase: "playing", message: "", live: localLive({}) }}
+    render(<CookGame view={{ recipe: "com_tam_suon", steps: ["slice", "fire", "stir"], phase: "playing", message: "", live: localLive({}) }}
       onEnd={vi.fn()} onClose={vi.fn()} />);
-    expect(screen.getByText(/Cơm rau nấm/)).toBeTruthy();
+    expect(screen.getByText(/Cơm tấm sườn/)).toBeTruthy();
     expect(screen.getByText("Bước 1/3")).toBeTruthy();
   });
 });

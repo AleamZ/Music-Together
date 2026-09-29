@@ -42,3 +42,14 @@ export function nearestTree(x: number, y: number, reach = CHOP_REACH): NearTree 
   }
   return best;
 }
+
+/** 0097: the world px of felled trees ("cx:cy:k" keys), for the 3D Forest's stumps. */
+export function felledPoints(keys: readonly string[]): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = [];
+  for (const key of keys) {
+    const [cx, cy, k] = key.split(":").map(Number);
+    const t = cellTrees(cx, cy)[k];
+    if (t) out.push({ x: t.x, y: t.y });
+  }
+  return out;
+}

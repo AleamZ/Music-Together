@@ -189,7 +189,8 @@ export const snowStop = (token: string, roomId: string) => call("snow_event_stop
 
 const TEXTS: Record<string, string> = {
   "too far": "Còn xa quá — lại gần hơn nhé.",
-  "not in forest": "Thú hoang chỉ sống trong rừng tràm — vào rừng mà săn nhé.",   // 0096
+  "not in forest": "Muốn săn thì vô rừng tràm nha!",   // 0096 (0097: forest-content copy)
+  "no bow": "Cần có cung mới đi săn được nghen!",   // 0097
   gone: "Con vật đã chạy mất.",
   cooldown: "Chậm lại một nhịp…",
   cannot: "Không làm vậy với con này được.",

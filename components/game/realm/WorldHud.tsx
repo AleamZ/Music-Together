@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import {
-  ACT_RANGE, GATE, MAX_COMBO, STALL, beat, inArena, near, speciesOf, type WildAction,
+  ACT_RANGE, GATE, MAX_COMBO, STALL, beat, inArena, near, photoOnly, speciesOf, type WildAction,
 } from "@/lib/game/realm/model";
 import type { MapId } from "@/lib/game/maps/types";
 import type { WildAnimal } from "@/lib/game/realm/rpc";
@@ -118,7 +118,7 @@ export default function WorldHud(props: {
 
       {!blocked && !gameOpen && target && sp && !fight && (
         <div className="pch pointer-events-auto absolute bottom-36 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 px-2 py-1 font-vt text-base">
-          <span className="mr-1">{sp.name}{danger ? " ⚠️ nguy hiểm" : ""}</span>
+          <span className="mr-1">{sp.name}{danger ? " ⚠️ nguy hiểm" : ""}{photoOnly(sp) ? " · 📷 Chỉ chụp ảnh" : ""}</span>
           {sp.hunt > 0 && actBtn("hunt", "🏹 Săn", target.d <= ACT_RANGE.hunt)}
           {sp.trap > 0 && actBtn("trap", "🪤 Bẫy", target.d <= ACT_RANGE.trap)}
           {actBtn("photo", target.a.photographed ? "📷 Đã chụp" : "📷 Chụp", !target.a.photographed)}
