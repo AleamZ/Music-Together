@@ -11,6 +11,7 @@ import type { MapId } from "@/lib/game/maps/types";
 import type { WildAnimal } from "@/lib/game/realm/rpc";
 import { animalAt, useWorld } from "./useWorld";
 import WorldPanel, { type WorldTab } from "./WorldPanel";
+import KeyBadge from "../KeyBadge";
 
 const clock = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -100,8 +101,8 @@ export default function WorldHud(props: {
           </button>
         )}
         <div className="pointer-events-auto flex gap-1">
-          <button type="button" className="pch-btn px-2 py-0.5 text-base" title="Thế giới: săn bắt, tổ đội, boss, hầm ngục" onClick={() => open("world")}>
-            {s?.night ? "🌙" : "🌍"}<span className="sr-only"> Thế giới</span>
+          <button type="button" className="pch-btn relative px-2 py-0.5 text-base" title="Thế giới: săn bắt, tổ đội, boss, hầm ngục (6)" data-hotkey="world" onClick={() => open("world")}>
+            {s?.night ? "🌙" : "🌍"}<span className="sr-only"> Thế giới</span><KeyBadge id="world" />
             {(s?.invites.length ?? 0) > 0 && <span className="ml-0.5 text-red-700">✉️</span>}
           </button>
           {atStall && <button type="button" className="pch-btn px-2 py-0.5 text-base" onClick={() => open("wild")}>{s?.night ? "🏮 Chợ đêm" : "🏹 Sạp thợ săn"}</button>}

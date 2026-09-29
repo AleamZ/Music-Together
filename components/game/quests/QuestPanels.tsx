@@ -7,6 +7,7 @@ import ArenaTeamModal from "./ArenaTeamModal";
 import LoginCalendarModal from "./LoginCalendarModal";
 import PhotoMode from "./PhotoMode";
 import QuestLogModal from "./QuestLogModal";
+import KeyBadge from "../KeyBadge";
 
 /** The v21 quests group's panels in GameShell's `panel` slot. */
 export type QuestPanel = "quests" | "login_calendar" | "album" | "photo" | "arena_team";
@@ -25,11 +26,11 @@ export function QuestHudButtons({ token, canPopup, onOpen }: {
   }, [token, canPopup, onOpen]);
   return (
     <>
-      <button type="button" className="pch-btn relative" title="Nhiệm vụ" data-testid="quests-hud" onClick={() => onOpen("quests")}>
-        📜<span className="sr-only"> Nhiệm vụ</span>
+      <button type="button" className="pch-btn relative" title="Nhiệm vụ (2)" data-testid="quests-hud" data-hotkey="quests" onClick={() => onOpen("quests")}>
+        📜<span className="sr-only"> Nhiệm vụ</span><KeyBadge id="quests" />
       </button>
-      <button type="button" className="pch-btn relative" title="Chụp ảnh" data-testid="photo-hud" onClick={() => onOpen("photo")}>
-        📷<span className="sr-only"> Chụp ảnh</span>
+      <button type="button" className="pch-btn relative" title="Chụp ảnh (7)" data-testid="photo-hud" data-hotkey="photo" onClick={() => onOpen("photo")}>
+        📷<span className="sr-only"> Chụp ảnh</span><KeyBadge id="photo" />
       </button>
     </>
   );

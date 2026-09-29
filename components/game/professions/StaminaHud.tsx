@@ -2,6 +2,7 @@
 
 import { BUFF_TEXT, PROFESSIONS } from "@/lib/game/professions/catalog";
 import type { BuffRow, ProfState, StaminaState } from "@/lib/game/professions/model";
+import KeyBadge from "../KeyBadge";
 
 const LOW = 20;
 
@@ -37,9 +38,9 @@ export default function StaminaHud({ stamina, value, state, nowMs, onOpen }: {
             title={`${t.name}: +${b.value}${t.unit} — còn ${mins} phút`}>{t.icon}</span>
         ) : null;
       })}
-      <button type="button" className="pch-btn px-1 py-0 text-sm leading-none" onClick={onOpen}
-        title={main ? `Nghề nghiệp: ${main.name}` : "Nghề nghiệp — chọn nghề chính"} data-testid="profession-open">
-        {main ? main.icon : "🛠️"}<span className="sr-only"> Nghề nghiệp</span>
+      <button type="button" className="pch-btn relative px-1 py-0 text-sm leading-none" onClick={onOpen} data-hotkey="profession"
+        title={main ? `Nghề nghiệp: ${main.name} (3)` : "Nghề nghiệp — chọn nghề chính (3)"} data-testid="profession-open">
+        {main ? main.icon : "🛠️"}<span className="sr-only"> Nghề nghiệp</span><KeyBadge id="profession" />
       </button>
     </div>
   );

@@ -903,9 +903,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             </div>
             {/* row 3: the icon buttons (labels in the tooltips and for screen readers) */}
             <div className="flex flex-wrap items-center gap-1 [&_.pch-btn]:px-1.5 [&_.pch-btn]:py-0.5 [&_.pch-btn]:text-sm [&_.pch-btn]:leading-none">
-              <button type="button" className="pch-btn relative tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng" data-testid="profile-hud"
-                onClick={() => { setPanel("profile"); void progress.reload(); }}>
-                ⭐{myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span>
+              <button type="button" className="pch-btn relative tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng (1)" data-testid="profile-hud"
+                data-hotkey="profile" onClick={() => { setPanel("profile"); void progress.reload(); }}>
+                ⭐{myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span><KeyBadge id="profile" />
               </button>
               <button type="button" className="pch-btn relative" data-hotkey="wardrobe" title="Tủ đồ (I)" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
                 👕<span className="sr-only"> Tủ đồ</span><KeyBadge id="wardrobe" />
@@ -913,12 +913,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               <button type="button" className="pch-btn relative" data-hotkey="bag" title="Giỏ đồ (B)" onClick={() => fishing.openPanel("bag")}>
                 🎒<span className="sr-only"> Giỏ đồ</span><KeyBadge id="bag" />
               </button>
-              <button type="button" className="pch-btn" title="Chợ người chơi · đấu giá" data-testid="player-market-hud" onClick={() => setPanel("player_market")}>
-                🏪<span className="sr-only"> Chợ người chơi</span>
+              <button type="button" className="pch-btn relative" title="Chợ người chơi · đấu giá (4)" data-testid="player-market-hud" data-hotkey="playerMarket" onClick={() => setPanel("player_market")}>
+                🏪<span className="sr-only"> Chợ người chơi</span><KeyBadge id="playerMarket" />
               </button>
-              <button type="button" className="pch-btn relative" title="Trại thú: trứng, nuôi dạy, đấu thú, cá chiến" data-testid="pet-center-hud"
-                onClick={() => { setPanel("pet_center"); void reloadPets(); }}>
-                🐾<span className="sr-only"> Trại thú</span>
+              <button type="button" className="pch-btn relative" title="Trại thú: trứng, nuôi dạy, đấu thú, cá chiến (5)" data-testid="pet-center-hud"
+                data-hotkey="petCenter" onClick={() => { setPanel("pet_center"); void reloadPets(); }}>
+                🐾<span className="sr-only"> Trại thú</span><KeyBadge id="petCenter" />
                 {petChallenges > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />}
               </button>
               {fishing.handFish !== null && (
