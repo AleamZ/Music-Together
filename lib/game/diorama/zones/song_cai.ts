@@ -4,7 +4,8 @@ import type { GameMap } from "@/lib/game/maps/types";
 import { RIVER, riverWater } from "@/lib/game/river/geometry";
 import { pxLen } from "../coords";
 import { rng } from "../layout";
-import { Kit, ZONE_WATER_Y, type Inst, type OutdoorOptions } from "./outdoor-kit";
+import { Kit, labelNear, ZONE_WATER_Y, type Inst, type OutdoorOptions } from "./outdoor-kit";
+import type { SignIcon } from "./signart";
 
 // Sông Cái ("song_cai") as a diorama: the wide brown-green river flowing east between grassy banks with a muddy lip and
 // reeds (lau sậy), deeper in the middle, lighter over the three shoals (bãi cá, with rising bubbles), four mossy rocks
@@ -120,8 +121,11 @@ export function buildSongCaiZone(map: GameMap, opts: OutdoorOptions = {}): THREE
   k.base();
 
   // ---- the river: one wide surface, flowing east; foam lines at its lips
-  const wx0 = opts.openEnds ? -8 : RIVER.x0 - 6, wx1 = opts.openEnds ? map.width + 8 : RIVER.x1 + 6;
-  k.water({ x: wx0, y: RIVER.y0 - 4, w: wx1 - wx0, h: RIVER.y1 - RIVER.y0 + 8 }, { flow: 1, tint: opts.openEnds ? endTint(map.width) : riverTint, segs: [120, 44], opacity: 0.86 });
+  // open ends (the world): the sheet stops exactly at the zone's edges, and its waves die out over the last 40 px so it
+  // lies flat on the wild river's sheet (just under it, world/props.ts) instead of cutting through it
+  const wx0 = opts.openEnds ? 0 : RIVER.x0 - 6, wx1 = opts.openEnds ? map.width : RIVER.x1 + 6;
+  const calm = opts.openEnds ? (x: number) => Math.min(1, Math.max(0, Math.min(x, map.width - x) / 40)) : undefined;
+  k.water({ x: wx0, y: RIVER.y0 - 4, w: wx1 - wx0, h: RIVER.y1 - RIVER.y0 + 8 }, { flow: 1, tint: opts.openEnds ? endTint(map.width) : riverTint, segs: [120, 44], opacity: 0.86, calm });
 
   // ---- rocks (mossy, with a foam collar upstream) and the island
   const rockGeo = k.geo(new THREE.DodecahedronGeometry(1, 0));
@@ -188,7 +192,7 @@ export function buildSongCaiZone(map: GameMap, opts: OutdoorOptions = {}): THREE
       const onIsland = Math.hypot(p.x - ISLAND[0], p.y - ISLAND[1]) < ISLAND[2];
       k.palm(p.x, p.y, p.h, p.lean, p.seed, onIsland ? 0.4 : 0);
     } else if (p.kind === "banana") k.banana(p.x, p.y);
-    else if (p.kind === "sign") k.sign(p.x, p.y);
+    else if (p.kind === "sign") k.sign(p.x, p.y, "sign", labelNear(map, p.x, p.y - 12), (p as { icon?: SignIcon }).icon);
     else if (p.kind === "city_map_post") k.sign(p.x, p.y, "city");
   }
   for (const l of L.lights) k.lamp(l.x, l.y, l.r, 2.1, 0xffc070);
@@ -235,3 +239,6 @@ export function buildSongCaiZone(map: GameMap, opts: OutdoorOptions = {}): THREE
 
   return k.finish({ heightAt: riverHeightAt, animate: (t) => drift(t) });
 }
+
+
+

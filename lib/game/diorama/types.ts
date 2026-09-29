@@ -19,6 +19,10 @@ export interface Billboard {
   me?: boolean;
   /** The 3D chibi's action (sit, fish cast/reel, swim, ride, wave…); absent = idle/walk/run from how the feet move. */
   act?: CharAct;
+  /** Seated on a real seat (zones/seats.ts): the model's yaw (facing the table; absent: from `facing`) and how far
+   *  above the ground its feet go (units; absent: 0 — the view's own lifts win). */
+  yaw?: number;
+  lift?: number;
   /** P3: what they ride — a vehicle, or the boat on Sông Cái (absent: on foot). The vehicle model follows the feet. */
   vehicle?: "bike" | "moto" | "car" | "boat";
 }
@@ -63,3 +67,4 @@ export interface View3D {
 
 export type CameraMode = "follow" | "overview" | "free";
 export type Quality = "high" | "low";
+

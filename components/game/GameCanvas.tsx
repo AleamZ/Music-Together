@@ -14,6 +14,7 @@ import { isZone, toWorld, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 import { IS_PROD } from "@/lib/app-mode";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
+import type { CardSeatIn } from "@/lib/game/diorama/zones/seats";
 import type { HouseDraw } from "@/lib/game/housing/lot";
 import { GameEngine, type WorldExtras, type HeatProbe, type LocalFishing, type LocalInfo, type RosterEntry } from "@/lib/game/engine";
 import type { UmbrellaKind } from "@/lib/game/rain/model";
@@ -110,6 +111,8 @@ export interface GameCanvasHandle {
   plotChanged: (p: number) => void;
   /** The hall's card-table labels (v16 spec §5). */
   setCardTables: (labels: Readonly<Partial<Record<CardGame, string>>>) => void;
+  /** Who sits at which card table seat (card_lobby): the 3D view seats them on the real seats. */
+  setCardSeats: (seats: ReadonlyArray<CardSeatIn>) => void;
   /** v19.3: Khu nhà's lots and their houses. */
   setHouses: (houses: ReadonlyArray<LiveHouseIn>) => void;
   /** v18.11: the unread dot on the Báo Làng stand. */
@@ -283,6 +286,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
   const view3dRef = useRef<{ setPlots(p: ReadonlyArray<PlotDraw>): void } | null>(null);   // the diorama (or P2 world view) drawing this world
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
+  const cardSeatsRef = useRef<ReadonlyArray<CardSeatIn>>([]);
   const housesRef = useRef<ReadonlyArray<HouseDraw>>([]);                           // v19.3
   const newsUnreadRef = useRef(false);
   const ringLabelsRef = useRef<ReadonlyArray<string | null>>([]);
@@ -464,6 +468,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
         cardTablesRef.current = labels;
         engineRef.current?.setCardTables(labels);
       },
+      setCardSeats: (seats) => {
+        cardSeatsRef.current = seats;
+        engineRef.current?.setCardSeats(seats);
+      },
       setHouses: (houses) => {
         housesRef.current = houses;
         engineRef.current?.setHouses(houses);
@@ -612,6 +620,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     engine.setWeatherFx(weatherFxRef.current);
     engine.setPlots(plotsRef.current);
     engine.setCardTables(cardTablesRef.current);
+    engine.setCardSeats(cardSeatsRef.current);
     engine.setHouses(housesRef.current);
     engine.setNewsUnread(newsUnreadRef.current);
     engine.setRingLabels(ringLabelsRef.current);
@@ -802,3 +811,5 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     </>
   );
 }
+
+

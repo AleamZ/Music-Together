@@ -8,9 +8,10 @@ import {
 import type { Vec } from "@/lib/game/types";
 import { ZONES } from "@/lib/game/world/zones";
 import { toon } from "./toon";
+import { flagPixels, VN_RATIO } from "./vnflag";
 
 // Browser only: the world's set pieces — the river and the stream as flowing ribbons, the red bridges on the trails,
-// the landmarks seen from afar (the đình's flag, the market arch, the dojo tower, the mine headframe), windmills,
+// the landmarks seen from afar (the hall's flag on its rise, the market arch, the dojo tower, the mine headframe), windmills,
 // clouds, hot-air balloons and a few flocks of birds. All procedural, toon-shaded.
 
 const U = (px: number) => px / 16;
@@ -168,13 +169,31 @@ export function buildBridges(): THREE.Group {
 
 // ---------------------------------------------------------------- landmarks
 
+/** The flag cloth's length (units); its height is 2/3 of it. */
+const FLAG_LEN = 3.2;
+
+/** The flag's texture (rows flipped: a DataTexture's first row is its bottom). */
+function flagTexture(): THREE.DataTexture {
+  const p = flagPixels(300), rows = new Uint8Array(p.rgba.length), stride = p.w * 4;
+  for (let y = 0; y < p.h; y++) rows.set(p.rgba.subarray(y * stride, (y + 1) * stride), (p.h - 1 - y) * stride);
+  const tex = new THREE.DataTexture(rows, p.w, p.h, THREE.RGBAFormat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export interface Landmarks { root: THREE.Group; animate(t: number, wind: number): void; dispose(): void }
 
 export function buildLandmarks(): Landmarks {
   const root = new THREE.Group();
   const mat = toon({ vertexColors: true });
   const bladeMat = toon({ vertexColors: true, side: THREE.DoubleSide });
-  const flagMat = toon({ color: 0xda251d, side: THREE.DoubleSide });
+  const flagTex = flagTexture();
+  const flagMat = toon({ map: flagTex, side: THREE.DoubleSide });
   const lampMat = new THREE.MeshBasicMaterial({ color: 0xffc46a });
   const spinning: Array<{ obj: THREE.Object3D; speed: number }> = [];
   const flags: THREE.Mesh[] = [];
@@ -220,14 +239,11 @@ export function buildLandmarks(): Landmarks {
         colored(new THREE.SphereGeometry(0.2, 6, 4).translate(0, 11.1, 0), 0xe0b43a),
         box(1.6, 0.5, 1.6, 0, 0.25, 0, 0x8e877a),
       ], l);
-      const flagGeo = new THREE.PlaneGeometry(3.2, 2.1, 8, 2).translate(1.6, 9.8, 0);
+      // the national flag (vnflag.ts): 2 : 3, the star painted into the cloth's texture — one layer, both sides
+      const flagGeo = new THREE.PlaneGeometry(FLAG_LEN, FLAG_LEN * VN_RATIO, 16, 4).translate(FLAG_LEN / 2, 9.8, 0);
       geos.push(flagGeo);
       const flag = new THREE.Mesh(flagGeo, flagMat);
       flag.userData.base = Float32Array.from(flagGeo.getAttribute("position").array);
-      const starGeo = new THREE.CircleGeometry(0.55, 5).translate(1.25, 9.8, 0.02);
-      geos.push(starGeo);
-      const star = new THREE.Mesh(starGeo, toon({ color: 0xffdf3a, side: THREE.DoubleSide }));
-      flag.add(star);
       g.add(flag);
       flags.push(flag);
     } else if (l.kind === "arch") {
@@ -303,7 +319,7 @@ export function buildLandmarks(): Landmarks {
         pos.needsUpdate = true;
       }
     },
-    dispose() { for (const g of geos) g.dispose(); mat.dispose(); bladeMat.dispose(); flagMat.dispose(); lampMat.dispose(); },
+    dispose() { for (const g of geos) g.dispose(); mat.dispose(); bladeMat.dispose(); flagMat.dispose(); flagTex.dispose(); lampMat.dispose(); },
   };
 }
 

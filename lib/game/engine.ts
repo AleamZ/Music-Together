@@ -66,6 +66,7 @@ import type { CharAct } from "@/lib/game/diorama/character/pose";
 import { getMap } from "@/lib/game/maps/registry";
 import { interactablesNear, npcsNear, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { toWorld, zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
+import { cardSeatMap, seatPeople, type CardSeatIn, type SeatAnchor } from "@/lib/game/diorama/zones/seats";
 import { worldSwimMap } from "@/lib/game/world/swim";                                          // P3
 import { gateNear, type WorldGate } from "@/lib/game/world/gates";                              // P3
 
@@ -407,8 +408,14 @@ export class GameEngine {
       this.lightingAt = wallNow;
     }
     const night = this.lighting.night;
+    // real seats (zones/seats.ts): card players at their table, the hammock, the café chairs — mine and everyone's
+    const hall = this.worldMap ? zoneRect("hall") : this.map.id === "hall" ? { ox: 0, oy: 0 } : null;
+    const seated = hall ? seatPeople(out, {
+      cards: this.cardSeatMap, origin: { x: hall.ox, y: hall.oy },
+      hammock: new Set(out.filter((b) => (b.me ? lying : this.world.hammock(b.id))).map((b) => b.id)),
+    }) : out;
     return {
-      t, focus: { x: me.display.x, y: me.display.y }, billboards: out,
+      t, focus: { x: me.display.x, y: me.display.y }, billboards: seated,
       night, warm: night > 0 && night < 1 ? Math.max(0, 1 - Math.abs(night - 0.5) * 2) : 0,
       weather: INDOOR_MAPS.has(this.here as MapId) ? null : this.weather?.kind ?? null, windKmh: this.weather?.windKmh ?? 0,
       fx: this.weatherFx, reduced,
@@ -1005,6 +1012,12 @@ export class GameEngine {
     if (this.hidden.size === 0) return this.map;
     this.interactMap ??= { ...this.map, interactables: this.map.interactables.filter((i) => !this.hidden.has(i.id)) };
     return this.interactMap;
+  }
+
+  /** Who sits where at the card tables (card_lobby): the 3D view seats them on their table's real seats. */
+  private cardSeatMap: ReadonlyMap<string, SeatAnchor> = new Map();
+  setCardSeats(seats: ReadonlyArray<CardSeatIn>): void {
+    this.cardSeatMap = cardSeatMap(seats);
   }
 
   /** The card tables' labels from card_lobby (v16 spec §5): one line over each table of the hall. */
@@ -2188,3 +2201,5 @@ export class GameEngine {
     return badges ? `${badges} ${name}` : name;
   }
 }
+
+

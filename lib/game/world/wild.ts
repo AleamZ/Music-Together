@@ -97,7 +97,7 @@ function nearSongCai(x: number, y: number): boolean {
 }
 
 /** P3: the landmarks' solid footprints (world px circles, from the 3D models in lib/game/diorama/world/props.ts): the
- *  windmills' towers (base radius 1.5 units), the đình's flag plinth, the market arch's two posts (the road runs
+ *  windmills' towers (base radius 1.5 units), the hall flag's plinth, the market arch's two posts (the road runs
  *  between them), the dojo tower's plinth, the headframe's engine house. The mine mouth is MINE_SOLID. */
 export const LANDMARK_SOLIDS: ReadonlyArray<{ x: number; y: number; r: number }> = LANDMARKS.flatMap((l) => {
   switch (l.kind) {

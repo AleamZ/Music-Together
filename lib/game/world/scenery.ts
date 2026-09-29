@@ -8,7 +8,7 @@ import { WORLD_H, ZONE_IDS, ZONES } from "./zones";
 
 // Where the world's scenery stands (pure, deterministic): the forests (round deciduous trees, conifers up the slopes,
 // a few yellow ones), rocks, grass tufts and flowers, the windmills and the landmarks seen from afar (spec §1: the
-// đình's flag, the market arch, the dojo tower, the mine headframe and its tunnel mouth). World px; the 3D view (lib/game/diorama/world)
+// hall's flag, the market arch, the dojo tower, the mine headframe and its tunnel mouth). World px; the 3D view (lib/game/diorama/world)
 // instances them per chunk. Nothing here is ever on a zone, a road, a trail or in the water.
 
 /** Scenery chunks (px): the renderer's streaming unit. */
@@ -31,7 +31,7 @@ export interface Spot { x: number; y: number; h: number; scale: number; rot: num
 export interface Landmark { kind: "windmill" | "flag" | "arch" | "tower" | "headframe" | "mine"; x: number; y: number; yaw: number }
 
 export const LANDMARKS: readonly Landmark[] = [
-  { kind: "flag", x: 1290, y: 456, yaw: 0 },            // the đình's flag, on the rise behind the hall
+  { kind: "flag", x: 1290, y: 456, yaw: 0 },            // the national flag, on the rise behind the hall
   { kind: "arch", x: 1722, y: 724, yaw: 0 },            // cổng chợ over the road into the market
   { kind: "tower", x: 2440, y: 420, yaw: 0.2 },         // the dojo's watchtower behind the market
   { kind: "headframe", x: 3716, y: 1150, yaw: 0.3 },    // the mine's headframe, on the hill above the mouth (P2)
