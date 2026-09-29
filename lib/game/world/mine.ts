@@ -13,7 +13,7 @@ export const MINE = {
   /** Back up from the cave: just outside the mouth, facing down the road. */
   exit: { x: 3600, y: 1232, dir: "left" } as Spot,
   /** The flat apron before the mouth: its centre, radius (px) and height (3D units). */
-  pad: { x: 3606, y: 1232, r: 64, elev: 7.4 },
+  pad: { x: 3606, y: 1232, r: 64, elev: 2.6 },
 } as const;
 
 /** The hill the tunnel runs into (a blocked knoll: terrain.ts KNOLLS lists it). */

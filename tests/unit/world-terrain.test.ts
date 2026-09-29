@@ -3,7 +3,7 @@ import { buildWorld, type WorldMap } from "@/lib/game/world/compose";
 import { cumulative, pointAt, ROADS, TRAILS } from "@/lib/game/world/roads";
 import {
   bridgeAt, DOMAIN, heightAt, heightGrid, MAX_ROAD_SLOPE, MAX_WALK_SLOPE, onPath, RIVER_LEVEL, RIVER_PTS, riverAt, slopeAtCell,
-  standHeight, STREAM_PTS, waterAt, ZONE_ELEV,
+  standHeight, STREAM_PTS, waterAt, ZONE_ELEV, CANALS, EAST_HILLS,
 } from "@/lib/game/world/terrain";
 import { wildBlocked } from "@/lib/game/world/wild";
 import { LANDMARKS, scatterRocks, scatterTrees } from "@/lib/game/world/scenery";
@@ -112,13 +112,36 @@ describe("world terrain", () => {
     expect(riverAt(end.x, end.y).d).toBeLessThan(riverAt(end.x, end.y).hw);
   });
 
-  it("rings the world with mountains", () => {
-    let high = 0, n = 0;
+  it("is a flat delta ringed by the river mouths' water, with one low hill group in the east", () => {
+    let wet = 0, n = 0;
     for (let x = DOMAIN.x0; x <= DOMAIN.x1; x += 160) for (const y of [DOMAIN.y0 + 200, DOMAIN.y1 - 200]) {
       n++;
-      if (heightAt(x, y) > 12 || waterAt(x, y) !== null || riverAt(x, y).d < 700) high++;
+      if (waterAt(x, y) === RIVER_LEVEL && heightAt(x, y) < RIVER_LEVEL) wet++;
     }
-    expect(high / n).toBeGreaterThan(0.9);
+    expect(wet / n).toBeGreaterThan(0.9);
+    // no mountains: the open land stays within a few units of the river; only the eastern hills rise, and gently
+    let top = 0;
+    for (let y = 40; y < WORLD_H; y += 80) for (let x = 40; x < WORLD_W; x += 80) {
+      if (zoneAt({ x, y }) !== "wild") continue;
+      const h = heightAt(x, y);
+      if (Math.hypot(x - EAST_HILLS[0].x, y - EAST_HILLS[0].y) > 450) expect(h, `${x},${y}`).toBeLessThan(3.5);
+      top = Math.max(top, h);
+    }
+    expect(top).toBeLessThan(9);
+  });
+
+  it("cuts canals joined to the river, at its level", () => {
+    for (const c of CANALS) {
+      const cum = cumulative(c), L = cum[cum.length - 1];
+      let wet = 0, n = 0;
+      for (let s = 0; s <= L; s += 16) {
+        const p = pointAt(c, cum, s);
+        if (zoneAt(p) !== "wild" || onPath(p.x, p.y)) continue;
+        n++;
+        if (waterAt(p.x, p.y) === RIVER_LEVEL) wet++;
+      }
+      expect(wet / Math.max(1, n)).toBeGreaterThan(0.95);
+    }
   });
 });
 
@@ -126,7 +149,7 @@ describe("the wild's collision from the terrain", () => {
   const world = buildWorld();
   const g = heightGrid();
 
-  it("blocks water, cliffs and mountains in the wild; roads, trails and bridges stay open", () => {
+  it("blocks water, cliffs and the hill in the wild; roads, trails and bridges stay open", () => {
     const bad: string[] = [];
     for (let r = 1; r < world.rows - 1; r++) for (let c = 1; c < world.cols - 1; c++) {
       const x = c * WORLD_CELL + 4, y = r * WORLD_CELL + 4;
@@ -163,7 +186,7 @@ describe("the world's scenery", () => {
   it("keeps every tree and rock off the zones, the paths and the water; deterministic", async () => {
     const trees = scatterTrees();
     const rocks = scatterRocks();
-    expect(trees.length).toBeGreaterThan(5000);
+    expect(trees.length).toBeGreaterThan(3000);
     const bad = [...trees, ...rocks].filter((t) => zoneAt({ x: t.x, y: t.y }) !== "wild" && t.x >= 0 && t.y >= 0 && t.x < WORLD_W && t.y < WORLD_H
       || onPath(t.x, t.y) || waterAt(t.x, t.y) !== null);
     expect(bad.slice(0, 5)).toEqual([]);
@@ -181,6 +204,6 @@ describe("the world's scenery", () => {
       expect(zoneAt(l), `${l.kind} ${l.x},${l.y}`).toBe("wild");
       expect(waterAt(l.x, l.y), l.kind).toBeNull();
     }
-    expect(LANDMARKS.map((l) => l.kind)).toEqual(expect.arrayContaining(["flag", "arch", "tower", "headframe", "windmill"]));
+    expect(LANDMARKS.map((l) => l.kind)).toEqual(expect.arrayContaining(["flag", "arch", "tower", "headframe", "pagoda"]));
   });
 });

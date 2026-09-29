@@ -29,7 +29,7 @@ const lobby = (seats: Array<{ game: string; ids: string[] }> = []) => ({
 });
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
-const canvas = { setCardTables: vi.fn() };
+const canvas = { setCardTables: vi.fn(), setCardSeats: vi.fn() };
 const it_ = (id: string) => getMap("hall").interactables.find((i) => i.id === id)!;
 
 function mount(mapId: MapId = "hall", toast = vi.fn()) {

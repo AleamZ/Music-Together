@@ -246,6 +246,20 @@ export function buildLandmarks(): Landmarks {
       flag.userData.base = Float32Array.from(flagGeo.getAttribute("position").array);
       g.add(flag);
       flags.push(flag);
+    } else if (l.kind === "pagoda") {
+      // a small hill pagoda: a stone terrace, three shrinking tiers under upturned tiled roofs, a golden finial
+      const parts: THREE.BufferGeometry[] = [box(4.2, 0.5, 4.2, 0, 0.25, 0, 0x9a8a78), box(3.6, 0.3, 3.6, 0, 0.65, 0, 0xb8a890)];
+      let y = 0.8;
+      for (let i = 0; i < 3; i++) {
+        const w = 2.6 - i * 0.6, h = 1.5 - i * 0.2;
+        parts.push(box(w, h, w, 0, y + h / 2, 0, i % 2 ? 0xf0dcae : 0xe8c890));
+        parts.push(box(w * 0.3, h * 0.6, 0.06, 0, y + h * 0.3, w / 2 + 0.02, 0x7a2a1a));
+        y += h;
+        parts.push(colored(new THREE.ConeGeometry(w * 0.95, 0.9, 4).rotateY(Math.PI / 4).translate(0, y + 0.35, 0), 0xa8452e));
+        y += 0.55;
+      }
+      parts.push(colored(new THREE.CylinderGeometry(0.05, 0.14, 1.2, 6).translate(0, y + 0.5, 0), 0xe0b43a));
+      add(parts, l);
     } else if (l.kind === "arch") {
       add([
         box(0.7, 5.2, 0.7, 0, 2.6, -2.1, 0xb8322a), box(0.7, 5.2, 0.7, 0, 2.6, 2.1, 0xb8322a),

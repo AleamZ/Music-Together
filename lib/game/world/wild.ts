@@ -107,6 +107,7 @@ export const LANDMARK_SOLIDS: ReadonlyArray<{ x: number; y: number; r: number }>
     case "headframe": return [{ x: l.x, y: l.y, r: 30 }];
     case "arch": return [-1, 1].map((s) => ({ x: l.x + Math.sin(l.yaw) * s * 33.6, y: l.y + Math.cos(l.yaw) * s * 33.6, r: 10 }));
     case "mine": return [];
+    case "pagoda": return [{ x: l.x, y: l.y, r: 36 }];
   }
 });
 

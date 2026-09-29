@@ -5,7 +5,7 @@ import type { GameMap } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 import { openingRect } from "@/lib/game/world/compose";
 import { CHUNK_PX, CHUNKS_X, CHUNKS_Y } from "@/lib/game/world/scenery";
-import { DOMAIN, heightAt as terrainHeight, standHeight, ZONE_ELEV, zoneUnder } from "@/lib/game/world/terrain";
+import { DOMAIN, RIVER_LEVEL, standHeight, ZONE_ELEV, zoneUnder } from "@/lib/game/world/terrain";
 import { OPENINGS } from "@/lib/game/world/wild";
 import { WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId } from "@/lib/game/world/zones";
 import { animateWater, type Built } from "../build";
@@ -105,6 +105,9 @@ export class WorldView implements View3D {
   private readonly terrain = new THREE.Group();
   private readonly jobs = new TerrainJobs((c, level, geo) => this.chunkBuilt(c, level, geo));
   private horizon: THREE.Mesh | null = null;
+  private sea: THREE.Mesh | null = null;
+  /** The muddy brown-green water of the delta (the river mouths, the canals). */
+  private readonly seaMat = toon({ color: 0x8a8a52 });
   private readonly zones: ZoneScene[] = [];
   private readonly mergedGeos: THREE.BufferGeometry[] = [];
   private readonly mergedMats: THREE.Material[] = [];
@@ -271,7 +274,7 @@ export class WorldView implements View3D {
       const x = x0 + i * step, y = y0 + j * step, k = (j * (nx + 1) + i) * 3;
       const inside = x > DOMAIN.x0 && x < DOMAIN.x1 && y > DOMAIN.y0 && y < DOMAIN.y1;
       const out = Math.max(DOMAIN.x0 - x, x - DOMAIN.x1, DOMAIN.y0 - y, y - DOMAIN.y1, 0);
-      const h = inside ? -30 : terrainHeight(x, y) * (1 + out / 4000) + out / 700;
+      const h = inside ? -30 : RIVER_LEVEL - 1.6;
       pos.set([x / 16, h, y / 16], k);
       landColor(x, y, h, 0.3, c).lerp(far, Math.min(0.6, out / 9000));
       col.set([c.r, c.g, c.b], k);
@@ -289,6 +292,14 @@ export class WorldView implements View3D {
     this.horizon = new THREE.Mesh(g, this.terrainMat);
     this.horizon.name = "horizon";
     this.scene.add(this.horizon);
+    // the delta's one water table: the river mouths out to the horizon, and every canal carved below it in the land
+    // (the river's own ribbon lies on top of it, a hair higher)
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(2 * reach + (DOMAIN.x1 - DOMAIN.x0), 2 * reach + (DOMAIN.y1 - DOMAIN.y0)).rotateX(-Math.PI / 2), this.seaMat);
+    sea.position.set((DOMAIN.x0 + DOMAIN.x1) / 32, RIVER_LEVEL - 0.05, (DOMAIN.y0 + DOMAIN.y1) / 32);
+    sea.name = "sea";
+    sea.receiveShadow = true;
+    this.sea = sea;
+    this.scene.add(sea);
   }
 
   // ------------------------------------------------------------ hooks for the engine
@@ -680,6 +691,8 @@ export class WorldView implements View3D {
     for (const m of this.mergedMats) m.dispose();
     for (const c of this.chunks) for (const g of c.geos) g?.dispose();
     this.horizon?.geometry.dispose();
+    this.sea?.geometry.dispose();
+    this.seaMat.dispose();
     this.terrainMat.dispose();
     this.forest.dispose();
     this.water.dispose();

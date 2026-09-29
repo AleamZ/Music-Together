@@ -7,7 +7,8 @@ import { WORLD_CELL, WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId } from
 // and a ring beyond it. Pure — the 3D renderer (lib/game/diorama/world) meshes it, wild.ts turns it into collision.
 //   - each zone sits on a flat plateau at its own elevation (ZONE_ELEV), blended into the land over PLATEAU_MARGIN px;
 //   - the roads ramp linearly from one zone's elevation to the other's (never steeper than MAX_ROAD_SLOPE);
-//   - rolling hills (value-noise fbm) in between, mountains ringing the world's edge and a forested ridge in the north;
+//   - the flat Mekong delta in between (paddies a hand above the water), canals (CANALS) joined to the river, one low
+//     rounded hill group in the east (the mine, a pagoda), and the river mouths' open water past the world's edge;
 //   - Sông Cái winds through a valley across the south (the zone's own water stays where the gameplay has it; the
 //     wild river meets it at the zone's west and east edges), and a stream runs from the pond down to it.
 // Units: x/y in world px, heights in 3D units (px / 16, the diorama's), 0 = the river's bank level datum.
@@ -19,7 +20,7 @@ const PXU = 16;
 /** Each zone's plateau height, units (village hall mid, fields low near the river, Khu nhà high in the east; the mine's
  *  apron is MINE.pad.elev). */
 export const ZONE_ELEV: Readonly<Record<OutdoorMapId, number>> = {
-  song_cai: 0.6, field: 1.4, pond: 2.2, hall: 4.4, bai_dat: 6.0, market: 6.4, khu_nha: 8.4,
+  song_cai: 0.6, field: 1.0, pond: 1.2, hall: 1.5, bai_dat: 1.6, market: 1.7, khu_nha: 1.9,
 };
 /** How far (px) a plateau blends into the land around it. */
 export const PLATEAU_MARGIN = 160;
@@ -56,14 +57,40 @@ const STREAM_CUM = cumulative(STREAM_PTS);
 export const STREAM_HALF_W = 11;
 const STREAM_TOP = ZONE_ELEV.pond + ZONE_WATER_Y;
 
-/** Knolls (blocked rocky mounds): centre and radius, world px. */
+/** Knolls (blocked mounds): centre and radius, world px. The delta is flat: only the mine's hill (a low Thất Sơn-like
+ *  rise in the east; the tunnel runs into it). */
 export const KNOLLS: readonly { x: number; y: number; r: number }[] = [
-  { x: 4090, y: 900, r: 60 },
-  { x: 4090, y: 1300, r: 60 },
-  { x: 2100, y: 1250, r: 90 },
-  { x: 3700, y: 1540, r: 70 },
-  MINE_HILL,                                               // the hill the mine's tunnel runs into (P2)
+  MINE_HILL,
 ];
+
+/** The low hill group in the east (Núi Sam-like: rounded, a pagoda on top): centre / radius px, height units. */
+export const EAST_HILLS: readonly { x: number; y: number; r: number; h: number }[] = [
+  { x: 3780, y: 1232, r: 250, h: 5 }, { x: 3950, y: 1110, r: 180, h: 3.4 }, { x: 3930, y: 1430, r: 160, h: 2.8 },
+];
+/** Where the hill's pagoda stands (the summit). */
+export const PAGODA = { x: 3800, y: 1180 } as const;
+
+/** Kênh rạch: the canals crossing the delta, joined to the river (their water is the river's level). World px. */
+export const CANALS: readonly (readonly Vec[])[] = [
+  [{ x: -200, y: 300 }, { x: 700, y: 320 }, { x: 1700, y: 290 }, { x: 2700, y: 330 }, { x: 3600, y: 300 }, { x: 4400, y: 320 }],
+  [{ x: 876, y: 300 }, { x: 880, y: 900 }, { x: 874, y: 1300 }, { x: 880, y: 1480 }],
+  [{ x: 2150, y: 900 }, { x: 2210, y: 1150 }, { x: 2250, y: 1400 }, { x: 2250, y: 1790 }],
+  [{ x: 3340, y: 900 }, { x: 3330, y: 1300 }, { x: 3360, y: 1600 }, { x: 3320, y: 1870 }],
+  [{ x: 4060, y: 300 }, { x: 4080, y: 800 }, { x: 4130, y: 1000 }, { x: 4300, y: 1100 }],
+  [{ x: 60, y: 1100 }, { x: 300, y: 1250 }, { x: 420, y: 1500 }, { x: 424, y: 1890 }],
+];
+const CANAL_CUM = CANALS.map((c) => cumulative(c));
+export const CANAL_HALF_W = 13;
+/** Distance (px) to the nearest canal's centreline. */
+export function canalDist(x: number, y: number): number {
+  let d = Infinity;
+  for (let i = 0; i < CANALS.length; i++) d = Math.min(d, nearestOn(CANALS[i], CANAL_CUM[i], x, y).d);
+  return d;
+}
+/** How far (px) past the world's edge (0 inside): beyond it the delta opens onto the river mouths' water. */
+export function outside(x: number, y: number): number {
+  return Math.max(-x, x - WORLD_W, -y, y - WORLD_H, 0);
+}
 
 /** The ring rendered around the world (mountains to the horizon), px beyond each edge. */
 export const RING = 1120;
@@ -89,16 +116,6 @@ export function valueNoise(x: number, y: number, seed = TERRAIN_SEED): number {
 export function fbm(x: number, y: number, octaves = 4, seed = TERRAIN_SEED): number {
   let s = 0, amp = 0.5, f = 1, norm = 0;
   for (let i = 0; i < octaves; i++) { s += valueNoise(x * f, y * f, seed + i * 101) * amp; norm += amp; amp *= 0.5; f *= 2.03; }
-  return s / norm;
-}
-
-/** Ridged noise 0…1 (sharp crests: the mountains). */
-function ridged(x: number, y: number, octaves = 4): number {
-  let s = 0, amp = 0.5, f = 1, norm = 0;
-  for (let i = 0; i < octaves; i++) {
-    const n = 1 - Math.abs(valueNoise(x * f, y * f, TERRAIN_SEED + 700 + i * 37));
-    s += n * n * amp; norm += amp; amp *= 0.5; f *= 2.1;
-  }
   return s / norm;
 }
 
@@ -219,26 +236,21 @@ export function onPath(x: number, y: number): boolean {
 
 // ---------------------------------------------------------------- the height
 
-/** The land before the zones, roads and water: rolling hills, the rim mountains, the north ridge, the river valley. */
+/** The land before the zones, roads and water: the flat delta (paddies a hand above the river, gentle swells), the
+ *  low eastern hills, the river's bank, the shore where the land sinks into the river mouths past the world's edge. */
 export function naturalHeight(x: number, y: number): number {
-  let h = 4 + 6.5 * fbm(x / 760, y / 760) + 1.6 * fbm(x / 240 + 11, y / 240 - 7, 3);
-  // rim mountains: rise as the edge nears, highest beyond it
-  const edge = Math.min(x, WORLD_W - x, y, WORLD_H - y);
-  // (lower in the south: the river side stays open to the view)
-  const m = smoothstep(260, -320, edge) * (y > WORLD_H - 700 ? 0.45 + 0.55 * smoothstep(WORLD_H + 900, WORLD_H - 200, y) : 1);
-  h += m * (10 + 34 * ridged(x / 520, y / 520));
-  // the forested ridge in the north
-  const n = smoothstep(560, 120, y) * (1 - m);
-  h += n * (7 + 7 * fbm(x / 300, 3.1, 3));
-  // knolls
-  for (const k of KNOLLS) {
+  let h = RIVER_BANK + 0.8 + 0.35 * fbm(x / 520, y / 520, 3) + 0.12 * fbm(x / 90, y / 90, 2);
+  for (const k of EAST_HILLS) {
     const d = Math.hypot(x - k.x, y - k.y);
-    if (d < k.r * 1.8) h += 4.2 * (1 - smoothstep(0, k.r * 1.8, d)) ** 1.5;
+    if (d < k.r) { const u = 1 - d / k.r; h += k.h * u * u * (3 - 2 * u); }
   }
   // the river valley: the land settles toward the bank
   const r = riverAt(x, y);
   const v = 1 - smoothstep(r.hw, r.hw + 560, r.d);
   h = lerp(h, RIVER_BANK + 0.4 + 0.5 * fbm(x / 160, y / 160, 2), v * 0.96);
+  // the edge: a mangrove shore, then the open water of the river mouths
+  const inEdge = Math.min(x, WORLD_W - x, y, WORLD_H - y);
+  if (inEdge < 90) h = lerp(h, RIVER_LEVEL - 1.6, smoothstep(90, -120, inEdge));
   return h;
 }
 
@@ -276,6 +288,12 @@ export function heightAt(x: number, y: number): number {
       h = lerp(RIVER_LEVEL - 0.3, Math.min(h, RIVER_BANK + 0.6), smoothstep(r.hw, r.hw + 40, r.d));
     }
   }
+  // the canals: water at the river's level (a road or trail crossing one is a raised causeway)
+  const cd = canalDist(x, y);
+  if (cd < CANAL_HALF_W + 48) {
+    if (cd < CANAL_HALF_W) h = RIVER_LEVEL - 0.3 - 0.6 * (1 - cd / CANAL_HALF_W);
+    else h = lerp(RIVER_LEVEL - 0.2, h, smoothstep(CANAL_HALF_W, CANAL_HALF_W + 48, cd));
+  }
   // the stream: a little gully falling to the river
   const st = streamAt(x, y);
   if (st.d < STREAM_HALF_W + 56) {
@@ -298,6 +316,8 @@ export function waterAt(x: number, y: number): number | null {
   if (zoneUnder(x, y)) return null;
   const r = riverAt(x, y);
   if (!r.inZone && r.d < r.hw) return RIVER_LEVEL;
+  if (outside(x, y) > 0) return RIVER_LEVEL;
+  if (canalDist(x, y) < CANAL_HALF_W && !onPath(x, y)) return RIVER_LEVEL;
   const st = streamAt(x, y);
   if (st.d < STREAM_HALF_W) return streamLevel(st.s);
   return null;

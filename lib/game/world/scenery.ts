@@ -1,5 +1,6 @@
 import type { Vec } from "@/lib/game/types";
 import { MINE } from "./mine";
+import { PAGODA } from "./terrain";
 import { cumulative, nearestOn, ROADS, TRAILS } from "./roads";
 import {
   DOMAIN, fbm, hashAt, heightAt, rectDistance, riverAt, smoothstep, streamAt, STREAM_HALF_W, waterAt,
@@ -28,7 +29,7 @@ export interface TreeSpot { x: number; y: number; h: number; kind: TreeKind; sca
 export interface Spot { x: number; y: number; h: number; scale: number; rot: number; tint: number }
 
 /** A landmark or a windmill: what, where (px) and which way it faces (radians about y). */
-export interface Landmark { kind: "windmill" | "flag" | "arch" | "tower" | "headframe" | "mine"; x: number; y: number; yaw: number }
+export interface Landmark { kind: "windmill" | "flag" | "arch" | "tower" | "headframe" | "mine" | "pagoda"; x: number; y: number; yaw: number }
 
 export const LANDMARKS: readonly Landmark[] = [
   { kind: "flag", x: 1290, y: 456, yaw: 0 },            // the national flag, on the rise behind the hall
@@ -36,11 +37,7 @@ export const LANDMARKS: readonly Landmark[] = [
   { kind: "tower", x: 2440, y: 420, yaw: 0.2 },         // the dojo's watchtower behind the market
   { kind: "headframe", x: 3716, y: 1150, yaw: 0.3 },    // the mine's headframe, on the hill above the mouth (P2)
   { kind: "mine", x: MINE.mouth.x, y: MINE.mouth.y, yaw: -1.05 },   // the mine mouth, facing west-south-west (the road, the camera)
-  { kind: "windmill", x: 2150, y: 1180, yaw: 0.6 },
-  { kind: "windmill", x: 540, y: 1180, yaw: -0.4 },
-  { kind: "windmill", x: 3880, y: 1470, yaw: 0.9 },
-  { kind: "windmill", x: 2020, y: 1440, yaw: 0.3 },
-  { kind: "windmill", x: 3000, y: 2150, yaw: -0.8 },
+  { kind: "pagoda", x: PAGODA.x, y: PAGODA.y, yaw: -0.5 },  // the pagoda on the eastern hill (Núi Sam-like)
 ];
 
 interface PathGeo { pts: readonly Vec[]; cum: number[]; hw: number }
