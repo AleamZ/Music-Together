@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { IS_PROD } from "@/lib/app-mode";
 
 /** Keys that open DevTools or the page source (Windows/Linux and macOS). */
@@ -14,21 +14,35 @@ export function isDevtoolsShortcut(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "m
   return false;
 }
 
-interface Gaps { w: number; h: number }
+export interface Gaps { w: number; h: number }
 /** How much of the window is not the page (browser chrome, a docked DevTools). */
 function gaps(): Gaps {
   return { w: window.outerWidth - window.innerWidth, h: window.outerHeight - window.innerHeight };
 }
-/** Docked DevTools open: the non-page strip grew by more than a DevTools panel's minimum since the baseline. */
-export function devtoolsDocked(base: Gaps, now: Gaps): boolean {
-  return now.w - base.w > 160 || now.h - base.h > 160;
+
+/** A docked DevTools panel is at least this big; browser chrome growing by less (a bar, a zoom step) is not one. */
+const PANEL = 160;
+/** Bigger than any browser chrome (tabs, address, bookmarks ≈ 80–140 px tall; a vertical tab strip ≈ 50–300 px wide):
+ *  a strip this big is DevTools even if it was already open when the page loaded. */
+const ABS_W = 420, ABS_H = 320;
+
+/** The smallest strip seen so far is the browser's own chrome; DevTools is the strip growing a panel past it. */
+export function nextFloor(floor: Gaps | null, now: Gaps): Gaps {
+  return floor ? { w: Math.min(floor.w, now.w), h: Math.min(floor.h, now.h) } : now;
+}
+
+/** Docked DevTools open: the strip grew a panel past the smallest seen, or is bigger than any browser chrome. */
+export function devtoolsDocked(floor: Gaps, now: Gaps): boolean {
+  if (now.w > ABS_W || now.h > ABS_H) return true;
+  return now.w - floor.w > PANEL || now.h - floor.h > PANEL;
 }
 
 /**
- * APP_MODE=prod only: blocks the DevTools shortcuts and the right-click menu (text fields keep theirs), and covers the
- * page while DevTools is open. A deterrent, not security — the server stays the judge of anything that pays.
+ * APP_MODE=prod only: blocks the DevTools shortcuts and the right-click menu (text fields keep theirs), and while
+ * DevTools is open the app itself is not rendered at all (the game unmounts and leaves its channels), so hiding the
+ * cover with CSS shows an empty page. Still a deterrent, not security — the server stays the judge of anything that pays.
  */
-export default function DevtoolsGuard() {
+export default function DevtoolsGuard({ children }: { children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!IS_PROD) return;
@@ -40,30 +54,36 @@ export default function DevtoolsGuard() {
       if (t?.closest("input, textarea, [contenteditable='true']")) return;
       e.preventDefault();
     };
-    // Docked DevTools steal a strip of the window. Browser chrome (a sidebar, bookmarks, zoom) does too, so only a
-    // strip that GROWS past the one measured at load counts; a zoom change measures the baseline again. (A console
-    // probe was dropped: Next's dev overlay and extensions read logged objects and gave false alarms.)
-    let base = gaps(), ratio = window.devicePixelRatio;
+    // Old rule: "the strip grew since load" — backwards when DevTools was open at load (the open strip became the
+    // baseline, so closing never mattered and reopening was missed) and when the window was restored/resized after load.
+    // Now: the SMALLEST strip seen is the chrome (it shrinks as soon as DevTools closes), plus an absolute ceiling for a
+    // panel already open at load. Fullscreen has no chrome to measure; a zoom change starts the floor again.
+    let floor: Gaps | null = null, ratio = window.devicePixelRatio;
     const check = () => {
-      if (window.devicePixelRatio !== ratio) { ratio = window.devicePixelRatio; base = gaps(); }
-      setOpen(devtoolsDocked(base, gaps()));
+      if (document.fullscreenElement) return;
+      const now = gaps();
+      if (window.devicePixelRatio !== ratio) { ratio = window.devicePixelRatio; floor = null; }
+      floor = nextFloor(floor, now);
+      setOpen(devtoolsDocked(floor, now));
     };
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("contextmenu", onMenu, true);
-    const id = setInterval(check, 1500);
+    window.addEventListener("resize", check);
+    const id = setInterval(check, 1000);
     const first = setTimeout(check, 0);
     return () => {
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("contextmenu", onMenu, true);
+      window.removeEventListener("resize", check);
       clearInterval(id); clearTimeout(first);
     };
   }, []);
-  if (!IS_PROD || !open) return null;
+  if (!IS_PROD || !open) return <>{children}</>;
   return (
     <div
       role="alertdialog"
       aria-label="Đóng công cụ nhà phát triển"
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-3 bg-black/95 p-6 text-center font-vt text-parchment"
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-3 bg-black p-6 text-center font-vt text-parchment"
     >
       <p className="text-3xl">🔒 Đang mở công cụ nhà phát triển (DevTools)</p>
       <p className="text-xl opacity-80">Đóng DevTools để tiếp tục chơi và nghe nhạc.</p>
