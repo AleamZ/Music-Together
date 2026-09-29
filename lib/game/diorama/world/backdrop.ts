@@ -162,8 +162,10 @@ function ranges(): { mesh: THREE.Mesh; clouds: THREE.Mesh } {
       const a = a0 + (a1 - a0) * (i / n);
       const peak = peakAt(i);
       const x = cx + Math.cos(a) * L.r, y = cy + Math.sin(a) * L.r * 0.8;
-      pos.push(x / U, -2, y / U, x / U, RIVER_LEVEL + 6 + peak, y / U);
-      c.set(L.col);
+      // both ends taper down into the haze (the west end most: it shows past the estuary), no cut against the sky
+      const tn = i / n, env = smoothstep(0, 0.3, tn) * smoothstep(0, 0.15, 1 - tn);
+      pos.push(x / U, -2, y / U, x / U, RIVER_LEVEL - 1 + (7 + peak) * env, y / U);
+      c.set(L.col).lerp(C.haze, 1 - env);
       cols.push(c.r * 0.85, c.g * 0.85, c.b * 0.85);
       c.lerp(new THREE.Color(0xe6eef0), li === 2 ? 0.35 : peak > L.h * 0.8 ? 0.25 : 0);   // pale tops far off
       cols.push(c.r, c.g, c.b);
