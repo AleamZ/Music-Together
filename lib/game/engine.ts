@@ -67,7 +67,8 @@ import { getMap } from "@/lib/game/maps/registry";
 import { interactablesNear, npcsNear, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { toWorld, zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 import { cardSeatMap, seatPeople, type CardSeatIn, type SeatAnchor } from "@/lib/game/diorama/zones/seats";
-import { worldSwimMap } from "@/lib/game/world/swim";                                          // P3
+import { worldSwimMap } from "@/lib/game/world/swim";
+import { boatWater, wildBoatInteractable, worldBoatMap } from "@/lib/game/world/boat";                           // 0095                                          // P3
 import { gateNear, type WorldGate } from "@/lib/game/world/gates";                              // P3
 
 export type { RosterEntry } from "@/lib/game/world";
@@ -398,7 +399,7 @@ export class GameEngine {
       const ph = this.fishing.phase;
       const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim"
         : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : waved.has(this.opts.localId) ? "wave" : undefined;
-      const boat = this.onBoat(me.display);                                               // P3: rowing Sông Cái
+      const boat = this.worldMap !== null && this.afloatAt(me.pos);                                               // P3: rowing Sông Cái
       out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
         act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined) });
     }
@@ -425,10 +426,18 @@ export class GameEngine {
 
   /** P3: is a world point on Sông Cái's water (a boat there)? World mode only. */
   private onBoat(p: Vec): boolean {
-    if (!this.worldMap || zoneAt(p) !== "song_cai") return false;
-    const q = this.toZone(p, "song_cai");
-    return riverWater(q.x, q.y);
+    // 0095: Sông Cái, the river, the canals — but not someone walking a bridge or causeway over them
+    return this.worldMap !== null && boatWater(p.x, p.y) && (zoneAt(p) === "song_cai" || isBlockedAt(this.map, p.x, p.y));
   }
+  /** 0095: am I in the boat? On boat water where nobody walks; over a bridge, only if I rowed onto it (sticky). */
+  private afloat = false;
+  private afloatAt(p: Vec): boolean {
+    if (!boatWater(p.x, p.y)) return (this.afloat = false);
+    if (zoneAt(p) === "song_cai" || isBlockedAt(this.map, p.x, p.y)) return (this.afloat = true);
+    return this.afloat;
+  }
+  /** 0095: the world grid with only the boat water open (built on first use). */
+  private boatMap: GameMap | null = null;
 
   /** P3: the rats, dogs, leaping fish and shut gates the 3D world draws (world px). */
   private gameplayFrame(t: number): GameplayFrame {
@@ -1217,6 +1226,7 @@ export class GameEngine {
 
   /** The collision grid I move on: the swim grid while swimming. */
   private get moveMap(): GameMap {
+    if (this.worldMap && this.afloatAt(this.local.pos)) return (this.boatMap ??= worldBoatMap(this.worldMap));   // 0095: the boat rows the whole river
     return this.swimming && this.swimMap ? this.swimMap : this.map;
   }
 
@@ -1515,6 +1525,11 @@ export class GameEngine {
     if (!near && !this.rodOut && !this.swimming && !locked && this.here === "song_cai") {
       const river = this.fromZoneIt(riverInteractable(this.toZone(this.local.pos), this.local.facing));
       near = river && this.prompt?.id === river.id && this.prompt.face === river.face ? this.prompt : river;
+    }
+    // 0095: …and from the boat anywhere on the wild river and its canals (map wild, world px)
+    if (!near && !this.rodOut && !this.swimming && !locked && this.worldMap && this.here === "wild") {
+      const w = wildBoatInteractable(this.local.pos.x, this.local.pos.y, this.local.facing);
+      near = w && this.prompt?.id === w.id && this.prompt.face === w.face ? this.prompt : w;
     }
     // the hammock's prompt: "Dậy" while I lie in it (always, wherever the nearest is), "Có người đang nằm" when taken
     if (this.hammockSince !== null && this.hammockIt) near = hammockPrompt(this.hammockIt, true, false);
