@@ -61,6 +61,7 @@ import { CATCH_LABEL_MS, FARM_ANIM_MS, RemoteWorld, type RosterEntry } from "@/l
 import type { PresenceDog } from "@/lib/presence-modes";
 import type { RoomWeather } from "@/lib/game/weather/model";
 import type { MapId } from "@/lib/game/maps/types";
+import type { Billboard, DioramaFrame, View3D } from "@/lib/game/diorama/types";
 
 export type { RosterEntry } from "@/lib/game/world";
 
@@ -318,6 +319,57 @@ export class GameEngine {
   private extras: WorldExtras | null = null;
   setExtras(fn: WorldExtras | null): void {
     this.extras = fn;
+  }
+
+  /** Diorama prototype: a 3D view draws the world instead of the 2D canvas (null = 2D). The game itself — input,
+   *  movement, collision, the network — is unchanged; the view only reads the state each frame. */
+  private view3d: View3D | null = null;
+  setView3D(v: View3D | null): void {
+    this.view3d = v;
+  }
+
+  /** Diorama prototype: a click/tap on the map at world px `w` (the 3D view's raycast), handled like a canvas click. */
+  tapWorld(w: Vec): void {
+    if (!this.inputEnabled) return;
+    this.cb.onInput?.();
+    if (this.rodOut) {
+      this.cb.onFishingInput?.("tap");
+      return;
+    }
+    this.handleTap(w);
+  }
+
+  /** What the 3D view draws this frame: the same people the 2D renderer shows, as billboards, plus the light model. */
+  private dioramaFrame(t: number): DioramaFrame {
+    const reduced = this.opts.reducedMotion;
+    const idle = (p: Vec) => (reduced ? 0 : idleFrame(t, (Math.round(p.x) * 37 + Math.round(p.y) * 11) % 900));
+    const out: Billboard[] = [];
+    for (const e of this.world.roster.values()) {
+      const label = e.name;
+      if (e.spot) { out.push({ id: e.id, look: e.look, x: e.spot.x, y: e.spot.y, facing: e.spot.dir, frame: 0, name: label }); continue; }
+      const a = this.world.actors.get(e.id);
+      if (!a || !this.visible(e.id, t) || this.carried(e.id, t)) continue;
+      const f = walkFrame(a);
+      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label });
+    }
+    for (const n of this.map.npcs) out.push({ id: `npc:${n.id}`, look: n.look, x: n.spot.x, y: n.spot.y, facing: n.spot.dir, frame: idle(n.spot), name: n.name });
+    const me = this.local;
+    if (this.hammockSince === null && !this.aboard(t)) {
+      const f = walkFrame(me);
+      out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true });
+    }
+    const wallNow = Date.now();
+    if (wallNow - this.lightingAt > 1000) {
+      this.lighting = lightingFor(wallNow, this.weather, this.weatherFx);
+      this.lightingAt = wallNow;
+    }
+    const night = this.lighting.night;
+    return {
+      t, focus: { x: me.display.x, y: me.display.y }, billboards: out,
+      night, warm: night > 0 && night < 1 ? Math.max(0, 1 - Math.abs(night - 0.5) * 2) : 0,
+      weather: INDOOR_MAPS.has(this.map.id) ? null : this.weather?.kind ?? null, windKmh: this.weather?.windKmh ?? 0,
+      fx: this.weatherFx, reduced,
+    };
   }
 
   /** v18.8: the room's weather (null = unknown: no effects, lighting by the local clock). */
@@ -1089,10 +1141,14 @@ export class GameEngine {
       return;
     }
     const r = this.canvas.getBoundingClientRect();
-    const w: Vec = {
+    this.handleTap({
       x: ((e.clientX - r.left) * this.dpr) / this.scale + this.cam.x,
       y: ((e.clientY - r.top) * this.dpr) / this.scale + this.cam.y,
-    };
+    });
+  };
+
+  /** A click/tap at world point `w` (the 2D canvas's, or the diorama's raycast). */
+  private handleTap(w: Vec): void {
     // v18.10: no walking while warming up or cramping
     if (this.warming(performance.now()) || this.cramping(performance.now())) return;
     // v18.13: a passenger does not walk or use anything
@@ -1133,7 +1189,7 @@ export class GameEngine {
     }
     this.pendingInteract = null;
     this.walkTo(w);
-  };
+  }
 
   /** The live rat drawn under world point p (a finger-sized box around it), as its interactable; field only. */
   private ratUnder(p: Vec): Interactable | null {
@@ -1216,7 +1272,8 @@ export class GameEngine {
     this.lastT = t;
     try {
       this.update(dt, t);
-      this.render(t);
+      if (this.view3d) this.view3d.render(this.dioramaFrame(t));
+      else this.render(t);
       this.failures = 0;
     } catch (err) {
       this.failures++;

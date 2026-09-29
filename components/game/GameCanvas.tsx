@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import { useEffect, useImperativeHandle, useRef, useSyncExternalStore, type Ref } from "react";
+import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/diorama/flag";
+import { DioramaView } from "@/lib/game/diorama/view";
+import { IS_PROD } from "@/lib/app-mode";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
 import type { HouseDraw } from "@/lib/game/housing/lot";
@@ -180,6 +183,10 @@ export interface GameCanvasProps {
 /** The game world: one engine + one broadcast channel per map visit. */
 export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...rest }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // diorama prototype: the per-browser "Đồ hoạ 2D | 3D (thử)" setting swaps the renderer of the maps that have one
+  const canvas3dRef = useRef<HTMLCanvasElement>(null);
+  const gfx = useSyncExternalStore<GfxMode>(subscribeGfx, readGfx, () => "2d");
+  const use3d = usesDiorama(gfx, mapId);
   const engineRef = useRef<GameEngine | null>(null);
   // The map of the world that is up, set and cleared with its engine.
   const worldRef = useRef<MapId | null>(null);
@@ -562,8 +569,23 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     // a portal in the rain rebuilt the engine and crashed on `channel` here)
     if (shockedRef.current) engine.setHeat({ shocked: true, crampLeftMs: null });
     if (rainRef.current) engine.setRain(rainRef.current);
+    // diorama prototype: a 3D view draws this world (no WebGL: it stays 2D)
+    let view: DioramaView | null = null;
+    const c3 = canvas3dRef.current;
+    if (use3d && c3) {
+      try {
+        view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+        engine.setView3D(view);
+      } catch {
+        view = null;
+      }
+    }
     engine.start();
     return () => {
+      if (view) {
+        engine.setView3D(null);
+        view.dispose();
+      }
       replies.dispose();
       repliesRef.current = null;
       sendRef.current = null;
@@ -572,7 +594,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       channel.leave({ t: "bye", id: localId });
       engine.destroy();
     };
-  }, [roomId, localId, mapId, arrive]);
+  }, [roomId, localId, mapId, arrive, use3d]);
 
-  return <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label="Thế giới game" />;
+  return (
+    <>
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label="Thế giới game" />
+      {use3d && <canvas ref={canvas3dRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label="Thế giới game (3D)" />}
+    </>
+  );
 }

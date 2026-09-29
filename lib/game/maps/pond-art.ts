@@ -30,13 +30,13 @@ function segDist(x: number, y: number, x1: number, y1: number, x2: number, y2: n
   return Math.hypot(x - (x1 + t * vx), y - (y1 + t * vy));
 }
 
-function onPath(x: number, y: number): boolean {
+export function onPath(x: number, y: number): boolean {
   const n = Math.sin(x * 0.21) * 1.2 + Math.sin(y * 0.17) * 1.2;
   return PATHS.some(([x1, y1, x2, y2, w]) => segDist(x, y, x1, y1, x2, y2) < w + n);
 }
 
 /** Lily pads (bông súng): x, y, has a flower. */
-const LILIES: ReadonlyArray<readonly [number, number, boolean]> = [
+export const LILIES: ReadonlyArray<readonly [number, number, boolean]> = [
   [170, 150, true], [196, 116, false], [238, 98, true], [382, 100, false], [432, 148, true], [456, 196, false],
   [168, 240, false], [222, 262, true], [376, 256, true], [424, 238, false], [330, 124, false], [262, 146, false],
 ];
