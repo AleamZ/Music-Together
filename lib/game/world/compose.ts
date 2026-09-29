@@ -3,6 +3,7 @@ import type { GameMap, Interactable, Npc, PlotGeom, PropPlacement, Rect, Seating
 import type { Vec } from "@/lib/game/types";
 import { LINKS, OPENINGS, OPENING_W, onRoad, ROADS, WILD_INTERACTABLES, wildBlocked, type Opening, type Road } from "./wild";
 import { toWorld, WORLD_CELL, WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId, type ZoneId } from "./zones";
+import { WORLD_GATES, type WorldGate } from "./gates";
 
 // buildWorld (spec §2): the one world map, headless. Each unlocked zone's collision grid is stamped at its offset; its
 // interactables, NPCs, props, plots and seating are moved to world px and tagged with their zone; the portals between
@@ -29,6 +30,8 @@ export interface WorldMap extends Omit<GameMap, "id" | "interactables" | "npcs" 
   links: WorldLink[];
   /** Spatial hash (HASH_CELL px buckets) of interactables and NPCs, by their use point / spot. */
   hash: SpatialHash;
+  /** P3: the level gates still shut for this account (their barrier blocked, their guard among the NPCs). */
+  gates: WorldGate[];
 }
 
 export const HASH_CELL = 128;
@@ -105,8 +108,9 @@ export function openingEnd(o: Opening, use: Vec): Vec {
   }
 }
 
-/** The world map with these zones unlocked (the others are solid). Default: all. */
-export function buildWorld(unlocked: Iterable<ZoneId> = ZONE_IDS): WorldMap {
+/** The world map with these zones unlocked (the others are solid). Default: all. P3: an interior among them (mo_da)
+ *  opens its level gate; one not among them keeps it shut. */
+export function buildWorld(unlocked: Iterable<ZoneId> = [...ZONE_IDS, "mo_da"]): WorldMap {
   const open = new Set<ZoneId>(unlocked);
   const cell = WORLD_CELL, cols = WORLD_W / cell, rows = WORLD_H / cell;
   const blocked = new Uint8Array(cols * rows);
@@ -160,7 +164,20 @@ export function buildWorld(unlocked: Iterable<ZoneId> = ZONE_IDS): WorldMap {
     }
   }
 
-  for (const it of WILD_INTERACTABLES) interactables.push({ ...it, zone: "wild" });
+  // P3: the level gates still shut — the barrier blocks, the guard stands by it, the door behind it is out of use
+  const gates = WORLD_GATES.filter((g) => !open.has(g.map));
+  for (const g of gates) {
+    if (g.barrier) {
+      const b = g.barrier;
+      for (let r = Math.floor(b.y / cell); r < Math.ceil((b.y + b.h) / cell); r++)
+        for (let c = Math.floor(b.x / cell); c < Math.ceil((b.x + b.w) / cell); c++) if (r >= 0 && r < rows && c >= 0 && c < cols) blocked[r * cols + c] = 1;
+    }
+    npcs.push({ ...g.guard, zone: "wild" });
+  }
+  for (const it of WILD_INTERACTABLES) {
+    if (it.to && gates.some((g) => g.map === it.to!.map)) continue;               // P3: the mine mouth behind its barrier
+    interactables.push({ ...it, zone: "wild" });
+  }
 
   const links: WorldLink[] = LINKS.filter((l) => open.has(l.from.zone) && open.has(l.to.zone))
     .map((l) => ({ kind: l.kind, from: toWorld(l.from.zone, l.from.p)!, to: toWorld(l.to.zone, l.to.p)! }));
@@ -172,5 +189,5 @@ export function buildWorld(unlocked: Iterable<ZoneId> = ZONE_IDS): WorldMap {
   const hall = getMap("hall");
   const spawn = mvSpot(hall.spawn, { x: ZONES.hall.ox, y: ZONES.hall.oy });
   return { id: "world", width: WORLD_W, height: WORLD_H, cell, cols, rows, blocked, spawn, seating,
-    interactables, npcs, props, plots, zones, roads: ROADS, links, hash };
+    interactables, npcs, props, plots, zones, roads: ROADS, links, hash, gates };
 }

@@ -18,6 +18,18 @@ export interface Billboard {
   me?: boolean;
   /** The 3D chibi's action (sit, fish cast/reel, swim, ride, wave…); absent = idle/walk/run from how the feet move. */
   act?: CharAct;
+  /** P3: what they ride — a vehicle, or the boat on Sông Cái (absent: on foot). The vehicle model follows the feet. */
+  vehicle?: "bike" | "moto" | "car" | "boat";
+}
+
+/** P3: the gameplay things the 3D world shows beside the people (world px): the field's rats, the dogs, the pond's
+ *  leaping fish and the shut level gates' bamboo barriers. */
+export interface GameplayFrame {
+  rats: ReadonlyArray<{ key: string; x: number; y: number; dir: 1 | -1; fallen: boolean }>;
+  dogs: ReadonlyArray<{ id: string; x: number; y: number; facing: Facing }>;
+  /** A fish in the air: where, and how high (0…1 of its arc). */
+  leaps: ReadonlyArray<{ x: number; y: number; h: number }>;
+  gates: ReadonlyArray<{ id: string; at: Vec; barrier: { x: number; y: number; w: number; h: number } | null }>;
 }
 
 /** What the engine hands the diorama each frame (the same state the 2D renderer draws). */
@@ -35,6 +47,8 @@ export interface DioramaFrame {
   windKmh: number;
   fx: WeatherFx;
   reduced: boolean;
+  /** P3 world mode: rats, dogs, leaping fish, gates (absent on a per-map diorama). */
+  gameplay?: GameplayFrame;
 }
 
 /** What the engine needs from a 3D view. */

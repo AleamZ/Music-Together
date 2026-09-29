@@ -22,6 +22,17 @@ export function tripVehicle(owned: readonly string[]): Vehicle | null {
 
 export const tripMs = (owned: readonly string[]): number => tripVehicle(owned)?.tripMs ?? WALK_TRIP_MS;
 
+/** P3 (0089 vehicle_catalog.speed_mul): how many times the walking speed a vehicle rides the unified world, from its old
+ *  trip (walking it took WALK_TRIP_MS): 1 + 2 × (15000 − tripMs) / 13000, capped at 3, 2 decimals — bike 1.77, moto 2.54,
+ *  car 3. */
+export const speedMul = (tripMs: number): number =>
+  Math.round(Math.min(3, Math.max(1, 1 + (2 * (WALK_TRIP_MS - tripMs)) / 13000)) * 100) / 100;
+
+/** P3: each vehicle's speed_mul. */
+export const WORLD_RIDE_SPEED: Readonly<Record<VehicleId, number>> = Object.fromEntries(
+  VEHICLES.map((v) => [v.id, speedMul(v.tripMs)]),
+) as Record<VehicleId, number>;
+
 export const isRoadTrip = (from: MapId, to: MapId): boolean =>
   (from === "hall" && to === "market") || (from === "market" && to === "hall")
   // v19.2: Chợ Lớn <-> Khu nhà is a road too

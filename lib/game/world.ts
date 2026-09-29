@@ -1,3 +1,5 @@
+import { worldSwimMap } from "@/lib/game/world/swim";
+import type { WorldMap } from "@/lib/game/world/compose";
 import { applyPathMsg, applyStateMsg, createActor, tickActor, type Actor } from "@/lib/game/actor";
 import { HX } from "@/lib/game/heat/model";
 import { decodeNet, netAlive, type NetState } from "@/lib/game/fishing/netcast";
@@ -81,7 +83,7 @@ export class RemoteWorld {
   constructor(map: GameMap, localId: string) {
     this.map = map;
     this.localId = localId;
-    this.swimMap = buildSwimMap(map);
+    this.swimMap = map.id === ("world" as string) ? worldSwimMap(map as unknown as WorldMap) : buildSwimMap(map);   // P3: the world's pond
   }
 
   /** Everyone online except me, by account id. */
@@ -353,7 +355,7 @@ export class RemoteWorld {
 
   /** A rider's actor is simulated at the ride speed, so it keeps pace between messages instead of snapping. */
   private speedOf(id: string): number {
-    return WALK_SPEED * rideSpeed(this.riding(id)) * swimSpeed(this.swimming.has(id));
+    return WALK_SPEED * rideSpeed(this.riding(id), this.map.id === ("world" as string)) * swimSpeed(this.swimming.has(id));
   }
 
   private needsActor(id: string): boolean {

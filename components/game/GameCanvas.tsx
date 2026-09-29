@@ -4,10 +4,12 @@ import { useEffect, useImperativeHandle, useRef, useSyncExternalStore, type Ref 
 import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/diorama/flag";
 import { DioramaView } from "@/lib/game/diorama/view";
 import { WorldView } from "@/lib/game/diorama/world/view";
+import { GameplayLayer } from "@/lib/game/diorama/gameplay3d";
+import type { Scene } from "three";
 import { ZoneChannels } from "@/lib/game/net/world-channels";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap } from "@/lib/game/maps/types";
-import { aoiZones } from "@/lib/game/world/aoi";
+import { aoiStep, aoiZones, nearestZone } from "@/lib/game/world/aoi";
 import { buildWorld, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { isZone, toWorld, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 import { IS_PROD } from "@/lib/app-mode";
@@ -203,6 +205,8 @@ export interface GameCanvasProps {
   onAoiChange?: (zones: ZoneId[]) => void;
   /** P2: the world could not start (no WebGL): the shell goes back to the per-map game. */
   onWorldFailed?: () => void;
+  /** P3 world mode: I walked up to the shut level gate of map (the shell says "Cần cấp N"). */
+  onGate?: (map: MapId) => void;
   /** Dev only (/dev/world-game): a local fake instead of the realtime channels, and 3D on every map with a diorama. */
   joinChannel?: typeof joinGameChannel;
   force3d?: boolean;
@@ -522,6 +526,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     // the broadcast: one channel (a map) or my zone + its neighbours (the world); `send` goes to mine
     let channel: { send: (msg: GameMessage) => void; leave: (last?: GameMessage) => void };
     let zones: ZoneChannels | null = null;
+    let aoiNow: ZoneId[] = [];                                                           // P3: the zones listened to now
+    let aoiTimer = 0;
     try {
       const art = wmap ? blankArt() : paintMap(map);
       const fontVar = getComputedStyle(document.documentElement).getPropertyValue("--font-vt323").trim();
@@ -554,13 +560,15 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           // P2: a new zone — listen around it, tell its topic where I am, ask the new neighbours for theirs
           if (!zones) return;
           const before = new Set(zones.zones());
-          const next = aoiZones(z, engine.localPos());
-          zones.setZones(next);
+          const next = aoiZones(z, engine.localPos(), aoiNow);
+          aoiNow = next;
+          zones.setZones(next, nearestZone(engine.localPos()));                          // P3: the wild's fallback topic
           zones.send(engine.snapshot());
           for (const n of next) if (!before.has(n) && n !== z) zones.send({ t: "hello", id: localId }, n);
           propsRef.current.onAoiChange?.(next);
           propsRef.current.onZoneChange?.(z);
         },
+        onGate: (m) => propsRef.current.onGate?.(m),                                    // P3
       }, {
         localId,
         name: init.name,
@@ -593,7 +601,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     engine.setGatherSpots(gatherRef.current);
     engine.setLocal({ name: init.name, badges: init.badges, look: init.look, ...dogRef.current });
     if (zoomRef.current !== 1) engine.setZoom(zoomRef.current);
-    if (map.id === "field") engine.setRats(ratsRef.current);
+    if (map.id === "field" || wmap) engine.setRats(ratsRef.current);                      // P3: the field zone of the world too
 
     // One answer (my state) serves every `hello` that arrives before it goes out; answers are spread over a window
     // that grows with the world, because each one reaches every player.
@@ -666,8 +674,29 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
         },
       }, joinChannel);
       const first = aoiZones(engine.currentZone(), engine.localPos());
-      zc.setZones(first);
+      zc.setZones(first, nearestZone(engine.localPos()));
+      aoiNow = first;
       zones = zc;
+      // P3: walking the wild, the zones in reach change without a zone change: listen around me every half second
+      aoiTimer = window.setInterval(() => {
+        if (engine.currentZone() !== "wild") return;
+        const pos = engine.localPos(), fb = nearestZone(pos);
+        const next = aoiStep(aoiNow, "wild", pos);
+        if (!next) {
+          if (zc.fallbackZone() !== fb) {
+            zc.setZones(aoiNow, fb);
+            zc.send(engine.snapshot());
+            propsRef.current.onAoiChange?.(aoiNow);                                      // the presence's fallback zone
+          }
+          return;
+        }
+        const before = new Set(aoiNow);
+        aoiNow = next;
+        zc.setZones(next, fb);
+        zc.send(engine.snapshot());
+        for (const n of next) if (!before.has(n)) zc.send({ t: "hello", id: localId }, n);
+        propsRef.current.onAoiChange?.(next);
+      }, 500);
       channel = { send: (msg) => zc.send(msg), leave: (last) => zc.leave(last) };
       propsRef.current.onAoiChange?.(first);
       propsRef.current.onZoneChange?.(engine.currentZone());
@@ -699,6 +728,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     if (rainRef.current) engine.setRain(rainRef.current);
     // diorama prototype: a 3D view draws this world (no WebGL: it stays 2D); P2: the world's own view, which must start
     let view: (DioramaView | WorldView) | null = null;
+    let gameplay: GameplayLayer | null = null;                                          // P3: vehicles, rats, dogs, gates
     const c3 = canvas3dRef.current;
     if (use3d && c3) {
       try {
@@ -706,10 +736,15 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
           wv.setCameraMode("follow");
           view = wv;
+          // P3: the gameplay layer rides in the world view's scene (WorldView keeps its scene private: no API for layers yet)
+          const gp = new GameplayLayer((x, y) => wv.heightAt(x, y));
+          (wv as unknown as { scene: Scene }).scene.add(gp.root);
+          gameplay = gp;
+          engine.setView3D({ render: (f) => { gp.update(f); wv.render(f); } });
         } else {
           view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+          engine.setView3D(view);
         }
-        engine.setView3D(view);
         view.setPlots(plotsRef.current);
         view3dRef.current = view;
       } catch {
@@ -722,8 +757,10 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       if (view) {
         if (view3dRef.current === view) view3dRef.current = null;
         engine.setView3D(null);
+        gameplay?.dispose();
         view.dispose();
       }
+      if (aoiTimer) window.clearInterval(aoiTimer);
       replies.dispose();
       repliesRef.current = null;
       sendRef.current = null;

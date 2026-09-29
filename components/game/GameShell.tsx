@@ -4,6 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { readGfx, subscribeGfx, type GfxMode } from "@/lib/game/diorama/flag";
 import { unifiedWorldOn } from "@/lib/game/world/flag";
 import { worldArrival } from "@/lib/game/world/wild";
+import { gateText } from "@/lib/game/world/gates";
+import { nearestZone } from "@/lib/game/world/aoi";
+import { waypointClick, waypointMarks, type WaypointMark } from "@/lib/game/world/waypoints";
 import { isZone, ZONE_IDS, type ZoneId } from "@/lib/game/world/zones";
 import WorldMiniMap from "./WorldMiniMap";
 import ZoneToast from "./ZoneToast";
@@ -43,7 +46,7 @@ import { DEFAULT_LOOK } from "@/lib/game/look";
 import { HALL_SPAWN } from "@/lib/game/maps/hall";
 import { CITY_PLACES } from "@/lib/game/maps/city";
 import { getMap } from "@/lib/game/maps/registry";
-import { posReport, posReportWorld } from "@/lib/game/position";
+import { beatDue, posReport, posReportWorld, type RideReport } from "@/lib/game/position";
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import { overlayLocks } from "@/lib/game/overlays";
 import { skipTrip } from "@/lib/game/travel/rpc";
@@ -174,9 +177,6 @@ type Panel =
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
 
-/** P2 world mode: the road-trip hop is off (vehicles just ride the world's roads) until the owner decides. */
-const WORLD_ROAD_TEXT = "🛣️ Thế giới liền mạch: cứ đi (hoặc chạy xe) theo đường — chưa có chuyến xe tự chạy.";
-
 /** A portal fades to dark in FADE_MS, the new map starts, and it fades back in after the map's first frame. */
 const FADE_MS = 250;
 
@@ -254,9 +254,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const map = getMap(travel.mapId);
   const inWorld = worldMode && isZone(travel.mapId);
   const presenceAt = inWorld && zone ? zone : travel.mapId;
+  // P3: in the wild, the nearest zone goes along for the older clients (they know no "wild"; realtime.ts setMap)
+  const [wildNear, setWildNear] = useState<MapId>("hall");
   useEffect(() => {
-    setPresenceMap(presenceAt);
-  }, [presenceAt, setPresenceMap]);
+    setPresenceMap(presenceAt, presenceAt === "wild" ? wildNear : undefined);
+  }, [presenceAt, wildNear, setPresenceMap]);
   // 0057: where I arrive is a position claim (the server checks each claim against the last one it accepted); P2: walking
   // across the world is not an arrival (the heartbeat below reports it)
   useEffect(() => {
@@ -265,19 +267,22 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     const at = travel.arrive ?? getMap(travel.mapId).spawn;
     void posReport(token, travel.mapId, at.x, at.y);
   }, [token, travel]);
-  // P2: the position heartbeat while walking the world (pos_report_w, world px) — every 3 s once I moved 16 px
-  const lastBeat = useRef<{ x: number; y: number } | null>(null);
+  // P2: the position heartbeat while walking the world (pos_report_w, world px) — every 3 s once I moved 16 px.
+  // P3 (0089): with what I ride (the server allows 260 × the vehicle's speed_mul px/s), every second while on a vehicle
+  // or a lift (a passenger's claim is judged against its driver's latest one).
+  const lastBeat = useRef<{ x: number; y: number; at: number } | null>(null);
+  const rideReport = useRef<RideReport>(null);
   useEffect(() => {
     if (!token || !inWorld) return;
     lastBeat.current = null;
     const id = window.setInterval(() => {
       const p = canvasRef.current?.worldPos();
       if (!p) return;
-      const l = lastBeat.current;
-      if (l && Math.hypot(p.x - l.x, p.y - l.y) < 16) return;
-      if (l) void posReportWorld(token, p.x, p.y);                                  // the arrival reported the first
-      lastBeat.current = { x: p.x, y: p.y };
-    }, 3000);
+      const l = lastBeat.current, now = performance.now();
+      if (!beatDue(l, p, now, rideReport.current)) return;
+      if (l) void posReportWorld(token, p.x, p.y, rideReport.current);              // the arrival reported the first
+      lastBeat.current = { x: p.x, y: p.y, at: now };
+    }, 1000);
     return () => window.clearInterval(id);
   }, [token, inWorld]);
   const onZoneChange = useCallback((z: ZoneId) => {
@@ -286,6 +291,14 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     if (isZone(z)) setTravel((t) => (t.mapId === z ? t : { ...t, mapId: z, arrive: null, walked: true, world: null }));
   }, []);
   const onWorldFailed = useCallback(() => setWorldFailed(true), []);
+  const onAoiChange = useCallback((zs: ZoneId[]) => {
+    setAoi(zs);
+    const p = canvasRef.current?.worldPos();
+    if (p) setWildNear(nearestZone(p));
+  }, []);
+  // P3: a shut level gate in the world (bamboo barrier + guard)
+  const gateLevels = useRef<Readonly<Record<string, number>> | undefined>(undefined);
+  const onGate = useCallback((m: MapId) => showToast(gateText(mapMinLevel(m, gateLevels.current))), [showToast]);
   const getWorldPos = useCallback(() => canvasRef.current?.worldPos() ?? null, []);
   useEffect(() => () => {
     if (fadeTimer.current) clearTimeout(fadeTimer.current);
@@ -398,7 +411,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const myLevel = progress.state?.level ?? 1;
   // the zones of the world my level has opened (a locked one is a solid block until P3's barriers)
   const worldLevels = progress.state?.mapLevels;
-  const worldZoneKey = ZONE_IDS.filter((z) => mapUnlocked(z, myLevel, worldLevels)).join(",");
+  // P3: …and Mỏ đá, whose level gate stands before the mine mouth
+  const worldZoneKey = [...ZONE_IDS, "mo_da" as const].filter((z) => mapUnlocked(z, myLevel, worldLevels)).join(",");
+  useEffect(() => { gateLevels.current = worldLevels ?? undefined; }, [worldLevels]);
   const worldZones = useMemo(() => ({ unlocked: worldZoneKey.split(",").filter(Boolean) as ZoneId[] }), [worldZoneKey]);
   const myTitle = titleText(progress.state);
   // v20.3 Bãi đất trống: the rings (labels, my corner, my live match)
@@ -681,12 +696,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     const door = getMap(mapId).interactables.find((i) => i.kind === "portal" && i.to?.map === m);
     if (!door?.to) return false;
     cancelCast();
-    // P2 world mode: no road-trip hops (the owner has not decided how vehicles travel the world): ride the roads
-    if (inWorld && isRoadTrip(mapId, m)) { showToast(WORLD_ROAD_TEXT); return false; }
+    // P3 world mode: no road-trip hops — the engine keeps me on my driver's vehicle along the world's roads
+    if (inWorld && isRoadTrip(mapId, m)) return true;
     if (isRoadTrip(mapId, m)) setTrip({ to: door.to, toMarket: tripForward(mapId, m), vehicle: VEHICLES.find((x) => x.id === v) ?? null });
     else travelTo(door.to);
     return true;
-  }, [mapId, cancelCast, travelTo, inWorld, showToast]);
+  }, [mapId, cancelCast, travelTo, inWorld]);
   const lift = useLift({
     canvasRef, riding, fainted: faint !== null, nameOf, toast: showToast, follow: followDriver,
     canAsk: riding === null && !rideBusy && !blocking,
@@ -694,6 +709,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     inTransit: () => trip !== null || fadeTimer.current !== null,
   });
   const { portal: liftPortal } = lift;
+  const liftKind = lift.state.kind;
+  useEffect(() => {
+    rideReport.current = liftKind === "passenger" ? "lift" : riding;                  // P3: the heartbeat's ride
+  }, [liftKind, riding]);
   // the HUD hotkeys (lib/game/hotkeys.ts): one listener; a key clicks its visible button
   useHotkeys({ enabled: !blocking && faint === null && trip === null, helpOpen, offer: lift.offer !== null }, () => setHelpOpen((o) => !o));
   const liftTrip = lift.state.kind === "passenger"
@@ -716,6 +735,14 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     travelTo({ map: r.to.map, arrive: { x: r.to.x, y: r.to.y, dir: r.to.dir } });
     reloadCoins();
   }, [progressTravel, cancelCast, travelTo, reloadCoins]);
+  // P3 world mode: the waypoints on the world map and the minimap; a click on a discovered one is that trip
+  const wpState = progress.state?.waypoints, wpAt = progress.state?.atWaypoint ?? null;
+  const wpMarks = useMemo(() => waypointMarks(new Set((wpState ?? []).filter((w) => w.found).map((w) => w.id)), wpAt), [wpState, wpAt]);
+  const onWaypoint = useCallback((m: WaypointMark) => {
+    const c = waypointClick(m);
+    if (!c.travel) showToast(c.why);
+    else void teleport(m.id);
+  }, [showToast, teleport]);
 
   const onInteract = useCallback((it: Interactable) => {
     if (interactBlocked(riding, it.kind)) {
@@ -737,11 +764,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         }
         cancelCast();
         liftPortal(it.to.map);                                              // v18.13: my passenger comes along
-        if (inWorld && isRoadTrip(mapId, it.to.map)) {                      // P2: no road-trip hops in the world
-          showToast(WORLD_ROAD_TEXT);
-          break;
-        }
-        if (isRoadTrip(mapId, it.to.map)) {
+        if (!inWorld && isRoadTrip(mapId, it.to.map)) {                     // P3: no road-trip hops in the world
           // the road is driven on the vehicle I am riding, else the fastest I own (v18.7)
           setTrip({
             to: it.to, toMarket: tripForward(mapId, it.to.map),
@@ -906,8 +929,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         travelKey={travel.key}
         arriveWorld={travel.world ?? null}
         onZoneChange={onZoneChange}
-        onAoiChange={setAoi}
+        onAoiChange={onAoiChange}
         onWorldFailed={onWorldFailed}
+        onGate={onGate}
         initial={{ name: myName, badges: myBadges, look: myLook }}
         isMember={(id) => memberIds.has(id)}
         isHere={(id) => isHereOn(presence, id, inWorld ? aoi : travel.mapId)}
@@ -1142,7 +1166,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
 
       <div className="pointer-events-none absolute bottom-18 right-3 z-10 hidden sm:block">
-        {inWorld ? <WorldMiniMap getWorldPos={getWorldPos} zone={zone} /> : <MiniMap mapId={travel.mapId} getLocalPos={() => canvasRef.current?.localPos() ?? null} />}
+        {inWorld ? <WorldMiniMap getWorldPos={getWorldPos} zone={zone} waypoints={wpMarks} onWaypoint={onWaypoint} /> : <MiniMap mapId={travel.mapId} getLocalPos={() => canvasRef.current?.localPos() ?? null} />}
       </div>
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
@@ -1582,6 +1606,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length, song_cai: counts.song_cai.length }}
           onClose={close}
           getWorldPos={inWorld ? getWorldPos : undefined}
+          waypoints={inWorld ? wpMarks : undefined}
+          onWaypoint={onWaypoint}
         />
       )}
       {creating && (

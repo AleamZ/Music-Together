@@ -4,6 +4,7 @@ import { MINE } from "./mine";
 import { ROADS, TRAILS } from "./roads";
 import { RIVER_PTS, STREAM_PTS } from "./terrain";
 import { WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId, type ZoneId } from "./zones";
+import type { WaypointMark } from "./waypoints";
 
 // P2: the world as a map (the minimap's player-centred window and the city map's whole world): the land, the river and
 // the stream, the roads and trails, each zone as a labelled block, the mine mouth, and me. Drawn with plain 2D canvas
@@ -33,7 +34,8 @@ export function centreOn(p: Vec, w: number, h: number, scale: number): MapView {
   return { x0, y0, scale };
 }
 
-export function drawWorldMap(ctx: CanvasRenderingContext2D, w: number, h: number, v: MapView, me: Vec | null, opts: { labels?: boolean; locked?: ReadonlySet<ZoneId> } = {}): void {
+export function drawWorldMap(ctx: CanvasRenderingContext2D, w: number, h: number, v: MapView, me: Vec | null,
+  opts: { labels?: boolean; locked?: ReadonlySet<ZoneId>; waypoints?: readonly WaypointMark[] } = {}): void {
   const X = (x: number) => (x - v.x0) * v.scale, Y = (y: number) => (y - v.y0) * v.scale;
   ctx.fillStyle = "#6f8f4a";
   ctx.fillRect(0, 0, w, h);
@@ -76,6 +78,35 @@ export function drawWorldMap(ctx: CanvasRenderingContext2D, w: number, h: number
   if (opts.labels) {
     ctx.fillStyle = "#2a1d12";
     ctx.fillText("⛏️ Mỏ đá", X(MINE.mouth.x), Y(MINE.mouth.y) - mr - 8);
+  }
+  // P3: the fast-travel waypoints — gold when discovered (click to travel), grey when not, a green ring where I stand
+  for (const m of opts.waypoints ?? []) {
+    const x = X(m.x), y = Y(m.y), s = Math.max(4, 60 * v.scale);
+    ctx.fillStyle = m.found ? "#f2c14e" : "#9a9086";
+    ctx.strokeStyle = "#2a1d12";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y - s);
+    ctx.lineTo(x + s, y);
+    ctx.lineTo(x, y + s);
+    ctx.lineTo(x - s, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    if (m.here) {
+      ctx.strokeStyle = "#2f9e44";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, s + 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (opts.labels) {
+      ctx.fillStyle = "#2a1d12";
+      ctx.font = `${Math.max(10, Math.round(70 * v.scale))}px monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(`🌀 ${m.name}`, x, y + s + 2);
+    }
   }
   if (me) {
     ctx.fillStyle = "#e0402a";

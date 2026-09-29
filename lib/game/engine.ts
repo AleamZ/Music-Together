@@ -12,10 +12,10 @@ import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { drawNetThrower } from "@/lib/game/art/netthrow";
 import { facingTowards, netAlive, type NetState } from "@/lib/game/fishing/netcast";
 import { serverNow } from "@/lib/game/farm/clock";
-import { promptTarget, RAT_PROMPT_RANGE, ratAt, ratInteractable, type FieldRats } from "@/lib/game/farm/rats";
+import { nearestRat, promptTarget, RAT_PROMPT_RANGE, ratAt, ratInteractable, type FieldRats } from "@/lib/game/farm/rats";
 import { getCharacterFrames } from "@/lib/game/art/raster";
 import { drawRide } from "@/lib/game/art/ride";
-import { drawLeap, drawSwimmer, drawWetDrips, leapDone, type Leap } from "@/lib/game/art/swim";
+import { drawLeap, drawSwimmer, drawWetDrips, LEAP_MS, leapDone, type Leap } from "@/lib/game/art/swim";
 import { drawCramp, drawHeatFace, drawStretch } from "@/lib/game/art/heat";
 import { drawHammockLive, hammockSwing, lyingSprite } from "@/lib/game/art/hammock";
 import { hammockBlocked, hammockKeeper, hammockPrompt } from "@/lib/game/hammock";
@@ -61,11 +61,13 @@ import { CATCH_LABEL_MS, FARM_ANIM_MS, RemoteWorld, type RosterEntry } from "@/l
 import type { PresenceDog } from "@/lib/presence-modes";
 import type { RoomWeather } from "@/lib/game/weather/model";
 import type { MapId } from "@/lib/game/maps/types";
-import type { Billboard, DioramaFrame, View3D } from "@/lib/game/diorama/types";
+import type { Billboard, DioramaFrame, GameplayFrame, View3D } from "@/lib/game/diorama/types";
 import type { CharAct } from "@/lib/game/diorama/character/pose";
 import { getMap } from "@/lib/game/maps/registry";
 import { interactablesNear, npcsNear, type WorldMap, type Zoned } from "@/lib/game/world/compose";
-import { zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
+import { toWorld, zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
+import { worldSwimMap } from "@/lib/game/world/swim";                                          // P3
+import { gateNear, type WorldGate } from "@/lib/game/world/gates";                              // P3
 
 export type { RosterEntry } from "@/lib/game/world";
 
@@ -118,6 +120,8 @@ export interface EngineCallbacks {
   onInput?: () => void;
   /** P2 world mode: my feet crossed into another zone (or the wild). */
   onZoneChange?: (zone: ZoneId) => void;
+  /** P3 world mode: I walked up to the shut level gate of map (once per approach). */
+  onGate?: (map: MapId) => void;
 }
 
 export interface EngineOptions {
@@ -294,11 +298,12 @@ export class GameEngine {
     this.zone = this.worldMap ? zoneAt(start) : map.id;
     this.local = createActor(opts.localId, { x: start.x, y: start.y }, start.dir, performance.now());
     this.world = new RemoteWorld(map, opts.localId);
-    this.pack = new Pack((x, y) => isBlockedAt(map, x, y), opts.localId);
+    // P3: in the world the field's rats walk field px, drawn and hunted at the field's origin
+    this.pack = new Pack((x, y) => isBlockedAt(map, x, y), opts.localId, this.worldMap ? toWorld("field", { x: 0, y: 0 }) ?? undefined : undefined);
     this.localInfo = { name: opts.name, badges: opts.badges, look: opts.look };
     // art.props mirrors map.props one to one (each painter maps them through propSprite)
     this.swaying = art.props.map((_, i) => SWAY_KINDS.has(map.props[i]?.kind ?? ""));
-    this.swimMap = buildSwimMap(map);
+    this.swimMap = this.worldMap ? worldSwimMap(this.worldMap) : buildSwimMap(map);         // P3: the pond zone's water
     this.hammockIt = map.interactables.find((i) => i.kind === "hammock") ?? null;
     this.nextLeapAt = performance.now() + LEAP_GAP_MIN_MS;
     this.ro = new ResizeObserver(() => this.resize());
@@ -379,7 +384,8 @@ export class GameEngine {
       const a = this.world.actors.get(e.id);
       if (!a || !this.visible(e.id, t) || this.carried(e.id, t)) continue;
       const f = walkFrame(a);
-      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label, act: remoteAct(e.id) });
+      const boat = this.onBoat(a.display), veh = this.world.riding(e.id) ?? (boat ? "boat" : undefined);           // P3
+      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label, act: boat ? "sit" : remoteAct(e.id), vehicle: veh });
     }
     const me = this.local;
     // P2: the world's NPCs near the camera's focus (the spatial hash), else the map's
@@ -391,7 +397,9 @@ export class GameEngine {
       const ph = this.fishing.phase;
       const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim"
         : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : waved.has(this.opts.localId) ? "wave" : undefined;
-      out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true, act });
+      const boat = this.onBoat(me.display);                                               // P3: rowing Sông Cái
+      out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
+        act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined) });
     }
     const wallNow = Date.now();
     if (wallNow - this.lightingAt > 1000) {
@@ -404,6 +412,28 @@ export class GameEngine {
       night, warm: night > 0 && night < 1 ? Math.max(0, 1 - Math.abs(night - 0.5) * 2) : 0,
       weather: INDOOR_MAPS.has(this.here as MapId) ? null : this.weather?.kind ?? null, windKmh: this.weather?.windKmh ?? 0,
       fx: this.weatherFx, reduced,
+      gameplay: this.worldMap ? this.gameplayFrame(t) : undefined,
+    };
+  }
+
+  /** P3: is a world point on Sông Cái's water (a boat there)? World mode only. */
+  private onBoat(p: Vec): boolean {
+    if (!this.worldMap || zoneAt(p) !== "song_cai") return false;
+    const q = this.toZone(p, "song_cai");
+    return riverWater(q.x, q.y);
+  }
+
+  /** P3: the rats, dogs, leaping fish and shut gates the 3D world draws (world px). */
+  private gameplayFrame(t: number): GameplayFrame {
+    const sNow = serverNow();
+    return {
+      rats: this.pack.drawnRats(t, sNow).map((r) => ({ key: r.key, x: r.x, y: r.y, dir: r.dir, fallen: r.fallen })),
+      dogs: this.pack.drawnDogs(t).map((d) => ({ id: d.id, x: d.x, y: d.y, facing: d.facing })),
+      leaps: this.leaps.map((l) => {
+        const k = Math.min(1, Math.max(0, (t - l.born) / LEAP_MS));
+        return { x: l.x0 + (l.x1 - l.x0) * k, y: l.y0 + (l.y1 - l.y0) * k, h: k >= 1 ? 0 : Math.sin(k * Math.PI) };
+      }),
+      gates: (this.worldMap?.gates ?? []).map((g) => ({ id: g.id, at: g.at, barrier: g.barrier })),
     };
   }
 
@@ -453,6 +483,19 @@ export class GameEngine {
   /** Is this engine on the unified world? */
   isWorld(): boolean {
     return this.worldMap !== null;
+  }
+
+  /** P3: the shut gate I stand at (its toast was said), or null. */
+  private gateAt: string | null = null;
+
+  /** P3: walking up to a shut level gate tells the shell once (again after I walked away). */
+  private checkGate(now: number): void {
+    void now;
+    if (!this.worldMap || this.worldMap.gates.length === 0) return;
+    const g: WorldGate | null = gateNear(this.worldMap.gates, this.local.pos);
+    if ((g?.id ?? null) === this.gateAt) return;
+    this.gateAt = g?.id ?? null;
+    if (g) this.cb.onGate?.(g.map);
   }
 
   /** The zone my feet are in (world mode; else the map). */
@@ -679,7 +722,7 @@ export class GameEngine {
 
   /** My walk speed now (px/s): the vitals factor times the ride factor (none while swimming) times the swim factor. */
   localSpeed(): number {
-    return WALK_SPEED * this.speedFactor * rideSpeed(this.swimming ? null : this.ridingV) * swimSpeed(this.swimming) * this.petSpeedF
+    return WALK_SPEED * this.speedFactor * rideSpeed(this.swimming ? null : this.ridingV, this.worldMap !== null) * swimSpeed(this.swimming) * this.petSpeedF
       * this.boostF * (this.sprinting() ? SPRINT_SPEED : 1);                                        // v21 (0077)
   }
 
@@ -716,9 +759,10 @@ export class GameEngine {
   /** v18.1: a big fish pulled me in — I surface on the water cell nearest my bobber and swim until I step onto a bank.
    *  Pond only (nothing happens elsewhere). The others are told at once (`sw` 1). */
   overboard(): void {
-    if (!this.swimMap) return;
-    const at = nearestWater(bobberPoint(this.local.pos, this.local.facing));
-    if (!at) return;
+    if (!this.swimMap || this.here !== "pond") return;
+    const w = nearestWater(bobberPoint(this.toZone(this.local.pos, "pond"), this.local.facing));   // P3: pond px
+    if (!w) return;
+    const at = this.fromZone(w, "pond");
     this.keys = { ...NO_KEYS };
     this.pendingInteract = null;
     setKeyboard(this.local, { x: 0, y: 0 });
@@ -741,9 +785,10 @@ export class GameEngine {
 
   /** v18.10: jump into the water cell next to the shore or dock cell I stand on (pond only). False when I can't. */
   jumpIn(): boolean {
-    if (!this.swimMap || this.swimming || this.rodOut || this.warming(performance.now())) return false;
-    const at = jumpTarget(this.local.pos, this.local.facing);
-    if (!at) return false;
+    if (!this.swimMap || this.here !== "pond" || this.swimming || this.rodOut || this.warming(performance.now())) return false;
+    const j = jumpTarget(this.toZone(this.local.pos, "pond"), this.local.facing);   // P3: pond px, back to world px
+    if (!j) return false;
+    const at = this.fromZone(j, "pond");
     this.stopHere();
     this.local.pos = { x: at.x, y: at.y };
     this.local.display = { x: at.x, y: at.y };
@@ -757,7 +802,7 @@ export class GameEngine {
 
   /** v18.10: the 10 s warm-up stretch on the shore (movement locked, the others see it). False when I can't. */
   warmUp(): boolean {
-    if (this.swimming || this.rodOut || !edgeCell(this.local.pos)) return false;
+    if (this.swimming || this.rodOut || this.here !== "pond" || !edgeCell(this.toZone(this.local.pos, "pond"))) return false;
     this.stopHere();
     this.warmUntil = performance.now() + WARM_MS;
     this.announceNow();
@@ -781,7 +826,8 @@ export class GameEngine {
     if (until > 0) this.stopHere();
     this.crampUntil = until;
     if (h.rescued && this.swimming) {
-      const at = nearestEdge(this.local.pos);
+      const e = nearestEdge(this.toZone(this.local.pos, "pond"));                   // P3: pond px
+      const at = e ? this.fromZone(e, "pond") : null;
       if (at) {
         this.local.pos = { x: at.x, y: at.y };
         this.local.display = { x: at.x, y: at.y };
@@ -1291,11 +1337,11 @@ export class GameEngine {
 
   /** The live rat drawn under world point p (a finger-sized box around it), as its interactable; field only. */
   private ratUnder(p: Vec): Interactable | null {
-    if (this.map.id !== "field") return null;
-    const t = serverNow();
+    if (this.map.id !== "field" && !(this.worldMap && this.here === "field")) return null;
+    const t = serverNow(), q = this.toZone(p, "field");                                    // P3: field px in the world
     for (const r of this.pack.liveRats) {
       const at = ratAt(r, t);
-      if (at && Math.abs(p.x - at.x) <= 8 && p.y >= at.y - 10 && p.y <= at.y + 4) return ratInteractable(r, at);
+      if (at && Math.abs(q.x - at.x) <= 8 && q.y >= at.y - 10 && q.y <= at.y + 4) return ratInteractable(r, this.fromZone(at, "field"));
     }
     return null;
   }
@@ -1424,6 +1470,14 @@ export class GameEngine {
     // its prompt object while it runs.
     // v18.1: …else, on the pond, a cast from the bank or the platform edge I stand on (the same cell keeps its prompt)
     let near = this.rodOut || this.swimming || locked ? null : promptTarget(this.usable(), this.local.pos, this.pack.liveRats, serverNow());
+    // P3: …in the world's field zone, the rats walk field px
+    if (!near && !this.rodOut && !this.swimming && !locked && this.worldMap && this.here === "field") {
+      const t = serverNow(), r = nearestRat(this.pack.liveRats, this.toZone(this.local.pos, "field"), t, RAT_PROMPT_RANGE);
+      const at = r ? ratAt(r, t) : null;
+      near = r && at ? ratInteractable(r, this.fromZone(at, "field")) : null;
+    }
+    // P3: a locked gate I walk up to (the bamboo barrier and its guard): "Cần cấp N" once per approach
+    this.checkGate(now);
     if (!near && !this.rodOut && !this.swimming && !locked && this.here === "pond") {
       const bank = this.worldMap
         ? this.fromZoneIt(shoreInteractable(getMap("pond"), this.toZone(this.local.pos), this.local.facing))
@@ -1468,7 +1522,7 @@ export class GameEngine {
 
   /** v18.1: stepping out of the water ends swim mode and starts the drips; the others hear both (and the drying). */
   private updateSwim(now: number): void {
-    if (this.swimming && !inWater(this.local.pos)) {
+    if (this.swimming && !inWater(this.toZone(this.local.pos, "pond"))) {           // P3: pond px
       this.swimming = false;
       this.wetUntil = now + WET_MS;
       this.wetAnnounced = true;
@@ -1491,7 +1545,10 @@ export class GameEngine {
 
   /** v18.1: every 3–8 s a fish leaps from a random open-water cell of the pond (cosmetic; only this client sees it). */
   private updateLeaps(now: number): void {
-    if (this.map.id !== "pond") return;
+    if (this.here !== "pond") {                                                   // P3: the pond zone of the world too
+      if (this.leaps.length > 0) this.leaps = [];
+      return;
+    }
     if (this.leaps.length > 0) this.leaps = this.leaps.filter((l) => !leapDone(l, now));
     if (now < this.nextLeapAt) return;
     this.nextLeapAt = now + LEAP_GAP_MIN_MS + Math.random() * (LEAP_GAP_MAX_MS - LEAP_GAP_MIN_MS);
@@ -1502,7 +1559,8 @@ export class GameEngine {
     const dir = Math.random() < 0.5 ? -1 : 1;
     const to = { x: from.x + dir * (12 + Math.round(Math.random() * 6)), y: from.y + Math.round(Math.random() * 4 - 2) };
     if (!inPond(to.x, to.y, -10)) return;
-    this.leaps.push({ x0: from.x, y0: from.y, x1: to.x, y1: to.y, born: now });
+    const a = this.fromZone(from, "pond"), b = this.fromZone(to, "pond");                 // P3: world px in the world
+    this.leaps.push({ x0: a.x, y0: a.y, x1: b.x, y1: b.y, born: now });
   }
 
   /** Everyone drawn walking with a dog this frame: me, and the visible walkers whose presence has one (v17 §7.3). */
