@@ -12,7 +12,9 @@ export interface PresenceDog { name: string; coat: DogCoat }
 /** `map`: the game map the member walks on (v14); null in the classic view. `dog` (v17): the dog walking with them,
  *  from the same tab as `map`; null in the classic view or without one (absent in hand-made entries). */
 /** `cell` (P4): a world-mode member's grid cell (lib/game/world/grid.ts) as of their last publish — absent otherwise. */
-export interface PresenceEntry { accountId: string; name: string; mode: PresenceMode; map: PresenceMap | null; dog?: PresenceDog | null; cell?: number }
+/** `near` (fix pass): for a member out in the wild, the nearest zone its client publishes on — the 2D clients there see
+ *  it at that zone's edge, so its non-movement messages (look, bye, lifts, …) count as "here" on that zone too. */
+export interface PresenceEntry { accountId: string; name: string; mode: PresenceMode; map: PresenceMap | null; dog?: PresenceDog | null; cell?: number; near?: MapId }
 
 /** A presence `dog` value: `n` a name of 1–16 characters with no hidden character (the names the server stores), and
  *  `c` a known coat; anything else is no dog. */
@@ -53,7 +55,12 @@ export function aggregatePresenceModes(state: Record<string, PresenceMeta[] | un
       continue;
     }
     const latest = games.reduce((a, b) => (onlineAt(b) > onlineAt(a) ? b : a));
-    out.push({ accountId, name, mode: "game", map: latest.w === 1 ? "wild" : presenceMap(latest.map), dog: presenceDog(latest.dog), ...presenceCell(latest.c) });
+    const wild = latest.w === 1;
+    const near = wild ? presenceMap(latest.map) : null;
+    out.push({
+      accountId, name, mode: "game", map: wild ? "wild" : presenceMap(latest.map), dog: presenceDog(latest.dog), ...presenceCell(latest.c),
+      ...(near && near !== "wild" ? { near } : {}),
+    });
   }
   return out.sort((a, b) => (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
 }
