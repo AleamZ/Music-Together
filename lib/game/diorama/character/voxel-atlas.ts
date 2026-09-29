@@ -145,17 +145,19 @@ export class VoxelModel<S extends string> {
       }
     }
     // shelf packing, tallest first
-    const area = rects.reduce((a, r) => a + r.w * r.h, 0);
-    const widest = rects.reduce((a, r) => Math.max(a, r.w), 1);
+    // every rectangle gets a one-texel gutter repeating its edge (so smooth, linear-filtered sampling never bleeds)
+    const G = 1;
+    const area = rects.reduce((a, r) => a + (r.w + 2 * G) * (r.h + 2 * G), 0);
+    const widest = rects.reduce((a, r) => Math.max(a, r.w + 2 * G), 1);
     let width = 64;
     while ((width * width < area * 1.5 || width < widest) && width < 4096) width *= 2;
     const order = [...rects].sort((a, b) => b.h - a.h || b.w - a.w);
     let x = 0, y = 0, shelf = 0;
     for (const r of order) {
-      if (x + r.w > width) { x = 0; y += shelf; shelf = 0; }
-      r.x = x; r.y = y;
-      x += r.w;
-      shelf = Math.max(shelf, r.h);
+      if (x + r.w + 2 * G > width) { x = 0; y += shelf; shelf = 0; }
+      r.x = x + G; r.y = y + G;
+      x += r.w + 2 * G;
+      shelf = Math.max(shelf, r.h + 2 * G);
     }
     let height = 16;
     while (height < y + shelf) height *= 2;
@@ -203,6 +205,14 @@ export class VoxelModel<S extends string> {
         pos.copy(o).addScaledVector(U, (tu + 0.5) / r.w).addScaledVector(Vv, (tv + 0.5) / r.h);
         put(tu, tv, r.piece.paint({ dir: f.dir, u: tu, v: tv, w: r.w, h: r.h, x: pos.x, y: pos.y, z: pos.z, n: f.n, surface: false }));
       }
+    }
+    for (const r of rects) {
+      const cp = (fx: number, fy: number, tx: number, ty: number) => {
+        const a = (fy * width + fx) * 4, b = (ty * width + tx) * 4;
+        pixels[b] = pixels[a]; pixels[b + 1] = pixels[a + 1]; pixels[b + 2] = pixels[a + 2]; pixels[b + 3] = pixels[a + 3];
+      };
+      for (let u = 0; u < r.w; u++) { cp(r.x + u, r.y, r.x + u, r.y - 1); cp(r.x + u, r.y + r.h - 1, r.x + u, r.y + r.h); }
+      for (let v = -1; v <= r.h; v++) { cp(r.x, r.y + v, r.x - 1, r.y + v); cp(r.x + r.w - 1, r.y + v, r.x + r.w, r.y + v); }
     }
     const geos = {} as Record<S, THREE.BufferGeometry>;
     const nm = new THREE.Matrix3();

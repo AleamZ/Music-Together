@@ -61,6 +61,12 @@ export class ChibiRig {
     for (const s of SEGS) { this.m[s].geometry = p[s]; this.m[s].material = p.material; }
     this.face.geometry = p.faceGeo;
     this.face.material = p.faces.open;
+    const d = p.dims;
+    this.armL.position.x = -d.shoulderX;
+    this.armR.position.x = d.shoulderX;
+    this.legL.position.x = -d.legX;
+    this.legR.position.x = d.legX;
+    this.head.scale.setScalar(d.headScale);
   }
 
   setShadow(on: boolean): void {

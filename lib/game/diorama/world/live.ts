@@ -15,7 +15,7 @@ import {
 } from "./live-plan";
 import {
   barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, fishModel, houseModel, Labels,
-  lotSign, ModelMats, petModel, ratModel, ringModel, spearModel, stallModel, vehicleModel, wildAnimal,
+  lotSign, ModelMats, petModel, poseCreature, ratModel, ringModel, spearModel, stallModel, vehicleModel, wildAnimal,
   type Barrier, type Boat, type Creature, type Vehicle,
 } from "./models";
 
@@ -356,22 +356,7 @@ export class LiveLayer {
 
   private animate(c: Creature, m: Motion, t: number, fleeing: boolean, reduced: boolean): void {
     c.root.rotation.y = m.yaw;
-    const g = gait(m.speed, fleeing);
-    const s = reduced ? 0 : Math.sin(m.phase), k = g.amp;
-    if (c.legs.length === 4) {
-      c.legs[0].rotation.x = c.legs[3].rotation.x = s * k;
-      c.legs[1].rotation.x = c.legs[2].rotation.x = -s * k;
-    }
-    c.body.position.y = c.hop && g.freq > 0 && !reduced ? Math.abs(Math.sin(m.phase / 2)) * 0.18 : 0;
-    c.body.rotation.x = fleeing && g.freq > 0 ? -0.08 : 0;
-    if (c.head) c.head.rotation.x = g.freq === 0 && !reduced ? Math.max(0, Math.sin(t / 1400 + m.phase)) * 0.5 : 0;   // grazing
-    if (c.tail) c.tail.rotation.y = reduced ? 0 : Math.sin(t / (fleeing ? 90 : 220)) * 0.35;
-    if (c.wings.length) {
-      const air = c.flies && (fleeing || g.freq > 2.5);
-      const flap = air && !reduced ? Math.sin(t / 55) * 0.9 : 0.1;
-      c.wings[0].rotation.z = flap; c.wings[1].rotation.z = -flap;
-      c.body.position.y = air ? Math.min(2.5, c.body.position.y + 0.5 + Math.sin(t / 300) * 0.2) : c.body.position.y;
-    }
+    poseCreature(c, m.phase, gait(m.speed, fleeing), t, fleeing, reduced);
   }
 
   private boss(b: LiveBoss, t: number, dt: number): void {

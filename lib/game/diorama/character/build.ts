@@ -2,17 +2,18 @@ import * as THREE from "three";
 import type { Gender } from "@/lib/game/types";
 import type { ChibiHat, ChibiSpec } from "./spec";
 import { FACE_EXPRS, FACE_H, FACE_W, facePixels, type FaceExpr } from "./voxel-face";
-import { VoxelModel, around, hash3, type Painter, type RGB, type Shape, type Texel } from "./voxel-atlas";
-import { lathe, roundBlock, spow, strand, type Ring } from "./voxel-shapes";
+import { VoxelModel, around, type Painter, type RGB, type Shape, type Texel } from "./voxel-atlas";
+import { lathe, roundBlock, smoothRings, spow, strand, type Ring } from "./voxel-shapes";
 import { mix, painted, pixelTexture, rgb, shade, solid, tone, voxelMaterial } from "./voxel-material";
 
-// Browser only (but DOM-free): a ChibiSpec → a sculpted, pixel-textured character. Every rig segment (head, torso,
-// upper arms, forearms, thighs, calves, the rod) is modelled from shaped pieces — a rounded head with a jaw and a
-// flat face, a lathed torso with chest/waist/hips, tapered limbs, mitten hands with a thumb, soled shoes, hair as
-// locks — merged into one geometry; every piece is painted into ONE nearest-filtered pixel-art atlas per look
-// (clothes, hair strands, stepped shading) from the palette the 2D sprite uses. The face is a shared transparent
-// pixel decal (open / blink / happy) hugging the face. Built once per look, shared by every actor wearing it:
-// 12 draw calls a character.
+// Browser only (but DOM-free): a ChibiSpec → a sculpted, smooth low-poly chibi in clean flat colours. Every rig
+// segment (head, torso, upper arms, forearms, thighs, calves, the rod) is modelled from shaped pieces — a big rounded
+// head with a jaw (squarer for boys, softer for girls), a smoothed lathed torso (boys V-shaped, girls with a waist and
+// hips), tapered limbs with deltoids, mitten hands with a thumb, chunky soled shoes, hair as smooth shells and locks,
+// clothes as shells over the body — merged into one geometry; every piece is painted in flat per-part colours into
+// ONE smoothly filtered atlas per look (the light does the shading) from the palette the 2D sprite uses. The face is
+// a shared transparent decal of clean shapes (open / blink / happy / surprised) hugging the face. Built once per look,
+// shared by every actor wearing it: 12 draw calls a character.
 
 export type Detail = "high" | "low";
 
@@ -24,10 +25,10 @@ export const RIG = {
   hipY: 14 * VOX,
   /** hips → the head's base (chin). */
   neckY: 10 * VOX,
-  /** The head is modelled 8.4×9.5 units and drawn 1.25× (a big chibi head: ~3.2 heads tall in all). */
-  headScale: 1.25,
-  headH: 9.5 * VOX * 1.25,
-  headW: 8.4 * VOX * 1.25,
+  /** The head is modelled 8.4×9.5 units and drawn ~1.3× (a big chibi head: ~2.9 heads tall in all; per body type: BODY). */
+  headScale: 1.32,
+  headH: 9.5 * VOX * 1.34,
+  headW: 8.4 * VOX * 1.34,
   shoulderX: 4.5 * VOX,
   shoulderY: 8.2 * VOX,
   upperLen: 5 * VOX,
@@ -37,8 +38,19 @@ export const RIG = {
   calfLen: 6 * VOX,
 } as const;
 
+/** Per body type: where the arms and legs hang and how big the head is drawn. Boys: broader shoulders, a touch
+ *  wider stance; girls: narrower shoulders, a slightly bigger head on a slimmer body. */
+export interface BodyDims { shoulderX: number; legX: number; headScale: number }
+export const BODY: Record<Gender, BodyDims> = {
+  nam: { shoulderX: 4.85 * VOX, legX: 1.8 * VOX, headScale: 1.3 },
+  nu: { shoulderX: 4.05 * VOX, legX: 1.7 * VOX, headScale: 1.34 },
+};
+
+/** Lathe smoothing (extra rings between the sculpted ones) for the model being built: high detail only. */
+let SMOOTH = 2;
+
 /** The ink outline's width (world units). */
-const OUTLINE = 0.013;
+const OUTLINE = 0.011;
 
 const SEGS = ["head", "torso", "upperL", "upperR", "foreL", "foreR", "thighL", "thighR", "calfL", "calfR", "rod"] as const;
 export type Seg = (typeof SEGS)[number];
@@ -49,6 +61,8 @@ export interface ChibiParts extends Record<Seg, THREE.BufferGeometry> {
   /** The face decal (shared) and its expressions for this body type (shared). */
   faceGeo: THREE.BufferGeometry;
   faces: Record<FaceExpr, THREE.Material>;
+  /** Where this body type's limbs attach. */
+  dims: BodyDims;
 }
 
 type V3 = readonly [number, number, number];
@@ -60,22 +74,27 @@ const rings = (pts: readonly (readonly [number, number])[], kz = 1, x = 0, z = 0
 
 // ---- head (head space: chin at y 0, face toward +z) ----
 
-const HEAD = { cy: 4.7, rx: 4.2, ry: 4.8, rz: 4.1, e: 0.6, flat: 3.7 } as const;
+const HEAD = { cy: 4.7, rx: 4.2, ry: 4.8, rz: 4.1, e: 0.62, flat: 3.7 } as const;
+
+/** How much the jaw narrows toward the chin: a squarer jaw for boys, a softer, rounder-pointed chin for girls. */
+const JAW: Record<Gender, number> = { nam: 0.17, nu: 0.27 };
 
 /** The jaw narrows the lower head; the face is pressed flat. */
-function headDeform(p: THREE.Vector3): void {
-  if (p.y < HEAD.cy) {
-    const k = (HEAD.cy - p.y) / HEAD.ry;
-    p.x *= 1 - 0.22 * k * k;
-    p.z *= 1 - 0.06 * k * k;
-  }
-  if (p.z > HEAD.flat) p.z = HEAD.flat + (p.z - HEAD.flat) * 0.2;
+function headDeform(jaw: number): (p: THREE.Vector3) => void {
+  return (p) => {
+    if (p.y < HEAD.cy) {
+      const k = (HEAD.cy - p.y) / HEAD.ry;
+      p.x *= 1 - jaw * k * k;
+      p.z *= 1 - 0.06 * k * k;
+    }
+    if (p.z > HEAD.flat) p.z = HEAD.flat + (p.z - HEAD.flat) * 0.2;
+  };
 }
 
 /** The head surface's z at (x, y) on the front (for the face decal), or null off the head. */
-export function headFrontZ(x: number, y: number): number | null {
+export function headFrontZ(x: number, y: number, jaw = JAW.nam): number | null {
   const k = y < HEAD.cy ? (HEAD.cy - y) / HEAD.ry : 0;
-  const jx = 1 - 0.22 * k * k, jz = 1 - 0.06 * k * k;
+  const jx = 1 - jaw * k * k, jz = 1 - 0.06 * k * k;
   const p = 2 / HEAD.e;
   const rest = 1 - Math.pow(Math.abs(x / jx / HEAD.rx), p) - Math.pow(Math.abs((y - HEAD.cy) / HEAD.ry), p);
   if (rest <= 0) return null;
@@ -88,12 +107,9 @@ function hairPainter(s: ChibiSpec): Painter {
   const main = rgb(s.hair.main), hi = rgb(s.hair.hi), dk = rgb(s.hair.shade);
   return (t) => {
     let c: RGB = main;
-    const r = hash3(t.u, t.w, t.h, 7);                                        // one strand per texel column
-    if (r < 0.2) c = hi;
-    else if (r > 0.8) c = dk;
-    if (t.y > 7.8 && t.y < 9 && t.n[1] > -0.2) c = mix(c, hi, 0.5);            // the shine band
+    if (t.y > 7.9 && t.y < 8.8 && t.n[1] > -0.2 && t.z > -1) c = mix(c, hi, 0.55);  // the anime shine band
     const k = t.v / Math.max(1, t.h - 1);
-    if (k > 0.6) c = mix(c, dk, (k - 0.6) * 1.2);                               // darker toward the tips
+    if (k > 0.65) c = mix(c, dk, Math.min(1, (k - 0.65) * 1.1));               // a touch darker toward the tips
     return shade(c, tone(t, 0.03));
   };
 }
@@ -114,14 +130,18 @@ function hairCap(front: number, side: number, back: number, grow = 1): Shape {
     const sp = spow(Math.sin(ph), e);
     return new THREE.Vector3(rx * sp * spow(Math.cos(th), e), cy + ry * spow(Math.cos(ph), e), rz * sp * spow(Math.sin(th), e));
   };
-  return { at, center: () => new THREE.Vector3(0, HEAD.cy, 0), sizeU: 2 * Math.PI * rx * 1.1, sizeV: ry * 2.4, segU: 14, segV: 5 };
+  return { at, center: () => new THREE.Vector3(0, HEAD.cy, 0), sizeU: 2 * Math.PI * rx * 1.1, sizeV: ry * 2.4, segU: 22, segV: 8 };
 }
 
 function buildHead(m: M, s: ChibiSpec): void {
   const skin = rgb(s.skin), skinSh = rgb(s.skinShade);
-  m.surface("head", roundBlock([0, HEAD.cy, 0], [HEAD.rx, HEAD.ry, HEAD.rz], HEAD.e, { seg: [14, 9], deform: headDeform }),
-    painted((t) => (t.n[1] < -0.55 ? skinSh : t.y < 1.2 && !isFront(t) ? mix(skin, skinSh, 0.4) : skin), 0.02));
-  for (const sx of [-1, 1]) m.surface("head", roundBlock([sx * 3.95, 4.3, 0.1], [0.55, 0.95, 0.65], 0.7, { seg: [8, 6] }), solid(s.skin, 0.02));
+  m.surface("head", roundBlock([0, HEAD.cy, 0], [HEAD.rx, HEAD.ry, HEAD.rz], HEAD.e, { seg: [20, 12], deform: headDeform(JAW[s.gender] ?? JAW.nam) }),
+    painted((t) => (t.n[1] < -0.8 && t.y < 1.2 ? mix(skin, skinSh, 0.35) : skin), 0.02));
+  // ears: a rounded shell with a darker inner fold
+  for (const sx of [-1, 1]) {
+    m.surface("head", roundBlock([sx * 3.95, 4.3, 0.1], [0.5, 0.95, 0.62], 0.8, { seg: [8, 7] }),
+      painted((t) => (t.x * sx > 4.2 && Math.abs(t.y - 4.3) < 0.45 && Math.abs(t.z - 0.1) < 0.3 ? mix(skin, skinSh, 0.6) : skin), 0.02));
+  }
   const hp = hairPainter(s);
   buildHair(m, s, hp, !!s.hat);
   if (s.hat) buildHat(m, s.hat);
@@ -132,12 +152,12 @@ type Lock = readonly [V3, V3, V3];
 
 function buildHair(m: M, s: ChibiSpec, hp: Painter, hatted: boolean): void {
   const lock = (l: Lock, w: readonly [number, number], t: readonly [number, number], side: V3 = [1, 0, 0]) =>
-    m.surface("head", strand(l[0], l[1], l[2], w, t, side, [5, 5]), hp);
+    m.surface("head", strand(l[0], l[1], l[2], w, t, side, [6, 7]), hp);
   const blob = (c: V3, r: V3, e = 0.75) => m.surface("head", roundBlock(c, r, e, { seg: [10, 6] }), hp);
   /** Forehead locks: x positions and tip heights, swept a little to one side. */
   const fringe = (xs: readonly number[], tips: readonly number[], sweep = 0.4, w = 1.25) => xs.forEach((x, i) => {
     const zf = (headFrontZ(x, tips[i]) ?? 3.3) + 0.45;
-    lock([[x * 0.6, 9.9, 1.2], [x * 1.02, 9.8, 4.8], [x + sweep, tips[i], zf]], [w, w * 0.55], [0.55, 0.3]);
+    lock([[x * 0.6, 9.9, 1.2], [x * 1.02, 9.8, 4.8], [x + sweep, tips[i], zf]], [w, w * 0.62], [0.55, 0.34]);
   });
   const sideLocks = (tip: number, zf = 2.6, out = 4.55) => {
     for (const sx of [-1, 1]) lock([[sx * 3.6, 9, 1], [sx * (out + 0.4), 7.4, zf], [sx * out, tip, zf + 0.3]], [1.1, 0.6], [0.6, 0.35], [0, 0, 1]);
@@ -225,9 +245,8 @@ function strawPainter(main: string, shadeHex: string, band: string): Painter {
   const a = rgb(main), b = rgb(shadeHex), c = rgb(band);
   return (t) => {
     if (t.y > 9.95 && t.y < 10.45 && t.n[1] > 0) return shade(c, tone(t, 0.04));
-    const ring = Math.floor((14 - t.y) * 2.2);
-    const weave = (Math.floor(t.u / 2) + ring) % 2 === 0;
-    return shade(ring % 3 === 0 ? mix(a, b, 0.55) : weave ? a : shade(a, 0.94), tone(t, 0.05));
+    const ring = Math.floor((14 - t.y) * 0.8);                                   // a few flat woven rings
+    return shade(ring % 2 === 1 && t.n[1] > 0 ? mix(a, b, 0.3) : a, tone(t, 0.05));
   };
 }
 
@@ -256,8 +275,8 @@ function buildHat(m: M, h: ChibiHat): void {
       break;
     case "beanie":
       surf(roundBlock([0, 8.7, -0.1], [4.95, 3.7, 4.85], 0.75, { seg: [16, 8], deform: (p) => { if (p.y < 7) p.y = 7; } }),
-        painted((t) => (t.u % 2 ? shade(rgb(h.main), 0.9) : h.main), 0.03));
-      surf(lathe(rings([[8.5, 5.05], [7.0, 5.05]], 0.99), 0.85, 16), painted((t) => (t.u % 2 ? shade(rgb(h.brim), 0.88) : h.brim), 0.03));
+        solid(h.main, 0.03));
+      surf(lathe(rings([[8.5, 5.05], [7.0, 5.05]], 0.99), 0.85, 16), solid(h.brim, 0.03));
       surf(roundBlock([0, 12.6, -0.3], [1.15, 1.05, 1.15], 0.85, { seg: [8, 6] }), solid(h.accent));
       break;
     case "fedora":
@@ -367,7 +386,7 @@ function chestPainter(s: ChibiSpec): Painter {
         const open = t.y - 7.6;
         if (open > 0 && ax < 0.4 + open * 0.8) c = SK;
         else if (s.detail !== s.torso && open > -0.6 && ax < 0.4 + (open + 0.6) * 0.8 + 0.3) c = D;
-        else if (s.detail !== s.torso && isFront(t) && ax < 0.26 && t.y < 7.1 && t.y > 2) c = Math.floor(t.y * 2) % 3 === 0 ? shade(D, 0.8) : D;
+        else if (s.detail !== s.torso && isFront(t) && ax < 0.26 && t.y < 7.1 && t.y > 2) c = D;
       }
       if (t.y > 9.1 && ax < 1.6) c = SK;
       if (t.y < 2.1 && t.y > 1.4) c = TS;
@@ -398,7 +417,7 @@ function skirtPainter(base: string, shadeHex: string, pleats: boolean, placket?:
   const a = rgb(base), b = rgb(shadeHex), p = placket ? rgb(placket) : null;
   return (t) => {
     let c: RGB = a;
-    if (pleats && Math.floor(t.u / 2) % 3 === 0) c = b;
+    if (pleats && Math.floor(t.u / 3) % 2 === 0) c = mix(a, b, 0.6);
     if (p && isFront(t) && Math.abs(t.x) < 0.3) c = p;
     if (t.v >= t.h - 2 && t.n[1] > -0.5) c = shade(c, 0.85);                   // hem
     return shade(c, tone(t, 0.04));
@@ -408,15 +427,20 @@ function skirtPainter(base: string, shadeHex: string, pleats: boolean, placket?:
 function buildTorso(m: M, s: ChibiSpec): void {
   const nu = s.gender === "nu";
   const chest = chestPainter(s), hips = hipsPainter(s);
+  // a sculpted profile, then smoothed: boys straighter and V-shaped (broad shoulders, flat chest, narrow hips); girls
+  // narrower in the shoulder with a soft bust, a defined waist and fuller hips. The top rings slope down from the neck
+  // into the shoulders so the arms' deltoids meet the torso in a curve, not a step.
   const body: Ring[] = nu
-    ? [{ y: 9.5, rx: 0, rz: 0 }, { y: 9.5, rx: 1.7, rz: 1.2 }, { y: 9.1, rx: 3.0, rz: 1.75 }, { y: 8.2, rx: 3.45, rz: 1.95 }, { y: 6.6, rx: 3.2, rz: 2.2, z: 0.15 },
-      { y: 5.2, rx: 2.9, rz: 1.9 }, { y: 3.8, rx: 2.65, rz: 1.7 }, { y: 1.8, rx: 3.2, rz: 1.9 }, { y: 0, rx: 3.4, rz: 2.0 }, { y: -1.4, rx: 3.0, rz: 1.85 },
-      { y: -2.1, rx: 1.7, rz: 1.2 }, { y: -2.3, rx: 0, rz: 0 }]
-    : [{ y: 9.6, rx: 0, rz: 0 }, { y: 9.6, rx: 1.8, rz: 1.3 }, { y: 9.2, rx: 3.3, rz: 1.9 }, { y: 8.3, rx: 3.85, rz: 2.1 }, { y: 6.4, rx: 3.6, rz: 2.15 },
-      { y: 4.2, rx: 3.15, rz: 1.9 }, { y: 1.8, rx: 3.25, rz: 1.95 }, { y: 0, rx: 3.35, rz: 2.0 }, { y: -1.4, rx: 2.9, rz: 1.85 }, { y: -2.1, rx: 1.6, rz: 1.2 },
-      { y: -2.3, rx: 0, rz: 0 }];
-  m.surface("torso", lathe(body, 0.72, 16), (t) => (t.y >= 1.5 ? chest(t) : hips(t)));
-  m.surface("torso", lathe(rings([[11.2, 0], [11.2, 1.05], [9.2, 1.2], [8.8, 0]]), 1, 10), solid(s.skinShade, 0.02));
+    ? [{ y: 9.6, rx: 0, rz: 0 }, { y: 9.6, rx: 1.5, rz: 1.1 }, { y: 9.35, rx: 2.45, rz: 1.55 }, { y: 8.85, rx: 3.15, rz: 1.85 }, { y: 8.0, rx: 3.3, rz: 1.95 },
+      { y: 6.8, rx: 3.15, rz: 2.3, z: 0.2 }, { y: 5.6, rx: 2.9, rz: 2.05, z: 0.1 }, { y: 4.2, rx: 2.5, rz: 1.72 }, { y: 2.6, rx: 2.9, rz: 1.85 },
+      { y: 1.0, rx: 3.45, rz: 2.05 }, { y: 0, rx: 3.55, rz: 2.1 }, { y: -1.2, rx: 3.2, rz: 2.0 }, { y: -2.0, rx: 2.3, rz: 1.55 }, { y: -2.35, rx: 0, rz: 0 }]
+    : [{ y: 9.7, rx: 0, rz: 0 }, { y: 9.7, rx: 1.8, rz: 1.3 }, { y: 9.45, rx: 2.95, rz: 1.8 }, { y: 8.9, rx: 3.95, rz: 2.1 }, { y: 8.0, rx: 4.15, rz: 2.2 },
+      { y: 6.6, rx: 3.95, rz: 2.25, z: 0.1 }, { y: 5.0, rx: 3.55, rz: 2.0 }, { y: 3.4, rx: 3.3, rz: 1.9 }, { y: 1.8, rx: 3.3, rz: 1.95 },
+      { y: 0, rx: 3.35, rz: 2.0 }, { y: -1.3, rx: 3.0, rz: 1.9 }, { y: -2.0, rx: 2.2, rz: 1.5 }, { y: -2.35, rx: 0, rz: 0 }];
+  m.surface("torso", lathe(smoothRings(body, SMOOTH), 0.74, 20), (t) => (t.y >= 1.5 ? chest(t) : hips(t)));
+  // the neck flares into the trapezius
+  const nk = nu ? 0.88 : 1;
+  m.surface("torso", lathe(rings([[11.3, 0], [11.3, 1.05 * nk], [10.4, 1.1 * nk], [9.7, 1.3 * nk], [9.2, 1.85 * nk], [8.8, 0]]), 1, 12), solid(s.skinShade, 0.02));
   const skirt = (r: readonly (readonly [number, number, number])[], p: Painter) => m.surface("torso", lathe(r.map(([y, rx, rz]) => ({ y, rx, rz })), 0.8, 16), p);
   switch (s.lower) {
     case "skirt": skirt([[2.2, 3.15, 1.95], [-4.2, 4.3, 2.9], [-4.45, 4.0, 2.7], [-4.45, 0, 0]], skirtPainter(s.bottom, s.bottomShade, false)); break;
@@ -439,71 +463,83 @@ function buildTorso(m: M, s: ChibiSpec): void {
 
 function buildArm(m: M, s: ChibiSpec, side: -1 | 1): void {
   const up: Seg = side < 0 ? "upperL" : "upperR", fo: Seg = side < 0 ? "foreL" : "foreR";
-  const k = s.gender === "nu" ? 0.88 : 1;
-  const sleeveC = rgb(s.sleeveColor), skin = rgb(s.skin);
+  const nu = s.gender === "nu";
+  const k = nu ? 0.86 : 1.04, hk = nu ? 0.9 : 1.08;                            // limb and hand thickness
+  const sleeveC = rgb(s.sleeveColor), skin = rgb(s.skin), skinSh = rgb(s.skinShade);
   const long = s.sleeve === "long";
-  m.surface(up, lathe(rings([[1.1, 0], [1.0, 0.8 * k], [0.4, 1.15 * k], [-2, 1.08 * k], [-4.6, 0.95 * k], [-5.2, 0.6 * k], [-5.3, 0]]), 0.8, 10),
+  // upper arm: a round deltoid cap tapering to the elbow
+  m.surface(up, lathe(rings([[1.2, 0], [1.1, 0.72 * k], [0.65, 1.1 * k], [0, 1.18 * k], [-1.4, 1.08 * k], [-3.2, 0.98 * k], [-4.6, 0.9 * k], [-5.15, 0.62 * k], [-5.3, 0]]), 0.85, 12),
     painted(() => (long ? sleeveC : skin), 0.04));
   if (s.sleeve === "short") {
-    m.surface(up, lathe(rings([[1.4, 0], [1.3, 0.95 * k], [0.6, 1.45 * k], [-2.3, 1.38 * k], [-2.6, 1.05 * k], [-2.6, 0]]), 0.8, 10),
-      painted((t) => (t.y < -1.9 ? shade(sleeveC, 0.84) : sleeveC), 0.04));
+    m.surface(up, lathe(rings([[1.45, 0], [1.35, 0.9 * k], [0.8, 1.38 * k], [0, 1.45 * k], [-2.2, 1.36 * k], [-2.55, 1.12 * k], [-2.6, 0]]), 0.85, 12),
+      painted((t) => (t.y < -2.0 ? shade(sleeveC, 0.84) : sleeveC), 0.04));
   }
-  m.surface(fo, lathe(rings([[0.7, 0], [0.6, 0.75 * k], [0, 1.0 * k], [-2, 0.93 * k], [-3.9, 0.8 * k], [-4.2, 0.5 * k], [-4.3, 0]]), 0.8, 10),
-    painted((t) => (long ? (t.y < -3.2 ? shade(sleeveC, 0.85) : sleeveC) : skin), 0.04));
-  // the hand: a mitten block, fingers darker at the tip, and a thumb toward the body and the front
+  m.surface(fo, lathe(rings([[0.7, 0], [0.55, 0.72 * k], [0, 0.95 * k], [-1.2, 0.98 * k], [-2.8, 0.85 * k], [-3.8, 0.74 * k], [-4.25, 0.52 * k], [-4.35, 0]]), 0.85, 12),
+    painted((t) => (long ? (t.y < -3.3 ? shade(sleeveC, 0.85) : sleeveC) : skin), 0.04));
+  // the hand: a soft palm with the fingers drawn in (creases toward the tips), and a curved thumb in front
   const inner = -side;
-  m.surface(fo, roundBlock([0, -5.25, 0.1], [0.75 * k + 0.05, 1.2, 0.95], 0.55, { seg: [10, 6] }),
-    painted((t) => (t.y < -5.9 ? mix(skin, rgb(s.skinShade), 0.5) : skin), 0.03));
-  m.surface(fo, roundBlock([inner * 0.6, -4.95, 0.75], [0.38, 0.62, 0.38], 0.7, { seg: [6, 5] }), solid(s.skin, 0.02));
+  m.surface(fo, roundBlock([0, -5.2, 0.05], [0.66 * hk, 1.05 * hk, 0.88 * hk], 0.72, { seg: [12, 8] }),
+    painted((t) => {
+      const tip = t.y < -5.55;
+      if (tip && [-0.32, 0.12, 0.52].some((zc) => Math.abs(t.z - zc * hk) < 0.08)) return mix(skin, skinSh, 0.75);
+      return tip ? mix(skin, skinSh, 0.25) : skin;
+    }, 0.02));
+  m.surface(fo, strand([inner * 0.45 * hk, -4.7, 0.55 * hk], [inner * 0.72 * hk, -5.15, 0.95 * hk], [inner * 0.5 * hk, -5.75, 1.0 * hk], [0.3 * hk, 0.22 * hk], [0.28 * hk, 0.2 * hk], [1, 0, 0], [6, 5]),
+    solid(s.skin, 0.02));
   if (side > 0 && s.wrist) {
-    m.surface(fo, lathe(rings([[-3.1, 0.98 * k], [-3.8, 0.94 * k]], 1), 0.85, 10), solid(s.wrist.main));
-    if (s.wrist.kind === "watch") m.surface(fo, roundBlock([0, -3.45, 0.95 * k], [0.45, 0.42, 0.22], 0.5, { seg: [6, 4] }), solid(s.wrist.accent));
+    m.surface(fo, lathe(rings([[-3.2, 0.9 * k], [-3.85, 0.86 * k]], 1), 0.85, 12), solid(s.wrist.main));
+    if (s.wrist.kind === "watch") m.surface(fo, roundBlock([0, -3.5, 0.88 * k], [0.45, 0.42, 0.22], 0.5, { seg: [6, 4] }), solid(s.wrist.accent));
   }
 }
 
 function buildLeg(m: M, s: ChibiSpec, side: -1 | 1): void {
   const th: Seg = side < 0 ? "thighL" : "thighR", ca: Seg = side < 0 ? "calfL" : "calfR";
+  const nu = s.gender === "nu";
   const skin = rgb(s.skin), bottom = rgb(s.bottom);
   const long = s.calf !== s.skin;
   const shorts = !long && s.thigh !== s.skin;
   const briefs = !long && !shorts && s.lower === "pants";
-  m.surface(th, lathe(rings([[0.9, 0], [0.8, 1.3], [0.2, 1.78], [-3, 1.62], [-5.8, 1.32], [-6.3, 0.9], [-6.4, 0]], 0.95), 0.8, 12), painted((t) => {
+  // girls: fuller at the hip, slimmer at the knee; boys: straighter
+  const thigh: readonly (readonly [number, number])[] = nu
+    ? [[0.9, 0], [0.8, 1.35], [0.3, 1.86], [-1.5, 1.78], [-3.5, 1.5], [-5.3, 1.22], [-6.05, 1.0], [-6.4, 0]]
+    : [[0.9, 0], [0.8, 1.3], [0.3, 1.74], [-1.5, 1.7], [-3.5, 1.56], [-5.3, 1.36], [-6.05, 1.1], [-6.4, 0]];
+  m.surface(th, lathe(rings(thigh, 0.95), 0.85, 12), painted((t) => {
     if (long) return rgb(s.thigh);
     if (briefs && t.y > -1.1) return t.y < -0.8 ? shade(bottom, 0.85) : bottom;
     return skin;
   }, 0.04));
   if (shorts) {
     const cloth = rgb(s.thigh);
-    m.surface(th, lathe(rings([[1.3, 0], [1.2, 1.6], [0.4, 2.05], [-3.3, 1.98], [-3.6, 1.55], [-3.6, 0]], 0.95), 0.8, 12), painted((t) => {
+    m.surface(th, lathe(rings([[1.3, 0], [1.2, 1.6], [0.4, 2.05], [-3.3, 1.98], [-3.6, 1.55], [-3.6, 0]], 0.95), 0.85, 12), painted((t) => {
       if (t.y < -3.1) return shade(cloth, 0.78);
-      if (t.y < -2.4 && hash3(t.u, 1, side, 5) < 0.3) return shade(cloth, 0.88);                  // folds
       return cloth;
     }, 0.04));
   }
   // calf and foot
   const sh = s.shoe, main = rgb(sh.main), sole = rgb(sh.sole);
   const boots = sh.shape === "boots", sneakers = sh.shape === "sneakers";
-  m.surface(ca, lathe(rings([[0.6, 0], [0.5, 1.15], [0, 1.4], [-1.6, 1.48], [-4.5, 1.12], [-6.1, 0.98], [-6.3, 0]], 0.95), 0.8, 12), painted((t) => {
+  const ck = nu ? 0.93 : 1;
+  m.surface(ca, lathe(rings([[0.6, 0], [0.5, 1.15 * ck], [0, 1.36 * ck], [-1.4, 1.46 * ck], [-3.0, 1.3 * ck], [-4.6, 1.08 * ck], [-5.8, 0.98 * ck], [-6.2, 0.82 * ck], [-6.35, 0]], 0.95), 0.85, 12), painted((t) => {
     if (long) return t.y < -5.2 ? shade(rgb(s.calf), 0.85) : rgb(s.calf);
     if (sneakers && t.y < -4.9) return rgb("#f2eee6");
     return skin;
   }, 0.04));
   if (boots) {
     m.surface(ca, lathe(rings([[-2.2, 0], [-2.2, 1.72], [-3.1, 1.72], [-3.1, 1.52], [-6.4, 1.3], [-6.4, 0]], 0.97), 0.75, 12),
-      painted((t) => (t.y > -3.15 ? sole : t.u % 5 === 0 ? shade(main, 0.9) : main), 0.04));
+      painted((t) => (t.y > -3.15 ? sole : main), 0.04));
   }
   if (sh.shape === "dep" || sh.shape === "sandals") {
-    m.surface(ca, roundBlock([0, -7.05, 0.45], [1.28, 0.8, 1.95], 0.5, { seg: [10, 6] }), solid(s.skin, 0.02));
-    m.surface(ca, roundBlock([0, -7.8, 0.45], [1.5, 0.24, 2.2], 0.3, { seg: [10, 4] }), solid(sh.sole));
+    m.surface(ca, roundBlock([0, -7.05, 0.5], [1.26, 0.78, 1.92], 0.62, { seg: [12, 7], deform: (p) => { if (p.z > 1.1) p.y -= (p.z - 1.1) * 0.15; } }), solid(s.skin, 0.02));
+    m.surface(ca, roundBlock([0, -7.8, 0.5], [1.48, 0.24, 2.2], 0.4, { seg: [12, 4] }), solid(sh.sole));
     m.surface(ca, roundBlock([0, -6.75, 1.0], [1.36, 0.26, 0.55], 0.5, { seg: [8, 4] }), solid(sh.main));
     if (sh.shape === "sandals") m.surface(ca, roundBlock([0, -6.3, -0.9], [1.25, 0.24, 0.6], 0.5, { seg: [8, 4] }), solid(sh.main));
   } else {
-    m.surface(ca, roundBlock([0, -6.9, 0.55], [1.5, 1.05, 2.2], 0.45, { seg: [12, 6] }), painted((t) => {
-      if (sneakers && t.n[1] > 0.5 && Math.abs(t.x) < 0.6 && t.z > 0.8 && t.v % 2 === 0) return rgb("#f4f1ea");
-      if (sneakers && t.y < -7.1 && t.u % 3 === 0) return shade(main, 1.15);
+    m.surface(ca, roundBlock([0, -6.95, 0.6], [1.45, 1.0, 2.15], 0.58, { seg: [14, 8], deform: (p) => { if (p.z > 1.2) p.y -= (p.z - 1.2) * 0.12; } }), painted((t) => {
+      if (sneakers && t.n[1] > 0.4 && Math.abs(t.x) < 0.55 && t.z > 0.6 && t.z < 1.9) return rgb("#f4f1ea");     // the laces panel
+      if (sneakers && t.z > 1.9) return rgb("#f4f1ea");                                                        // the toe cap
       return main;
     }, 0.04));
-    m.surface(ca, roundBlock([0, -7.75, 0.55], [1.6, 0.3, 2.3], 0.3, { seg: [12, 4] }), solid(sh.sole));
+    m.surface(ca, roundBlock([0, -7.75, 0.6], [1.56, 0.3, 2.28], 0.4, { seg: [14, 4] }), solid(sh.sole));
   }
 }
 
@@ -514,12 +550,13 @@ function buildRod(m: M): void {
 }
 
 /** The face decal: the head front's 8×9-unit face area as a grid hugging the flattened face. */
-function buildFaceGeo(): THREE.BufferGeometry {
-  const g = new THREE.PlaneGeometry(8 * VOX, 9 * VOX, 12, 14);
+function buildFaceGeo(g0: Gender): THREE.BufferGeometry {
+  const jaw = JAW[g0] ?? JAW.nam;
+  const g = new THREE.PlaneGeometry(8 * VOX, 9 * VOX, 16, 18);
   const pos = g.getAttribute("position"), uv = g.getAttribute("uv");
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) / VOX, y = pos.getY(i) / VOX + 4.5;
-    const z = headFrontZ(x, y);
+    const z = headFrontZ(x, y, jaw);
     pos.setXYZ(i, x * VOX, y * VOX, ((z ?? 0) + 0.05) * VOX);
     uv.setY(i, 1 - uv.getY(i));                                                   // the decal's row 0 is its top
   }
@@ -528,9 +565,10 @@ function buildFaceGeo(): THREE.BufferGeometry {
   return g;
 }
 
-/** Builds the model of a look at a detail level (2 texels per unit and full grids high; 1 and half grids low). */
+/** Builds the model of a look at a detail level (3 texels per unit and full grids high; 1 and coarser grids low). */
 export function buildChibi(spec: ChibiSpec, detail: Detail): { geos: Record<Seg, THREE.BufferGeometry>; pixels: Uint8Array; width: number; height: number } {
   const m = new VoxelModel<Seg>(SEGS);
+  SMOOTH = detail === "high" ? 2 : 1;
   buildHead(m, spec);
   buildTorso(m, spec);
   buildArm(m, spec, -1);
@@ -538,7 +576,7 @@ export function buildChibi(spec: ChibiSpec, detail: Detail): { geos: Record<Seg,
   buildLeg(m, spec, -1);
   buildLeg(m, spec, 1);
   buildRod(m);
-  return detail === "high" ? m.build(2, VOX, 1, true) : m.build(1, VOX, 0.6, false);
+  return detail === "high" ? m.build(3, VOX, 1, true) : m.build(1, VOX, 0.6, false);
 }
 
 interface Entry { parts: ChibiParts; tex: THREE.Texture; refs: number }
@@ -547,10 +585,16 @@ interface Entry { parts: ChibiParts; tex: THREE.Texture; refs: number }
  *  `max` are disposed, oldest first). */
 export class ChibiFactory {
   private readonly entries = new Map<string, Entry>();
-  private readonly faceGeo = buildFaceGeo();
+  private readonly faceGeos = new Map<Gender, THREE.BufferGeometry>();
   private readonly faceMats = new Map<Gender, Record<FaceExpr, THREE.Material>>();
 
   constructor(private readonly max = 120) {}
+
+  private faceGeo(g: Gender): THREE.BufferGeometry {
+    let geo = this.faceGeos.get(g);
+    if (!geo) this.faceGeos.set(g, (geo = buildFaceGeo(g)));
+    return geo;
+  }
 
   private faces(g: Gender): Record<FaceExpr, THREE.Material> {
     let f = this.faceMats.get(g);
@@ -574,7 +618,7 @@ export class ChibiFactory {
     else {
       const b = buildChibi(spec, detail);
       const tex = pixelTexture(b.pixels, b.width, b.height);
-      e = { refs: 0, tex, parts: { ...b.geos, material: voxelMaterial(tex, { outline: detail === "high" ? OUTLINE : 0 }), faceGeo: this.faceGeo, faces: this.faces(spec.gender) } };
+      e = { refs: 0, tex, parts: { ...b.geos, material: voxelMaterial(tex, { outline: detail === "high" ? OUTLINE : 0 }), faceGeo: this.faceGeo(spec.gender), faces: this.faces(spec.gender), dims: BODY[spec.gender] ?? BODY.nam } };
     }
     e.refs++;
     this.entries.set(key, e);
@@ -615,7 +659,8 @@ export class ChibiFactory {
       mat.dispose();
     }
     this.faceMats.clear();
-    this.faceGeo.dispose();
+    for (const g of this.faceGeos.values()) g.dispose();
+    this.faceGeos.clear();
   }
 }
 

@@ -5,12 +5,13 @@ import { hash3, mix, rgb, shade, type Painter, type RGB, type Texel } from "./vo
 // warm under any scene light), the lighting preset, and the base painters (soft per-voxel noise and a bevel: lighter
 // top edge, darker bottom edge on every side face). Reusable for the environment.
 
-/** RGBA bytes → a nearest-filtered sRGB texture (no mipmaps: the pixels stay square). */
-export function pixelTexture(pixels: Uint8Array, width: number, height: number): THREE.DataTexture {
+/** RGBA bytes → an sRGB texture (no mipmaps). `smooth` (the default) filters linearly: flat colour areas with soft,
+ *  clean edges; `smooth: false` keeps the pixels square. */
+export function pixelTexture(pixels: Uint8Array, width: number, height: number, smooth = true): THREE.DataTexture {
   const t = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.NearestFilter;
+  t.magFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter;
+  t.minFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter;
   t.generateMipmaps = false;
   t.flipY = false;
   t.needsUpdate = true;
@@ -18,12 +19,12 @@ export function pixelTexture(pixels: Uint8Array, width: number, height: number):
 }
 
 let ramp: THREE.DataTexture | null = null;
-/** The toon ramp: three soft steps (shadow, mid, lit). */
+/** The light ramp: soft shading (shade → lit, linearly blended), the smooth low-poly look. */
 function toonRamp(): THREE.DataTexture {
   if (ramp) return ramp;
-  const px = new Uint8Array([150, 150, 150, 255, 205, 205, 205, 255, 255, 255, 255, 255]);
-  ramp = new THREE.DataTexture(px, 3, 1, THREE.RGBAFormat);
-  ramp.magFilter = ramp.minFilter = THREE.NearestFilter;
+  const px = new Uint8Array([168, 168, 172, 255, 206, 206, 208, 255, 240, 240, 240, 255, 255, 255, 255, 255]);
+  ramp = new THREE.DataTexture(px, 4, 1, THREE.RGBAFormat);
+  ramp.magFilter = ramp.minFilter = THREE.LinearFilter;
   ramp.generateMipmaps = false;
   ramp.needsUpdate = true;
   return ramp;
@@ -83,15 +84,10 @@ export function addVoxelLights(scene: THREE.Scene, shadowSize = 4): { hemi: THRE
   return { hemi, sun };
 }
 
-/** Per-voxel brightness wobble (±amp) and the block bevel for a texel. */
+/** Brightness for a texel: sculpted surfaces are flat colour (the light does the shading — the smooth low-poly
+ *  look); plain boxes keep the voxel wobble (±amp) and bevel. */
 export function tone(t: Texel, amp = 0.05, seed = 0): number {
-  if (t.surface) {
-    // sculpted pieces: per-pixel wobble plus soft stepped shading bands by how much the surface faces up
-    let k = 1 + (hash3(t.u, t.v, t.w * 31 + t.h, seed) - 0.5) * 2 * amp;
-    const ny = t.n[1];
-    k *= ny > 0.6 ? 1.08 : ny > 0.2 ? 1.03 : ny < -0.55 ? 0.8 : ny < -0.2 ? 0.9 : 1;
-    return k;
-  }
+  if (t.surface) return 1;
   let k = 1 + (hash3(t.x * 1.0001, t.y * 1.0001, t.z * 1.0001, seed) - 0.5) * 2 * amp;
   if (t.dir === "py") k *= 1.06;
   else if (t.dir === "ny") k *= 0.78;

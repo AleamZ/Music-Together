@@ -1,92 +1,152 @@
 import type { Gender } from "@/lib/game/types";
 
-// Pure: the chibi's face as a transparent pixel decal (32×36 texels = the head's 8×9-unit face at 4 texels per unit),
-// laid over the skin: brows, big anime eyes (lash line, sclera, a two-tone iris with a dark pupil and white glints),
-// nose shading, blush, mouth. Expressions: open, blink (swapped in for a moment every few seconds), happy (waving),
-// surprised.
+// Pure: the chibi's face as a transparent decal laid over the skin, drawn from clean flat shapes (antialiased
+// ellipses, arcs and strokes — no pixel noise) at 16 texels per face unit: brows, big anime eyes (sclera, a two-tone
+// iris, pupil, two glints, the upper lash line), a hint of a nose, blush, mouth. Boys: slightly smaller eyes with a
+// plain lash line, thick straight brows, a flat mouth; girls: taller eyes with a thick winged lash line and a lower
+// lash, thin arched brows, stronger blush, a small smile. Expressions: open, blink (swapped in for a moment every few
+// seconds), happy (waving), surprised.
 
 export type FaceExpr = "open" | "blink" | "happy" | "surprised";
 export const FACE_EXPRS: readonly FaceExpr[] = ["open", "blink", "happy", "surprised"];
-export const FACE_W = 32;
-export const FACE_H = 36;
+/** Texels per face unit; the face is 8×9 units. */
+const R = 16;
+export const FACE_W = 8 * R;
+export const FACE_H = 9 * R;
 
 type C = readonly [number, number, number, number];
-const LASH: C = [40, 24, 22, 255];
-const BROW: C = [74, 46, 36, 230];
-const TOP: C = [52, 30, 24, 255];
-const IRIS: C = [138, 78, 40, 255];
-const IRIS2: C = [196, 126, 62, 255];
-const PUPIL: C = [30, 16, 14, 255];
-const HI: C = [255, 255, 255, 255];
-const WHITE: C = [248, 243, 236, 255];
-const LOWER: C = [120, 70, 60, 150];
-const BLUSH: C = [238, 120, 116, 110];
-const NOSE: C = [150, 80, 60, 70];
-const MOUTH: C = [150, 70, 62, 255];
-const MOUTH_IN: C = [112, 36, 42, 255];
-const TONGUE: C = [226, 112, 112, 255];
+const LASH: C = [44, 26, 24, 1];
+const BROW: C = [84, 52, 40, 0.92];
+const BROW_M: C = [60, 38, 30, 0.96];
+const TOP: C = [70, 38, 28, 1];
+const IRIS: C = [150, 88, 46, 1];
+const IRIS2: C = [214, 146, 76, 1];
+const PUPIL: C = [34, 18, 16, 1];
+const HI: C = [255, 255, 255, 1];
+const WHITE: C = [250, 246, 240, 1];
+const BLUSH: C = [240, 124, 120, 1];
+const NOSE: C = [170, 96, 76, 1];
+const MOUTH: C = [150, 66, 60, 1];
+const MOUTH_IN: C = [120, 40, 46, 1];
+const TONGUE: C = [232, 118, 118, 1];
+const LIP: C = [222, 118, 120, 1];
+
+type Sdf = (x: number, y: number) => number;
+
+/** Signed distance (units, approx.) to an axis-aligned ellipse. */
+const ellipse = (cx: number, cy: number, rx: number, ry: number): Sdf => (x, y) => {
+  const dx = (x - cx) / rx, dy = (y - cy) / ry;
+  return (Math.hypot(dx, dy) - 1) * Math.min(rx, ry);
+};
+/** A stroke along a segment, radius r. */
+const seg = (ax: number, ay: number, bx: number, by: number, r: number): Sdf => (x, y) => {
+  const vx = bx - ax, vy = by - ay, t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
+  return Math.hypot(x - ax - vx * t, y - ay - vy * t) - r;
+};
+/** A stroke along an ellipse's outline (thickness w), kept where `keep` holds. */
+const ring = (e: Sdf, w: number, keep: (x: number, y: number) => boolean): Sdf => (x, y) => (keep(x, y) ? Math.abs(e(x, y)) - w / 2 : 1);
+const both = (a: Sdf, b: Sdf): Sdf => (x, y) => Math.max(a(x, y), b(x, y));
+const either = (a: Sdf, b: Sdf): Sdf => (x, y) => Math.min(a(x, y), b(x, y));
 
 /** RGBA bytes, row 0 = top of the face. */
 export function facePixels(expr: FaceExpr, gender: Gender): Uint8Array {
-  const px = new Uint8Array(FACE_W * FACE_H * 4);
-  const put = (x: number, y: number, c: C) => {
-    if (x < 0 || y < 0 || x >= FACE_W || y >= FACE_H) return;
-    const i = (y * FACE_W + x) * 4;
-    px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = c[3];
+  const acc = new Float32Array(FACE_W * FACE_H * 4);                              // premultiplied rgb + alpha
+  /** Composites a shape over what is there; `soft` feathers the edge (units). `col` may vary per point. */
+  const draw = (sdf: Sdf, col: C | ((x: number, y: number) => C), alpha = 1, soft = 0) => {
+    const f = Math.max(0.5 / R, soft);
+    for (let py = 0; py < FACE_H; py++) for (let px = 0; px < FACE_W; px++) {
+      const x = (px + 0.5) / R, y = (py + 0.5) / R;
+      const d = sdf(x, y);
+      if (d > f) continue;
+      const cov = Math.max(0, Math.min(1, 0.5 - d / (2 * f)));
+      if (cov <= 0) continue;
+      const c = typeof col === "function" ? col(x, y) : col;
+      const a = cov * alpha * c[3], i = (py * FACE_W + px) * 4;
+      acc[i] = c[0] * a + acc[i] * (1 - a);
+      acc[i + 1] = c[1] * a + acc[i + 1] * (1 - a);
+      acc[i + 2] = c[2] * a + acc[i + 2] * (1 - a);
+      acc[i + 3] = a + acc[i + 3] * (1 - a);
+    }
   };
   const nu = gender === "nu";
-  const E = 15;                                                              // the eyes' top row
-  for (const side of [-1, 1] as const) {
-    // columns counted from the outer corner (0) inward (5): the screen-left eye spans 6..11, the right one 20..25
-    const at = (i: number) => (side < 0 ? 6 + i : 25 - i);
-    const lr = (x: number) => (side < 0 ? 6 + x : 20 + x);                   // left-to-right within the eye
-    // brows: a soft slant, higher at the outer end
-    put(at(1), E - 3, BROW); put(at(2), E - 3, BROW); put(at(3), E - 3, BROW); put(at(4), E - 2, BROW);
+  const rx = nu ? 0.7 : 0.62, ry = nu ? 0.9 : 0.78, cyE = nu ? 4.6 : 4.75;
+  for (const sd of [-1, 1] as const) {
+    const cx = 4 + sd * 1.72, inw = -sd;                                          // inw: toward the nose
+    // brows
+    if (nu) {
+      draw(either(seg(cx - inw * 0.62, cyE - ry - 0.26, cx, cyE - ry - 0.46, 0.06), seg(cx, cyE - ry - 0.46, cx + inw * 0.5, cyE - ry - 0.38, 0.06)), BROW);
+    } else {
+      draw(seg(cx - inw * 0.62, cyE - ry - 0.44, cx + inw * 0.55, cyE - ry - 0.3, 0.11), BROW_M);
+    }
+    const eye = ellipse(cx, cyE, rx, ry);
     if (expr === "open" || expr === "surprised") {
-      const s = expr === "surprised" ? 1 : 0;
-      for (let i = 0; i < 6; i++) put(at(i), E - s, LASH);
-      put(at(-1), E - 1 - s, LASH);
-      if (nu) { put(at(-1), E - s, LASH); put(at(-2), E - 1 - s, LASH); }
-      for (let y = E + 1; y <= E + 5; y++) put(at(0), y, WHITE);
-      for (let y = E + 1; y <= E + 6; y++) for (let x = 1; x <= 5; x++) {
-        const r = y - E;
-        put(lr(side < 0 ? x : x - 1), y, r <= 2 ? TOP : r <= 4 ? IRIS : IRIS2);
-      }
-      if (s) for (let y = E + 1; y <= E + 6; y++) { put(lr(side < 0 ? 1 : 0), y, WHITE); put(lr(side < 0 ? 5 : 4), y, WHITE); }
-      // pupil and glints (the big glint toward screen-left on both eyes)
-      const c0 = side < 0 ? 8 : 21;
-      put(c0 + 1, E + 3, PUPIL); put(c0 + 2, E + 3, PUPIL); put(c0 + 1, E + 4, PUPIL); put(c0 + 2, E + 4, PUPIL);
-      put(c0 - 1, E + 2, HI); put(c0, E + 2, HI); put(c0 - 1, E + 3, HI); put(c0, E + 3, HI);
-      put(c0 + 3, E + 5, HI);
-      for (let i = 1; i < 5; i++) put(at(i), E + 7, LOWER);
+      const s = expr === "surprised";
+      draw(eye, WHITE);
+      const ix = cx + inw * rx * 0.06, iy = cyE + ry * 0.06, irx = rx * (s ? 0.58 : 0.84), iry = ry * (s ? 0.62 : 0.9);
+      draw(both(ellipse(ix, iy, irx, iry), eye), (_x, y) => {
+        const k = Math.max(0, Math.min(1, (y - (iy - iry * 0.7)) / (iry * 1.5)));
+        const a = k < 0.5 ? TOP : IRIS, b = k < 0.5 ? IRIS : IRIS2, t = k < 0.5 ? k * 2 : (k - 0.5) * 2;
+        return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, 1];
+      });
+      draw(ellipse(ix, iy - iry * 0.05, irx * 0.42, iry * 0.48), PUPIL);
+      draw(ellipse(cx - rx * 0.3, cyE - ry * 0.34, rx * 0.27, rx * 0.27), HI);
+      draw(ellipse(cx + rx * 0.3, cyE + ry * 0.42, rx * 0.13, rx * 0.13), HI, 0.9);
+      // the upper lash line (thicker for girls, winged at the outer corner), a short lower lash for girls
+      draw(ring(ellipse(cx, cyE + 0.02, rx * 1.02, ry * 1.02), nu ? 0.2 : 0.13, (_x, y) => y < cyE - ry * 0.18), LASH);
+      if (nu) {
+        draw(seg(cx - inw * rx * 0.9, cyE - ry * 0.5, cx - inw * (rx + 0.3), cyE - ry * 0.86, 0.075), LASH);
+        draw(ring(ellipse(cx, cyE, rx * 1.02, ry * 1.02), 0.06, (x, y) => y > cyE + ry * 0.5 && (x - cx) * inw < 0), LASH, 0.6);
+      } else draw(seg(cx - inw * rx * 0.95, cyE - ry * 0.4, cx - inw * (rx + 0.08), cyE - ry * 0.1, 0.06), LASH);
     } else if (expr === "blink") {
-      for (let i = 0; i < 6; i++) put(at(i), E + 4, LASH);
-      put(at(-1), E + 3, LASH);
-      for (let i = 1; i < 5; i++) put(at(i), E + 5, LOWER);
+      draw(ring(ellipse(cx, cyE - ry * 0.25, rx * 0.98, ry * 0.55), nu ? 0.13 : 0.1, (_x, y) => y > cyE - ry * 0.25), LASH);
+      if (nu) draw(seg(cx - inw * rx * 0.95, cyE - ry * 0.2, cx - inw * (rx + 0.28), cyE - ry * 0.45, 0.065), LASH);
     } else {
       // happy: ^ ^
-      put(at(2), E + 2, LASH); put(at(3), E + 2, LASH);
-      put(at(1), E + 3, LASH); put(at(4), E + 3, LASH);
-      put(at(0), E + 4, LASH); put(at(5), E + 4, LASH);
+      draw(ring(ellipse(cx, cyE + ry * 0.35, rx * 0.9, ry * 0.62), 0.13, (_x, y) => y < cyE + ry * 0.35), LASH);
+      if (nu) draw(seg(cx - inw * rx * 0.88, cyE + ry * 0.2, cx - inw * (rx + 0.25), cyE - ry * 0.05, 0.06), LASH);
     }
     // blush under the outer eye
-    for (let i = -1; i < 3; i++) { put(at(i), E + 9, BLUSH); put(at(i), E + 10, BLUSH); }
+    draw(ellipse(cx - inw * 0.2, cyE + ry + 0.5, nu ? 0.55 : 0.45, nu ? 0.24 : 0.18), BLUSH, nu ? 0.5 : 0.2, 0.18);
   }
-  // nose: a soft shadow
-  put(16, E + 9, NOSE); put(16, E + 10, NOSE);
+  // nose: a soft hint
+  if (nu) draw(ellipse(4, 6.2, 0.07, 0.05), NOSE, 0.45, 0.06);
+  else draw(seg(4.08, 5.9, 4.12, 6.22, 0.05), NOSE, 0.45, 0.04);
   // mouth
-  const M = E + 13;
+  const my = nu ? 6.95 : 7.05;
   if (expr === "happy") {
-    put(13, M - 1, MOUTH); put(18, M - 1, MOUTH);
-    for (let x = 14; x <= 17; x++) put(x, M, MOUTH_IN);
-    put(15, M + 1, TONGUE); put(16, M + 1, TONGUE); put(14, M + 1, MOUTH_IN); put(17, M + 1, MOUTH_IN);
+    const open = both(ellipse(4, my - 0.08, 0.42, 0.4), (x, y) => my - 0.08 - y);
+    draw(open, MOUTH_IN);
+    draw(both(ellipse(4, my + 0.28, 0.22, 0.14), open), TONGUE);
   } else if (expr === "surprised") {
-    put(15, M - 1, MOUTH_IN); put(16, M - 1, MOUTH_IN);
-    put(14, M, MOUTH_IN); put(17, M, MOUTH_IN); put(15, M, MOUTH_IN); put(16, M, MOUTH_IN);
-    put(15, M + 1, MOUTH_IN); put(16, M + 1, MOUTH_IN);
+    draw(ellipse(4, my, 0.2, 0.26), MOUTH_IN);
+  } else if (nu) {
+    draw(ring(ellipse(4, my - 0.2, 0.3, 0.22), 0.07, (_x, y) => y > my - 0.2), MOUTH);
+    draw(ellipse(4, my + 0.1, 0.16, 0.06), LIP, 0.45, 0.05);
   } else {
-    put(15, M, MOUTH); put(16, M, MOUTH);
-    put(14, M - 1, [MOUTH[0], MOUTH[1], MOUTH[2], nu ? 150 : 90]); put(17, M - 1, [MOUTH[0], MOUTH[1], MOUTH[2], nu ? 150 : 90]);
+    draw(seg(3.72, my, 4.28, my - 0.02, 0.055), MOUTH);
+  }
+  const px = new Uint8Array(FACE_W * FACE_H * 4);
+  for (let i = 0; i < px.length; i += 4) {
+    const a = acc[i + 3];
+    if (a <= 0) continue;
+    px[i] = Math.round(acc[i] / a); px[i + 1] = Math.round(acc[i + 1] / a); px[i + 2] = Math.round(acc[i + 2] / a);
+    px[i + 3] = Math.round(a * 255);
+  }
+  // bleed the colours a few texels into the transparent area (smooth filtering then never pulls in black fringes)
+  for (let pass = 0; pass < 3; pass++) {
+    const src = px.slice();
+    for (let y = 0; y < FACE_H; y++) for (let x = 0; x < FACE_W; x++) {
+      const i = (y * FACE_W + x) * 4;
+      if (src[i + 3] || src[i] || src[i + 1] || src[i + 2]) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const X = x + dx, Y = y + dy;
+        if (X < 0 || Y < 0 || X >= FACE_W || Y >= FACE_H) continue;
+        const j = (Y * FACE_W + X) * 4;
+        if (!(src[j + 3] || src[j] || src[j + 1] || src[j + 2])) continue;
+        px[i] = src[j]; px[i + 1] = src[j + 1]; px[i + 2] = src[j + 2];
+        break;
+      }
+    }
   }
   return px;
 }
