@@ -3,12 +3,15 @@ import type { MapId } from "@/lib/game/maps/types";
 import type { ViewMode } from "@/lib/view-mode";
 
 export type PresenceMode = ViewMode;
-export interface PresenceMeta { name?: unknown; online_at?: unknown; mode?: unknown; map?: unknown; dog?: unknown }
+/** Where a game-mode member is: a map, or (P2 world mode) "wild" — the world between the zones ("Ngoài đồng"). */
+export type PresenceMap = MapId | "wild";
+/** `w` (P3): 1 = out in the wild — `map` then holds the nearest zone, for older clients that know no "wild". */
+export interface PresenceMeta { name?: unknown; online_at?: unknown; mode?: unknown; map?: unknown; dog?: unknown; w?: unknown }
 /** A member's dog as presence carries it (v17 §7.3): `{n, c}` on the wire. */
 export interface PresenceDog { name: string; coat: DogCoat }
 /** `map`: the game map the member walks on (v14); null in the classic view. `dog` (v17): the dog walking with them,
  *  from the same tab as `map`; null in the classic view or without one (absent in hand-made entries). */
-export interface PresenceEntry { accountId: string; name: string; mode: PresenceMode; map: MapId | null; dog?: PresenceDog | null }
+export interface PresenceEntry { accountId: string; name: string; mode: PresenceMode; map: PresenceMap | null; dog?: PresenceDog | null }
 
 /** A presence `dog` value: `n` a name of 1–16 characters with no hidden character (the names the server stores), and
  *  `c` a known coat; anything else is no dog. */
@@ -23,11 +26,11 @@ export function presenceDog(v: unknown): PresenceDog | null {
 const onlineAt = (m: PresenceMeta): number => (typeof m.online_at === "string" ? Date.parse(m.online_at) || 0 : 0);
 
 /** Every map id (a new one is a type error until it is listed). */
-const KNOWN_MAPS: Record<MapId, true> = { hall: true, pond: true, field: true, market: true, khu_nha: true, bai_dat: true, ham_ngam: true, mo_da: true, song_cai: true };
+const KNOWN_MAPS: Record<PresenceMap, true> = { hall: true, pond: true, field: true, market: true, khu_nha: true, bai_dat: true, ham_ngam: true, mo_da: true, song_cai: true, wild: true };
 
 /** A presence `map` value; anything unknown (an old client) is the hall. */
-export function presenceMap(v: unknown): MapId {
-  return typeof v === "string" && Object.hasOwn(KNOWN_MAPS, v) ? (v as MapId) : "hall";
+export function presenceMap(v: unknown): PresenceMap {
+  return typeof v === "string" && Object.hasOwn(KNOWN_MAPS, v) ? (v as PresenceMap) : "hall";
 }
 
 /** Presence state (key = account id, one meta per open tab) → one entry per account.
@@ -44,16 +47,16 @@ export function aggregatePresenceModes(state: Record<string, PresenceMeta[] | un
       continue;
     }
     const latest = games.reduce((a, b) => (onlineAt(b) > onlineAt(a) ? b : a));
-    out.push({ accountId, name, mode: "game", map: presenceMap(latest.map), dog: presenceDog(latest.dog) });
+    out.push({ accountId, name, mode: "game", map: latest.w === 1 ? "wild" : presenceMap(latest.map), dog: presenceDog(latest.dog) });
   }
   return out.sort((a, b) => (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
 }
 
 export interface MapMember { accountId: string; name: string; classic: boolean }
 
-/** Who is on which map (me included): classic-view members count in the hall. */
-export function mapCounts(presence: readonly PresenceEntry[]): Record<MapId, MapMember[]> {
-  const out: Record<MapId, MapMember[]> = { hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [], ham_ngam: [], mo_da: [], song_cai: [] };
+/** Who is on which map (me included): classic-view members count in the hall; P2: "wild" = out between the zones. */
+export function mapCounts(presence: readonly PresenceEntry[]): Record<PresenceMap, MapMember[]> {
+  const out: Record<PresenceMap, MapMember[]> = { hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [], ham_ngam: [], mo_da: [], song_cai: [], wild: [] };
   for (const p of presence) {
     const classic = p.mode === "classic";
     out[classic ? "hall" : p.map ?? "hall"].push({ accountId: p.accountId, name: p.name, classic });

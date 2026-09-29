@@ -1,6 +1,5 @@
 import { supabase, type RealtimeChannel } from "@/lib/supabase";
 import { markLeaving, whenTopicFree } from "@/lib/channel-lifecycle";
-import type { GameMap } from "@/lib/game/maps/types";
 import { createSendGate, GAME_EVENTS, parseGameMessage, toPayload, type GameMessage } from "@/lib/game/net/protocol";
 
 export interface GameChannelHandlers {
@@ -16,10 +15,10 @@ export interface GameChannelHandle {
   leave(last?: GameMessage): void;
 }
 
-/** Broadcast channel `game:{roomId}:{mapId}` — one per map (v14 spec §9.1). Browser only. */
+/** Broadcast channel `game:{roomId}:{mapId}` — one per map (v14 spec §9.1; P2: a world zone's, "wild" included). Browser only. */
 export function joinGameChannel(
   roomId: string,
-  map: Pick<GameMap, "id" | "width" | "height">,
+  map: { id: string; width: number; height: number },
   handlers: GameChannelHandlers,
 ): GameChannelHandle {
   const topic = `game:${roomId}:${map.id}`;

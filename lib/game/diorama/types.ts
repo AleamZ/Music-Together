@@ -1,0 +1,60 @@
+import type { Frame } from "@/lib/game/art/layers";
+import type { WeatherFx } from "@/lib/game/art/weather";
+import type { Facing, Look, Vec } from "@/lib/game/types";
+import type { WeatherKind } from "@/lib/game/weather/model";
+import type { CharAct } from "./character/pose";
+
+/** A character drawn as a camera-facing billboard (its 24×48 chibi frame). */
+export interface Billboard {
+  id: string;
+  look: Look;
+  /** Feet, map px. */
+  x: number;
+  y: number;
+  facing: Facing;
+  frame: Frame;
+  /** The name tag (null = none). */
+  name: string | null;
+  me?: boolean;
+  /** The 3D chibi's action (sit, fish cast/reel, swim, ride, wave…); absent = idle/walk/run from how the feet move. */
+  act?: CharAct;
+  /** P3: what they ride — a vehicle, or the boat on Sông Cái (absent: on foot). The vehicle model follows the feet. */
+  vehicle?: "bike" | "moto" | "car" | "boat";
+}
+
+/** P3: the gameplay things the 3D world shows beside the people (world px): the field's rats, the dogs, the pond's
+ *  leaping fish and the shut level gates' bamboo barriers. */
+export interface GameplayFrame {
+  rats: ReadonlyArray<{ key: string; x: number; y: number; dir: 1 | -1; fallen: boolean }>;
+  dogs: ReadonlyArray<{ id: string; x: number; y: number; facing: Facing }>;
+  /** A fish in the air: where, and how high (0…1 of its arc). */
+  leaps: ReadonlyArray<{ x: number; y: number; h: number }>;
+  gates: ReadonlyArray<{ id: string; at: Vec; barrier: { x: number; y: number; w: number; h: number } | null }>;
+}
+
+/** What the engine hands the diorama each frame (the same state the 2D renderer draws). */
+export interface DioramaFrame {
+  /** performance.now() */
+  t: number;
+  /** Where the camera follows (my feet, map px). */
+  focus: Vec;
+  billboards: Billboard[];
+  /** 0 by day … 1 at night (the 2D lighting model's `night`). */
+  night: number;
+  /** Dawn/dusk warmth 0…1. */
+  warm: number;
+  weather: WeatherKind | null;
+  windKmh: number;
+  fx: WeatherFx;
+  reduced: boolean;
+  /** P3 world mode: rats, dogs, leaping fish, gates (absent on a per-map diorama). */
+  gameplay?: GameplayFrame;
+}
+
+/** What the engine needs from a 3D view. */
+export interface View3D {
+  render(f: DioramaFrame): void;
+}
+
+export type CameraMode = "follow" | "overview" | "free";
+export type Quality = "high" | "low";

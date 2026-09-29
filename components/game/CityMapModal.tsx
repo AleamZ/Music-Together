@@ -3,6 +3,10 @@
 import { ParchmentModal } from "@/components/game/Parchment";
 import { CITY_PLACES, VISIBLE_MAP_IDS, cityRoads } from "@/lib/game/maps/city";
 import type { MapId } from "@/lib/game/maps/types";
+import type { Vec } from "@/lib/game/types";
+import { TELEPORT_FEE } from "@/lib/game/progression/model";
+import type { WaypointMark } from "@/lib/game/world/waypoints";
+import { WorldMapCanvas } from "./WorldMiniMap";
 
 const ROADS = cityRoads();
 
@@ -21,15 +25,21 @@ const TREES: ReadonlyArray<readonly [number, number]> = [
 
 /** "Bản đồ thành phố" (view only): the whole town on old paper, the roads between the maps as the portals link them, where
  *  I am, how many are on each map and what is there. */
-export default function CityMapModal({ current, counts, onClose }: {
+/** P2 world mode (`getWorldPos`): the paper is the true world map — the zones where they are, the roads, the river,
+ *  the mine mouth and me — with the same list of places below. */
+/** P3 world mode: the waypoints on the paper and listed; clicking a discovered one travels there (`onWaypoint`). */
+export default function CityMapModal({ current, counts, onClose, getWorldPos, waypoints, onWaypoint }: {
   current: MapId;
   counts: Readonly<Record<MapId, number>>;
   onClose: () => void;
+  getWorldPos?: () => Vec | null;
+  waypoints?: readonly WaypointMark[];
+  onWaypoint?: (m: WaypointMark) => void;
 }) {
   return (
     <ParchmentModal title="🗺️ Bản đồ thành phố" onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-3 font-vt leading-tight">
-        <div
+        {getWorldPos ? <WorldMapCanvas getWorldPos={getWorldPos} waypoints={waypoints} onWaypoint={onWaypoint} /> : (<div
           className="relative aspect-[16/11] w-full overflow-hidden rounded-sm border-2 border-ink/60 bg-[#efe0bb] shadow-inner"
           data-testid="city-map-paper"
         >
@@ -103,8 +113,22 @@ export default function CityMapModal({ current, counts, onClose }: {
               </div>
             );
           })}
-        </div>
+        </div>)}
 
+        {getWorldPos && waypoints && waypoints.length > 0 && (
+          <div data-testid="world-waypoints">
+            <p className="text-lg">🌀 Trạm dịch chuyển · {TELEPORT_FEE} xu/lượt, đi từ trạm bạn đang đứng</p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {waypoints.map((m) => (
+                <button key={m.id} type="button" data-testid={`waypoint-${m.id}`} disabled={!m.found || m.here}
+                  className={`pch-btn px-2 py-1 text-base ${m.found ? "" : "opacity-60"}`} onClick={() => onWaypoint?.(m)}
+                  title={m.here ? "Bạn đang ở trạm này" : m.found ? `Dịch chuyển tới ${m.name}` : "Chưa khám phá"}>
+                  {m.here ? "📍" : m.found ? "🌀" : "🔒"} {m.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <ul className="grid grid-cols-1 gap-2 text-base sm:grid-cols-2">
           {VISIBLE_MAP_IDS.map((id) => {
             const p = CITY_PLACES[id];
@@ -119,7 +143,9 @@ export default function CityMapModal({ current, counts, onClose }: {
             );
           })}
         </ul>
-        <p className="text-sm opacity-70">Bản đồ chỉ để xem — đi theo biển chỉ đường ở mỗi khu để di chuyển.</p>
+        <p className="text-sm opacity-70">{getWorldPos
+          ? "Đi bộ hoặc chạy xe theo đường; bấm một trạm 🌀 đã khám phá để dịch chuyển."
+          : "Bản đồ chỉ để xem — đi theo biển chỉ đường ở mỗi khu để di chuyển."}</p>
       </div>
     </ParchmentModal>
   );

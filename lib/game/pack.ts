@@ -53,9 +53,18 @@ export class Pack {
   /** Live rats my own dog is fetching: drawn fallen by their ending, not on their path. */
   private hidden = new Set<number>();
 
-  constructor(blocked: Blocked, localId: string) {
+  /** P3: where the field's px start in this map (the unified world: the field zone's origin; else 0, 0). */
+  private readonly origin: Vec;
+
+  constructor(blocked: Blocked, localId: string, origin: Vec = { x: 0, y: 0 }) {
     this.blocked = blocked;
     this.localId = localId;
+    this.origin = { x: origin.x, y: origin.y };
+  }
+
+  /** A rat pose (field px) in this map's px. */
+  private moved<T extends Vec>(p: T): T {
+    return this.origin.x === 0 && this.origin.y === 0 ? p : { ...p, x: p.x + this.origin.x, y: p.y + this.origin.y };
   }
 
   /** The live rats, for the prompt and the auto-hunt. */
@@ -74,8 +83,9 @@ export class Pack {
     for (const r of recent) {
       if (this.recentIds.has(r.id) || (r.how === "dog" && r.by?.id === this.localId)) continue;
       const home = ratHome(r.plot);
-      const p = home ? ratPos(r.seed, r.since, home.hole, home.rect, r.endedAt) : null;
-      if (!p) continue;
+      const q = home ? ratPos(r.seed, r.since, home.hole, home.rect, r.endedAt) : null;
+      if (!q) continue;
+      const p = this.moved(q);
       const catcher = r.how === "dog" && r.by && this.dogs.has(r.by.id) ? r.by.id : null;
       const how = r.how === "dog" && !catcher ? "sling" : r.how;
       if (catcher) this.update(catcher, (f) => pounce(f, p));
@@ -111,7 +121,8 @@ export class Pack {
    *  dog carries it. False without my dog or the rat. */
   pounce(ratId: number, now: number, serverT: number): boolean {
     const r = this.live.find((x) => x.id === ratId);
-    const p = r ? ratAt(r, serverT) : null;
+    const q = r ? ratAt(r, serverT) : null;
+    const p = q ? this.moved(q) : null;
     if (!r || !p || !this.dogs.has(this.localId)) return false;
     this.update(this.localId, (f) => pounce(f, p));
     this.hidden.add(ratId);
@@ -142,7 +153,8 @@ export class Pack {
   drawnRats(now: number, serverT: number): DrawnRat[] {
     const out: DrawnRat[] = [];
     for (const r of this.liveRats) {
-      const p = ratAt(r, serverT);
+      const q = ratAt(r, serverT);
+      const p = q ? this.moved(q) : null;
       if (p) out.push({ key: `r${r.id}`, x: p.x, y: p.y, dir: p.dir, moving: p.moving, fallen: false });
     }
     for (const e of this.endings) {
@@ -151,7 +163,8 @@ export class Pack {
         continue;
       }
       const home = ratHome(e.rat.plot);
-      const p = home ? ratFleePos(e.rat.seed, e.rat.since, e.endedAt, home.hole, home.rect, e.endedAt + (now - e.seenAt)) : null;
+      const q = home ? ratFleePos(e.rat.seed, e.rat.since, e.endedAt, home.hole, home.rect, e.endedAt + (now - e.seenAt)) : null;
+      const p = q ? this.moved(q) : null;
       if (p) out.push({ key: e.key, x: p.x, y: p.y, dir: p.dir, moving: true, fallen: false });
     }
     return out;

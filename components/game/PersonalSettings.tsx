@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+import { readGfx, subscribeGfx, writeGfx, type GfxMode } from "@/lib/game/diorama/flag";
 import type { WeatherFx } from "@/lib/game/art/weather";
 import { FX_LEVELS } from "@/lib/game/weather/fx";
 import KeyBadge from "./KeyBadge";
@@ -8,6 +9,7 @@ import KeyBadge from "./KeyBadge";
 /** The viewer's own display settings (v18.8): for now the weather-effects level. */
 export default function PersonalSettings({ weatherFx, onWeatherFx }: { weatherFx: WeatherFx; onWeatherFx: (l: WeatherFx) => void }) {
   const [open, setOpen] = useState(false);
+  const gfx = useSyncExternalStore<GfxMode>(subscribeGfx, readGfx, () => "2d");
   return (
     <div className="relative font-vt text-base leading-none">
       <button
@@ -42,6 +44,22 @@ export default function PersonalSettings({ weatherFx, onWeatherFx }: { weatherFx
               ))}
             </div>
             <div className="text-xs opacity-75">Chỉ đổi hình ảnh trên máy bạn; ngày/đêm và đèn vẫn giữ.</div>
+            <div id="gfx-label" className="mt-1 text-xs font-bold opacity-75">Đồ hoạ</div>
+            <div role="radiogroup" aria-labelledby="gfx-label" className="flex gap-1">
+              {(["2d", "3d"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={gfx === m}
+                  className={`pch-btn px-1.5 text-xs ${gfx === m ? "pch-btn-primary" : ""}`}
+                  onClick={() => writeGfx(m)}
+                >
+                  {m === "2d" ? "2D" : "3D (thử)"}
+                </button>
+              ))}
+            </div>
+            <div className="text-xs opacity-75">3D (thử): chỉ ở Ao cá, các nơi khác vẫn 2D.</div>
           </div>
         </>
       )}

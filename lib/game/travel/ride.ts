@@ -1,5 +1,5 @@
 import type { InteractKind, MapId } from "@/lib/game/maps/types";
-import type { VehicleId } from "@/lib/game/travel/vehicles";
+import { WORLD_RIDE_SPEED, type VehicleId } from "@/lib/game/travel/vehicles";
 
 // v18.7: riding a vehicle around the maps. Cosmetic + faster walking; no interactions but portals while riding.
 
@@ -8,7 +8,8 @@ export const RIDE_KEY = "r";
 
 export const isVehicleId = (v: unknown): v is VehicleId => v === "bike" || v === "moto" || v === "car";
 export const canRide = (map: MapId, v: VehicleId): boolean => !(map === "pond" && v === "car") && map !== "ham_ngam" && map !== "song_cai";   // v20.4: no vehicle down a manhole; v22: on the river you row
-export const rideSpeed = (v: VehicleId | null): number => (v ? RIDE_SPEED[v] : 1);
+/** The ride factor on the walk speed; P3 world: the unified world's roads, at the vehicle's speed_mul (≤ 3, 0089). */
+export const rideSpeed = (v: VehicleId | null, world = false): number => (v ? (world ? WORLD_RIDE_SPEED : RIDE_SPEED)[v] : 1);
 export const interactBlocked = (riding: VehicleId | null, kind: InteractKind): boolean => riding !== null && kind !== "portal";
 
 /** The owned vehicle ids, fastest first. */
