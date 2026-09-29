@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import GameCanvas, { type GameCanvasHandle } from "@/components/game/GameCanvas";
+import Camera3dControl from "@/components/game/Camera3dControl";
+import { addFelled, setFelled } from "@/lib/game/forest/felled-store";
+import { cellTrees } from "@/lib/game/forest/near";
+import { cyclePreset, getCam, setCam, toggleView } from "@/lib/game/diorama/world/game-camera";
 import WorldMiniMap from "@/components/game/WorldMiniMap";
 import ZoneToast from "@/components/game/ZoneToast";
 import { useDevLive } from "./useDevLive";
@@ -128,8 +132,26 @@ export default function WorldGameDev() {
       pos: () => canvasRef.current?.worldPos() ?? canvasRef.current?.localPos(),
       zone: () => canvasRef.current?.zone(),
       travel: () => travel,
+      // 0097 playtest: my chibi chops / cooks (the fa broadcast too); fell the tràm nearest (x, y) for 20 s, or clear
+      work: (a: "chop" | "cook" | null) => canvasRef.current?.setWork?.(a),
+      fell: (x: number, y: number) => {
+        const cx = Math.floor(x / 64), cy = Math.floor(y / 64);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++)
+          cellTrees(cx + dx, cy + dy).forEach((_t, k) => addFelled(`${cx + dx}:${cy + dy}:${k}`, Date.now() + 20_000));
+      },
+      unfell: () => setFelled([], Date.now()),
     };
   }, [travelTo, travel]);
+
+  // the game's camera keys (the shell's hotkeys are not on this page): Z cycles the preset, 8 first / third person
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.code === "KeyZ") setCam(cyclePreset(getCam()));
+      if (e.code === "Digit8" || e.code === "Numpad8") setCam(toggleView(getCam()));
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
 
   return (
     <div className="game-ui fixed inset-0 overflow-hidden bg-[#2f6e8f] text-ink">
@@ -165,6 +187,7 @@ export default function WorldGameDev() {
           <p>Đang ở: {isZone(travel.mapId) ? (zone ? zoneName(zone) : "…") : `${travel.mapId} (bên trong)`}</p>
           <p className="opacity-70">WASD/chạm để đi · E tương tác · cửa hầm mỏ trên đồi phía đông</p>
         </div>
+        <div className="pointer-events-auto"><Camera3dControl /></div>
         {isZone(travel.mapId) && <WorldMiniMap getWorldPos={() => canvasRef.current?.worldPos() ?? null} zone={zone} />}
       </div>
       {prompt && (

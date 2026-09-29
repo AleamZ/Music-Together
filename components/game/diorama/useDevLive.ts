@@ -16,7 +16,7 @@ const stall = (no: number, renterName: string | null, items: number): Stall =>
   ({ no, mine: no === 2, renterName, paidMs: null, items: Array.from({ length: items }, () => ({}) as Stall["items"][number]) });
 
 function fakeRealm(zone: MapId, now: number): WorldState {
-  const kinds: WildSpeciesId[] = ["deer", "rabbit", "fox", "bird", "bear", "rabbit", "deer", "wolf"];
+  const kinds: WildSpeciesId[] = ["deer", "rabbit", "fox", "bird", "chuot_dong", "ga_rung", "ran_ri_ca", "cay_huong", "co_trang", "rua_hop_lung_den"]; // + 0097: the forest's six
   const animals: WildAnimal[] = kinds.map((species, i) => ({
     id: i + 1, species, hx: 260 + (i % 4) * 110, hy: 150 + Math.floor(i / 4) * 150, seed: i * 13 + 5,
     bornMs: now - 60_000, expiresMs: now + 3_600_000, photographed: false,
