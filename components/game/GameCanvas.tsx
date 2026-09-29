@@ -4,8 +4,6 @@ import { useEffect, useImperativeHandle, useRef, useSyncExternalStore, type Ref 
 import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/diorama/flag";
 import { DioramaView } from "@/lib/game/diorama/view";
 import { WorldView } from "@/lib/game/diorama/world/view";
-import { GameplayLayer } from "@/lib/game/diorama/gameplay3d";
-import type { Scene } from "three";
 import { ZoneChannels } from "@/lib/game/net/world-channels";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap } from "@/lib/game/maps/types";
@@ -728,7 +726,6 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     if (rainRef.current) engine.setRain(rainRef.current);
     // diorama prototype: a 3D view draws this world (no WebGL: it stays 2D); P2: the world's own view, which must start
     let view: (DioramaView | WorldView) | null = null;
-    let gameplay: GameplayLayer | null = null;                                          // P3: vehicles, rats, dogs, gates
     const c3 = canvas3dRef.current;
     if (use3d && c3) {
       try {
@@ -736,11 +733,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
           wv.setCameraMode("follow");
           view = wv;
-          // P3: the gameplay layer rides in the world view's scene (WorldView keeps its scene private: no API for layers yet)
-          const gp = new GameplayLayer((x, y) => wv.heightAt(x, y));
-          (wv as unknown as { scene: Scene }).scene.add(gp.root);
-          gameplay = gp;
-          engine.setView3D({ render: (f) => { gp.update(f); wv.render(f); } });
+          // P3: the world view draws the frame's gameplay itself (vehicles and the boat under riders, rats, dogs,
+          // leaping fish, gate barriers: DioramaFrame.gameplay + Billboard.vehicle)
+          engine.setView3D(wv);
         } else {
           view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
           engine.setView3D(view);
@@ -757,7 +752,6 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       if (view) {
         if (view3dRef.current === view) view3dRef.current = null;
         engine.setView3D(null);
-        gameplay?.dispose();
         view.dispose();
       }
       if (aoiTimer) window.clearInterval(aoiTimer);

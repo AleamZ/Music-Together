@@ -66,6 +66,7 @@ interface ChunkSet {
   /** trees by LOD, then kind */
   lods: THREE.Group[];
   near: THREE.Group;                    // grass, flowers (only at LOD 0)
+  rocks?: THREE.InstancedMesh;
   center: THREE.Vector3;
   level: number;
 }
@@ -109,12 +110,14 @@ export class Forest {
       const set: ChunkSet = { lods: [new THREE.Group(), new THREE.Group(), new THREE.Group()], near: new THREE.Group(), center: new THREE.Vector3(), level: -1 };
       const list = trees[c];
       if (list.length) {
-        for (const kind of ["round", "conifer", "yellow"] as const) {
-          const mine = list.filter((t) => t.kind === kind);
+        // the round and yellow trees share a shape (only the colours differ): one instanced mesh for both
+        for (const kinds of [["round", "yellow"], ["conifer"]] as const) {
+          const mine = list.filter((t) => (kinds as readonly TreeKind[]).includes(t.kind));
           if (!mine.length) continue;
           for (let lod = 0; lod < 3; lod++) {
-            const im = new THREE.InstancedMesh(treeGeo[kind][lod], treeMat, mine.length);
+            const im = new THREE.InstancedMesh(treeGeo[kinds[0]][lod], treeMat, mine.length);
             mine.forEach((t, i) => {
+              const kind = t.kind;
               const k = t.scale * (kind === "conifer" ? 1.1 : 1);
               m.compose(p.set(t.x / 16, t.h - 0.15, t.y / 16), q.setFromAxisAngle(up, t.rot), s.set(k, k * (0.9 + t.tint * 0.3), k));
               im.setMatrixAt(i, m);
@@ -143,7 +146,9 @@ export class Forest {
       if (rocks[c].length) {
         const r = inst(rockGeo, rockMat, rocks[c], (sp) => [sp.scale * 0.9, sp.scale * 0.6, sp.scale * 0.75, -0.1], (sp) => (sp.tint < 0.5 ? 0xffffff : 0xd8d2c4));
         r.castShadow = true;
-        this.root.add(r);                                  // rocks: always shown (cheap)
+        set.rocks = r;                                     // rocks: hidden only at the far level (a draw call a chunk)
+        r.visible = false;
+        this.root.add(r);
         this.counts.rocks += rocks[c].length;
       }
       if (grass[c].length) {
@@ -176,6 +181,7 @@ export class Forest {
       c.level = level;
       c.lods.forEach((g, i) => { g.visible = i === level; });
       c.near.visible = this.nearOn && level === 0;
+      if (c.rocks) c.rocks.visible = level < 2;
     }
   }
 

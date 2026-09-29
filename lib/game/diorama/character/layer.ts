@@ -60,6 +60,10 @@ export class CharacterLayer {
   private frameNo = 0;
   private lastT: number | null = null;
   private quality: Quality = "high";
+  /** Beyond this (units) from `cullFrom` a person is not drawn (me always is): the world's overview. */
+  private cullFrom: THREE.Vector3 | null = null;
+  private cullDist = Infinity;
+  private lifts: ReadonlyMap<string, number> = new Map();
 
   constructor(size: MapSize, groundAt: (x: number, y: number) => number) {
     this.size = size;
@@ -78,6 +82,24 @@ export class CharacterLayer {
       if (a.key) this.factory.release(a.key);
       a.key = "";                                                        // re-acquired at the new detail next update
     }
+  }
+
+  /** Hide people farther than `dist` units from `eye` (the camera): in the world's overview they are a few pixels
+   *  tall and ~13 draw calls each. `null` turns it off. */
+  setCull(eye: THREE.Vector3 | null, dist = Infinity): void {
+    this.cullFrom = eye;
+    this.cullDist = dist;
+  }
+
+  /** Per person: how far above the ground their feet are drawn (units): on a vehicle's seat, in a boat. */
+  setLifts(lifts: ReadonlyMap<string, number>): void {
+    this.lifts = lifts;
+  }
+
+  /** Where a person's feet are drawn (units), or null (not here): hooks for what rides with them (vehicles, boats). */
+  feetOf(id: string): { pos: THREE.Vector3; yaw: number; visible: boolean } | null {
+    const a = this.actors.get(id);
+    return a ? { pos: a.rig.root.position, yaw: a.yaw, visible: a.rig.root.visible } : null;
   }
 
   /** Kept for the view's API: the chibis are lit by the scene, so night needs no tint. */
@@ -159,7 +181,7 @@ export class CharacterLayer {
       const swim = act === "swim" || (b.act === undefined && ground < WATER_DEPTH);
       a.rig.apply(poseAt(swim ? "swim" : act, a.walkT, a.phase, reduced));
       const w = pxToWorld(b, this.size);
-      a.rig.root.position.set(w.x, swim && ground < WATER_DEPTH ? ground + SWIM_LIFT : ground, w.z);
+      a.rig.root.position.set(w.x, (swim && ground < WATER_DEPTH ? ground + SWIM_LIFT : ground) + (this.lifts.get(b.id) ?? 0), w.z);
       a.rig.root.rotation.y = a.yaw;
       a.blob.visible = !swim;
       if (b.name !== a.tagText) {
@@ -176,6 +198,9 @@ export class CharacterLayer {
         a.tagText = b.name;
       }
       a.tag?.position.set(a.rig.root.position.x, a.rig.root.position.y + TAG_Y, a.rig.root.position.z);
+      const shown = !this.cullFrom || !!b.me || a.rig.root.position.distanceTo(this.cullFrom) < this.cullDist;
+      a.rig.root.visible = shown;
+      if (a.tag) a.tag.visible = shown;
     }
     for (const [id, a] of this.actors) {
       if (a.seen === n) continue;

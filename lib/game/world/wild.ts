@@ -7,6 +7,7 @@ import {
   bridgeAt, heightGrid, KNOLLS, MAX_WALK_HEIGHT, MAX_WALK_SLOPE, onPath, slopeAtCell, waterAt,
 } from "./terrain";
 export { ROADS, TRAILS, type Road, type Trail } from "./roads";
+import { LANDMARKS } from "./scenery";
 import { WORLD_CELL, WORLD_H, WORLD_W, ZONES, type OutdoorMapId } from "./zones";
 
 // The wild: the filler between the zones (spec §1). compose.ts turns it into collision; the 3D renderer
@@ -16,7 +17,7 @@ import { WORLD_CELL, WORLD_H, WORLD_W, ZONES, type OutdoorMapId } from "./zones"
 //   - the forest belt along the north edge (scenery),
 //   - water: the river winding across the south and the pond's stream (the bridges on the trails cross the river),
 //   - a reed bank around Sông Cái (the zone is boat water, reached from the pond's pier: no walking in),
-//   - the mine mouth's frame (the tunnel itself is Mỏ đá, an interior),
+//   - the mine mouth's frame (the tunnel itself is Mỏ đá, an interior), the landmarks' footprints (windmills…),
 //   - the world's rim (one cell).
 // Roads and trails are walkable whatever lies under them; each road joins the two ends of an old portal pair.
 /** Which edge of a zone a portal's opening runs to. */
@@ -95,6 +96,20 @@ function nearSongCai(x: number, y: number): boolean {
   return x >= z.ox - REED_BANK && x < z.ox + z.w + REED_BANK && y >= z.oy - REED_BANK && y < z.oy + z.h + REED_BANK;
 }
 
+/** P3: the landmarks' solid footprints (world px circles, from the 3D models in lib/game/diorama/world/props.ts): the
+ *  windmills' towers (base radius 1.5 units), the đình's flag plinth, the market arch's two posts (the road runs
+ *  between them), the dojo tower's plinth, the headframe's engine house. The mine mouth is MINE_SOLID. */
+export const LANDMARK_SOLIDS: ReadonlyArray<{ x: number; y: number; r: number }> = LANDMARKS.flatMap((l) => {
+  switch (l.kind) {
+    case "windmill": return [{ x: l.x, y: l.y, r: 28 }];
+    case "flag": return [{ x: l.x, y: l.y, r: 14 }];
+    case "tower": return [{ x: l.x, y: l.y, r: 30 }];
+    case "headframe": return [{ x: l.x, y: l.y, r: 30 }];
+    case "arch": return [-1, 1].map((s) => ({ x: l.x + Math.sin(l.yaw) * s * 33.6, y: l.y + Math.cos(l.yaw) * s * 33.6, r: 10 }));
+    case "mine": return [];
+  }
+});
+
 /** Is this wild point blocked (before the roads are laid over it)? */
 export function wildBlocked(x: number, y: number): boolean {
   if (x < 8 || y < 8 || x >= WORLD_W - 8 || y >= WORLD_H - 8) return true;
@@ -102,6 +117,7 @@ export function wildBlocked(x: number, y: number): boolean {
   if (waterAt(x, y) !== null) return bridgeAt(x, y) === null;
   if (nearSongCai(x, y)) return true;
   if (x >= MINE_SOLID.x && x < MINE_SOLID.x + MINE_SOLID.w && y >= MINE_SOLID.y && y < MINE_SOLID.y + MINE_SOLID.h) return true;
+  if (LANDMARK_SOLIDS.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 <= s.r ** 2)) return true;
   if (KNOLLS.some((h) => (x - h.x) ** 2 + (y - h.y) ** 2 <= h.r ** 2)) return true;
   const g = heightGrid(), c = Math.floor(x / WORLD_CELL), r = Math.floor(y / WORLD_CELL);
   if (g.h[r * g.cols + c] > MAX_WALK_HEIGHT) return true;

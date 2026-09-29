@@ -7,7 +7,7 @@ import { IS_PROD } from "@/lib/app-mode";
 
 export const metadata: Metadata = { title: "Thế giới — 3D", robots: { index: false, follow: false } };
 
-const KEYS = ["mode", "hour", "weather", "q", "speed", "panel"] as const;
+const KEYS = ["mode", "hour", "weather", "q", "speed", "panel", "live"] as const;
 
 export default async function WorldPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   if (IS_PROD) notFound();

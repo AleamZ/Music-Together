@@ -66,8 +66,27 @@ export function meshHeight(x: number, y: number): number {
   return zoneUnder(x, y) ? h - UNDER_ZONE : h;
 }
 
-/** The chunk (cx, cy)'s mesh geometry at a step (px); world units, absolute (px / 16). */
-export function chunkGeometry(chunk: number, step: number): THREE.BufferGeometry {
+/** A chunk's mesh as plain arrays (world units, absolute: px / 16) — built on the main thread or in the terrain worker. */
+export interface ChunkArrays { pos: Float32Array; nor: Float32Array; col: Float32Array; idx: Uint16Array | Uint32Array }
+
+/** The coarsest step: every level's rim follows this grid (linearly between its samples), so neighbours at different
+ *  levels share the same edge line, normals and colours — no cracks and no seam lines between LODs. */
+const RIM_STEP = LOD_STEPS[LOD_STEPS.length - 1];
+
+interface Sample { h: number; n: [number, number, number]; c: [number, number, number] }
+
+/** A vertex exactly as the coarsest level computes it (its height, central-difference normal and colour). */
+function coarseSample(x: number, y: number, c: THREE.Color, v3: THREE.Vector3): Sample {
+  const s = RIM_STEP, u = s / 16;
+  const h = meshHeight(x, y);
+  const dx = meshHeight(x + s, y) - meshHeight(x - s, y), dz = meshHeight(x, y + s) - meshHeight(x, y - s);
+  v3.set(-dx, 2 * u, -dz).normalize();
+  landColor(x, y, h, Math.hypot(dx, dz) / (2 * u), c);
+  return { h, n: [v3.x, v3.y, v3.z], c: [c.r, c.g, c.b] };
+}
+
+/** The chunk's mesh arrays at a step (px): an (n+1)² grid plus a skirt hanging from its rim. */
+export function chunkArrays(chunk: number, step: number): ChunkArrays {
   const cx = chunk % CHUNKS_X, cy = Math.floor(chunk / CHUNKS_X);
   const x0 = DOMAIN.x0 + cx * CHUNK_PX, y0 = DOMAIN.y0 + cy * CHUNK_PX;
   const n = CHUNK_PX / step;
@@ -77,18 +96,37 @@ export function chunkGeometry(chunk: number, step: number): THREE.BufferGeometry
   const verts = (n + 1) * (n + 1), rim = 4 * n;
   const pos = new Float32Array((verts + rim) * 3), nor = new Float32Array((verts + rim) * 3), col = new Float32Array((verts + rim) * 3);
   const u = step / 16, v3 = new THREE.Vector3(), c = new THREE.Color();
+  const cache = new Map<number, Sample>();
+  const coarse = (x: number, y: number): Sample => {
+    const key = x * 100003 + y;
+    let s = cache.get(key);
+    if (!s) { s = coarseSample(x, y, c, v3); cache.set(key, s); }
+    return s;
+  };
   for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
-    const k = j * (n + 1) + i, hi = (j + 1) * N + (i + 1);
-    const h = H[hi], x = x0 + i * step, y = y0 + j * step;
+    const k = j * (n + 1) + i, x = x0 + i * step, y = y0 + j * step;
+    if (i === 0 || j === 0 || i === n || j === n) {
+      // on the rim: between the two coarse samples along this edge
+      const alongX = j === 0 || j === n;
+      const off = alongX ? x - x0 : y - y0, a = Math.floor(off / RIM_STEP) * RIM_STEP, t = (off - a) / RIM_STEP;
+      const A = alongX ? coarse(x0 + a, y) : coarse(x, y0 + a);
+      const B = t > 0 ? (alongX ? coarse(x0 + a + RIM_STEP, y) : coarse(x, y0 + a + RIM_STEP)) : A;
+      pos.set([x / 16, A.h + (B.h - A.h) * t, y / 16], k * 3);
+      v3.set(A.n[0] + (B.n[0] - A.n[0]) * t, A.n[1] + (B.n[1] - A.n[1]) * t, A.n[2] + (B.n[2] - A.n[2]) * t).normalize();
+      nor.set([v3.x, v3.y, v3.z], k * 3);
+      col.set([A.c[0] + (B.c[0] - A.c[0]) * t, A.c[1] + (B.c[1] - A.c[1]) * t, A.c[2] + (B.c[2] - A.c[2]) * t], k * 3);
+      continue;
+    }
+    const hi = (j + 1) * N + (i + 1);
+    const h = H[hi];
     pos.set([x / 16, h, y / 16], k * 3);
     const dx = H[hi + 1] - H[hi - 1], dz = H[hi + N] - H[hi - N];
     v3.set(-dx, 2 * u, -dz).normalize();
     nor.set([v3.x, v3.y, v3.z], k * 3);
-    const s = Math.hypot(dx, dz) / (2 * u);
-    landColor(x, y, h, s, c);
+    landColor(x, y, h, Math.hypot(dx, dz) / (2 * u), c);
     col.set([c.r, c.g, c.b], k * 3);
   }
-  // the skirt: the rim's vertices again, SKIRT units lower
+  // the skirt: the rim's vertices again, SKIRT units lower (same colour: it only ever shows through a crack)
   const rimIdx: number[] = [];
   for (let i = 0; i < n; i++) rimIdx.push(i);                               // north, west → east
   for (let j = 0; j < n; j++) rimIdx.push(j * (n + 1) + n);                 // east, north → south
@@ -98,23 +136,35 @@ export function chunkGeometry(chunk: number, step: number): THREE.BufferGeometry
     const k = verts + r;
     pos.set([pos[src * 3], pos[src * 3 + 1] - SKIRT, pos[src * 3 + 2]], k * 3);
     nor.set([nor[src * 3], nor[src * 3 + 1], nor[src * 3 + 2]], k * 3);
-    col.set([col[src * 3] * 0.8, col[src * 3 + 1] * 0.8, col[src * 3 + 2] * 0.8], k * 3);
+    col.set([col[src * 3], col[src * 3 + 1], col[src * 3 + 2]], k * 3);
   });
-  const idx: number[] = [];
+  const total = (n * n * 6) + rim * 12;
+  const idx = verts + rim > 65535 ? new Uint32Array(total) : new Uint16Array(total);
+  let w = 0;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const a = j * (n + 1) + i, b = a + 1, d = a + n + 1, e = d + 1;
-    idx.push(a, d, b, b, d, e);
+    idx[w++] = a; idx[w++] = d; idx[w++] = b; idx[w++] = b; idx[w++] = d; idx[w++] = e;
   }
   for (let r = 0; r < rim; r++) {
     const a = rimIdx[r], b = rimIdx[(r + 1) % rim], a2 = verts + r, b2 = verts + ((r + 1) % rim);
-    idx.push(a, b, a2, b, b2, a2, a, a2, b, b, a2, b2);                     // both faces: the skirt may be seen from either side
+    for (const v of [a, b, a2, b, b2, a2, a, a2, b, b, a2, b2]) idx[w++] = v;  // both faces: the skirt may be seen from either side
   }
+  return { pos, nor, col, idx };
+}
+
+/** Arrays → a geometry (the worker's result, or a main-thread build). */
+export function geometryFromArrays(a: ChunkArrays): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  g.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
-  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  g.setIndex(verts + rim > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1));
+  g.setAttribute("position", new THREE.BufferAttribute(a.pos, 3));
+  g.setAttribute("normal", new THREE.BufferAttribute(a.nor, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(a.col, 3));
+  g.setIndex(new THREE.BufferAttribute(a.idx, 1));
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;
+}
+
+/** The chunk (cx, cy)'s mesh geometry at a step (px), built here and now. */
+export function chunkGeometry(chunk: number, step: number): THREE.BufferGeometry {
+  return geometryFromArrays(chunkArrays(chunk, step));
 }

@@ -48,6 +48,15 @@ export function riverTint(x: number, y: number): number {
   return k < 0.35 ? 0x3f7478 : k < 0.7 ? 0x46807f : 0x4f8a8c;
 }
 
+/** The world's river tint: the zone's bands easing, over its last 160 px each end, into the wild river's blue. */
+export function endTint(width: number): (x: number, y: number) => number {
+  const wild = new THREE.Color(0x63b4cf), c = new THREE.Color();
+  return (x, y) => {
+    const k = 1 - Math.min(1, Math.min(x, width - x) / 160);
+    return c.setHex(riverTint(x, y)).lerp(wild, k * k).getHex();
+  };
+}
+
 /** The current's lanes for the drifting streaks and hyacinths (px), seeded. */
 export interface RiverLayout {
   reeds: Array<{ x: number; y: number; h: number; tip: boolean }>;
@@ -95,8 +104,9 @@ export function buildSongCaiZone(map: GameMap, opts: OutdoorOptions = {}): THREE
   const L = riverLayout(map, opts);
   const k = new Kit(map);
   const W = (x: number, y: number) => k.W(x, y);
+  const open = (x: number, y: number) => !!opts.openEnds && y >= RIVER.y0 && y <= RIVER.y1 && (x < RIVER.x0 || x > RIVER.x1);
   k.terrain(map.cell, (x, y) => {
-    const g = riverGroundAt(x, y);
+    const g0 = riverGroundAt(x, y), g = g0 !== "jetty" && open(x, y) ? "water" : g0;
     switch (g) {
       case "water": return { top: -riverDepth(x, y), color: 0x5a4a30 };
       case "rock": return { top: -0.9, color: 0x56514a };
@@ -110,7 +120,8 @@ export function buildSongCaiZone(map: GameMap, opts: OutdoorOptions = {}): THREE
   k.base();
 
   // ---- the river: one wide surface, flowing east; foam lines at its lips
-  k.water({ x: RIVER.x0 - 6, y: RIVER.y0 - 4, w: RIVER.x1 - RIVER.x0 + 12, h: RIVER.y1 - RIVER.y0 + 8 }, { flow: 1, tint: riverTint, segs: [120, 44], opacity: 0.86 });
+  const wx0 = opts.openEnds ? -8 : RIVER.x0 - 6, wx1 = opts.openEnds ? map.width + 8 : RIVER.x1 + 6;
+  k.water({ x: wx0, y: RIVER.y0 - 4, w: wx1 - wx0, h: RIVER.y1 - RIVER.y0 + 8 }, { flow: 1, tint: opts.openEnds ? endTint(map.width) : riverTint, segs: [120, 44], opacity: 0.86 });
 
   // ---- rocks (mossy, with a foam collar upstream) and the island
   const rockGeo = k.geo(new THREE.DodecahedronGeometry(1, 0));

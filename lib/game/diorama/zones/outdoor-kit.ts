@@ -34,6 +34,8 @@ export interface ZoneRig {
 export interface OutdoorOptions {
   /** 0.5 … 1: how many repeated plants/props (low-end devices build fewer). */
   density?: number;
+  /** The world map: Sông Cái's river runs out through the zone's west and east edges to meet the wild river. */
+  openEnds?: boolean;
 }
 
 /** A zone builder: the map → its diorama group in zone-local px → units (centred like the pond). */

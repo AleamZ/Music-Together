@@ -5,6 +5,7 @@ import { LANDMARKS, type Landmark } from "@/lib/game/world/scenery";
 import {
   bridgeAt, heightAt, RIVER_LEVEL, ZONE_ELEV, RIVER_PTS, riverHalfWidth, STREAM_HALF_W, STREAM_PTS, streamLevel, waterAt,
 } from "@/lib/game/world/terrain";
+import type { Vec } from "@/lib/game/types";
 import { ZONES } from "@/lib/game/world/zones";
 import { toon } from "./toon";
 
@@ -71,28 +72,52 @@ function ribbon(pts: readonly { x: number; y: number }[], s0: number, s1: number
 
 export interface Water { root: THREE.Group; animate(t: number, wind: number): void; dispose(): void }
 
+/** Where the wild river's ribbon stops and starts again around Sông Cái (arc lengths): 8 px inside the zone's edges. */
+export function riverRibbonSpan(): [number, number] {
+  const cum = cumulative(RIVER_PTS), L = cum[cum.length - 1], sc = ZONES.song_cai;
+  let sIn = 0, sOut = L;
+  for (let s = 0; s < L; s += 2) { if (pointAt(RIVER_PTS, cum, s).x >= sc.ox + 8) { sIn = s; break; } }
+  for (let s = L; s > 0; s -= 2) { if (pointAt(RIVER_PTS, cum, s).x <= sc.ox + sc.w - 8) { sOut = s; break; } }
+  return [sIn, sOut];
+}
+
+/** The stream's water from inside the pond (its south shore) out to the river: the points, the length, where it
+ *  leaves the pond zone (`lip`) and its surface. Over the pond's grass it rides just above the ground; past the lip
+ *  it eases down onto the stream's own slope within 48 px. */
+export function streamRunnel(): { pts: Vec[]; length: number; lip: number; level: (s: number) => number } {
+  const pond = ZONES.pond, first = STREAM_PTS[0];
+  // the lake's south shore under the stream's first point (the pond's oval: centre 300,180, radii 180×105; 12 px in)
+  const shore = { x: first.x, y: pond.oy + 180 + 105 * Math.sqrt(Math.max(0, 1 - ((first.x - pond.ox - 300) / 180) ** 2)) - 12 };
+  const pts: Vec[] = [shore, ...STREAM_PTS];
+  const cum = cumulative(pts), length = cum[cum.length - 1];
+  const lip = cum[1];                                          // STREAM_PTS[0] is on the zone's south edge
+  const grass = ZONE_ELEV.pond + 0.05;
+  const level = (s: number) => {
+    if (s <= lip) return grass;
+    const own = streamLevel(s - lip), k = Math.min(1, (s - lip) / 48);
+    return grass + (own + 0.02 - grass) * (k * k * (3 - 2 * k));
+  };
+  return { pts, length, lip, level };
+}
+
 export function buildWater(): Water {
   const root = new THREE.Group();
   const tex = streakTexture();
   const mat = toon({ color: 0x4f9fb0, map: tex, transparent: true, opacity: 0.93, side: THREE.DoubleSide });
   const cum = cumulative(RIVER_PTS), L = cum[cum.length - 1];
   const sc = ZONES.song_cai;
-  // the zone draws its own water from 48 px in; the ribbon runs a little under the zone's banks to meet it
-  let sIn = 0, sOut = L;
-  for (let s = 0; s < L; s += 4) { const p = pointAt(RIVER_PTS, cum, s); if (p.x >= sc.ox + 50) { sIn = s; break; } }
-  for (let s = L; s > 0; s -= 4) { const p = pointAt(RIVER_PTS, cum, s); if (p.x <= sc.ox + sc.w - 50) { sOut = s; break; } }
+  // in the world Sông Cái's own water runs to its west and east edges (openEnds): the ribbon meets it there, level
+  // (the zone's water is at RIVER_LEVEL too), overlapping a few px just under it — no step at either end
+  const [sIn, sOut] = riverRibbonSpan();
   const half = (s: number) => riverHalfWidth(s) + 6;
-  // over the zone's grass strip (48 px each end) the water rides just above it, spilling down to the wild river
-  const top = ZONE_ELEV.song_cai + 0.04;
   const lvl = (s: number) => {
     const x = pointAt(RIVER_PTS, cum, s).x;
-    const edge = Math.min(x - (sc.ox - 10), sc.ox + sc.w + 10 - x);
-    return RIVER_LEVEL + (top - RIVER_LEVEL) * Math.max(0, Math.min(1, edge / 12));
+    return x > sc.ox - 2 && x < sc.ox + sc.w + 2 ? RIVER_LEVEL - 0.015 : RIVER_LEVEL;
   };
   const geos = [ribbon(RIVER_PTS, 0, sIn, 6, half, lvl), ribbon(RIVER_PTS, sOut, L, 6, half, lvl)];
-  const scum = cumulative(STREAM_PTS);
-  geos.push(ribbon(STREAM_PTS, 0, scum[scum.length - 1], 8, () => STREAM_HALF_W + 3, (s) => streamLevel(s) + 0.02));
-  for (const g of geos) {
+  // the stream: out of the pond's water, across the pond's grass in a shallow runnel, then down to the river
+  const run = streamRunnel();
+  geos.push(ribbon(run.pts, 0, run.length, 8, (s) => (s < run.lip ? STREAM_HALF_W - 1 : STREAM_HALF_W + 3), run.level));  for (const g of geos) {
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true;
     root.add(m);

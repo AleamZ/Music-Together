@@ -6,8 +6,9 @@ import { lightingFor, type WeatherFx } from "@/lib/game/art/weather";
 import { CAMERA_MODES } from "@/lib/game/diorama/camera";
 import type { Billboard, CameraMode, Quality } from "@/lib/game/diorama/types";
 import { demoFieldPlots } from "@/lib/game/diorama/zones/field";
+import { demoLive, demoRower } from "@/lib/game/diorama/world/live-demo";
 import type { WorldStats, WorldView } from "@/lib/game/diorama/world/view";
-import { CHU_TAM_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
+import { CHU_HAI_CA_LOOK, CHU_TAM_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
 import type { GameMap } from "@/lib/game/maps/types";
 import { findPath, smoothPath } from "@/lib/game/pathfinding";
@@ -44,7 +45,7 @@ function tourStops(): Vec[] {
 }
 
 /** The page's query (?mode=follow&hour=17.8&weather=rain&q=high&speed=3&panel=0), read on the server. */
-export type WorldPreviewInit = Partial<Record<"mode" | "hour" | "weather" | "q" | "speed" | "panel", string>>;
+export type WorldPreviewInit = Partial<Record<"mode" | "hour" | "weather" | "q" | "speed" | "panel" | "live", string>>;
 
 export default function WorldPreview({ init = {} }: { init?: WorldPreviewInit }) {
   const param = (name: keyof WorldPreviewInit): string | null => init[name] ?? null;
@@ -114,6 +115,7 @@ export default function WorldPreview({ init = {} }: { init?: WorldPreviewInit })
           return (performance.now() - t) / n;
         },
       };
+      const showLive = param("live") !== "0";
       let last = now0, statsAt = 0, lastFrame: Parameters<WorldView["render"]>[0] | null = null;
       const loop = (t: number) => {
         const dt = Math.min(0.05, (t - last) / 1000);
@@ -136,6 +138,12 @@ export default function WorldPreview({ init = {} }: { init?: WorldPreviewInit })
           t, focus: me.display, billboards, night, warm: Math.max(0, 1 - Math.min(Math.abs(env.hour - 18), Math.abs(env.hour - 6)) / 1.1),
           weather: w?.kind ?? null, windKmh: env.wind, fx: env.fx, reduced: false,
         };
+        if (showLive) {
+          const live = demoLive(t, { moto: "ba" });
+          v.setLive(live);
+          const rower = demoRower(live, CHU_HAI_CA_LOOK);
+          if (rower) billboards.push(rower);
+        }
         v.render(lastFrame);
         if (t - statsAt > 500) { statsAt = t; setStats(v.stats()); }
         raf = requestAnimationFrame(loop);
@@ -211,7 +219,7 @@ export default function WorldPreview({ init = {} }: { init?: WorldPreviewInit })
           </div>
           {stats && (
             <div className="font-mono text-xs opacity-80" data-testid="world-stats">
-              {stats.fps} fps · {stats.cpuMs} ms CPU · {stats.quality} · {stats.calls} calls · {Math.round(stats.triangles / 1000)}k tris · LOD {stats.chunks} · {stats.trees} cây
+              {stats.fps} fps · {stats.cpuMs} ms CPU · {stats.quality} · {stats.calls} calls · {Math.round(stats.triangles / 1000)}k tris · LOD {stats.chunks} · {stats.trees} cây · {stats.live} live
             </div>
           )}
           <div className="text-xs opacity-70">

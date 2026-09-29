@@ -15,9 +15,14 @@ import { createFpsMonitor, type FpsMonitor } from "../quality";
 import type { CameraMode, DioramaFrame, Quality, View3D } from "../types";
 import { WeatherLayer } from "../weather3d";
 import { buildMapScene } from "../zones";
+import { demoFieldPlots } from "../zones/field";
 import { Forest } from "./forest";
+import { LiveLayer } from "./live";
+import { liveFromFrame, type WorldLive } from "./live-plan";
+import { mergeStatic } from "./merge";
 import { InkPass, SkyDome } from "./post";
 import { buildBridges, buildLandmarks, buildSkyLife, buildWater, type Landmarks, type SkyLife, type Water } from "./props";
+import { TerrainJobs } from "./terrain-jobs";
 import { chunkGeometry, landColor, LOD_STEPS } from "./terrain-mesh";
 import { toon, toonify } from "./toon";
 
@@ -39,12 +44,14 @@ export interface WorldViewOptions {
 export interface WorldStats {
   fps: number; cpuMs: number; quality: Quality; calls: number; triangles: number; mode: CameraMode;
   chunks: string; trees: number;
+  /** Live things drawn (stalls, animals, bosses, vehicles…). */
+  live: number;
 }
 
 interface ZoneScene { id: OutdoorMapId; built: Built; heightAt: (x: number, y: number) => number; root: THREE.Group;
   roofs: Array<{ mats: THREE.Material[]; x: number; y: number; w: number; h: number }>; glow: THREE.MeshToonMaterial[] }
 
-interface Chunk { mesh: THREE.Mesh | null; level: number; geos: Array<THREE.BufferGeometry | null>; center: THREE.Vector3 }
+interface Chunk { mesh: THREE.Mesh | null; level: number; want: number; geos: Array<THREE.BufferGeometry | null>; center: THREE.Vector3 }
 
 const SKY = {
   day: { zenith: new THREE.Color(0x5ea7e0), horizon: new THREE.Color(0xd8ebf2) },
@@ -96,8 +103,13 @@ export class WorldView implements View3D {
   private readonly terrainMat = toon({ vertexColors: true });
   private readonly chunks: Chunk[] = [];
   private readonly terrain = new THREE.Group();
+  private readonly jobs = new TerrainJobs((c, level, geo) => this.chunkBuilt(c, level, geo));
   private horizon: THREE.Mesh | null = null;
   private readonly zones: ZoneScene[] = [];
+  private readonly mergedGeos: THREE.BufferGeometry[] = [];
+  private readonly mergedMats: THREE.Material[] = [];
+  /** Per zone: its meshes before and after the static merge (dev stats). */
+  readonly meshCounts: Partial<Record<OutdoorMapId, [number, number]>> = {};
   private readonly lamps: Array<{ pos: THREE.Vector3; color: THREE.Color; distance: number }> = [];
   private readonly pool: THREE.PointLight[] = [];
   private readonly forest: Forest;
@@ -106,6 +118,11 @@ export class WorldView implements View3D {
   private readonly life: SkyLife;
   private readonly bridges: THREE.Group;
   private readonly people: CharacterLayer;
+  private readonly live: LiveLayer;
+  private liveState: WorldLive = {};
+  /** P3: this view draws the frame's gameplay (DioramaFrame.gameplay: rats, dogs, leaping fish, gate barriers) and the
+   *  vehicles/boats under riders (Billboard.vehicle) itself — no extra layer needed. */
+  readonly drawsGameplay = true;
   private readonly weather = new WeatherLayer();
   private readonly monitor: FpsMonitor;
   private readonly ro: ResizeObserver;
@@ -123,6 +140,7 @@ export class WorldView implements View3D {
   private shadowKey = "";
   private shadowFrame = 0;
   private disposed = false;
+  private frameNo = 0;
 
   constructor(canvas: HTMLCanvasElement, opts: WorldViewOptions = {}) {
     this.canvas = canvas;
@@ -149,7 +167,7 @@ export class WorldView implements View3D {
     for (let c = 0; c < CHUNKS_X * CHUNKS_Y; c++) {
       const cx = c % CHUNKS_X, cy = Math.floor(c / CHUNKS_X);
       const center = new THREE.Vector3((DOMAIN.x0 + (cx + 0.5) * CHUNK_PX) / 16, 2, (DOMAIN.y0 + (cy + 0.5) * CHUNK_PX) / 16);
-      this.chunks.push({ mesh: null, level: -1, geos: [null, null, null], center });
+      this.chunks.push({ mesh: null, level: -1, want: 2, geos: [null, null, null], center });
       this.setChunkLevel(c, 2);
     }
     this.scene.add(this.terrain);
@@ -171,7 +189,8 @@ export class WorldView implements View3D {
     this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root, this.forest.root);
 
     this.people = new CharacterLayer({ width: 0, height: 0 }, (x, y) => this.heightAt(x, y));
-    this.scene.add(this.people.root, this.weather.root);
+    this.live = new LiveLayer((x, y) => this.heightAt(x, y));
+    this.scene.add(this.people.root, this.weather.root, this.live.root);
     this.applyQuality(this.monitor.quality());
 
     this.ro = new ResizeObserver(() => this.resize());
@@ -191,7 +210,7 @@ export class WorldView implements View3D {
 
   private addZone(id: OutdoorMapId, density: number): void {
     const map = openedMap(id);
-    const { built, heightAt } = buildMapScene(map, { density });
+    const { built, heightAt } = buildMapScene(map, { density, openEnds: true });
     const z = ZONES[id];
     const root = new THREE.Group();
     root.name = `zone:${id}`;
@@ -201,6 +220,20 @@ export class WorldView implements View3D {
     const roofs = built.roofs.map((r) => ({ ...r, mats: r.mats.map((m) => swap.get(m) ?? m) }));
     const glow = (built.glow ?? []).map((m) => swap.get(m)).filter((m): m is THREE.MeshToonMaterial => !!m);
     built.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.receiveShadow = true; });
+    // one mesh per material for everything that never moves (the probe runs the zone's hooks to find what does)
+    const merged = mergeStatic(built.root, {
+      keep: [built.water, ...built.sway.map((s) => s.obj), ...built.lamps],
+      keepMats: [...roofs.flatMap((r) => r.mats), ...glow, ...built.bulbs],
+      probe: () => {
+        animateWater(built, 1234, 10);
+        animateWater(built, 98_765, 40);
+        built.setPlots?.(demoFieldPlots(), Date.now());
+        built.setPlots?.([], Date.now());
+      },
+    });
+    this.mergedGeos.push(...merged.geos);
+    this.mergedMats.push(...merged.mats);
+    this.meshCounts[id] = [merged.before, merged.after];
     this.scene.add(root);
     root.updateMatrixWorld(true);
     for (const l of built.lamps) {
@@ -270,6 +303,22 @@ export class WorldView implements View3D {
     return standHeight(x, y);
   }
 
+  /** Add an extra object to the world's scene (absolute units: world px / 16), e.g. a debug or gameplay overlay; the
+   *  view never disposes it — the caller removes it (removeLayer) and disposes its own geometry. */
+  addLayer(obj: THREE.Object3D): void {
+    this.scene.add(obj);
+  }
+
+  removeLayer(obj: THREE.Object3D): void {
+    this.scene.remove(obj);
+  }
+
+  /** The world's live things besides the people (world px): stalls, fight rings, bosses, wild animals, Khu nhà's
+   *  houses, dig spots, fishing bobbers, pets… Kept until the next call; the frame's own gameplay is added on top. */
+  setLive(live: WorldLive): void {
+    this.liveState = live;
+  }
+
   /** The field's plots (the crops by stage). */
   setPlots(plots: ReadonlyArray<PlotDraw>): void {
     this.zones.find((z) => z.id === "field")?.built.setPlots?.(plots, Date.now());
@@ -306,7 +355,7 @@ export class WorldView implements View3D {
     for (const c of this.chunks) lv[c.level]++;
     return {
       fps: Math.round(this.monitor.fps()), cpuMs: Math.round(this.cpuMs * 10) / 10, quality: this.quality, calls: info.calls,
-      triangles: info.triangles, mode: this.mode, chunks: lv.join("/"), trees: this.forest.counts.trees,
+      triangles: info.triangles, mode: this.mode, chunks: lv.join("/"), trees: this.forest.counts.trees, live: this.live.count(),
     };
   }
 
@@ -429,7 +478,13 @@ export class WorldView implements View3D {
     this.updateLod();
     this.updateLight(f);
     const t = f.reduced ? 0 : f.t;
-    for (const z of this.zones) animateWater(z.built, t, f.windKmh);
+    // the zones' water (per-vertex waves: Sông Cái's alone is ~2 ms): every frame near the camera, a zone in four
+    // frames farther out, not at all past the fog
+    const n = ++this.frameNo, cam = this.camera.position, near = this.quality === "high" ? 140 : 90;
+    this.zones.forEach((z, i) => {
+      const d = Math.hypot(z.root.position.x - cam.x, z.root.position.z - cam.z);
+      if (d < near || (d < this.fog.far && n % 4 === i % 4)) animateWater(z.built, t, f.windKmh);
+    });
     this.water.animate(t, f.windKmh);
     this.landmarks.animate(t, f.windKmh);
     this.life.animate(f.t, f.windKmh, f.reduced);
@@ -451,7 +506,12 @@ export class WorldView implements View3D {
     }
 
     const yaw = this.mode === "free" ? this.fly.yaw : Math.atan2(this.eye.x - this.look.x, this.eye.z - this.look.z);
-    this.people.update(f.billboards, yaw, f.t, f.reduced);
+    const live = liveFromFrame(f, this.liveState);
+    const people = this.live.adjust(f.billboards, live);
+    this.people.setCull(this.camera.position, this.quality === "high" ? 170 : 110);
+    this.people.setLifts(this.live.lifts());
+    this.people.update(people, yaw, f.t, f.reduced);
+    this.live.update(live, this.people, f.t, f.night, f.reduced);
     this.weather.update(f.weather, f.fx, f.reduced, f.t, new THREE.Vector3(this.look.x, this.look.y, this.look.z), f.windKmh, this.quality === "low");
     this.sky.follow(this.camera.position);
     this.ink.render(this.renderer, this.scene, this.camera);
@@ -501,21 +561,30 @@ export class WorldView implements View3D {
     }
   }
 
-  /** Terrain chunks and the forest's detail from the camera; at most one new chunk mesh a frame. */
+  /** Terrain chunks and the forest's detail from the camera. Missing levels are built by the terrain workers (a
+   *  chunk keeps its current mesh until its new one arrives); without workers, one chunk a frame as before. */
   private updateLod(): void {
     const cam = this.camera.position;
     const [d0, d1] = TERRAIN_LOD[this.quality];
-    let todo: { c: number; level: number; d: number } | null = null;
+    this.jobs.clearQueue();
     for (let c = 0; c < this.chunks.length; c++) {
       const ch = this.chunks[c];
       const d = Math.hypot(ch.center.x - cam.x, ch.center.z - cam.z, (ch.center.y - cam.y) * 0.5);
       const want = d < d0 ? 0 : d < d1 ? 1 : 2;
+      ch.want = want;
       if (want === ch.level) continue;
       if (ch.geos[want]) { this.setChunkLevel(c, want); continue; }
-      if (!todo || d < todo.d) todo = { c, level: want, d };
+      this.jobs.request(c, want, d);
     }
-    if (todo) this.setChunkLevel(todo.c, todo.level);
+    this.jobs.pump();
     this.forest.update(cam);
+  }
+
+  private chunkBuilt(c: number, level: number, geo: THREE.BufferGeometry): void {
+    const ch = this.chunks[c];
+    if (this.disposed || !ch || ch.geos[level]) { geo.dispose(); return; }
+    ch.geos[level] = geo;
+    if (ch.want === level) this.setChunkLevel(c, level);
   }
 
   private readonly tmpA = new THREE.Color();
@@ -602,9 +671,13 @@ export class WorldView implements View3D {
     this.canvas.removeEventListener("contextmenu", this.onContextMenu);
     window.removeEventListener("keydown", this.onKey, true);
     window.removeEventListener("keyup", this.onKey, true);
+    this.jobs.dispose();
+    this.live.dispose();
     this.people.dispose();
     this.weather.dispose();
     for (const z of this.zones) z.built.dispose();
+    for (const g of this.mergedGeos) g.dispose();
+    for (const m of this.mergedMats) m.dispose();
     for (const c of this.chunks) for (const g of c.geos) g?.dispose();
     this.horizon?.geometry.dispose();
     this.terrainMat.dispose();

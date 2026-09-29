@@ -63,6 +63,8 @@ export interface ZoneOpts {
   density?: number;
   /** "center" (default): the group's origin is the map's middle, like the pond; "corner": its north-west corner. */
   origin?: "center" | "corner";
+  /** The world map: Sông Cái's river runs out through the zone's west and east edges to meet the wild river. */
+  openEnds?: boolean;
 }
 
 export const MAX_LIGHTS = 8;
