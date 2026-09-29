@@ -10,15 +10,30 @@ import { rarityInfo } from "@/lib/game/rarity";
 
 export const MINE_HELP = "Vạch chạy qua lại trên thanh đá. Bấm Space (hoặc chạm, bấm chuột) khi vạch nằm trong vân quặng sáng để đập trúng.";
 
+const reducedMotion = (): boolean =>
+  typeof window !== "undefined" && (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+
 /** The bar: the vein (the current centre ± win) and the sweeping marker. */
 function Bar({ s }: { s: MineRound }) {
   const c = s.centres[Math.min(s.hits, s.centres.length - 1)];
   const lo = Math.max(0, c - s.win) / 10, hi = Math.min(1000, c + s.win) / 10;
   const pos = minePos(s.period, s.tick) / 10;
+  // v22: rock chips burst from the last strike for 14 ticks (ore-coloured on a hit, grey on a miss)
+  const lastAt = s.strikes.length > 0 ? s.strikes[s.strikes.length - 1] : -99;
+  const age = s.tick - lastAt;
+  const chipX = minePos(s.period, lastAt) / 10;
+  const shake = age < 6 && s.last === "hit";
   return (
-    <div className="relative h-10 w-full overflow-hidden rounded border-2 border-[#3a2418] bg-[#6d655c]" aria-hidden="true">
+    <div className="relative h-10 w-full overflow-hidden rounded border-2 border-[#3a2418] bg-[#6d655c]" aria-hidden="true"
+      style={shake ? { transform: `translateX(${age % 2 === 0 ? -2 : 2}px)` } : undefined}>
       <div className="absolute inset-y-0 bg-[#f2c93a]/80" style={{ left: `${lo}%`, width: `${hi - lo}%` }} />
       <div className="absolute inset-y-0 w-1 -translate-x-1/2 bg-[#fff7d8] shadow-[0_0_0_1px_#3a2418]" style={{ left: `${pos}%` }} />
+      {age >= 0 && age < 14 && !reducedMotion() && [0, 1, 2, 3, 4, 5].map((i) => (
+        <div key={i} className="absolute h-1.5 w-1.5" style={{
+          left: `calc(${chipX}% + ${(i - 2.5) * age * 0.9}px)`, top: `${14 - age * (1.6 - (i % 3) * 0.4) + 0.12 * age * age}px`,
+          background: s.last === "hit" ? (i % 2 ? "#f2c93a" : "#fff7d8") : "#8a8178",
+        }} />
+      ))}
     </div>
   );
 }

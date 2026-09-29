@@ -77,6 +77,6 @@ export const machineHarvest = async (roomId: string, token: string, plot: number
   void await call("machine_harvest", { p_room_id: roomId, p_session_token: token, p_plot: plot });
 export const processStart = async (token: string, recipe: string, batches: number) =>
   extras(await call("process_start", { p_session_token: token, p_recipe: recipe, p_batches: batches }));
-export const processCollect = async (token: string) => extras(await call("process_collect", { p_session_token: token }));
+// v22 (0084): collecting is the sort minigame — lib/game/craftmg/rpc.ts sortStart / sortFinish (process_collect is 'outdated').
 export const sellGoods = async (token: string, recipe: string, qty: number) =>
   extras(await call("sell_goods", { p_session_token: token, p_recipe: recipe, p_qty: qty }));

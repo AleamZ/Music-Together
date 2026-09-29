@@ -10,6 +10,10 @@ import type { MineState } from "@/lib/game/mining/rpc";
 import { rarityInfo } from "@/lib/game/rarity";
 import { ParchmentModal } from "../Parchment";
 import MineGame from "./MineGame";
+import AnvilGame from "../craftmg/AnvilGame";
+import BrewGame from "../craftmg/BrewGame";
+import { CraftFrame } from "../craftmg/shared";
+import { QUALITY_NAME } from "@/lib/game/craftmg/games";
 
 // Mỏ đá's overlays (v21 #19, #26, #89): the dig, chú Tám's counter, the anvil, bà Sáu's cauldron, the potion bag, and a
 // small chip for active buffs and the bag.
@@ -110,7 +114,8 @@ function AnvilPanel({ m }: { m: UseMining }) {
   return (
     <ParchmentModal title="🔨 Đe rèn · nâng cấp đồ nghề" onClose={() => m.openPanel(null)} className="sm:max-w-[720px]">
       <div className="flex flex-col gap-2 font-vt text-lg">
-        <p className="text-base opacity-80">Mỗi lần nâng cấp tốn xu và quặng; thợ rèn có thể thất bại (mất nguyên liệu, giữ cấp). Tối đa +{MAX_UPGRADE}.</p>
+        <p className="text-base opacity-80">Mỗi lần nâng cấp tốn xu và quặng; thợ rèn có thể thất bại (mất nguyên liệu, giữ cấp). Tối đa +{MAX_UPGRADE}.
+          Nện búa đúng lúc thanh sắt sáng rực: tỉ lệ ±10%.</p>
         {m.lastUpgrade && <p role="status"><b>{m.lastUpgrade}</b></p>}
         {rows.length === 0 && <p>Bạn chưa có cần câu, lưới hay cuốc nào.</p>}
         <ul className="flex flex-col gap-2">
@@ -128,7 +133,7 @@ function AnvilPanel({ m }: { m: UseMining }) {
                 {max ? <span className="text-base">Đã tối đa.</span> : (
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-base">Lên +{r.level + 1}: {coins} xu, <Needs s={s} needs={mats} /> · tỉ lệ {UPGRADE_CHANCE[r.level] / 10}%</span>
-                    <button type="button" className="pch-btn ml-auto" disabled={m.busy || !matsOk || (s?.coins ?? 0) < coins} onClick={() => m.upgrade(r.id)}>Nâng cấp</button>
+                    <button type="button" className="pch-btn ml-auto" disabled={m.busy || !matsOk || (s?.coins ?? 0) < coins} onClick={() => m.upgrade(r.id, r.name)}>Rèn nâng cấp</button>
                   </div>
                 )}
               </li>
@@ -152,6 +157,9 @@ function PotionList({ m }: { m: UseMining }) {
           <li key={i.id} className="flex flex-wrap items-center gap-2">
             <RarityName name={i.name} tier={i.rarity} icon={i.icon} />
             <span>×{have(s, i.id)}</span>
+            {(s?.quality ?? []).filter((q) => q.item === i.id).map((q) => (
+              <span key={q.tier} className="rounded bg-[#3fbf6a]/20 px-1 text-sm">{QUALITY_NAME[q.tier]} ×{q.qty}</span>
+            ))}
             {r && <span className="text-base">{effectText(r)}</span>}
             <button type="button" className="pch-btn ml-auto" disabled={m.busy} onClick={() => m.drink(i.id)}>Uống</button>
           </li>
@@ -202,7 +210,8 @@ function CauldronPanel({ m }: { m: UseMining }) {
           </ul>
         )}
         {tab === "bag" && (<><Buffs s={s} offset={m.clockOffset} /><PotionList m={m} /></>)}
-        <p className="text-base opacity-80">Thảo dược hái ở các bãi rêu trong mỏ; quặng đào ở các mỏ đá; cá lấy từ xô câu.</p>
+        <p className="text-base opacity-80">Thảo dược hái ở các bãi rêu trong mỏ; quặng đào ở các mỏ đá; cá lấy từ xô câu.
+          Giữ lửa trong dải xanh khi nấu: thuốc Tốt / Hoàn hảo mạnh hơn 5 / 10%.</p>
       </div>
     </ParchmentModal>
   );
@@ -235,13 +244,21 @@ function BagPanel({ m }: { m: UseMining }) {
 export default function MiningOverlays({ m, showChip }: { m: UseMining; showChip: boolean }) {
   return (
     <>
-      {showChip && m.panel === null && m.dig === null && (
+      {showChip && m.panel === null && m.dig === null && m.craft === null && (
         <button type="button" className="pch-btn fixed left-2 top-40 z-20 font-vt text-lg" onClick={() => m.openPanel("bag")}
           aria-label="Túi mỏ và thuốc">
           🎒 Túi mỏ{(m.state?.buffs.length ?? 0) > 0 ? " · ✨" : ""}
         </button>
       )}
       {m.dig && <MineGame view={m.dig} onEnd={m.finishDig} onClose={m.closeDig} />}
+      {m.craft && (
+        <CraftFrame title={m.craft.title} label={m.craft.game === "brew" ? "Nấu thuốc" : "Rèn nâng cấp"} phase={m.craft.phase}
+          message={m.craft.message} good={m.craft.good} onClose={m.closeCraft}>
+          {m.craft.game === "brew"
+            ? <BrewGame key={m.craft.seed} seed={m.craft.seed} onEnd={m.finishBrew} />
+            : <AnvilGame key={m.craft.seed} seed={m.craft.seed} onEnd={m.finishAnvil} />}
+        </CraftFrame>
+      )}
       {m.panel === "shop" && <ShopPanel m={m} />}
       {m.panel === "anvil" && <AnvilPanel m={m} />}
       {m.panel === "cauldron" && <CauldronPanel m={m} />}

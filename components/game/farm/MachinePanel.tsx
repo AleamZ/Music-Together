@@ -10,8 +10,23 @@ import { BED_WATER_NAME, WATER_NAME } from "@/lib/game/farm/messages";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import { clockText, MACHINES, type ExtrasState, type MachineId } from "@/lib/game/fishing/extras";
 import {
-  buyMachine, extrasErrorMessage, fetchExtras, machineHarvest, machineWater, processCollect, processStart, sellGoods,
+  buyMachine, extrasErrorMessage, fetchExtras, machineHarvest, machineWater, processStart, sellGoods,
 } from "@/lib/game/fishing/extras-rpc";
+import { sortFinish, sortStart } from "@/lib/game/craftmg/rpc";
+import SortGame from "@/components/game/craftmg/SortGame";
+import { CraftFrame } from "@/components/game/craftmg/shared";
+
+/** v22 (0084): the sort minigame at collecting, and the sprinkler's install / refill splash. */
+interface SortView { seed: number; phase: "playing" | "sending" | "done"; message: string | null; good: boolean | null }
+const SPLASH_CSS = `
+.mp-splash { position: relative; }
+.mp-splash::after { content: ""; position: absolute; inset: -4px; border: 3px dashed #4aa3c8; border-radius: 6px;
+  animation: mp-splash 700ms steps(4) 1 both; pointer-events: none; }
+.mp-drop { display: inline-block; animation: mp-drop 600ms steps(4) 3; }
+@keyframes mp-splash { from { opacity: 1; transform: scale(.9) } to { opacity: 0; transform: scale(1.12) } }
+@keyframes mp-drop { from { transform: translateY(-6px); opacity: .3 } to { transform: translateY(4px); opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .mp-splash::after, .mp-drop { animation: none !important; } }
+`;
 
 const AUTO_KEY = "mt.sprinklerAuto";
 /** The auto sprinkler looks at my plots this often, and touches one plot at most once in this long (watering allows 6 an hour). */
@@ -69,6 +84,12 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState(readAuto);
   const [now, setNow] = useState(() => serverNow());
+  const [sort, setSort] = useState<SortView | null>(null);
+  const [splash, setSplash] = useState<string | null>(null);
+  const splashAt = useCallback((key: string) => {
+    setSplash(key);
+    window.setTimeout(() => setSplash((k) => (k === key ? null : k)), 1800);
+  }, []);
   useEffect(() => {
     const t = setInterval(() => setNow(serverNow()), 1000);
     return () => clearInterval(t);
@@ -91,6 +112,30 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
     }
   }, [toast, onCoinsChanged, farm.data]);
 
+  const startSort = useCallback(() => void run(async () => {
+    const r = await sortStart(token);
+    setSort({ seed: r.seed, phase: "playing", message: null, good: null });
+    return r.state;
+  }), [run, token]);
+  const endSort = useCallback((ticks: readonly number[], dirs: readonly number[], score: number) => {
+    setSort((v) => (v ? { ...v, phase: "sending" } : v));
+    void (async () => {
+      try {
+        const r = await sortFinish(token, ticks, dirs, score);
+        setX(r.state);
+        const a = r.answer;
+        const message = a.result === "collected"
+          ? `${a.score >= 8 ? "Phân loại chuẩn rồi!" : "Nhìn kỹ nguyên liệu nhé!"} Đúng ${a.score}/12 — đã lấy hàng ra${a.bonus > 0 ? `, thưởng +${a.pct}% (${formatXu(a.bonus)})` : ""}.`
+          : a.why === "expired" ? "Hết giờ — hàng vẫn nằm trong máy." : "Lượt phân loại không hợp lệ.";
+        setSort((v) => (v ? { ...v, phase: "done", message, good: a.result === "collected" && a.score >= 8 } : v));
+        onCoinsChanged();
+      } catch (err) {
+        if (!(err instanceof AnticheatError && err.info.strike >= 1)) toast(extrasErrorMessage(err));
+        setSort(null);
+      }
+    })();
+  }, [token, toast, onCoinsChanged]);
+
   const has = (m: MachineId) => x?.machines.includes(m) ?? false;
   const state = farm.data.state, catalog = farm.data.catalog;
   const plans = state && catalog ? waterPlans(state, catalog, me, now) : [];
@@ -111,7 +156,7 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
                   <span className="text-base">{m.blurb}</span>
                   {has(m.id)
                     ? <button type="button" className="pch-btn" disabled>Đã có</button>
-                    : <button type="button" className="pch-btn pch-btn-primary" disabled={busy || x.coins < m.price} onClick={() => void run(() => buyMachine(token, m.id), `Đã mua ${m.name}!`)}>
+                    : <button type="button" className="pch-btn pch-btn-primary" disabled={busy || x.coins < m.price} onClick={() => { if (m.id === "sprinkler") splashAt("buy"); void run(() => buyMachine(token, m.id), `Đã mua ${m.name}!`); }}>
                       {x.coins < m.price ? `Thiếu xu · ${formatXu(m.price)}` : `Mua · ${formatXu(m.price)}`}
                     </button>}
                 </li>
@@ -120,7 +165,7 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
 
             {has("sprinkler") && (
               <section className="flex flex-col gap-1">
-                <h3 className="text-xl text-burgundy">💦 Máy tưới</h3>
+                <h3 className={`text-xl text-burgundy ${splash === "buy" ? "mp-splash" : ""}`}>💦 Máy tưới{splash !== null && <span className="mp-drop" aria-hidden="true"> 💧</span>}</h3>
                 <label className="flex items-center gap-2 text-base">
                   <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); writeAuto(e.target.checked); }} />
                   Tự động tưới khi tôi ở ngoài đồng
@@ -130,10 +175,10 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
                     {plans.map((p) => {
                       const names = p.kind === "upland" ? BED_WATER_NAME : WATER_NAME;
                       return (
-                        <li key={p.plot} className="flex flex-wrap items-center gap-2">
+                        <li key={p.plot} className={`flex flex-wrap items-center gap-2 ${splash === `plot${p.plot}` ? "mp-splash" : ""}`}>
                           <span className="flex-1">Thửa {p.plot}: {names[p.level]}{p.want ? ` · cần ${p.want.map((l) => names[l]).join("/")}` : ""}</span>
                           {p.target !== null
-                            ? <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => void run(() => machineWater(roomId, token, p.plot, p.target ?? 0), `Thửa ${p.plot}: ${names[p.target ?? 0]}`)}>Tưới → {names[p.target]}</button>
+                            ? <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => { splashAt(`plot${p.plot}`); void run(() => machineWater(roomId, token, p.plot, p.target ?? 0), `Thửa ${p.plot}: ${names[p.target ?? 0]}`); }}>Tưới → {names[p.target]}</button>
                             : <span className="text-base opacity-80">Vừa đủ</span>}
                         </li>
                       );
@@ -165,7 +210,7 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="flex-1">Đang làm {x.job.batches} mẻ {x.recipes.find((r) => r.id === x.job?.recipe)?.name ?? x.job.recipe}</span>
                     {now < x.job.readyAt ? <span>⏳ {clockText(x.job.readyAt - now)}</span>
-                      : <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => void run(() => processCollect(token), "Đã lấy hàng ra!")}>Lấy hàng</button>}
+                      : <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={startSort}>Lấy hàng (phân loại)</button>}
                   </div>
                 ) : (
                   <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
@@ -204,6 +249,12 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
           </>
         )}
       </div>
+      {sort && (
+        <CraftFrame title="🏭 Phân loại mẻ hàng" label="Phân loại" phase={sort.phase} message={sort.message} good={sort.good} onClose={() => setSort(null)}>
+          <SortGame key={sort.seed} seed={sort.seed} onEnd={endSort} />
+        </CraftFrame>
+      )}
+      <style>{SPLASH_CSS}</style>
     </ParchmentModal>
   );
 }

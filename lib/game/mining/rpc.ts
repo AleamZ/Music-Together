@@ -19,7 +19,10 @@ export interface MineState {
   gear: MineGear[];
   buffs: MineBuff[];
   dig: MineDig | null;
+  /** v22 (0084): how many of the bag's potions are Tốt (2) / Hoàn hảo (3). */
+  quality: MineQuality[];
 }
+export interface MineQuality { item: string; tier: 2 | 3; qty: number }
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -59,6 +62,8 @@ export function parseMineState(raw: unknown): MineState | null {
     buffs: arr(s.buffs).map(obj).filter((o) => o.kind === "luck" || o.kind === "miner")
       .map((o) => ({ kind: o.kind === "miner" ? "miner" as const : "luck" as const, power: num(o.power, 1), until: time(o.until) })),
     dig: parseDig(s.dig),
+    quality: arr(s.quality).map(obj).map((o) => ({ item: str(o.item), tier: o.tier === 3 ? 3 as const : 2 as const, qty: num(o.qty) }))
+      .filter((q) => q.qty > 0),
   };
 }
 
@@ -115,20 +120,9 @@ export async function buyPickaxe(token: string, tool: string): Promise<MineState
   return stateOf(await call("buy_pickaxe", { p_session_token: token, p_tool: tool }));
 }
 
-export async function brewPotion(token: string, recipe: string, qty: number): Promise<MineState> {
-  return stateOf(await call("brew_potion", { p_session_token: token, p_recipe: recipe, p_qty: qty }));
-}
-
-export async function drinkPotion(token: string, potion: string): Promise<{ effect: string; state: MineState }> {
+export async function drinkPotion(token: string, potion: string): Promise<{ effect: string; quality: number; state: MineState }> {
   const r = await call("drink_potion", { p_session_token: token, p_potion: potion });
-  return { effect: str(r.effect), state: stateOf(r) };
-}
-
-export interface UpgradeAnswer { item: string; ok: boolean; level: number; cost: number; chance: number }
-export async function upgradeItem(token: string, item: string): Promise<{ upgrade: UpgradeAnswer; state: MineState }> {
-  const r = await call("upgrade_item", { p_session_token: token, p_item: item });
-  const u = obj(r.upgrade);
-  return { upgrade: { item: str(u.item), ok: u.ok === true, level: num(u.level), cost: num(u.cost), chance: num(u.chance) }, state: stateOf(r) };
+  return { effect: str(r.effect), quality: num(r.quality, 1), state: stateOf(r) };
 }
 
 /** A refusal in Vietnamese. */
@@ -151,6 +145,9 @@ export function mineErrorMessage(err: unknown): string {
     "too thirsty": "Khát quá, uống gì đã!",
     fainted: "Bạn đang ngất.",
     "map locked": "Mỏ đá mở từ cấp 5 — luyện thêm đã nhé.",
+    "too tired": "Mệt quá — nghỉ lấy sức đã.",
+    "round not found": "Lượt này đã hết hạn.",
+    outdated: "Cập nhật trang để dùng bản mới.",
   };
   for (const [k, v] of Object.entries(map)) if (m.includes(k)) return v;
   return "Có lỗi, thử lại sau.";

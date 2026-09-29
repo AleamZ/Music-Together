@@ -4,23 +4,35 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnticheatError } from "@/lib/anticheat";
 import { craftItem } from "@/lib/game/mining/catalog";
 import {
-  brewPotion, buyPickaxe, drinkPotion, gatherHerb, mineErrorMessage, mineFinish, mineStart, mineState, sellOre, upgradeItem,
+  buyPickaxe, drinkPotion, gatherHerb, mineErrorMessage, mineFinish, mineStart, mineState, sellOre,
   type DigResult, type MineDig, type MineState,
 } from "@/lib/game/mining/rpc";
 import { mineView } from "@/lib/game/maps/mo-da-art";
 import type { Interactable, MapId } from "@/lib/game/maps/types";
 import { rarityInfo } from "@/lib/game/rarity";
+import { QUALITY_NAME } from "@/lib/game/craftmg/games";
+import { brewFinish, brewStart, upgradeFinish, upgradeStart } from "@/lib/game/craftmg/rpc";
 
 // Mỏ đá's controller (v21 #19, #26, #89): the mine state (polled while on the map), the dig, the herb patches, and the
 // panels of chú Tám, the anvil, bà Sáu's cauldron and the potion bag. The server decides everything; this only shows it.
 
 export type MinePanel = "shop" | "anvil" | "cauldron" | "bag";
 export interface MineDigView { dig: MineDig; phase: "playing" | "sending" | "done"; message: string | null }
+/** v22 (0084): a cauldron or anvil minigame in progress; `good` colours the end (success puff / crack). */
+export interface CraftView {
+  game: "brew" | "anvil";
+  seed: number;
+  title: string;
+  phase: "playing" | "sending" | "done";
+  message: string | null;
+  good: boolean | null;
+}
 
 export interface UseMining {
   state: MineState | null;
   panel: MinePanel | null;
   dig: MineDigView | null;
+  craft: CraftView | null;
   /** A panel or a dig holds the screen. */
   open: boolean;
   busy: boolean;
@@ -29,11 +41,14 @@ export interface UseMining {
   openPanel: (p: MinePanel | null) => void;
   finishDig: (strikes: readonly number[], ticks: number, pass: boolean) => void;
   closeDig: () => void;
+  finishBrew: (toggles: readonly number[], score: number) => void;
+  finishAnvil: (strikes: readonly number[], ticks: number, score: number) => void;
+  closeCraft: () => void;
   sell: (item: string, qty: number) => void;
   buy: (tool: string) => void;
   brew: (recipe: string, qty: number) => void;
   drink: (potion: string) => void;
-  upgrade: (item: string) => void;
+  upgrade: (item: string, name?: string) => void;
   /** The last upgrade's outcome line (the anvil panel shows it). */
   lastUpgrade: string | null;
   /** Client ms minus server ms at the last answer. */
@@ -65,6 +80,11 @@ export function useMining({ token, roomId, mapId, toast, onCoins, onVitals }: {
   const [state, setState] = useState<MineState | null>(null);
   const [panel, setPanel] = useState<MinePanel | null>(null);
   const [dig, setDig] = useState<MineDigView | null>(null);
+  const [craft, setCraft] = useState<CraftView | null>(null);
+  const craftRef = useRef<CraftView | null>(null);
+  useEffect(() => {
+    craftRef.current = craft;
+  });
   const [busy, setBusy] = useState(false);
   const [lastUpgrade, setLastUpgrade] = useState<string | null>(null);
   const [clockOffset, setClockOffset] = useState(0);
@@ -197,25 +217,77 @@ export function useMining({ token, roomId, mapId, toast, onCoins, onVitals }: {
     live.current.onCoins();
   }), [apply, run, token]);
 
+  // v22 (0084): the brew and the upgrade are minigames — start (the server's seed), play, finish (the inputs replayed)
   const brew = useCallback((recipe: string, qty: number) => void run(async () => {
-    apply(await brewPotion(token, recipe, qty));
-    live.current.toast(`🧪 Nấu xong ${qty} ${itemName(recipe)}.`);
-    live.current.onCoins();
+    const r = await brewStart(token, recipe, qty);
+    apply(r.state);
+    setPanel(null);
+    setCraft({ game: "brew", seed: r.seed, title: `🧪 ${itemName(recipe)}${qty > 1 ? ` ×${qty}` : ""}`, phase: "playing", message: null, good: null });
   }), [apply, run, token]);
+
+  const finishBrew = useCallback((toggles: readonly number[], score: number) => {
+    setCraft((c) => (c ? { ...c, phase: "sending" } : c));
+    void (async () => {
+      try {
+        const r = await brewFinish(token, toggles, score);
+        apply(r.state);
+        const a = r.answer;
+        const message = a.result === "brewed"
+          ? `${a.quality >= 2 ? "Mẻ thuốc thơm quá!" : "Lửa chưa đều rồi!"} Nấu xong ${a.qty} ${itemName(a.potion)} — ${QUALITY_NAME[a.quality]}${a.bonus > 0 ? ` (hiệu lực +${a.bonus}%)` : ""}`
+          : a.why === "expired" ? "Hết giờ — nguyên liệu vẫn còn nguyên." : "Mẻ thuốc không hợp lệ.";
+        setCraft((c) => (c ? { ...c, phase: "done", message, good: a.result === "brewed" && a.quality >= 2 } : c));
+        live.current.onCoins();
+        live.current.onVitals();
+      } catch (err) {
+        fail(err);
+        setCraft(null);
+      }
+    })();
+  }, [apply, fail, token]);
 
   const drink = useCallback((potion: string) => void run(async () => {
     const r = await drinkPotion(token, potion);
     apply(r.state);
-    live.current.toast(`🧪 Đã uống ${itemName(potion)}.`);
+    live.current.toast(`🧪 Đã uống ${itemName(potion)}${r.quality >= 2 ? ` (${QUALITY_NAME[r.quality === 3 ? 3 : 2]})` : ""}.`);
     live.current.onVitals();
   }), [apply, run, token]);
 
-  const upgrade = useCallback((item: string) => void run(async () => {
-    const r = await upgradeItem(token, item);
+  const upgrade = useCallback((item: string, name?: string) => void run(async () => {
+    const r = await upgradeStart(token, item);
     apply(r.state);
-    setLastUpgrade(r.upgrade.ok ? `✨ Thành công! Lên +${r.upgrade.level}.` : `💥 Thất bại (tỉ lệ ${r.upgrade.chance / 10}%) — mất nguyên liệu.`);
-    live.current.onCoins();
+    setLastUpgrade(null);
+    setPanel(null);
+    setCraft({ game: "anvil", seed: r.seed, title: `🔨 Rèn ${name ?? item} · tỉ lệ gốc ${r.chance / 10}%`, phase: "playing", message: null, good: null });
   }), [apply, run, token]);
+
+  const finishAnvil = useCallback((strikes: readonly number[], ticks: number, score: number) => {
+    setCraft((c) => (c ? { ...c, phase: "sending" } : c));
+    void (async () => {
+      try {
+        const r = await upgradeFinish(token, strikes, Math.max(1, ticks), score);
+        apply(r.state);
+        const a = r.answer;
+        const pp = a.result === "done" ? `${a.chance / 10}% ${a.nudge >= 0 ? "+" : "−"} ${Math.abs(a.nudge) / 10} = ${a.final / 10}%` : "";
+        const message = a.result !== "done"
+          ? (a.why === "expired" ? "Hết giờ — lò nguội, chưa mất gì." : "Lượt rèn không hợp lệ.")
+          : a.ok ? `Nhát búa chắc tay! ✨ Thành công, lên +${a.level} (tỉ lệ ${pp}).`
+            : `Lần rèn này chưa đạt! 💥 Nứt rồi (tỉ lệ ${pp}) — mất nguyên liệu.`;
+        setLastUpgrade(message);
+        setCraft((c) => (c ? { ...c, phase: "done", message, good: a.result === "done" && a.ok } : c));
+        live.current.onCoins();
+        live.current.onVitals();
+      } catch (err) {
+        fail(err);
+        setCraft(null);
+      }
+    })();
+  }, [apply, fail, token]);
+
+  const closeCraft = useCallback(() => {
+    const game = craftRef.current?.game;
+    setCraft(null);
+    if (game) setPanel(game === "brew" ? "cauldron" : "anvil");
+  }, []);
 
   const openPanel = useCallback((p: MinePanel | null) => {
     setPanel(p);
@@ -223,7 +295,7 @@ export function useMining({ token, roomId, mapId, toast, onCoins, onVitals }: {
   }, [reload]);
 
   return {
-    state, panel, dig, open: panel !== null || dig !== null, busy, interact, promptText, openPanel, finishDig, closeDig,
-    sell, buy, brew, drink, upgrade, lastUpgrade, clockOffset,
+    state, panel, dig, craft, open: panel !== null || dig !== null || craft !== null, busy, interact, promptText, openPanel,
+    finishDig, closeDig, finishBrew, finishAnvil, closeCraft, sell, buy, brew, drink, upgrade, lastUpgrade, clockOffset,
   };
 }
