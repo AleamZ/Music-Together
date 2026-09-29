@@ -20,7 +20,7 @@ export interface LiveHouseIn extends HouseDraw { ownerName?: string | null; mine
 /** A treasure dig in progress (zone-local, the zone it is in). */
 export interface LiveDigIn { id: string; zone: MapId; x: number; y: number; state: LiveDig["state"] }
 /** The realm's world_state and the zone it was asked for (wild animals are that zone's, zone-local). */
-export interface LiveRealmIn { state: WorldState; zone: MapId; /** server − local clock, ms. */ offsetMs: number }
+export interface LiveRealmIn { state: WorldState; zone: ZoneId; /** server − local clock, ms. */ offsetMs: number }   // 0096: "wild" = the forest's animals (world px)
 
 /** Everything the shell feeds; each key is replaced as a whole (absent/null = none). */
 export interface LiveInputs {
@@ -83,7 +83,7 @@ export function animalAt(a: WildAnimal, nowMs: number): Vec {
 }
 
 /** The zone's wild animals at `nowMs` in world px; one moving fast (a bolt) is fleeing. */
-export function animalsLive(animals: ReadonlyArray<WildAnimal>, zone: MapId, nowMs: number): LiveAnimal[] {
+export function animalsLive(animals: ReadonlyArray<WildAnimal>, zone: ZoneId, nowMs: number): LiveAnimal[] {
   const out: LiveAnimal[] = [];
   for (const a of animals) {
     if (nowMs >= a.expiresMs) continue;

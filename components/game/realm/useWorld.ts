@@ -43,10 +43,13 @@ export function animalAt(a: WildAnimal, nowMs: number): Vec {
 export const bossSpot = (f: BossFight): Vec => ({ x: f.arena.x + f.arena.w / 2, y: f.arena.y + f.arena.h / 2 + 24 });
 
 export function useWorld(o: WorldOpts) {
-  const { token, roomId, accountId, mapId, canvas, toast, onCoins, onWeather } = o;
+  const { token, roomId, accountId, mapId: zoneMap, canvas, toast, onCoins, onWeather } = o;
+  // 0096: the wild animals live in the rừng tràm only — out in the 3D world ("wild", world px) the realm is the wild's
+  const [inWild, setInWild] = useState(false);
+  const mapId: MapId | "wild" = inWild ? "wild" : zoneMap;
   const [state, setState] = useState<WorldState | null>(null);
   const [offset, setOffset] = useState(0);
-  const [here, setHere] = useState<{ now: number; pos: Vec | null }>({ now: 0, pos: null });
+  const [here, setHere] = useState<{ now: number; pos: Vec | null }>({ now: 0, pos: null });   // pos: the realm map's px
   const [busy, setBusy] = useState(false);
   const [lastHit, setLastHit] = useState<Hit | null>(null);
   const stateRef = useRef<WorldState | null>(null);
@@ -77,7 +80,11 @@ export function useWorld(o: WorldOpts) {
 
   // where I stand, 4× a second (for the action bar and the arena check)
   useEffect(() => {
-    const id = setInterval(() => setHere({ now: Date.now(), pos: canvas()?.localPos() ?? null }), 250);
+    const id = setInterval(() => {
+      const c = canvas(), wild = c?.zone?.() === "wild";                                  // 0096: world px in the wild
+      setInWild(wild);
+      setHere({ now: Date.now(), pos: (wild ? c?.worldPos() : c?.localPos()) ?? null });
+    }, 250);
     return () => clearInterval(id);
   }, [canvas]);
 
@@ -154,7 +161,7 @@ export function useWorld(o: WorldOpts) {
     }
   }, [reload, toast]);
 
-  const posNow = () => canvas()?.localPos() ?? null;
+  const posNow = () => (canvas()?.zone?.() === "wild" ? canvas()?.worldPos() : canvas()?.localPos()) ?? null;   // 0096
 
   // v22 (0083): the wild minigames — start, play (WildGame, live via mg_sync since 0087), finish (the inputs only)
   const act = (a: WildAnimal, action: WildAction) => {
@@ -182,7 +189,7 @@ export function useWorld(o: WorldOpts) {
         } else if (r.result === "ok" && r.item) {
           lines.push(`${okLine(key, v.round.nonce)} +${r.qty} ${WILD_ITEMS[r.item].name} (+${r.xp} XP)`);
         } else if (r.result === "lost") {
-          lines.push(r.why === "gone" ? "Con vật đã chạy mất." : r.why === "expired" ? "Hết giờ rồi."
+          lines.push(r.why === "gone" ? "Con vật đã chạy mất." : r.why === "not in forest" ? "Bạn đã ra khỏi rừng." : r.why === "expired" ? "Hết giờ rồi."
             : r.why === "late" ? "Mạng chập chờn — lượt này không được tính." : "Lượt này không được tính.");
         } else if (r.outcome === "hit" || r.outcome === "caught") {
           lines.push(`Trúng ${r.score} điểm nhưng ${sp?.name} vùng thoát được (${r.chance}%)…`);
@@ -205,9 +212,9 @@ export function useWorld(o: WorldOpts) {
 
   // v22 (0083): the combo strike (bosses and the dungeon)
   const startCombo = (kind: "boss" | "dungeon", ref: number, target: number, view: Pick<ComboView, "name" | "boss" | "icon">) => {
-    const p = posNow();
+    const p = canvas()?.localPos() ?? null;                                                    // the bosses are the zones'
     if (!p || busy || wild || combo) return;
-    void run(() => comboStart(token, kind, ref, target, mapId, p.x, p.y), (round) => setCombo({ ...view, round, phase: "playing", message: "", dmg: null, live: liveSync(token, "world") }));
+    void run(() => comboStart(token, kind, ref, target, zoneMap, p.x, p.y), (round) => setCombo({ ...view, round, phase: "playing", message: "", dmg: null, live: liveSync(token, "world") }));
   };
   const attack = (f: BossFight) => startCombo("boss", f.id, 0, { name: f.name, boss: f.boss, icon: "👹" });
   const comboEnd = (keys: number[], dodges: number[], ticks: number) => {
@@ -246,9 +253,9 @@ export function useWorld(o: WorldOpts) {
   };
   const comboClose = () => setCombo(null);
   const summon = () => {
-    const p = posNow();
+    const p = canvas()?.localPos() ?? null;
     if (!p) return;
-    void run(() => bossSummon(token, mapId, p.x, p.y), () => toast("📣 Vua Heo Rừng đang lao tới!"));
+    void run(() => bossSummon(token, zoneMap, p.x, p.y), () => toast("📣 Vua Heo Rừng đang lao tới!"));
   };
 
   const dgStart = () => void run(() => dungeonStart(token), () => { toast(`🕳️ Vào hầm ngục!`); onCoins(); });
@@ -274,7 +281,7 @@ export function useWorld(o: WorldOpts) {
     stop: () => void run(() => snowStop(token, roomId), () => onWeather()),
   };
 
-  return { state, offset, here, busy, lastHit, act, sell, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
+  return { state, offset, here, inWild, busy, lastHit, act, sell, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
 }
 
 export type World = ReturnType<typeof useWorld>;

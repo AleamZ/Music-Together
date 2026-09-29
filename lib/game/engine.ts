@@ -209,6 +209,7 @@ export class GameEngine {
   /** v18.13: my lift, since when (this world) and when the partner was last seen here (performance ms). */
   private lift: (LocalLift & { since: number; seenAt: number }) | null = null;
   private pendingInteract: Interactable | null = null;
+  private workAct: "chop" | "cook" | null = null;
   private prompt: Interactable | null = null;
   private lastSent = { mv: false, vx: 0, vy: 0, at: 0 };
   private fishing: Required<LocalFishing> = { phase: "idle", tint: null, glow: false };
@@ -398,7 +399,7 @@ export class GameEngine {
       const f = walkFrame(me);
       const ph = this.fishing.phase;
       const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim"
-        : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : waved.has(this.opts.localId) ? "wave" : undefined;
+        : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : this.workAct ?? (waved.has(this.opts.localId) ? "wave" : undefined);
       const boat = this.worldMap !== null && this.afloatAt(me.pos);                                               // P3: rowing Sông Cái
       out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
         act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined) });
@@ -621,6 +622,11 @@ export class GameEngine {
   showReaction(id: string | null, emoji: string): void {
     this.reactions.push({ id: id ?? null, emoji, born: performance.now(), dx: Math.round((Math.random() - 0.5) * 12) });
     if (this.reactions.length > 40) this.reactions.shift();
+  }
+
+  /** 0096: what my hands are busy with (chopping a tree, cooking) — the 3D chibi's action while a minigame runs. */
+  setWork(a: "chop" | "cook" | null): void {
+    this.workAct = a;
   }
 
   /** Scales the local walk speed (hunger/thirst slowdown), clamped to [0.1, 1]. */

@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-export type LiveGame = "world" | "brew" | "anvil" | "sort" | "care" | "row" | "dig" | "mine" | "press";
+export type LiveGame = "world" | "brew" | "anvil" | "sort" | "care" | "row" | "dig" | "mine" | "press" | "chop" | "cook";
 /** The revealed events: event number → its payload. */
 export type LiveEvents = Record<number, Record<string, number>>;
 export interface LiveSnap { t: number; ev: LiveEvents }

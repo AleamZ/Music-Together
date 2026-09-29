@@ -4,8 +4,8 @@
 
 import type { FaceExpr } from "./voxel-face";
 
-export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "reel" | "swim" | "ride" | "wave";
-export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "reel", "swim", "ride", "wave"];
+export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "reel" | "swim" | "ride" | "wave" | "chop" | "cook";
+export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "reel", "swim", "ride", "wave", "chop", "cook"];
 
 /** Limb swing: `x` = pitch (forward +), `z` = roll (outward +). */
 export interface Limb { x: number; z: number }
@@ -190,6 +190,32 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       p.headZ = w * 0.06;
       p.bob = Math.abs(w) * 0.02;
       p.face = "happy";
+      break;
+    }
+    case "chop": {
+      // 0096 Tiều phu: both arms raised over the right shoulder, then a hard swing down and across (0.8 s a stroke)
+      const k = (s / 0.8) % 1;
+      const up = k < 0.6 ? k / 0.6 : 1 - (k - 0.6) / 0.4;                   // slow wind-up, fast strike
+      const e = up * up * (3 - 2 * up);
+      p.armR.x = -0.4 + e * 2.9; p.armR.z = 0.35 - e * 0.1;
+      p.armL.x = -0.3 + e * 2.7; p.armL.z = 0.15 + e * 0.2;
+      p.elbowR = 0.3 + e * 0.4; p.elbowL = 0.4 + e * 0.4;
+      p.lean = 0.28 - e * 0.3;
+      p.kneeL = 0.2; p.kneeR = 0.14;
+      p.legL.x = 0.18; p.legR.x = -0.12;
+      p.bob = -0.02 - (1 - e) * 0.02;
+      p.headX = 0.1 - e * 0.12;
+      break;
+    }
+    case "cook": {
+      // 0096 Đầu bếp: leaning over the pot, the right hand stirring small circles, the left steadying it
+      const a = s * TAU * 1.1;
+      p.lean = 0.22;
+      p.armR.x = 0.85 + Math.sin(a) * 0.18; p.armR.z = 0.25 + Math.cos(a) * 0.15; p.elbowR = 1.0 + Math.cos(a) * 0.2;
+      p.armL.x = 0.7; p.armL.z = 0.2; p.elbowL = 1.1;
+      p.kneeL = 0.08; p.kneeR = 0.08;
+      p.headX = 0.2;
+      p.bob = Math.sin(a * 2) * 0.004;
       break;
     }
   }

@@ -155,6 +155,8 @@ export interface GameCanvasHandle {
    *  rings' labels come in through setHouses / setRingLabels too. */
   setLiveInputs?: (patch: LiveInputs) => void;
   zone: () => ZoneId | null;
+  /** 0096: my chibi chops or cooks while that minigame runs (null: done). */
+  setWork?: (a: "chop" | "cook" | null) => void;
 }
 
 export interface GameCanvasProps {
@@ -517,6 +519,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       },
       worldPos: () => (engineRef.current?.isWorld() ? engineRef.current.localPos() : null),
       zone: () => (engineRef.current?.isWorld() ? engineRef.current.currentZone() : null),
+      setWork: (a) => engineRef.current?.setWork(a),
       lastInputAt: () => inputAtRef.current,
       setZoom: (zoom: number) => {
         zoomRef.current = zoom;

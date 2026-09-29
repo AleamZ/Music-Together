@@ -63,6 +63,7 @@ import AnticheatChip from "./AnticheatChip";
 import AnticheatModal from "./AnticheatModal";
 import CameraZoomControl from "./CameraZoomControl";
 import Camera3dControl from "./Camera3dControl";
+import ForestHud from "./forest/ForestHud";
 import CityMapModal from "./CityMapModal";
 import CardOverlays from "./cards/CardOverlays";
 import CardSeatChip from "./cards/CardSeatChip";
@@ -664,10 +665,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   //     an open overlay outside the field's own, not to the farm work
   const [helpOpen, setHelpOpen] = useState(false); // the "⌨️ Phím tắt" overlay (H / ?)
   const [worldOpen, setWorldOpen] = useState(false); // v21 world (0075): the 🌍 panel
+  const [forestOpen, setForestOpen] = useState(false); // 0096: chopping, cooking, the stall's logs
   const openOverlays = {
     panel: panel !== null || inside !== null || insideHouse !== null || building || helpOpen || rings.active !== null
       || ug.active !== null || ugResult !== null || knocking !== null || isCalled(ug.state)                     // v20.4
       || worldOpen                                                                                             // v21 world
+      || forestOpen                                                                                            // 0096 forest
       || trade.state?.trade != null                                                                             // v21 economy
       || mining.open                                                                                            // v21 Mỏ đá
       || explore.open,                                                                                          // v22 (0086)
@@ -1152,6 +1155,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       <WorldHud token={token} roomId={room.id} accountId={accountId} isOwner={isOwner} mapId={map.id} canvas={getCanvas}
         blocked={blocking || faint !== null || trip !== null} toast={showToast} onCoins={reloadCoins}
         onWeather={() => void roomWeather.reload()} onPanel={setWorldOpen} />{/* v21 world (0075) */}
+      <ForestHud token={token} mapId={map.id} canvas={getCanvas} blocked={blocking || faint !== null || trip !== null}
+        toast={showToast} onCoins={reloadCoins} onPanel={setForestOpen} />{/* 0096 forest */}
       <HeatActions heat={heat} hidden={blocking || faint !== null || trip !== null || fishing.net !== null}
         onNet={fishing.netReady && fishing.cast.phase === "idle" ? fishing.throwNet : null} />
       {prompt && !blocking && (
