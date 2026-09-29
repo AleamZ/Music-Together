@@ -35,7 +35,7 @@ export const LANDMARKS: readonly Landmark[] = [
   { kind: "arch", x: 1722, y: 724, yaw: 0 },            // cổng chợ over the road into the market
   { kind: "tower", x: 2440, y: 420, yaw: 0.2 },         // the dojo's watchtower behind the market
   { kind: "headframe", x: 3716, y: 1150, yaw: 0.3 },    // the mine's headframe, on the hill above the mouth (P2)
-  { kind: "mine", x: MINE.mouth.x, y: MINE.mouth.y, yaw: -Math.PI / 2 },   // the mine mouth: the tunnel faces west
+  { kind: "mine", x: MINE.mouth.x, y: MINE.mouth.y, yaw: -1.05 },   // the mine mouth, facing west-south-west (the road, the camera)
   { kind: "windmill", x: 2150, y: 1180, yaw: 0.6 },
   { kind: "windmill", x: 540, y: 1180, yaw: -0.4 },
   { kind: "windmill", x: 3880, y: 1470, yaw: 0.9 },
