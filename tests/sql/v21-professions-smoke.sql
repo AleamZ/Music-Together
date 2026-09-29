@@ -2,6 +2,8 @@
 -- 0077, from the repo root. Re-runs 0077 with \i (re-runnable). Every check is an ASSERT; the first failure stops psql.
 \set ON_ERROR_STOP on
 set client_min_messages = warning;
+-- 0097's dish buffs are kinds 0077's check does not know (re-apply 0097 after this smoke)
+delete from public.player_buffs where kind in ('hunt_stamina', 'chop_stamina', 'hunt_chance');
 \i supabase/migrations/0077_professions.sql
 \i supabase/migrations/0077_professions.sql
 reset client_min_messages;

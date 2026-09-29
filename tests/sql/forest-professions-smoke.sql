@@ -7,6 +7,8 @@
 \set ON_ERROR_STOP on
 set time zone 'UTC';
 set client_min_messages = warning;
+-- 0097 re-made _cook_recipes with more columns: 0096's body cannot replace it, so it goes first (re-apply 0097 after)
+drop function if exists public._cook_recipes();
 \i supabase/migrations/0096_forest_professions.sql
 \i supabase/migrations/0096_forest_professions.sql
 reset client_min_messages;
