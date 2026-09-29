@@ -1,6 +1,6 @@
 import type { PixelIcon } from "./icons";
 
-// 16×16 icons for the fishing gear (spec §11): 3 rods, 3 bobbers, 3 baits, the bait box and 2 buckets.
+// 16×16 icons for the fishing gear (spec §11): rods, bobbers, baits, the bait boxes, buckets and the fishing kit.
 // "." transparent, "o" outline, other letters from the icon's own palette. Original art.
 
 export const GEAR_ICONS: Record<string, PixelIcon> = {
@@ -255,6 +255,71 @@ export const GEAR_ICONS: Record<string, PixelIcon> = {
       "................",
     ],
     pal: { w: "#6fb2cf", b: "#8d949c", B: "#6a7078", f: "#e0a431" },
+  },
+  // Hotfix bộ câu cá: Hộp mồi 100 (a two-tier green tackle box, brass clasps), Thùng cá 100 (a slatted wooden crate, a tail
+  // over the rim) and the kit (the box and crate together with a rod across).
+  bait_box_100: {
+    rows: [
+      "................",
+      "................",
+      ".....oooooo.....",
+      ".....o....o.....",
+      ".oooooooooooooo.",
+      ".oLLLLLLLLLLLLo.",
+      ".oooooooooooooo.",
+      ".ogggggkkgggggo.",
+      ".oGGGGGkkGGGGGo.",
+      ".oooooooooooooo.",
+      ".oggggggggggggo.",
+      ".ogggggkkgggggo.",
+      ".oGGGGGGGGGGGGo.",
+      ".oooooooooooooo.",
+      "................",
+      "................",
+    ],
+    pal: { L: "#8fd09b", g: "#5fae6e", G: "#468a53", k: "#e0b33c" },
+  },
+  bucket_100: {
+    rows: [
+      "................",
+      "................",
+      "..........ff....",
+      ".........fFf....",
+      "..........f.....",
+      ".oooooooooooooo.",
+      ".owwwwwwwwwwwwo.",
+      ".oooooooooooooo.",
+      ".obbbbbbbbbbbbo.",
+      ".oBBBBBBBBBBBBo.",
+      ".oooooooooooooo.",
+      ".obbbbbbbbbbbbo.",
+      ".oBBBBBBBBBBBBo.",
+      ".oooooooooooooo.",
+      "..oo........oo..",
+      "................",
+    ],
+    pal: { w: "#6fb2cf", b: "#b7834a", B: "#8b5a33", f: "#e0a431", F: "#b27d16" },
+  },
+  fishing_kit: {
+    rows: [
+      "..............oo",
+      ".............rr.",
+      "............rr..",
+      "...........rr...",
+      "..........rr....",
+      ".........rr.....",
+      "oooooooorroooo..",
+      "oggggggrrbbbbo..",
+      "oggkkgrrbbbbbo..",
+      "ogggggrobBBBBo..",
+      "ooooorrooooooo..",
+      "ogggrrggobbbbo..",
+      "oGGrrGGGoBBBBo..",
+      "oooooooooooooo..",
+      "..hh............",
+      ".hh.............",
+    ],
+    pal: { r: "#8b5a33", h: "#5a381e", g: "#5fae6e", G: "#468a53", k: "#e0b33c", b: "#b7834a", B: "#8b5a33" },
   },
   // v18.2: Cần sợi thủy tinh (a pale green glass-fibre blank with white wraps), Cần thủ (black and gold, a cork grip)
   rod_fiber: {

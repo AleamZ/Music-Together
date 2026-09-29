@@ -74,3 +74,15 @@ describe("row mapping", () => {
     })).toMatchObject({ id: "bobber_lamp", kind: "bobber", price: 800, windowMs: 2500, biteMinMs: 2000, biteMaxMs: 7000, showsRarity: true });
   });
 });
+
+describe("Bộ câu cá (hotfix 0098)", () => {
+  it("parses the kit kind and describes its contents", () => {
+    const k = shopItemFromRow({
+      id: "fishing_kit", kind: "fishing_kit", name: "Bộ câu cá", price: 50000, starter: false, sort_order: 10,
+      zone_pct: null, weight_k: null, rare_mult: 1, window_ms: null, bite_min_ms: null, bite_max_ms: null, shows_rarity: false,
+      mult_hiem: 1, mult_quy: 1, mult_legend: 1, capacity: 100,
+    });
+    expect(k.kind).toBe("fishing_kit");
+    expect(describeItem(k)).toBe("Gồm Hộp mồi 100 (chứa 100 mồi) và Thùng cá 100 (đựng 100 con cá)");
+  });
+});
