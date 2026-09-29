@@ -2,7 +2,7 @@ import { isTyping } from "@/lib/game/keys";
 
 /** The game HUD's keyboard shortcuts: one table (the help overlay lists it) and a pure resolver. A resolved action is
  *  carried out by the element marked `data-hotkey="<id>"` (clicked, or focused for a text field), so a key does only
- *  what its visible, enabled button would. Keys handled elsewhere (movement, E, R, M, Space/Esc in minigames) are
+ *  what its visible, enabled button would. Keys handled elsewhere (movement, E, R, Space/Esc in minigames) are
  *  listed with `external: true` and never resolved here. */
 
 export type HotkeyGroup = "move" | "hud" | "pond" | "social" | "music" | "other";
@@ -42,7 +42,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   { id: "farmTasks", codes: ["KeyG"], label: "G", desc: "Việc đồng áng (ở ruộng)", group: "hud" },
   { id: "settings", codes: ["KeyO"], label: "O", desc: "Cài đặt cá nhân", group: "hud" },
   { id: "zoom", codes: ["KeyZ"], label: "Z", desc: "Chỉnh zoom camera", group: "hud" },
-  { id: null, codes: ["KeyM"], label: "M", desc: "Thu / mở bản đồ nhỏ", group: "hud", external: true },
+  { id: "cityMap", codes: ["KeyM"], label: "M", desc: "Bản đồ thế giới", group: "hud" },
   // v21: every letter is taken, so the new panels are on the number row
   { id: "profile", codes: ["Digit1", "Numpad1"], label: "1", desc: "Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng", group: "hud" },
   { id: "quests", codes: ["Digit2", "Numpad2"], label: "2", desc: "Nhiệm vụ", group: "hud" },

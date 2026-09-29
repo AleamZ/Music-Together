@@ -41,9 +41,12 @@ function getInitialSize(): MiniMapSize {
 export default function MiniMap({
   mapId,
   getLocalPos,
+  onOpenMap,
 }: {
   mapId: MapId;
   getLocalPos: () => Vec | null;
+  /** P4: open the world map (the button carries the M hotkey). */
+  onOpenMap?: () => void;
 }) {
   const [minimized, setMinimized] = useState(false);
   const [sizeKey, setSizeKey] = useState<MiniMapSize>(getInitialSize);
@@ -67,25 +70,6 @@ export default function MiniMap({
       // ignore
     }
   };
-
-  // Toggle with 'M' key
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (
-        e.code === "KeyM" &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.metaKey &&
-        target.tagName !== "INPUT" &&
-        target.tagName !== "TEXTAREA"
-      ) {
-        setMinimized((prev) => !prev);
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, []);
 
   useEffect(() => {
     if (minimized) return;
@@ -199,12 +183,16 @@ export default function MiniMap({
 
   return (
     <div className="pointer-events-auto font-vt select-none">
+      {onOpenMap && (
+        <button type="button" className="pch-btn mb-1 ml-auto block px-2 py-0.5 text-sm" data-hotkey="cityMap" onClick={onOpenMap}
+          title="Bản đồ thế giới (M)" aria-label="Mở bản đồ thế giới">🌏 Bản đồ (M)</button>
+      )}
       {minimized ? (
         <button
           type="button"
           className="pch-btn flex items-center gap-1.5 px-3 py-1.5 shadow-lg text-sm font-bold bg-[#fbf6ea] border-2 border-ink"
           onClick={() => setMinimized(false)}
-          title="Mở Mini Map (Phím M)"
+          title="Mở Mini Map"
           aria-label="Mở bản đồ thu nhỏ"
         >
           <span className="text-base">🗺️</span>
@@ -233,7 +221,7 @@ export default function MiniMap({
                 type="button"
                 className="rounded px-1.5 py-0.5 text-xs font-bold text-ink/80 hover:bg-black/10 hover:text-ink transition-colors"
                 onClick={() => setMinimized(true)}
-                title="Thu nhỏ (Phím M)"
+                title="Thu nhỏ"
                 aria-label="Thu nhỏ bản đồ"
               >
                 —

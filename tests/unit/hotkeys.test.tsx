@@ -19,8 +19,8 @@ describe("hotkeyFor", () => {
     expect(hotkeyFor(ev("KeyH"), ON)).toBe("help");
     expect(hotkeyFor(ev("Slash"), ON)).toBe("help");
   });
-  it("leaves movement, E, R, M and Space to their own listeners", () => {
-    for (const c of ["KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyR", "KeyM", "Space", "Escape", "ArrowUp"]) expect(hotkeyFor(ev(c), ON)).toBeNull();
+  it("leaves movement, E, R and Space to their own listeners (P4: M is the world map)", () => {
+    for (const c of ["KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyR", "Space", "Escape", "ArrowUp"]) expect(hotkeyFor(ev(c), ON)).toBeNull();
   });
   it("ignores typing, modifiers and held keys", () => {
     const input = document.createElement("input");

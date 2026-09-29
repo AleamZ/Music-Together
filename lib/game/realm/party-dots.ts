@@ -7,3 +7,4 @@ export interface PartyDot { name: string; map: MapId; x: number; y: number }
 let dots: readonly PartyDot[] = [];
 export const setPartyDots = (d: readonly PartyDot[]): void => { dots = d; };
 export const partyDotsOn = (map: MapId): readonly PartyDot[] => dots.filter((d) => d.map === map);
+export const allPartyDots = (): readonly PartyDot[] => dots;

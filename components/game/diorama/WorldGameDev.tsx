@@ -8,6 +8,10 @@ import { cellTrees } from "@/lib/game/forest/near";
 import { cyclePreset, getCam, setCam, toggleView } from "@/lib/game/diorama/world/game-camera";
 import WorldMiniMap from "@/components/game/WorldMiniMap";
 import ZoneToast from "@/components/game/ZoneToast";
+import CityMapModal from "@/components/game/CityMapModal";
+import { WAYPOINTS } from "@/lib/game/progression/model";
+import { waypointMarks } from "@/lib/game/world/waypoints";
+import { mapPosToWorld } from "@/lib/game/world/worldmap";
 import { useDevLive } from "./useDevLive";
 import { CO_BA_LOOK, CO_UT_LOOK, CHU_TU_LOOK, DEFAULT_LOOK } from "@/lib/game/look";
 import { getMap } from "@/lib/game/maps/registry";
@@ -37,6 +41,7 @@ const BOT_LOOKS: Array<[string, string, Look]> = [
 ];
 
 const ME = "dev-me";
+const DEV_COUNTS: Readonly<Record<MapId, number>> = { hall: 1, pond: 0, field: 0, market: 1, khu_nha: 0, bai_dat: 1, ham_ngam: 0, mo_da: 0, song_cai: 0, rung_tram: 0 };
 
 export default function WorldGameDev() {
   const canvasRef = useRef<GameCanvasHandle | null>(null);
@@ -51,6 +56,21 @@ export default function WorldGameDev() {
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 2600);
   }, []);
+  // P4: the world map (M, the minimap): my spot (world px; in Rừng tràm / the mine mapped onto the world), the bots, waypoints
+  const [mapOpen, setMapOpen] = useState(false);
+  const getWorldPos = useCallback(() => canvasRef.current?.worldPos() ?? null, []);
+  const getMarks = useCallback(() => canvasRef.current?.mapMarks() ?? { others: [], boat: false }, []);
+  const mapRef = useRef<MapId>("hall");
+  useEffect(() => {
+    mapRef.current = travel.mapId;
+  }, [travel.mapId]);
+  const getMapPos = useCallback(() => {
+    const w = canvasRef.current?.worldPos();
+    if (w) return w;
+    const p = canvasRef.current?.localPos();
+    return p ? mapPosToWorld(mapRef.current, p) : null;
+  }, []);
+  const devWaypoints = useMemo(() => waypointMarks(new Set(WAYPOINTS.map((w) => w.id).slice(0, -1)), null), []);
   const unlocked = useMemo(() => ({ unlocked: ZONE_IDS }), []);
   const travelTo = useCallback((to: { map: MapId; arrive: Spot }) => {
     setTravel((t) => ({ mapId: to.map, arrive: to.arrive, key: t.key + 1, world: worldArrival(t.mapId, to.map) }));
@@ -147,6 +167,7 @@ export default function WorldGameDev() {
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (e.code === "KeyZ") setCam(cyclePreset(getCam()));
+      if (e.code === "KeyM" && !(e.target instanceof HTMLInputElement)) setMapOpen((o) => !o);   // P4: the world map
       if (e.code === "Digit8" || e.code === "Numpad8") setCam(toggleView(getCam()));
     };
     window.addEventListener("keydown", on);
@@ -188,12 +209,16 @@ export default function WorldGameDev() {
           <p className="opacity-70">WASD/chạm để đi · E tương tác · cửa hầm mỏ trên đồi phía đông</p>
         </div>
         <div className="pointer-events-auto"><Camera3dControl /></div>
-        {isZone(travel.mapId) && <WorldMiniMap getWorldPos={() => canvasRef.current?.worldPos() ?? null} zone={zone} />}
+        {isZone(travel.mapId) && <WorldMiniMap getWorldPos={getWorldPos} getMarks={getMarks} zone={zone} waypoints={devWaypoints} onOpenMap={() => setMapOpen(true)} />}
       </div>
       {prompt && (
         <button type="button" className="pch-btn absolute bottom-6 left-1/2 z-10 -translate-x-1/2 px-3 py-2 font-vt text-xl" onClick={() => canvasRef.current?.interact()}>
           E · {prompt.prompt}
         </button>
+      )}
+      {mapOpen && (
+        <CityMapModal current={travel.mapId} counts={DEV_COUNTS} onClose={() => setMapOpen(false)} getWorldPos={getMapPos} getMarks={getMarks}
+          waypoints={devWaypoints} onWaypoint={(m) => { setMapOpen(false); setTravel((t) => ({ mapId: isZone(zoneAt(m)) ? (zoneAt(m) as MapId) : "bai_dat", arrive: null, key: t.key + 1, world: { x: m.x, y: m.y + 24, dir: "down" } })); say(`(dev) 🌀 ${m.name}`); }} />
       )}
       {toast && <div className="pch absolute bottom-20 left-1/2 z-10 -translate-x-1/2 px-3 py-2 font-vt text-lg">{toast}</div>}
     </div>
