@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   CAM_PRESETS, CAM_STORAGE_KEY, CAM_ZOOM, cyclePreset, DEFAULT_CAM, getCam, loadCam, parseCam, pickPreset, pinchBy,
-  resetCamForTests, saveCam, setCam, subscribeCam, toggleView, zoomBy, type GameCam,
+  resetCamForTests, saveCam, CAM_FIXED_YAW, dragLook, FP_PITCH, thirdPersonOrbit, setCam, subscribeCam, toggleView, zoomBy, type GameCam,
 } from "@/lib/game/diorama/world/game-camera";
 import { HOTKEYS } from "@/lib/game/hotkeys";
 
@@ -44,7 +44,7 @@ describe("game camera (3D)", () => {
     let near = c;
     for (let i = 0; i < 50; i++) near = pinchBy(near, 2);
     expect(near.distance).toBe(CAM_ZOOM.min);
-    expect(pinchBy(c, 0.5).distance).toBe(c.distance * 2);
+    expect(pinchBy(c, 0.5).distance).toBe(Math.min(CAM_ZOOM.max, c.distance * 2));
     expect(pinchBy(c, 0)).toBe(c);
     expect(zoomBy(c, Number.NaN)).toBe(c);
     const fp = toggleView(c);
@@ -94,5 +94,41 @@ describe("game camera (3D)", () => {
     expect(k?.codes).toContain("Digit8");
     const all = HOTKEYS.flatMap((h) => h.codes.map((c) => `${h.group}:${c}:${h.id}`));
     expect(all.filter((x) => x.includes(":Digit8:"))).toHaveLength(1);
+  });
+
+  it("third person is FIXED: a drag changes neither yaw nor pitch", () => {
+    const c: GameCam = { ...DEFAULT_CAM };
+    const s0 = { yaw: CAM_FIXED_YAW, fpPitch: -0.1 };
+    expect(dragLook(c, s0, 300, -200)).toEqual(s0);
+    const o = thirdPersonOrbit(c);
+    expect(o.yaw).toBe(CAM_FIXED_YAW);
+    expect(thirdPersonOrbit({ ...c, distance: 999 }).pitch).toBeGreaterThan(thirdPersonOrbit({ ...c, distance: 1 }).pitch);
+  });
+
+  it("zoom stays between the near and far presets", () => {
+    expect(CAM_ZOOM).toEqual({ min: CAM_PRESETS.near, max: CAM_PRESETS.far });
+    let c: GameCam = { ...DEFAULT_CAM };
+    for (let i = 0; i < 50; i++) c = zoomBy(c, 500);
+    expect(c).toMatchObject({ distance: CAM_PRESETS.far, preset: "far" });
+    for (let i = 0; i < 50; i++) c = pinchBy(c, 3);
+    expect(c.distance).toBe(CAM_PRESETS.near);
+    expect(thirdPersonOrbit({ ...c, distance: 5 }).distance).toBe(CAM_PRESETS.near);
+  });
+
+  it("first person looks around with the pitch clamped", () => {
+    const c: GameCam = { ...DEFAULT_CAM, view: "first" };
+    const up = dragLook(c, { yaw: 0, fpPitch: 0 }, 100, -100000);
+    expect(up.fpPitch).toBe(FP_PITCH.max);
+    expect(up.yaw).not.toBe(0);
+    expect(dragLook(c, { yaw: 0, fpPitch: 0 }, 0, 100000).fpPitch).toBe(FP_PITCH.min);
+  });
+
+  it("persists the mode; blocked storage falls back safely", () => {
+    const m = mem();
+    saveCam({ view: "first", preset: "far", distance: CAM_PRESETS.far }, m);
+    expect(loadCam(m)).toEqual({ view: "first", preset: "far", distance: CAM_PRESETS.far });
+    const bad = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+    expect(() => saveCam(DEFAULT_CAM, bad)).not.toThrow();
+    expect(loadCam(bad)).toEqual(DEFAULT_CAM);
   });
 });

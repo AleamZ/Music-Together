@@ -18,7 +18,7 @@ import { WeatherLayer } from "../weather3d";
 import { buildMapScene } from "../zones";
 import { demoFieldPlots } from "../zones/field";
 import { Forest } from "./forest";
-import { getCam, pinchBy, setCam, subscribeCam, zoomBy, type GameCam } from "./game-camera";
+import { dragLook, getCam, pinchBy, setCam, subscribeCam, thirdPersonOrbit, zoomBy, type GameCam } from "./game-camera";
 import { LiveLayer } from "./live";
 import { liveFromFrame, type WorldLive } from "./live-plan";
 import { mergeStatic } from "./merge";
@@ -238,9 +238,12 @@ export class WorldView implements View3D {
 
   /** The game's camera changed (the HUD, the wheel, a pinch): the follow distance and first person. */
   private applyGameCam(c: GameCam): void {
-    if (this.gcam?.view !== c.view && c.view === "first") this.fpPitch = -0.1;
+    const entering = this.gcam?.view !== c.view;
+    if (entering && c.view === "first") this.fpPitch = -0.1;
     this.gcam = c;
-    this.orbit.follow = { ...this.orbit.follow, distance: c.distance };
+    // third person: the fixed angle (yaw looking north, pitch by distance); first person keeps its own look yaw
+    const fixed = thirdPersonOrbit(c);
+    this.orbit.follow = c.view === "first" && !entering ? { ...this.orbit.follow, distance: fixed.distance } : fixed;
     this.people.setHideMyHead(c.view === "first");
   }
 
@@ -502,9 +505,10 @@ export class WorldView implements View3D {
       return;
     }
     const m = this.mode, o = this.orbit[m];
-    if (m === "follow" && this.gcam?.view === "first") {                     // first person: look around (the yaw is the orbit's)
-      this.orbit.follow = { ...o, yaw: o.yaw - dx * 0.005 };
-      this.fpPitch = Math.max(-1.2, Math.min(1.1, this.fpPitch - dy * 0.004));
+    if (m === "follow" && this.gcam) {                                      // the game: third person is FIXED; first person looks around
+      const l = dragLook(this.gcam, { yaw: o.yaw, fpPitch: this.fpPitch }, dx, dy);
+      this.orbit.follow = { ...o, yaw: l.yaw };
+      this.fpPitch = l.fpPitch;
       return;
     }
     this.orbit[m] = { ...o, yaw: o.yaw - dx * 0.006, pitch: Math.max(0.12, Math.min(1.45, o.pitch + dy * 0.004)) };
