@@ -7,7 +7,7 @@ export const RIDE_SPEED: Record<VehicleId, number> = { bike: 1.6, moto: 2.2, car
 export const RIDE_KEY = "r";
 
 export const isVehicleId = (v: unknown): v is VehicleId => v === "bike" || v === "moto" || v === "car";
-export const canRide = (map: MapId, v: VehicleId): boolean => !(map === "pond" && v === "car") && map !== "ham_ngam";   // v20.4: no vehicle down a manhole
+export const canRide = (map: MapId, v: VehicleId): boolean => !(map === "pond" && v === "car") && map !== "ham_ngam" && map !== "song_cai";   // v20.4: no vehicle down a manhole; v22: on the river you row
 export const rideSpeed = (v: VehicleId | null): number => (v ? RIDE_SPEED[v] : 1);
 export const interactBlocked = (riding: VehicleId | null, kind: InteractKind): boolean => riding !== null && kind !== "portal";
 

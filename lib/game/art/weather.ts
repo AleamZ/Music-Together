@@ -6,6 +6,7 @@
 // Every particle is a pure function of (its index, t, the camera): nothing is stored or allocated per frame, and under
 // reduced motion t is pinned to 0 so the pattern holds still.
 
+import { RIVER, riverWater } from "@/lib/game/river/geometry";
 import { CANAL, BRIDGES } from "../maps/field";
 import { hallShoreY, HALL_H, HALL_W } from "../maps/hall";
 import { MARKET_W } from "../maps/market";
@@ -240,6 +241,11 @@ function waterPoint(map: MapId, u: number, v: number, out: Vec): boolean {
     case "ham_ngam":                             // v20.4: indoors — no water, no weather
     case "mo_da":                                // v21 #19: a cave
       return false;
+    case "song_cai": {                           // v22 (0086): the river
+      const x = RIVER.x0 + u * (RIVER.x1 - RIVER.x0), y = RIVER.y0 + v * (RIVER.y1 - RIVER.y0);
+      if (!riverWater(x, y)) return false;
+      out.x = x; out.y = y; return true;
+    }
   }
 }
 

@@ -193,6 +193,13 @@ export function extrasErrorText(msg: string): string | null {
     case "wrong phase": return "Lúa chưa chín.";
     case "need water": return "Rút nước trước khi gặt.";
     case "lease ends": return "Hợp đồng thuê sắp hết — không kịp gặt.";
+    // v22 (0086): Sông Cái and the treasure dig
+    case "outdated": return "Trò chơi đã cập nhật — tải lại trang để chơi cách mới nhé.";
+    case "map locked": return "Chưa đủ cấp để ra Sông Cái (cần cấp 3).";
+    case "row not found": return "Chuyến chèo đã hết hạn — chèo lại nhé.";
+    case "dig not found": return "Lượt đào đã hết hạn — đào lại nhé.";
+    case "detector tired": return "Máy dò đã hết pin cho tấm bản đồ này.";
+    case "too tired": return "Mệt quá rồi — nghỉ chút cho lại sức nhé.";
     default: return null;
   }
 }

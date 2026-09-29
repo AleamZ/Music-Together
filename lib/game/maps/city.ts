@@ -53,7 +53,15 @@ export const CITY_PLACES: Readonly<Record<MapId, CityPlace>> = {
     id: "mo_da", icon: "⛏️", name: "Mỏ đá", at: { x: 94, y: 86 },
     places: ["10 mỏ quặng", "Bãi thảo dược", "Lán chú Tám (quặng, cuốc)", "Đe rèn", "Vạc thuốc bà Sáu"],
   },
+  // v22 (0086): past the pond, by boat only (Bến ghe on Cầu ao → chèo ghe)
+  song_cai: {
+    id: "song_cai", icon: "🛶", name: "Sông Cái", at: { x: 22, y: 90 },
+    places: ["Bến sông · ông Năm đò", "Bãi Lau", "Ghềnh Đá Đỏ", "Vũng Ngát", "Cù lao giữa sông"],
+  },
 };
+
+/** v22 (0086): roads that are not portals — the boat trip from Ao cá to Sông Cái (the rowing minigame). */
+export const BOAT_ROADS: ReadonlyArray<readonly [MapId, MapId]> = [["pond", "song_cai"]];
 
 /** The maps the town overview shows (a hidden one is a secret). */
 export const VISIBLE_MAP_IDS: readonly MapId[] = MAP_IDS.filter((id) => !CITY_PLACES[id].hidden);
@@ -72,5 +80,6 @@ export function cityRoads(): Array<readonly [MapId, MapId]> {
       out.push(pair);
     }
   }
+  for (const pair of BOAT_ROADS) if (!seen.has(pair.join("-"))) out.push(pair);                         // v22 (0086)
   return out;
 }

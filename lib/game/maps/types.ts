@@ -4,8 +4,8 @@ import type { Facing, Look, Vec } from "@/lib/game/types";
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Spot { x: number; y: number; dir: Facing }
 
-export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat" | "ham_ngam" | "mo_da";
-export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam", "mo_da"];
+export type MapId = "hall" | "pond" | "field" | "market" | "khu_nha" | "bai_dat" | "ham_ngam" | "mo_da" | "song_cai";
+export const MAP_IDS: readonly MapId[] = ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam", "mo_da", "song_cai"];
 
 export type InteractKind =
   | "dj_booth" | "notice_board" | "portal" | "fish_spot" | "dig_spot" | "depot" | "shop" | "records"
@@ -53,7 +53,9 @@ export type InteractKind =
   // v17: a live rat, offered by the engine when no map interactable is in range (never in a map's list)
   | "rat"
   // v21 (0076): Bến ghe and the boat's deck, the fishing battles' board (the pond), anh Hai's machine shed (the field)
-  | "boat" | "fish_battle" | "machine_shed";
+  | "boat" | "fish_battle" | "machine_shed"
+  // v22 (0086): Sông Cái's jetty (row back to the pond)
+  | "river_dock";
 
 export interface Interactable {
   /** Unique per map: "dock_sign", "fish_3", … */

@@ -25,6 +25,8 @@ import { DRY_LOOK, encodeRain, STRIKE_MS, type RainLook } from "@/lib/game/rain/
 import { edgeCell, jumpTarget, nearestEdge } from "@/lib/game/heat/pond";
 import { nearestWater, pondWaterCells, shoreInteractable } from "@/lib/game/fishing/shore";
 import { inPond } from "@/lib/game/maps/pond";
+import { drawBoatRider } from "@/lib/game/river/art";                                                  // v22 (0086)
+import { riverInteractable, riverWater } from "@/lib/game/river/geometry";                                  // v22 (0086)
 import { buildSwimMap, inWater, swimSpeed, WET_MS, type SwimCode } from "@/lib/game/swim";
 import { riderFrame } from "@/lib/game/art/road";
 import { drawLighting, drawNightLights, drawWeather, lightingFor, swayAmp, swayAt, type Lighting, type WeatherFx } from "@/lib/game/art/weather";
@@ -1270,6 +1272,11 @@ export class GameEngine {
       const bank = shoreInteractable(this.map, this.local.pos, this.local.facing);
       near = bank && this.prompt?.id === bank.id && this.prompt.face === bank.face ? this.prompt : bank;
     }
+    // v22 (0086): …and on Sông Cái, a cast from wherever the boat floats
+    if (!near && !this.rodOut && !this.swimming && !locked && this.map.id === "song_cai") {
+      const river = riverInteractable(this.local.pos, this.local.facing);
+      near = river && this.prompt?.id === river.id && this.prompt.face === river.face ? this.prompt : river;
+    }
     // the hammock's prompt: "Dậy" while I lie in it (always, wherever the nearest is), "Có người đang nằm" when taken
     if (this.hammockSince !== null && this.hammockIt) near = hammockPrompt(this.hammockIt, true, false);
     else if (near?.kind === "hammock") near = hammockPrompt(near, false, this.hammockTaken(now) !== null);
@@ -1431,6 +1438,11 @@ export class GameEngine {
       const x = Math.round(pos.x) - camX, y = Math.round(pos.y) - camY;
       // standing still: a slow breath, staggered by where the character stands (held under reduced motion)
       const frame = walk === 0 && !reduced ? idleFrame(t, (Math.round(pos.x) * 37 + Math.round(pos.y) * 11) % 900) : walk;
+      // v22 (0086): on Sông Cái everyone floats in their ghe
+      if (this.map.id === "song_cai" && riverWater(pos.x, pos.y)) {
+        drawBoatRider(b, x, y, facing, t, walk !== 0, reduced, (dy) => b.drawImage(getCharacterFrames(look)[facing][frame], x - 12, y - 46 + dy));
+        return;
+      }
       b.fillStyle = "rgba(40, 25, 10, 0.28)";
       b.fillRect(x - 7, y - 1, 14, 2);
       b.fillRect(x - 5, y + 1, 10, 1);

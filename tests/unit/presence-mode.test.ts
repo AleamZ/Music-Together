@@ -92,7 +92,8 @@ describe("mapCounts", () => {
       bai_dat: [],
       ham_ngam: [],
       mo_da: [],
+      song_cai: [],
     });
-    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [], ham_ngam: [], mo_da: [] });
+    expect(mapCounts([])).toEqual({ hall: [], pond: [], field: [], market: [], khu_nha: [], bai_dat: [], ham_ngam: [], mo_da: [], song_cai: [] });
   });
 });

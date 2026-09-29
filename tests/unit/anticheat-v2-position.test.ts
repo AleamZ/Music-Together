@@ -19,7 +19,7 @@ import { heatErrorMessage } from "@/lib/game/heat/model";
 // 0057_server_position.sql against the TS it mirrors: the maps, the portals, the spawn, the depots, the speeds.
 const SQL = readFileSync("supabase/migrations/0057_server_position.sql", "utf8").replace(/\r\n/g, "\n");
 // A function a later migration re-created (0072's _pos_maps / _pos_portals: Mỏ đá) is read from its newest definition.
-const NEWER = ["0072_mining_crafting.sql"].map((f) => readFileSync(`supabase/migrations/${f}`, "utf8").replace(/\r\n/g, "\n"));
+const NEWER = ["0072_mining_crafting.sql", "0086_explore_minigames.sql"].map((f) => readFileSync(`supabase/migrations/${f}`, "utf8").replace(/\r\n/g, "\n"));
 const fnBody = (name: string) => {
   const head = `create or replace function public.${name}(`;
   const newer = NEWER.filter((s) => s.includes(head)).pop();

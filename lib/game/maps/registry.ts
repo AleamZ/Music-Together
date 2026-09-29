@@ -14,6 +14,8 @@ import { buildMoDaMap } from "./mo-da";
 import { paintMoDa } from "./mo-da-art";
 import { buildPondMap } from "./pond";
 import { paintPond } from "./pond-art";
+import { buildSongCaiMap } from "./song-cai";
+import { paintSongCai } from "./song-cai-art";
 import type { SceneArt } from "./scene-art";
 import type { GameMap, MapId } from "./types";
 
@@ -32,6 +34,7 @@ function build(id: MapId): GameMap {
     case "bai_dat": return buildBaiDatMap();
     case "ham_ngam": return buildHamNgamMap();
     case "mo_da": return buildMoDaMap();
+    case "song_cai": return buildSongCaiMap();
   }
 }
 
@@ -45,6 +48,7 @@ function paint(map: GameMap): SceneArt {
     case "bai_dat": return paintBaiDat(map);
     case "ham_ngam": return paintHamNgam(map);
     case "mo_da": return paintMoDa(map);
+    case "song_cai": return paintSongCai(map);
   }
 }
 

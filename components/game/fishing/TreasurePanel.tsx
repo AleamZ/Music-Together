@@ -3,7 +3,7 @@
 import { ParchmentModal } from "@/components/game/Parchment";
 import { hintRect, MAP_NAMES, MAP_SIZES, type ExtrasState, type TreasureMap } from "@/lib/game/fishing/extras";
 
-const SOURCE: Record<TreasureMap["source"], string> = { fishing: "câu được", boat: "câu ngoài vùng sâu", dig: "đào trùn được" };
+const SOURCE: Record<TreasureMap["source"], string> = { fishing: "câu được", boat: "câu trên sông", dig: "đào trùn được" };
 
 /** The hint image: an old map of the whole place, torn edges, a 4 × 3 grid and the quarter inked with an X — never the
  *  spot itself (the server keeps it). Original SVG art. */
@@ -57,7 +57,7 @@ export default function TreasurePanel({ state, mapId, busy, notes, onDig, onClos
     <ParchmentModal title="🗺️ Bản đồ kho báu" onClose={onClose} className="sm:max-w-2xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         {!state ? <p>Đang tải…</p> : state.maps.length === 0 ? (
-          <p>Chưa có tấm bản đồ nào. Câu cá (nhất là ngoài vùng nước sâu) hoặc đào trùn, thỉnh thoảng sẽ nhặt được một tấm!{state.found > 0 ? ` Bạn đã tìm được ${state.found} kho báu.` : ""}</p>
+          <p>Chưa có tấm bản đồ nào. Câu cá (nhất là trên Sông Cái) hoặc đào trùn, thỉnh thoảng sẽ nhặt được một tấm!{state.found > 0 ? ` Bạn đã tìm được ${state.found} kho báu.` : ""}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {state.maps.map((m) => {
@@ -71,7 +71,7 @@ export default function TreasurePanel({ state, mapId, busy, notes, onDig, onClos
                     <span className="text-base opacity-80">Tấm bản đồ {SOURCE[m.source]} · đã đào {m.digs} lần</span>
                     {notes[m.id] && <span>{notes[m.id]}</span>}
                     <button type="button" className="pch-btn pch-btn-primary self-start" disabled={busy || !here} onClick={() => onDig(m.id)}>
-                      {here ? "⛏️ Đào ở chỗ đang đứng" : `Tới ${MAP_NAMES[m.map] ?? m.map} để đào`}
+                      {here ? "📡 Bật máy dò kho báu" : `Tới ${MAP_NAMES[m.map] ?? m.map} để đào`}
                     </button>
                   </div>
                 </li>

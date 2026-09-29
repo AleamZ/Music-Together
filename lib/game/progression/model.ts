@@ -34,6 +34,7 @@ export type XpBucket = keyof typeof XP_CAPS;
  *  A NEW MAP: add it here AND in your migration's `insert into public.map_levels`. */
 export const MAP_MIN_LEVEL: Readonly<Record<string, number>> = {
   hall: 1, pond: 1, field: 1, market: 1, khu_nha: 1, bai_dat: 1, ham_ngam: 1, mo_da: 5,   // mo_da: v21 #19 (0072)
+  song_cai: 3,                                                                            // v22 (0086): Sông Cái
 };
 
 /** The level `map` needs: the server's table when known, else the mirror. */

@@ -44,6 +44,9 @@ describe("0070's numbers are the client's", () => {
     const mine = readFileSync("supabase/migrations/0072_mining_crafting.sql", "utf8")
       .match(/insert into public\.map_levels \(map, min_level\) values \('(\w+)', (\d+)\)/);
     if (mine) rows[mine[1]] = Number(mine[2]);
+    const river = readFileSync("supabase/migrations/0086_explore_minigames.sql", "utf8")                     // v22: Sông Cái
+      .match(/insert into public\.map_levels \(map, min_level\) values \('(\w+)', (\d+)\)/);
+    if (river) rows[river[1]] = Number(river[2]);
     expect(rows).toEqual(MAP_MIN_LEVEL);
     for (const id of ["hall", "pond", "field", "market", "khu_nha", "bai_dat", "ham_ngam"]) expect(MAP_MIN_LEVEL[id], id).toBe(1);
     expect(mapUnlocked("hall", 1)).toBe(true);

@@ -22,14 +22,19 @@ export const SHADE_RECTS: Readonly<Record<MapId, readonly Rect[]>> = {
   ],
   ham_ngam: [],                              // v20.4: indoors as a whole (INDOOR_MAPS)
   mo_da: [],                                 // v21 #19: a cave
+  song_cai: [],                              // v22 (0086): the river (see BREEZY_MAPS)
 };
 
 /** v20.4: maps that are indoors everywhere (0041's _in_shade: a map not in its outdoor list): no heat, rain or weather. */
 export const INDOOR_MAPS: ReadonlySet<MapId> = new Set<MapId>(["ham_ngam", "mo_da"]);
 
+/** v22 (0086): outdoors (weather drawn) but never hot — the river breeze; the server agrees (0051's _in_shade: a map not
+ *  in its outdoor list is shaded). */
+export const BREEZY_MAPS: ReadonlySet<MapId> = new Set<MapId>(["song_cai"]);
+
 /** Is `p` (world px, rounded like the heartbeat sends it) in the shade of map `map`? */
 export function inShade(map: MapId, p: Vec): boolean {
-  if (INDOOR_MAPS.has(map)) return true;
+  if (INDOOR_MAPS.has(map) || BREEZY_MAPS.has(map)) return true;
   const x = Math.round(p.x), y = Math.round(p.y);
   return SHADE_RECTS[map].some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
 }

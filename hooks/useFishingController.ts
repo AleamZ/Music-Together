@@ -135,8 +135,15 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   const itemName = useCallback((id: string) => itemCatalog?.items.find((i) => i.id === id)?.name ?? id, [itemCatalog]);
   // v21 (0076): a cast from the boat goes to start_boat_cast; the rest of the cast (hook, reel, finish) is the same
   const boatCasting = useRef(false);
+  // v22 (0086): a cast on Sông Cái goes to start_river_cast from where the boat floats
+  const riverAt = useRef<{ x: number; y: number } | null>(null);
   const castData = useMemo(() => ({
-    ...data, startCast: (r: string, cell?: { col: number; row: number }) => (boatCasting.current ? data.startBoatCast(r) : data.startCast(r, cell)),
+    ...data, startCast: (r: string, cell?: { col: number; row: number }) => {
+      const river = riverAt.current;
+      riverAt.current = null;
+      if (river) return data.startRiverCast(r, river);
+      return boatCasting.current ? data.startBoatCast(r) : data.startCast(r, cell);
+    },
   }), [data]);
   const session = useCastSession({ roomId, data: castData, canvas, toast, itemName });
   const { state, failed, catalog, reload, claimDaily, dig, sell: sellFish, release: releaseFish, buy: buyItem, equip: setLoadout, repair: repairRod } = data;
@@ -259,7 +266,11 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   const fishAt = useCallback((it: Interactable) => {
     const refusal = castRefusal(stateRef.current, failedRef.current, canvas()?.anglerNear(it.use) ?? false);
     if (refusal) toastRef.current(refusal);
-    else castAt(it);
+    else {
+      riverAt.current = canvas()?.mapId() === "song_cai" ? { x: it.use.x, y: it.use.y } : null;   // v22 (0086)
+      castAt(it);
+      riverAt.current = null;                                         // a cast already out never read it
+    }
   }, [canvas, castAt]);
   const castPhase = session.view.phase;
   const onFishingInput = useCallback((kind: "tap" | "cancel") => {
@@ -421,7 +432,6 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       boatCasting.current = false;
     }
   }, [castAt]);
-  const aboard = extras.state?.boat.aboard ?? false;
   const reloadExtras = extras.reload;
 
   const interact = useCallback((it: Interactable): boolean => {
@@ -440,12 +450,9 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       case "market_fish_depot":
         setPanel("market_depot");
         return true;
-      case "boat":                                                         // v21 (0076)
-        if (it.id === BOAT_DECK_SPOT.id && aboard) boatCast();
-        else {
-          setPanel("boat");
-          reloadExtras();
-        }
+      case "boat":                                                         // v21 (0076); v22: the ghe sails to Sông Cái
+        setPanel("boat");
+        reloadExtras();
         return true;
       case "fish_battle":                                                  // v21 (0076)
         setPanel("battle");
@@ -453,7 +460,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       default:
         return false;
     }
-  }, [digAt, fishAt, aboard, boatCast, reloadExtras]);
+  }, [digAt, fishAt, reloadExtras]);
 
   return {
     data,

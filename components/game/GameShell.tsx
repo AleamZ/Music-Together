@@ -123,6 +123,8 @@ import RatChip from "./farm/RatChip";
 import { FarmTasksButton } from "./farm/FarmTasks";
 import FishingHud, { CoinsChip } from "./fishing/FishingHud";
 import FishingOverlays from "./fishing/FishingOverlays";
+import ExploreOverlays from "./river/ExploreOverlays";                                          // v22 (0086)
+import { useExplore } from "@/hooks/useExplore";                                                 // v22 (0086)
 import GameCanvas, { type GameCanvasHandle } from "./GameCanvas";
 import HudChatBar from "./HudChatBar";
 import HudNowPlaying from "./HudNowPlaying";
@@ -526,6 +528,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   }, [heat.probe, vitalsState]);
   // --- rain (v18.9): umbrellas, wet, cảm lạnh and lightning
   const reloadCoins = useCallback(() => void fishing.data.reload(), [fishing.data]);
+  // v22 (0086): chèo ghe to Sông Cái and back, the treasure detector and dig
+  const explore = useExplore({
+    token, roomId: room.id, mapId: travel.mapId, canvas: getCanvas, toast: gameToast, travelTo, cancelCast: fishing.cancelCast,
+    onCoins: reloadCoins, onMaps: fishing.extras.reload,
+  });
+  const exploreHome = explore.rowHome;
   const profs = useProfessions(token, canvasRef);                                     // v21 (0077): stamina, nghề
   const rain = useRain({ token, canvasRef, fromVitals: vitalsState?.rain, raining: isRainy(weather?.kind), onCoinsChanged: reloadCoins, showToast });
   const rainCold = rain.cold;
@@ -564,7 +572,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       || ug.active !== null || ugResult !== null || knocking !== null || isCalled(ug.state)                     // v20.4
       || worldOpen                                                                                             // v21 world
       || trade.state?.trade != null                                                                             // v21 economy
-      || mining.open,                                                                                           // v21 Mỏ đá
+      || mining.open                                                                                            // v21 Mỏ đá
+      || explore.open,                                                                                          // v22 (0086)
     fishingPanel: fishing.panel !== null || fishing.net !== null, creating, anticheatModal: anticheat.modal !== null,
     farmPanel: farm.panel !== null, farmWork: farm.work !== null, farmRound: farm.round !== null, farmCrab: farm.crab !== null,
     slingGame: farm.sling !== null,
@@ -686,6 +695,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       case "city_map":
         setPanel("city_map");
         break;
+      case "river_dock":                                                   // v22 (0086): row back to the pond
+        exploreHome();
+        break;
       case "pet_shop":
         setPanel("pet_shop");
         void reloadPets();
@@ -763,7 +775,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       default:
         if (!farmInteract(it) && !miningInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, farmInteract, miningInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner, myLevel, progress.state?.mapLevels]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, miningInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner, myLevel, progress.state?.mapLevels, exploreHome]);
 
   // v20.4 the knock on the hatch: ug_enter checks the unlock again, then down the ladder (the refs keep a re-render
   // from cancelling the knock)
@@ -810,7 +822,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
 
   return (
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : "bg-[#5a8f32]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : map.id === "song_cai" ? "bg-[#3f7478]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
@@ -1034,6 +1046,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
 
       <FishingOverlays
         fishing={fishing}
+        onSail={explore.rowOut}
+        onDetect={explore.detect}
         // the bag's farm tools, once the field has loaded and the catalog has them (before 0016 it has none)
         farm={farm.data.state && farm.data.catalog?.items.some((i) => i.kind === "tool")
           ? {
@@ -1043,6 +1057,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           : null}
       />
       <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} dog={coopDog} />
+      <ExploreOverlays explore={explore} mapId={map.id} idle={!blocking && fishing.cast.phase === "idle" && faint === null} />{/* v22 (0086) */}
       <MiningOverlays m={mining} showChip={map.id === "mo_da" || Object.keys(mining.state?.bag ?? {}).some((k) => k.startsWith("pot_")) || (mining.state?.buffs.length ?? 0) > 0} />{/* v21 Mỏ đá */}
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
 
@@ -1483,7 +1498,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {panel === "city_map" && (
         <CityMapModal
           current={travel.mapId}
-          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length }}
+          counts={{ hall: counts.hall.length, pond: counts.pond.length, field: counts.field.length, market: counts.market.length, khu_nha: counts.khu_nha.length, bai_dat: counts.bai_dat.length, ham_ngam: 0, mo_da: counts.mo_da.length, song_cai: counts.song_cai.length }}
           onClose={close}
         />
       )}

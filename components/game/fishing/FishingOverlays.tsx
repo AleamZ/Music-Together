@@ -15,7 +15,14 @@ import ShopPanel from "./ShopPanel";
 
 /** Fishing on top of the world (spec §6.1, §10): "🎣 Thu cần" while waiting, "❗ Giật cần!" at the bite, the reel, the
  *  catch card and the four fishing panels; the bag shows the farm tools once the field has loaded (v15.2 R29). */
-export default function FishingOverlays({ fishing, farm = null }: { fishing: FishingController; farm?: BagFarm | null }) {
+export default function FishingOverlays({ fishing, farm = null, onSail = null, onDetect = null }: {
+  fishing: FishingController;
+  farm?: BagFarm | null;
+  /** v22 (0086): row out to Sông Cái (the shell's explore minigames). */
+  onSail?: (() => void) | null;
+  /** v22 (0086): switch the metal detector on for a treasure map. */
+  onDetect?: ((id: string, map: string) => void) | null;
+}) {
   const { cast, caught, panel, busy, closePanel } = fishing;
   const { state, catalog } = fishing.data;
   const name = caught ? catalog?.species.find((s) => s.id === caught.fish.speciesId)?.name ?? caught.fish.speciesId : "";
@@ -76,15 +83,19 @@ export default function FishingOverlays({ fishing, farm = null }: { fishing: Fis
       )}
       {panel === "boat" && (
         <BoatPanel state={x.state} catalog={catalog} coins={state?.coins ?? null} busy={x.busy} onBuy={x.buyBoat}
-          onBoard={() => { x.boardBoat(); closePanel(); }} onLeave={() => { x.leave(); closePanel(); }}
-          onCast={() => { closePanel(); fishing.boatCast(); }} onClose={closePanel} />
+          onSail={onSail && (() => { closePanel(); onSail(); })} onClose={closePanel} />
       )}
       {panel === "battle" && (
         <BattlePanel board={x.board} busy={x.busy} speciesName={speciesName} onCreate={x.createBattle} onJoin={x.joinBattle}
           onLeave={x.leaveBattle} onStart={x.startBattle} onClose={closePanel} />
       )}
       {panel === "treasure" && (
-        <TreasurePanel state={x.state} mapId={x.mapNow} busy={x.busy} notes={x.digNote} onDig={x.dig} onClose={closePanel} />
+        <TreasurePanel state={x.state} mapId={x.mapNow} busy={x.busy} notes={x.digNote}
+          onDig={(id) => {
+            const m = x.state?.maps.find((t) => t.id === id);
+            if (onDetect && m) { closePanel(); onDetect(id, m.map); } else x.dig(id);
+          }}
+          onClose={closePanel} />
       )}
     </>
   );

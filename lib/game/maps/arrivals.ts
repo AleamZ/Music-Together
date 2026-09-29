@@ -49,3 +49,9 @@ export const MO_DA_ARRIVE: Spot = { x: 44, y: 200, dir: "right" };
 
 /** v21 #19: on Bãi đất trống, in the gap of the broken east wall, back from the mine. */
 export const BAI_MINE_ARRIVE: Spot = { x: 736, y: 268, dir: "left" };
+
+/** v22 (0086): on Sông Cái, in the boat beside the west jetty, facing downstream (0086 _river_geo arrive). */
+export const SONG_CAI_ARRIVE: Spot = { x: 80, y: 240, dir: "right" };
+
+/** v22 (0086): back on Cầu ao at Bến ghe (0076 _boat_geo pier), facing the bank. */
+export const POND_PIER_ARRIVE: Spot = { x: 378, y: 206, dir: "down" };
