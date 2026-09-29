@@ -28,6 +28,8 @@ export interface RosterInput {
   looks: Map<string, Look>;
   /** The map this client is on. */
   mapId: MapId;
+  /** P2 world mode: every zone whose members I see (my zone and its neighbours, "wild" included); mapId otherwise. */
+  maps?: readonly string[];
   /** Where classic-view members are shown: the hall's seating; null on a map without it (they are not drawn there). */
   seating: Seating | null;
 }
@@ -37,10 +39,11 @@ export interface RosterInput {
  * the hall with a fixed spot — the DJ behind the mixer, the others on café seats in account-id order — so every
  * client shows the same arrangement. Game-view members on this map walk (spot null), with their dog (v17).
  */
-export function buildRoster({ presence, members, room, localId, looks, mapId, seating }: RosterInput): RosterEntry[] {
+export function buildRoster({ presence, members, room, localId, looks, mapId, seating, maps }: RosterInput): RosterEntry[] {
   const byAccount = new Map(members.map((m) => [m.account_id, m] as const));
   const roles = roleAccounts(room, members);
-  const here = (p: PresenceEntry) => (p.mode === "classic" ? seating !== null : (p.map ?? "hall") === mapId);
+  const on = (m: string) => (maps ? maps.includes(m) : m === mapId);
+  const here = (p: PresenceEntry) => (p.mode === "classic" ? seating !== null : on(p.map ?? "hall"));
   const online = presence.filter((p) => p.accountId !== localId && byAccount.has(p.accountId) && here(p));
   const seated = online.filter((p) => p.mode === "classic" && p.accountId !== roles.djAccountId).map((p) => p.accountId);
   const spots = assignSpots(seated, seating?.seats ?? [], seating?.standSpots ?? []);
@@ -60,8 +63,9 @@ export function buildRoster({ presence, members, room, localId, looks, mapId, se
 
 /** Is this account in the room's presence in game mode on this map? Game messages other than movement, `hello` and `fp`
  *  are taken only from such a member (anti-cheat spec §14). */
-export function isHereOn(presence: readonly PresenceEntry[], accountId: string, mapId: MapId): boolean {
-  return presence.some((p) => p.accountId === accountId && p.mode === "game" && p.map === mapId);
+export function isHereOn(presence: readonly PresenceEntry[], accountId: string, mapId: MapId | readonly string[]): boolean {
+  const on = (m: string | null) => m !== null && (typeof mapId === "string" ? m === mapId : mapId.includes(m));   // P2: a zone set
+  return presence.some((p) => p.accountId === accountId && p.mode === "game" && on(p.map));
 }
 
 /** Chat messages that should pop up as bubbles: not shown yet, written by a person, at most maxAgeMs old. */

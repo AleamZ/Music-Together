@@ -44,6 +44,17 @@ export async function posReport(token: string, map: string, x: number, y: number
   }
 }
 
+/** P2 world mode: where I stand in world px (pos_report_w: the server finds the zone). The heartbeat while walking the
+ *  world, and an arrival onto it that is not a zone's own spot (the mine mouth). Best effort, like posReport. */
+export async function posReportWorld(token: string, wx: number, wy: number): Promise<void> {
+  try {
+    const { data, error } = await supabase.rpc("pos_report_w", { p_session_token: token, p_wx: Math.round(wx), p_wy: Math.round(wy) });
+    screenAnswer(data, error);
+  } catch {
+    /* the next claim is judged against the older position */
+  }
+}
+
 /** The Vietnamese text of a refused position claim; null for any other message. */
 export function positionErrorText(msg: string): string | null {
   if (msg === "too far") return "Bạn đứng xa chỗ đó quá — lại gần rồi thử lại nhé.";

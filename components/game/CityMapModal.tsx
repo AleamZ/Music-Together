@@ -3,6 +3,8 @@
 import { ParchmentModal } from "@/components/game/Parchment";
 import { CITY_PLACES, VISIBLE_MAP_IDS, cityRoads } from "@/lib/game/maps/city";
 import type { MapId } from "@/lib/game/maps/types";
+import type { Vec } from "@/lib/game/types";
+import { WorldMapCanvas } from "./WorldMiniMap";
 
 const ROADS = cityRoads();
 
@@ -21,15 +23,18 @@ const TREES: ReadonlyArray<readonly [number, number]> = [
 
 /** "Bản đồ thành phố" (view only): the whole town on old paper, the roads between the maps as the portals link them, where
  *  I am, how many are on each map and what is there. */
-export default function CityMapModal({ current, counts, onClose }: {
+/** P2 world mode (`getWorldPos`): the paper is the true world map — the zones where they are, the roads, the river,
+ *  the mine mouth and me — with the same list of places below. */
+export default function CityMapModal({ current, counts, onClose, getWorldPos }: {
   current: MapId;
   counts: Readonly<Record<MapId, number>>;
   onClose: () => void;
+  getWorldPos?: () => Vec | null;
 }) {
   return (
     <ParchmentModal title="🗺️ Bản đồ thành phố" onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-3 font-vt leading-tight">
-        <div
+        {getWorldPos ? <WorldMapCanvas getWorldPos={getWorldPos} /> : (<div
           className="relative aspect-[16/11] w-full overflow-hidden rounded-sm border-2 border-ink/60 bg-[#efe0bb] shadow-inner"
           data-testid="city-map-paper"
         >
@@ -103,7 +108,7 @@ export default function CityMapModal({ current, counts, onClose }: {
               </div>
             );
           })}
-        </div>
+        </div>)}
 
         <ul className="grid grid-cols-1 gap-2 text-base sm:grid-cols-2">
           {VISIBLE_MAP_IDS.map((id) => {

@@ -54,6 +54,20 @@ vi.mock("@/lib/game/engine", () => ({
     localPos() {
       return { x: 5, y: 6 };
     }
+    // P2 world mode (a per-map engine here: the identity)
+    isWorld() {
+      return false;
+    }
+    currentZone() {
+      return this.rec.mapId;
+    }
+    fromZone(p: unknown) {
+      return p;
+    }
+    toZone(p: unknown) {
+      return p;
+    }
+    teleport() {}
     setSpeedFactor() {}
     setSprint() {}                                                                 // v21 (0077)
     takeSprintMs() {

@@ -62,6 +62,10 @@ import type { PresenceDog } from "@/lib/presence-modes";
 import type { RoomWeather } from "@/lib/game/weather/model";
 import type { MapId } from "@/lib/game/maps/types";
 import type { Billboard, DioramaFrame, View3D } from "@/lib/game/diorama/types";
+import type { CharAct } from "@/lib/game/diorama/character/pose";
+import { getMap } from "@/lib/game/maps/registry";
+import { interactablesNear, npcsNear, type WorldMap, type Zoned } from "@/lib/game/world/compose";
+import { zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 
 export type { RosterEntry } from "@/lib/game/world";
 
@@ -112,6 +116,8 @@ export interface EngineCallbacks {
   onFatal?: (err: unknown) => void;
   /** I pressed a key or touched the canvas (the dog's auto-hunt wants input in the last 3 minutes, v17 §7.2). */
   onInput?: () => void;
+  /** P2 world mode: my feet crossed into another zone (or the wild). */
+  onZoneChange?: (zone: ZoneId) => void;
 }
 
 export interface EngineOptions {
@@ -124,6 +130,9 @@ export interface EngineOptions {
   /** CSS font-family for canvas text (the VT323 family from next/font). */
   fontFamily: string;
   reducedMotion: boolean;
+  /** P2: `map` is the unified world (lib/game/world/compose.ts buildWorld): world px throughout, the zone I stand in is
+   *  derived every frame, interactables and NPCs are looked up near me through the world's spatial hash. */
+  world?: boolean;
 }
 
 /** How the local rod looks (spec §6.1, §11). */
@@ -258,6 +267,9 @@ export class GameEngine {
   /** The hall's hammock: its interactable (null on other maps) and since when I lie in it (performance ms, null = not). */
   private readonly hammockIt: Interactable | null;
   private hammockSince: number | null = null;
+  /** P2 world mode: the world map (null on a single map), the zone my feet are in, and each id's last reaction (wave). */
+  private readonly worldMap: WorldMap | null;
+  private zone: ZoneId;
   private raf = 0;
   private lastT = 0;
   private failures = 0;
@@ -278,6 +290,8 @@ export class GameEngine {
     this.buf = buf;
     this.bctx = bctx;
     const start = opts.start ?? map.spawn;
+    this.worldMap = opts.world ? (map as unknown as WorldMap) : null;
+    this.zone = this.worldMap ? zoneAt(start) : map.id;
     this.local = createActor(opts.localId, { x: start.x, y: start.y }, start.dir, performance.now());
     this.world = new RemoteWorld(map, opts.localId);
     this.pack = new Pack((x, y) => isBlockedAt(map, x, y), opts.localId);
@@ -344,19 +358,40 @@ export class GameEngine {
     const reduced = this.opts.reducedMotion;
     const idle = (p: Vec) => (reduced ? 0 : idleFrame(t, (Math.round(p.x) * 37 + Math.round(p.y) * 11) % 900));
     const out: Billboard[] = [];
+    // the 3D chibi's action from the state the 2D renderer draws (P2): seated, riding, swimming, the rod, a reaction's wave
+    const waved = new Set(this.reactions.filter((r) => r.id !== null && t - r.born < REACTION_MS).map((r) => r.id));
+    const remoteAct = (id: string): CharAct | undefined => {
+      if (this.world.hammock(id)) return "sit";
+      if (this.world.riding(id) || this.world.carrier(id)) return "ride";
+      if (this.world.swim(id, t) === "swim") return "swim";
+      const ph = this.world.fishing(id, t).phase;
+      if (ph === 3) return "reel";
+      if (ph !== 0) return "cast";
+      return waved.has(id) ? "wave" : undefined;
+    };
     for (const e of this.world.roster.values()) {
       const label = e.name;
-      if (e.spot) { out.push({ id: e.id, look: e.look, x: e.spot.x, y: e.spot.y, facing: e.spot.dir, frame: 0, name: label }); continue; }
+      if (e.spot) {
+        const s = e.spot, seated = (this.map.seating?.seats ?? []).some((q) => q.x === s.x && q.y === s.y);   // the café seats
+        out.push({ id: e.id, look: e.look, x: s.x, y: s.y, facing: s.dir, frame: 0, name: label, act: seated ? "sit" : undefined });
+        continue;
+      }
       const a = this.world.actors.get(e.id);
       if (!a || !this.visible(e.id, t) || this.carried(e.id, t)) continue;
       const f = walkFrame(a);
-      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label });
+      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label, act: remoteAct(e.id) });
     }
-    for (const n of this.map.npcs) out.push({ id: `npc:${n.id}`, look: n.look, x: n.spot.x, y: n.spot.y, facing: n.spot.dir, frame: idle(n.spot), name: n.name });
     const me = this.local;
-    if (this.hammockSince === null && !this.aboard(t)) {
+    // P2: the world's NPCs near the camera's focus (the spatial hash), else the map's
+    const npcs = this.worldMap ? npcsNear(this.worldMap, me.display, 900) : this.map.npcs;
+    for (const n of npcs) out.push({ id: `npc:${n.id}`, look: n.look, x: n.spot.x, y: n.spot.y, facing: n.spot.dir, frame: idle(n.spot), name: n.name });
+    const lying = this.hammockSince !== null;
+    if (!this.aboard(t) && (!lying || this.view3d)) {
       const f = walkFrame(me);
-      out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true });
+      const ph = this.fishing.phase;
+      const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim"
+        : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : waved.has(this.opts.localId) ? "wave" : undefined;
+      out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true, act });
     }
     const wallNow = Date.now();
     if (wallNow - this.lightingAt > 1000) {
@@ -367,7 +402,7 @@ export class GameEngine {
     return {
       t, focus: { x: me.display.x, y: me.display.y }, billboards: out,
       night, warm: night > 0 && night < 1 ? Math.max(0, 1 - Math.abs(night - 0.5) * 2) : 0,
-      weather: INDOOR_MAPS.has(this.map.id) ? null : this.weather?.kind ?? null, windKmh: this.weather?.windKmh ?? 0,
+      weather: INDOOR_MAPS.has(this.here as MapId) ? null : this.weather?.kind ?? null, windKmh: this.weather?.windKmh ?? 0,
       fx: this.weatherFx, reduced,
     };
   }
@@ -413,6 +448,63 @@ export class GameEngine {
     return { x: this.local.pos.x, y: this.local.pos.y };
   }
 
+  // ------------------------------------------------------------ P2 world mode
+
+  /** Is this engine on the unified world? */
+  isWorld(): boolean {
+    return this.worldMap !== null;
+  }
+
+  /** The zone my feet are in (world mode; else the map). */
+  currentZone(): ZoneId {
+    return this.zone;
+  }
+
+  /** Where the gameplay is judged: the zone in world mode, else the map. */
+  private get here(): ZoneId {
+    return this.zone;
+  }
+
+  /** A world point in `zone`'s own px (the RPCs and the per-map geometry speak zone-local) — and back. */
+  toZone(p: Vec, zone: ZoneId = this.zone): Vec {
+    const r = this.worldMap ? zoneRect(zone) : null;
+    return r ? { x: p.x - r.ox, y: p.y - r.oy } : { x: p.x, y: p.y };
+  }
+
+  fromZone(p: Vec, zone: ZoneId = this.zone): Vec {
+    const r = this.worldMap ? zoneRect(zone) : null;
+    return r ? { x: p.x + r.ox, y: p.y + r.oy } : { x: p.x, y: p.y };
+  }
+
+  /** A zone's own interactable moved into the world (tagged with its zone). */
+  private fromZoneIt(it: Interactable | null, zone: ZoneId = this.zone): Interactable | null {
+    if (!it || !this.worldMap) return it;
+    const o = this.fromZone({ x: 0, y: 0 }, zone);
+    const w: Zoned<Interactable> = { ...it, zone, rect: { ...it.rect, x: it.rect.x + o.x, y: it.rect.y + o.y }, use: { x: it.use.x + o.x, y: it.use.y + o.y } };
+    return w;
+  }
+
+  /** Move me to `at` at once (a waypoint, the boat, back from an interior onto the world): stops any walk, tells the
+   *  others. */
+  teleport(at: Spot): void {
+    this.stopHere();
+    this.hammockSince = null;
+    this.local.pos = { x: at.x, y: at.y };
+    this.local.display = { x: at.x, y: at.y };
+    this.local.facing = at.dir;
+    this.clearPrompt();
+    this.updateZone();
+    this.announceNow();
+  }
+
+  private updateZone(): void {
+    if (!this.worldMap) return;
+    const z = zoneAt(this.local.pos);
+    if (z === this.zone) return;
+    this.zone = z;
+    this.cb.onZoneChange?.(z);
+  }
+
   /** Everyone online on this map except me. Walking members get an actor (placed with their last known state). */
   setRoster(entries: RosterEntry[]): void {
     this.world.setRoster(entries, performance.now());
@@ -454,7 +546,7 @@ export class GameEngine {
   }
 
   showReaction(id: string | null, emoji: string): void {
-    this.reactions.push({ id, emoji, born: performance.now(), dx: Math.round((Math.random() - 0.5) * 12) });
+    this.reactions.push({ id: id ?? null, emoji, born: performance.now(), dx: Math.round((Math.random() - 0.5) * 12) });
     if (this.reactions.length > 40) this.reactions.shift();
   }
 
@@ -734,10 +826,10 @@ export class GameEngine {
   heatProbe(): HeatProbe {
     const now = performance.now();
     // the pond's edge cells are pond coordinates: on any other map they'd match a street or a stall
-    const idle = this.map.id === "pond" && !this.swimming && !this.rodOut && !this.warming(now) && !this.ridingV && this.lift?.role !== "passenger";
-    const { x, y } = this.local.pos;
+    const idle = this.here === "pond" && !this.swimming && !this.rodOut && !this.warming(now) && !this.ridingV && this.lift?.role !== "passenger";
+    const { x, y } = this.toZone(this.local.pos);                              // P2: zone-local (the claims are)
     return {
-      edge: idle ? edgeCell(this.local.pos) : null,
+      edge: idle ? edgeCell({ x, y }) : null,
       swimming: this.swimming,
       warming: this.warming(now),
       cramping: this.crampUntil > now,
@@ -843,7 +935,13 @@ export class GameEngine {
     }
   }
 
-  private usable(): GameMap {
+  /** The map as E and clicks see it: without the hidden interactables — and in world mode only those near `p` (the
+   *  spatial hash; a click looks around the clicked point). */
+  private usable(p: Vec = this.local.pos): GameMap {
+    if (this.worldMap) {
+      const near = interactablesNear(this.worldMap, p, 160).filter((i) => !this.hidden.has(i.id));
+      return { ...this.map, interactables: near };
+    }
     if (this.hidden.size === 0) return this.map;
     this.interactMap ??= { ...this.map, interactables: this.map.interactables.filter((i) => !this.hidden.has(i.id)) };
     return this.interactMap;
@@ -1162,7 +1260,7 @@ export class GameEngine {
       return;
     }
     // Interactables win over people: the DJ stands right behind the booth.
-    const it = interactableAt(this.usable(), w);
+    const it = interactableAt(this.usable(w), w);
     if (it) {
       if (inUseRange(it, this.local.pos)) {
         this.trigger(it);
@@ -1312,6 +1410,7 @@ export class GameEngine {
       setKeyboard(this.local, dir);
     }
     const arrived = tickActor(this.moveMap, this.local, dt, now, false, this.localSpeed());
+    this.updateZone();                                                       // P2: the zone my feet are in
     if (this.sprinting()) this.sprintMs += dt * 1000;                                             // v21 (0077)
     this.updateSwim(now);
     if (arrived && this.pendingInteract) {
@@ -1325,13 +1424,15 @@ export class GameEngine {
     // its prompt object while it runs.
     // v18.1: …else, on the pond, a cast from the bank or the platform edge I stand on (the same cell keeps its prompt)
     let near = this.rodOut || this.swimming || locked ? null : promptTarget(this.usable(), this.local.pos, this.pack.liveRats, serverNow());
-    if (!near && !this.rodOut && !this.swimming && !locked && this.map.id === "pond") {
-      const bank = shoreInteractable(this.map, this.local.pos, this.local.facing);
+    if (!near && !this.rodOut && !this.swimming && !locked && this.here === "pond") {
+      const bank = this.worldMap
+        ? this.fromZoneIt(shoreInteractable(getMap("pond"), this.toZone(this.local.pos), this.local.facing))
+        : shoreInteractable(this.map, this.local.pos, this.local.facing);
       near = bank && this.prompt?.id === bank.id && this.prompt.face === bank.face ? this.prompt : bank;
     }
     // v22 (0086): …and on Sông Cái, a cast from wherever the boat floats
-    if (!near && !this.rodOut && !this.swimming && !locked && this.map.id === "song_cai") {
-      const river = riverInteractable(this.local.pos, this.local.facing);
+    if (!near && !this.rodOut && !this.swimming && !locked && this.here === "song_cai") {
+      const river = this.fromZoneIt(riverInteractable(this.toZone(this.local.pos), this.local.facing));
       near = river && this.prompt?.id === river.id && this.prompt.face === river.face ? this.prompt : river;
     }
     // the hammock's prompt: "Dậy" while I lie in it (always, wherever the nearest is), "Có người đang nằm" when taken

@@ -3,6 +3,13 @@
 import { useEffect, useImperativeHandle, useRef, useSyncExternalStore, type Ref } from "react";
 import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/diorama/flag";
 import { DioramaView } from "@/lib/game/diorama/view";
+import { WorldView } from "@/lib/game/diorama/world/view";
+import { ZoneChannels } from "@/lib/game/net/world-channels";
+import type { SceneArt } from "@/lib/game/maps/scene-art";
+import type { GameMap } from "@/lib/game/maps/types";
+import { aoiZones } from "@/lib/game/world/aoi";
+import { buildWorld, type WorldMap, type Zoned } from "@/lib/game/world/compose";
+import { isZone, toWorld, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 import { IS_PROD } from "@/lib/app-mode";
 import type { PlotDraw } from "@/lib/game/art/crops";
 import type { CardGame } from "@/lib/game/cards/deck";
@@ -138,6 +145,9 @@ export interface GameCanvasHandle {
   liftCandidate: () => { id: string; name: string } | null;
   /** v18.13: is member `id` within lift range of me (false with no world)? */
   nearForLift: (id: string) => boolean;
+  /** P2 world mode: where I stand in world px (the world minimap / city map), or null; and the zone my feet are in. */
+  worldPos: () => Vec | null;
+  zone: () => ZoneId | null;
 }
 
 export interface GameCanvasProps {
@@ -178,15 +188,71 @@ export interface GameCanvasProps {
   onLift?: (msg: LiftMessage) => void;
   /** v18.13: the engine ended my lift (the partner left, vanished or stopped agreeing). */
   onLiftLost?: () => void;
+  /** P2: the unified world (null/absent = the per-map game as before). While `mapId` is one of its zones the engine runs
+   *  on ONE world map (lib/game/world/compose.ts buildWorld of the unlocked zones) drawn by the 3D WorldView; walking
+   *  from zone to zone changes nothing here but `onZoneChange`. Interiors (the hầm, Mỏ đá, houses) stay per-map. */
+  world?: { unlocked: readonly ZoneId[] } | null;
+  /** P2: a real arrival (a portal out of an interior, a waypoint, the boat) — a new value moves me in the running world
+   *  (walking across zones does not change it). */
+  travelKey?: number;
+  /** P2: where I come out in the world when that is not a zone's own spot (Mỏ đá's tunnel → the mine mouth), world px. */
+  arriveWorld?: Spot | null;
+  /** P2 world mode: my feet crossed into another zone (or the wild). */
+  onZoneChange?: (zone: ZoneId) => void;
+  /** P2 world mode: the zones whose topics I listen to (mine first). */
+  onAoiChange?: (zones: ZoneId[]) => void;
+  /** P2: the world could not start (no WebGL): the shell goes back to the per-map game. */
+  onWorldFailed?: () => void;
+  /** Dev only (/dev/world-game): a local fake instead of the realtime channels, and 3D on every map with a diorama. */
+  joinChannel?: typeof joinGameChannel;
+  force3d?: boolean;
+}
+
+/** P2: the world maps built so far, by their unlocked zones (a level-up rebuilds; the grid is ~145 KB). */
+const WORLDS = new Map<string, WorldMap>();
+function worldFor(unlocked: readonly ZoneId[]): WorldMap {
+  const key = [...unlocked].sort().join(",");
+  let w = WORLDS.get(key);
+  if (!w) { w = buildWorld(unlocked); WORLDS.set(key, w); }
+  return w;
+}
+
+/** P2: the world has no 2D art (world mode is 3D only): an empty scene for the engine's 2D path. */
+function blankArt(): SceneArt {
+  const bg = document.createElement("canvas");
+  bg.width = bg.height = 1;
+  return { background: bg, props: [], edge: "#000", drawAnimated: () => {}, drawOverhead: () => {} };
+}
+
+/** P2: a world interactable as its zone's map has it (zone-local; the shell's handlers and the RPCs speak zone-local). */
+export function zoneLocalIt(it: Interactable, fallback: ZoneId): Interactable {
+  const { zone = fallback, ...rest } = it as Zoned<Interactable>;
+  const r = zoneRect(zone);
+  if (!r || zone === "wild") return rest;
+  return { ...rest, rect: { ...rest.rect, x: rest.rect.x - r.ox, y: rest.rect.y - r.oy }, use: { x: rest.use.x - r.ox, y: rest.use.y - r.oy } };
 }
 
 /** The game world: one engine + one broadcast channel per map visit. */
-export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...rest }: GameCanvasProps) {
+export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world, travelKey = 0, arriveWorld = null, joinChannel = joinGameChannel, force3d = false, ...rest }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // diorama prototype: the per-browser "Đồ hoạ 2D | 3D (thử)" setting swaps the renderer of the maps that have one
   const canvas3dRef = useRef<HTMLCanvasElement>(null);
   const gfx = useSyncExternalStore<GfxMode>(subscribeGfx, readGfx, () => "2d");
-  const use3d = usesDiorama(gfx, mapId);
+  // P2: in world mode every zone is one engine (the key ignores which zone); an interior keeps its own
+  const worldOn = !!world && isZone(mapId);
+  const worldKey = worldOn ? `world:${[...world!.unlocked].sort().join(",")}` : null;
+  const use3d = worldOn || usesDiorama(force3d ? "3d" : gfx, mapId);
+  // where the next engine starts / a real arrival moves me (world px in world mode), and the zones it opens (refs: the
+  // engine effect reads them; set by the effect below, which runs before it)
+  const startRef = useRef<Spot | null>(null);
+  const unlockedRef = useRef<readonly ZoneId[]>([]);
+  const unlocked = world?.unlocked;
+  useEffect(() => {
+    startRef.current = worldOn
+      ? arriveWorld ?? (() => { const s = arrive ?? getMap(mapId).spawn, w = toWorld(mapId, s)!; return { x: w.x, y: w.y, dir: s.dir }; })()
+      : arrive ?? getMap(mapId).spawn;
+    unlockedRef.current = unlocked ?? [];
+  }, [worldOn, arriveWorld, arrive, mapId, unlocked]);
   const engineRef = useRef<GameEngine | null>(null);
   // The map of the world that is up, set and cleared with its engine.
   const worldRef = useRef<MapId | null>(null);
@@ -208,7 +274,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   const weatherRef = useRef<RoomWeather | null>(null);
   const weatherFxRef = useRef<WeatherFx>(3);
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
-  const view3dRef = useRef<DioramaView | null>(null);                             // the diorama drawing this world
+  const view3dRef = useRef<{ setPlots(p: ReadonlyArray<PlotDraw>): void } | null>(null);   // the diorama (or P2 world view) drawing this world
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
   const housesRef = useRef<ReadonlyArray<HouseDraw>>([]);                           // v19.3
   const newsUnreadRef = useRef(false);
@@ -235,6 +301,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   });
 
   useImperativeHandle(ref, () => {
+    // P2 world mode: the shell and the RPCs speak zone-local; the engine world px (identity on a single map)
+    const fromZ = (p: Vec): Vec => engineRef.current?.fromZone(p) ?? p;
     const sendFs = (c?: [string, number]) => {
       const net = netRef.current;
       const msg: GameMessage = c
@@ -246,7 +314,11 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     };
     return {
       setRoster: (entries) => {
-        engineRef.current?.setRoster(entries);
+        // P2: the classic-view seats are the hall's (hall px) — in the world they are at the hall's offset
+        const e0 = engineRef.current;
+        engineRef.current?.setRoster(e0?.isWorld()
+          ? entries.map((e) => (e.spot ? { ...e, spot: { ...toWorld("hall", e.spot)!, dir: e.spot.dir } } : e))
+          : entries);
         // a member who appears on this map gets my state too, in case the budget dropped their `hello` (anti-cheat R34)
         const here = new Set(entries.map((e) => e.id).filter((id) => propsRef.current.isHere(id)));
         const known = hereRef.current;
@@ -306,7 +378,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         speciesRef.current = list;
         engineRef.current?.setSpecies(list);
       },
-      plant: (at, facing) => engineRef.current?.plant(at, facing),
+      plant: (at, facing) => engineRef.current?.plant(fromZ(at), facing),
       setFishing: (f) => {
         engineRef.current?.setLocalFishing(f);
         const code = phaseCode(f.phase);
@@ -329,12 +401,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         handRef.current = hand;
         sendFs([speciesId, weightG]);
       },
-      anglerNear: (p) => engineRef.current?.anglerNear(p) ?? false,
+      anglerNear: (p) => engineRef.current?.anglerNear(fromZ(p)) ?? false,
       overboard: () => engineRef.current?.overboard(),
       setNet: (inp, face) => {
         const e = engineRef.current;
         const prev = netRef.current;
-        if (inp && face) e?.faceTowards(face);                                         // turn first: offsets follow the facing
+        if (inp && face) e?.faceTowards(fromZ(face));                                         // turn first: offsets follow the facing
         const s = inp ? nextNet(prev, inp, e?.localFacing() ?? "down") : null;
         e?.setLocalNet(s);
         netRef.current = s;
@@ -357,7 +429,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       setHeatHandlers: (h) => {
         heatHandlersRef.current = h;
       },
-      puff: (at) => engineRef.current?.puff(at),
+      puff: (at) => engineRef.current?.puff(fromZ(at)),
       setPlots: (plots) => {
         plotsRef.current = plots;
         engineRef.current?.setPlots(plots);
@@ -393,7 +465,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         newsUnreadRef.current = unread;
         engineRef.current?.setNewsUnread(unread);
       },
-      mapId: () => worldRef.current,
+      mapId: () => {
+        const e = engineRef.current;
+        if (!e?.isWorld()) return worldRef.current;
+        const z = e.currentZone();
+        return isZone(z) ? z : null;                                              // the wild: no map to answer for
+      },
       setRats: (rats) => {
         ratsRef.current = rats;
         engineRef.current?.setRats(rats);
@@ -407,7 +484,14 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
         e.showFarmAnim(FARM_ANIM.pet);
         sendRef.current?.({ t: "fa", id: localId, a: FARM_ANIM.pet });
       },
-      localPos: () => engineRef.current?.localPos() ?? null,
+      localPos: () => {
+        const e = engineRef.current;
+        if (!e) return null;
+        if (!e.isWorld()) return e.localPos();
+        return isZone(e.currentZone()) ? e.toZone(e.localPos()) : null;         // P2: serverPos — zone-local
+      },
+      worldPos: () => (engineRef.current?.isWorld() ? engineRef.current.localPos() : null),
+      zone: () => (engineRef.current?.isWorld() ? engineRef.current.currentZone() : null),
       lastInputAt: () => inputAtRef.current,
       setZoom: (zoom: number) => {
         zoomRef.current = zoom;
@@ -427,14 +511,19 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const map = getMap(mapId);
+    // P2: the world (every zone at once, world px) or one map
+    const wmap = worldKey ? worldFor(unlockedRef.current) : null;
+    const map: GameMap = wmap ? (wmap as unknown as GameMap) : getMap(mapId);
     const init = propsRef.current.initial;
     // a new map starts with the rod in (the shell cancels any cast before travelling)
     phaseRef.current = 0;
     netRef.current = null;
     let engine: GameEngine;
+    // the broadcast: one channel (a map) or my zone + its neighbours (the world); `send` goes to mine
+    let channel: { send: (msg: GameMessage) => void; leave: (last?: GameMessage) => void };
+    let zones: ZoneChannels | null = null;
     try {
-      const art = paintMap(map);
+      const art = wmap ? blankArt() : paintMap(map);
       const fontVar = getComputedStyle(document.documentElement).getPropertyValue("--font-vt323").trim();
       engine = new GameEngine(canvas, map, art, {
         onLocalMove: (m) => {
@@ -445,8 +534,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
           channel.send({ t: "pa", id: localId, ...m });
           propsRef.current.onLocalMove?.();
         },
-        onInteract: (it) => propsRef.current.onInteract(it),
-        onPromptChange: (it) => propsRef.current.onPromptChange(it),
+        // P2: the shell and its RPCs get a zone's own interactable (zone-local), whatever the engine runs on
+        onInteract: (it) => propsRef.current.onInteract(wmap ? zoneLocalIt(it, engine.currentZone()) : it),
+        onPromptChange: (it) => propsRef.current.onPromptChange(wmap && it ? zoneLocalIt(it, engine.currentZone()) : it),
         onActorClick: (id) => propsRef.current.onActorClick(id),
         onFishingInput: (kind) => propsRef.current.onFishingInput(kind),
         onFirstFrame: () => propsRef.current.onFirstFrame(),
@@ -460,14 +550,26 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
           liftRef.current = null;
           propsRef.current.onLiftLost?.();
         },
+        onZoneChange: (z) => {
+          // P2: a new zone — listen around it, tell its topic where I am, ask the new neighbours for theirs
+          if (!zones) return;
+          const before = new Set(zones.zones());
+          const next = aoiZones(z, engine.localPos());
+          zones.setZones(next);
+          zones.send(engine.snapshot());
+          for (const n of next) if (!before.has(n) && n !== z) zones.send({ t: "hello", id: localId }, n);
+          propsRef.current.onAoiChange?.(next);
+          propsRef.current.onZoneChange?.(z);
+        },
       }, {
         localId,
         name: init.name,
         badges: init.badges,
         look: init.look,
-        start: arrive ?? map.spawn,
+        start: startRef.current ?? map.spawn,
         fontFamily: fontVar ? `${fontVar}, monospace` : "monospace",
         reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+        world: !!wmap,
       });
     } catch {
       propsRef.current.onUnsupported();
@@ -503,63 +605,87 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     hereRef.current = null;
     // what one sender may send (anti-cheat spec §14): the rest is dropped
     const budget = createBudget(GAME_LIMITS);
-    const channel = joinGameChannel(roomId, map, {
-      onMessage: (msg) => {
-        if (msg.id === localId) {
-          // Another tab of my account left the world and everyone just dropped my character: tell them where I am.
-          if (msg.t === "bye") channel.send(engine.snapshot());
-          // …or it changed a plot: this tab fetches the field again too
-          else if (msg.t === "fp") propsRef.current.onPlotChanged?.(msg.p);
-          else if (msg.t === "rg") propsRef.current.onRingHint?.(msg.r);                     // v20.3
-          return;
-        }
-        const p = propsRef.current;
-        if (!p.isMember(msg.id)) return;
-        // Presence arrives at least a second late: movement, a newcomer's `hello` and `fp` count before it does, the
-        // rest needs the sender on this map (anti-cheat R34)
-        const early = msg.t === "st" || msg.t === "mv" || msg.t === "pa" || msg.t === "hello" || msg.t === "fp";
-        if (!early && !p.isHere(msg.id)) return;
-        const kind = budgetKind(msg.t);
-        if (kind && !budget.take(msg.id, kind, performance.now())) return;
-        switch (msg.t) {
-          case "hello":
-            engine.noteHello(msg.id);
-            replies.onHello();
-            break;
-          case "lk":
-            propsRef.current.onLookChanged(msg.id);
-            break;
-          case "fp":
-            propsRef.current.onPlotChanged?.(msg.p);
-            break;
-          case "rg":                                                                          // v20.3
-            propsRef.current.onRingHint?.(msg.r);
-            break;
-          case "bye":
-            engine.removeActor(msg.id);
-            break;
-          case "rq":
-          case "ra":
-          case "rx":
-          case "lg":
-            // v18.13: a lift message addressed to me goes to the shell
-            if (msg.to === localId) propsRef.current.onLift?.(msg);
-            break;
-          default:
-            engine.applyMessage(msg);
-        }
-      },
-      onStatus: (connected) => {
-        propsRef.current.onConnectionChange(connected);
-        if (!connected) return;
-        // (Re)entering: ask for everyone's state and announce mine — after a reconnect I may have moved.
-        channel.send({ t: "hello", id: localId });
-        channel.send(engine.snapshot());
-      },
-    });
+    const onMessage = (msg: GameMessage) => {
+      if (msg.id === localId) {
+        // Another tab of my account left the world and everyone just dropped my character: tell them where I am.
+        if (msg.t === "bye") channel.send(engine.snapshot());
+        // …or it changed a plot: this tab fetches the field again too
+        else if (msg.t === "fp") propsRef.current.onPlotChanged?.(msg.p);
+        else if (msg.t === "rg") propsRef.current.onRingHint?.(msg.r);                     // v20.3
+        return;
+      }
+      const p = propsRef.current;
+      if (!p.isMember(msg.id)) return;
+      // Presence arrives at least a second late: movement, a newcomer's `hello` and `fp` count before it does, the
+      // rest needs the sender on this map (anti-cheat R34)
+      const early = msg.t === "st" || msg.t === "mv" || msg.t === "pa" || msg.t === "hello" || msg.t === "fp";
+      if (!early && !p.isHere(msg.id)) return;
+      const kind = budgetKind(msg.t);
+      if (kind && !budget.take(msg.id, kind, performance.now())) return;
+      switch (msg.t) {
+        case "hello":
+          engine.noteHello(msg.id);
+          replies.onHello();
+          break;
+        case "lk":
+          propsRef.current.onLookChanged(msg.id);
+          break;
+        case "fp":
+          propsRef.current.onPlotChanged?.(msg.p);
+          break;
+        case "rg":                                                                          // v20.3
+          propsRef.current.onRingHint?.(msg.r);
+          break;
+        case "bye":
+          engine.removeActor(msg.id);
+          break;
+        case "rq":
+        case "ra":
+        case "rx":
+        case "lg":
+          // v18.13: a lift message addressed to me goes to the shell
+          if (msg.to === localId) propsRef.current.onLift?.(msg);
+          break;
+        default:
+          engine.applyMessage(msg);
+      }
+    };
+    if (wmap) {
+      // P2: my zone's topic and its neighbours' (lib/game/world/aoi.ts); zone-local on the wire
+      const zc = new ZoneChannels(roomId, {
+        onMessage: (msg) => onMessage(msg),
+        onStatus: (z, connected) => {
+          if (z !== engine.currentZone()) {
+            if (connected) zc.send({ t: "hello", id: localId }, z);                     // a neighbour: who is there?
+            return;
+          }
+          propsRef.current.onConnectionChange(connected);
+          if (!connected) return;
+          zc.send({ t: "hello", id: localId });
+          zc.send(engine.snapshot());
+        },
+      }, joinChannel);
+      const first = aoiZones(engine.currentZone(), engine.localPos());
+      zc.setZones(first);
+      zones = zc;
+      channel = { send: (msg) => zc.send(msg), leave: (last) => zc.leave(last) };
+      propsRef.current.onAoiChange?.(first);
+      propsRef.current.onZoneChange?.(engine.currentZone());
+    } else {
+      channel = joinChannel(roomId, map, {
+        onMessage,
+        onStatus: (connected) => {
+          propsRef.current.onConnectionChange(connected);
+          if (!connected) return;
+          // (Re)entering: ask for everyone's state and announce mine — after a reconnect I may have moved.
+          channel.send({ t: "hello", id: localId });
+          channel.send(engine.snapshot());
+        },
+      });
+    }
 
     engineRef.current = engine;
-    worldRef.current = map.id;
+    worldRef.current = wmap ? null : map.id;
     sendRef.current = (msg) => channel.send(msg);
     // setRiding announces my state at once (onLocalMove → channel.send), so it waits until the channel exists: riding
     // through a portal rebuilds the engine with the vehicle still on
@@ -571,17 +697,24 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
     // a portal in the rain rebuilt the engine and crashed on `channel` here)
     if (shockedRef.current) engine.setHeat({ shocked: true, crampLeftMs: null });
     if (rainRef.current) engine.setRain(rainRef.current);
-    // diorama prototype: a 3D view draws this world (no WebGL: it stays 2D)
-    let view: DioramaView | null = null;
+    // diorama prototype: a 3D view draws this world (no WebGL: it stays 2D); P2: the world's own view, which must start
+    let view: (DioramaView | WorldView) | null = null;
     const c3 = canvas3dRef.current;
     if (use3d && c3) {
       try {
-        view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+        if (wmap) {
+          const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+          wv.setCameraMode("follow");
+          view = wv;
+        } else {
+          view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: !IS_PROD });
+        }
         engine.setView3D(view);
         view.setPlots(plotsRef.current);
         view3dRef.current = view;
       } catch {
         view = null;
+        if (wmap) propsRef.current.onWorldFailed?.();
       }
     }
     engine.start();
@@ -599,12 +732,25 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, ...res
       channel.leave({ t: "bye", id: localId });
       engine.destroy();
     };
-  }, [roomId, localId, mapId, arrive, use3d]);
+    // the world engine survives zone changes (worldKey); a map's is rebuilt per visit (mapId, arrive)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, localId, worldKey ?? mapId, worldKey ? null : arrive, use3d]);
+
+  // P2: a real arrival while the world runs (a waypoint, the boat, out of an interior onto it): move me there
+  const movedKey = useRef(travelKey);
+  useEffect(() => {
+    if (movedKey.current === travelKey) return;
+    movedKey.current = travelKey;
+    const e = engineRef.current;
+    if (e?.isWorld() && startRef.current) e.teleport(startRef.current);
+  }, [travelKey]);
 
   return (
     <>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label="Thế giới game" />
-      {use3d && <canvas ref={canvas3dRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label="Thế giới game (3D)" />}
+      {/* one canvas per 3D view: a disposed view loses its WebGL context for good (forceContextLoss), so the next
+          view (world ↔ an interior, map to map) gets a fresh element */}
+      {use3d && <canvas key={worldKey ?? `${mapId}:${arrive?.x ?? ""},${arrive?.y ?? ""}`} ref={canvas3dRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label="Thế giới game (3D)" />}
     </>
   );
 }

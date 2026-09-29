@@ -113,7 +113,7 @@ describe("chibi factory", () => {
     expect(tex(parts).magFilter).toBe(THREE.NearestFilter);
     for (const e of ["open", "blink", "happy"] as const) expect(parts.faces[e]).toBeTruthy();
     f.dispose();
-  });
+  }, 30_000);                                                                   // every look twice: slow under a full parallel run
 
   it("paints the look's own colours into the atlas", () => {
     const spec = chibiSpec({ ...BARE, top: "top_baba_yellow" });

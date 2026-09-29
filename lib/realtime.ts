@@ -1,5 +1,5 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import type { MapId } from "@/lib/game/maps/types";
+import type { PresenceMap } from "@/lib/presence-modes";
 import { supabase, type Room, type Member, type QueueItem } from "@/lib/supabase";
 import {
   aggregatePresenceModes, presenceDelay, PRESENCE_BUDGET, type PresenceDog, type PresenceEntry, type PresenceMeta, type PresenceMode,
@@ -50,12 +50,12 @@ export interface PresenceHandle {
   unsubscribe: () => void;
   setMode: (mode: PresenceMode) => void;
   /** The game map I walk on (v14). Published only while the mode is "game" (classic → map null). */
-  setMap: (map: MapId) => void;
+  setMap: (map: PresenceMap) => void;
   /** My dog (v17 §7.3), or null. Published only while the mode is "game" (classic → dog null). */
   setDog: (dog: PresenceDog | null) => void;
 }
 
-interface Published { mode: PresenceMode; map: MapId | null; dog: PresenceDog | null }
+interface Published { mode: PresenceMode; map: PresenceMap | null; dog: PresenceDog | null }
 
 const sameDog = (a: PresenceDog | null, b: PresenceDog | null) => a === b || (!!a && !!b && a.name === b.name && a.coat === b.coat);
 
@@ -65,12 +65,12 @@ const sameDog = (a: PresenceDog | null, b: PresenceDog | null) => a === b || (!!
  *  server already acknowledged is never re-sent, and failed tracks are retried. */
 export function trackPresence(
   roomId: string,
-  me: { memberId: string; name: string; mode: PresenceMode; map?: MapId; dog?: PresenceDog | null },
+  me: { memberId: string; name: string; mode: PresenceMode; map?: PresenceMap; dog?: PresenceDog | null },
   onChange: (entries: PresenceEntry[]) => void,
 ): PresenceHandle {
   const channel = supabase.channel(`presence:${roomId}`, { config: { presence: { key: me.memberId } } });
   let mode: PresenceMode = me.mode;          // what other members should see…
-  let map: MapId = me.map ?? "hall";
+  let map: PresenceMap = me.map ?? "hall";
   let dog: PresenceDog | null = me.dog ?? null;
   let published: Published | null = null;    // …and the last state the server acknowledged with 'ok'
   const wanted = (): Published => ({ mode, map: mode === "game" ? map : null, dog: mode === "game" ? dog : null });

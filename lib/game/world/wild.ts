@@ -58,6 +58,12 @@ export const WILD_INTERACTABLES: readonly Interactable[] = [
  *  portal led to Bãi đất) comes up at the mine mouth. */
 export const INTERIOR_EXITS: Readonly<Partial<Record<MapId, Spot>>> = { mo_da: MINE.exit };
 
+/** Where a travel from `from` to a zone `to` comes out in the world, when that is not the zone's own arrival spot (world
+ *  px; null: the arrival spot as it is). P2 world mode: out of Mỏ đá's tunnel onto the mine mouth. */
+export function worldArrival(from: MapId, to: MapId): Spot | null {
+  return to in ZONES ? INTERIOR_EXITS[from] ?? null : null;
+}
+
 /** An opening's corridor width, px. */
 export const OPENING_W = 24;
 
