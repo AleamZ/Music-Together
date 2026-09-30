@@ -1,7 +1,7 @@
 import type { MapId } from "@/lib/game/maps/types";
 
 // The per-browser graphics setting "Đồ hoạ: 2D | 3D (thử)". 2D by default; 3D only swaps the renderer of the maps that
-// have a diorama (the pond, the hall, Chợ Lớn, Khu nhà, the field, Bãi đất, Mỏ đá and Sông Cái). A view preference only: nothing is sent anywhere.
+// have a diorama (the pond, the hall, Chợ Lớn, Khu nhà, the field, Bãi đất, Mỏ đá, Sông Cái and the Hầm đấu ngầm). A view preference only: nothing is sent anywhere.
 
 export type GfxMode = "2d" | "3d";
 
@@ -9,7 +9,7 @@ export const GFX_KEY = "mt.gfx";
 const EVENT = "mt:gfx";
 
 /** The maps that have a diorama renderer. */
-export const DIORAMA_MAPS: ReadonlySet<MapId> = new Set<MapId>(["pond", "hall", "market", "khu_nha", "field", "bai_dat", "mo_da", "song_cai"]);
+export const DIORAMA_MAPS: ReadonlySet<MapId> = new Set<MapId>(["pond", "hall", "market", "khu_nha", "field", "bai_dat", "mo_da", "song_cai", "ham_ngam"]);
 
 /** A stored value → the mode (anything unknown is 2D). */
 export function parseGfx(raw: string | null | undefined): GfxMode {
