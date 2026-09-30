@@ -1,0 +1,46 @@
+# The VPS stack (deploy/README.md). `app` is the Next.js server on 127.0.0.1:3000 (never exposed directly); the domain
+# reaches it through ONE of:
+#   - profile "tunnel": Cloudflare Tunnel (cloudflared) — works behind a NAT VPS with no open 80/443, HTTPS by Cloudflare
+#   - profile "caddy":  Caddy on 80/443 with automatic Let's Encrypt (needs those two ports forwarded to the VPS)
+# Run from the repo root: docker compose -f deploy/docker-compose.yml --env-file .env --profile tunnel up -d --build
+name: music-together
+services:
+  app:
+    build:
+      context: ..
+      args:
+        GIT_COMMIT_SHA: ${GIT_COMMIT_SHA:-}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_APP_MODE: ${NEXT_PUBLIC_APP_MODE:-prod}
+    env_file: ../.env
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on: [app]
+    restart: unless-stopped
+
+  caddy:
+    profiles: ["caddy"]
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
