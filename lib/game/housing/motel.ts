@@ -1,12 +1,14 @@
-// v19.1 Nhà nghỉ + giấc ngủ: the rules of 0039_motel.sql (authoritative; the rest's stamina factor is 0105's) and its
-// RPCs. The client uses the rules only to show prices and to apply the walk buff of the state the server returned.
+// v19.1 Nhà nghỉ + giấc ngủ: the rules of 0039_motel.sql (authoritative; the prices and the rest's stamina factor are
+// 0105's, econ v2) and its RPCs. The client uses the rules only to show prices and to apply the walk buff of the state
+// the server returned.
 import { supabase } from "@/lib/supabase";
 
 export type MotelPlan = "night" | "month";
 
+/** econ v2 (0105): a night 300 (was 100), a month 6 000 (was 2 000) — still a third cheaper than 30 nights. */
 export const MOTEL_PLANS: ReadonlyArray<{ id: MotelPlan; name: string; price: number; hours: number }> = [
-  { id: "night", name: "Một đêm", price: 100, hours: 24 },
-  { id: "month", name: "Một tháng", price: 2000, hours: 30 * 24 },
+  { id: "night", name: "Một đêm", price: 300, hours: 24 },
+  { id: "month", name: "Một tháng", price: 6000, hours: 30 * 24 },
 ];
 /** Prepaid at most this far ahead. */
 export const MOTEL_MAX_AHEAD_DAYS = 60;

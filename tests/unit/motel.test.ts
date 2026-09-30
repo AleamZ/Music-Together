@@ -15,7 +15,8 @@ const PROF = readFileSync("supabase/migrations/0077_professions.sql", "utf8");
 describe("v19.1 motel rules mirror 0039", () => {
   it("prices, lengths, the cap and the buff", () => {
     const night = MOTEL_PLANS.find((p) => p.id === "night")!, month = MOTEL_PLANS.find((p) => p.id === "month")!;
-    expect(SQL).toContain(`when 'night' then ${night.price} when 'month' then ${month.price}`);
+    expect(SINKS).toContain(`when 'night' then ${night.price} when 'month' then ${month.price} end`);   // econ v2 (0105)
+    expect(SQL).toContain("when 'night' then 100 when 'month' then 2000 end");                          // v19.1's
     expect(SQL).toContain(`when 'night' then interval '${night.hours} hours' when 'month' then interval '${month.hours / 24} days'`);
     expect(SQL).toContain(`now() + interval '${MOTEL_MAX_AHEAD_DAYS} days'`);
     expect(SQL).toContain(`then ${REST_DRAIN} else 1 end`);

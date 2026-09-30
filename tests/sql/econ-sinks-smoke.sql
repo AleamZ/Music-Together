@@ -7,6 +7,7 @@
 --      the regen over a minute.
 --   3. S4 housing: the prices; the upkeep pays 1 500; giving a lot back pays 20 000, a repossession 10 000; the
 --      apartment rent is 2 000, buying 25 000, selling back 17 500; the helpers stay private.
+--   4. The motel: a night 300, a month 6 000 (a third cheaper than 30 nights), 60 days ahead at most.
 \set ON_ERROR_STOP on
 set time zone 'UTC';
 set client_min_messages = warning;
@@ -96,7 +97,7 @@ begin
   assert round(public._stamina_rate(x.a, false), 6) = round(base, 6), format('awake %s', public._stamina_rate(x.a, false));
   -- a motel night and a sleep
   j := public.motel_rent(x.t, 'night');
-  assert exists (select 1 from public.coin_ledger where account_id = x.a and reason = 'motel' and delta = -100), 'the night is 100';
+  assert exists (select 1 from public.coin_ledger where account_id = x.a and reason = 'motel' and delta = -300), 'the night is 300';
   j := public.motel_sleep(x.t);
   assert public._rest_factor(x.a) = 0.7, 'rested: the drain ×0.7 stays';
   assert round(public._stamina_rate(x.a, false), 6) = 0.2, format('rested ×1.2 %s', public._stamina_rate(x.a, false));
@@ -172,6 +173,30 @@ begin
   select no into v_no from public.apartments where owner_id = x.a2;
   assert v_no is null, 'moved out';
   raise notice 'housing ok';
+end $$;
+
+-- ---------- 4. The motel: 300 a night, 6 000 a month ----------
+do $$
+declare x esv; j jsonb;
+begin
+  select * into x from esv;
+  assert public._motel_price('night') = 300 and public._motel_price('month') = 6000 and public._motel_price('week') is null, 'motel prices';
+  assert public._motel_price('month') * 3 = public._motel_price('night') * 30 * 2, 'a month is a third cheaper than 30 nights';
+  assert not has_function_privilege('anon', 'public._motel_price(text)', 'execute'), 'helper stays private';
+  delete from public.motel_stays where account_id = x.a2;
+  perform public._wallet_lock(x.a2);
+  update public.wallets set coins = 5999 where account_id = x.a2;
+  assert pg_temp.fails(format('select public.motel_rent(%L, %L)', x.t2, 'month'), 'insufficient funds'), 'a month needs 6 000';
+  update public.wallets set coins = 20000 where account_id = x.a2;
+  j := public.motel_rent(x.t2, 'month');
+  assert (j->>'coins')::int = 14000 and j->'stay'->>'plan' = 'month', format('a month %s', j);
+  assert (select until between now() + interval '29 days 23 hours' and now() + interval '30 days 1 hour'
+            from public.motel_stays where account_id = x.a2), '30 days';
+  j := public.motel_rent(x.t2, 'month');
+  assert (j->>'coins')::int = 8000, format('a second month %s', j->>'coins');
+  assert pg_temp.fails(format('select public.motel_rent(%L, %L)', x.t2, 'night'), 'too far ahead'), '60 days ahead at most';
+  assert (select count(*) from public.coin_ledger where account_id = x.a2 and reason = 'motel' and delta = -6000) = 2, 'two month rows';
+  raise notice 'motel ok';
 end $$;
 
 select 'econ sinks smoke ok';

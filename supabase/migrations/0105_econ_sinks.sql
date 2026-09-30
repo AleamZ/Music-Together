@@ -1,8 +1,8 @@
 -- =========================================================
 -- 0105_econ_sinks.sql — Kinh tế v2, the sinks (spec docs/superpowers/specs/2026-09-30-economy-v2-design.md §8).
 -- ADDITIVE and re-runnable. Run after 0104 (it also applies right after 0100: 0101–0104 re-create none of its
--- functions). The re-created functions are copied verbatim from their newest bodies (0077, 0042, 0041) with only the
--- lines marked "econ v2" changed. The potion fees (S3) are 0103's.
+-- functions). The re-created functions are copied verbatim from their newest bodies (0077, 0042, 0041, 0039) with only
+-- the lines marked "econ v2" changed. The potion fees (S3) are 0103's.
 --   A. S1 meal_buffs (0077's rows): a buff is priced by what it earns. The fish dishes' rare-fish lift
 --      10 / 15 / 12 / 5 % → 4 / 6 / 5 / 2 % (cá kho tộ / canh chua / cá chiên / sinh tố); the stamina regen of
 --      phở / nước dừa / cà phê sữa / trà đá +50 / 40 / 30 / 20 % → +30 / 25 / 20 / 10 %. The durations, the strength and
@@ -17,6 +17,9 @@
 --      - the apartment rent 1 500 → 2 000 xu per 30 days.
 --      The land (40 000), a flat's price (25 000) and its buy-back (17 500) stay; so do the appraisals of 0043.
 --      Upkeep and rent already paid keep their days.
+--   D. The motel (_motel_price, 0039): a night 100 → 300, a month 2 000 → 6 000 (still a third cheaper than 30 nights).
+--      Even at ×1.2 a night's "Ngủ ngon" lifts the 200 casts/h stamina cap to 240 for a day, so it is priced by that
+--      value, as the buffs are. Stays already paid keep their days.
 -- =========================================================
 
 -- ---------- A. S1: the meal buffs ----------
@@ -78,7 +81,14 @@ create or replace function public._apt_price(p_what text) returns integer
 language sql immutable set search_path = public, extensions
 as $$ select case p_what when 'rent' then 2000 when 'buy' then 25000 when 'sell' then 17500 end $$;   -- econ v2: rent 1500 → 2000
 
+-- ---------- D. The motel ----------
+-- Price (xu) of a plan: a night 300, a month 6000 (null: no such plan).
+create or replace function public._motel_price(p_plan text) returns integer
+language sql immutable set search_path = public, extensions
+as $$ select case p_plan when 'night' then 300 when 'month' then 6000 end $$;   -- econ v2: night 100 → 300, month 2000 → 6000
+
 revoke all on function public._stamina_rate(uuid, boolean) from public, anon, authenticated;
 revoke all on function public._house_price(text) from public, anon, authenticated;
 revoke all on function public._house_sweep() from public, anon, authenticated;
 revoke all on function public._apt_price(text) from public, anon, authenticated;
+revoke all on function public._motel_price(text) from public, anon, authenticated;

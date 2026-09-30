@@ -9,7 +9,7 @@ import LotModal from "@/components/game/housing/LotModal";
 import ApartmentModal from "@/components/game/housing/ApartmentModal";
 import { APT_RENT, type AptList } from "@/lib/game/housing/apartment";
 import { LAND_PRICE, LAND_REFUND_SHARE, REPOSSESS_REFUND_SHARE, UPKEEP, type HouseList, type StreetLot } from "@/lib/game/housing/house";
-import { REST_EFFECT_TEXT, REST_STAMINA, type MotelState } from "@/lib/game/housing/motel";
+import { MOTEL_PLANS, REST_EFFECT_TEXT, REST_STAMINA, type MotelState } from "@/lib/game/housing/motel";
 import { MEAL_BUFFS } from "@/lib/game/professions/catalog";
 import { DEFAULT_LOOK } from "@/lib/game/look";
 
@@ -49,6 +49,11 @@ describe("0105: the migration", () => {
     expect(["pho_bo", "nuoc_dua", "cafe_sua", "tra_da"].map((m) => buff(m, "stamina_regen"))).toEqual([30, 25, 20, 10]);
     expect(REST_STAMINA).toBe(1.2);
     expect([UPKEEP, LAND_PRICE * LAND_REFUND_SHARE, LAND_PRICE * REPOSSESS_REFUND_SHARE, APT_RENT]).toEqual([1500, 20000, 10000, 2000]);
+    // the motel (the controller's addition to §8): a night 300, a month 6 000 — still a third cheaper than 30 nights
+    const night = MOTEL_PLANS.find((p) => p.id === "night")!, month = MOTEL_PLANS.find((p) => p.id === "month")!;
+    expect([night.price, month.price]).toEqual([300, 6000]);
+    expect(month.price * 3).toBe(night.price * (month.hours / night.hours) * 2);
+    expect(fn(SINKS, "_motel_price")).toContain(`when 'night' then ${night.price} when 'month' then ${month.price} end`);
   });
 });
 
@@ -62,6 +67,9 @@ describe("0105: the panels", () => {
     const text = screen.getByTestId("motel-rest").textContent ?? "";
     expect(text).toContain(REST_EFFECT_TEXT);
     expect(text).toContain("thể lực hồi nhanh hơn 20 %");
+    const plans = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+    expect(plans[0]).toContain("300 xu · 24 giờ");
+    expect(plans[1]).toContain("6.000 xu · 30 ngày (rẻ hơn ⅓)");
   });
 
   it("a lot: 1 500 upkeep, 20 000 back when given back, 10 000 when repossessed", () => {
