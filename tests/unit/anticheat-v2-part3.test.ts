@@ -54,13 +54,15 @@ describe("0064–0067: every re-created function is its newest body plus the mar
       expect(body(M(dst), sig)).toContain(`-- ${tag}`);
     });
   }
-  it("no later migration re-creates them again — but 0078, verbatim but for its marked lines", () => {
+  it("no later migration re-creates them again — but 0078 and 0101, verbatim but for their marked lines", () => {
+    // v21 fixes: the catch flag (mt.catch); econ v2 fishing: the battle's room (mt.catch_room) and the net haul's effort
+    const tags: Record<string, string[]> = { "0078_v21_fixes.sql": ["0078"], "0101_econ_fishing.sql": ["econ v2", "0078"] };
     const later = readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0067");
     for (const f of later) {
       for (const [sig, , dst] of cases) {
         if (!read(`supabase/migrations/${f}`).includes(`function public.${sig.slice(0, sig.indexOf("("))}(`)) continue;
-        expect(f, sig).toBe("0078_v21_fixes.sql");                                   // v21 fixes: the catch flag (mt.catch)
-        expect(unmarked(body(M(f.slice(0, -4)), sig), "0078")).toBe(body(M(dst), sig));
+        expect(Object.keys(tags), `${sig} in ${f}`).toContain(f);
+        expect(tags[f].reduce((b, tag) => unmarked(b, tag), body(M(f.slice(0, -4)), sig))).toBe(body(M(dst), sig));
       }
     }
   });

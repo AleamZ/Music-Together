@@ -101,8 +101,23 @@ describe("RPC wrappers", () => {
     }, error: null });
     expect(await fetchFishingBoard("room", "tok")).toEqual({
       records: [{ speciesId: "ca_tra", username: "Dat", weightG: 5000 }], mine: [{ speciesId: "ca_ro", weightG: 200 }],
-      richest: [{ username: "Dat", coins: 900 }], myRank: 2, myCoins: 30, prices: null,
+      richest: [{ username: "Dat", coins: 900 }], myRank: 2, myCoins: 30, prices: null, npc: null,
     });
+  });
+  it("econ v2 (0101): the board's thương lái day; a sale's pay, cut and day", async () => {
+    h.rpc.mockResolvedValue({ data: {
+      records: [], mine: [], richest: [], my_rank: 1, my_coins: 0, npc: { gross: 1200, full: 20000, half: 40000, tail_pct: 20 },
+    }, error: null });
+    expect((await fetchFishingBoard("room", "tok")).npc).toEqual({ gross: 1200, full: 20000, half: 40000, tailPct: 20 });
+    h.rpc.mockResolvedValue({ data: {
+      sold: 3, earned: 25000, npc_cut: 5000, npc: { gross: 30000, full: 20000, half: 40000, tail_pct: 20 }, state: STATE,
+    }, error: null });
+    expect(await sellFish("tok", ["a", "b", "c"], true)).toMatchObject({
+      sold: 3, earned: 25000, npcCut: 5000, npc: { gross: 30000, full: 20000, half: 40000, tailPct: 20 },
+    });
+    expect(h.rpc).toHaveBeenLastCalledWith("sell_fish_market", { p_session_token: "tok", p_fish_ids: ["a", "b", "c"] });
+    h.rpc.mockResolvedValue({ data: { sold: 1, earned: 7, state: STATE }, error: null });            // a server before econ v2
+    expect(await sellFish("tok", ["a"])).toMatchObject({ sold: 1, earned: 7, npcCut: 0, npc: null });
   });
   it("maps the board's fish prices", async () => {
     h.rpc.mockResolvedValue({ data: {

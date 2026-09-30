@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnticheatError, reportLock, reportNoLock } from "@/lib/anticheat";
 import { syncClock } from "@/lib/game/farm/clock";
+import type { NpcQuota } from "@/lib/game/economy/npc";
 import type { FishingCatalog } from "@/lib/game/fishing/catalog";
 import {
   buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, finishCast, finishNet, fishingErrorMessage, hookCast, netHaul, releaseFish,
@@ -25,8 +26,14 @@ export interface FishingData {
   dig: () => Promise<{ gained: number } | null>;
   buy: (itemId: string, qty: number) => Promise<boolean>;
   equip: (loadout: Loadout) => Promise<boolean>;
-  /** `market` (v18.5): sold at Vựa cá Chợ Lớn, +20%. */
-  sell: (ids: string[], market?: boolean) => Promise<{ sold: number; earned: number } | null>;
+  /** `market` (v18.5): sold at Vựa cá Chợ Lớn, +10% (econ v2). `npcCut` (0101): what the thương lái kept back. */
+  sell: (ids: string[], market?: boolean) => Promise<{ sold: number; earned: number; npcCut: number } | null>;
+  /** econ v2 (0101): the thương lái's day as the last sale (or learnNpc) told it; null until then. */
+  npc: NpcQuota | null;
+  /** econ v2: the last sale's pay and cut (a new object per sale), for the depot's note; null until then. */
+  lastSale: { earned: number; cut: number } | null;
+  /** econ v2: the thương lái's day from elsewhere (the records board) — the depot asks when it opens without one. */
+  learnNpc: (q: NpcQuota | null) => void;
   release: (id: string) => Promise<boolean>;
   /** `cell` (v18.1): the pond cell the cast starts from. */
   startCast: (roomId: string, cell?: { col: number; row: number }) => Promise<StartCast | null>;
@@ -59,6 +66,8 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
   const [state, setState] = useState<FishingState | null>(null);
   const [failed, setFailed] = useState(false);
   const [catalog, setCatalog] = useState<FishingCatalog | null>(null);
+  const [npc, setNpc] = useState<NpcQuota | null>(null);                                  // econ v2 (0101)
+  const [lastSale, setLastSale] = useState<{ earned: number; cut: number } | null>(null);
   const onErrorRef = useRef(onError);
   useEffect(() => {
     onErrorRef.current = onError;
@@ -128,7 +137,8 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
   }, [apply, reload]);
 
   return {
-    state, failed, catalog, reload,
+    state, failed, catalog, reload, npc, lastSale,
+    learnNpc: useCallback((q: NpcQuota | null) => { if (q) setNpc(q); }, []),
     claimDaily: useCallback(async () => {
       const r = await act(() => claimDaily(token), (x) => x.state);
       return r && { claimed: r.claimed, amount: r.amount };
@@ -141,7 +151,11 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     equip: useCallback(async (l: Loadout) => (await act(() => setLoadout(token, l), (s) => s)) !== null, [act, token]),
     sell: useCallback(async (ids: string[], market = false) => {
       const r = await act(() => sellFish(token, ids, market), (x) => x.state);
-      return r && { sold: r.sold, earned: r.earned };
+      if (r) {                                                                            // econ v2 (0101): the thương lái
+        if (r.npc) setNpc(r.npc);
+        setLastSale({ earned: r.earned, cut: r.npcCut });
+      }
+      return r && { sold: r.sold, earned: r.earned, npcCut: r.npcCut };
     }, [act, token]),
     release: useCallback(async (id: string) => (await act(() => releaseFish(token, id), (s) => s)) !== null, [act, token]),
     startCast: useCallback((roomId: string, cell?: { col: number; row: number }) => act(() => startCast(roomId, token, cell), (x) => x.state), [act, token]),

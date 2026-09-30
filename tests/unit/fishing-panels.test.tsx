@@ -89,6 +89,29 @@ describe("DepotPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Bán hết (2 con · 84 xu)" }));
     expect(onSell).toHaveBeenLastCalledWith(["f1", "f2"]);
   });
+  it("econ v2 (0101): the thương lái's day, what it pays for everything now, and a sale's cut", () => {
+    const onNeedNpc = vi.fn();
+    const { rerender } = render(<DepotPanel state={STATE} catalog={CATALOG} busy={false} onSell={() => {}} onClose={() => {}} onNeedNpc={onNeedNpc} />);
+    expect(onNeedNpc).toHaveBeenCalledTimes(1);                                           // opened without the day: ask once
+    expect(screen.getByRole("button", { name: "Bán hết (2 con · 77 xu)" })).toBeInTheDocument();
+    // 19 970 sold today: 30 xu at full price, 47 at half → 53
+    const npc = { gross: 19970, full: 20000, half: 40000, tailPct: 20 };
+    rerender(<DepotPanel state={STATE} catalog={CATALOG} busy={false} onSell={() => {}} onClose={() => {}} onNeedNpc={onNeedNpc} npc={npc} />);
+    expect(screen.getByText("Thương lái hôm nay: đã mua 19.970 / 20.000 xu đủ giá")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bán hết (2 con · 53 xu)" })).toBeInTheDocument();
+    expect(screen.queryByText(/bớt/)).toBeNull();
+    // a sale while it is open: its cut shows
+    rerender(<DepotPanel state={STATE} catalog={CATALOG} busy={false} onSell={() => {}} onClose={() => {}} onNeedNpc={onNeedNpc}
+      npc={{ ...npc, gross: 20047 }} lastSale={{ earned: 53, cut: 24 }} />);
+    expect(screen.getByText("Thương lái đã mua nhiều hôm nay nên bớt 24 xu.")).toBeInTheDocument();
+    expect(screen.getByText("Thương lái hôm nay đã mua 20.047 xu hàng: giờ chỉ trả 50% giá")).toBeInTheDocument();
+    expect(onNeedNpc).toHaveBeenCalledTimes(1);
+  });
+  it("econ v2: a sale made before the panel opened is old news", () => {
+    render(<DepotPanel state={STATE} catalog={CATALOG} busy={false} onSell={() => {}} onClose={() => {}}
+      npc={{ gross: 30000, full: 20000, half: 40000, tailPct: 20 }} lastSale={{ earned: 10, cut: 10 }} />);
+    expect(screen.queryByText(/bớt/)).toBeNull();
+  });
 });
 
 describe("ShopPanel", () => {
@@ -114,7 +137,7 @@ describe("RecordsPanel", () => {
   const BOARD: FishingBoard = {
     records: [{ speciesId: "ca_loc", username: "Dat", weightG: 2400 }], mine: [{ speciesId: "ca_ro", weightG: 210 }],
     richest: [{ username: "Dat", coins: 900 }, { username: "An", coins: 120 }], myRank: 2, myCoins: 120,
-    prices: { mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12, ca_loc: 0.93 } },
+    prices: { mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12, ca_loc: 0.93 } }, npc: null,
   };
   it("shows the room records next to mine, and the richest members", async () => {
     render(<RecordsPanel catalog={CATALOG} load={async () => BOARD} onClose={() => {}} />);
@@ -141,6 +164,12 @@ describe("RecordsPanel", () => {
     expect(within(loc).getByText("60 xu/kg")).toBeInTheDocument();
     expect(within(loc).getByText("125 xu/kg ▼")).toBeInTheDocument();
     expect(screen.getByText("Giá chốt lúc câu được cá; bán sau vẫn giữ giá đó.")).toBeInTheDocument();
+    expect(screen.queryByText(/Thương lái/)).toBeNull();                                  // a board without the day
+  });
+  it("econ v2 (0101): the Giá cá tab shows the thương lái's day", async () => {
+    render(<RecordsPanel catalog={CATALOG} load={async () => ({ ...BOARD, npc: { gross: 1200, full: 20000, half: 40000, tailPct: 20 } })} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
+    expect(await screen.findByText("Thương lái hôm nay: đã mua 1.200 / 20.000 xu đủ giá")).toBeInTheDocument();
   });
   it("says so when the server sends no fish prices", async () => {
     render(<RecordsPanel catalog={CATALOG} load={async () => ({ ...BOARD, prices: null })} onClose={() => {}} />);

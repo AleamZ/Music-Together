@@ -1,5 +1,6 @@
 import { AnticheatError, lockSeconds, lockText, parseAnticheat, screenAnswer, type AnticheatInfo } from "@/lib/anticheat";
 import { supabase } from "@/lib/supabase";
+import { parseNpcQuota, type NpcQuota } from "@/lib/game/economy/npc";
 import { positionErrorText } from "@/lib/game/position";
 import { publishVitals, vitalsErrorMessage } from "@/lib/game/vitals-rpc";
 import { STORM_TEXT } from "@/lib/game/weather/rpc";
@@ -149,7 +150,7 @@ export async function finishNet(token: string, throwId: string, p: NetPull): Pro
   }
   if (r.why === "overboard") {
     const o = (r.overboard && typeof r.overboard === "object" ? r.overboard : {}) as Record<string, unknown>;
-    return { result: "lost", why: "overboard", state, overboard: { rod: "", rodLost: false, hunger: Number(o.hunger ?? 10) }, anticheat: null };
+    return { result: "lost", why: "overboard", state, overboard: { rod: "", rodLost: false, hunger: Number(o.hunger ?? 5) }, anticheat: null };   // econ v2: 5
   }
   return { result: "lost", why: netWhy(r.why), state, anticheat: parseAnticheat(r) };
 }
@@ -261,15 +262,23 @@ export async function finishCast(token: string, castId: string, success: boolean
   const lost: FinishCast = { result: "lost", why, state, anticheat: parseAnticheat(r), ...(rodBroke ? { rodBroke } : {}) };
   if (why === "overboard") {
     const o = (r.overboard && typeof r.overboard === "object" ? r.overboard : {}) as Record<string, unknown>;
-    lost.overboard = { rod: String(o.rod ?? "rod_wood"), rodLost: o.rod_lost === true, hunger: Number(o.hunger ?? 10) };
+    lost.overboard = { rod: String(o.rod ?? "rod_wood"), rodLost: o.rod_lost === true, hunger: Number(o.hunger ?? 5) };   // econ v2: 5
   }
   return lost;
 }
 
-/** Sells fish to cô Ba at the pond, or (`market`, v18.5) to Vựa cá Chợ Lớn, which pays +10% (econ v2). */
-export async function sellFish(token: string, ids: string[], market = false): Promise<{ sold: number; earned: number; state: FishingState }> {
+/** What a sale answered: the fish sold, the xu paid, and (econ v2, 0101) the xu the thương lái kept back and its day after
+ *  the sale (null from a server before econ v2). */
+export interface FishSale { sold: number; earned: number; npcCut: number; npc: NpcQuota | null; state: FishingState }
+
+/** Sells fish to cô Ba at the pond, or (`market`, v18.5) to Vựa cá Chợ Lớn, which pays +10% (econ v2). Both pay through the
+ *  thương lái (0101): the day's first npc_full xu of fish at full price, then less. */
+export async function sellFish(token: string, ids: string[], market = false): Promise<FishSale> {
   const r = await call(market ? "sell_fish_market" : "sell_fish", { p_session_token: token, p_fish_ids: ids });
-  return { sold: Number(r.sold ?? 0), earned: Number(r.earned ?? 0), state: stateOf(r.state) };
+  return {
+    sold: Number(r.sold ?? 0), earned: Number(r.earned ?? 0), npcCut: Math.max(0, Number(r.npc_cut ?? 0) || 0), npc: parseNpcQuota(r.npc),
+    state: stateOf(r.state),
+  };
 }
 
 export async function releaseFish(token: string, id: string): Promise<FishingState> {
@@ -284,6 +293,8 @@ export interface FishingBoard {
   myCoins: number;
   /** The room's fish price index (economy spec §5); null from a server without it. */
   prices: FishPrices | null;
+  /** econ v2 (0101): my thương lái day (the "Giá cá" tab's line); null from a server before it. */
+  npc: NpcQuota | null;
 }
 
 export async function fetchFishingBoard(roomId: string, token: string): Promise<FishingBoard> {
@@ -296,6 +307,7 @@ export async function fetchFishingBoard(roomId: string, token: string): Promise<
     myRank: Number(r.my_rank ?? 1),
     myCoins: Number(r.my_coins ?? 0),
     prices: parseFishPrices(r.prices),
+    npc: parseNpcQuota(r.npc),
   };
 }
 

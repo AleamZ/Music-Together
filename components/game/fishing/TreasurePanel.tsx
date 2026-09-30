@@ -1,7 +1,7 @@
 "use client";
 
 import { ParchmentModal } from "@/components/game/Parchment";
-import { hintRect, MAP_NAMES, MAP_SIZES, type ExtrasState, type TreasureMap } from "@/lib/game/fishing/extras";
+import { hintRect, MAP_NAMES, MAP_SIZES, TREASURE_PER_DAY, type ExtrasState, type TreasureMap } from "@/lib/game/fishing/extras";
 
 const SOURCE: Record<TreasureMap["source"], string> = { fishing: "câu được", boat: "câu trên sông", dig: "đào trùn được" };
 
@@ -43,7 +43,8 @@ function HintImage({ m }: { m: TreasureMap }) {
 }
 
 /** v21 (0076) 🗺️ Bản đồ kho báu: each map shows its place, a landmark and the quarter it points to; "Đào ở đây" digs
- *  where I stand (the server checks the spot and my position; a miss says hot, warm or cold). */
+ *  where I stand (the server checks the spot and my position; a miss says hot, warm or cold). Econ v2 (0101): at most
+ *  TREASURE_PER_DAY chests a day — the panel says so. */
 export default function TreasurePanel({ state, mapId, busy, notes, onDig, onClose }: {
   state: ExtrasState | null;
   /** The map I am on (null: none shown). */
@@ -78,6 +79,12 @@ export default function TreasurePanel({ state, mapId, busy, notes, onDig, onClos
               );
             })}
           </ul>
+        )}
+        {state && (
+          <p className="text-base opacity-80">
+            Mỗi ngày tìm được tối đa {TREASURE_PER_DAY} kho báu; đủ {TREASURE_PER_DAY} rồi thì hôm đó không nhặt thêm bản đồ, bản đồ
+            đang có để mai đào tiếp.
+          </p>
         )}
       </div>
     </ParchmentModal>
