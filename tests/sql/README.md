@@ -103,3 +103,48 @@ ledger reasons, shop kinds or function overloads predate later rows and migratio
 - `forest-professions-smoke.sql` (0096: the rừng tràm grid `world_forest` = `lib/game/world/forest-grid.data.ts`; wild animals only on core forest cells (`_wild_cap` 0 on the zone maps), `wild_start` / `wild_finish` refuse 'not in forest'; Thợ săn and Tiều phu with their nodes; the starter tool once per account per nghề (`profession_choose`, the backfill); chopping — `_chop_hits` / `_cook_score` / `_tree_of` = `-v forest=…/forest-cases.json`, the honest live client on mg_sync, the peek (hard `chop_bad_input`), `chop_too_fast`, `chop_timing`, felling, the 40-log day, logs and axes at the stall; cooking — Đầu bếp only, the ingredients and fee at the start, the honest cook, the peek (`cook_bad_input`), eating and selling; the wipe): chain-level, re-runs 0096 twice with `\i`; run after the full chain — and **re-apply 0096 after any smoke that re-runs 0075 / 0077 / 0078 / 0083 / 0087** (they put the older `_wild_cap` / `_wild_fill` / `wild_start` / `wild_finish` / `profession_choose` / `_prof_json` / `_mg_events` back). `v21-professions-smoke.sql` counts 0077's eight nghề among the catalog (0096 adds two).
 - `forest-complete-smoke.sql` (0097: Rừng tràm, the 2D map that is a window of the world's forest — `_pos_maps` / `_pos_portals` / `_world_portals`, `_forest_xy`, the window's animals in the map's px; a 2D hunt (the bow wears) and a 2D chop in it; forest-content's six animals (three photo only), meats, ten dishes (the pan, the catch's fish by species, the buffs replaced, × the quality's %), the bow / pot / axe tiers; `tool_repair` by the point; Thợ săn xp for hunters only): chain-level, re-runs 0097 twice with `\i`; run after the full chain. `forest-professions-smoke.sql` drops `_cook_recipes` and `_prof_tools_catalog` before re-running 0096 (0097 re-made them with more columns) and `v21-professions-smoke.sql` deletes 0097's dish buffs before re-running 0077 — **re-apply 0096 (after dropping those two functions) and then 0097 after either**, and after any smoke that re-runs 0072 / 0075 / 0077 / 0078 / 0083 / 0087 / 0088.
 - `public-rooms-smoke.sql` (0093: three public halls `salon-592539` Sảnh Chính / `salon-cho-dem` Sảnh Chợ Đêm / `salon-song-que` Sảnh Sông Quê joined without a password; `create_room` refused but for root while `app_flags.room_creation_open` is off; older rooms kept but closed ('room closed') to all but their admin and root, in `join_room` and `_auth`; the first root in an ownerless hall becomes its admin): chain-level, re-runs 0093 twice with `\i`, rolls back its rows. **From 0093 on, the other smokes create rooms as ordinary accounts and have members join them: run them with the flag on** (`update public.app_flags set enabled = true where key = 'room_creation_open'` right after applying 0093 — on, the pre-0093 rules apply whole); this smoke switches it off inside its own transaction.
+
+## Economy v2 (0099–0106)
+
+Spec: `docs/superpowers/specs/2026-09-30-economy-v2-design.md`. These migrations re-create bodies from many earlier
+ones (0013 … 0098), so **re-apply 0099 … 0106 in order after any smoke that `\i`s an older migration** (the v21/v22 group
+smokes, `forest-*`, `anticheat-v2-*`, `faint-ladder`, `fishing-hunger`, `v18-*`, `v19-*`, `v20-rerun` …). Each econ
+smoke re-runs its own migration with `\i` (0101 and 0106 twice) and is re-runnable; all of them need
+`app_flags.room_creation_open` on (they turn it on and restore it, or expect it on — see 0093 above). They pass on the
+full chain in any order, except as noted.
+
+- `econ-core-smoke.sql` (0099 + 0100: the knobs and `admin_econ_set` (root, range, the fish snapshots re-priced at once);
+  the fish multiplier = the knob, not the room's wealth; the thương lái's 100 / 50 / 20 % marks, the day's totals and
+  `_npc_quota`; Chợ Lớn ×1.10; no `market_sell_pct` payout and the 1 500 xu perk day; `admin_economy`): chain-level; it
+  deletes its accounts and room at the end.
+- `econ-fishing-smoke.sql` (0101: the 23 species' prices and the lighter deep weights; the river bump 0.05 / 0.10; the
+  boat at 25 000 and the level gate on the wild river; one rarity lift ≤ 20 % rolled before the reel's difficulty; the
+  per-cast / net / overboard hunger and thirst; treasure drops, loot and 3 finds a day; `sell_fish` / `sell_fish_market`
+  through the thương lái; fishing battles scored in their own room; `-v fixtures=…/reel-cases.json`): chain-level. With
+  0101, `anticheat-v2-reel-hook-smoke.sql` expects the new overboard hunger (5).
+- `econ-farm-smoke.sql` (0102: plot caps across rooms (2 farmed + 1 private; over-cap accounts keep theirs); the
+  processor at 50 000, recipes ≈ 1.15×, the sort bonus +1 / +2 %; land sales and offers in 400 000–2 400 000 and
+  subleases ≤ 50 000, the seller / owner paid (100 − `p2p_fee_pct`) %; `crop_harvest` events; crabs, snails and rats
+  through the thương lái): chain-level. `v22-crafting-smoke.sql` and `v22-fixes-smoke.sql` now read the recipe value and
+  `_sort_bonus` instead of pinning 0076 / 0084's numbers.
+- `econ-crafts-smoke.sql` (0103: dish prices, quality 20 / 100 / 110 / 125 %, 2 stamina to cook, half back when eaten;
+  ores ÷ 4 and 200 digs a day; logs ÷ 3, 30 full-price logs and 150 a day; 40 kills and the +10 % night market; herbs
+  cost 1 stamina; the upgrade coin floor; `item_crafted` events; potion fees; switch 2 000 / reset 1 000; every sale
+  through the thương lái): chain-level. `forest-complete-smoke.sql` reads `_cook_pct(3)` and `v22-crafting-smoke.sql`
+  reads the fee from `potion_recipes`.
+- `econ-rewards-smoke.sql` (0104: raid pool 1 200 and 2 paid raid / weather-boss kills a day, the summon cooldown per
+  member; the dungeon's 50 + 250 × n × share, fee 100, 3 paid clears; level rewards 20·L / 60·L and the 1 500 grant cap;
+  the three smaller achievements and staked-only fight wins; the company pool of 3 000 by contribution; the squirrel's
+  150 a day while moving; pet / fish PvE 5 paid wins at × 0.6, PvP 5 %; "earned by work" without rewards and resales;
+  teleport / xe ôm 50; the farm dailies): chain-level.
+- `econ-sinks-smoke.sql` (0105: meal buffs; "Ngủ ngon" stamina × 1.2; lot upkeep 1 500 and the 10 000 repossession
+  refund (a sale still 20 000); apartment rent 2 000; motel 300 / 6 000): chain-level.
+- `econ-p2p-smoke.sql` (0106: Xì dách never goes below the escrow — the 8-seat, 3-bust hand sums to 0, no wallet < 0,
+  `_xd_cap` = `-v cap=…/xidach-cap-cases.json`; a debit below 0 refused even with `mt.allow_debt`; trades burn
+  `p2p_fee_pct` of the xu leg, receivers ≥ 3 days old and level ≥ 5, `trade_daily_in` a day; the trader perk as a fee
+  cut to ≥ 2 %; fashion gifts to roommates, 5 a day; stalls 500 a day): chain-level. Re-apply 0106 after
+  `v21-economy-smoke.sql` (it puts 0073's bodies back).
+
+Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" check is timing-sensitive under heavy load
+(`battle_press_too_fast`), and `unified-world-smoke.sql` / `dual-mode-smoke.sql` count `app_flags` rows without the
+`room_creation_open` flag that 0093 added.

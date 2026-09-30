@@ -138,12 +138,14 @@ The river is worth ≈ 1.5× the pond with the same gear. Treasure adds ≈ 10 %
 | F3 | Boat price; the wild river needs level 3 (`song_cai` unlocked), like Sông Cái | 4 000 → **25 000** |
 | F4 | Treasure map drops: pond or net catch / deep catch / worm dig | 2 / 5 / 3 % → **1 / 2 / 0.5 %** |
 | F4 | Treasure loot | 400–2 500, 5 % × 8 000 → **150–800 (clean ×1.1, ≤ 800), 2 % × 3 000** |
-| F4 | Maps found per account per VN day | unlimited → **3** (no drop after that) |
-| F5 | Rarity lifts (luck, perk, meal) change the fish after the reel difficulty is set | the lifted fish takes its own difficulty; at most one lift per cast, ≤ 20 % combined |
+| F4 | Maps found per account per VN day | unlimited → **3** (no drop after the 3rd find; a 4th dig is refused) |
+| F5 | Rarity lifts (luck, perk, meal) change the fish after the reel difficulty is set | one lift per cast (≤ 20 % combined), rolled in the start functions (`_cast_lift`) **before** the reel's difficulty and minimum time are set; the insert triggers no longer lift; pond casts pick a pond species directly |
 | F6 | Hunger / thirst per cast | 1.8 / 2.2 → **0.35 / 0.45** |
 | F6 | Hunger / thirst per net haul | 3 / 3.5 → **0.6 / 0.7** |
 | F6 | Overboard hunger | 10 → **5** |
 | F7 | `sell_fish`, `sell_fish_market` pay through the thương lái (§3.2); the depot panel shows the day's line and the cut | — |
+| F8 | Bait and nets, so better gear is never a loss after the price cut | shrimp / bloodworm / gold 5 / 12 / 25 → **1 / 3 / 6**; nets 250 / 600 → **50 / 120** |
+| F9 | Fishing battles | score only catches made in the battle's room |
 
 - **Food.** At the cheapest restaurant mix a cast now costs ≈ 3 xu of food, ≈ 33 % of a starter's income per cast
   (was ≈ 15 xu, 47–95 %) and ≈ 10 % for top gear. Potions (level 5+) make it cheaper still.
@@ -176,7 +178,7 @@ Target: a mid-tier tool earns ≈ 2 000–3 000/h, the best ≈ 4 500/h. Craftin
 | # | Change | From → to |
 |---|---|---|
 | K1 | Cooking: fee-only dishes (cơm tấm sườn, gỏi, bông súng) | a profit loop → sell for ≈ 0.8× their fee; they are for buffs and stamina |
-| K1 | Cooking: ingredient dishes | ×2–×11 → value ≈ fee + 1.3 × the ingredients' NPC value + 20 |
+| K1 | Cooking: ingredient dishes | ×2–×11 → value ≈ fee + 1.3 × the ingredients' NPC value (at 0101's fish prices) + 20 |
 | K1 | Cooking: quality | 20 / 100 / 125 / 150 % → **20 / 100 / 110 / 125 %** |
 | K1 | Cooking: stamina and sales | 0 stamina → **2 stamina** per cook; `cook_eat` restores half; `cook_sell` pays through the thương lái |
 | K2 | Mining: ore prices | ÷ **4** (đá 1 … tinh thể 500) |
@@ -192,7 +194,9 @@ Target: a mid-tier tool earns ≈ 2 000–3 000/h, the best ≈ 4 500/h. Craftin
 | K6 | Upgrade coin floor | 50 → **200 × (level + 1)** (a starter rod or stone pick no longer upgrades for pocket change) |
 | K7 | Emit `item_crafted` from brewing, upgrading and cooking | this unblocks quest n_nghe_3 |
 | K8 | Profession switch / skill reset | 500 / 300 → **2 000 / 1 000** |
-| K9 | Hunger / thirst per dig and per chop | ÷ 3, like fishing |
+| K9 | Hunger / thirst per dig | ÷ 3, like fishing (chopping never cost hunger or thirst) |
+| S3 | Potion fees (moved here from §8): pot_hunger / pot_thirst / pot_canh | 10 / 10 / 20 → **60 / 25 / 120** (self-brewed food ≈ 25–50 % of the restaurant per point) |
+| S3 | Potion fees: pot_luck / pot_luck2 / pot_miner | 80 / 300 / 60 → **150 / 600 / 300** (pot_miner returned 3.2× its cost after ores ÷ 4) |
 
 ## 7. Rewards and fixed faucets (0104)
 
@@ -220,6 +224,15 @@ Target:
 | R10 | Teleport, xe ôm | 20 → **50** |
 | R11 | Farm daily quests | goals rescaled to the farm's real numbers (d_rice 100 xu → 5 000 …) |
 
+As built (0104):
+- The raid's 1-hour summon cooldown now applies **per member** (`boss_fights.crew`), so disbanding and re-forming a
+  party no longer skips it. Thủy Quái and Người Tuyết share one cap of 2 paid kills a day; the scheduled bosses are not
+  capped (they need 4–5 players anyway).
+- **Counted wins:** exams, underground rated / ladder / cup, PvP with a stake and bouts of a staked 2v2 series. A
+  friendly 0-stake bout still gives fight XP.
+- The company quest's XP also goes only to contributors with ≥ 1 % of the goal.
+- The dungeon's n counts the members this clear pays (paid, did damage, under the daily cap).
+
 ## 8. Sinks (0105)
 
 | # | Change | From → to |
@@ -227,11 +240,13 @@ Target:
 | S1 | Meal buffs: rare-fish lift | 10 / 15 / 12 / 5 % → **4 / 6 / 5 / 2 %** |
 | S1 | Meal buffs: stamina regen | +50 / 40 / 30 / 20 % → **+30 / 25 / 20 / 10 %** |
 | S2 | "Ngủ ngon" stamina regen | ×1.5 → **×1.2** (the motel panel now says so) |
-| S3 | Potion fees: pot_hunger, pot_thirst, pot_canh | 10 / 10 / 20 → **25 / 20 / 45** |
-| S3 | Potion fees: pot_luck, pot_luck2 | 80 / 300 → **150 / 600** |
 | S4 | Housing: house lot upkeep | 500 → **1 500** per 30 days |
 | S4 | Housing: repossession refund | 20 000 → **10 000** (a voluntary sale still returns 20 000) |
 | S4 | Housing: apartment rent | 1 500 → **2 000** per 30 days |
+| S5 | Motel (the right to "Ngủ ngon") | night 100 / month 2 000 → **300 / 6 000** |
+| S6 | Paying for a fish dish with a fish (`eat_meal`) | 20–80 % off → still 20–80 %, but **at most 3 × the fish's price** |
+
+The potion fees (S3) moved to §6 (0103).
 
 Restaurant, fashion, furniture, salon, vehicle, dojo and pet prices stay. They already fit the §3 scale once the faucets
 are back on it.
@@ -246,6 +261,15 @@ are back on it.
 | P3 | Trader perk (`market_sell_pct`) | +6 % paid on top of the share → lowers the 5 % sale fee, to at least 2 % |
 | P4 | Fashion gift | any account, unlimited → a member of a room the giver is in; **5** gifts a day |
 | P5 | Stall rent | 200 → **500** a day |
+
+As built (0106):
+- **Xì dách.** The lines between each pair of seats are netted first, then a short seat pays everything it has on the
+  table (escrow + what it receives) pro rata, floor, the remainder burned. The replayed 8-seat hand that minted 90 000
+  now sums to 0 with every wallet ≥ 0, and a debit below 0 is refused outright.
+- **Trades.** The receive gate is enforced at the final confirm; the trade window warns earlier and shows the partner's
+  daily allowance.
+- **Negative wallets.** Wallets already negative from past Xì dách debt stay as debt: future credits repay them.
+  Find them with `select account_id, coins from wallets where coins < 0`.
 
 ## 10. Expected result
 

@@ -243,10 +243,10 @@ Movement uses a Broadcast channel `game:{roomId}` with tiny event messages: an i
 
 - **🎣 Ao cá:** walk down the hall's dock to **Bến câu cá** and press **E** — the screen fades to a Miền Tây fishing pond with a plank platform, a worm patch, **Vựa cá** (cô Ba) and **Tiệm đồ câu** (chú Tư). **Bến vào** takes you back to the hall. The chip at the top shows **🎵 Sảnh N · 🎣 Ao cá N**; tap it for the names. Music, chat and reactions stay room-wide on both maps.
 - **Worms:** press **E** at a mound in **Bãi trùn** for 1–3 **Trùn đất**, once every 45 s. The bait box holds 20 baits (60 with **Hộp mồi**).
-- **Fishing:** stand on one of the six spots on the platform and press **E** (or tap the water in front of it). When **❗** shows, hook with **Space**, a click/tap or **❗ Giật cần!** before the bobber's window closes (1.5–2.5 s). Then hold the mouse, a touch or **Space** to keep the fish inside the green zone until the bar fills. **🎣 Thu cần** / **Esc** gives the cast up (the bait is lost). You can cast 40 times per hour.
+- **Fishing:** stand on one of the six spots on the platform and press **E** (or tap the water in front of it). When **❗** shows, hook with **Space**, a click/tap or **❗ Giật cần!** before the bobber's window closes (1.5–2.5 s). Then hold the mouse, a touch or **Space** to keep the fish inside the green zone until the bar fills. **🎣 Thu cần** / **Esc** gives the cast up (the bait is lost). You can cast 40 times per hour (0047 later removed this cap; stamina limits casting since v21 — see **Kinh tế v2** below).
 - **Fish:** 12 species in 5 rarities (Thường, Khá, Hiếm, Quý, Huyền thoại); the price is set by the weight. You hold one fish in your hand — everyone sees it — and a bucket holds 5 (**Xô nhỏ**) or 15 more (**Xô lớn**). Rare+ catches are announced in the room chat.
 - **Shops:** cô Ba buys fish (**Bán** / **Bán hết**). Chú Tư sells rods (a bigger zone, heavier fish, more rare fish), bobbers (a longer bite window, faster bites, the rarity shown at the bite), bait (more rare fish), the bait box and buckets. **🎒 Giỏ đồ** lists your fish and gear and switches rod, bobber and bait. **Bảng kỷ lục** shows the room's record per species next to your best, and the room's richest members.
-- **Xu:** +20 for the daily check-in (your first game visit of the Vietnam day), +10 when a song of 60 s or more that you queued stays current for at least 75 % of its length (up to 10 a day), and fish sales. With worms and the wooden rod an average cast is worth about 46 xu, so a skilled angler earns about 1 000–1 800 xu an hour: **Cần tre** (300 xu) takes about 20 minutes, **Cần carbon** (1 500 xu) 1–2 hours.
+- **Xu:** +20 for the daily check-in (your first game visit of the Vietnam day), +10 when a song of 60 s or more that you queued stays current for at least 75 % of its length (up to 10 a day), and fish sales. With worms and the wooden rod an average cast is worth about 46 xu, so a skilled angler earns about 1 000–1 800 xu an hour: **Cần tre** (300 xu) takes about 20 minutes, **Cần carbon** (1 500 xu) 1–2 hours. (The check-in became the 7-day calendar in v21, and these rates are those of **Kinh tế v2** below.)
 - Also: the camera scrolls the character above the bottom HUD, the now-playing card folds into a one-line chip on phones, the game falls back to the classic view if its frame loop keeps failing, and chat bubbles never cut an emoji in half.
 
 ### Trust model
@@ -393,7 +393,7 @@ No new channel. A round sends `fa` every 2 s while it runs and `fp` after each p
 
 ### Play money (legal & product)
 
-Xu is play money: it is earned only in the game (fishing, farming, check-in, songs), never sold and never cashed out, and the tables take no cut — the winners get exactly what the losers pay. Vietnam fines gambling for money or property (Decree 144/2021/NĐ-CP, art. 28, names "tiến lên 13 lá" and "3 cây"), so while the corner exists no feature may sell xu or let xu buy anything of monetary value, and trading xu or accounts for money is forbidden (the owner may ban for it). The sit dialog and the rules book say so. Colluding players can move xu between accounts, as land sales already allow; there is no detection beyond the owner's review of `card_log`. This note is not legal advice.
+Xu is play money: it is earned only in the game (fishing, farming, check-in, songs), never sold and never cashed out, and the tables take no cut — the winners get exactly what the losers pay. Vietnam fines gambling for money or property (Decree 144/2021/NĐ-CP, art. 28, names "tiến lên 13 lá" and "3 cây"), so while the corner exists no feature may sell xu or let xu buy anything of monetary value, and trading xu or accounts for money is forbidden (the owner may ban for it). The sit dialog and the rules book say so. Colluding players can move xu between accounts, as land sales already allow; there is no detection beyond the owner's review of `card_log`. Since **Kinh tế v2** (0106) a Xì dách seat can never lose more than its hold (a đền làng beyond it is shared pro rata, the rounding burned) and wallets never go negative; xu handed over in a trade burn 5 %, only accounts at least 3 days old and at level 5 receive xu, at most 50 000 a day; plot sales burn 5 % too. This note is not legal advice.
 
 ### Trust model (v16)
 
@@ -463,3 +463,53 @@ The server decides the spawns, which plots the rats eat, the damage, the prices,
 ### Realtime budget (v17)
 
 No new channel. Spawns send nothing: a client on the field refetches at the next spawn time plus 0–10 s, at most once a minute, and only in rat season. A catch sends one `fp`. The slingshot sends `fa 12` every 2 s (7 in a 12 s session), and petting sends one `fa 11`, at most one every 3 s. The dog sends nothing: presence carries its name and coat, re-tracked within the 4-per-30-s budget.
+
+## Kinh tế v2: một thang giá, giới hạn theo ngày (economy v2)
+
+The economy grew one feature at a time and each feature priced its own faucet: at the room price multiplier ×1 a
+starter angler made 6 400 xu an hour, a river angler 79 500, cooking 14 000–40 000, mining up to 52 000, and the
+multiplier (the room members' average wealth, up to ×10) multiplied the fish. Two exploits minted xu (Xì dách debt, the
+raid re-summoned by re-forming the party). Economy v2 puts everything back on one scale — about 1 500–2 000 xu an
+active hour for a newcomer, 4 000–6 500 with the best gear — with a daily bound on every grind, sinks priced by what they
+give, and a 5 % burn on xu between players. Spec: `docs/superpowers/specs/2026-09-30-economy-v2-design.md`.
+
+### DB migration
+
+- `0099_economy_watch.sql` is read-only (an index and the root RPC `admin_economy`): run it on production **first** and
+  watch **/admin → Kinh tế** for a few days (money supply, xu in and out per reason, wallets).
+- Then `0100_econ_core.sql` … `0106_econ_p2p.sql`, in order (core, fishing, farm, crafts, rewards, sinks, players), and
+  `0107_news_econ_v2.sql` (the players' news post). All are additive and re-runnable; `scripts/db/migrate-all.sh` runs
+  them for a new database. Deploy the client after them.
+- Smokes: `tests/sql/README.md` → "Economy v2".
+
+### What changes for players
+
+- **Fish prices** no longer follow the room's wealth: one server-wide multiplier (×1.00) and the season factor. All 23
+  species are re-priced; the river pays about 1.5× the pond; the boat costs 25 000 and the wild river needs level 3.
+  Hunger / thirst per cast 0.35 / 0.45 (was 1.8 / 2.2). Bait 1 / 3 / 6 xu, nets 50 / 120.
+- **Thương lái:** each day an NPC buys your grind goods (fish, crabs, snails, rats, ores, logs, wild goods, dishes) at
+  full price for the first 20 000 xu of catalog value, then 50 % up to 40 000, then 20 %. Sale panels show the day's line
+  and what was cut. Farm harvests are not counted.
+- **Chợ Lớn** pays +10 % (was +20 %).
+- **Treasure maps:** fewer drops (1 % / 2 % / 0.5 %), chests of 150–800 xu (2 % × 3 000), at most 3 found a day.
+- **Farm:** at most 2 farmed plots and 1 private plot per account across all rooms; processor 50 000 with recipes
+  ≈ 1.15× the field price and a +1 / +2 % sort bonus; plot sales 400 000–2 400 000 and subleases ≤ 50 000, 5 % burned.
+- **Crafts:** ores ÷ 4 and 200 digs a day; logs ÷ 3, 30 full-price logs and 150 a day; 40 kills a day and a +10 % night
+  market; cooking adds ≈ 30 % to its ingredients (2 stamina a dish); potions 60 / 25 / 120 (hunger / thirst / canh);
+  profession switch 2 000, skill reset 1 000.
+- **Rewards:** level-ups pay 20·L (60·L every 5th level); raid and weather bosses pay 2 kills a day; the dungeon pays
+  50 + 250 × members × share (fee 100, 3 paid clears); the company quest shares 3 000 by contribution; the squirrel
+  forages 150 a day while you move; pet / fish PvE 5 paid wins at × 0.6; teleport and xe ôm 50.
+- **Sinks:** meal buffs weaker (rare fish 2–6 %, stamina +10–30 %); "Ngủ ngon" stamina × 1.2; motel 300 / 6 000; lot
+  upkeep 1 500 per 30 days; apartment rent 2 000.
+- **Between players:** trades burn 5 % of the xu, receivers must be ≥ 3 days old and level ≥ 5, at most 50 000 a day;
+  the trader perk lowers the market fee instead of paying on top; fashion gifts only to roommates, 5 a day; stalls 500 a
+  day; Xì dách never leaves anyone in debt.
+
+### For the owner (root)
+
+**/admin → Kinh tế** shows the money supply and its daily change, xu in and out by reason (faucets, sinks, transfers
+between players — whose net is the fees burned), the wallet percentiles, the ten biggest wallets, today's thương lái and
+the **knobs** (`econ_params`): `fish_mult`, `npc_full`, `npc_half`, `npc_tail_pct`, `p2p_fee_pct`, `trade_daily_in`.
+A change applies at once. Aim for a daily net flow of 0–1 % of the supply; if normal players' days drop too far raise
+`fish_mult` or `npc_full` by 10–20 %, if the supply keeps climbing more than 2 % a day lower them.

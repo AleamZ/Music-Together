@@ -142,6 +142,7 @@ export default function EconomyTab({ token }: { token: string }) {
 const PARAM_LABEL: Record<string, string> = {
   fish_mult: "Hệ số giá cá toàn server", npc_full: "Thương lái: mốc đủ giá (xu/ngày)", npc_half: "Thương lái: mốc 50 % (xu/ngày)",
   npc_tail_pct: "Thương lái: % trả sau mốc 50 %", p2p_fee_pct: "Phí xu giữa người chơi (%)",
+  trade_daily_in: "Xu nhận qua giao dịch tối đa mỗi ngày",
 };
 
 /** The econ_params knobs (0100): root changes one, the server checks its range and answers the new list. */

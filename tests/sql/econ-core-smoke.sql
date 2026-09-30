@@ -136,3 +136,8 @@ begin
   end;
   raise notice 'admin economy ok';
 end $$;
+
+-- ---------- Clean up: the smoke's accounts, room and rows go (their 1 000 000 xu sale would skew other smokes' income
+-- checks on a shared database, e.g. anticheat-v2-part3's earnings baseline) ----------
+delete from public.rooms where name = 'econ smoke';
+delete from public.accounts where id in (select v::uuid from ex where k in ('ra', 'pa'));
