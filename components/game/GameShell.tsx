@@ -114,7 +114,7 @@ import { QuestHudButtons, QuestPanels, type QuestPanel } from "./quests/QuestPan
 import { usePets } from "@/hooks/usePets";
 import MotelModal from "./MotelModal";
 import { useMotel } from "@/hooks/useMotel";
-import { restWalk } from "@/lib/game/housing/motel";
+import { REST_EFFECT_TEXT, restWalk } from "@/lib/game/housing/motel";
 import ApartmentModal from "./housing/ApartmentModal";
 import FurnitureShopModal from "./housing/FurnitureShopModal";
 import InteriorView from "./housing/InteriorView";
@@ -1057,7 +1057,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm empty:hidden">
               <VitalsNag state={vitals.state} />
               <HeatChips chips={heat.chips} />
-              {motel.rested && <span data-testid="rest-chip" title="Ngủ ngon: đói, khát chậm hơn 30 %, đi nhanh hơn 7 %" className="whitespace-nowrap">😴 Ngủ ngon</span>}
+              {motel.rested && <span data-testid="rest-chip" title={`Ngủ ngon: ${REST_EFFECT_TEXT}`} className="whitespace-nowrap">😴 Ngủ ngon</span>}
               {rain.chips.map((c) => (
                 <span key={c.key} data-testid={`rain-${c.key}`} title={c.title}
                   className={`whitespace-nowrap tabular-nums ${c.key === "cold" ? "text-sky-800" : ""}`}>{c.text}</span>

@@ -2,12 +2,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CELL_COUNT, HOUSE_MAX_ITEMS, HOUSE_MAX_ROOMS, LAND_PRICE, LAND_REFUND_SHARE, LOT_COLS, LOT_COUNT, LOT_ROWS, RENT_OWNER_PERCENT, REPOSSESS_DAYS,
-  ROOFS, ROOM_MAX_AHEAD_DAYS, ROOM_MIN_CELLS, ROOM_RENT_DAYS, ROOM_RENT_MAX, ROOM_RENT_MIN, TILE_PRICES, UPKEEP, UPKEEP_DAYS, UPKEEP_MAX_AHEAD_DAYS,
+  REPOSSESS_REFUND_SHARE, ROOFS, ROOM_MAX_AHEAD_DAYS, ROOM_MIN_CELLS, ROOM_RENT_DAYS, ROOM_RENT_MAX, ROOM_RENT_MIN, TILE_PRICES, UPKEEP, UPKEEP_DAYS,
+  UPKEEP_MAX_AHEAD_DAYS,
 } from "@/lib/game/housing/house";
 
 const read = (f: string) => readFileSync(f, "utf8").replace(/\r\n/g, "\n");
 const SQL = read("supabase/migrations/0042_houses.sql");
 const APT = read("supabase/migrations/0041_apartments.sql");
+/** econ v2: 0105 re-creates _house_price (upkeep, the repossession refund) and _house_sweep. */
+const SINKS = read("supabase/migrations/0105_econ_sinks.sql");
 
 /** A function's text, from its `create or replace` to its closing `$$;`. */
 const body = (s: string, name: string) => {
@@ -19,7 +22,12 @@ const lines = (s: string) => s.split("\n");
 
 describe("v19.3 houses: the TS rules mirror 0042", () => {
   it("prices, lengths, caps and the grid", () => {
-    expect(SQL).toContain(`when 'land' then ${LAND_PRICE} when 'upkeep' then ${UPKEEP} when 'refund' then ${LAND_PRICE * LAND_REFUND_SHARE} end`);
+    expect(SINKS).toContain(`when 'land' then ${LAND_PRICE} when 'upkeep' then ${UPKEEP} when 'refund' then ${LAND_PRICE * LAND_REFUND_SHARE}`
+      + ` when 'repossess' then ${LAND_PRICE * REPOSSESS_REFUND_SHARE} end`);
+    expect(SQL).toContain(`when 'land' then ${LAND_PRICE} when 'upkeep' then 500 when 'refund' then ${LAND_PRICE * LAND_REFUND_SHARE} end`);   // v19.3's
+    // giving the lot back pays 'refund'; a repossession (0105's sweep) pays 'repossess'
+    expect(body(SQL, "lot_sell")).toContain("public._pay(v_account, public._house_price('refund'), 'house_refund'");
+    expect(body(SINKS, "_house_sweep")).toContain("public._pay(l.owner_id, public._house_price('repossess'), 'house_refund'");
     expect(SQL).toContain(`when 'f' then ${TILE_PRICES.f} when 'w' then ${TILE_PRICES.w} when 'd' then ${TILE_PRICES.d} when 'n' then ${TILE_PRICES.n} else 0 end`);
     expect(SQL).toContain(`check (no between 1 and ${LOT_COUNT})`);
     expect(SQL).toContain(`length(grid) = ${CELL_COUNT}`);

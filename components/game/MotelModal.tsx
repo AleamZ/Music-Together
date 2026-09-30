@@ -5,7 +5,8 @@ import { paintMotelRoom, ROOM_H, ROOM_W, type RoomLookColors } from "@/lib/game/
 import { HAIR_COLOR, SKIN } from "@/lib/game/art/palettes";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import {
-  durationText, MOTEL_PLANS, motelErrorMessage, motelRent, motelSleep, REST_HOURS, SLEEP_MS, type MotelPlan, type MotelState,
+  durationText, MOTEL_PLANS, motelErrorMessage, motelRent, motelSleep, REST_EFFECT_TEXT, REST_HOURS, SLEEP_MS, type MotelPlan,
+  type MotelState,
 } from "@/lib/game/housing/motel";
 import type { Look } from "@/lib/game/types";
 import { ParchmentModal } from "./Parchment";
@@ -51,7 +52,8 @@ interface MotelModalProps {
 }
 
 /** 🏨 Nhà nghỉ Hoa Sen · cô Hồng (v19.1): rent a room by the night or the month; in the room, sleep once a day for
- *  "Ngủ ngon" (24 h: hunger and thirst −30 %, walking +7 %). The room is mine alone — nobody else sees it. */
+ *  "Ngủ ngon" (24 h: hunger and thirst −30 %, walking +7 %, stamina regen +20 %). The room is mine alone — nobody else
+ *  sees it. */
 export default function MotelModal({ token, state, coins, look, onState, onClose }: MotelModalProps) {
   const [inRoom, setInRoom] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -102,9 +104,9 @@ export default function MotelModal({ token, state, coins, look, onState, onClose
       <div className="flex flex-col gap-3 font-vt text-lg">
         {!inRoom ? (
           <>
-            <p>
-              “Phòng sạch, quạt mát, ngủ một giấc là khoẻ re!” Ngủ ở đây được <b>Ngủ ngon</b> {REST_HOURS} giờ: đói và khát
-              chậm hơn 30 %, đi nhanh hơn 7 %. Mỗi ngày ngủ một lần.
+            <p data-testid="motel-rest">
+              “Phòng sạch, quạt mát, ngủ một giấc là khoẻ re!” Ngủ ở đây được <b>Ngủ ngon</b> {REST_HOURS} giờ: {REST_EFFECT_TEXT}.
+              Mỗi ngày ngủ một lần.
             </p>
             <p data-testid="motel-stay">
               {stay
@@ -133,7 +135,7 @@ export default function MotelModal({ token, state, coins, look, onState, onClose
             <RoomView sleeper={sleeper} sleepAt={sleepAt} />
             <p aria-live="polite" data-testid="motel-status">
               {sleeping ? "💤 Zzz… ngủ một giấc thật ngon…"
-                : woke ? "☀️ Dậy rồi! Ngủ ngon trong 24 giờ: đói, khát chậm hơn và đi nhanh hơn."
+                : woke ? "☀️ Dậy rồi! Ngủ ngon trong 24 giờ: đói, khát chậm hơn, đi nhanh hơn và thể lực hồi nhanh hơn."
                 : state?.rest.sleptToday ? "Hôm nay bạn ngủ rồi — mai quay lại nhé."
                 : "Giường êm, quạt quay đều. Lên giường ngủ chứ?"}
             </p>

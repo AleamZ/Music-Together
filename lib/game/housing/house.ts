@@ -1,6 +1,7 @@
-// v19.3 Đất + xây nhà + cho thuê phòng: the rules of 0042_houses.sql (authoritative; tests/unit/house-sql.test.ts pins
-// the literals), the house designs (the same checks as _house_check), the furniture placement on a lot (as house_place),
-// the walking grid of a house, the parsers and the RPCs. Plan: docs/superpowers/plans/2026-09-27-v19-3-land.md.
+// v19.3 Đất + xây nhà + cho thuê phòng: the rules of 0042_houses.sql (authoritative; the prices of econ v2 are
+// 0105_econ_sinks.sql's; tests/unit/house-sql.test.ts pins the literals), the house designs (the same checks as
+// _house_check), the furniture placement on a lot (as house_place), the walking grid of a house, the parsers and the
+// RPCs. Plan: docs/superpowers/plans/2026-09-27-v19-3-land.md.
 import { supabase } from "@/lib/supabase";
 import type { Grid } from "@/lib/game/movement";
 import type { Vec } from "@/lib/game/types";
@@ -13,9 +14,12 @@ export { CELL_COUNT, LOT_COLS, LOT_COUNT, LOT_ROWS, LOT_TILE, ROOFS, type Roof }
 // ---------------------------------------------------------------- rules
 
 export const LAND_PRICE = 40000;
-/** The city pays back this share of the land price (giving the lot back, or a repossession). */
+/** The city pays back this share of the land price when the lot is given back (lot_sell). */
 export const LAND_REFUND_SHARE = 0.5;
-export const UPKEEP = 500;
+/** econ v2 (0105): a repossession (the upkeep unpaid REPOSSESS_DAYS) pays back only this share (10 000; was 50 %). */
+export const REPOSSESS_REFUND_SHARE = 0.25;
+/** econ v2 (0105): per UPKEEP_DAYS (was 500). */
+export const UPKEEP = 1500;
 export const UPKEEP_DAYS = 30;
 export const UPKEEP_MAX_AHEAD_DAYS = 60;
 /** Upkeep unpaid this long after it ran out: the city takes the lot back. */

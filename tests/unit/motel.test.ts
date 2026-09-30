@@ -1,12 +1,16 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  durationText, MOTEL_MAX_AHEAD_DAYS, MOTEL_PLANS, motelErrorMessage, parseMotelState, REST_DRAIN, REST_HOURS, REST_WALK, restActive, restWalk,
+  durationText, MOTEL_MAX_AHEAD_DAYS, MOTEL_PLANS, motelErrorMessage, parseMotelState, REST_DRAIN, REST_EFFECT_TEXT, REST_HOURS, REST_STAMINA,
+  REST_WALK, restActive, restWalk,
 } from "@/lib/game/housing/motel";
 
 const SQL = readFileSync("supabase/migrations/0039_motel.sql", "utf8");
 const VT = readFileSync("supabase/migrations/0040_rest_vitals.sql", "utf8");
 const RAIN = readFileSync("supabase/migrations/0038_rain.sql", "utf8");
+/** econ v2: 0105 re-creates 0077's _stamina_rate with the rested factor ×1.2 (was ×1.5). */
+const SINKS = readFileSync("supabase/migrations/0105_econ_sinks.sql", "utf8");
+const PROF = readFileSync("supabase/migrations/0077_professions.sql", "utf8");
 
 describe("v19.1 motel rules mirror 0039", () => {
   it("prices, lengths, the cap and the buff", () => {
@@ -17,6 +21,15 @@ describe("v19.1 motel rules mirror 0039", () => {
     expect(SQL).toContain(`then ${REST_DRAIN} else 1 end`);
     expect(SQL).toContain(`buff_until = now() + interval '${REST_HOURS} hours'`);
     expect(REST_WALK).toBe(1.07);
+  });
+  it("the rested stamina regen is 0105's ×1.2", () => {
+    const rest = (s: string) => {
+      const from = s.lastIndexOf("create or replace function public._stamina_rate(");
+      return s.slice(from, s.indexOf("$$;", s.indexOf("as $$", from) + 5));
+    };
+    expect(rest(SINKS)).toContain(`when public._rest_factor(p_account) < 1 then ${REST_STAMINA} else 1 end`);
+    expect(rest(PROF)).toContain("when public._rest_factor(p_account) < 1 then 1.5 else 1 end");
+    expect(REST_EFFECT_TEXT).toBe("đói và khát chậm hơn 30 %, đi nhanh hơn 7 %, thể lực hồi nhanh hơn 20 %");
   });
   it("the ledger keeps 0038's reasons and adds motel", () => {
     const reasons = (s: string) => {
