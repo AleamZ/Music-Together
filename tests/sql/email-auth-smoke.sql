@@ -6,6 +6,8 @@
 \i tests/sql/auth-stub.sql
 \i supabase/migrations/0112_email_auth.sql
 \i supabase/migrations/0112_email_auth.sql
+\i supabase/migrations/0113_review_fixes.sql
+\i supabase/migrations/0113_review_fixes.sql
 
 \o /dev/null
 begin;
@@ -30,10 +32,10 @@ do $$
 begin
   assert not has_function_privilege('anon', 'public.game_session_from_auth()', 'execute'), 'anon: game_session_from_auth';
   assert not has_function_privilege('anon', 'public.account_create_for_auth(text)', 'execute'), 'anon: create';
-  assert not has_function_privilege('anon', 'public.account_link_auth(text)', 'execute'), 'anon: link';
+  assert not has_function_privilege('anon', 'public.account_link_auth(text,text)', 'execute'), 'anon: link';
   assert has_function_privilege('authenticated', 'public.game_session_from_auth()', 'execute'), 'authenticated: session';
   assert has_function_privilege('authenticated', 'public.account_create_for_auth(text)', 'execute'), 'authenticated: create';
-  assert has_function_privilege('authenticated', 'public.account_link_auth(text)', 'execute'), 'authenticated: link';
+  assert has_function_privilege('authenticated', 'public.account_link_auth(text,text)', 'execute'), 'authenticated: link';
   assert has_function_privilege('anon', 'public.change_password(text,text,text)', 'execute'), 'anon: change_password';
   assert has_function_privilege('anon', 'public.account_auth_state(text)', 'execute'), 'anon: auth_state';
   assert not has_function_privilege('anon', 'public._auth_email_user()', 'execute'), 'helper';
@@ -60,7 +62,7 @@ begin
   exception when others then assert sqlerrm = 'email not confirmed', sqlerrm; end;
   begin perform public.game_session_from_auth(); assert false, 'unconfirmed session';
   exception when others then assert sqlerrm = 'email not confirmed', sqlerrm; end;
-  begin perform public.account_link_auth((select v from t where k = 'M')); assert false, 'unconfirmed link';
+  begin perform public.account_link_auth((select v from t where k = 'M'), 'mat-khau-M'); assert false, 'unconfirmed link';
   exception when others then assert sqlerrm = 'email not confirmed', sqlerrm; end;
   -- an unknown auth user
   perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000ff', true);
@@ -121,14 +123,22 @@ select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a2
 do $$
 declare r jsonb; s record;
 begin
-  r := public.account_link_auth('not-a-token');
+  r := public.account_link_auth('not-a-token', 'x');
   assert r = '{"ok":false,"error":"invalid session"}', r::text;
-  r := public.account_link_auth((select v from t where k = 'L'));
+  -- 0113: the token alone is not enough, the legacy password proves the account too
+  r := public.account_link_auth((select v from t where k = 'L'), 'sai');
+  assert r = '{"ok":false,"error":"wrong password"}', r::text;
+  r := public.account_link_auth((select v from t where k = 'L'), null);
+  assert r = '{"ok":false,"error":"wrong password"}', r::text;
+  assert public.account_auth_state((select v from t where k = 'L'))
+    = '{"linked": false, "email": null, "legacy_password": true}'::jsonb, 'no link without the password';
+  assert to_regprocedure('public.account_link_auth(text)') is null, 'the token-only form is gone';
+  r := public.account_link_auth((select v from t where k = 'L'), 'mat-khau-L');
   assert (r ->> 'ok')::boolean and (r ->> 'linked')::boolean, r::text;
-  r := public.account_link_auth((select v from t where k = 'L'));
+  r := public.account_link_auth((select v from t where k = 'L'), 'mat-khau-L');
   assert (r ->> 'ok')::boolean and not (r ->> 'linked')::boolean, 'idempotent: ' || r::text;
   -- this auth user already has an account: M cannot be linked to it too
-  r := public.account_link_auth((select v from t where k = 'M'));
+  r := public.account_link_auth((select v from t where k = 'M'), 'mat-khau-M');
   assert r ->> 'error' = 'email already linked', r::text;
   r := public.account_create_for_auth('EaTwo');
   assert (r ->> 'ok')::boolean and not (r ->> 'created')::boolean, 'U2 reuses L: ' || r::text;
@@ -140,7 +150,7 @@ select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a4
 do $$
 declare r jsonb;
 begin
-  r := public.account_link_auth((select v from t where k = 'L'));
+  r := public.account_link_auth((select v from t where k = 'L'), 'mat-khau-L');
   assert r = '{"ok":false,"error":"account already linked"}', r::text;
 end $$;
 reset role;
@@ -148,7 +158,7 @@ reset role;
 set local role anon;
 do $$
 begin
-  begin perform public.account_link_auth((select v from t where k = 'M')); assert false, 'anon link';
+  begin perform public.account_link_auth((select v from t where k = 'M'), 'mat-khau-M'); assert false, 'anon link';
   exception when insufficient_privilege then null; end;
   begin perform public.game_session_from_auth(); assert false, 'anon session';
   exception when insufficient_privilege then null; end;
@@ -184,7 +194,7 @@ begin
   begin perform public.game_session_from_auth(); assert false, 'banned session';
   exception when others then assert sqlerrm = 'account banned', sqlerrm; end;
   perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a4', true);
-  r := public.account_link_auth((select v from t where k = 'B'));
+  r := public.account_link_auth((select v from t where k = 'B'), 'mat-khau-B');
   assert r = '{"ok":false,"error":"account banned"}', r::text;
 end $$;
 reset role;
@@ -232,8 +242,8 @@ do $$
 declare i integer; r jsonb;
 begin
   -- U4 has used two link calls (L, taken; the banned B); eight more are answered, the eleventh is refused
-  for i in 1 .. 8 loop r := public.account_link_auth('bad'); assert r ->> 'error' = 'invalid session', r::text; end loop;
-  begin perform public.account_link_auth('bad'); assert false, 'link rate';
+  for i in 1 .. 8 loop r := public.account_link_auth('bad', 'x'); assert r ->> 'error' = 'invalid session', r::text; end loop;
+  begin perform public.account_link_auth('bad', 'x'); assert false, 'link rate';
   exception when others then assert sqlerrm = 'too many attempts', sqlerrm; end;
   for i in 1 .. 10 loop r := public.account_create_for_auth('Ao cá'); assert r ->> 'error' = 'invalid username', r::text; end loop;
   begin perform public.account_create_for_auth('EaFour'); assert false, 'create rate';
@@ -241,6 +251,20 @@ begin
   perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a2', true);
   for i in 1 .. 59 loop perform public.game_session_from_auth(); end loop;   -- one earlier: 60
   begin perform public.game_session_from_auth(); assert false, 'session rate';
+  exception when others then assert sqlerrm = 'too many attempts', sqlerrm; end;
+end $$;
+reset role;
+
+-- 7b. 0113: the legacy password of a link, 5 tries per 15 minutes per account (M had one in section 4)
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a1', true);
+do $$
+declare i integer; r jsonb;
+begin
+  for i in 1 .. 4 loop
+    r := public.account_link_auth((select v from t where k = 'M'), 'sai'); assert r ->> 'error' = 'wrong password', r::text;
+  end loop;
+  begin perform public.account_link_auth((select v from t where k = 'M'), 'mat-khau-moi-M'); assert false, 'link password rate';
   exception when others then assert sqlerrm = 'too many attempts', sqlerrm; end;
 end $$;
 reset role;

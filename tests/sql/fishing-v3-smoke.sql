@@ -21,6 +21,9 @@ set time zone 'UTC';
 set client_min_messages = warning;
 \i supabase/migrations/0110_fishing_v3.sql
 \i supabase/migrations/0110_fishing_v3.sql
+-- 0113 re-creates functions of this migration: re-run it after, as the chain does
+\i supabase/migrations/0113_review_fixes.sql
+\i supabase/migrations/0113_review_fixes.sql
 reset client_min_messages;
 update public.anticheat_config set mode = 'log';
 
@@ -341,6 +344,7 @@ end $$;
 -- ---------- 6. The breaks ----------
 do $$
 declare a uuid := pg_temp.u('a'); t text := pg_temp.v('ta'); room uuid := pg_temp.u('room'); r jsonb; i integer;
+        v_p bigint; v_w bigint; v_x bigint;   -- 0113
 begin
   -- the rig holds it: caught
   perform pg_temp.fresh(a);
@@ -349,6 +353,8 @@ begin
   -- heavier than the line (the weaker part): line_snap, one snap worn
   perform pg_temp.give(a, 'line_02');
   update public.fishing_profiles set line = 'line_02' where account_id = a;
+  select coalesce(sum(plays), 0), coalesce(sum(wins), 0), coalesce(sum(exact), 0) into v_p, v_w, v_x
+    from public.ac_play_stats where account_id = a and game = 'reel';   -- 0113
   for i in 1 .. 3 loop
     perform pg_temp.fresh(a);
     r := pg_temp.land(a, t, room, 'ca_chep', 3001, 'line_02', 3000, 15000, 'rod_carbon', null);
@@ -364,6 +370,9 @@ begin
       assert (select line from public.fishing_profiles where account_id = a) is null, 'unmounted';
     end if;
   end loop;
+  -- 0113: a snapped fish is a played round, never a won / exact one
+  assert (select sum(plays) = v_p + 3 and sum(wins) = v_w and sum(exact) = v_x
+            from public.ac_play_stats where account_id = a and game = 'reel'), 'a snap is a lost round';
   -- the rod the weaker part: rod_snap — the rod to 0, unequipped, rod_broke, repairable
   update public.fishing_profiles set line = 'line_03' where account_id = a;
   perform pg_temp.give(a, 'rod_fiber');
