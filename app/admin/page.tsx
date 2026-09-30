@@ -10,13 +10,14 @@ import AccountsTab from "@/components/admin/AccountsTab";
 import StatsTab from "@/components/admin/StatsTab";
 import AnticheatTab from "@/components/admin/AnticheatTab";
 import NewsTab from "@/components/admin/NewsTab";
+import EconomyTab from "@/components/admin/EconomyTab";
 import Logo from "@/components/brand/Logo";
 import BrandSpinner from "@/components/brand/BrandSpinner";
 
-type Tab = "feedback" | "rooms" | "accounts" | "stats" | "anticheat" | "news";
+type Tab = "feedback" | "rooms" | "accounts" | "stats" | "economy" | "anticheat" | "news";
 const TABS: { id: Tab; label: string }[] = [
   { id: "feedback", label: "Hòm thư" }, { id: "rooms", label: "Phòng" },
-  { id: "accounts", label: "Tài khoản" }, { id: "stats", label: "Thống kê" },
+  { id: "accounts", label: "Tài khoản" }, { id: "stats", label: "Thống kê" }, { id: "economy", label: "Kinh tế" },
   { id: "anticheat", label: "Chống gian lận" }, { id: "news", label: "Bản tin" },
 ];
 
@@ -49,6 +50,7 @@ export default function AdminPage() {
       {token && tab === "rooms" && <RoomsTab token={token} />}
       {token && tab === "accounts" && <AccountsTab token={token} />}
       {token && tab === "stats" && <StatsTab token={token} />}
+      {token && tab === "economy" && <EconomyTab token={token} />}
       {token && tab === "anticheat" && <AnticheatTab token={token} />}
       {token && tab === "news" && <NewsTab token={token} />}
     </main>
