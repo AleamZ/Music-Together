@@ -92,7 +92,7 @@ export class LiveLayer {
   private frame = 0;
   private lastT = -1;
   // the fishing lines and the nets (shared)
-  private readonly lineMat = new THREE.LineBasicMaterial({ color: 0xf2efe6, transparent: true, opacity: 0.75 });
+  private readonly lineMat = new THREE.LineBasicMaterial({ color: 0xfbfaf4, transparent: true, opacity: 0.95 });
   private readonly ropeMat = new THREE.LineBasicMaterial({ color: 0xc8b58a });
   private readonly netGeo = netGeometry();
   private readonly netMat = new THREE.LineBasicMaterial({ color: 0xe9e3d2, transparent: true, opacity: 0.85 });

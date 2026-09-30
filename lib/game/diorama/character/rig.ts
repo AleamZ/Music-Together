@@ -139,9 +139,15 @@ export class ChibiRig {
     const rod = this.m.rod;
     if (!rod.visible || !this.parts) return null;
     const g = rod.geometry;
-    if (!g.boundingBox) g.computeBoundingBox();
+    let tip = g.userData.tip as THREE.Vector3 | undefined;
+    if (!tip) {                                                   // the farthest point along the rod (+z): its tip
+      const p = g.getAttribute("position");
+      let best = 0;
+      for (let i = 1; i < p.count; i++) if (p.getZ(i) > p.getZ(best)) best = i;
+      tip = g.userData.tip = new THREE.Vector3(p.getX(best), p.getY(best), p.getZ(best));
+    }
     this.root.updateMatrixWorld(true);
-    return rod.localToWorld(out.set(0, 0, g.boundingBox!.max.z));
+    return rod.localToWorld(out.copy(tip));
   }
 
   /** Between the two hands in world space (what they hold: a net's bundle, its rope). */

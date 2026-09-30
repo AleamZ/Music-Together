@@ -153,9 +153,9 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       if (k < CAST_S) {
         const wind = Math.min(1, k / 0.45), snap = k < 0.45 ? 0 : Math.min(1, (k - 0.45) / 0.18), settle = k < 0.63 ? 0 : (k - 0.63) / (CAST_S - 0.63);
         const e = settle * settle * (3 - 2 * settle);
-        const swing = k < 0.45 ? -2.5 * wind : k < 0.63 ? -2.5 + 3.7 * snap : 1.2 - 0.65 * e;
+        const swing = k < 0.45 ? -2.5 * wind : k < 0.63 ? -2.5 + 3.7 * snap : 1.2 - 0.95 * e;
         p.armR.x = swing; p.armL.x = 0.4 + swing * 0.25;
-        p.elbowR = k < 0.45 ? 0.3 + 1.1 * wind : k < 0.63 ? 1.4 - 1.3 * snap : 0.1 + 0.3 * e;
+        p.elbowR = k < 0.45 ? 0.3 + 1.1 * wind : k < 0.63 ? 1.4 - 1.3 * snap : 0.1 + 0.2 * e;
         p.elbowL = 0.8;
         p.lean = k < 0.45 ? -0.12 * wind : k < 0.63 ? 0.16 * snap : 0.16 - 0.12 * e;
         p.squash = k < 0.45 ? -0.02 * wind : 0.02 * (1 - snap);
@@ -163,8 +163,9 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
         break;
       }
       const b = Math.sin(s * TAU * 0.35), nod = Math.sin(s * TAU * 0.6);
-      p.armR.x = 0.55 + nod * 0.03; p.elbowR = 0.4;
-      p.armL.x = 0.55; p.armL.z = 0.12; p.elbowL = 0.6;
+      // the grip at the right hip, the long rod out over the water ~30° up; the left hand resting near the reel
+      p.armR.x = 0.25 + nod * 0.03; p.armR.z = 0.2; p.elbowR = 0.3;
+      p.armL.x = 0.45; p.armL.z = -0.15; p.elbowL = 0.9;
       p.lean = 0.04;
       p.bob = b * 0.008 - 0.004;
       p.squash = b * 0.01;
@@ -176,8 +177,8 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       // a fish on: leaning back, both hands on the rod, the rod jerking up in quick tugs
       const j = Math.sin(s * TAU * 3.2), tug = Math.max(0, Math.sin(s * TAU * 1.3));
       p.rod = 1;
-      p.armR.x = 0.75 + tug * 0.35 + j * 0.06; p.elbowR = 0.55 + tug * 0.25;
-      p.armL.x = 0.85 + tug * 0.3; p.armL.z = 0.02; p.elbowL = 0.75;
+      p.armR.x = 0.5 + tug * 0.3 + j * 0.05; p.armR.z = 0.2; p.elbowR = 0.45 + tug * 0.15;
+      p.armL.x = 0.6 + tug * 0.25; p.armL.z = -0.15; p.elbowL = 0.85;
       p.lean = -0.14 - tug * 0.06;
       p.legL.x = 0.35; p.kneeL = 0.3; p.legR.x = -0.25; p.kneeR = 0.12; p.ankleR = 0.2;
       p.bob = -0.015 + j * 0.006;
@@ -188,10 +189,10 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       break;
     }
     case "reel": {
-      // the rod held forward, the right forearm cranking in circles at the elbow
+      // the rod held up ~45° in the right hand, the left hand cranking the reel's handle in circles
       const r = Math.sin(s * TAU * 2.2), c = Math.cos(s * TAU * 2.2);
-      p.armR.x = 0.95 + r * 0.18; p.elbowR = 0.75 + c * 0.35;
-      p.armL.x = 1.05; p.elbowL = 0.55;
+      p.armR.x = 0.45 + r * 0.04; p.armR.z = 0.2; p.elbowR = 0.35;
+      p.armL.x = 0.55 + r * 0.15; p.armL.z = -0.2 + c * 0.05; p.elbowL = 1.0 + c * 0.25;
       p.lean = -0.1;
       p.legL.x = 0.25; p.kneeL = 0.2; p.legR.x = -0.15; p.kneeR = 0.06;
       p.rod = 1;

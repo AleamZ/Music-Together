@@ -31,7 +31,7 @@ describe("chibi poses: fishing, pedalling, the warm-up", () => {
   it("the cast throws once, then holds the rod still-ish", () => {
     const wound = poseAt("cast", 0.4), held = poseAt("cast", CAST_S + 2), later = poseAt("cast", CAST_S + 2.3);
     expect(wound.armR.x).toBeLessThan(-1.5);                          // the rod back over the shoulder
-    expect(held.armR.x).toBeGreaterThan(0.3);                         // then held out in front
+    expect(held.armR.x).toBeGreaterThan(0.1);                         // then held out in front, the grip at the hip
     expect(Math.abs(held.armR.x - later.armR.x)).toBeLessThan(0.1);   // no more throwing
     expect(held.rod).toBe(1);
     expect(poseAt("bite", 1).rod).toBe(1);
