@@ -29,7 +29,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
     const got = f.acquire(chibiSpec(t.look), t.detail ?? "high");
     rig.setParts(got.parts);
     rig.root.rotation.y = t.yaw;
-    rig.apply(poseAt("idle", 0.2, 0, true));
+    rig.apply(t.act ? poseAt(t.act, t.time ?? 0.2) : poseAt("idle", 0.2, 0, true));
     scene.add(rig.root);
     const z = t.zoom ?? 1, fy = t.focusY ?? 1.08;
     cam.position.set(0, fy + 0.3 / z, 5.0 / z); cam.lookAt(0, fy, 0);

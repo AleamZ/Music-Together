@@ -460,13 +460,13 @@ function ringsOf(pts: readonly (readonly [number, number, number])[]): Ring[] {
 function aoDaiPanels(m: M, s: ChibiSpec, g: TorsoGeo): void {
   const T = rgb(s.torso), TR = rgb(s.trim[0]);
   for (const dir of [1, -1]) {
-    const z0 = dir * (2.05 * g.depth + 0.1);
-    const shape: Shape = roundBlock([0, -3.9, z0], [2.2 * g.hips, 6.1, 0.17], 0.3, {
+    const z0 = dir * 2.0 * g.depth;
+    const shape: Shape = roundBlock([0, -3.5, z0], [2.2 * g.hips, 6.5, 0.17], 0.3, {
       seg: [12, 14],
       deform: (p) => {
-        const k = (2.2 - p.y) / 12.2;                                                   // 0 at the waist → 1 at the hem
+        const k = Math.max(0, (2.0 - p.y) / 12.0);                                                  // 0 at the waist → 1 at the hem
         p.x *= 0.92 + 0.3 * k;                                                          // flares a little
-        p.z += dir * (0.25 * k - 0.17 * p.x * p.x + 0.35 * k * k);                 // curves round the body, falls away
+        p.z += dir * (0.32 * Math.min(1, k * 5) + 0.55 * k - 0.15 * p.x * p.x + 0.5 * k * k);   // tucked in at the waist, falls clear of the legs
       },
     });
     m.surface("hips", shape, (t) => {

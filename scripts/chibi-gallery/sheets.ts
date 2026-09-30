@@ -1,3 +1,4 @@
+import type { CharAct } from "@/lib/game/diorama/character/pose";
 import { wearableIds, type LookSlot } from "@/lib/game/diorama/character/catalog";
 import { wear3dDesc, WEAR3D } from "@/lib/game/diorama/character/wear3d";
 import type { Look } from "@/lib/game/types";
@@ -6,7 +7,7 @@ import NAMES from "./names.json";
 // The outfit gallery's sheets: close-ups (before/after), a signature-outfit sheet, and one sheet per slot that dresses
 // sample characters in every catalog item (boys and girls alternating, front and 3/4 views alternating).
 
-export interface Tile { look: Look; label: string; yaw: number; zoom?: number; detail?: "high" | "low"; focusY?: number }
+export interface Tile { look: Look; label: string; yaw: number; zoom?: number; detail?: "high" | "low"; focusY?: number; act?: CharAct; time?: number }
 export interface Sheet { name: string; title: string; cols: number; tw: number; th: number; tiles: Tile[] }
 
 const names = NAMES as Record<string, string>;
@@ -89,6 +90,17 @@ export function gallerySheets(): Sheet[] {
     { look: l, label: `#${n + i} ${wears(l)} · 3/4`, yaw: TQ },
   ]);
   n += SIGNATURE.length;
+  const AO: Look[] = [
+    { ...NU, outfit: "fm_ao_dai", hat: "hat_nonla", hair: "long" },
+    { ...NU, top: "top_aodai_tet", bottom: "bottom_pants_silk_white", hair: "bun" },
+    { ...NU, top: "top_aodai_yellow", bottom: "bottom_pants_silk_white", hat: "hat_nonquaitao", hair: "long" },
+    { ...NAM, top: "top_aodai_tet", bottom: "bottom_pants_tet", shoes: "shoes_dep_brown" },
+    { ...NAM, top: "top_aodai_yellow", bottom: "bottom_pants_silk_white", shoes: "shoes_dep_brown" },
+    { ...NU, outfit: "fm_kimono", hair: "bun" },
+  ];
+  const views: [string, number, CharAct?, number?][] = [["trước", 0], ["3/4", TQ], ["nghiêng", -Math.PI / 2], ["sau", Math.PI], ["đi bộ 3/4", TQ, "walk", 0.18], ["đi bộ nghiêng", -Math.PI / 2, "walk", 0.43]];
+  sheets.push({ name: "ao-dai", title: "Áo dài (và kimono) — trước / 3/4 / nghiêng / sau / đi bộ", cols: 6, tw: 250, th: 330,
+    tiles: AO.flatMap((l, i) => views.map(([v, yaw, act, time]) => ({ look: l, label: `A${i + 1} ${wears(l)} · ${v}`, yaw, act, time }))) });
   sheets.push({ name: "outfits-signature", title: "Bộ đồ tiêu biểu (trước + 3/4)", cols: 8, tw: 250, th: 330, tiles: sig });
   const slotSheet = (slot: LookSlot, title: string, zoom?: number, focusY?: number, pick?: (id: string) => boolean, name?: string) => {
     const list = ids[slot].filter(pick ?? (() => true));

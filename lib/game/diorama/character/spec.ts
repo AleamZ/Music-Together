@@ -101,6 +101,7 @@ function hairpinOf(id: string | null | undefined): ChibiHairpin | null {
 
 /** The belt colour of a worn võ phục (the garment's code "1", already in the wearer's rank colour). */
 function beltOf(look: Look): string | null {
+  if (!look.outfit?.startsWith("vp_")) return null;                              // only a võ phục has a belt (code 1 is a trim elsewhere)
   const { garments } = resolveWear(look);
   for (const g of garments) if (g.slot === "outfit" && g.colors["1"]) return hex(g.colors["1"], "#f6f6f2");
   return null;

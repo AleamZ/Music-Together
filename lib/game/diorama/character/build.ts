@@ -538,7 +538,11 @@ function chestPainter(s: ChibiSpec): Painter {
 }
 
 function hipsPainter(s: ChibiSpec): Painter {
-  return bottomPainter(s, hipsBase(s));
+  const p = bottomPainter(s, hipsBase(s));
+  if (s.top3d !== "aodai") return p;
+  // áo dài: the tunic covers the pelvis front and back down to the panels; only the sides (the slits) show trousers
+  const T = rgb(s.torso);
+  return (t) => (t.y > 0.2 || (Math.abs(t.n[2]) > 0.55 && Math.abs(t.x) < 2.4) ? T : p(t));
 }
 
 function hipsBase(s: ChibiSpec): (t: Texel) => RGB {
