@@ -131,7 +131,8 @@ describe("0101's numbers", () => {
     for (const sig of ["start_cast(", "start_river_cast(", "start_river_cast_w("]) {
       expect(body(SQL, sig)).toContain("public._fishing_effort(v_account, 0.35, 0.45);");
     }
-    expect(body(SQL, "net_haul(p_session_token text, p_throw_id uuid, p_press integer")).toContain("public._fishing_effort(v_account, 0.6, 0.7);");
+    // a net haul costs what a cast costs
+    expect(body(SQL, "net_haul(p_session_token text, p_throw_id uuid, p_press integer")).toContain("public._fishing_effort(v_account, 0.35, 0.45);");
     expect(body(SQL, "_overboard_outcome(")).toContain("'hunger', 5,");
   });
   it("F7: the sales go through the thương lái and answer npc_cut / npc; the board shows the day", () => {
@@ -142,7 +143,10 @@ describe("0101's numbers", () => {
   });
   it("I: the bait and the nets at the new fish prices (shop_items)", () => {
     const shop = Object.fromEntries([...SQL.matchAll(/^ {4}\('((?:bait|net)_\w+)',\s+(\d+)\)/gm)].map((m) => [m[1], Number(m[2])]));
-    expect(shop).toEqual({ bait_shrimp: 1, bait_bloodworm: 3, bait_gold: 6, net_small: 50, net_big: 120 });
+    expect(shop).toEqual({ bait_shrimp: 1, bait_bloodworm: 3, bait_gold: 4, net_small: 50, net_big: 120 });
+    // Mồi vàng: Mồi trùn chỉ's rarity, its faster bite kept (bite_boost is not touched)
+    expect(SQL).toContain("update public.shop_items set mult_hiem = 2, mult_quy = 2, mult_legend = 3\n where id = 'bait_gold'");
+    expect(SQL).not.toMatch(/bite_boost\s*=/);
   });
   it("J: the extras state answers the day's chests; the treasure panel's line", () => {
     expect(body(SQL, "_fx_extras_state(")).toContain(

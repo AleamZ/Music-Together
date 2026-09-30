@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
 import { UmbrellaShelf } from "@/components/game/rain/UmbrellaShelf";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
+import { BAIT_HINT } from "@/lib/game/fishing/messages";
 import { baitTotal, maxBuyQty, needsRepair, ownsItem, repairPrice, wearFor, type FishingState } from "@/lib/game/fishing/state";
 
 const KIND_ORDER: ReadonlyArray<ShopItem["kind"]> = ["fishing_kit", "rod", "net", "bobber", "bait", "bait_box", "bucket"];
@@ -80,7 +81,8 @@ function Repairs({ items, state, busy, onRepair }: { items: ShopItem[]; state: F
   );
 }
 
-/** 🎣 Tiệm đồ câu · chú Tư (spec §10.2, v18.2): rods, nets, bobbers, bait, the bait box, buckets, and Sửa cần. */
+/** 🎣 Tiệm đồ câu · chú Tư (spec §10.2, v18.2): rods, nets, bobbers, bait, the bait box, buckets, and Sửa cần. Econ v2
+ *  (0101): a line before the bait says a better bait wants a better rod. */
 export default function ShopPanel({ state, catalog, busy, onBuy, onRepair = () => {}, onClose }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
@@ -102,7 +104,14 @@ export default function ShopPanel({ state, catalog, busy, onBuy, onRepair = () =
           <>
             <p>Bạn có <b>{formatXu(state.coins)}</b>.</p>
             <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((i) => <Tile key={i.id} item={i} state={state} busy={busy} onBuy={onBuy} />)}
+              {items.map((i, k) => (
+                <Fragment key={i.id}>
+                  {i.kind === "bait" && items[k - 1]?.kind !== "bait" && (
+                    <li className="col-span-full text-base italic leading-tight opacity-80">{BAIT_HINT}</li>
+                  )}
+                  <Tile item={i} state={state} busy={busy} onBuy={onBuy} />
+                </Fragment>
+              ))}
             </ul>
             <Repairs items={catalog.items} state={state} busy={busy} onRepair={onRepair} />
             <UmbrellaShelf />{/* v18.9 */}
