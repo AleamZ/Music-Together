@@ -274,13 +274,13 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       break;
     }
     case "net_hold": {
-      // quăng lưới, aiming: feet apart, the net's bundle hanging from the right hand, the left holding its edge at the
-      // chest; the body rocks side to side, swinging the bundle
+      // quăng lưới, aiming: feet apart, the body rocking side to side
       const w = Math.sin(s * TAU * 0.9);
       p.legL.x = 0.25; p.legR.x = -0.2; p.legL.z = p.legR.z = 0.14; p.kneeL = p.kneeR = 0.28;
       p.drop = 0.05;
-      p.armR.x = 0.35 + w * 0.3; p.armR.z = 0.18; p.elbowR = 0.25;
-      p.armL.x = 0.8; p.armL.z = 0.25; p.elbowL = 1.25;
+      // both fists together in front of the chest holding the net's gathered top (it hangs from them), swinging
+      p.armR.x = 0.55 + w * 0.2; p.armR.z = -0.12; p.elbowR = 0.75;
+      p.armL.x = 0.55 + w * 0.2; p.armL.z = -0.12; p.elbowL = 0.75;
       p.lean = 0.12;
       p.roll = w * 0.06;
       p.headX = 0.12;

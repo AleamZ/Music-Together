@@ -43,6 +43,8 @@ const LINE_PTS = 16;
 const BOB_FLIGHT_S = 0.45;
 /** The net's flight from the hands onto the water (s), after the throw's release. */
 const NET_FLIGHT_S = 0.55;
+/** The net draped from the hands before the throw: its radius and how far it hangs (units). */
+const HANG_R = 0.28, HANG_H = 0.75;
 
 /** A cast net (chài), unit radius, flat at y = 0 with its centre raised by 1 (scale.y sets the dome): 16 spokes and
  *  5 rings as line segments. */
@@ -606,15 +608,22 @@ export class LiveLayer {
     p.bundle.visible = false;
     p.net.visible = false;
     if (n.show === "aim" || n.show === "charge" || (n.show === "throw" && s < NET_RELEASE_S)) {
+      // in the hands: the gathered top in the fists, the net hanging down from them with its lead rim, swaying
       p.bundle.visible = true;
-      p.bundle.position.copy(hands).y -= 0.15;
-      p.bundle.scale.setScalar(1);
+      p.bundle.position.copy(hands);
+      p.bundle.scale.setScalar(0.6);
+      p.net.visible = true;
+      p.net.position.copy(hands).y += 0.05;
+      p.net.scale.set(HANG_R, -HANG_H, HANG_R);                                 // the dome upside down: a draped net
+      p.net.rotation.z = reduced ? 0 : Math.sin(tm / (n.show === "charge" ? 160 : 320)) * 0.15;
     } else if (n.show === "throw") {
+      // it leaves the hands as they fling forward, a draped net opening out into a wide disc as it flies
       const u = Math.min(1, (s - NET_RELEASE_S) / NET_FLIGHT_S), e2 = 1 - (1 - u) * (1 - u);
       p.net.visible = true;
       p.net.position.set(hands.x + (target.x - hands.x) * e2, hands.y + (target.y - hands.y) * e2 + Math.sin(u * Math.PI) * 1.4, hands.z + (target.z - hands.z) * e2);
-      const spread = R * (0.2 + 0.8 * e2);
-      p.net.scale.set(spread, R * 0.45 * (1 - u) + 0.02, spread);
+      const spread = HANG_R + (R - HANG_R) * Math.min(1, u * 1.6);
+      p.net.scale.set(spread, -HANG_H * (1 - Math.min(1, u * 2.5)) + R * 0.3 * Math.max(0, 1 - u) * Math.min(1, u * 2.5) + 0.02, spread);
+      p.net.rotation.z = 0;
       p.spin += reduced ? 0 : dt * 5 * (1 - u);
       out = true;
     } else if (n.show === "sunk") {
@@ -634,6 +643,7 @@ export class LiveLayer {
       p.bundle.position.copy(hands).y += 0.1;
       p.bundle.scale.setScalar(1.3 + (reduced ? 0 : Math.sin(tm / 150) * 0.05) + Math.min(0.6, n.k * 0.08));
     }
+    if (n.show !== "aim" && n.show !== "charge" && !(n.show === "throw" && s < NET_RELEASE_S)) p.net.rotation.z = 0;
     p.net.rotation.y = p.spin;
     p.rope.visible = out;
     if (out) sagLine(p.rope, hands, this.v3.copy(p.net.position), n.show === "pull" ? 0.05 : 0.35);
