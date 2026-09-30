@@ -1,5 +1,5 @@
 import {
-  FARM_LIMIT, HARVEST_PARTS, HARVESTER_MS, harvesterPrice, PLOT_PRICE, RENT_PRICE, SALE_MAX, SUBLEASE_MAX, type Variety,
+  FARM_LIMIT, HARVEST_PARTS, HARVESTER_MS, harvesterPrice, PLOT_PRICE, RENT_PRICE, SALE_MAX, SALE_MIN, SUBLEASE_MAX, type Variety,
 } from "./catalog";
 import { cropModel, cropPhase, waterAt } from "./crop";
 import { farmErrorMessage } from "./messages";
@@ -7,20 +7,31 @@ import type { FieldMine, OfferView, PlotView } from "./state";
 
 // Land rules on the client (spec §7): who farms what, and why a land action would be refused right now. Each check
 // returns the error code the server would raise (the same order of checks), or null — farmErrorMessage turns a code
-// into the Vietnamese reason a disabled button shows. Pure.
+// into the Vietnamese reason a disabled button shows. Pure. Econ v2 (0102): the limits count every room (the field
+// state's mine.farmTotal / mine.ownsLand), and player deals are in a band and pay the seller less the burned fee.
 
-export interface LandCtx { me: string; plots: readonly PlotView[]; mine: FieldMine }
+/** `feePct` (econ v2): the field state's p2p_fee_pct, the % a plot sale or a sublease burns (0 before 0102). */
+export interface LandCtx { me: string; plots: readonly PlotView[]; mine: FieldMine; feePct?: number }
 
 export const isFarmer = (p: PlotView, me: string): boolean => p.farmer?.id === me;
 export const isOwner = (p: PlotView, me: string): boolean => p.owner?.id === me;
 
-/** The plots I farm here (the limit is 2): leased ones and my own unleased plot. */
+/** The plots I farm here: leased ones and my own unleased plot. */
 export function farmingCount(ctx: LandCtx): number {
   return ctx.plots.filter((p) => isFarmer(p, ctx.me)).length;
 }
 
-const atLimit = (ctx: LandCtx) => farmingCount(ctx) >= FARM_LIMIT;
-const ownsLand = (ctx: LandCtx) => ctx.plots.some((p) => isOwner(p, ctx.me));
+/** The plots I farm in every room (the limit is 2): the server's total, or this room's before 0102. */
+export function farmingTotal(ctx: LandCtx): number {
+  return Math.max(farmingCount(ctx), ctx.mine.farmTotal ?? 0);
+}
+
+/** Whether I own a private plot in any room (one each): the server's answer, or this room's before 0102. */
+export function ownsLand(ctx: LandCtx): boolean {
+  return ctx.mine.ownsLand === true || ctx.plots.some((p) => isOwner(p, ctx.me));
+}
+
+const atLimit = (ctx: LandCtx) => farmingTotal(ctx) >= FARM_LIMIT;
 const plotOf = (ctx: LandCtx, no: number) => ctx.plots.find((p) => p.no === no) ?? null;
 
 /** The reason text for a refusal code. */
@@ -67,12 +78,12 @@ export function rentSubleaseRefusal(p: PlotView, ctx: LandCtx): string | null {
   return null;
 }
 
-const priceOk = (price: number, max: number) => Number.isInteger(price) && price >= 1 && price <= max;
+const priceOk = (price: number, min: number, max: number) => Number.isInteger(price) && price >= min && price <= max;
 
 export function offerRefusal(p: PlotView, ctx: LandCtx, price: number): string | null {
   if (!p.owner) return "not for sale";
   if (p.owner.id === ctx.me) return "invalid plot";
-  if (!priceOk(price, SALE_MAX)) return "invalid price";
+  if (!priceOk(price, SALE_MIN, SALE_MAX)) return "invalid price";
   if (ownsLand(ctx)) return "already own land";
   return null;
 }
@@ -81,7 +92,7 @@ export function offerRefusal(p: PlotView, ctx: LandCtx, price: number): string |
 export function listRefusal(p: PlotView, ctx: LandCtx, price: number | null): string | null {
   if (!isOwner(p, ctx.me)) return "not your plot";
   if (price === null) return null;
-  if (!priceOk(price, SALE_MAX)) return "invalid price";
+  if (!priceOk(price, SALE_MIN, SALE_MAX)) return "invalid price";
   if (p.crop) return "crop exists";
   if (p.lease) return "leased";
   return null;
@@ -91,7 +102,7 @@ export function listRefusal(p: PlotView, ctx: LandCtx, price: number | null): st
 export function subleaseRefusal(p: PlotView, ctx: LandCtx, price: number | null): string | null {
   if (!isOwner(p, ctx.me)) return "not your plot";
   if (price === null) return null;
-  if (!priceOk(price, SUBLEASE_MAX)) return "invalid price";
+  if (!priceOk(price, 1, SUBLEASE_MAX)) return "invalid price";
   if (p.crop) return "crop exists";
   if (p.lease) return "leased";
   return null;

@@ -3,18 +3,18 @@
 import { useState, type ReactNode } from "react";
 import { ParchmentModal } from "@/components/game/Parchment";
 import {
-  FARM_LIMIT, HARVEST_PARTS, harvesterPrice, LEASE_HOURS, PLOT_PRICE, RENT_PRICE, SALE_MAX, SELL_BACK_PRICE, SUBLEASE_MAX,
-  type FarmCatalog, type Variety,
+  FARM_LIMIT, HARVEST_PARTS, harvesterPrice, landNet, LEASE_HOURS, PLOT_PRICE, RENT_PRICE, SALE_MAX, SALE_MIN, SELL_BACK_PRICE,
+  SUBLEASE_MAX, type FarmCatalog, type Variety,
 } from "@/lib/game/farm/catalog";
 import { cropModel, cropPhase, overripeAt } from "@/lib/game/farm/crop";
 import {
-  acceptRefusal, buyListedRefusal, buyPlotRefusal, farmingCount, harvesterRefusal, listRefusal, offerRefusal, reasonText, rentRefusal,
+  acceptRefusal, buyListedRefusal, buyPlotRefusal, farmingTotal, harvesterRefusal, listRefusal, offerRefusal, reasonText, rentRefusal,
   rentSubleaseRefusal, sellBackRefusal, subleaseRefusal, type LandCtx,
 } from "@/lib/game/farm/land";
 import { COAT_NAME, DOG, DOG_COATS, dogNameRefusal, type DogCoat, type DogView } from "@/lib/game/dog";
 import {
   ADOPT_BUTTON, ADOPT_INTRO, adoptConfirmText, DOG_NAME_HINT, DOG_NAME_PROBLEM, dogOwnedText, durationText, harvesterStartText,
-  PHASE_NAME,
+  landNetText, PHASE_NAME, saleRuleText, subleaseRuleText,
 } from "@/lib/game/farm/messages";
 import type { FieldAction } from "@/lib/game/farm/rpc";
 import type { CropView, FieldState, PlotView } from "@/lib/game/farm/state";
@@ -157,12 +157,14 @@ function Line({ children, action }: { children: ReactNode; action?: ReactNode })
 }
 
 /** A whole-xu price field. */
-function PriceInput({ label, max, value, onChange }: { label: string; max: number; value: string; onChange: (v: string) => void }) {
+function PriceInput({ label, min = 1, max, value, onChange }: {
+  label: string; min?: number; max: number; value: string; onChange: (v: string) => void;
+}) {
   return (
     <label className="flex items-center gap-1">
       <span>{label}</span>
       <input
-        type="number" inputMode="numeric" min={1} max={max} step={1} value={value} aria-label={label} onChange={(e) => onChange(e.target.value)}
+        type="number" inputMode="numeric" min={min} max={max} step={1} value={value} aria-label={label} onChange={(e) => onChange(e.target.value)}
         className="w-28 rounded-sm border border-ink/40 bg-parchment px-1 text-right"
       />
       <span>xu</span>
@@ -196,7 +198,7 @@ function VillageTab({ ctx, busy, now, onAct }: { ctx: LandCtx; busy: boolean; no
 function PrivateTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: Act }) {
   return (
     <>
-      <p className="opacity-80">Đất tư được thêm 10% lúa, không tốn tiền thuê; mỗi người một thửa trong phòng.</p>
+      <p className="opacity-80">Đất tư được thêm 10% lúa, không tốn tiền thuê; mỗi người một thửa (tính cả các sảnh).</p>
       <ul>
         {ctx.plots.filter((p) => p.kind === "private").map((p) => (
           <Line key={p.no} action={!p.owner && (
@@ -253,7 +255,9 @@ function MarketTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: A
       {others.length > 0 && (
         <section className="pch flex flex-col gap-1 p-2">
           <h3 className="text-xl text-burgundy">Đề nghị mua</h3>
-          <p className="text-base opacity-80">Trả giá đất tư của người khác; chủ đất đồng ý thì mới thành. Đề nghị có hạn 24 giờ.</p>
+          <p className="text-base opacity-80">
+            Trả giá đất tư của người khác; chủ đất đồng ý thì mới thành. Đề nghị có hạn 24 giờ. {saleRuleText(0)}
+          </p>
           <div className="flex flex-wrap gap-1" role="group" aria-label="Thửa muốn mua">
             {others.map((p) => (
               <button key={p.no} type="button" className="pch-btn text-base" aria-pressed={offerPlot?.no === p.no} onClick={() => choose(p.no)}>
@@ -262,7 +266,7 @@ function MarketTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: A
             ))}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-1">
-            <PriceInput label="Giá" max={SALE_MAX} value={price} onChange={setPrice} />
+            <PriceInput label="Giá" min={SALE_MIN} max={SALE_MAX} value={price} onChange={setPrice} />
             {/* keyed by the plot and the price: a change drops an open question, so it always names what is sent */}
             <LandButton key={`${offerPlot?.no ?? ""}:${price}`} busy={busy} primary
               refusal={offerPlot ? priceRefusal(price, (x) => offerRefusal(offerPlot, ctx, x)) : ""}
@@ -282,6 +286,7 @@ export function MyPlot({ p, ctx, busy, onAct }: { p: PlotView; ctx: LandCtx; bus
   const [sale, setSale] = useState("");
   const [lease, setLease] = useState("");
   const salePrice = toPrice(sale), leasePrice = toPrice(lease);
+  const fee = ctx.feePct ?? 0;
   return (
     <section className="pch flex flex-col gap-2 p-2">
       <h3 className="text-xl text-burgundy">Thửa {p.no} — đất tư của bạn</h3>
@@ -290,14 +295,18 @@ export function MyPlot({ p, ctx, busy, onAct }: { p: PlotView; ctx: LandCtx; bus
           <LandButton refusal={listRefusal(p, ctx, null)} busy={busy} onClick={() => onAct({ kind: "list", plot: p.no, price: null }, "Đã thôi rao bán.")}>
             Thôi rao bán
           </LandButton>
-        }>Đang rao bán {formatXu(p.salePrice)}</Line>
+        }>Đang rao bán {formatXu(p.salePrice)} — bán được thì {landNetText(p.salePrice, fee)}</Line>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-1">
-          <PriceInput label="Rao bán" max={SALE_MAX} value={sale} onChange={setSale} />
-          <LandButton refusal={priceRefusal(sale, (x) => listRefusal(p, ctx, x))} busy={busy}
-            onClick={() => onAct({ kind: "list", plot: p.no, price: salePrice }, `Đã rao bán thửa ${p.no} giá ${formatXu(salePrice)}.`)}>
-            Rao bán
-          </LandButton>
+        <div className="flex flex-col gap-0.5">
+          <div className="flex flex-wrap items-center justify-between gap-1">
+            <PriceInput label="Rao bán" min={SALE_MIN} max={SALE_MAX} value={sale} onChange={setSale} />
+            <LandButton refusal={priceRefusal(sale, (x) => listRefusal(p, ctx, x))} busy={busy}
+              onClick={() => onAct({ kind: "list", plot: p.no, price: salePrice },
+                `Đã rao bán thửa ${p.no} giá ${formatXu(salePrice)}; bán được thì ${landNetText(salePrice, fee)}.`)}>
+              Rao bán
+            </LandButton>
+          </div>
+          <span className="text-base opacity-80">{saleRuleText(fee)}</span>
         </div>
       )}
       {p.subleasePrice !== null ? (
@@ -305,14 +314,18 @@ export function MyPlot({ p, ctx, busy, onAct }: { p: PlotView; ctx: LandCtx; bus
           <LandButton refusal={subleaseRefusal(p, ctx, null)} busy={busy} onClick={() => onAct({ kind: "set_sublease", plot: p.no, price: null }, "Đã thôi cho thuê.")}>
             Thôi cho thuê
           </LandButton>
-        }>Đang cho thuê một vụ {formatXu(p.subleasePrice)}</Line>
+        }>Đang cho thuê một vụ {formatXu(p.subleasePrice)} — có người thuê thì {landNetText(p.subleasePrice, fee)}</Line>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-1">
-          <PriceInput label="Cho thuê một vụ" max={SUBLEASE_MAX} value={lease} onChange={setLease} />
-          <LandButton refusal={priceRefusal(lease, (x) => subleaseRefusal(p, ctx, x))} busy={busy}
-            onClick={() => onAct({ kind: "set_sublease", plot: p.no, price: leasePrice }, `Đã cho thuê thửa ${p.no} giá ${formatXu(leasePrice)} một vụ.`)}>
-            Cho thuê
-          </LandButton>
+        <div className="flex flex-col gap-0.5">
+          <div className="flex flex-wrap items-center justify-between gap-1">
+            <PriceInput label="Cho thuê một vụ" max={SUBLEASE_MAX} value={lease} onChange={setLease} />
+            <LandButton refusal={priceRefusal(lease, (x) => subleaseRefusal(p, ctx, x))} busy={busy}
+              onClick={() => onAct({ kind: "set_sublease", plot: p.no, price: leasePrice },
+                `Đã cho thuê thửa ${p.no} giá ${formatXu(leasePrice)} một vụ; có người thuê thì ${landNetText(leasePrice, fee)}.`)}>
+              Cho thuê
+            </LandButton>
+          </div>
+          <span className="text-base opacity-80">{subleaseRuleText(fee)}</span>
         </div>
       )}
       {p.lease && p.farmer && p.farmer.id !== ctx.me && <p>{p.farmer.name} đang thuê thửa này.</p>}
@@ -327,11 +340,14 @@ export function MyPlot({ p, ctx, busy, onAct }: { p: PlotView; ctx: LandCtx; bus
 
 function MineTab({ ctx, state, busy, now, onAct }: { ctx: LandCtx; state: FieldState; busy: boolean; now: number; onAct: Act }) {
   const owned = ctx.plots.find((p) => p.owner?.id === ctx.me) ?? null;
+  const fee = ctx.feePct ?? 0;
   const leases = ctx.plots.filter((p) => p.lease && p.farmer?.id === ctx.me);
   const { incomingOffers, myOffers } = state.mine;
   return (
     <>
-      {owned ? <MyPlot p={owned} ctx={ctx} busy={busy} onAct={onAct} /> : <p className="opacity-80">Bạn chưa có đất tư — mua ở thẻ Đất tư hoặc Chợ đất.</p>}
+      {owned ? <MyPlot p={owned} ctx={ctx} busy={busy} onAct={onAct} />
+        : ctx.mine.ownsLand ? <p className="opacity-80">Thửa đất tư của bạn ở một sảnh khác — mỗi người chỉ một thửa.</p>
+        : <p className="opacity-80">Bạn chưa có đất tư — mua ở thẻ Đất tư hoặc Chợ đất.</p>}
       {leases.length > 0 && (
         <ul>
           {leases.map((p) => <Line key={p.no}>Thửa {p.no} · bạn thuê — còn {durationText(p.lease!.until - now)}</Line>)}
@@ -345,8 +361,8 @@ function MineTab({ ctx, state, busy, now, onAct }: { ctx: LandCtx; state: FieldS
               <Line key={o.id} action={
                 <div className="flex flex-wrap items-start gap-1">
                   <LandButton refusal={acceptRefusal(o, ctx)} busy={busy} primary
-                    warn={`Bán thửa ${o.plot} cho ${o.buyer?.name ?? "người này"} lấy ${formatXu(o.price)}?`}
-                    onClick={() => onAct({ kind: "accept_offer", offer: o.id }, `Đã bán thửa ${o.plot} — nhận ${formatXu(o.price)}.`)}>
+                    warn={`Bán thửa ${o.plot} cho ${o.buyer?.name ?? "người này"} lấy ${formatXu(o.price)} — ${landNetText(o.price, fee)}?`}
+                    onClick={() => onAct({ kind: "accept_offer", offer: o.id }, `Đã bán thửa ${o.plot} — nhận ${formatXu(landNet(o.price, fee))}.`)}>
                     Đồng ý
                   </LandButton>
                   <LandButton refusal={null} busy={busy} onClick={() => onAct({ kind: "decline_offer", offer: o.id }, "Đã từ chối đề nghị.")}>
@@ -354,7 +370,7 @@ function MineTab({ ctx, state, busy, now, onAct }: { ctx: LandCtx; state: FieldS
                   </LandButton>
                 </div>
               }>
-                {o.buyer?.name ?? "Ai đó"} trả {formatXu(o.price)} cho thửa {o.plot} — còn {durationText(o.expiresAt - now)}
+                {o.buyer?.name ?? "Ai đó"} trả {formatXu(o.price)} cho thửa {o.plot} — {landNetText(o.price, fee)} — còn {durationText(o.expiresAt - now)}
               </Line>
             ))}
           </ul>
@@ -458,7 +474,7 @@ export default function CoopPanel({ state, catalog = null, failed, me, busy, now
   onReload: () => void;
   onClose: () => void;
 }) {
-  const ctx: LandCtx | null = state ? { me, plots: state.plots, mine: state.mine } : null;
+  const ctx: LandCtx | null = state ? { me, plots: state.plots, mine: state.mine, feePct: state.p2pFeePct } : null;
   const varieties = catalog?.varieties ?? [];
   const [tab, setTab] = useState<Tab>(() => (ctx && riceReady(ctx, varieties, now) ? "harvester" : "village"));
   return (
@@ -475,7 +491,7 @@ export default function CoopPanel({ state, catalog = null, failed, me, busy, now
           <FieldStatus failed={failed} onReload={onReload} />
         ) : (
           <div role="tabpanel" className="flex flex-col gap-2">
-            <p>Bạn có <b>{formatXu(state.mine.coins)}</b> · đang canh tác {farmingCount(ctx)}/{FARM_LIMIT} thửa.</p>
+            <p>Bạn có <b>{formatXu(state.mine.coins)}</b> · đang canh tác {farmingTotal(ctx)}/{FARM_LIMIT} thửa (tính cả các sảnh).</p>
             {tab === "village" && <VillageTab ctx={ctx} busy={busy} now={now} onAct={onAct} />}
             {tab === "private" && <PrivateTab ctx={ctx} busy={busy} onAct={onAct} />}
             {tab === "market" && <MarketTab ctx={ctx} busy={busy} onAct={onAct} />}

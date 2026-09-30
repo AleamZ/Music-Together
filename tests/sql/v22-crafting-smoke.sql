@@ -223,8 +223,10 @@ begin
   perform pg_temp.seed(a, 'sort', (sharp->>'seed')::bigint);
   c0 := (select coins from public.wallets where account_id = a);
   r := public.process_sort_finish(t, pg_temp.ints(sharp->'ticks'), pg_temp.ints(sharp->'dirs'), 12);
-  assert r->>'result' = 'collected' and (r->>'bonus_pct')::int = 5 and (r->>'bonus')::int = 960, format('collected %s', r);
-  assert (select coins from public.wallets where account_id = a) >= c0 + 960, 'bonus paid';
+  -- econ v2: the recipe's value is data that 0102 re-prices (gạo trắng 9 600 → 8 150), so the bonus is read from it
+  assert r->>'result' = 'collected' and (r->>'bonus_pct')::int = 5
+     and (r->>'bonus')::int = (select value from public.processor_recipes where id = 'gao_trang') * 2 * 5 / 100, format('collected %s', r);
+  assert (select coins from public.wallets where account_id = a) >= c0 + (r->>'bonus')::int, 'bonus paid';
   assert (select qty from public.processed_goods where account_id = a and recipe = 'gao_trang') = 2, 'goods';
   assert exists (select 1 from public.anticheat_events where account_id = a and code = 'sort_timing'), 'soft timing';
   assert exists (select 1 from public.game_events where account_id = a and kind = 'crop_processed' and (meta->>'sort')::int = 12), 'event';

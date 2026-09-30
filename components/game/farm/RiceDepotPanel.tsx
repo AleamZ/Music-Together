@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
+import { npcPay, npcQuotaLine } from "@/lib/game/economy/npc";
 import { producePrice, ricePrice, type FarmCatalog, type UplandCrop, type Variety } from "@/lib/game/farm/catalog";
 import { critterPrice, lowerFirst } from "@/lib/game/farm/gather";
 import type { CritterPrices, FarmMine } from "@/lib/game/farm/state";
@@ -70,7 +71,11 @@ function ProduceRow({ u, kg, busy, onSell, pay }: {
 /** cô Út's cua & ốc once 0018 has critters (v15.3 §13.4): today's prices, and the sale of a kind or of all (null). */
 export interface DepotCritters { prices: CritterPrices | null; onSell: (kind: string | null) => void }
 
-/** 🦀 Cua & ốc: today's prices from the room's M, a row per kind held at the prices fixed at the catch, and Bán hết. */
+/** What the thương lái pays for goods worth `xu` at their catch prices (econ v2): the day's rate, or all before 0102. */
+const npcPaid = (mine: FarmMine, xu: number): number => (mine.npc ? npcPay(mine.npc, xu) : xu);
+
+/** 🦀 Cua & ốc: today's prices from the room's M, a row per kind held at the prices fixed at the catch, and Bán hết; the
+ *  buttons show what the thương lái pays today (econ v2). */
 function CritterSection({ mine, catalog, critters, busy }: { mine: FarmMine; catalog: FarmCatalog; critters: DepotCritters; busy: boolean }) {
   const held = catalog.critters.flatMap((k) => ((mine.critters[k.id]?.n ?? 0) > 0 ? [{ k, s: mine.critters[k.id] }] : []));
   const total = held.reduce((xu, h) => xu + h.s.xu, 0);
@@ -88,14 +93,14 @@ function CritterSection({ mine, catalog, critters, busy }: { mine: FarmMine; cat
           {held.map(({ k, s }) => (
             <li key={k.id} className="pch flex flex-wrap items-center justify-between gap-2 p-2">
               <span className="flex items-center gap-2"><ItemIcon id={k.id} scale={3} />{k.name} × {s.n} · {formatXu(s.xu)}</span>
-              <button type="button" className="pch-btn" disabled={busy} onClick={() => onSell(k.id)}>Bán {s.n} con · {formatXu(s.xu)}</button>
+              <button type="button" className="pch-btn" disabled={busy} onClick={() => onSell(k.id)}>Bán {s.n} con · {formatXu(npcPaid(mine, s.xu))}</button>
             </li>
           ))}
         </ul>
       )}
       {held.length > 0 && (
         <button type="button" className="pch-btn pch-btn-primary self-end" disabled={busy} onClick={() => onSell(null)}>
-          Bán hết cua ốc · {formatXu(total)}
+          Bán hết cua ốc · {formatXu(npcPaid(mine, total))}
         </button>
       )}
       <p className="text-base opacity-80">Giá chốt lúc bắt được; bán sau vẫn giữ giá đó.</p>
@@ -120,7 +125,7 @@ function RatSection({ mine, rats, busy }: { mine: FarmMine; rats: DepotRats; bus
               <span className="text-base">{formatXu(value)} (giá chốt lúc bắt)</span>
             </span>
           </span>
-          <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={rats.onSell}>Bán hết · {formatXu(value)}</button>
+          <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={rats.onSell}>Bán hết · {formatXu(npcPaid(mine, value))}</button>
         </div>
       )}
       <p className="text-base opacity-80">Giá chuột bây giờ: {rats.price.toLocaleString("vi-VN")} xu một con</p>
@@ -188,6 +193,7 @@ export default function RiceDepotPanel({
             )}
             {critters && <CritterSection mine={mine} catalog={catalog} critters={critters} busy={busy} />}
             {rats && <RatSection mine={mine} rats={rats} busy={busy} />}
+            {(critters || rats) && mine.npc && <p className="text-base opacity-80">{npcQuotaLine(mine.npc)}</p>}
           </>
         )}
       </div>

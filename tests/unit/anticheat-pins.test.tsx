@@ -238,19 +238,20 @@ describe("bad_price", () => {
     // the plot first: until one is picked the button is off whatever the price
     fireEvent.click(within(screen.getByRole("group", { name: "Thửa muốn mua" })).getAllByRole("button")[0]);
     const send = () => screen.getByRole("button", { name: "Gửi đề nghị" });
-    for (const v of BAD) {
+    for (const v of [...BAD, "6000", "399999", "2400001"]) {                   // econ v2 (0102): the band 400 000–2 400 000
       fireEvent.change(screen.getByLabelText("Giá"), { target: { value: v } });
       expect(send()).toBeDisabled();
     }
-    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "6000" } });
+    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "600000" } });
     expect(send()).toBeEnabled();
   });
 
   it("keeps Rao bán and Cho thuê disabled for a price the server refuses", () => {
     coop(STATE, "Của tôi");
-    for (const [label, good] of [["Rao bán", "12000"], ["Cho thuê một vụ", "3000"]] as const) {
+    for (const [label, good] of [["Rao bán", "1200000"], ["Cho thuê một vụ", "3000"]] as const) {
       const button = () => screen.getByRole("button", { name: label === "Rao bán" ? "Rao bán" : "Cho thuê" });
-      for (const v of [...BAD, ...(label === "Cho thuê một vụ" ? ["100001"] : [])]) {
+      // econ v2 (0102): a sale in the band 400 000–2 400 000, a sublease at most 50 000
+      for (const v of [...BAD, ...(label === "Cho thuê một vụ" ? ["50001"] : ["12000", "399999", "2400001"])]) {
         fireEvent.change(screen.getByLabelText(label), { target: { value: v } });
         expect(button()).toBeDisabled();
       }
