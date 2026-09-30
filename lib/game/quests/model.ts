@@ -13,6 +13,17 @@ export const BAC_BA_LANG_LOOK: Look = {
 /** The 7-day login calendar (0071 `_login_rewards`), in xu. */
 export const LOGIN_REWARDS: readonly number[] = [20, 30, 40, 50, 60, 80, 150];
 
+/** Economy v2 (0104 `_company_share`): a finished company goal's pool (its `coins`, 3 000) is shared by contribution. A
+ *  contributor with at least COMPANY_MIN_PCT % of the goal gets floor(pool × mine / total), at most COMPANY_SHARE_MAX, and
+ *  the goal's XP; under that, nothing. `total` is everyone's contribution (the last one may pass the goal); while the goal is
+ *  open the estimate uses the goal. */
+export const COMPANY_SHARE_MAX = 300;
+export const COMPANY_MIN_PCT = 1;
+export function companyShare(pool: number, mine: number, goal: number, total: number = goal): number {
+  if (!(goal > 0) || mine * 100 < goal * COMPANY_MIN_PCT) return 0;
+  return Math.min(COMPANY_SHARE_MAX, Math.floor((pool * mine) / Math.max(goal, total)));
+}
+
 /** Album limits (0071 photo_save). */
 export const PHOTO_MAX_CHARS = 150_000;
 export const PHOTO_MAX_COUNT = 24;

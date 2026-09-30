@@ -5,8 +5,8 @@
 import { useState } from "react";
 import { ParchmentModal } from "@/components/game/Parchment";
 import {
-  BOSS_DEFS, DUNGEON_FEE, DUNGEON_ROOMS, MAX_COMBO, PARTY_MAX, RAID_ARENA, WILD_ITEMS, WILD_SPECIES, beat, inArena, sellPrice,
-  type WildItemId,
+  BOSS_DEFS, BOSS_PAID_PER_DAY, DUNGEON_BASE, DUNGEON_FEE, DUNGEON_PAID_PER_DAY, DUNGEON_POT, DUNGEON_ROOMS, MAX_COMBO, PARTY_MAX,
+  RAID_ARENA, WILD_ITEMS, WILD_SPECIES, beat, inArena, sellPrice, type WildItemId,
 } from "@/lib/game/realm/model";
 import type { WorldState } from "@/lib/game/realm/rpc";
 import type { MapId } from "@/lib/game/maps/types";
@@ -185,7 +185,11 @@ function BossTab({ w, s, now, mapId, pos, clock, vnTime }: { w: World; s: WorldS
       {raidDef && (
         <div className="pch p-2">
           <p className="font-bold">🐗 Boss tổ đội: {raidDef.name}</p>
-          <p className="text-sm">Cần tổ đội có ≥ 3 thành viên cùng đứng trong đấu trường giữa Bãi đất trống. Mỗi đội gọi 1 lần/giờ.</p>
+          <p className="text-sm">
+            Cần tổ đội có ≥ 3 thành viên cùng đứng trong đấu trường giữa Bãi đất trống. Mỗi người chỉ góp vào 1 lần gọi mỗi giờ
+            (lập lại đội cũng vậy). Mỗi ngày chỉ {BOSS_PAID_PER_DAY} trận boss tổ đội và {BOSS_PAID_PER_DAY} trận boss mưa/tuyết có xu,
+            sau đó chỉ có kinh nghiệm.
+          </p>
           <button type="button" className="pch-btn pch-btn-primary mt-1 px-2 py-0.5" disabled={w.busy || !s.party || !inRaid} onClick={() => w.summon()}>
             Gọi {raidDef.name}
           </button>
@@ -203,7 +207,11 @@ function DungeonTab({ w, s, now, atGate, clock }: { w: World; s: WorldState; now
   const b = beat(since);
   return (
     <div className="flex flex-col gap-2">
-      <p>Hầm ngục tổ đội: 4 phòng quái, phòng cuối là <b>Dơi Chúa</b>. Vé vào {DUNGEON_FEE} xu/người; thưởng theo công sức (5 lượt/ngày). Đứng ở cổng hầm (Bãi đất trống, phía tây) trong suốt trận.</p>
+      <p>
+        Hầm ngục (một mình hoặc cả tổ đội): 4 phòng quái, phòng cuối là <b>Dơi Chúa</b>. Vé vào {DUNGEON_FEE} xu/người. Dọn xong, mỗi
+        người có góp sức nhận {DUNGEON_BASE} xu cộng phần của quỹ {DUNGEON_POT} xu × số người, chia theo
+        công sức ({DUNGEON_PAID_PER_DAY} lượt có thưởng mỗi ngày). Đứng ở cổng hầm (Bãi đất trống, phía tây) trong suốt trận.
+      </p>
       {!atGate && <p className="text-sm opacity-80">Bạn chưa đứng ở cổng hầm ngục.</p>}
       {!run || run.status !== "open" ? (
         <>
@@ -213,7 +221,7 @@ function DungeonTab({ w, s, now, atGate, clock }: { w: World; s: WorldState; now
             Vào hầm ({DUNGEON_FEE} xu)
           </button>
           {!s.party && <p className="text-sm">Cần có tổ đội (lập một mình cũng được).</p>}
-          <p className="text-sm opacity-80">Lượt đã dọn hôm nay: {s.clearsToday}/5</p>
+          <p className="text-sm opacity-80">Lượt đã dọn hôm nay: {s.clearsToday}/{DUNGEON_PAID_PER_DAY}</p>
         </>
       ) : (
         <div className="pch p-2">

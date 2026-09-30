@@ -59,6 +59,12 @@ describe("0064–0067: every re-created function is its newest body plus the mar
     for (const f of later) {
       for (const [sig, , dst] of cases) {
         if (!read(`supabase/migrations/${f}`).includes(`function public.${sig.slice(0, sig.indexOf("("))}(`)) continue;
+        // economy v2 (0104) re-creates the 2-arg pet_tick (the sóc's forage; tests/unit/econ-rewards.test.ts), never the
+        // 1-arg stub 0066 left
+        if (f === "0104_econ_rewards.sql" && sig === "pet_tick(p_session_token text)") {
+          expect(read(`supabase/migrations/${f}`)).not.toContain("function public.pet_tick(p_session_token text)");
+          continue;
+        }
         expect(f, sig).toBe("0078_v21_fixes.sql");                                   // v21 fixes: the catch flag (mt.catch)
         expect(unmarked(body(M(f.slice(0, -4)), sig), "0078")).toBe(body(M(dst), sig));
       }

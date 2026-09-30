@@ -113,7 +113,7 @@ const ARENA_POND = { x: 490, y: 60, w: 140, h: 300 };
 export const BOSS_DEFS: readonly BossDef[] = [
   { id: "trau_tinh", name: "Trâu Tinh", kind: "world", map: "bai_dat", arena: ARENA_BAI, hp: 40000, capPct: 20, pool: 3000, durMin: 30, xp: 120 },
   { id: "soi_ma", name: "Sói Ma", kind: "night", map: "bai_dat", arena: ARENA_BAI, hp: 30000, capPct: 25, pool: 2000, durMin: 30, xp: 100 },
-  { id: "heo_rung", name: "Vua Heo Rừng", kind: "raid", map: "bai_dat", arena: ARENA_BAI, hp: 24000, capPct: 25, pool: 1600, durMin: 20, xp: 90 },
+  { id: "heo_rung", name: "Vua Heo Rừng", kind: "raid", map: "bai_dat", arena: ARENA_BAI, hp: 24000, capPct: 25, pool: 1200, durMin: 20, xp: 90 },   // econ v2 (0104)
   { id: "thuy_quai", name: "Thủy Quái", kind: "weather", map: "pond", arena: ARENA_POND, hp: 15000, capPct: 34, pool: 900, durMin: 20, xp: 70 },
   { id: "nguoi_tuyet", name: "Người Tuyết", kind: "snow", map: "pond", arena: ARENA_POND, hp: 15000, capPct: 34, pool: 900, durMin: 20, xp: 70 },
 ];
@@ -121,6 +121,17 @@ export const BOSS_SCHEDULE: ReadonlyArray<{ boss: BossId; at: string }> = [
   { boss: "trau_tinh", at: "12:00" }, { boss: "trau_tinh", at: "20:00" }, { boss: "soi_ma", at: "22:00" },
 ];
 export const bossDef = (id: string): BossDef | null => BOSS_DEFS.find((b) => b.id === id) ?? null;
+/** Economy v2 (0104 _boss_payout): a raid or a weather boss (rain or snow) pays an account's share of the pool for this many
+ *  kills a Vietnam day; after that the hitter gets the XP only. The scheduled world and night bosses are not capped. */
+export const BOSS_PAID_PER_DAY = 2;
+export const bossPaidCapped = (kind: BossDef["kind"]): boolean => kind === "raid" || kind === "weather" || kind === "snow";
+/** The line after a kill: how the reward is shared (and the daily cap, where there is one). */
+export function bossRewardNote(id: string): string {
+  const d = bossDef(id);
+  return d && bossPaidCapped(d.kind)
+    ? `Phần thưởng chia theo công sức (mỗi ngày chỉ ${BOSS_PAID_PER_DAY} trận ${d.kind === "raid" ? "boss tổ đội" : "boss mưa/tuyết"} có xu, sau đó chỉ có kinh nghiệm).`
+    : "Phần thưởng chia theo công sức.";
+}
 /** The raid arena (where the party summons Vua Heo Rừng). */
 export const RAID_ARENA = { map: "bai_dat" as MapId, ...ARENA_BAI };
 /** In the arena, with the server's 16 px margin. */
@@ -140,7 +151,16 @@ export function beat(sinceMs: number): "wait" | "beat" | "late" {
 }
 
 // ---------------------------------------------------------------- the dungeon
-export const DUNGEON_FEE = 150;
+/** Economy v2 (0104 _dg_pay_fee; was 150). */
+export const DUNGEON_FEE = 100;
+/** The cleared runs a day that pay (0104 _dg_payout; was 5). */
+export const DUNGEON_PAID_PER_DAY = 3;
+/** What a clear pays a member (0104 _dg_payout): DUNGEON_BASE + floor(DUNGEON_POT × n × share) — n the members this clear
+ *  pays (the fee paid, some damage, under the day's cap), share the member's part of the damage. Equal hitters earn the same
+ *  in any party. */
+export const DUNGEON_BASE = 50;
+export const DUNGEON_POT = 250;
+export const dungeonReward = (nPaid: number, share: number): number => DUNGEON_BASE + Math.floor(DUNGEON_POT * nPaid * share);
 export const DUNGEON_ROOMS: ReadonlyArray<{ room: number; mob: string; name: string; hp: number; n: number }> = [
   { room: 1, mob: "doi", name: "Dơi hang", hp: 300, n: 3 },
   { room: 2, mob: "ran", name: "Rắn hang", hp: 450, n: 3 },

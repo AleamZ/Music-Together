@@ -45,8 +45,9 @@ export interface PetsState {
   /** pet_tick: xu the sóc just found (0 = none). */
   found?: number;
   coins?: number;
-  /** pet_tick (0066): why the sóc did not forage — no live heartbeat, or not a member of the room. */
-  idle?: "no_heartbeat" | "not_member";
+  /** pet_tick (0066): why the sóc did not forage — no live heartbeat, not a member of the room, or (0104) the owner has
+   *  not moved in the last 5 minutes. */
+  idle?: "no_heartbeat" | "not_member" | "afk";
 }
 
 const num = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v !== "" && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -82,7 +83,7 @@ export function parsePetsState(data: unknown): PetsState {
   };
   if (r.found !== undefined) out.found = num(r.found);
   if (r.coins !== undefined) out.coins = num(r.coins);
-  if (r.idle === "no_heartbeat" || r.idle === "not_member") out.idle = r.idle;
+  if (r.idle === "no_heartbeat" || r.idle === "not_member" || r.idle === "afk") out.idle = r.idle;
   return out;
 }
 
@@ -110,7 +111,8 @@ async function call(fn: string, args: Record<string, unknown>): Promise<PetsStat
 }
 
 export const petsState = (token: string) => call("pets_state", { p_session_token: token });
-/** The minute heartbeat (0066): the sóc forages only while this room's game is live (a recent heartbeat, a member). */
+/** The minute heartbeat (0066): the sóc forages only while this room's game is live (a recent heartbeat, a member) and
+ *  (0104) while I move — the server samples my position at each tick. */
 export const petTick = (token: string, roomId: string) => call("pet_tick", { p_session_token: token, p_room_id: roomId });
 export const buyPet = (token: string, species: PetSpecies, variant: string, name: string | null) =>
   call("pet_buy", { p_session_token: token, p_species: species, p_variant: variant, p_name: name });

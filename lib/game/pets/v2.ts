@@ -1,6 +1,6 @@
 // v21 Pets v2 + combat pets + battle fish + the aquarium: a display copy of 0074_pets_aquarium.sql (authoritative — the
 // server rolls the eggs, resolves the turns and pays; the client only picks a skill per turn). tests/unit/pets-v2.test.ts
-// pins these literals to the SQL.
+// pins these literals to the SQL; economy v2 (0104_econ_rewards.sql) changed the paid wins, the prizes and the PvP cut.
 import { supabase } from "@/lib/supabase";
 import type { PetSpecies } from "./catalog";
 import { parsePetsState, type PetsState } from "./rpc";
@@ -18,14 +18,15 @@ export const MAX_FISH_FIGHTERS = 6;
 /** A fish of at least this rarity can be kept as a fighter. */
 export const FISH_FIGHTER_RARITY = 3;
 export const PVE_PER_DAY = 40;
-export const PVE_PAID_WINS = 10;
+/** Economy v2 (0104 _pv2 'pve_paid'; was 10). */
+export const PVE_PAID_WINS = 5;
 export const MAX_STAKE = 1000;
 export const MAX_DECOR = 4;
 export const MAX_TURNS = 30;
 export const PAT_COOLDOWN_S = 60;
 export const TRAIN_COOLDOWN_S = 20;
-/** The PvP pot goes to the winner less this share. */
-export const PVP_CUT = 0.1;
+/** The PvP pot goes to the winner less this share (0104 _battle_finish; was 0.1). */
+export const PVP_CUT = 0.05;
 
 export const xpNeed = (level: number): number => 20 * level;
 export const trainCost = (points: number): number => 100 + 50 * points;
@@ -75,12 +76,12 @@ export const SKILL_NOTE: Record<SkillKind, string> = {
 
 export interface Npc { id: string; name: string; kind: "wild" | "trainer"; species: PetSpecies; variant: string; level: number; hp: number; atk: number; def: number; spd: number; skills: string[]; reward: number }
 export const NPCS: readonly Npc[] = [
-  { id: "meo_hoang", name: "Mèo hoang", kind: "wild", species: "meo", variant: "den", level: 3, hp: 60, atk: 12, def: 9, spd: 12, skills: ["tackle", "bite"], reward: 40 },
-  { id: "cho_co", name: "Chó cỏ", kind: "wild", species: "cho", variant: "vang", level: 6, hp: 80, atk: 15, def: 12, spd: 11, skills: ["tackle", "bite", "guard"], reward: 70 },
-  { id: "soc_nui", name: "Sóc núi", kind: "wild", species: "soc", variant: "do", level: 9, hp: 85, atk: 17, def: 12, spd: 18, skills: ["tackle", "bite", "guard"], reward: 90 },
-  { id: "thay_tu", name: "Thầy Tư", kind: "trainer", species: "cho", variant: "nau", level: 14, hp: 120, atk: 22, def: 17, spd: 14, skills: ["tackle", "bite", "guard", "heal"], reward: 150 },
-  { id: "co_bay", name: "Cô Bảy", kind: "trainer", species: "vet", variant: "lam", level: 22, hp: 160, atk: 30, def: 22, spd: 22, skills: ["tackle", "bite", "heal", "fury"], reward: 250 },
-  { id: "ho_than", name: "Hổ thần", kind: "wild", species: "meo", variant: "cam", level: 32, hp: 240, atk: 42, def: 32, spd: 20, skills: ["bite", "fury", "guard", "heal"], reward: 450 },
+  { id: "meo_hoang", name: "Mèo hoang", kind: "wild", species: "meo", variant: "den", level: 3, hp: 60, atk: 12, def: 9, spd: 12, skills: ["tackle", "bite"], reward: 24 },
+  { id: "cho_co", name: "Chó cỏ", kind: "wild", species: "cho", variant: "vang", level: 6, hp: 80, atk: 15, def: 12, spd: 11, skills: ["tackle", "bite", "guard"], reward: 42 },
+  { id: "soc_nui", name: "Sóc núi", kind: "wild", species: "soc", variant: "do", level: 9, hp: 85, atk: 17, def: 12, spd: 18, skills: ["tackle", "bite", "guard"], reward: 54 },
+  { id: "thay_tu", name: "Thầy Tư", kind: "trainer", species: "cho", variant: "nau", level: 14, hp: 120, atk: 22, def: 17, spd: 14, skills: ["tackle", "bite", "guard", "heal"], reward: 90 },
+  { id: "co_bay", name: "Cô Bảy", kind: "trainer", species: "vet", variant: "lam", level: 22, hp: 160, atk: 30, def: 22, spd: 22, skills: ["tackle", "bite", "heal", "fury"], reward: 150 },
+  { id: "ho_than", name: "Hổ thần", kind: "wild", species: "meo", variant: "cam", level: 32, hp: 240, atk: 42, def: 32, spd: 20, skills: ["bite", "fury", "guard", "heal"], reward: 270 },
 ];
 
 export interface Decor { id: string; name: string; price: number }

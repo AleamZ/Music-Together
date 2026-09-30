@@ -18,7 +18,9 @@ export const BUFF_VUI = 50;
 export const FORAGE_EVERY_S = 600;
 export const FORAGE_MIN = 5;
 export const FORAGE_MAX = 30;
-export const FORAGE_DAY_CAP = 300;
+/** Economy v2 (0104 pet_tick): 150 xu a day (was 300), and only while the owner moved within FORAGE_MOVE_S. */
+export const FORAGE_DAY_CAP = 150;
+export const FORAGE_MOVE_S = 300;
 /** mèo: the owner's hunger and thirst drain × this. */
 export const CAT_DRAIN = 0.9;
 export const NAME_MAX = 16;

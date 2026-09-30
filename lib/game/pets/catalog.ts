@@ -32,7 +32,7 @@ export const SPECIES: Readonly<Record<PetSpecies, SpeciesInfo>> = {
   soc: {
     id: "soc", name: "Sóc", icon: "🐿️", price: 2500,
     variants: [{ id: "nau", name: "Nâu" }, { id: "do", name: "Đỏ" }, { id: "xam", name: "Xám" }],
-    buff: "Lượm được 5–30 xu mỗi 10 phút (tối đa 300 xu/ngày)",
+    buff: "Lượm được 5–30 xu mỗi 10 phút khi chủ đang đi lại (tối đa 150 xu/ngày)",
   },
   meo: {
     id: "meo", name: "Mèo", icon: "🐱", price: 3000,
