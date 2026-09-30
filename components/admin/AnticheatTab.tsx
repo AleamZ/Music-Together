@@ -59,6 +59,7 @@ export const CODE_LABEL: Record<string, string> = {
   fight_lookahead: "Phản xạ đấu võ nhanh hơn người (thấy trước)",
   stat_outlier: "Thống kê bất thường",
   auto_blacklist: "Tự động vào danh sách đen",
+  code_bruteforce: "Dò code quà (sai 10 lần/giờ)",
 };
 const OUTCOME_LABEL: Record<string, string> = {
   soft: "Tín hiệu mềm",

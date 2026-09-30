@@ -41,6 +41,9 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'news_admin_list(text)', 'news_post_delete(text,uuid)', 'news_post_upsert(text,uuid,text,text,text,boolean)',
      'admin_economy(text)', 'admin_econ_params(text)', 'admin_econ_set(text,text,numeric)',   -- economy watch/v2 (0099/0100)
      'admin_bot_list(text)', 'admin_bot_clear(text,uuid)',                                  -- the bot score (0109)
+     'admin_mail_send(text,jsonb,text,text,integer,jsonb)', 'admin_code_list(text)',        -- the mailbox and codes (0111)
+     'admin_code_create(text,text,text,integer,jsonb,integer,timestamp with time zone,timestamp with time zone)',
+     'admin_code_disable(text,bigint)',
      -- reads
      'fishing_state(text)', 'fishing_board(uuid,text)', 'field_state(uuid,text)', 'dog_state(text)',
      'card_lobby(uuid,text)', 'card_state(uuid,text,text)', 'card_hand(uuid,text,text)', 'card_tick(uuid,text,text)',
@@ -219,7 +222,14 @@ begin
     format('select public.ring_accept(%L, %L, 1, 100, 0)', room, t),
     -- the pet's heartbeat (0066)
     format('select public.pet_tick(%L)', t),
-    format('select public.pet_tick(%L, %L)', t, room)];
+    format('select public.pet_tick(%L, %L)', t, room),
+    -- the mailbox and gift codes (0111)
+    format('select public.mail_list(%L)', t),
+    format('select public.mail_read(%L, 1)', t),
+    format('select public.mail_claim(%L, 1)', t),
+    format('select public.mail_claim_all(%L)', t),
+    format('select public.mail_delete(%L, 1)', t),
+    format('select public.redeem_code(%L, %L)', t, 'GUARD')];
 end $$;
 
 insert into public.anticheat_status (account_id, locked_until)
@@ -235,7 +245,7 @@ begin
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 85, format('%s guarded calls', n);
+  assert n = 91, format('%s guarded calls', n);
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);

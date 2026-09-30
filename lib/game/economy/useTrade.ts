@@ -23,7 +23,7 @@ export function useTrade(token: string | null, roomId: string, toast: (text: str
     if (s.lastDone && s.lastDone.id !== seen.current) {
       if (seen.current !== null && before !== null && s.lastDone.status === "done") setDone({ k: s.lastDone.id, coins: Math.max(0, s.coins - before) });
       seen.current = s.lastDone.id;
-      toastRef.current(s.lastDone.status === "done" ? `🤝 Giao dịch với ${s.lastDone.partnerName} đã xong!` : `Giao dịch với ${s.lastDone.partnerName} đã huỷ.`);
+      toastRef.current(s.lastDone.status === "done" ? `🤝 Giao dịch với ${s.lastDone.partnerName} đã xong! Đồ và xu đã gửi vào 📬 Hòm thư.` : `Giao dịch với ${s.lastDone.partnerName} đã huỷ.`);
     }
   }, []);
 

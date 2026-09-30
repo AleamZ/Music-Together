@@ -132,6 +132,8 @@ import StallModal from "./economy/StallModal";                                  
 import TradeWindow from "./economy/TradeWindow";                                          // v21 economy
 import { TradeDoneFx } from "./celebrate/Fx";                                             // v22 (0086)
 import { useTrade } from "@/lib/game/economy/useTrade";                                   // v21 economy
+import MailboxModal from "./mail/MailboxModal";                                           // 0111 Hòm thư
+import { useMail } from "@/lib/game/mail/useMail";                                        // 0111 Hòm thư
 import { petSpeed } from "@/lib/game/pets/model";
 import { followingPet, lookOf, myPetCode } from "@/lib/game/pets/rpc";
 import SalonModal from "./SalonModal";
@@ -178,7 +180,7 @@ export interface GameShellProps {
 }
 
 type Panel =
-  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | QuestPanel | "player_market" | "player_stalls" | "professions" | "pet_center" | null;
+  | "queue" | "board" | "settings" | "members" | "chat" | "wardrobe" | "fashion_store" | "restaurant" | "vehicle_shop" | "salon" | "dog" | "city_map" | "news" | "pet_shop" | "umbrella_stall" | "umbrellas" | "motel" | "apartment" | "furniture_shop" | "lot" | "estate" | "fight_practice" | "dojo" | "ring" | "ring_board" | "underground" | "ug_watch" | "profile" | QuestPanel | "player_market" | "player_stalls" | "professions" | "pet_center" | "mailbox" | null;
 
 /** The toasts the vitals refusals map to (v18.3): seeing one means the bars are stale. */
 const VITALS_TEXTS = new Set(["too hungry", "too thirsty", "fainted", "exhausted"].map((m) => vitalsErrorMessage(m)));
@@ -459,6 +461,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const ug = useUnderground({ token, roomId: room.id, accountId, mapId: travel.mapId, toast: gameToast, onCoins: () => void fishing.data.reload() });
   const { enter: ugEnter } = ug;
   const trade = useTrade(token, room.id, showToast);                                     // v21 economy: the trade window
+  const mail = useMail(token);                                                           // 0111: the mailbox and its unread badge
+  const refreshMail = mail.refresh;
+  const tradeDoneId = trade.state?.lastDone?.id ?? null;
+  useEffect(() => { if (tradeDoneId !== null) refreshMail(); }, [tradeDoneId, refreshMail]);   // a finished trade's goods are in the mail
   const [ugTab, setUgTab] = useState<UgTab>("queue");
   const [knocking, setKnocking] = useState<Interactable | null>(null);   // the hatch's knock (3 long, 2 short)
   const [ugResult, setUgResult] = useState<MatchResult | null>(null);
@@ -1085,6 +1091,14 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               <button type="button" className="pch-btn relative" title="Chợ người chơi · đấu giá (4)" data-testid="player-market-hud" data-hotkey="playerMarket" onClick={() => setPanel("player_market")}>
                 🏪<span className="sr-only"> Chợ người chơi</span><KeyBadge id="playerMarket" />
               </button>
+              <button type="button" className="pch-btn relative" data-testid="mailbox-hud" onClick={() => setPanel("mailbox")}
+                title={mail.box && mail.box.unread > 0 ? `Hòm thư: ${mail.box.unread} thư chưa đọc` : "Hòm thư · nhập code quà"}>
+                📬<span className="sr-only"> Hòm thư</span>
+                {(mail.box?.unread ?? 0) > 0 && (
+                  <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-0.5 text-center font-sans text-[10px] leading-4 text-white"
+                    data-testid="mailbox-unread">{Math.min(99, mail.box?.unread ?? 0)}</span>
+                )}
+              </button>
               <button type="button" className="pch-btn relative" title="Trại thú: trứng, nuôi dạy, đấu thú, cá chiến (5)" data-testid="pet-center-hud"
                 data-hotkey="petCenter" onClick={() => { setPanel("pet_center"); void reloadPets(); }}>
                 🐾<span className="sr-only"> Trại thú</span><KeyBadge id="petCenter" />
@@ -1460,10 +1474,13 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         />
       )}
       {panel === "player_market" && (                                      // v21 economy
-        <PlayerMarketModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} />
+        <PlayerMarketModal token={token} onChanged={() => { void fishing.data.reload(); refreshMail(); }} onClose={close} />
+      )}
+      {panel === "mailbox" && token && (                                    // 0111 Hòm thư
+        <MailboxModal token={token} box={mail.box} onBox={mail.apply} onChanged={() => void fishing.data.reload()} onClose={close} />
       )}
       {panel === "player_stalls" && (                                      // v21 economy
-        <StallModal token={token} onChanged={() => void fishing.data.reload()} onClose={close} onStalls={(stalls) => canvasRef.current?.setLiveInputs?.({ stalls })} />
+        <StallModal token={token} onChanged={() => { void fishing.data.reload(); refreshMail(); }} onClose={close} onStalls={(stalls) => canvasRef.current?.setLiveInputs?.({ stalls })} />
       )}
       {trade.done && <TradeDoneFx key={trade.done.k} coins={trade.done.coins} onDone={trade.clearDone} />}{/* v22 (0086) */}
       {trade.state?.trade && (                                              // v21 economy

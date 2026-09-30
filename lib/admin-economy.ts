@@ -44,6 +44,7 @@ const R: Record<string, [EconGroup, string]> = {
   boss_reward: ["faucet", "Thưởng boss"], dungeon_reward: ["faucet", "Thưởng hầm ngục"],
   land_refund: ["faucet", "Hoàn tiền ruộng bị thu hồi"], house_refund: ["faucet", "Hoàn tiền nhà"],
   apartment_sell: ["faucet", "Bán lại căn hộ"],
+  admin_gift: ["faucet", "Quà admin (hòm thư)"], gift_code: ["faucet", "Code quà tặng (hòm thư)"],
   // sinks
   buy: ["sink", "Mua ở tiệm (đồ câu, bộ câu…)"], rent: ["sink", "Thuê ruộng"], farm_buy: ["sink", "Mua đồ nông trại"],
   harvester: ["sink", "Thuê máy gặt"], meal: ["sink", "Ăn uống"], vehicle: ["sink", "Mua xe"], skip: ["sink", "Xe ôm"],
