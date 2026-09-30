@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useRef, useSyncExternalStore, type Ref } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from "react";
 import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/diorama/flag";
 import { DioramaView } from "@/lib/game/diorama/view";
 import { WorldView } from "@/lib/game/diorama/world/view";
+import World3dLoading from "./World3dLoading";
 import { LiveFeed, type LiveHouseIn, type LiveInputs } from "@/lib/game/diorama/world/live-feed";
 import { GridChannels } from "@/lib/game/net/grid-channels";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
@@ -252,6 +253,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // diorama prototype: the per-browser "Đồ hoạ 2D | 3D (thử)" setting swaps the renderer of the maps that have one
   const canvas3dRef = useRef<HTMLCanvasElement>(null);
+  // the 3D world being built (WorldView.build's steps): the loading bar over the game
+  const [loading3d, setLoading3d] = useState<{ done: number; total: number; label: string } | null>(null);
   const gfx = useSyncExternalStore<GfxMode>(subscribeGfx, readGfx, () => "2d");
   // P2: in world mode every zone is one engine (the key ignores which zone); an interior keeps its own
   const worldOn = !!world && isZone(mapId);
@@ -771,34 +774,50 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     // diorama prototype: a 3D view draws this world (no WebGL: it stays 2D); P2: the world's own view, which must start
     let view: (DioramaView | WorldView) | null = null;
     const c3 = canvas3dRef.current;
+    // the world view is built in steps behind a loading bar (seconds of work: the page stays alive and shows how far it
+    // got); the engine runs meanwhile (the 2D canvas under the bar), the view takes over once it is ready
+    const building = { aborted: false };
+    const worldReady = (wv: WorldView) => {
+      if (building.aborted) { wv.dispose(); return; }
+      wv.setCameraMode("follow");
+      view = wv;
+      // P4: the live feed (stalls, rings, houses, digs, the realm's animals and bosses); what moves by itself is
+      // brought up to time each frame, the rest on a state change
+      const lf = (feedRef.current ??= new LiveFeed());
+      wv.setLive(lf.at(Date.now()));
+      worldViewRef.current = wv;
+      if (process.env.NODE_ENV !== "production") (window as unknown as { __worldView?: WorldView }).__worldView = wv;   // dev: stats()
+      wv.setFelled(felledPoints(felledKeys()));                                     // 0097
+      // P3: the world view draws the frame's gameplay itself (vehicles and the boat under riders, rats, dogs,
+      // leaping fish, gate barriers, P4 pets and bobbers: DioramaFrame.gameplay + Billboard.vehicle)
+      engine.setView3D({
+        render: (f) => {
+          if (lf.moving()) wv.setLive(lf.at(Date.now()));
+          wv.render(f);
+        },
+      });
+      wv.setPlots(plotsRef.current);
+      view3dRef.current = wv;
+      setLoading3d(null);
+    };
     if (use3d && c3) {
       try {
         if (wmap) {
           // the game's camera: third person (near / mid / far, wheel or pinch zoom) or first person; never the free
           // camera (only the /dev pages allow it)
-          const wv = new WorldView(c3, { onTap: (p) => engine.tapWorld(p), allowFree: false, gameCamera: true });
-          wv.setCameraMode("follow");
-          view = wv;
-          // P4: the live feed (stalls, rings, houses, digs, the realm's animals and bosses); what moves by itself is
-          // brought up to time each frame, the rest on a state change
-          const lf = (feedRef.current ??= new LiveFeed());
-          wv.setLive(lf.at(Date.now()));
-          worldViewRef.current = wv;
-          wv.setFelled(felledPoints(felledKeys()));                                     // 0097
-          // P3: the world view draws the frame's gameplay itself (vehicles and the boat under riders, rats, dogs,
-          // leaping fish, gate barriers, P4 pets and bobbers: DioramaFrame.gameplay + Billboard.vehicle)
-          engine.setView3D({
-            render: (f) => {
-              if (lf.moving()) wv.setLive(lf.at(Date.now()));
-              wv.render(f);
-            },
+          WorldView.build(c3, { onTap: (p) => engine.tapWorld(p), allowFree: false, gameCamera: true },
+            (done, total, label) => { if (!building.aborted) setLoading3d({ done, total, label }); }, building,
+          ).then(worldReady, () => {
+            if (building.aborted) return;
+            setLoading3d(null);
+            propsRef.current.onWorldFailed?.();
           });
         } else {
           view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: false });
           engine.setView3D(view);
+          view.setPlots(plotsRef.current);
+          view3dRef.current = view;
         }
-        view.setPlots(plotsRef.current);
-        view3dRef.current = view;
       } catch {
         view = null;
         if (wmap) propsRef.current.onWorldFailed?.();
@@ -806,6 +825,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     }
     engine.start();
     return () => {
+      building.aborted = true;
+      setLoading3d(null);
       if (view) {
         if (view3dRef.current === view) view3dRef.current = null;
         if (worldViewRef.current === view) worldViewRef.current = null;
@@ -831,7 +852,12 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     if (movedKey.current === travelKey) return;
     movedKey.current = travelKey;
     const e = engineRef.current;
-    if (e?.isWorld() && startRef.current) e.teleport(startRef.current);
+    if (!e?.isWorld() || !startRef.current) return;
+    e.teleport(startRef.current);
+    // the running world has no new first frame to lift the shell's fade (rowing out to Sông Cái, a waypoint): once
+    // the moved view has drawn, it is this arrival's first frame
+    let raf = requestAnimationFrame(() => { raf = requestAnimationFrame(() => propsRef.current.onFirstFrame()); });
+    return () => cancelAnimationFrame(raf);
   }, [travelKey]);
 
   return (
@@ -840,6 +866,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
       {/* one canvas per 3D view: a disposed view loses its WebGL context for good (forceContextLoss), so the next
           view (world ↔ an interior, map to map) gets a fresh element */}
       {use3d && <canvas key={worldKey ?? `${mapId}:${arrive?.x ?? ""},${arrive?.y ?? ""}`} ref={canvas3dRef} className="absolute inset-0 h-full w-full touch-none select-none" aria-label="Thế giới game (3D)" />}
+      {loading3d && <World3dLoading {...loading3d} />}
     </>
   );
 }

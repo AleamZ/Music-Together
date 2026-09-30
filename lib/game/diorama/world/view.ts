@@ -8,6 +8,7 @@ import { CHUNK_PX, CHUNKS_X, CHUNKS_Y } from "@/lib/game/world/scenery";
 import { DOMAIN, RIVER_LEVEL, standHeight, ZONE_ELEV, zoneUnder } from "@/lib/game/world/terrain";
 import { OPENINGS } from "@/lib/game/world/wild";
 import { WORLD_H, WORLD_W, ZONE_IDS, ZONES, type OutdoorMapId } from "@/lib/game/world/zones";
+import { zoneName } from "@/lib/game/world/minimap";
 import { animateWater, type Built } from "../build";
 import { flyForward, lerp3, orbitEye, smoothK, type FlyState, type Orbit, type V3 } from "../camera";
 import { RIG } from "../character/build";
@@ -30,6 +31,7 @@ import { buildDelta } from "./delta";
 import { buildBackdrop, type Backdrop } from "./backdrop";
 import { buildNuiCam } from "./nuicam";
 import { toon, toonify } from "./toon";
+import { inRange, nextScale, rectDist, rimDist, viewRange, type Rect } from "./view-range";
 import { pixelize, pixelizeTree } from "../pixeltex";
 
 // Browser only: the unified world in 3D (spec P2/P3's visual part). One continuous landscape — the heightmap's chunks
@@ -57,7 +59,7 @@ export interface WorldStats {
   live: number;
 }
 
-interface ZoneScene { id: OutdoorMapId; built: Built; heightAt: (x: number, y: number) => number; root: THREE.Group;
+interface ZoneScene { id: OutdoorMapId; built: Built; heightAt: (x: number, y: number) => number; root: THREE.Group; rect: Rect;
   roofs: Array<{ mats: THREE.Material[]; x: number; y: number; w: number; h: number }>; glow: THREE.MeshToonMaterial[] }
 
 interface Chunk { mesh: THREE.Mesh | null; level: number; want: number; geos: Array<THREE.BufferGeometry | null>; center: THREE.Vector3 }
@@ -83,6 +85,17 @@ const ORBITS: Record<"follow" | "overview", { o: Orbit; min: number; max: number
 /** Terrain LOD distances (units) by quality. */
 const TERRAIN_LOD: Record<Quality, [number, number]> = { high: [90, 320], low: [50, 150] };
 const LAMP_POOL = 4;
+/** A terrain / scenery chunk's half diagonal (units): its reach past its centre. */
+const CHUNK_R = (CHUNK_PX / 16) * Math.SQRT1_2;
+/** The land's own rectangle (units): the backdrop lies past its rim. */
+const DOMAIN_U: Rect = { x0: DOMAIN.x0 / 16, z0: DOMAIN.y0 / 16, x1: DOMAIN.x1 / 16, z1: DOMAIN.y1 / 16 };
+const NIGHT_SUN = new THREE.Color(0x8fa8ff);
+const DUSK_SKY = new THREE.Color(0xffb88a);
+const NIGHT_SKY = new THREE.Color(0x3a4a8a);
+const NIGHT_GROUND = new THREE.Color(0x141a30);
+const INK_DAY = new THREE.Color(0x2a2320);
+const INK_NIGHT = new THREE.Color(0x05060c);
+const BULB_ON = new THREE.Color(0xffd27a);
 
 /** A zone's map with its openings cleared (the walls and hedges where the roads come in are left out). */
 function openedMap(id: OutdoorMapId): GameMap {
@@ -125,24 +138,29 @@ export class WorldView implements View3D {
   readonly meshCounts: Partial<Record<OutdoorMapId, [number, number]>> = {};
   private readonly lamps: Array<{ pos: THREE.Vector3; color: THREE.Color; distance: number }> = [];
   private readonly pool: THREE.PointLight[] = [];
-  private readonly forest: Forest;
-  private readonly water: Water;
-  private readonly landmarks: Landmarks;
-  private readonly life: SkyLife;
-  private readonly bridges: THREE.Group;
+  // built by the staged steps (buildSteps): set once the view is ready
+  private forest!: Forest;
+  private water!: Water;
+  private landmarks!: Landmarks;
+  private life!: SkyLife;
+  private bridges!: THREE.Group;
   /** The delta's life along the water: canal bridges, stilt houses, moored xuồng, the floating market (one mesh). */
-  private readonly delta = buildDelta();
+  private delta!: ReturnType<typeof buildDelta>;
   /** The mountain (Núi Cấm-like) and its landmarks: lake, temple, tower, Di Lặc, waterfall, cable car, clouds, gate. */
-  private readonly nui = buildNuiCam();
-  private readonly people: CharacterLayer;
-  private readonly live: LiveLayer;
+  private nui!: ReturnType<typeof buildNuiCam>;
+  private people!: CharacterLayer;
+  private live!: LiveLayer;
+  /** Every build step has run (render draws nothing before). */
+  private ready = false;
+  /** The felled trees asked for before the forest was built. */
+  private felled: ReadonlyArray<Vec> = [];
   private liveState: WorldLive = {};
   /** P3: this view draws the frame's gameplay (DioramaFrame.gameplay: rats, dogs, leaping fish, gate barriers) and the
    *  vehicles/boats under riders (Billboard.vehicle) itself — no extra layer needed. */
   readonly drawsGameplay = true;
   private readonly weather = new WeatherLayer();
   private readonly monitor: FpsMonitor;
-  private readonly ro: ResizeObserver;
+  private ro: ResizeObserver | null = null;
   private mode: CameraMode = "overview";
   private orbit: Record<"follow" | "overview", Orbit> = { follow: { ...ORBITS.follow.o }, overview: { ...ORBITS.overview.o } };
   private fly: FlyState = { pos: { x: 130, y: 60, z: 200 }, yaw: 0, pitch: -0.3 };
@@ -164,8 +182,17 @@ export class WorldView implements View3D {
   private fpPitch = -0.1;
   private readonly touches = new Map<number, { x: number; y: number }>();
   private pinchD = 0;
+  /** How far (units) this frame draws (view-range.ts): bounded in third person. */
+  private range = Infinity;
+  /** The render scale on the pixel ratio (view-range.ts nextScale) and when it was last stepped (ms). */
+  private scale = 1;
+  private scaleAt = 0;
+  /** The lamps nearest the camera's target, re-picked when the target moves a few units. */
+  private lampsAt: THREE.Vector3 | null = null;
+  private nearLamps: Array<{ pos: THREE.Vector3; color: THREE.Color; distance: number }> = [];
 
-  constructor(canvas: HTMLCanvasElement, opts: WorldViewOptions = {}) {
+  /** `staged`: only the renderer and lights now; WorldView.build runs the rest in steps. */
+  constructor(canvas: HTMLCanvasElement, opts: WorldViewOptions = {}, staged = false) {
     this.canvas = canvas;
     this.opts = opts;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
@@ -185,37 +212,82 @@ export class WorldView implements View3D {
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.05;
 
-    // the land: every chunk at its coarsest first; nearer levels are built as the camera comes
-    this.terrain.name = "terrain";
-    for (let c = 0; c < CHUNKS_X * CHUNKS_Y; c++) {
-      const cx = c % CHUNKS_X, cy = Math.floor(c / CHUNKS_X);
-      const center = new THREE.Vector3((DOMAIN.x0 + (cx + 0.5) * CHUNK_PX) / 16, 2, (DOMAIN.y0 + (cy + 0.5) * CHUNK_PX) / 16);
-      this.chunks.push({ mesh: null, level: -1, want: 2, geos: [null, null, null], center });
-      this.setChunkLevel(c, 2);
+    if (!staged) for (const step of this.buildSteps()) step.run();
+  }
+
+  /** A view built in steps (the game's switch to 3D): each step is a slice of the ~seconds of building, so the page
+   *  can paint a progress bar between them. `onStep(done, total, label)` before each step; resolves once the view is
+   *  ready, or rejects if a step throws (no WebGL, out of memory). `signal` aborts (the view is then disposed). */
+  static async build(canvas: HTMLCanvasElement, opts: WorldViewOptions, onStep: (done: number, total: number, label: string) => void,
+    signal?: { aborted: boolean }): Promise<WorldView> {
+    const v = new WorldView(canvas, opts, true);
+    const steps = v.buildSteps();
+    try {
+      for (let i = 0; i < steps.length; i++) {
+        onStep(i, steps.length, steps[i].label);
+        await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // let the bar paint
+        if (signal?.aborted) throw new Error("aborted");
+        steps[i].run();
+      }
+      onStep(steps.length, steps.length, "");
+      return v;
+    } catch (err) {
+      v.dispose();
+      throw err;
     }
-    this.scene.add(this.terrain);
-    this.buildHorizon();
+  }
 
-    // the zones on their plateaus
-    for (const id of ZONE_IDS) this.addZone(id, opts.density ?? 1);
-    for (let i = 0; i < LAMP_POOL; i++) {
-      const l = new THREE.PointLight(0xffb060, 0, 14, 1.6);
-      this.pool.push(l);
-      this.scene.add(l);
-    }
+  /** The heavy building, in steps (labels for the loading bar). The constructor runs them all unless staged. */
+  private buildSteps(): Array<{ label: string; run: () => void }> {
+    const opts = this.opts, density = opts.density ?? 1;
+    return [
+      { label: "Địa hình", run: () => {
+        // the land: every chunk at its coarsest first; nearer levels are built as the camera comes
+        this.terrain.name = "terrain";
+        for (let c = 0; c < CHUNKS_X * CHUNKS_Y; c++) {
+          const cx = c % CHUNKS_X, cy = Math.floor(c / CHUNKS_X);
+          const center = new THREE.Vector3((DOMAIN.x0 + (cx + 0.5) * CHUNK_PX) / 16, 2, (DOMAIN.y0 + (cy + 0.5) * CHUNK_PX) / 16);
+          this.chunks.push({ mesh: null, level: -1, want: 2, geos: [null, null, null], center });
+          this.setChunkLevel(c, 2);
+        }
+        this.scene.add(this.terrain);
+      } },
+      { label: "Đồng bằng xa", run: () => this.buildHorizon() },
+      // the zones on their plateaus
+      ...ZONE_IDS.map((id) => ({ label: zoneName(id), run: () => this.addZone(id, density) })),
+      { label: "Sông nước, cầu", run: () => {
+        for (let i = 0; i < LAMP_POOL; i++) {
+          const l = new THREE.PointLight(0xffb060, 0, 14, 1.6);
+          this.pool.push(l);
+          this.scene.add(l);
+        }
+        this.water = buildWater();
+        this.bridges = buildBridges();
+        this.landmarks = buildLandmarks();
+        this.life = buildSkyLife();
+        this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root);
+      } },
+      { label: "Rừng cây", run: () => {
+        this.forest = new Forest(density);
+        this.forest.setFelled(this.felled);
+        this.scene.add(this.forest.root);
+      } },
+      { label: "Kênh rạch, núi", run: () => {
+        this.delta = buildDelta();
+        this.nui = buildNuiCam();
+        this.scene.add(this.delta.root, this.nui.root);
+        // the pixel texels (pixeltex.ts: grass, dirt, planks, thatch, tin, water) on the land and everything built on it
+        pixelize(this.terrainMat);
+        pixelize(this.seaMat, true);
+        pixelizeTree(this.water.root, true);
+        for (const r of [this.bridges, this.landmarks.root, this.forest.root, this.delta.root, this.nui.root]) pixelizeTree(r);
+      } },
+      { label: "Nhân vật", run: () => this.finishBuild() },
+    ];
+  }
 
-    this.water = buildWater();
-    this.bridges = buildBridges();
-    this.landmarks = buildLandmarks();
-    this.life = buildSkyLife();
-    this.forest = new Forest(opts.density ?? 1);
-    this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root, this.forest.root, this.delta.root, this.nui.root);
-    // the pixel texels (pixeltex.ts: grass, dirt, planks, thatch, tin, water) on the land and everything built on it
-    pixelize(this.terrainMat);
-    pixelize(this.seaMat, true);
-    pixelizeTree(this.water.root, true);
-    for (const r of [this.bridges, this.landmarks.root, this.forest.root, this.delta.root, this.nui.root]) pixelizeTree(r);
-
+  private finishBuild(): void {
+    const canvas = this.canvas, opts = this.opts;
     this.people = new CharacterLayer({ width: 0, height: 0 }, (x, y) => this.heightAt(x, y));
     this.live = new LiveLayer((x, y) => this.heightAt(x, y));
     this.scene.add(this.people.root, this.weather.root, this.live.root);
@@ -236,6 +308,7 @@ export class WorldView implements View3D {
       this.applyGameCam(getCam());
       this.unsubCam = subscribeCam((c) => this.applyGameCam(c));
     }
+    this.ready = true;
   }
 
   /** The game's camera changed (the HUD, the wheel, a pinch): the follow distance and first person. */
@@ -286,7 +359,8 @@ export class WorldView implements View3D {
       this.lamps.push({ pos, color: l.color.clone(), distance: l.distance });
       l.parent?.remove(l);
     }
-    this.zones.push({ id, built, heightAt, root, roofs, glow });
+    const rect: Rect = { x0: z.ox / 16, z0: z.oy / 16, x1: (z.ox + z.w) / 16, z1: (z.oy + z.h) / 16 };
+    this.zones.push({ id, built, heightAt, root, rect, roofs, glow });
   }
 
   private setChunkLevel(c: number, level: number): void {
@@ -354,7 +428,8 @@ export class WorldView implements View3D {
 
   /** 0097: the felled trees of the rừng tràm (world px): stumps until they respawn. */
   setFelled(points: ReadonlyArray<Vec>): void {
-    this.forest.setFelled(points);
+    this.felled = points;
+    this.forest?.setFelled(points);
   }
 
   /** The field's plots (the crops by stage). */
@@ -400,7 +475,7 @@ export class WorldView implements View3D {
     for (const c of this.chunks) lv[c.level]++;
     return {
       fps: Math.round(this.monitor.fps()), cpuMs: Math.round(this.cpuMs * 10) / 10, quality: this.quality, calls: info.calls,
-      triangles: info.triangles, mode: this.mode, chunks: lv.join("/"), trees: this.forest.counts.trees, live: this.live.count(),
+      triangles: info.triangles, mode: this.mode, chunks: lv.join("/"), trees: this.forest?.counts.trees ?? 0, live: this.live?.count() ?? 0,
     };
   }
 
@@ -432,11 +507,11 @@ export class WorldView implements View3D {
   private applyQuality(q: Quality): void {
     this.quality = q;
     const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-    this.renderer.setPixelRatio(q === "high" ? Math.min(dpr, 1.75) : Math.min(dpr, 1) * 0.8);
+    this.renderer.setPixelRatio((q === "high" ? Math.min(dpr, 1.75) : Math.min(dpr, 1) * 0.8) * this.scale);
     this.sun.castShadow = q === "high";
     this.ink.setSamples(q === "high" ? 4 : 0);
-    this.people.setQuality(q);
-    this.forest.setQuality(q === "high");
+    this.people?.setQuality(q);
+    this.forest?.setQuality(q === "high");
     for (const z of this.zones) for (const t of z.built.thinnable) t.mesh.count = q === "high" ? t.full : Math.ceil(t.full * 0.45);
     this.resize();
   }
@@ -532,7 +607,7 @@ export class WorldView implements View3D {
   // ------------------------------------------------------------ frame
 
   render(f: DioramaFrame): void {
-    if (this.disposed) return;
+    if (this.disposed || !this.ready) return;
     const start = performance.now();
     this.renderer.info.reset();
     this.draw(f);
@@ -546,8 +621,15 @@ export class WorldView implements View3D {
       if (q !== this.quality) this.applyQuality(q);
     }
     this.lastT = f.t;
+    // the render scale follows the frame rate (every 2 s; the monitor's own warm-up gives 0 fps first)
+    if (f.t - this.scaleAt > 2000) {
+      this.scaleAt = f.t;
+      const next = nextScale(this.scale, this.monitor.fps());
+      if (next !== this.scale) { this.scale = next; this.applyQuality(this.quality); }
+    }
 
     this.updateCamera(f, dt);
+    this.updateRange();
     this.updateLod();
     this.updateLight(f);
     const t = f.reduced ? 0 : f.t;
@@ -555,6 +637,7 @@ export class WorldView implements View3D {
     // frames farther out, not at all past the fog
     const n = ++this.frameNo, cam = this.camera.position, near = this.quality === "high" ? 140 : 90;
     this.zones.forEach((z, i) => {
+      if (!z.root.visible) return;
       const d = Math.hypot(z.root.position.x - cam.x, z.root.position.z - cam.z);
       if (d < near || (d < this.fog.far && n % 4 === i % 4)) animateWater(z.built, t, f.windKmh);
     });
@@ -583,7 +666,8 @@ export class WorldView implements View3D {
     const yaw = this.mode === "free" ? this.fly.yaw : Math.atan2(this.eye.x - this.look.x, this.eye.z - this.look.z);
     const live = liveFromFrame(f, this.liveState);
     const people = this.live.adjust(f.billboards, live);
-    this.people.setCull(this.camera.position, this.quality === "high" ? 170 : 110);
+    this.people.setCull(this.camera.position, Math.min(this.quality === "high" ? 170 : 110, this.range));
+    this.people.setShadowFocus(this.mode === "follow" ? this.shadowV.set(this.look.x, this.look.y, this.look.z) : null);
     this.people.setLifts(this.live.lifts());
     this.people.update(people, yaw, f.t, f.reduced);
     this.live.update(live, this.people, f.t, f.night, f.reduced);
@@ -624,7 +708,7 @@ export class WorldView implements View3D {
       look = { x: eye.x + d.x, y: eye.y + d.y, z: eye.z + d.z };
       rate = 30;
     }
-    const k = f.reduced ? 1 : smoothK(dt, rate);
+    const k = f.reduced || this.frameNo === 0 ? 1 : smoothK(dt, rate);             // the first frame starts in place
     this.eye = lerp3(this.eye, eye, k);
     this.look = lerp3(this.look, look, k);
     this.camera.position.set(this.eye.x, this.eye.y, this.eye.z);
@@ -643,6 +727,21 @@ export class WorldView implements View3D {
     }
   }
 
+  /** The view range (view-range.ts): in third person the far plane closes in and the zones, the backdrop and (in
+   *  updateLod) the terrain and forest chunks past it are not drawn; the fog (updateLight) fades out before it. */
+  private updateRange(): void {
+    const third = this.mode === "follow" && this.gcam?.view !== "first";
+    const range = viewRange(third, this.quality);
+    this.range = range;
+    const far = Number.isFinite(range) ? range + 30 : 1500;
+    if (this.camera.far !== far) { this.camera.far = far; this.camera.updateProjectionMatrix(); }
+    const cx = this.camera.position.x, cz = this.camera.position.z;
+    for (const z of this.zones) z.root.visible = inRange(rectDist(cx, cz, z.rect), 0, range);
+    const rim = inRange(rimDist(cx, cz, DOMAIN_U), 0, range);
+    if (this.backdrop) this.backdrop.root.visible = rim;
+    if (this.horizon) this.horizon.visible = rim;
+  }
+
   /** Terrain chunks and the forest's detail from the camera. Missing levels are built by the terrain workers (a
    *  chunk keeps its current mesh until its new one arrives); without workers, one chunk a frame as before. */
   private updateLod(): void {
@@ -654,12 +753,13 @@ export class WorldView implements View3D {
       const d = Math.hypot(ch.center.x - cam.x, ch.center.z - cam.z, (ch.center.y - cam.y) * 0.5);
       const want = d < d0 ? 0 : d < d1 ? 1 : 2;
       ch.want = want;
+      if (ch.mesh) ch.mesh.visible = inRange(d, CHUNK_R, this.range);
       if (want === ch.level) continue;
       if (ch.geos[want]) { this.setChunkLevel(c, want); continue; }
       this.jobs.request(c, want, d);
     }
     this.jobs.pump();
-    this.forest.update(cam);
+    this.forest.update(cam, this.range);
   }
 
   private chunkBuilt(c: number, level: number, geo: THREE.BufferGeometry): void {
@@ -671,6 +771,9 @@ export class WorldView implements View3D {
 
   private readonly tmpA = new THREE.Color();
   private readonly tmpB = new THREE.Color();
+  private readonly tmpC = new THREE.Color();
+  private readonly lookV = new THREE.Vector3();
+  private readonly shadowV = new THREE.Vector3();
 
   private updateLight(f: DioramaFrame): void {
     const kind = f.weather ?? "clear";
@@ -685,7 +788,8 @@ export class WorldView implements View3D {
     (this.scene.background as THREE.Color).copy(hor);
     this.fog.color.copy(hor);
     this.backdrop?.tint(hor, f.night);
-    const base = this.mode === "follow" ? [120, 760] : this.mode === "overview" ? [260, 1400] : [140, 1100];
+    const base = Number.isFinite(this.range) ? [Math.min(120, this.range * 0.4), this.range]
+      : this.mode === "follow" ? [120, 760] : this.mode === "overview" ? [260, 1400] : [140, 1100];
     const fk = 1 - (1 - (FOG_K[kind] ?? 1)) * fxK;
     this.fog.near = base[0] * fk;
     this.fog.far = base[1] * Math.max(0.25, fk);
@@ -705,25 +809,29 @@ export class WorldView implements View3D {
     this.sun.target.updateMatrixWorld();
     this.updateShadow(dir);
     this.sun.intensity = (0.3 + 2.4 * day) * (1 - overcast * 0.55 * fxK);
-    this.sun.color.setRGB(1, 0.95 - 0.4 * f.warm, 0.86 - 0.6 * f.warm).lerp(new THREE.Color(0x8fa8ff), f.night);
+    this.sun.color.setRGB(1, 0.95 - 0.4 * f.warm, 0.86 - 0.6 * f.warm).lerp(NIGHT_SUN, f.night);
     this.hemi.intensity = 0.5 + 0.9 * day + flash;
-    this.hemi.color.setHex(0xdff2ff).lerp(new THREE.Color(0xffb88a), f.warm * 0.6).lerp(new THREE.Color(0x3a4a8a), f.night);
-    this.hemi.groundColor.setHex(0x5a7a3a).lerp(new THREE.Color(0x141a30), f.night);
-    this.ink.setInk(0.85, 1, new THREE.Color(0x2a2320).lerp(new THREE.Color(0x05060c), f.night));
+    this.hemi.color.setHex(0xdff2ff).lerp(DUSK_SKY, f.warm * 0.6).lerp(NIGHT_SKY, f.night);
+    this.hemi.groundColor.setHex(0x5a7a3a).lerp(NIGHT_GROUND, f.night);
+    this.ink.setInk(0.85, 1, this.tmpC.copy(INK_DAY).lerp(INK_NIGHT, f.night));
 
     // night: the lamp pool at the lamps nearest the camera's target
-    const tgt = new THREE.Vector3(this.look.x, this.look.y, this.look.z);
-    const near = this.lamps.map((l) => ({ l, d: l.pos.distanceToSquared(tgt) })).sort((a, b) => a.d - b.d).slice(0, LAMP_POOL);
+    const tgt = this.lookV.set(this.look.x, this.look.y, this.look.z);
+    if (!this.lampsAt || this.lampsAt.distanceToSquared(tgt) > 4) {            // re-picked when the target moved 2 units
+      this.lampsAt = (this.lampsAt ?? new THREE.Vector3()).copy(tgt);
+      this.nearLamps = this.lamps.map((l) => ({ l, d: l.pos.distanceToSquared(tgt) })).sort((a, b) => a.d - b.d).slice(0, LAMP_POOL).map((n) => n.l);
+    }
     this.pool.forEach((p, i) => {
-      const n = near[i];
+      const n = this.nearLamps[i];
       if (!n) { p.intensity = 0; return; }
-      p.position.copy(n.l.pos);
-      p.color.copy(n.l.color);
-      p.distance = n.l.distance;
+      p.position.copy(n.pos);
+      p.color.copy(n.color);
+      p.distance = n.distance;
       p.intensity = 9 * f.night;
     });
     for (const z of this.zones) {
-      for (const b of z.built.bulbs) b.color.setHex(0xd23a3a).lerp(new THREE.Color(0xffd27a), f.night);
+      if (!z.root.visible) continue;
+      for (const b of z.built.bulbs) b.color.setHex(0xd23a3a).lerp(BULB_ON, f.night);
       for (const m of z.glow) m.emissiveIntensity = f.night * 0.9;
     }
   }
@@ -747,7 +855,7 @@ export class WorldView implements View3D {
     this.disposed = true;
     this.unsubCam?.();
     this.unsubCam = null;
-    this.ro.disconnect();
+    this.ro?.disconnect();
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
@@ -757,8 +865,8 @@ export class WorldView implements View3D {
     window.removeEventListener("keydown", this.onKey, true);
     window.removeEventListener("keyup", this.onKey, true);
     this.jobs.dispose();
-    this.live.dispose();
-    this.people.dispose();
+    this.live?.dispose();
+    this.people?.dispose();
     this.weather.dispose();
     for (const z of this.zones) z.built.dispose();
     for (const g of this.mergedGeos) g.dispose();
@@ -768,13 +876,13 @@ export class WorldView implements View3D {
     this.sea?.geometry.dispose();
     this.seaMat.dispose();
     this.terrainMat.dispose();
-    this.forest.dispose();
-    this.water.dispose();
-    this.landmarks.dispose();
-    this.life.dispose();
-    this.bridges.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); });
-    this.delta.dispose();
-    this.nui.dispose();
+    this.forest?.dispose();
+    this.water?.dispose();
+    this.landmarks?.dispose();
+    this.life?.dispose();
+    this.bridges?.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); });
+    this.delta?.dispose();
+    this.nui?.dispose();
     this.sky.dispose();
     this.ink.dispose();
     this.sun.shadow.map?.dispose();

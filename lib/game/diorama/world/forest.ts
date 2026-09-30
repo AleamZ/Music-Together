@@ -10,6 +10,8 @@ import { toon } from "./toon";
 // own bounding sphere, so the renderer's frustum culling skips the chunks off screen.
 
 const TRUNK = new THREE.Color(0x7a5436);
+/** A chunk's half diagonal (units). */
+const CHUNK_R = (CHUNK_PX / 16) * Math.SQRT1_2;
 
 function painted(g: THREE.BufferGeometry, c: THREE.Color): THREE.BufferGeometry {
   const geo = g.index ? g.toNonIndexed() : g;
@@ -325,10 +327,11 @@ export class Forest {
     this.wind.value.set(reduced ? 0 : t / 1000, reduced ? 0 : 0.12 + Math.min(0.35, windKmh / 60));
   }
 
-  update(camera: THREE.Vector3): void {
+  /** `range`: past it (units, the view's range) a chunk is not drawn at all (level 3). */
+  update(camera: THREE.Vector3, range = Infinity): void {
     for (const c of this.chunks) {
       const d = c.center.distanceTo(camera);
-      const level = d < this.lodDist[0] ? 0 : d < this.lodDist[1] ? 1 : 2;
+      const level = d - CHUNK_R > range ? 3 : d < this.lodDist[0] ? 0 : d < this.lodDist[1] ? 1 : 2;
       if (level === c.level) continue;
       c.level = level;
       c.lods.forEach((g, i) => { g.visible = i === level; });

@@ -19,6 +19,7 @@ const { views, FakeView } = vi.hoisted(() => {
   class FakeView {
     lives: WorldLive[] = [];
     constructor() { views.push(this); }
+    static async build() { return new FakeView(); }
     setLive(l: WorldLive) { this.lives.push(l); }
     render() {}
     setCameraMode() {}
