@@ -203,3 +203,11 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   kinds aside while it re-runs 0098 (whose kind check does not know them) and re-applies 0110 after;
   `anticheat-guards.sql` calls `fishing_equip`, `throw_groundbait` and `fishing_notebook` (88 guarded calls).
 
+
+## Chuyện làng (0114)
+
+- `story-quests-smoke.sql` (0114: the story chain end to end — one open step at a time and in order, progress read only
+  from records made after the accept (a bait buy, a sale at cô Ba vs at Vựa cá Chợ Lớn, catches, the story letter, the
+  farm gift), the hand-in beside the turn-in NPC ('too far'), paid once ('quest_reward' ref `story:<id>`, 330 xu in all),
+  a locked account refused, veterans closed unpaid and a re-run sparing a chain begun). Re-runs 0114 with `\i` and
+  deletes its accounts.

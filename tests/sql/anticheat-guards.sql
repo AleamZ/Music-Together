@@ -56,6 +56,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'progress_state(text)', 'progress_leaderboard(text,text)',   -- v21 progression (0070)
      'quest_state(text)', 'login_state(text)', 'arena_state(text)', 'photo_list(text)', 'photo_get(text,bigint)',
      'photo_delete(text,bigint)',                                 -- v21 quests (0071): reads, and deleting one's own photo
+     'story_state(text)',                                         -- the story chain (0114): a read
      'profession_state(text)',                                    -- v21 professions (0077): a read
      'fb_state(uuid,text)', 'fishing_extras_state(text)',         -- v21 fishing (0076): reads (fb_state settles lazily)
      -- the position and the heartbeat: they run during a lock by design (0057), and judge every claim themselves
@@ -233,7 +234,10 @@ begin
     format('select public.mail_claim(%L, 1)', t),
     format('select public.mail_claim_all(%L)', t),
     format('select public.mail_delete(%L, 1)', t),
-    format('select public.redeem_code(%L, %L)', t, 'GUARD')];
+    format('select public.redeem_code(%L, %L)', t, 'GUARD'),
+    -- the story chain (0114)
+    format('select public.story_accept(%L, %L)', t, 's01_chao'),
+    format('select public.story_turn_in(%L, %L, 368, 222)', t, 's01_chao')];
 end $$;
 
 insert into public.anticheat_status (account_id, locked_until)
@@ -249,7 +253,7 @@ begin
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 94, format('%s guarded calls', n);                                            -- 0110: +3, 0111: +6
+  assert n = 96, format('%s guarded calls', n);                                            -- 0110: +3, 0111: +6, 0114: +2
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);
