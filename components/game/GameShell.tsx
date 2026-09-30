@@ -64,6 +64,8 @@ import AnticheatChip from "./AnticheatChip";
 import AnticheatModal from "./AnticheatModal";
 import CameraZoomControl from "./CameraZoomControl";
 import Camera3dControl from "./Camera3dControl";
+import { HudSlotContext } from "./hud/HudSlot";
+import { foldClass, useFold } from "./hud/useFold";
 import ForestHud from "./forest/ForestHud";
 import CityMapModal from "./CityMapModal";
 import CardOverlays from "./cards/CardOverlays";
@@ -150,7 +152,7 @@ import { useChangelogPopup } from "@/lib/game/news/changelog-seen";
 import { ParchmentModal } from "./Parchment";
 import QueuePanel from "./QueuePanel";
 import SpritePreview from "./SpritePreview";
-import VitalsHud from "./VitalsHud";
+import VitalsHud, { VitalsNag } from "./VitalsHud";
 import StaminaHud from "./professions/StaminaHud";                                  // v21 (0077)
 import ProfessionModal from "./professions/ProfessionModal";                        // v21 (0077)
 import { useProfessions } from "@/hooks/useProfessions";                            // v21 (0077)
@@ -253,6 +255,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   //     `world`: an arrival onto the world that is not a zone's own spot (Mỏ đá's tunnel → the mine mouth)
   const [travel, setTravel] = useState<{ mapId: MapId; arrive: Spot | null; key: number; walked?: boolean; world?: Spot | null }>({ mapId: "hall", arrive: null, key: 0 });
   const [fading, setFading] = useState(false);
+  // the HUD's slot for the situational chips (components/game/hud/HudSlot.tsx)
+  const [hudSlot, setHudSlot] = useState<HTMLDivElement | null>(null);
+  // the toolbar folds away (☰ on the status card), kept per browser; folded on a phone until chosen
+  const [toolsOpen, setToolsOpen] = useFold("mt.hud.tools");
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const map = getMap(travel.mapId);
   const inWorld = worldMode && isZone(travel.mapId);
@@ -948,6 +954,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     : cardPresence?.map === "wild" ? "🌲 Đang dạo ngoài đồng" : "🎮 Đang dạo quanh sảnh";
 
   return (
+    <HudSlotContext.Provider value={hudSlot}>
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
     <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : map.id === "song_cai" ? "bg-[#3f7478]" : map.id === "rung_tram" ? "bg-[#3f5a2c]" : "bg-[#5a8f32]"}`}>
       <GameCanvas
@@ -1007,32 +1014,47 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {faint && <FaintOverlay untilMs={faint.until} serverNowMs={faint.serverNow} clientAtPerfMs={faint.at} onDone={endFaint} cause={faint.cause} count={vitalsState?.faintCount ?? 0} />}
 
       <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex flex-wrap items-start justify-between gap-2">
-        <div
-          className="pch pointer-events-auto flex max-w-[calc(100vw-1rem)] items-center gap-1.5 p-1 font-vt text-base leading-none sm:max-w-md"
-          data-testid="player-hud"
-        >
-          <SpritePreview look={myLook} scale={2} className="shrink-0 self-start rounded-sm bg-parchment" />
-          <div className="flex min-w-0 flex-col gap-1">
-            {/* row 1: who I am, my coins and the room's weather */}
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span className="min-w-0 max-w-36 truncate text-lg" title={`${myBadges ? `${myBadges} ` : ""}${myName}`}>
-                {myBadges ? `${myBadges} ` : ""}{myName}
-              </span>
-              <CoinsChip state={fishing.data.state} />
-              <WeatherChip
-                weather={weather}
-                tempC={weatherSource.tempC}
-                isOwner={isOwner}
-                needsLocation={weatherSource.status === "needed"}
-                onOpenLocation={() => setWeatherDialog(true)}
-              />
+        {/* the left column: who I am and how I am (the status card), the toolbar, then the situational chips */}
+        <div className="pointer-events-none flex w-[20rem] max-w-[calc(100vw-1rem)] flex-col items-stretch gap-1.5">
+          <div className="pch pointer-events-auto flex flex-col gap-1.5 p-1.5 font-vt leading-none" data-testid="player-hud">
+            <div className="flex items-center gap-2">
+              <SpritePreview look={myLook} scale={2} className="shrink-0 rounded-sm bg-parchment" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-xl" title={`${myBadges ? `${myBadges} ` : ""}${myName}`}>
+                    {myBadges ? `${myBadges} ` : ""}{myName}
+                  </span>
+                  <button type="button" className="pch-btn shrink-0 px-1.5 py-0.5 text-base" aria-expanded={toolsOpen ?? undefined}
+                    aria-controls="hud-toolbar" title={toolsOpen === false ? "Mở thanh công cụ" : "Gập thanh công cụ"} data-testid="hud-tools-toggle"
+                    onClick={() => setToolsOpen(!(toolsOpen ?? window.matchMedia("(min-width: 640px)").matches))}>
+                    ☰<span className="sr-only"> Công cụ</span>
+                  </button>
+                  <button type="button" className="pch-btn relative shrink-0 px-1.5 py-0.5 text-base tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng (1)" data-testid="profile-hud"
+                    data-hotkey="profile" onClick={() => { setPanel("profile"); void progress.reload(); }}>
+                    ⭐ {myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span><KeyBadge id="profile" />
+                  </button>
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-base">
+                  <CoinsChip state={fishing.data.state} />
+                  <WeatherChip
+                    weather={weather}
+                    tempC={weatherSource.tempC}
+                    isOwner={isOwner}
+                    needsLocation={weatherSource.status === "needed"}
+                    onOpenLocation={() => setWeatherDialog(true)}
+                  />
+                </div>
+              </div>
             </div>
             {!connected && <span className="text-sm opacity-80">Đang kết nối thế giới…</span>}
-            {/* row 2: hunger and thirst, then the fishing or farm status (details in the tooltips) */}
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-              <VitalsHud state={vitals.state} />
+            {/* the body: hunger, thirst and stamina; then the passing states and the fishing / farm line */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t-2 border-parchment-300 pt-1.5 text-sm">
+              <VitalsHud state={vitals.state} nag={false} />
               <StaminaHud stamina={profs.stamina} value={profs.staminaValue} state={profs.state} nowMs={profs.nowMs}
                 onOpen={() => setPanel("professions")} />{/* v21 (0077) */}
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm empty:hidden">
+              <VitalsNag state={vitals.state} />
               <HeatChips chips={heat.chips} />
               {motel.rested && <span data-testid="rest-chip" title="Ngủ ngon: đói, khát chậm hơn 30 %, đi nhanh hơn 7 %" className="whitespace-nowrap">😴 Ngủ ngon</span>}
               {rain.chips.map((c) => (
@@ -1048,12 +1070,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                   : null}
               />
             </div>
-            {/* row 3: the icon buttons (labels in the tooltips and for screen readers) */}
-            <div className="flex flex-wrap items-center gap-1 [&_.pch-btn]:px-1.5 [&_.pch-btn]:py-0.5 [&_.pch-btn]:text-sm [&_.pch-btn]:leading-none">
-              <button type="button" className="pch-btn relative tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng (1)" data-testid="profile-hud"
-                data-hotkey="profile" onClick={() => { setPanel("profile"); void progress.reload(); }}>
-                ⭐{myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span><KeyBadge id="profile" />
-              </button>
+          </div>
+          {/* the toolbar: square buttons of one size in three groups (me · things to do · the game), labels in the
+              tooltips and for screen readers; the camera on its own row */}
+          <nav id="hud-toolbar" className={`pch pointer-events-auto ${foldClass(toolsOpen)} flex-col gap-1 p-1 font-vt`} aria-label="Công cụ" data-testid="hud-toolbar">
+            <div className="flex flex-wrap items-center gap-1 text-lg leading-none [&_.pch-btn]:inline-flex [&_.pch-btn]:h-9 [&_.pch-btn]:min-w-9 [&_.pch-btn]:items-center [&_.pch-btn]:justify-center [&_.pch-btn]:px-1.5 [&_.pch-btn]:py-0">
               <button type="button" className="pch-btn relative" data-hotkey="wardrobe" title="Tủ đồ (I)" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
                 👕<span className="sr-only"> Tủ đồ</span><KeyBadge id="wardrobe" />
               </button>
@@ -1100,8 +1121,16 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                 onDismount={dismount}
               />
               {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
+              <span aria-hidden="true" className="mx-0.5 h-7 w-0.5 bg-parchment-300" />
               <QuestHudButtons token={token} canPopup={!blocking} onOpen={openQuestPanel} />
+              {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
+              <span aria-hidden="true" className="mx-0.5 h-7 w-0.5 bg-parchment-300" />
               <PersonalSettings weatherFx={weatherFx} onWeatherFx={changeWeatherFx} />
+              <button type="button" className="pch-btn relative pointer-coarse:hidden" title="Phím tắt (H)" onClick={() => setHelpOpen(true)}>
+                ⌨️<span className="sr-only"> Phím tắt</span><KeyBadge id="help" />
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
               {worldMode ? <Camera3dControl /> : (
                 <CameraZoomControl
                   mapWidth={map.width}
@@ -1109,10 +1138,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                   onZoomChange={(z) => canvasRef.current?.setZoom(z)}
                 />
               )}
-              <button type="button" className="pch-btn relative pointer-coarse:hidden" title="Phím tắt (H)" onClick={() => setHelpOpen(true)}>
-                ⌨️<span className="sr-only"> Phím tắt</span><KeyBadge id="help" />
-              </button>
             </div>
+          </nav>
+          <div ref={setHudSlot} className="pointer-events-auto flex flex-col items-start gap-1.5 empty:hidden" data-testid="hud-slot">
             <AnticheatChip secondsLeft={anticheat.secondsLeft} />
             {cards.seated && <CardSeatChip table={cards.seatTable} me={accountId} onOpen={() => cards.seated && cards.openPanel(cards.seated)} />}
           </div>
@@ -1656,5 +1684,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {anticheat.modal && <AnticheatModal kind={anticheat.modal} reason={anticheat.reason} onClose={anticheat.dismiss} />}
     </div>
     </UmbrellaContext.Provider>
+    </HudSlotContext.Provider>
   );
 }

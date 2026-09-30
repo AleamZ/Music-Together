@@ -1,5 +1,6 @@
 "use client";
 
+import { HudSlotted } from "../hud/HudSlot";
 import { useEffect, useState } from "react";
 import { BigPop, Confetti, CountUp, FxStyle, useBump } from "@/components/game/celebrate/Fx";
 import { ParchmentModal } from "@/components/game/Parchment";
@@ -147,12 +148,14 @@ export function BattleChip({ board, speciesName, onOpen }: { board: BattleBoard 
   return (
     <>
     {pop && <BigPop k={pop}>{pop}</BigPop>}
-    <button type="button" onClick={onOpen} className="pch absolute left-2 top-28 z-10 flex w-56 flex-col gap-0.5 p-2 text-left font-vt text-base leading-tight">
+    <HudSlotted>
+    <button type="button" onClick={onOpen} className="pch flex w-56 flex-col gap-0.5 p-2 text-left font-vt text-base leading-tight">
       <span className="text-lg text-burgundy">
         🏆 Đấu câu · {phase === "countdown" ? `bắt đầu sau ${clockText((b.startsAt ?? now) - now)}` : phase === "fishing" ? `còn ${clockText((b.endsAt ?? now) - now)}` : "đang chấm…"}
       </span>
       <Scoreboard battle={b} me={board.me} speciesName={speciesName} limit={3} />
     </button>
+    </HudSlotted>
     </>
   );
 }

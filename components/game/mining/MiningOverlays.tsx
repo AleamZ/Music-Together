@@ -1,5 +1,6 @@
 "use client";
 
+import { HudSlotted } from "../hud/HudSlot";
 import { useState } from "react";
 import type { UseMining } from "@/hooks/useMining";
 import {
@@ -245,10 +246,12 @@ export default function MiningOverlays({ m, showChip }: { m: UseMining; showChip
   return (
     <>
       {showChip && m.panel === null && m.dig === null && m.craft === null && (
-        <button type="button" className="pch-btn fixed left-2 top-40 z-20 font-vt text-lg" onClick={() => m.openPanel("bag")}
-          aria-label="Túi mỏ và thuốc">
-          🎒 Túi mỏ{(m.state?.buffs.length ?? 0) > 0 ? " · ✨" : ""}
-        </button>
+        <HudSlotted>
+          <button type="button" className="pch-btn font-vt text-lg" onClick={() => m.openPanel("bag")}
+            aria-label="Túi mỏ và thuốc">
+            🎒 Túi mỏ{(m.state?.buffs.length ?? 0) > 0 ? " · ✨" : ""}
+          </button>
+        </HudSlotted>
       )}
       {m.dig && <MineGame view={m.dig} onEnd={m.finishDig} onClose={m.closeDig} />}
       {m.craft && (
