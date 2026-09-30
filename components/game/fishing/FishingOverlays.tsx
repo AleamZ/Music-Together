@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import type { FishingController } from "@/hooks/useFishingController";
 import BagPanel, { type BagFarm } from "./BagPanel";
 import BattlePanel, { BattleChip, BattleResult } from "./BattlePanel";
@@ -28,6 +29,10 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
   const name = caught ? catalog?.species.find((s) => s.id === caught.fish.speciesId)?.name ?? caught.fish.speciesId : "";
   const x = fishing.extras;                                                          // v21 (0076)
   const speciesName = (id: string) => catalog?.species.find((s) => s.id === id)?.name ?? id;
+  // econ v2 (0101): the depot shows the thương lái's day; before the first sale it is read from the records board
+  const { npc, lastSale, learnNpc } = fishing.data;
+  const loadBoard = fishing.loadBoard;
+  const needNpc = useCallback(() => { loadBoard().then((b) => learnNpc(b.npc), () => {}); }, [loadBoard, learnNpc]);
   return (
     <>
       {cast.phase === "waiting" && (
@@ -61,9 +66,13 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
         <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equip} onRelease={fishing.release} onClose={closePanel}
           farm={farm} />
       )}
-      {panel === "depot" && <DepotPanel state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids)} onClose={closePanel} />}
+      {panel === "depot" && (
+        <DepotPanel state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids)} onClose={closePanel}
+          npc={npc} lastSale={lastSale} onNeedNpc={needNpc} />
+      )}
       {panel === "market_depot" && (
-        <DepotPanel market state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids, true)} onClose={closePanel} />
+        <DepotPanel market state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids, true)} onClose={closePanel}
+          npc={npc} lastSale={lastSale} onNeedNpc={needNpc} />
       )}
       {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onRepair={fishing.repair} onClose={closePanel} />}
       {panel === "records" && <RecordsPanel catalog={catalog} load={fishing.loadBoard} onClose={closePanel} />}

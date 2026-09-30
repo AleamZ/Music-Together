@@ -14,14 +14,19 @@ import { BOAT_DECK_SPOT, inPond, onPlatform } from "@/lib/game/maps/pond";
 import { isBlockedAt } from "@/lib/game/movement";
 import type { MapId } from "@/lib/game/maps/types";
 
-// 0076_fishing_extras.sql against the TS that mirrors it.
+// 0076_fishing_extras.sql against the TS that mirrors it (and 0101_econ_fishing.sql, which re-prices the boat).
 const SQL = readFileSync("supabase/migrations/0076_fishing_extras.sql", "utf8").replace(/\r\n/g, "\n");
+const SQL101 = readFileSync("supabase/migrations/0101_econ_fishing.sql", "utf8").replace(/\r\n/g, "\n");
+const GEO = /'\{"pier_x": (\d+), "pier_y": (\d+), "deck_x": (\d+), "deck_y": (\d+), "price": (\d+)\}'/;
 
 describe("0076 is the client's", () => {
-  it("the boat's geometry and price", () => {
-    const m = SQL.match(/'\{"pier_x": (\d+), "pier_y": (\d+), "deck_x": (\d+), "deck_y": (\d+), "price": (\d+)\}'/);
+  it("the boat's geometry (0076) and price (econ v2: 0101's _boat_geo, 25 000)", () => {
+    const m = SQL.match(GEO), m101 = SQL101.slice(SQL101.indexOf("function public._boat_geo(")).match(GEO);
     expect(m).not.toBeNull();
-    expect(m!.slice(1).map(Number)).toEqual([BOAT.pier.x, BOAT.pier.y, BOAT.deck.x, BOAT.deck.y, BOAT.price]);
+    expect(m101).not.toBeNull();
+    expect(m!.slice(1, 5).map(Number)).toEqual([BOAT.pier.x, BOAT.pier.y, BOAT.deck.x, BOAT.deck.y]);
+    expect(m101!.slice(1).map(Number)).toEqual([BOAT.pier.x, BOAT.pier.y, BOAT.deck.x, BOAT.deck.y, BOAT.price]);
+    expect(BOAT.price).toBe(25000);
   });
   it("the deep species", () => {
     const ids = [...SQL.matchAll(/\('(\w+)',\s+'[^']+',\s+(\d), .*'deep'\)/g)].map((x) => x[1]);
@@ -88,13 +93,13 @@ describe("the rules the panels show", () => {
 describe("the parsers", () => {
   it("the extras state (no treasure coordinates anywhere)", () => {
     const s = parseExtrasState({
-      server_now: "2026-09-29T00:00:00Z", coins: 5000, boat: { owned: true, aboard: false, price: 4000 },
+      server_now: "2026-09-29T00:00:00Z", coins: 5000, boat: { owned: true, aboard: false, price: 25000 },
       maps: [{ id: "m1", map: "pond", landmark: "Bụi tre", source: "boat", cell: { col: 1, row: 0 }, digs: 2 }], found: 1,
       machines: ["processor", "nope"], job: { recipe: "gao_thom", batches: 2, started_at: "2026-09-29T00:00:00Z", ready_at: "2026-09-29T00:12:00Z" },
       goods: { banh_tet: 3, bot_bap: 0 }, recipes: [{ id: "gao_thom", name: "Gạo thơm", input_kind: "rice", input_id: "thom", input_kg: 10, value: 19600, minutes: 6 }],
     });
     expect(s).not.toBeNull();
-    expect(s!.boat).toEqual({ owned: true, aboard: false, price: 4000 });
+    expect(s!.boat).toEqual({ owned: true, aboard: false, price: 25000 });
     expect(s!.maps).toEqual([{ id: "m1", map: "pond", landmark: "Bụi tre", source: "boat", cell: { col: 1, row: 0 }, digs: 2 }]);
     expect(s!.machines).toEqual(["processor"]);
     expect(s!.goods).toEqual({ banh_tet: 3 });

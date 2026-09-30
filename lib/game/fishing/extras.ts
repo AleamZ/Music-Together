@@ -4,10 +4,11 @@
 
 import type { Vec } from "@/lib/game/types";
 
-/** 0076 _boat_geo(): where one stands to board (on Cầu ao), the boat's deck in the deep water, the price. */
-export const BOAT = { pier: { x: 378, y: 206 }, deck: { x: 356, y: 116 }, price: 4000 } as const;
+/** 0076 _boat_geo(): where one stands to board (on Cầu ao), the boat's deck in the deep water, the price (econ v2, 0101: 25 000;
+ *  was 4 000). */
+export const BOAT = { pier: { x: 378, y: 206 }, deck: { x: 356, y: 116 }, price: 25000 } as const;
 
-/** 0076's deep-water species (rarity 3–5; the dock never lands them). */
+/** 0076's deep-water species (rarity 3–5; the dock never lands them). 0086 added five more: lib/game/river/species.ts. */
 export const DEEP_SPECIES: readonly string[] = ["ca_leo", "ca_bong_tuong", "ca_chien", "ca_duoi_song", "ca_tra_dau", "rua_mai_vang"];
 
 /** 0076 _machine_price(). */
@@ -17,6 +18,9 @@ export const MACHINES: ReadonlyArray<{ id: MachineId; name: string; price: numbe
   { id: "harvester", name: "Máy gặt riêng", price: 15000, blurb: "Gặt trọn thửa lúa chín trong 30 giây — không tốn tiền thuê." },
   { id: "processor", name: "Máy chế biến", price: 10000, blurb: "Biến lúa khô và hoa màu thành hàng giá trị cao hơn." },
 ];
+
+/** Econ v2 (0101): at most this many chests found per account per Vietnam day; after that no map drops and no dig starts. */
+export const TREASURE_PER_DAY = 3;
 
 /** Fishing battle options (0076 fb_create). */
 export const BATTLE_FEES: readonly number[] = [100, 300, 500, 1000, 2000];
@@ -199,6 +203,8 @@ export function extrasErrorText(msg: string): string | null {
     case "row not found": return "Chuyến chèo đã hết hạn — chèo lại nhé.";
     case "dig not found": return "Lượt đào đã hết hạn — đào lại nhé.";
     case "detector tired": return "Máy dò đã hết pin cho tấm bản đồ này.";
+    // econ v2 (0101): three chests a day
+    case "treasure day cap": return `Hôm nay đã đào đủ ${TREASURE_PER_DAY} kho báu — bản đồ vẫn giữ, mai đào tiếp nhé.`;
     case "too tired": return "Mệt quá rồi — nghỉ chút cho lại sức nhé.";
     default: return null;
   }

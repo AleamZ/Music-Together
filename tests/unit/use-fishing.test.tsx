@@ -48,6 +48,24 @@ describe("useFishing", () => {
     expect(result.current.failed).toBe(false);
   });
 
+  it("econ v2 (0101): a sale keeps the thương lái's day and the sale's cut; the board can tell the day too", async () => {
+    const { result } = renderHook(() => useFishing("tok", () => {}));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.npc).toBeNull();
+    expect(result.current.lastSale).toBeNull();
+    act(() => result.current.learnNpc({ gross: 100, full: 20000, half: 40000, tailPct: 20 }));
+    expect(result.current.npc).toEqual({ gross: 100, full: 20000, half: 40000, tailPct: 20 });
+    rpc.sellFish.mockResolvedValue({ sold: 2, earned: 900, npcCut: 100, npc: { gross: 21100, full: 20000, half: 40000, tailPct: 20 }, state: state() });
+    let r: { sold: number; earned: number; npcCut: number } | null = null;
+    await act(async () => { r = await result.current.sell(["a", "b"], true); });
+    expect(r).toEqual({ sold: 2, earned: 900, npcCut: 100 });
+    expect(rpc.sellFish).toHaveBeenLastCalledWith("tok", ["a", "b"], true);
+    expect(result.current.npc?.gross).toBe(21100);
+    expect(result.current.lastSale).toEqual({ earned: 900, cut: 100 });
+    act(() => result.current.learnNpc(null));                                              // nothing new: kept
+    expect(result.current.npc?.gross).toBe(21100);
+  });
+
   it("sets the shared server clock from the state's server_now (v15 §11.6)", async () => {
     rpc.fetchFishingState.mockResolvedValue(state({ server_now: new Date(Date.now() + 90_000).toISOString() }));
     renderHook(() => useFishing("tok", () => {}));
