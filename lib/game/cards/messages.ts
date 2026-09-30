@@ -203,6 +203,7 @@ export function cardErrorMessage(err: unknown, must?: Card | null): string {
     case "deck empty": return "Nọc đã hết bài.";
     case "over 28": return "Cái đã quá 28 điểm — dằn bài để đền làng.";
     case "account locked": return lockText(lockSeconds(err) ?? 300);
+    case "rate limited": return "Thao tác quá nhanh — chờ một chút rồi thử lại nhé.";
   }
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";
   if (msg.includes("account banned")) return "Tài khoản đã bị khoá.";

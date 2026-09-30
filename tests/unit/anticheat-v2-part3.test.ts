@@ -56,7 +56,9 @@ describe("0064–0067: every re-created function is its newest body plus the mar
   }
   it("no later migration re-creates them again — but 0078 and 0101, verbatim but for their marked lines", () => {
     // v21 fixes: the catch flag (mt.catch); econ v2 fishing: the battle's room (mt.catch_room) and the net haul's effort
-    const tags: Record<string, string[]> = { "0078_v21_fixes.sql": ["0078"], "0101_econ_fishing.sql": ["econ v2", "0078"] };
+    const tags: Record<string, string[]> = {
+      "0078_v21_fixes.sql": ["0078"], "0101_econ_fishing.sql": ["econ v2", "0078"], "0108_anticheat_v3.sql": ["0108"],
+    };
     const later = readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0067");
     for (const f of later) {
       for (const [sig, , dst] of cases) {
@@ -65,6 +67,12 @@ describe("0064–0067: every re-created function is its newest body plus the mar
         // 1-arg stub 0066 left
         if (f === "0104_econ_rewards.sql" && sig === "pet_tick(p_session_token text)") {
           expect(read(`supabase/migrations/${f}`)).not.toContain("function public.pet_tick(p_session_token text)");
+          continue;
+        }
+        // anti-cheat v3 (0108) adds a 7-arg finish_cast (the client's word) that calls the 6-arg one, never re-creating it
+        if (f === "0108_anticheat_v3.sql" && sig === "finish_cast(") {
+          expect(read(`supabase/migrations/${f}`)).toContain("p_client jsonb) returns jsonb");
+          expect(read(`supabase/migrations/${f}`).match(/create or replace function public\.finish_cast\(/g)).toHaveLength(1);
           continue;
         }
         expect(Object.keys(tags), `${sig} in ${f}`).toContain(f);

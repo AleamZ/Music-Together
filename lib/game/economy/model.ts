@@ -254,6 +254,7 @@ const REFUSALS: ReadonlyArray<[string, string]> = [
   ["cannot receive xu", `Người nhận xu phải có tài khoản từ ${RECV_MIN_DAYS} ngày tuổi và đạt cấp ${RECV_MIN_LEVEL} trở lên (đồ vật thì đổi thoải mái).`],
   ["receive limit", "Số xu này vượt mức người nhận còn được nhận qua giao dịch hôm nay — bớt xu lại hoặc mai đổi tiếp nhé."],
   ["account locked", "Tài khoản đang bị tạm khoá."],
+  ["rate limited", "Thao tác quá nhanh — chờ một chút rồi thử lại nhé."],
   ["client outdated", "Trang đã cũ — tải lại trang nhé."],
 ];
 

@@ -148,3 +148,12 @@ full chain in any order, except as noted.
 Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" check is timing-sensitive under heavy load
 (`battle_press_too_fast`), and `unified-world-smoke.sql` / `dual-mode-smoke.sql` count `app_flags` rows without the
 `room_creation_open` flag that 0093 added.
+
+## Anti-cheat v3 (0108)
+
+- `anticheat-v3-smoke.sql` (0108: `_reel_claim_diff`; the 7-argument `finish_cast` — an honest claim lands the fish, a
+  widened zone (won or lost) is lost, spent and flagged `client_tamper`, strike 1 then 2; the 6-argument form unchanged;
+  the call budget in `_ac_guard` (`rate_high`, `rate_block`, `rate limited`, a new minute); `market_list` /
+  `auction_create` lock the wallet before the reserved sum). Needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json`;
+  it switches the mode to `enforce` and back, and deletes its accounts and room. Re-apply 0108 after any smoke that
+  `\i`s 0064 or 0073 (they put the old `_ac_guard` / `market_list` back).

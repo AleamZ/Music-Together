@@ -85,7 +85,7 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
     // v18.1: a reel lost after the hook tells the server so (a big fish may pull me in)
     // 0046: a reel sends its input — the server replays it and decides the catch
     // (only to a server that chose the seed: one before 0046 would not know the arguments)
-    const input = reel && l.info.reelSeed != null ? { toggles: reel.toggles, ticks: reel.ticks } : undefined;
+    const input = reel && l.info.reelSeed != null ? { toggles: reel.toggles, ticks: reel.ticks, used: reel.used } : undefined;
     const r = cause === "reel" && !success ? await finishCast(l.info.castId, false, true, input)
       : input ? await finishCast(l.info.castId, success, false, input) : await finishCast(l.info.castId, success);
     setView({ phase: "idle" });

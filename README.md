@@ -513,3 +513,13 @@ between players — whose net is the fees burned), the wallet percentiles, the t
 the **knobs** (`econ_params`): `fish_mult`, `npc_full`, `npc_half`, `npc_tail_pct`, `p2p_fee_pct`, `trade_daily_in`.
 A change applies at once. Aim for a daily net flow of 0–1 % of the supply; if normal players' days drop too far raise
 `fish_mult` or `npc_full` by 10–20 %, if the supply keeps climbing more than 2 % a day lower them.
+
+## Anti-cheat v3: thông số client, giới hạn lượt gọi (0108)
+
+`supabase/migrations/0108_anticheat_v3.sql` is **additive and re-runnable**; run it after `0107`. The reel was already server-authoritative (0046 replays every won reel with the cast's own zone, difficulty and seed; 0059 hooks on the server's clock and flags inhuman timing), so a page edited to widen the zone never lands a fish. 0108 adds:
+
+- **The client's word.** The reel overlay reports the zone / difficulty / min reel it really simulated (`p_client` on a 7-argument `finish_cast`). It is compared with the cast's stored params; a difference is the hard `client_tamper` (a strike in `enforce` mode) and the cast is lost, even when the reel itself was lost. A page before 0108 calls the 6-argument form unchanged.
+- **A call budget per account** in `_ac_guard` (every guarded RPC): past `rate_soft_per_min` (900) a soft `rate_high`, at `rate_block_per_min` (1 200) a soft `rate_block` and then `rate limited` until the minute is over. Both are set in /admin → Chống gian lận → Thống kê.
+- `market_list` / `auction_create` take the wallet lock before counting what is already listed, so two parallel calls cannot list one asset twice.
+
+`tests/sql/anticheat-v3-smoke.sql` checks it (with `-v fixtures=<repo>/tests/fixtures/reel-cases.json`).

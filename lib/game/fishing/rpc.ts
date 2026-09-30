@@ -234,7 +234,7 @@ export type FinishCast =
 const LOST_WHYS: readonly LostWhy[] = ["expired", "too_early", "full", "no_bite", "overboard", "reel_invalid", "outdated"];
 
 /** The reel's input for the server's replay (0046): the ticks where the hold flipped, and the tick it ended on. */
-export interface ReelInput { toggles: number[]; ticks: number }
+export interface ReelInput { toggles: number[]; ticks: number; used?: { zonePct: number; difficulty: number; minReelMs: number } }
 
 /** `hooked` (v18.1): the fish was hooked and the reel lost — a big fish may pull me in. Sent only when true.
  *  `reel` (0046): the reel's input; the server replays it and decides the catch itself. */
@@ -244,6 +244,8 @@ export async function finishCast(token: string, castId: string, success: boolean
   if (reel) {
     args.p_inputs = reel.toggles;
     args.p_ticks = reel.ticks;
+    // 0108: what the reel simulated with; the server compares it with the cast's params
+    if (reel.used) args.p_client = { zone_pct: reel.used.zonePct, difficulty: reel.used.difficulty, min_reel_ms: reel.used.minReelMs };
   }
   const r = await call("finish_cast", args);
   const state = stateOf(r.state);
@@ -344,6 +346,7 @@ export function fishingErrorMessage(err: unknown): string {
     case "cast not found": return "Cá đã thoát mất rồi.";
     case "fish not found": return "Con cá này không còn nữa.";
     case "account locked": return lockText(lockSeconds(err) ?? 300);
+    case "rate limited": return "Thao tác quá nhanh — chờ một chút rồi thử lại nhé.";                                    // 0108
     case "daily cast limit": return DAILY_LIMIT_TEXT;
     case "rod broken": return "Cần này gãy rồi — mang tới tiệm chú Tư sửa nhé.";
     case "not worn": return "Cần còn tốt, chưa cần sửa.";

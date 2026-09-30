@@ -230,6 +230,7 @@ const TEXTS: Record<string, string> = {
   "too thirsty": "Bạn khát quá, uống gì đã.",
   exhausted: "Hôm nay bạn kiệt sức rồi.",
   "account locked": "Tài khoản đang bị tạm khóa.",
+  "rate limited": "Thao tác quá nhanh — chờ một chút rồi thử lại nhé.",                                                    // 0108
   outdated: "Trò chơi đã cập nhật — tải lại trang nhé.",                        // v22 (0083)
   stunned: "Bạn đang choáng — đợi một chút!",
   "round not found": "Lượt chơi đã hết.",

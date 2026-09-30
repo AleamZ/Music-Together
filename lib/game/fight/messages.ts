@@ -51,6 +51,7 @@ const TEXT: readonly [string, string][] = [
   ["bad tier", "Mức phí vào không hợp lệ."],
   ["bad floor", "Không có tầng này."],
   ["account locked", "Tài khoản đang bị khóa tạm thời."],
+  ["rate limited", "Thao tác quá nhanh — chờ một chút rồi thử lại nhé."],
   ["locked", "Tài khoản đang bị khóa tạm thời."],
 ];
 

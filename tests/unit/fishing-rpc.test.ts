@@ -93,6 +93,12 @@ describe("RPC wrappers", () => {
     h.rpc.mockResolvedValue({ data: { result: "lost", why: "outdated", message: "Cập nhật trang để câu tiếp", state: STATE }, error: null });
     expect(await finishCast("tok", "c1", true, false, { toggles: [0, 12], ticks: 300 })).toMatchObject({ result: "lost", why: "outdated" });
     expect(h.rpc).toHaveBeenLastCalledWith("finish_cast", { p_session_token: "tok", p_cast_id: "c1", p_success: true, p_inputs: [0, 12], p_ticks: 300 });
+    // 0108: the params the overlay simulated ride along for the server to compare
+    await finishCast("tok", "c1", true, false, { toggles: [0, 12], ticks: 300, used: { zonePct: 25, difficulty: 52, minReelMs: 4080 } });
+    expect(h.rpc).toHaveBeenLastCalledWith("finish_cast", {
+      p_session_token: "tok", p_cast_id: "c1", p_success: true, p_inputs: [0, 12], p_ticks: 300,
+      p_client: { zone_pct: 25, difficulty: 52, min_reel_ms: 4080 },
+    });
   });
   it("maps the board", async () => {
     h.rpc.mockResolvedValue({ data: {

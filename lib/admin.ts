@@ -120,6 +120,9 @@ export interface AnticheatConfig {
   stats_every_min: number;
   /** The build number of the page that asked (the admin's own). */
   server_build: number;
+  /** 0108: calls per minute per account — past the soft line a soft rate_high, at the block line refused (absent before 0108). */
+  rate_soft_per_min?: number;
+  rate_block_per_min?: number;
 }
 export interface StatFlag {
   kind: "stat_win_rate" | "stat_exact_rate" | "stat_earnings" | "stat_marathon" | string;
