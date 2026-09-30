@@ -65,6 +65,7 @@ import AnticheatModal from "./AnticheatModal";
 import CameraZoomControl from "./CameraZoomControl";
 import Camera3dControl from "./Camera3dControl";
 import { HudSlotContext } from "./hud/HudSlot";
+import GuideTracker from "./guide/GuideTracker";
 import { foldClass, useFold } from "./hud/useFold";
 import ForestHud from "./forest/ForestHud";
 import CityMapModal from "./CityMapModal";
@@ -1225,6 +1226,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       />
       <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} dog={coopDog} />
       <ExploreOverlays explore={explore} mapId={map.id} idle={!blocking && fishing.cast.phase === "idle" && faint === null} />{/* v22 (0086) */}
+      <GuideTracker accountId={accountId} onStepDone={(t) => showToast(`✅ Xong: ${t}`)} ctx={{
+        map: travel.mapId, fish: fishing.data.state?.fish.length ?? null, coins: fishing.data.state?.coins ?? null,
+        hunger: vitals.state?.hunger ?? null, thirst: vitals.state?.thirst ?? null, panel: typeof panel === "string" ? panel : null,
+      }} />{/* the newcomer's guide (lib/game/guide/model.ts) */}
       <MiningOverlays m={mining} showChip={map.id === "mo_da" || Object.keys(mining.state?.bag ?? {}).some((k) => k.startsWith("pot_")) || (mining.state?.buffs.length ?? 0) > 0} />{/* v21 Mỏ đá */}
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
 
