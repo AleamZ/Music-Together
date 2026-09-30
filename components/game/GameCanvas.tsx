@@ -802,6 +802,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           if (lf.moving()) wv.setLive(lf.at(Date.now()));
           wv.render(f);
         },
+        inputYaw: () => wv.inputYaw(),
       });
       wv.setPlots(plotsRef.current);
       view3dRef.current = wv;

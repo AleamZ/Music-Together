@@ -444,6 +444,11 @@ export class WorldView implements View3D {
     this.fly = { pos: { ...pos }, yaw, pitch };
   }
 
+  /** First person in the game: the look's yaw (the movement keys turn with it); else null. */
+  inputYaw(): number | null {
+    return this.mode === "follow" && this.gcam?.view === "first" ? this.orbit.follow.yaw : null;
+  }
+
   setCameraMode(m: CameraMode): void {
     if (m === "free" && !this.opts.allowFree) return;
     if (m === "free" && this.mode !== "free") {

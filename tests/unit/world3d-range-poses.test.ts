@@ -80,3 +80,16 @@ describe("the 3D quality setting", async () => {
     expect(m.quality()).toBe("low");
   });
 });
+
+describe("first-person keys", async () => {
+  const { turnInput } = await import("@/lib/game/movement");
+  const near = (v: { x: number; y: number }, x: number, y: number) => { expect(v.x).toBeCloseTo(x, 5); expect(v.y).toBeCloseTo(y, 5); };
+  it("keep the map axes looking north (yaw 0), turn with the look otherwise", () => {
+    near(turnInput({ x: 0, y: -1 }, 0), 0, -1);                        // W: north
+    near(turnInput({ x: 1, y: 0 }, 0), 1, 0);                          // D: east
+    near(turnInput({ x: 0, y: -1 }, Math.PI / 2), -1, 0);              // looking west: W goes west
+    near(turnInput({ x: 1, y: 0 }, Math.PI / 2), 0, -1);               // …and D goes north (my right)
+    near(turnInput({ x: 0, y: -1 }, Math.PI), 0, 1);                   // looking south: W goes south
+    near(turnInput({ x: 0, y: 0 }, 1), 0, 0);
+  });
+});

@@ -63,6 +63,8 @@ export interface DioramaFrame {
 /** What the engine needs from a 3D view. */
 export interface View3D {
   render(f: DioramaFrame): void;
+  /** First person: the camera's yaw (radians), so the movement keys go where I look; null = map axes (third person). */
+  inputYaw?(): number | null;
 }
 
 export type CameraMode = "follow" | "overview" | "free";

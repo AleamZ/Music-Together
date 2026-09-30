@@ -35,7 +35,7 @@ import { formatWeight, RARITY_COLOR, type Rarity } from "@/lib/game/fishing/cata
 import { bobberPoint, SWING_MS } from "@/lib/game/fishing/geometry";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap, Interactable, Spot } from "@/lib/game/maps/types";
-import { inputDir, isBlockedAt, WALK_SPEED, type KeyState } from "@/lib/game/movement";
+import { inputDir, isBlockedAt, turnInput, WALK_SPEED, type KeyState } from "@/lib/game/movement";
 import { SPRINT_SPEED } from "@/lib/game/professions/catalog";
 import { FARM_ANIM, facingToCode, MAX_PATH_POINTS, type FacingCode, type FarmAnim, type GameMessage, type Unit } from "@/lib/game/net/protocol";
 import { Pack, type DogWalker } from "@/lib/game/pack";
@@ -1498,7 +1498,9 @@ export class GameEngine {
     const locked = this.warming(now) || this.cramping(now)                  // v18.10: the stretch, a cramp
       || this.lift?.role === "passenger"                                    // v18.13: on someone's vehicle
       || this.struck(now);                                                  // v18.9: lightning
-    const dir = this.inputEnabled && !this.rodOut && !locked ? inputDir(this.keys) : { x: 0, y: 0 };
+    const keys = this.inputEnabled && !this.rodOut && !locked ? inputDir(this.keys) : { x: 0, y: 0 };
+    const yaw = this.view3d?.inputYaw?.() ?? null;                                 // first person: keys follow the look
+    const dir = yaw === null ? keys : turnInput(keys, yaw);
     if (this.warmUntil !== 0 && !this.warming(now)) {
       this.warmUntil = 0;
       this.announceNow();
