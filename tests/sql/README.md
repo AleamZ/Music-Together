@@ -157,3 +157,21 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   `auction_create` lock the wallet before the reserved sum). Needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json`;
   it switches the mode to `enforce` and back, and deletes its accounts and room. Re-apply 0108 after any smoke that
   `\i`s 0064 or 0073 (they put the old `_ac_guard` / `market_list` back).
+
+## Câu cá v3 (0110)
+
+- `fishing-v3-smoke.sql` (0110: the parts, the rods' and lines' limits, Cần gỗ the kit, `fish_habits` not readable by
+  anon, the 27 species on 0101's scale; a bare rod refused (`rod needs parts`, nothing spent), parts filling their
+  slots, a bought rod waiting for them; `fishing_equip` (slot, kind, ownership, unmounting, a broken rod, the bait);
+  hook-gated species, hours, ×2 bait / ×3 groundbait (statistical, generous bounds) and the lift; `throw_groundbait`
+  (a bag spent, 48 px, 10 minutes, mine only, the cast answers it); `line_snap` (3 snaps, then gone) and `rod_snap`
+  (the rod to 0, unequipped, repairable); the extra hooks' odds and landing within the rig and the bucket; the reel's
+  and the phao's params; the notebook's gate; the new nets' rarity and the throw's spot; the new buckets; the river
+  casts): chain-level, re-runs 0110 twice with `\i`, needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json`; it
+  switches the `unified_world` flag and Sông Cái's level for its river checks and restores them, and deletes its
+  accounts and room. **Re-apply 0110 after any smoke that `\i`s 0034, 0059, 0098 or 0101** (they put the older
+  `start_cast` / `finish_cast` / `buy_item` / `start_net` / `net_haul` / `_fishing_state` back).
+- With 0110: `econ-fishing-smoke.sql` counts 0101's 23 species among the 27; `fishing-kit-smoke.sql` sets 0110's new
+  kinds aside while it re-runs 0098 (whose kind check does not know them) and re-applies 0110 after;
+  `anticheat-guards.sql` calls `fishing_equip`, `throw_groundbait` and `fishing_notebook` (88 guarded calls).
+
