@@ -4,13 +4,17 @@
 
 import type { FaceExpr } from "./voxel-face";
 
-export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "stretch";
-export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch"];
+export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "stretch" | "net_hold" | "net_throw" | "net_pull" | "net_won";
+export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch", "net_hold", "net_throw", "net_pull", "net_won"];
 /** Actions that play once from their start (the caller passes the time since the action began, not a running clock):
  *  the cast's throw, then the rod held out while the line waits. */
-export const ONE_SHOT_ACTS: ReadonlySet<CharAct> = new Set<CharAct>(["cast"]);
+export const ONE_SHOT_ACTS: ReadonlySet<CharAct> = new Set<CharAct>(["cast", "net_throw"]);
 /** The cast's throw (s): wind-up, snap, follow-through; then the hold. */
 export const CAST_S = 0.95;
+
+/** The net's throw (s): the wind-up and twist, the fling (the net leaves the hands at NET_RELEASE_S), then the hold. */
+export const NET_THROW_S = 1.0;
+export const NET_RELEASE_S = 0.5;
 
 /** A preview's clock for an action (the dev lab, the wardrobe): a one-shot action replays every 3 s. */
 export function previewTime(act: CharAct, t: number): number {
@@ -267,6 +271,58 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
         p.headX = -0.2 * e;
         p.squash = -0.02 * e;
       }
+      break;
+    }
+    case "net_hold": {
+      // quăng lưới, aiming: feet apart, the net's bundle hanging from the right hand, the left holding its edge at the
+      // chest; the body rocks side to side, swinging the bundle
+      const w = Math.sin(s * TAU * 0.9);
+      p.legL.x = 0.25; p.legR.x = -0.2; p.legL.z = p.legR.z = 0.14; p.kneeL = p.kneeR = 0.28;
+      p.drop = 0.05;
+      p.armR.x = 0.35 + w * 0.3; p.armR.z = 0.18; p.elbowR = 0.25;
+      p.armL.x = 0.8; p.armL.z = 0.25; p.elbowL = 1.25;
+      p.lean = 0.12;
+      p.roll = w * 0.06;
+      p.headX = 0.12;
+      break;
+    }
+    case "net_throw": {
+      // ONE SHOT (t = since the throw began): twist back with both arms low on the right, then sweep them forward and up
+      // (the net leaves at NET_RELEASE_S), then the arms stay out as the net lands
+      const k = Math.max(0, t);
+      const wind = Math.min(1, k / 0.4), fling = k < 0.4 ? 0 : Math.min(1, (k - 0.4) / 0.2);
+      const e = fling * fling * (3 - 2 * fling);
+      p.legL.x = 0.35; p.legR.x = -0.3; p.legL.z = p.legR.z = 0.16;
+      p.kneeL = 0.3 + 0.2 * wind * (1 - e); p.kneeR = 0.35 * (1 - e);
+      p.drop = 0.1 * wind * (1 - e);
+      p.armR.x = -0.6 * wind * (1 - e) + 1.5 * e; p.armR.z = 0.35 + 0.45 * e; p.elbowR = 0.3 - 0.2 * e;
+      p.armL.x = -0.3 * wind * (1 - e) + 1.4 * e; p.armL.z = 0.2 + 0.5 * e; p.elbowL = 0.6 - 0.45 * e;
+      p.lean = -0.12 * wind * (1 - e) + 0.3 * e;
+      p.roll = 0.18 * wind * (1 - e) - 0.08 * e;
+      p.headX = 0.1 + 0.1 * e;
+      p.squash = -0.03 * wind * (1 - e) + 0.02 * e;
+      break;
+    }
+    case "net_pull": {
+      // hauling the net in hand over hand: leaning back, knees bent, the hands pulling in turn
+      const a = s * TAU * 1.1, pl = Math.sin(a), pr = Math.sin(a + Math.PI);
+      p.legL.x = 0.4; p.legR.x = -0.25; p.legL.z = p.legR.z = 0.14; p.kneeL = 0.45; p.kneeR = 0.3; p.ankleL = -0.2;
+      p.drop = 0.1;
+      p.armL.x = 1.0 + pl * 0.45; p.armR.x = 1.0 + pr * 0.45; p.armL.z = p.armR.z = 0.12;
+      p.elbowL = 0.6 - pl * 0.5; p.elbowR = 0.6 - pr * 0.5;
+      p.lean = -0.18 + Math.abs(pl) * 0.04;
+      p.roll = pl * 0.03;
+      p.headX = 0.08;
+      break;
+    }
+    case "net_won": {
+      // the dripping bundle held up high with both hands, a happy bounce
+      const b = Math.abs(Math.sin(s * TAU * 1.4));
+      p.armL.x = p.armR.x = 2.5; p.armL.z = p.armR.z = 0.25; p.elbowL = p.elbowR = 0.5;
+      p.bob = b * 0.05; p.squash = b * 0.02;
+      p.lean = -0.08;
+      p.headX = -0.25;
+      p.face = "happy";
       break;
     }
     case "wave": {

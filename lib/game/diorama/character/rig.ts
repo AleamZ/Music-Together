@@ -134,6 +134,24 @@ export class ChibiRig {
     if (this.parts) this.face.material = this.parts.faces[p.face];
   }
 
+  /** The rod's tip in world space (the line starts there), or null while no rod is out. */
+  rodTip(out: THREE.Vector3): THREE.Vector3 | null {
+    const rod = this.m.rod;
+    if (!rod.visible || !this.parts) return null;
+    const g = rod.geometry;
+    if (!g.boundingBox) g.computeBoundingBox();
+    this.root.updateMatrixWorld(true);
+    return rod.localToWorld(out.set(0, 0, g.boundingBox!.max.z));
+  }
+
+  /** Between the two hands in world space (what they hold: a net's bundle, its rope). */
+  hands(out: THREE.Vector3): THREE.Vector3 {
+    this.root.updateMatrixWorld(true);
+    const l = this.elbowL.localToWorld(new THREE.Vector3(0, -this.dims.foreLen, 0));
+    const r = this.elbowR.localToWorld(out.set(0, -this.dims.foreLen, 0));
+    return r.add(l).multiplyScalar(0.5);
+  }
+
   /** Drops the geometry/material references (the factory owns them). */
   detach(): void {
     this.parts = null;

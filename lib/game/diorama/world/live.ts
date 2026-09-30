@@ -7,11 +7,12 @@ import type { Facing } from "@/lib/game/types";
 import { RIVER_LEVEL, ZONE_ELEV } from "@/lib/game/world/terrain";
 import { ZONES } from "@/lib/game/world/zones";
 import { WATER_Y } from "../build";
+import { NET_RELEASE_S } from "../character/pose";
 import type { CharacterLayer } from "../character/layer";
 import type { Billboard } from "../types";
 import {
   gait, hash01, leap, pushWake, SEAT_LIFT, stepMotion, telegraphLook, trailSpot,
-  type LiveBoss, type Motion, type WakePoint, type WorldLive,
+  type LiveBoss, type LiveNet, type Motion, type WakePoint, type WorldLive,
 } from "./live-plan";
 import {
   barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, fishModel, houseModel, Labels,
@@ -33,7 +34,48 @@ interface Entry { obj: THREE.Object3D; key: string; seen: number; motion: Motion
 
 interface BossParts { c: Creature; bar: THREE.Sprite; fill: THREE.Sprite; decals: THREE.Mesh[]; arena: THREE.Object3D | null; arenaKey: string }
 interface BoatParts { b: Boat; wake: WakePoint[]; foam: THREE.InstancedMesh }
-interface FishParts { bob: THREE.Group; rings: THREE.Mesh[]; alert: THREE.Sprite }
+interface FishParts { bob: THREE.Group; rings: THREE.Mesh[]; alert: THREE.Sprite; line: THREE.Line; born: number }
+interface NetParts { net: THREE.Group; bundle: THREE.Mesh; rope: THREE.Line; spin: number }
+
+/** The fishing line / the net's rope: this many points, a sagging curve between the two ends. */
+const LINE_PTS = 16;
+/** The bobber's flight from the rod tip onto the water (s). */
+const BOB_FLIGHT_S = 0.45;
+/** The net's flight from the hands onto the water (s), after the throw's release. */
+const NET_FLIGHT_S = 0.55;
+
+/** A cast net (chài), unit radius, flat at y = 0 with its centre raised by 1 (scale.y sets the dome): 16 spokes and
+ *  5 rings as line segments. */
+function netGeometry(): THREE.BufferGeometry {
+  const pts: number[] = [], spokes = 16, rings = 5, seg = 32;
+  const y = (r: number) => 1 - r * r;
+  for (let i = 0; i < spokes; i++) {
+    const a = (i / spokes) * Math.PI * 2;
+    for (let k = 0; k < rings; k++) {
+      const r0 = k / rings, r1 = (k + 1) / rings;
+      pts.push(Math.cos(a) * r0, y(r0), Math.sin(a) * r0, Math.cos(a) * r1, y(r1), Math.sin(a) * r1);
+    }
+  }
+  for (let k = 1; k <= rings; k++) {
+    const r = k / rings;
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2;
+      pts.push(Math.cos(a0) * r, y(r), Math.sin(a0) * r, Math.cos(a1) * r, y(r), Math.sin(a1) * r);
+    }
+  }
+  return new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+}
+
+/** Lay a line's points on a sagging curve from `a` to `b` (`sag` units down at the middle). */
+function sagLine(line: THREE.Line, a: THREE.Vector3, b: THREE.Vector3, sag: number): void {
+  const pos = line.geometry.getAttribute("position") as THREE.BufferAttribute;
+  for (let i = 0; i < LINE_PTS; i++) {
+    const u = i / (LINE_PTS - 1);
+    pos.setXYZ(i, a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u - sag * 4 * u * (1 - u), a.z + (b.z - a.z) * u);
+  }
+  pos.needsUpdate = true;
+  line.geometry.computeBoundingSphere();
+}
 
 export class LiveLayer {
   readonly root = new THREE.Group();
@@ -47,6 +89,26 @@ export class LiveLayer {
   private readonly ambient: { fish: Array<{ g: THREE.Group; splash: THREE.Mesh; x: number; y: number; w: number; dir: number; seed: number }>; ducks: Array<{ c: Creature; a: number; r: number; speed: number }> };
   private frame = 0;
   private lastT = -1;
+  // the fishing lines and the nets (shared)
+  private readonly lineMat = new THREE.LineBasicMaterial({ color: 0xf2efe6, transparent: true, opacity: 0.75 });
+  private readonly ropeMat = new THREE.LineBasicMaterial({ color: 0xc8b58a });
+  private readonly netGeo = netGeometry();
+  private readonly netMat = new THREE.LineBasicMaterial({ color: 0xe9e3d2, transparent: true, opacity: 0.85 });
+  private readonly rimGeo = new THREE.TorusGeometry(1, 0.035, 4, 32).rotateX(Math.PI / 2);
+  private readonly bundleGeo = new THREE.IcosahedronGeometry(0.22, 1);
+  private readonly rimMat = new THREE.MeshLambertMaterial({ color: 0x4a4e56, flatShading: true });
+  private readonly bundleMat = new THREE.MeshLambertMaterial({ color: 0xd8cfb4, flatShading: true });
+  private readonly v1 = new THREE.Vector3();
+  private readonly v2 = new THREE.Vector3();
+  private readonly v3 = new THREE.Vector3();
+
+  private newLine(mat: THREE.LineBasicMaterial): THREE.Line {
+    const g = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(LINE_PTS * 3), 3));
+    const l = new THREE.Line(g, mat);
+    l.frustumCulled = false;
+    l.userData.lineGeo = true;
+    return l;
+  }
 
   constructor(private readonly heightAt: (x: number, y: number) => number) {
     this.root.name = "live";
@@ -137,6 +199,7 @@ export class LiveLayer {
   private drop(id: string, e: Entry): void {
     for (const o of [e.obj, ...e.extras]) {
       this.root.remove(o);
+      if (o.userData.lineGeo) (o as THREE.Line).geometry.dispose();                    // a fishing line / net rope's own points
       o.traverse((x) => {
         const m = x as THREE.Mesh;
         if (!m.isMesh) return;
@@ -269,12 +332,21 @@ export class LiveLayer {
         const bob = bobberModel(this.mats);
         const rings = [0, 1].map(() => new THREE.Mesh(this.ringGeo, this.mats.foam));
         const alert = this.labels.sprite("!", "alert", 0.9);
-        return { bob, rings, alert } as FishParts;
+        const line = this.newLine(this.lineMat);
+        return { bob, rings, alert, line, born: t } as FishParts;
       });
       const p = e.data as FishParts;
-      if (!p.bob.parent) e.obj.add(p.bob, ...p.rings, p.alert);
+      if (!p.bob.parent) { e.obj.add(p.bob, ...p.rings, p.alert); this.root.add(p.line); e.extras.push(p.line); }
       const wy = this.waterY(fsh.x, fsh.y);
-      e.obj.position.set(U(fsh.x), wy, U(fsh.y));
+      const rest = this.v1.set(U(fsh.x), wy, U(fsh.y));
+      // the line from the angler's rod tip (the 3D chibi's rod), the bobber flying out along it first
+      const angler = fsh.id.startsWith("cast:") ? fsh.id.slice(5) : null;
+      const tip = angler ? people.rodTip(angler, this.v2) : null;
+      const age = (t - p.born) / 1000, fly = reduced || !tip ? 1 : Math.min(1, age / BOB_FLIGHT_S);
+      if (fly < 1 && tip) {
+        const u = fly * (2 - fly);                                                // eases out: the bobber slows as it lands
+        e.obj.position.set(tip.x + (rest.x - tip.x) * u, tip.y + (rest.y - tip.y) * u + Math.sin(fly * Math.PI) * 0.9, tip.z + (rest.z - tip.z) * u);
+      } else e.obj.position.copy(rest);
       const pull = fsh.hooked ? fsh.tension : 0;
       p.bob.position.y = reduced ? 0 : -pull * 0.12 * (1 + Math.sin(tm / 70)) + Math.sin(tm / 500) * 0.03;
       p.bob.position.x = reduced ? 0 : pull * Math.sin(tm / 130) * 0.15;
@@ -282,10 +354,21 @@ export class LiveLayer {
         const k = ((tm / (fsh.hooked ? 500 : 1400) + i * 0.5) % 1);
         r.scale.setScalar(0.2 + k * (fsh.hooked ? 1.3 : 0.8));
         r.position.y = 0.02;
+        r.visible = fly >= 1;
       });
       p.alert.visible = fsh.hooked;
       p.alert.position.y = 1.2 + (reduced ? 0 : Math.abs(Math.sin(tm / 160)) * 0.2);
+      p.line.visible = !!tip;
+      if (tip) {
+        const end = this.v3.copy(e.obj.position).add(p.bob.position);
+        end.y += 0.2;
+        // slack while it waits, taut and trembling with a fish on
+        const sag = fly < 1 ? 0.05 : fsh.hooked ? 0.01 + (reduced ? 0 : Math.sin(tm / 45) * 0.015) : Math.min(0.6, tip.distanceTo(end) * 0.09);
+        sagLine(p.line, tip, end, sag);
+      }
     }
+
+    for (const n of live.nets ?? []) this.net(n, people, t, tm, dt, reduced);
 
     const petSlots = new Map<string, number>();
     for (const pet of live.pets ?? []) {
@@ -498,6 +581,65 @@ export class LiveLayer {
   }
 
   /** How many live things are drawn (dev stats). */
+  /** A cast net: the bundle in the hands (aiming, won), flying out and opening (the throw), lying on the water, hauled
+   *  back closing up (the pull); a rope from the hands while it is out. */
+  private net(n: LiveNet, people: CharacterLayer, t: number, tm: number, dt: number, reduced: boolean): void {
+    const e = this.get(n.id, "net", () => new THREE.Group(), () => {
+      const net = new THREE.Group();
+      net.add(new THREE.LineSegments(this.netGeo, this.netMat));
+      const rim = new THREE.Mesh(this.rimGeo, this.rimMat);
+      rim.castShadow = false;
+      net.add(rim);
+      const bundle = new THREE.Mesh(this.bundleGeo, this.bundleMat);
+      const rope = this.newLine(this.ropeMat);
+      return { net, bundle, rope, spin: 0 } as NetParts;
+    });
+    const p = e.data as NetParts;
+    if (!p.net.parent) { e.obj.add(p.net, p.bundle); this.root.add(p.rope); e.extras.push(p.rope); }
+    e.obj.position.set(0, 0, 0);
+    const hands = people.hands(n.throwerId, this.v1) ?? this.v1.set(U(n.x), this.heightAt(n.x, n.y) + 1.1, U(n.y));
+    const R = Math.max(0.3, U(n.r));
+    const ty = Math.max(this.heightAt(n.cx, n.cy), this.waterY(n.cx, n.cy)) + 0.03;
+    const target = this.v2.set(U(n.cx), ty, U(n.cy));
+    const s = reduced ? 10 : n.since / 1000;
+    let out = false;                                                          // the net is off the hands (rope shown)
+    p.bundle.visible = false;
+    p.net.visible = false;
+    if (n.show === "aim" || n.show === "charge" || (n.show === "throw" && s < NET_RELEASE_S)) {
+      p.bundle.visible = true;
+      p.bundle.position.copy(hands).y -= 0.15;
+      p.bundle.scale.setScalar(1);
+    } else if (n.show === "throw") {
+      const u = Math.min(1, (s - NET_RELEASE_S) / NET_FLIGHT_S), e2 = 1 - (1 - u) * (1 - u);
+      p.net.visible = true;
+      p.net.position.set(hands.x + (target.x - hands.x) * e2, hands.y + (target.y - hands.y) * e2 + Math.sin(u * Math.PI) * 1.4, hands.z + (target.z - hands.z) * e2);
+      const spread = R * (0.2 + 0.8 * e2);
+      p.net.scale.set(spread, R * 0.45 * (1 - u) + 0.02, spread);
+      p.spin += reduced ? 0 : dt * 5 * (1 - u);
+      out = true;
+    } else if (n.show === "sunk") {
+      p.net.visible = true;
+      p.net.position.copy(target).y -= Math.min(1, s / 1.5) * 0.08;
+      p.net.scale.set(R, 0.02, R);
+      out = true;
+    } else if (n.show === "pull") {
+      const k = Math.min(1, s / 3);
+      const front = this.v3.set(hands.x, ty, hands.z);                     // at the thrower's feet, on the water line
+      p.net.visible = true;
+      p.net.position.set(target.x + (front.x - target.x) * k * 0.75, ty - 0.08 + k * 0.15, target.z + (front.z - target.z) * k * 0.75);
+      p.net.scale.set(R * (1 - 0.65 * k), R * 0.5 * k + 0.02, R * (1 - 0.65 * k));
+      out = true;
+    } else {                                                                   // won: the dripping bundle held up
+      p.bundle.visible = true;
+      p.bundle.position.copy(hands).y += 0.1;
+      p.bundle.scale.setScalar(1.3 + (reduced ? 0 : Math.sin(tm / 150) * 0.05) + Math.min(0.6, n.k * 0.08));
+    }
+    p.net.rotation.y = p.spin;
+    p.rope.visible = out;
+    if (out) sagLine(p.rope, hands, this.v3.copy(p.net.position), n.show === "pull" ? 0.05 : 0.35);
+    void t;
+  }
+
   count(): number {
     return this.entries.size;
   }
@@ -510,5 +652,13 @@ export class LiveLayer {
     this.ringGeo.dispose();
     this.discGeo.dispose();
     this.planeGeo.dispose();
+    this.lineMat.dispose();
+    this.ropeMat.dispose();
+    this.netGeo.dispose();
+    this.netMat.dispose();
+    this.rimGeo.dispose();
+    this.bundleGeo.dispose();
+    this.rimMat.dispose();
+    this.bundleMat.dispose();
   }
 }

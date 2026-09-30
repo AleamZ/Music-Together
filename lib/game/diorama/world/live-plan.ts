@@ -43,7 +43,10 @@ export interface WorldLive {
   dogs?: LiveDog[];
   rats?: LiveCritter[];
   leaps?: LiveLeap[];
+  /** Net throws (quăng lưới): the thrower, the phase and its age (ms), the net's centre (world px) and radius (px). */
+  nets?: LiveNet[];
 }
+export interface LiveNet { id: string; throwerId: string; show: "aim" | "charge" | "throw" | "sunk" | "pull" | "won"; since: number; x: number; y: number; cx: number; cy: number; r: number; k: number }
 
 /** How far up a rider sits on a vehicle (units above the ground under the vehicle; the "ride" pose's hips are at 0.6). */
 export const SEAT_LIFT: Readonly<Record<VehicleKind, number>> = { bike: 0.32, moto: 0.3, car: -0.08 };
@@ -138,6 +141,7 @@ export function liveFromFrame(f: Pick<DioramaFrame, "billboards" | "gameplay">, 
     // P4: the pets at their owners' heels and everyone's bobbers (mine and the others' from realtime)
     pets: [...(extra.pets ?? []), ...(g.pets ?? []).map((p) => ({ id: `pet:${p.ownerId}`, ownerId: p.ownerId, species: p.species, x: p.x, y: p.y }))],
     fishing: [...(extra.fishing ?? []), ...(g.anglers ?? []).map(castLive)],
+    nets: [...(extra.nets ?? []), ...(g.nets ?? []).map((n) => ({ ...n, id: `net:${n.id}`, throwerId: n.id }))],
   };
 }
 

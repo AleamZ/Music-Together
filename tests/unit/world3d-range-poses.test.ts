@@ -93,3 +93,14 @@ describe("first-person keys", async () => {
     near(turnInput({ x: 0, y: 0 }, 1), 0, 0);
   });
 });
+
+describe("net throw poses", () => {
+  it("winds back, then flings the arms forward after the release", () => {
+    const back = poseAt("net_throw", 0.35), flung = poseAt("net_throw", 0.9);
+    expect(back.armR.x).toBeLessThan(0);
+    expect(flung.armR.x).toBeGreaterThan(1.2);
+    expect(poseAt("net_pull", 1).lean).toBeLessThan(0);
+    expect(poseAt("net_won", 1).armL.x).toBeGreaterThan(2);
+    expect(previewTime("net_throw", 4)).toBe(1);
+  });
+});
