@@ -19,6 +19,9 @@ set time zone 'UTC';
 set client_min_messages = warning;
 \i supabase/migrations/0111_mailbox.sql
 \i supabase/migrations/0111_mailbox.sql
+-- 0113 re-creates functions of this migration: re-run it after, as the chain does
+\i supabase/migrations/0113_review_fixes.sql
+\i supabase/migrations/0113_review_fixes.sql
 reset client_min_messages;
 
 create temp table mx_was (k text primary key, v text);
@@ -383,7 +386,13 @@ begin
   v_m := pg_temp.mail('td', 'trade');
   update public.mail set expires_at = now() - interval '1 second' where id = v_m;
   assert pg_temp.fails(format('select public.mail_claim(%L, %s)', pg_temp.t('td'), v_m), 'mail expired'), 'too late';
+  -- 0113: the sweep runs at most once a minute server-wide
+  update public.mail_sweep_state set swept_at = now() - interval '30 seconds';
   j := public.mail_list(pg_temp.t('td'));
+  assert exists (select 1 from public.mail where id = v_m), 'swept 30 s ago: not yet (0113)';
+  update public.mail_sweep_state set swept_at = now() - interval '61 seconds';
+  j := public.mail_list(pg_temp.t('td'));
+  assert (select swept_at = now() from public.mail_sweep_state), 'the sweep is stamped (0113)';
   assert not exists (select 1 from public.mail where id = v_m), 'gone from td';
   v_n := pg_temp.mail('ta', 'return');
   assert v_n is not null and (select xu from public.mail where id = v_n) = 950, 'returned to ta';
@@ -396,6 +405,7 @@ begin
   v_m := pg_temp.mail('td', 'market');                                            -- the auction's fish
   assert exists (select 1 from public.mail_fish where mail_id = v_m), 'escrow';
   update public.mail set expires_at = now() - interval '1 second' where id = v_m;
+  update public.mail_sweep_state set swept_at = null;   -- 0113: the throttle's minute is over
   j := public.mail_list(pg_temp.t('td'));
   assert not exists (select 1 from public.mail where id = v_m), 'dropped';
   assert not exists (select 1 from public.mail_fish where id = '00000000-0000-4000-8000-00000000a444'), 'escrow dropped';

@@ -13,6 +13,9 @@ set time zone 'UTC';
 set client_min_messages = warning;
 \i supabase/migrations/0108_anticheat_v3.sql
 \i supabase/migrations/0108_anticheat_v3.sql
+-- 0113 re-creates functions of this migration: re-run it after, as the chain does
+\i supabase/migrations/0113_review_fixes.sql
+\i supabase/migrations/0113_review_fixes.sql
 reset client_min_messages;
 
 create temp table av (k text primary key, v text);
@@ -60,8 +63,14 @@ begin
   assert public._reel_claim_diff(honest, honest || '{"difficulty": "52"}') ? 'difficulty', 'a string is not a number';
   -- honest, 7 arguments
   cid := pg_temp.cast(a, room, won);
+  insert into public.ac_rate (account_id, calls, win_at) values (a, 5, now())
+    on conflict (account_id) do update set calls = 5, win_at = now();   -- 0113
   r := public.finish_cast(t, cid, true, false, tg, ticks, honest);
   assert r->>'result' = 'caught', format('honest 7-arg %s', r);
+  assert (select calls from public.ac_rate where account_id = a) = 6, 'the 7-arg finish counts once (0113)';
+  assert coalesce(current_setting('mt.ac_counted', true), '') = '', 'the skip is used up (0113)';
+  perform public._ac_guard(a);
+  assert (select calls from public.ac_rate where account_id = a) = 7, 'the next call counts again (0113)';
   -- the 6-argument form (a page before 0108)
   delete from public.fish where account_id = a;
   cid := pg_temp.cast(a, room, won);

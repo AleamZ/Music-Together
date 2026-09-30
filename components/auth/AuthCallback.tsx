@@ -18,7 +18,8 @@ const primary = "rounded-lg bg-burgundy px-4 py-2 font-cormorant text-lg font-bo
 const errText = (e: unknown) => emailAuthErrorText((e as { message?: string })?.message ?? "");
 
 /** /auth/callback: signs in from the mail's link, then
- *  - a "Liên kết email" started in THIS browser for the game account logged in here: links them (both proofs);
+ *  - a "Liên kết email" started in THIS browser for the game account logged in here: the link form, its name
+ *    prefilled (the old password is still asked: a game session token alone never links);
  *  - an email with a game account: its game session;
  *  - a confirmed email without one: the player picks the in-game name (sign-up's wish prefilled), or links an old
  *    account by logging into it (a link from another device or browser never links on its own). */
@@ -46,7 +47,7 @@ export default function AuthCallback({ params }: { params: RedirectParams }) {
         const game = loadSession();
         if (pending && game && pending.accountId === game.accountId && pending.email === normEmail(user.email)) {
           clearPendingLink();
-          await linkWithGameToken(game.token);
+          setLegacyName(game.username);   // the link still needs the old password (0113): prefilled, never automatic
         }
         const r = await gameSessionFromAuth();
         if (r) {
@@ -75,7 +76,7 @@ export default function AuthCallback({ params }: { params: RedirectParams }) {
     e.preventDefault(); setError(null); setBusy(true);
     try {
       const legacy = await loginAccount(legacyName.trim(), legacyPw);
-      try { await linkWithGameToken(legacy.token); }
+      try { await linkWithGameToken(legacy.token, legacyPw); }
       finally { void logoutAccount(legacy.token).catch(() => {}); }   // only a proof: the email session is the one kept
       const r = await gameSessionFromAuth();
       if (!r) throw new Error("unknown");

@@ -43,15 +43,20 @@ describe("/auth/callback", () => {
     expect(ea.linkWithGameToken).not.toHaveBeenCalled();
   });
 
-  it("links the game account of this browser when the pending link matches", async () => {
+  it("prefills the link of this browser's game account when the pending link matches, and still asks the old password", async () => {
     saveSession({ accountId: "acc-1", username: "Dat", token: "game-t" });
     savePendingLink({ accountId: "acc-1", email: "dat@mail.vn", at: Date.now() });
     ea.handleAuthRedirect.mockResolvedValue("email");
     ea.currentAuthUser.mockResolvedValue({ email: "Dat@Mail.vn", username: null, linkIntent: true });
-    ea.gameSessionFromAuth.mockResolvedValue(S);
+    ea.gameSessionFromAuth.mockResolvedValueOnce(null).mockResolvedValueOnce(S);
+    legacy.loginAccount.mockResolvedValue({ accountId: "acc-1", username: "Dat", token: "legacy-t" });
     render(<AuthCallback params={{ code: "c" }} />);
-    await waitFor(() => expect(ea.linkWithGameToken).toHaveBeenCalledWith("game-t"));
-    await waitFor(() => expect(auth.adoptSession).toHaveBeenCalled());
+    expect(await screen.findByPlaceholderText("Tên đăng nhập cũ")).toHaveValue("Dat");
+    expect(ea.linkWithGameToken).not.toHaveBeenCalled();   // a game token alone never links (0113)
+    fireEvent.change(screen.getByPlaceholderText("Mật khẩu cũ"), { target: { value: "cu" } });
+    fireEvent.submit(screen.getByPlaceholderText("Mật khẩu cũ").closest("form")!);
+    await waitFor(() => expect(auth.adoptSession).toHaveBeenCalledWith(S));
+    expect(ea.linkWithGameToken).toHaveBeenCalledWith("legacy-t", "cu");
   });
 
   it("never links on its own without this browser's pending link (another email or account)", async () => {
@@ -91,7 +96,7 @@ describe("/auth/callback", () => {
     fireEvent.change(screen.getByPlaceholderText("Mật khẩu cũ"), { target: { value: "cu" } });
     fireEvent.submit(screen.getByPlaceholderText("Mật khẩu cũ").closest("form")!);
     await waitFor(() => expect(auth.adoptSession).toHaveBeenCalledWith(S));
-    expect(ea.linkWithGameToken).toHaveBeenCalledWith("legacy-t");
+    expect(ea.linkWithGameToken).toHaveBeenCalledWith("legacy-t", "cu");
     expect(legacy.logoutAccount).toHaveBeenCalledWith("legacy-t");
   });
 

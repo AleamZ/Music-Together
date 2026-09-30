@@ -9,6 +9,9 @@ set time zone 'UTC';
 set client_min_messages = warning;
 \i supabase/migrations/0109_bot_score.sql
 \i supabase/migrations/0109_bot_score.sql
+-- 0113 re-creates functions of this migration: re-run it after, as the chain does
+\i supabase/migrations/0113_review_fixes.sql
+\i supabase/migrations/0113_review_fixes.sql
 reset client_min_messages;
 
 create temp table bs (k text primary key, v text);
@@ -32,6 +35,10 @@ begin
   assert (select active_since is not null and last_at is not null and hour_mark = date_trunc('hour', now())
             from public.ac_rate where account_id = a), 'the session starts';
   assert (select count(*) from public.ac_hours where account_id = a and hour = date_trunc('hour', now())) = 1, 'the hour';
+  -- 0113: the marks ride the one upsert (only the rate flag's flagged_at is a second write, and only when flagged)
+  assert (select count(*) from regexp_matches((select prosrc from pg_proc where proname = '_ac_rate'),
+                                                '^\s*update public\.ac_rate', 'gn')) = 1, 'one update left in _ac_rate';
+  assert (select scored_at = now() from public.ac_rate where account_id = a), 'scored at the first call';
   update public.ac_rate set active_since = now() - interval '3 hours', last_at = now() - interval '5 minutes' where account_id = a;
   perform public._ac_guard(a);
   assert (select active_since < now() - interval '170 minutes' from public.ac_rate where account_id = a), 'no gap: the session goes on';

@@ -120,9 +120,10 @@ export async function linkEmailStart(accountId: string, email: string, password:
   savePendingLink({ accountId, email: normEmail(email), at: Date.now() });
 }
 
-/** Step 2: both proofs — the game token (the account) and the Supabase JWT (the confirmed email). */
-export async function linkWithGameToken(gameToken: string): Promise<void> {
-  const { data, error } = await authClient.rpc("account_link_auth", { p_session_token: gameToken });
+/** Step 2: the proofs — the game token and the legacy password (the account; 0113: a token alone may have leaked)
+ *  and the Supabase JWT (the confirmed email). */
+export async function linkWithGameToken(gameToken: string, legacyPassword: string): Promise<void> {
+  const { data, error } = await authClient.rpc("account_link_auth", { p_session_token: gameToken, p_password: legacyPassword });
   if (error) throw error;
   const r = data as { ok: boolean; error?: string };
   if (!r?.ok) throw fail(r?.error ?? "unknown");

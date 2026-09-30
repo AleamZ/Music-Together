@@ -96,10 +96,10 @@ describe("linking a legacy account", () => {
 
   it("links with the game token through the auth client", async () => {
     m.authRpc.mockResolvedValueOnce({ data: { ok: true, linked: true }, error: null });
-    await linkWithGameToken("game-token");
-    expect(m.authRpc).toHaveBeenCalledWith("account_link_auth", { p_session_token: "game-token" });
+    await linkWithGameToken("game-token", "mat-khau-cu");
+    expect(m.authRpc).toHaveBeenCalledWith("account_link_auth", { p_session_token: "game-token", p_password: "mat-khau-cu" });
     m.authRpc.mockResolvedValueOnce({ data: { ok: false, error: "account already linked" }, error: null });
-    await expect(linkWithGameToken("game-token")).rejects.toThrow("account already linked");
+    await expect(linkWithGameToken("game-token", "x")).rejects.toThrow("account already linked");
   });
 });
 
