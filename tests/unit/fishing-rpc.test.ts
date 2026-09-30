@@ -97,7 +97,7 @@ describe("RPC wrappers", () => {
     // 0108: the params the overlay simulated ride along for the server to compare
     await finishCast("tok", "c1", true, false, { toggles: [0, 12], ticks: 300, used: { zonePct: 25, difficulty: 52, minReelMs: 4080 } });
     expect(h.rpc).toHaveBeenLastCalledWith("finish_cast", {
-      p_session_token: "tok", p_cast_id: "c1", p_success: true, p_inputs: [0, 12], p_ticks: 300,
+      p_session_token: "tok", p_cast_id: "c1", p_success: true, p_inputs: [0, 12], p_ticks: 300, p_hooked: false,
       p_client: { zone_pct: 25, difficulty: 52, min_reel_ms: 4080 },
     });
   });

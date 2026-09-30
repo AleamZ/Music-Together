@@ -17,7 +17,8 @@ export function useMail(token: string | null, everyMs = 60_000) {
   useEffect(() => {
     live.current = true;
     refresh();
-    const id = window.setInterval(refresh, everyMs);
+    // only while the tab is visible: a hidden tab must not look like play (0109's session and hours)
+    const id = window.setInterval(() => { if (document.visibilityState === "visible") refresh(); }, everyMs);
     return () => { live.current = false; window.clearInterval(id); };
   }, [refresh, everyMs]);
 

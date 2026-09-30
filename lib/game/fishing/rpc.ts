@@ -307,7 +307,11 @@ export async function finishCast(token: string, castId: string, success: boolean
     args.p_inputs = reel.toggles;
     args.p_ticks = reel.ticks;
     // 0108: what the reel simulated with; the server compares it with the cast's params
-    if (reel.used) args.p_client = { zone_pct: reel.used.zonePct, difficulty: reel.used.difficulty, min_reel_ms: reel.used.minReelMs };
+    // the 7-arg form has no defaults: p_hooked must ride along (PostgREST matches overloads by argument names)
+    if (reel.used) {
+      args.p_hooked = hooked;
+      args.p_client = { zone_pct: reel.used.zonePct, difficulty: reel.used.difficulty, min_reel_ms: reel.used.minReelMs };
+    }
   }
   const r = await call("finish_cast", args);
   const state = stateOf(r.state);

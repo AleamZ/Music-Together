@@ -151,8 +151,7 @@ create or replace function public._ac_faucet_reasons() returns text[]
 language sql immutable parallel safe
 as $$ select array['daily', 'song', 'sell', 'rice_sell', 'produce_sell', 'critter_sell', 'rat_sell', 'pet_find',
                     'login_reward', 'level_reward', 'quest_reward', 'achievement_reward', 'collection_reward', 'ore_sell',
-                    'gem_sell', 'boss_reward', 'dungeon_reward', 'wild_sell', 'treasure', 'wood_sell', 'dish_sell',
-                    'pet_battle'] $$;
+                    'gem_sell', 'boss_reward', 'dungeon_reward', 'wild_sell', 'treasure', 'wood_sell', 'dish_sell'] $$;   -- not pet_battle: it carries PvP pots and refunds
 revoke all on function public._ac_faucet_reasons() from public, anon, authenticated;
 
 -- The share of a faucet the account keeps (100 unless scored, not cleared and not root).
@@ -173,7 +172,8 @@ declare v_balance integer;
         v_keep integer;                                                                   -- 0109
 begin
   -- 0109 {
-  if p_delta > 1 and p_reason = any (public._ac_faucet_reasons()) then
+  if p_delta > 1 and p_reason = any (public._ac_faucet_reasons())
+     and not (p_reason = 'sell' and (p_ref like 'vehicle:%' or p_ref like 'fashion:%')) then   -- buy-backs are refunds
     v_keep := public._ac_keep_pct(p_account);
     if v_keep < 100 then p_delta := greatest(1, (p_delta * v_keep) / 100); end if;
   end if;
