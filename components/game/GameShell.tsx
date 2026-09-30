@@ -65,7 +65,8 @@ import AnticheatModal from "./AnticheatModal";
 import CameraZoomControl from "./CameraZoomControl";
 import Camera3dControl from "./Camera3dControl";
 import { HudSlotContext } from "./hud/HudSlot";
-import GuideTracker from "./guide/GuideTracker";
+import StoryLayer from "./story/StoryLayer";                                              // 0114 Chuyện làng
+import { useStory } from "@/lib/game/story/useStory";                                     // 0114 Chuyện làng
 import { useFold } from "./hud/useFold";
 import { HudGroupItems, HudMenu, HudTabs, useHudGroup, type HudGroup } from "./hud/HudMenu";
 import { RotateOverlay, TouchControls } from "./hud/TouchHud";
@@ -655,6 +656,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   }, [heat.probe, vitalsState]);
   // --- rain (v18.9): umbrellas, wet, cảm lạnh and lightning
   const reloadCoins = useCallback(() => void fishing.data.reload(), [fishing.data]);
+  const story = useStory(token, { toast: showToast, onCoins: reloadCoins });              // 0114: the story chain
+  const storyTalk = story.talk;
   // v22 (0086): chèo ghe to Sông Cái and back, the treasure detector and dig
   const explore = useExplore({
     token, roomId: room.id, mapId: travel.mapId, canvas: getCanvas, toast: gameToast, travelTo, cancelCast: fishing.cancelCast,
@@ -797,6 +800,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       showToast(dismountText(it.prompt));
       return;
     }
+    if (storyTalk(it)) return;                                              // 0114: an NPC of the story speaks first
     switch (it.kind) {
       case "dj_booth":
         setPanel("queue");
@@ -918,7 +922,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       default:
         if (!farmInteract(it) && !miningInteract(it) && !cardsInteract(it) && !fishingInteract(it)) showToast("Sắp mở — chờ chút nhé!");
     }
-  }, [travelTo, showToast, fishingInteract, farmInteract, miningInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner, myLevel, progress.state?.mapLevels, exploreHome, inWorld]);
+  }, [travelTo, showToast, fishingInteract, farmInteract, miningInteract, cardsInteract, cancelCast, mapId, reloadVehicles, riding, vehicles.owned, refreshNews, reloadPets, liftPortal, reloadMotel, reloadApt, reloadHouses, reloadDojo, takeCorner, myLevel, progress.state?.mapLevels, exploreHome, inWorld, storyTalk]);
 
   // v20.4 the knock on the hatch: ug_enter checks the unlock again, then down the ladder (the refs keep a re-render
   // from cancelling the knock)
@@ -1293,10 +1297,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       />
       <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} dog={coopDog} />
       <ExploreOverlays explore={explore} mapId={map.id} idle={!blocking && fishing.cast.phase === "idle" && faint === null} />{/* v22 (0086) */}
-      <GuideTracker accountId={accountId} onStepDone={(t) => showToast(`✅ Xong: ${t}`)} ctx={{
-        map: travel.mapId, fish: fishing.data.state?.fish.length ?? null, coins: fishing.data.state?.coins ?? null,
-        hunger: vitals.state?.hunger ?? null, thirst: vitals.state?.thirst ?? null, panel: typeof panel === "string" ? panel : null,
-      }} />{/* the newcomer's guide (lib/game/guide/model.ts) */}
+      <StoryLayer story={story} mapId={travel.mapId} resume={onInteract}
+        getLocalPos={inWorld ? undefined : () => canvasRef.current?.localPos() ?? null} />{/* 0114: Chuyện làng (lib/game/story) */}
       <MiningOverlays m={mining} showChip={map.id === "mo_da" || Object.keys(mining.state?.bag ?? {}).some((k) => k.startsWith("pot_")) || (mining.state?.buffs.length ?? 0) > 0} />{/* v21 Mỏ đá */}
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
       <TouchControls disabled={blocking || faint !== null || trip !== null || hudGroup !== null} />{/* phones: stick + E / Space */}
