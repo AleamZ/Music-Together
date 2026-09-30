@@ -4,9 +4,11 @@ import BagPanel from "@/components/game/fishing/BagPanel";
 import DepotPanel from "@/components/game/fishing/DepotPanel";
 import RecordsPanel from "@/components/game/fishing/RecordsPanel";
 import ShopPanel from "@/components/game/fishing/ShopPanel";
+import TreasurePanel from "@/components/game/fishing/TreasurePanel";
 import { critterFromRow, farmItemFromRow } from "@/lib/game/farm/catalog";
 import type { FarmMine, Tank } from "@/lib/game/farm/state";
 import { shopItemFromRow, speciesFromRow, type FishingCatalog, type ShopItemRow } from "@/lib/game/fishing/catalog";
+import { parseExtrasState } from "@/lib/game/fishing/extras";
 import type { FishingBoard } from "@/lib/game/fishing/rpc";
 import { parseFishingState } from "@/lib/game/fishing/state";
 
@@ -175,6 +177,25 @@ describe("RecordsPanel", () => {
     render(<RecordsPanel catalog={CATALOG} load={async () => ({ ...BOARD, prices: null })} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
     expect(await screen.findByText("Chưa có bảng giá.")).toBeInTheDocument();
+  });
+});
+
+describe("TreasurePanel", () => {
+  const extras = (over: Record<string, unknown>) => parseExtrasState({
+    server_now: "2026-09-30T00:00:00Z", coins: 0, boat: { owned: false, aboard: false, price: 25000 }, maps: [], found: 5, ...over,
+  })!;
+  const panel = (over: Record<string, unknown>) =>
+    render(<TreasurePanel state={extras(over)} mapId={null} busy={false} notes={{}} onDig={() => {}} onClose={() => {}} />);
+  it("econ v2 (0101): shows today's chests of 3 (found_today) and the rule", () => {
+    panel({ found_today: 2 });
+    expect(screen.getByText("Hôm nay: 2/3 kho báu")).toBeInTheDocument();
+    expect(screen.getByText(/Mỗi ngày tìm được tối đa 3 kho báu/)).toBeInTheDocument();
+    cleanup();
+    panel({ found_today: 3 });
+    expect(screen.getByText("Hôm nay: 3/3 kho báu — đủ rồi, mai đào tiếp nhé.")).toBeInTheDocument();
+    cleanup();
+    panel({});                                                                  // a server before 0101
+    expect(screen.getByText("Hôm nay: 0/3 kho báu")).toBeInTheDocument();
   });
 });
 

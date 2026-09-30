@@ -12,6 +12,7 @@
 --   5. F4 treasure: the drops' chances, 3 finds a day (no drop, no dig), the chest's range, honest digs.
 --   6. F7 thương lái: sell_fish / sell_fish_market pay through _npc_sale and answer earned / npc_cut / npc; the board's npc.
 --   7. H a fishing battle scores only its room's catches.
+--   8. I the shop's bait and nets at their new prices; J the extras state's found_today (in 5).
 \set ON_ERROR_STOP on
 set time zone 'UTC';
 set client_min_messages = warning;
@@ -342,7 +343,11 @@ begin
     select a, 1, 'fishing', now() - interval '1 minute', 500 from generate_series(1, 2);
   perform public._treasure_drop(a, 'fishing', 1.0);
   assert (select count(*) from public.treasure_maps where account_id = a and found_at is null) = 0, 'no drop after 3 finds today';
+  -- J: the panel's day (the public RPC and its helper)
+  assert (public.fishing_extras_state(t)->>'found_today')::int = 3 and (public._fx_extras_state(a)->>'found')::int = 3,
+    format('found_today %s', public._fx_extras_state(a)->'found_today');
   update public.treasure_maps set found_at = public._vn_day_start() - interval '1 minute' where account_id = a;
+  assert (public.fishing_extras_state(t)->>'found_today')::int = 0, 'yesterday''s finds are not today''s';
   perform public._treasure_drop(a, 'fishing', 1.0);
   perform public._treasure_drop(a, 'boat', 1.0);
   assert (select count(*) from public.treasure_maps where account_id = a and found_at is null) = 2, 'yesterday''s finds do not count';
@@ -466,6 +471,33 @@ begin
   delete from public.fishing_battles where id = bid;
   delete from public.fish where account_id = a;
   raise notice 'battle room ok';
+end $$;
+
+-- ---------- 8. I the shop: the bait and the nets ----------
+do $$
+declare c uuid := pg_temp.u('c'); t text := pg_temp.v('tc'); v_last bigint;
+begin
+  assert (select jsonb_object_agg(id, price) from public.shop_items
+           where id in ('bait_shrimp', 'bait_bloodworm', 'bait_gold', 'net_small', 'net_big'))
+       = '{"bait_shrimp": 1, "bait_bloodworm": 3, "bait_gold": 6, "net_small": 50, "net_big": 120}'::jsonb, 'the prices';
+  insert into public.wallets (account_id) values (c) on conflict do nothing;
+  update public.wallets set coins = 1000 where account_id = c;
+  delete from public.inventory where account_id = c
+     and item_id in ('bait_worm', 'bait_shrimp', 'bait_bloodworm', 'bait_gold', 'net_small', 'net_big');
+  v_last := coalesce((select max(id) from public.coin_ledger where account_id = c), 0);
+  perform public.buy_item(t, 'bait_shrimp', 10);
+  perform public.buy_item(t, 'bait_bloodworm', 5);
+  perform public.buy_item(t, 'bait_gold', 2);
+  perform public.buy_item(t, 'net_small');
+  perform public.buy_item(t, 'net_big');
+  assert (select array_agg(-delta order by id) from public.coin_ledger where account_id = c and id > v_last and reason = 'buy')
+       = array[10, 15, 12, 50, 120], 'what the shop charged';
+  assert (select coins from public.wallets where account_id = c)
+       = 1000 + (select sum(delta) from public.coin_ledger where account_id = c and id > v_last), 'the wallet follows the ledger';
+  assert (select jsonb_object_agg(item_id, coalesce(durability, qty)) from public.inventory where account_id = c
+           and item_id in ('bait_shrimp', 'bait_bloodworm', 'bait_gold', 'net_small', 'net_big'))
+       = '{"bait_shrimp": 10, "bait_bloodworm": 5, "bait_gold": 2, "net_small": 20, "net_big": 30}'::jsonb, 'what was bought';
+  raise notice 'shop ok';
 end $$;
 
 update public.app_flags set enabled = (select v::boolean from ef where k = 'flag_rooms') where key = 'room_creation_open';

@@ -22,6 +22,12 @@ export const MACHINES: ReadonlyArray<{ id: MachineId; name: string; price: numbe
 /** Econ v2 (0101): at most this many chests found per account per Vietnam day; after that no map drops and no dig starts. */
 export const TREASURE_PER_DAY = 3;
 
+/** Econ v2 (0101): the treasure panel's line for the day's finds (`found_today`), e.g. "Hôm nay: 2/3 kho báu". */
+export function treasureTodayText(found: number): string {
+  const n = Math.max(0, Math.min(TREASURE_PER_DAY, Math.floor(found)));
+  return `Hôm nay: ${n}/${TREASURE_PER_DAY} kho báu${n >= TREASURE_PER_DAY ? " — đủ rồi, mai đào tiếp nhé." : ""}`;
+}
+
 /** Fishing battle options (0076 fb_create). */
 export const BATTLE_FEES: readonly number[] = [100, 300, 500, 1000, 2000];
 export const BATTLE_DURATIONS: readonly number[] = [180, 300, 600];
@@ -68,6 +74,8 @@ export interface ExtrasState {
   boat: { owned: boolean; aboard: boolean; price: number };
   maps: TreasureMap[];
   found: number;
+  /** Econ v2 (0101): the chests found this Vietnam day (at most TREASURE_PER_DAY); 0 from a server before it. */
+  foundToday: number;
   machines: MachineId[];
   job: { recipe: string; batches: number; startedAt: number; readyAt: number } | null;
   goods: Record<string, number>;
@@ -99,6 +107,7 @@ export function parseExtrasState(raw: unknown): ExtrasState | null {
     boat: { owned: b.owned === true, aboard: b.aboard === true, price: num(b.price, BOAT.price) },
     maps: arr(o.maps).map(parseMap).filter((m): m is TreasureMap => m !== null),
     found: num(o.found),
+    foundToday: num(o.found_today),
     machines: arr(o.machines).filter((m): m is MachineId => m === "sprinkler" || m === "harvester" || m === "processor"),
     job: j ? { recipe: str(j.recipe), batches: num(j.batches, 1), startedAt: time(j.started_at), readyAt: time(j.ready_at) } : null,
     goods,

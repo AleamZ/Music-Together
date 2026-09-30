@@ -292,7 +292,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   }, []);
   const sell = useCallback((ids: string[], market = false) => void run(async () => {
     const r = await sellFish(ids, market);
-    if (r) toastRef.current(saleText(r.sold, r.earned));
+    if (r) toastRef.current(saleText(r.sold, r.earned, r.npcCut));                         // econ v2 (0101): the thương lái's cut
   }), [run, sellFish]);
   const release = useCallback((id: string) => void run(() => releaseFish(id)), [run, releaseFish]);
   const buy = useCallback((itemId: string, qty: number) => void run(async () => {

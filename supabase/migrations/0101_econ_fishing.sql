@@ -29,11 +29,15 @@
 --      day's line in the "Giá cá" tab).
 --   H. A fishing battle scores only the catches made in its room: finish_cast and finish_net pass the cast's room to
 --      _fx_on_fish in mt.catch_room (a river cast in another hall no longer wins a pond battle).
+--   I. The shop at the new fish prices (the old bait and nets cost more than the fish they bring): Mồi tép 5 → 1,
+--      Mồi trùn chỉ 12 → 3, Mồi vàng 25 → 6 xu a bait; Lưới nhỏ 250 → 50 (20 hauls), Lưới lớn 600 → 120 xu (30 hauls).
+--   J. The treasure panel's day: _fx_extras_state (fishing_extras_state) answers found_today — the chests found this
+--      Vietnam day, of the 3 allowed.
 -- Re-created from their newest bodies, only the lines marked "econ v2" changed: start_cast (0059), start_river_cast
 -- (0086), start_river_cast_w (0095), _cast_luck (0072), _prof_on_cast (0077), net_haul (0065, the overload the client
 -- calls), finish_net (0078), _overboard_outcome (0031), finish_cast (0078), _fx_on_fish (0078), _fx_on_dig (0076),
 -- _treasure_drop (0076), treasure_dig_start (0087), treasure_dig_finish (0087), _boat_geo (0076), sell_fish (0015),
--- sell_fish_market (0057), fishing_board (0015). New: _cast_lift (private).
+-- sell_fish_market (0057), fishing_board (0015), _fx_extras_state (0076). New: _cast_lift (private).
 -- Unchanged: buy_boat (reads _boat_geo), _fishing_effort (the amounts are its arguments), _cast_settle_hooked (reads
 -- _overboard_outcome), _cast_water, dig_worms and the fb_* RPCs.
 -- =========================================================
@@ -1051,3 +1055,44 @@ begin
     'prices', public._fish_prices(p_room_id, now()),   -- econ v2 was: 'prices', public._fish_prices(p_room_id, now()));
     'npc', public._npc_quota(v_account));   -- econ v2 (F7: the thương lái's day)
 end; $$;
+
+-- ---------- I. The shop: the bait and the nets at the new fish prices ----------
+-- At 0101's fish prices the old ones cost more than they bring (most pond fish are worth 4–40 xu; a net haul brings 1–5
+-- commons of ≈ 8 xu). With these, any rod from the bamboo up with any bait nets more per hour than the starter's wooden
+-- rod and worms (the audit's simulator, skilled and average players); a better bait on the wooden rod still does not pay.
+update public.shop_items s set price = v.price
+  from (values
+    ('bait_shrimp',       1),   -- Mồi tép       was   5 a bait
+    ('bait_bloodworm',    3),   -- Mồi trùn chỉ  was  12
+    ('bait_gold',         6),   -- Mồi vàng      was  25
+    ('net_small',        50),   -- Lưới nhỏ      was 250 (20 hauls)
+    ('net_big',         120)    -- Lưới lớn      was 600 (30 hauls)
+  ) v(id, price)
+ where s.id = v.id and s.price is distinct from v.price;
+
+-- ---------- J. The treasure panel's day ----------
+-- _fx_extras_state (0076_fishing_extras.sql's, verbatim but for the line marked econ v2): found_today, the chests found
+-- this Vietnam day (TreasurePanel shows "Hôm nay: n/3"; lib/game/fishing/extras.ts TREASURE_PER_DAY).
+create or replace function public._fx_extras_state(p_account uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+begin
+  return jsonb_build_object(
+    'server_now', now(),
+    'coins', coalesce((select coins from public.wallets where account_id = p_account), 0),
+    'boat', jsonb_build_object('owned', exists (select 1 from public.boats where account_id = p_account),
+                               'aboard', public._boat_aboard(p_account), 'price', (public._boat_geo()->>'price')::int),
+    'maps', coalesce((select jsonb_agg(public._treasure_json(t) order by t.created_at)
+                        from public.treasure_maps t where t.account_id = p_account and t.found_at is null), '[]'::jsonb),
+    'found', (select count(*) from public.treasure_maps where account_id = p_account and found_at is not null),
+    'found_today', (select count(*) from public.treasure_maps where account_id = p_account and found_at >= public._vn_day_start()),   -- econ v2 (J: the chests found today, of 3)
+    'machines', coalesce((select jsonb_agg(machine order by machine) from public.farm_machines where account_id = p_account),
+                         '[]'::jsonb),
+    'job', (select jsonb_build_object('recipe', recipe, 'batches', batches, 'started_at', started_at, 'ready_at', ready_at)
+              from public.processor_jobs where account_id = p_account),
+    'goods', coalesce((select jsonb_object_agg(recipe, qty) from public.processed_goods where account_id = p_account and qty > 0),
+                      '{}'::jsonb),
+    'recipes', (select jsonb_agg(jsonb_build_object('id', id, 'name', name, 'input_kind', input_kind, 'input_id', input_id,
+                                                    'input_kg', input_kg, 'value', value, 'minutes', minutes) order by sort_order)
+                  from public.processor_recipes));
+end $$;

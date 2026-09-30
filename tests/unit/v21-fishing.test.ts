@@ -94,7 +94,7 @@ describe("the parsers", () => {
   it("the extras state (no treasure coordinates anywhere)", () => {
     const s = parseExtrasState({
       server_now: "2026-09-29T00:00:00Z", coins: 5000, boat: { owned: true, aboard: false, price: 25000 },
-      maps: [{ id: "m1", map: "pond", landmark: "Bụi tre", source: "boat", cell: { col: 1, row: 0 }, digs: 2 }], found: 1,
+      maps: [{ id: "m1", map: "pond", landmark: "Bụi tre", source: "boat", cell: { col: 1, row: 0 }, digs: 2 }], found: 1, found_today: 1,
       machines: ["processor", "nope"], job: { recipe: "gao_thom", batches: 2, started_at: "2026-09-29T00:00:00Z", ready_at: "2026-09-29T00:12:00Z" },
       goods: { banh_tet: 3, bot_bap: 0 }, recipes: [{ id: "gao_thom", name: "Gạo thơm", input_kind: "rice", input_id: "thom", input_kg: 10, value: 19600, minutes: 6 }],
     });
@@ -102,6 +102,7 @@ describe("the parsers", () => {
     expect(s!.boat).toEqual({ owned: true, aboard: false, price: 25000 });
     expect(s!.maps).toEqual([{ id: "m1", map: "pond", landmark: "Bụi tre", source: "boat", cell: { col: 1, row: 0 }, digs: 2 }]);
     expect(s!.machines).toEqual(["processor"]);
+    expect([s!.found, s!.foundToday]).toEqual([1, 1]);                          // econ v2 (0101): found_today
     expect(s!.goods).toEqual({ banh_tet: 3 });
     expect(s!.job!.readyAt - s!.job!.startedAt).toBe(12 * 60_000);
     expect(parseExtrasState({})).toBeNull();
