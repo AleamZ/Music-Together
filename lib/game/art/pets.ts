@@ -398,7 +398,7 @@ const BODIES: Readonly<Record<string, { a: string; b: string }>> = {
 const FORM1_OUTLINE: Readonly<Record<PetSpecies, string>> = {
   cho: "#4a2a12", meo: "#3a1f3a", tho: "#5a2a3a", hamster: "#5a3a12", soc: "#4a1a08", vet: "#123a2a",
 };
-const FORM2_PAL: Readonly<Record<PetSpecies, Pal>> = {
+export const FORM2_PAL: Readonly<Record<PetSpecies, Pal>> = {
   cho: { o: "#5a2a10", b: "#f0c040", s: "#c08820", l: "#fff0c0", w: "#c08820", n: "#5a2a10" },
   meo: { o: "#2a2050", b: "#e8e0f8", s: "#9a88c8", l: "#ffffff", w: "#9a88c8", e: "#40c0f0", p: "#c090e0" },
   tho: { o: "#6a2a4a", b: "#f8d8e8", s: "#d890b0", l: "#ffffff", w: "#d890b0", e: "#c0306a" },

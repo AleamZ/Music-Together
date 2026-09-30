@@ -9,6 +9,10 @@ import { REST, type Pose } from "./pose";
 // attachment points come from the look's proportions (body type + body sliders). `apply` poses it; the root's
 // position/yaw are the caller's.
 
+/** The rod's tilt in the fist (radians): it runs out along the forearm, so a forearm held forward at chest height
+ *  points the rod ~30° up (the poses' arm angles count this in). */
+export const ROD_GRIP = 0.9;
+
 const EMPTY = new THREE.BufferGeometry();
 const NONE = new THREE.MeshBasicMaterial({ visible: false });
 
@@ -86,6 +90,7 @@ export class ChibiRig {
     this.kneeL.position.y = this.kneeR.position.y = -d.thighLen;
     this.ankleL.position.y = this.ankleR.position.y = -d.calfLen;
     this.m.rod.position.set(0, -d.foreLen - 0.8 * VOX, 0.2 * VOX);
+    this.m.rod.rotation.x = ROD_GRIP;                                     // along the forearm, as a rod is held
   }
 
   setParts(p: ChibiParts): void {
@@ -131,7 +136,66 @@ export class ChibiRig {
     this.ankleL.rotation.x = p.ankleL;
     this.ankleR.rotation.x = p.ankleR;
     this.m.rod.visible = p.rod > 0;
+    if (p.rod > 0 && this.parts) this.gripRod();
     if (this.parts) this.face.material = this.parts.faces[p.face];
+  }
+
+  private readonly ikT = new THREE.Vector3();
+  private readonly ikM = new THREE.Matrix4();
+
+  /** Two hands on the rod: the left arm solved (two-bone IK) so its hand closes on the rod's butt, wherever the right
+   *  hand swings it. The arm pitches (x) and rolls (z) at the shoulder and bends at the elbow, as the poses do. */
+  private gripRod(): void {
+    const rod = this.m.rod, g = rod.geometry;
+    let butt = g.userData.butt as THREE.Vector3 | undefined;
+    if (!butt) {                                                  // a fist's width behind the right hand, on the grip
+      const pos = g.getAttribute("position");
+      let minZ = 0;
+      for (let i = 0; i < pos.count; i++) minZ = Math.min(minZ, pos.getZ(i));
+      butt = g.userData.butt = new THREE.Vector3(0, 0, minZ * 0.3);
+    }
+    this.body.updateMatrixWorld(true);
+    // the butt in the body's frame (the left shoulder's parent), from the shoulder
+    const t = this.ikT.copy(butt).applyMatrix4(rod.matrixWorld);
+    t.applyMatrix4(this.ikM.copy(this.body.matrixWorld).invert()).sub(this.armL.position);
+    const u = this.dims.upperLen, f = this.dims.foreLen;
+    const d = Math.min(u + f - 1e-4, Math.max(Math.abs(u - f) + 1e-4, t.length()));
+    // the elbow: the law of cosines on the two bones
+    const e = Math.PI - Math.acos(Math.max(-1, Math.min(1, (u * u + f * f - d * d) / (2 * u * f))));
+    // the hand in the arm's own frame (rest: down -y; the elbow folds the forearm forward, +z)
+    const vy = -(u + f * Math.cos(e)), vz = f * Math.sin(e);
+    t.setLength(d);
+    // pitch: Rx(ax) must bring the arm's (vy, vz) plane onto the target
+    const rho = Math.hypot(t.y, t.z), phi = Math.atan2(t.y, t.z);
+    const ax = Math.acos(Math.max(-1, Math.min(1, vz / Math.max(1e-6, rho)))) - phi;
+    const cy = t.y * Math.cos(ax) + t.z * Math.sin(ax);
+    const az = Math.atan2(-t.x / vy, cy / vy);
+    this.armL.rotation.set(ax, 0, az);
+    this.elbowL.rotation.x = -e;
+  }
+
+  /** The rod's tip in world space (the line starts there), or null while no rod is out. */
+  rodTip(out: THREE.Vector3): THREE.Vector3 | null {
+    const rod = this.m.rod;
+    if (!rod.visible || !this.parts) return null;
+    const g = rod.geometry;
+    let tip = g.userData.tip as THREE.Vector3 | undefined;
+    if (!tip) {                                                   // the farthest point along the rod (+z): its tip
+      const p = g.getAttribute("position");
+      let best = 0;
+      for (let i = 1; i < p.count; i++) if (p.getZ(i) > p.getZ(best)) best = i;
+      tip = g.userData.tip = new THREE.Vector3(p.getX(best), p.getY(best), p.getZ(best));
+    }
+    this.root.updateMatrixWorld(true);
+    return rod.localToWorld(out.copy(tip));
+  }
+
+  /** Between the two hands in world space (what they hold: a net's bundle, its rope). */
+  hands(out: THREE.Vector3): THREE.Vector3 {
+    this.root.updateMatrixWorld(true);
+    const l = this.elbowL.localToWorld(new THREE.Vector3(0, -this.dims.foreLen, 0));
+    const r = this.elbowR.localToWorld(out.set(0, -this.dims.foreLen, 0));
+    return r.add(l).multiplyScalar(0.5);
   }
 
   /** Drops the geometry/material references (the factory owns them). */

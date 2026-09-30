@@ -10,7 +10,7 @@ import { drawRat, ratFrame } from "@/lib/game/art/rats";
 import { drawBedCue, drawHoleCue } from "@/lib/game/art/gather-art";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { drawNetThrower } from "@/lib/game/art/netthrow";
-import { facingTowards, netAlive, type NetState } from "@/lib/game/fishing/netcast";
+import { facingTowards, netAlive, type NetShow, type NetState } from "@/lib/game/fishing/netcast";
 import { serverNow } from "@/lib/game/farm/clock";
 import { nearestRat, promptTarget, RAT_PROMPT_RANGE, ratAt, ratInteractable, type FieldRats } from "@/lib/game/farm/rats";
 import { getCharacterFrames } from "@/lib/game/art/raster";
@@ -35,7 +35,7 @@ import { formatWeight, RARITY_COLOR, type Rarity } from "@/lib/game/fishing/cata
 import { bobberPoint, SWING_MS } from "@/lib/game/fishing/geometry";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap, Interactable, Spot } from "@/lib/game/maps/types";
-import { inputDir, isBlockedAt, WALK_SPEED, type KeyState } from "@/lib/game/movement";
+import { inputDir, isBlockedAt, turnInput, WALK_SPEED, type KeyState } from "@/lib/game/movement";
 import { SPRINT_SPEED } from "@/lib/game/professions/catalog";
 import { FARM_ANIM, facingToCode, MAX_PATH_POINTS, type FacingCode, type FarmAnim, type GameMessage, type Unit } from "@/lib/game/net/protocol";
 import { Pack, type DogWalker } from "@/lib/game/pack";
@@ -72,6 +72,9 @@ import { boatWater, wildBoatInteractable, worldBoatMap } from "@/lib/game/world/
 import { gateNear, type WorldGate } from "@/lib/game/world/gates";                              // P3
 
 export type { RosterEntry } from "@/lib/game/world";
+
+/** The 3D chibi's pose through a net throw's phases. */
+const NET_ACT: Readonly<Record<NetShow, CharAct>> = { aim: "net_hold", charge: "net_hold", throw: "net_throw", sunk: "net_pull", pull: "net_pull", won: "net_won" };
 
 /** v21 world: the extra sprites of map `map` at t — each drawn at its feet (x, y) in world px, sorted by y. */
 export type WorldExtras = (map: MapId, t: number, reduced: boolean) => ReadonlyArray<{ x: number; y: number; draw: (b: CanvasRenderingContext2D, camX: number, camY: number) => void }>;
@@ -373,6 +376,8 @@ export class GameEngine {
       if (this.world.riding(id) || this.world.carrier(id)) return "ride";
       if (this.world.swim(id, t) === "swim") return "swim";
       if (this.world.heat(id, t).warming) return "stretch";                           // khởi động by the pond
+      const nt = this.world.net(id, t);                                                // quăng lưới
+      if (nt) return NET_ACT[nt.s.show];
       const ph = this.world.fishing(id, t).phase;
       if (ph === 3) return "reel";
       if (ph === 2) return "bite";
@@ -404,6 +409,7 @@ export class GameEngine {
       const f = walkFrame(me);
       const ph = this.fishing.phase;
       const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim" : this.warming(t) ? "stretch"
+        : this.myNet(t) ? NET_ACT[this.myNet(t)!.s.show]
         : ph === "reeling" ? "reel" : ph === "bite" ? "bite" : ph !== "idle" ? "cast" : this.workAct ?? (waved.has(this.opts.localId) ? "wave" : undefined);
       const boat = this.worldMap !== null && this.afloatAt(me.pos);                                               // P3: rowing Sông Cái
       out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
@@ -456,9 +462,32 @@ export class GameEngine {
         return { x: l.x0 + (l.x1 - l.x0) * k, y: l.y0 + (l.y1 - l.y0) * k, h: k >= 1 ? 0 : Math.sin(k * Math.PI) };
       }),
       gates: (this.worldMap?.gates ?? []).map((g) => ({ id: g.id, at: g.at, barrier: g.barrier })),
-      pets: this.pets.drawn().map((p) => ({ ownerId: p.id, species: p.look.species, x: p.x, y: p.y })),        // P4
+      pets: this.pets.drawn().map((p) => ({ ownerId: p.id, species: p.look.species, x: p.x, y: p.y,
+        look: { variant: p.look.variant, form: p.look.form, head: p.look.head, neck: p.look.neck, body: p.look.body } })),        // P4
       anglers: this.anglersFrame(t),                                                                            // P4
+      nets: this.netsFrame(t),
     };
+  }
+
+  /** My net throw while it is still shown, and how long its phase has gone (ms). */
+  private myNet(t: number): { s: NetState; since: number } | null {
+    const n = this.netThrow;
+    return n && netAlive(n.s.show, t - n.at) ? { s: n.s, since: t - n.at } : null;
+  }
+
+  /** Everyone's net throw (mine and the others'): the thrower's feet and facing, the phase and its age, where the net
+   *  lies (world px) and how wide. */
+  private netsFrame(t: number): GameplayFrame["nets"] {
+    const out: Array<NonNullable<GameplayFrame["nets"]>[number]> = [];
+    const put = (id: string, p: Vec, facing: Facing, n: { s: NetState; since: number }) =>
+      out.push({ id, x: p.x, y: p.y, facing, show: n.s.show, since: n.since, cx: p.x + n.s.dx, cy: p.y + n.s.dy, r: n.s.r, k: n.s.k });
+    const mine = this.myNet(t);
+    if (mine) put(this.opts.localId, this.local.display, this.local.facing, mine);
+    for (const [id, a] of this.world.actors) {
+      const n = this.world.net(id, t);
+      if (n && this.visible(id, t)) put(id, a.display, a.facing, n);
+    }
+    return out;
   }
 
   /** P4: everyone with a line in the water (mine and the others'), feet + facing + phase code (1 wait, 2 bite, 3 reel). */
@@ -1498,7 +1527,9 @@ export class GameEngine {
     const locked = this.warming(now) || this.cramping(now)                  // v18.10: the stretch, a cramp
       || this.lift?.role === "passenger"                                    // v18.13: on someone's vehicle
       || this.struck(now);                                                  // v18.9: lightning
-    const dir = this.inputEnabled && !this.rodOut && !locked ? inputDir(this.keys) : { x: 0, y: 0 };
+    const keys = this.inputEnabled && !this.rodOut && !locked ? inputDir(this.keys) : { x: 0, y: 0 };
+    const yaw = this.view3d?.inputYaw?.() ?? null;                                 // first person: keys follow the look
+    const dir = yaw === null ? keys : turnInput(keys, yaw);
     if (this.warmUntil !== 0 && !this.warming(now)) {
       this.warmUntil = 0;
       this.announceNow();

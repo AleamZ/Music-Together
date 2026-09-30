@@ -149,6 +149,7 @@ export default function WorldGameDev() {
       mine: () => setTravel((t) => ({ mapId: "bai_dat", arrive: null, key: t.key + 1, world: { ...MINE.exit, dir: "right" } })),
       interact: () => canvasRef.current?.interact(),
       fish: (phase: "idle" | "waiting" | "bite" | "reeling") => canvasRef.current?.setFishing({ phase }),
+      net: (show: "aim" | "charge" | "throw" | "sunk" | "pull" | "won" | null) => canvasRef.current?.setNet(show ? { show, scene: { x: 80, y: 30 }, sceneR: 30, k: 3 } : null),
       pos: () => canvasRef.current?.worldPos() ?? canvasRef.current?.localPos(),
       zone: () => canvasRef.current?.zone(),
       travel: () => travel,

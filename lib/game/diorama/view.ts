@@ -132,7 +132,7 @@ export class DioramaView implements View3D {
 
   /** Pin a quality, or "auto" (drops to low when the fps stays under 40). */
   setQuality(q: Quality | "auto"): void {
-    if (q === "auto") return;
+    if (q === "auto") { this.monitor.auto(); this.applyQuality(this.monitor.quality()); return; }
     this.monitor.force(q);
     this.applyQuality(q);
   }

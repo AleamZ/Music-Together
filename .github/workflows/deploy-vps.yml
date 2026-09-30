@@ -1,0 +1,45 @@
+# CI/CD to the self-hosted VPS (deploy/README.md), alongside Vercel: a push to dev deploys the dev environment, a push
+# to main the main one (each its own checkout, .env, port and domain on the server). Checked first (typecheck, unit
+# tests), then deployed over SSH with scripts/vps/deploy.sh <branch>.
+# Secrets: VPS_HOST, VPS_PORT, VPS_USER, VPS_SSH_KEY.
+name: Deploy VPS
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Environment to deploy"
+        type: choice
+        options: [dev, main]
+        default: dev
+concurrency:
+  group: deploy-vps-${{ inputs.branch || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.branch || github.ref_name }}" }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit -p .
+      # (lint is not a gate yet: the repo has older lint errors outside the game code)
+      - run: pnpm test
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.branch || github.ref_name }}
+    steps:
+      - name: Deploy ${{ inputs.branch || github.ref_name }} over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 30m
+          script: /opt/music-together-${{ inputs.branch || github.ref_name }}/scripts/vps/deploy.sh ${{ inputs.branch || github.ref_name }}

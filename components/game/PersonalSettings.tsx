@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { readGfx, subscribeGfx, writeGfx, type GfxMode } from "@/lib/game/diorama/flag";
+import { readGfx, readQuality, subscribeGfx, subscribeQuality, writeGfx, writeQuality, type GfxMode, type GfxQuality } from "@/lib/game/diorama/flag";
 import type { WeatherFx } from "@/lib/game/art/weather";
 import { FX_LEVELS } from "@/lib/game/weather/fx";
 import { unifiedWorldOn } from "@/lib/game/world/flag";
@@ -11,6 +11,7 @@ import KeyBadge from "./KeyBadge";
 export default function PersonalSettings({ weatherFx, onWeatherFx }: { weatherFx: WeatherFx; onWeatherFx: (l: WeatherFx) => void }) {
   const [open, setOpen] = useState(false);
   const gfx = useSyncExternalStore<GfxMode>(subscribeGfx, readGfx, () => "2d");
+  const quality = useSyncExternalStore<GfxQuality>(subscribeQuality, readQuality, () => "auto");
   // 0090: the server offers the unified 3D world (flag unified_world); without it 3D is only the Ao cá diorama
   const [world, setWorld] = useState(false);
   useEffect(() => {
@@ -70,6 +71,22 @@ export default function PersonalSettings({ weatherFx, onWeatherFx }: { weatherFx
             <div className="text-xs opacity-75">
               {world ? "3D: cả thế giới liền một mảnh, đi bộ giữa các khu. Máy yếu tải không nổi sẽ tự về 2D." : "3D (thử): chỉ ở Ao cá, các nơi khác vẫn 2D."}
             </div>
+            {gfx === "3d" && (
+              <>
+                <div id="gfxq-label" className="mt-1 text-xs font-bold opacity-75">Chất lượng 3D</div>
+                <div role="radiogroup" aria-labelledby="gfxq-label" className="flex gap-1" data-testid="gfx-quality">
+                  {([["auto", "Tự động"], ["high", "Cao"], ["low", "Thấp"]] as const).map(([q, label]) => (
+                    <button key={q} type="button" role="radio" aria-checked={quality === q}
+                      className={`pch-btn px-1.5 text-xs ${quality === q ? "pch-btn-primary" : ""}`} onClick={() => writeQuality(q)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs opacity-75">
+                  {quality === "auto" ? "Tự động: bắt đầu ở Cao, máy chậm thì tự hạ." : quality === "high" ? "Cao: bóng đổ, cây cỏ dày, nét mịn, nhìn xa hơn." : "Thấp: nhẹ máy — không bóng đổ, ít cỏ, độ phân giải thấp hơn."}
+                </div>
+              </>
+            )}
           </div>
         </>
       )}

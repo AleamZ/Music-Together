@@ -736,9 +736,18 @@ function buildLeg(m: M, s: ChibiSpec, P: Proportions, side: -1 | 1): void {
 }
 
 function buildRod(m: M): void {
-  m.surface("rod", roundBlock([0, 0, 0.2], [0.3, 0.3, 1.4], 0.6, { seg: [6, 5] }), solid("#3a2418"));
-  m.surface("rod", strand([0, 0, 1.4], [0, 0, 10], [0, 0, 19], [0.14, 0.09], [0.14, 0.09], [1, 0, 0], [6, 4]),
-    painted((t) => (Math.floor(t.v / 3) % 2 ? "#6f4526" : "#8b5a33"), 0.03));
+  // a real cần câu, ~3× the old stick: a cork grip through the fist with a butt cap, a spinning reel hanging under it
+  // (spool, foot, handle), then a long blank that tapers to a fine tip and droops a little under its own weight, with
+  // three line guides under it (the line leaves the tip: rig.rodTip)
+  m.surface("rod", roundBlock([0, 0, -1.2], [0.42, 0.42, 3.4], 0.8, { seg: [7, 6] }), solid("#c89a62"));   // the cork
+  m.surface("rod", roundBlock([0, 0, -4.4], [0.5, 0.5, 0.45], 0.7, { seg: [6, 4] }), solid("#2a2420"));    // butt cap
+  m.surface("rod", roundBlock([0, -0.75, 2.6], [0.12, 0.6, 0.18], 0.6, { seg: [4, 4] }), solid("#3a3a3a")); // reel foot
+  m.surface("rod", roundBlock([0, -1.55, 2.6], [0.62, 0.55, 0.55], 0.5, { seg: [8, 5] }), solid("#b8bcc2")); // spool
+  m.surface("rod", roundBlock([0.7, -1.55, 2.6], [0.12, 0.12, 0.5], 0.6, { seg: [4, 4] }), solid("#2a2420")); // handle
+  m.surface("rod", strand([0, 0, 2.2], [0, 0.9, 30], [0, -3.2, 58], [0.2, 0.05], [0.2, 0.05], [1, 0, 0], [6, 8]),
+    painted((t) => (t.v < 1.2 ? "#2a2420" : Math.floor(t.v / 9) % 2 ? "#23313d" : "#2c3c4a"), 0.03));
+  for (const [z, y] of [[14, 0.25], [28, 0.35], [44, -0.9]] as const)                                  // line guides
+    m.surface("rod", roundBlock([0, y - 0.45, z], [0.14, 0.3, 0.14], 0.6, { seg: [4, 3] }), solid("#c8ccd2"));
 }
 
 /** The face decal: the head front's 8×9-unit face area as a grid hugging the flattened face. */

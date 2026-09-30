@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from "react";
-import { readGfx, subscribeGfx, usesDiorama, type GfxMode } from "@/lib/game/diorama/flag";
+import { readGfx, readQuality, subscribeGfx, subscribeQuality, usesDiorama, type GfxMode, type GfxQuality } from "@/lib/game/diorama/flag";
 import { DioramaView } from "@/lib/game/diorama/view";
 import { WorldView } from "@/lib/game/diorama/world/view";
 import World3dLoading from "./World3dLoading";
@@ -253,6 +253,9 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // diorama prototype: the per-browser "Đồ hoạ 2D | 3D (thử)" setting swaps the renderer of the maps that have one
   const canvas3dRef = useRef<HTMLCanvasElement>(null);
+  // the player's 3D quality (Cài đặt → Chất lượng 3D): the view starts at it and follows a change at once
+  const quality = useSyncExternalStore<GfxQuality>(subscribeQuality, readQuality, () => "auto");
+  const qualityRef = useRef(quality);
   // the 3D world being built (WorldView.build's steps): the loading bar over the game
   const [loading3d, setLoading3d] = useState<{ done: number; total: number; label: string } | null>(null);
   const gfx = useSyncExternalStore<GfxMode>(subscribeGfx, readGfx, () => "2d");
@@ -292,7 +295,11 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   const weatherRef = useRef<RoomWeather | null>(null);
   const weatherFxRef = useRef<WeatherFx>(3);
   const plotsRef = useRef<ReadonlyArray<PlotDraw>>([]);
-  const view3dRef = useRef<{ setPlots(p: ReadonlyArray<PlotDraw>): void } | null>(null);   // the diorama (or P2 world view) drawing this world
+  const view3dRef = useRef<{ setPlots(p: ReadonlyArray<PlotDraw>): void; setQuality?(q: GfxQuality): void } | null>(null);   // the diorama (or P2 world view) drawing this world
+  useEffect(() => {
+    qualityRef.current = quality;
+    view3dRef.current?.setQuality?.(quality);
+  }, [quality]);
   const cardTablesRef = useRef<Readonly<Partial<Record<CardGame, string>>>>({});
   const cardSeatsRef = useRef<ReadonlyArray<CardSeatIn>>([]);
   const housesRef = useRef<ReadonlyArray<HouseDraw>>([]);                           // v19.3
@@ -795,6 +802,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           if (lf.moving()) wv.setLive(lf.at(Date.now()));
           wv.render(f);
         },
+        inputYaw: () => wv.inputYaw(),
       });
       wv.setPlots(plotsRef.current);
       view3dRef.current = wv;
@@ -805,7 +813,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
         if (wmap) {
           // the game's camera: third person (near / mid / far, wheel or pinch zoom) or first person; never the free
           // camera (only the /dev pages allow it)
-          WorldView.build(c3, { onTap: (p) => engine.tapWorld(p), allowFree: false, gameCamera: true },
+          WorldView.build(c3, { onTap: (p) => engine.tapWorld(p), allowFree: false, gameCamera: true, quality: qualityRef.current },
             (done, total, label) => { if (!building.aborted) setLoading3d({ done, total, label }); }, building,
           ).then(worldReady, () => {
             if (building.aborted) return;
@@ -814,6 +822,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
           });
         } else {
           view = new DioramaView(c3, map, { onTap: (p) => engine.tapWorld(p), allowFree: false });
+          view.setQuality(qualityRef.current);
           engine.setView3D(view);
           view.setPlots(plotsRef.current);
           view3dRef.current = view;

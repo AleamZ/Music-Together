@@ -11,6 +11,8 @@ export interface FpsMonitor {
   quality(): Quality;
   /** A manual choice (turns the auto pick off). */
   force(q: Quality): void;
+  /** Back to the auto pick, from high (the window starts again). */
+  auto(): void;
 }
 
 /** `warmupMs`: the first frames (shader compiles, the first texture uploads) are slow on every machine — not counted. */
@@ -32,5 +34,6 @@ export function createFpsMonitor(opts: { minFps?: number; window?: number; warmu
     fps,
     quality: () => q,
     force(next) { q = next; auto = false; },
+    auto() { q = "high"; auto = true; buf.length = 0; sum = 0; },
   };
 }

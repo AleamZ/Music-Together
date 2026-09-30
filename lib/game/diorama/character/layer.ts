@@ -124,6 +124,18 @@ export class CharacterLayer {
     return a ? { pos: a.rig.root.position, yaw: a.yaw, visible: a.rig.root.visible, crank: a.act === "pedal" ? pedalAngle(a.walkT, a.phase) : null } : null;
   }
 
+  /** A person's rod tip (world units), or null (no rod out, not here). */
+  rodTip(id: string, out: THREE.Vector3): THREE.Vector3 | null {
+    const a = this.actors.get(id);
+    return a && a.rig.root.visible ? a.rig.rodTip(out) : null;
+  }
+
+  /** Between a person's hands (world units), or null (not here). */
+  hands(id: string, out: THREE.Vector3): THREE.Vector3 | null {
+    const a = this.actors.get(id);
+    return a && a.rig.root.visible ? a.rig.hands(out) : null;
+  }
+
   /** Kept for the view's API: the chibis are lit by the scene, so night needs no tint. */
   setTint(c: THREE.Color): void {
     void c;

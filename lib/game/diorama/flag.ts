@@ -48,3 +48,40 @@ export function subscribeGfx(cb: () => void): () => void {
     window.removeEventListener("storage", onStorage);
   };
 }
+
+// ---- the 3D quality the player picks (Tự động / Cao / Thấp): a view preference, kept per browser
+
+export type GfxQuality = "auto" | "high" | "low";
+export const QUALITY_KEY = "mt.gfxq";
+const Q_EVENT = "mt:gfxq";
+
+export function parseQuality(raw: string | null | undefined): GfxQuality {
+  return raw === "high" || raw === "low" ? raw : "auto";
+}
+
+export function readQuality(): GfxQuality {
+  try {
+    return parseQuality(window.localStorage.getItem(QUALITY_KEY));
+  } catch {
+    return "auto";
+  }
+}
+
+export function writeQuality(q: GfxQuality): void {
+  try {
+    window.localStorage.setItem(QUALITY_KEY, q);
+  } catch {
+    // blocked storage: this page only
+  }
+  window.dispatchEvent(new Event(Q_EVENT));
+}
+
+export function subscribeQuality(cb: () => void): () => void {
+  const onStorage = (e: StorageEvent) => { if (e.key === QUALITY_KEY) cb(); };
+  window.addEventListener(Q_EVENT, cb);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(Q_EVENT, cb);
+    window.removeEventListener("storage", onStorage);
+  };
+}
