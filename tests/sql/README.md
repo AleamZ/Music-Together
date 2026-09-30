@@ -172,3 +172,16 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   0106's / 0073's `trade_confirm`, `_econ_buy`, `_econ_settle` and `_econ_trade_left` back, which deliver directly).
   `anticheat-guards.sql` lists the four admin RPCs and calls the six player RPCs in its lock / build loops (91 calls), so
   it needs 0111.
+
+## Email accounts (0112)
+
+- `email-auth-smoke.sql` (0112: `account_auth` / `auth_rate` private to the definer, no email on `accounts`; the
+  auth-only RPCs `game_session_from_auth` / `account_create_for_auth` / `account_link_auth` are not anon's; no JWT,
+  an unknown or an unconfirmed auth user refused; register()'s name rules and one account per auth user; the session
+  works with `_auth_account`; a confirmed email change synced; the link needs the game token AND the JWT, is
+  idempotent, refuses a taken account or email, removes the legacy password (`login` → 'email login required');
+  banned accounts refused; legacy `change_password` (8–72, other sessions end); the rate limits; the
+  `legacy_register_open` switch; a deleted auth user drops the link): chain-level. A plain PostgreSQL has no Supabase
+  `auth` schema: it `\i`s `tests/sql/auth-stub.sql` first (auth.users, auth.uid() from `request.jwt.claim.sub`, the
+  roles — each only when missing), re-runs 0112 twice with `\i`, and rolls back its rows. For a **fresh chain** load
+  `auth-stub.sql` before `scripts/db/migrate-all.sh` (0112 references auth.users). Never on hosted Supabase.
