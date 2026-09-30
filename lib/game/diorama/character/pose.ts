@@ -165,7 +165,7 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
         const wind = Math.min(1, k / 0.45), snap = k < 0.45 ? 0 : Math.min(1, (k - 0.45) / 0.18), settle = k < 0.63 ? 0 : (k - 0.63) / (CAST_S - 0.63);
         const e = settle * settle * (3 - 2 * settle);
         const swing = k < 0.45 ? -2.5 * wind : k < 0.63 ? -2.5 + 3.7 * snap : 1.2 - 0.95 * e;
-        p.armR.x = swing;
+        p.armR.x = swing + 0.9; p.armR.z = -0.55;
         p.elbowR = k < 0.45 ? 0.3 + 1.1 * wind : k < 0.63 ? 1.4 - 1.3 * snap : 0.1 + 0.2 * e;
         twoHands(p);
         p.lean = k < 0.45 ? -0.12 * wind : k < 0.63 ? 0.16 * snap : 0.16 - 0.12 * e;
@@ -175,7 +175,7 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       }
       const b = Math.sin(s * TAU * 0.35), nod = Math.sin(s * TAU * 0.6);
       // the grip at the right hip, the long rod out over the water ~30° up; the left hand resting near the reel
-      p.armR.x = 0.25 + nod * 0.03; p.armR.z = 0.2; p.elbowR = 0.3;
+      p.armR.x = 0.75 + nod * 0.03; p.armR.z = -0.6; p.elbowR = 0.7;
       twoHands(p);
       p.lean = 0.04;
       p.bob = b * 0.008 - 0.004;
@@ -188,7 +188,7 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       // a fish on: leaning back, both hands on the rod, the rod jerking up in quick tugs
       const j = Math.sin(s * TAU * 3.2), tug = Math.max(0, Math.sin(s * TAU * 1.3));
       p.rod = 1;
-      p.armR.x = 0.5 + tug * 0.3 + j * 0.05; p.armR.z = 0.2; p.elbowR = 0.45 + tug * 0.15;
+      p.armR.x = 0.95 + tug * 0.3 + j * 0.05; p.armR.z = -0.6; p.elbowR = 0.9 + tug * 0.15;
       twoHands(p);
       p.lean = -0.14 - tug * 0.06;
       p.legL.x = 0.35; p.kneeL = 0.3; p.legR.x = -0.25; p.kneeR = 0.12; p.ankleR = 0.2;
@@ -204,15 +204,15 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       // ONE SHOT from the strike (t = since the reel began): the rod whipped back over the shoulder and brought down,
       // then held ~45° while the front hand winds the reel; the rod dips and bobs under the fish's pull
       const k = Math.max(0, t);
-      p.armR.z = 0.2;
+      p.armR.z = -0.6;
       if (k < STRIKE_S) {
         const w = Math.sin(Math.PI * Math.min(1, (k / STRIKE_S) * 1.4));
-        p.armR.x = 0.45 + w * 1.5; p.elbowR = 0.35 + w * 0.5;
+        p.armR.x = 0.9 + w * 1.4; p.elbowR = 0.75 + w * 0.4;
         p.lean = -0.1 - w * 0.12;
         twoHands(p);
       } else {
         const a = s * TAU * 2.2, pullDip = Math.sin(s * TAU * 0.9) * 0.08;
-        p.armR.x = 0.45 + pullDip; p.elbowR = 0.35;
+        p.armR.x = 0.9 + pullDip; p.elbowR = 0.75;
         twoHands(p, a);
         p.lean = -0.1;
       }

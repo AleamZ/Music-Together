@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CAST_S, JOINT_LIMITS, pedalAngle, poseAt, previewTime } from "@/lib/game/diorama/character/pose";
+import { ROD_GRIP } from "@/lib/game/diorama/character/rig";
 import { inRange, nextScale, rectDist, RENDER_SCALE, rimDist, THIRD_PERSON_RANGE, viewRange } from "@/lib/game/diorama/world/view-range";
 
 describe("world3d view range", () => {
@@ -30,7 +31,7 @@ describe("world3d view range", () => {
 describe("chibi poses: fishing, pedalling, the warm-up", () => {
   it("the cast throws once, then holds the rod still-ish", () => {
     const wound = poseAt("cast", 0.4), held = poseAt("cast", CAST_S + 2), later = poseAt("cast", CAST_S + 2.3);
-    expect(wound.armR.x).toBeLessThan(-1.5);                          // the rod back over the shoulder
+    expect(wound.armR.x + wound.elbowR - ROD_GRIP).toBeLessThan(-0.5);         // the rod back over the shoulder
     expect(held.armR.x).toBeGreaterThan(0.1);                         // then held out in front, the grip at the hip
     expect(Math.abs(held.armR.x - later.armR.x)).toBeLessThan(0.1);   // no more throwing
     expect(held.rod).toBe(1);
