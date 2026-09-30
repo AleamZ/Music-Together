@@ -43,6 +43,19 @@ describe("0105: the migration", () => {
     }
   });
 
+  it("re-creates eat_meal (0038) verbatim but for the econ v2 lines: the fish discount ≤ 3 × the fish's price", () => {
+    const mine = fn(SINKS, "eat_meal").split("\n"), old = fn(read("supabase/migrations/0038_rain.sql"), "eat_meal").split("\n");
+    const replaced = new Set([
+      "    select s.rarity, f.weight_g into v_rarity, v_weight",
+      "  v_price := m.price - (m.price * v_pct) / 100;",
+      "                            'cured', v_cured);                                                      -- v18.9",
+    ]);
+    expect(old.filter((l) => replaced.has(l))).toHaveLength(3);
+    expect(mine.filter((l) => l.includes("econ v2"))).toHaveLength(4);                 // three replaced, one declaration added
+    expect(mine.filter((l) => !l.includes("econ v2"))).toEqual(old.filter((l) => !replaced.has(l)));
+    expect(SINKS).toContain("grant execute on function public.eat_meal(text, text, uuid) to anon, authenticated;");
+  });
+
   it("the new numbers are the spec's", () => {
     const buff = (meal: string, key: string) => MEAL_BUFFS.find((b) => b.meal === meal && b.key === key)?.value;
     expect(["ca_kho_to", "canh_chua", "ca_chien", "sinh_to"].map((m) => buff(m, "rare_fish"))).toEqual([4, 6, 5, 2]);
