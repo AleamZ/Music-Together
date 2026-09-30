@@ -29,7 +29,7 @@ export async function sellVehicle(token: string, vehicle: string): Promise<{ own
 /** What ông Tám pays back for a vehicle: half its price, rounded down (mirrors sell_vehicle). */
 export const sellBackPrice = (price: number): number => Math.floor((price * 50) / 100);
 
-/** Bỏ qua (20 xu): the xe ôm takes you the rest of the way. */
+/** Bỏ qua (SKIP_COST xu, 0104): the xe ôm takes you the rest of the way. */
 export async function skipTrip(token: string): Promise<{ coins: number }> {
   const { data, error } = await supabase.rpc("skip_trip", { p_session_token: token });
   if (error) throw error;

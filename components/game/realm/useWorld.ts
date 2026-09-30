@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { npcCutNote, type NpcQuota } from "@/lib/game/economy/npc";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { drawAnimal, drawBoss, drawBossBar, drawGate, drawStall } from "@/lib/game/realm/art";
-import { GATE, STALL, speciesOf, wildXY, type WildAction, type WildItemId } from "@/lib/game/realm/model";
+import { GATE, STALL, bossRewardNote, speciesOf, wildXY, type WildAction, type WildItemId } from "@/lib/game/realm/model";
 import { setPartyDots } from "@/lib/game/realm/party-dots";
 import {
   bossSummon, comboFinish, comboStart, dungeonJoin, dungeonStart, partyAccept, partyCreate, partyDecline, partyInvite,
@@ -253,7 +253,7 @@ export function useWorld(o: WorldOpts) {
           ? `${hits >= 4 ? okLine("combo", v.round.nonce) : noLine("combo", v.round.nonce)} ${hits}/6 nhịp, chuỗi ×${r.best} → ${r.dmg} sát thương`
           : r.why === "expired" ? "Hết giờ rồi." : r.why === "late" ? "Mạng chập chờn — lượt này không được tính." : r.why === "boss not up" ? "Boss đã đi." : r.why === "run over" ? "Lượt hầm ngục đã kết thúc." : "Lượt này không được tính."];
         if (r.stunned) lines.push(`💢 ${noLine("dodge", v.round.nonce + 1)} Choáng 3 giây (đói, khát −3)`);
-        if (r.killed) { lines.push(`🏆 ${v.name} đã bị hạ! Phần thưởng chia theo công sức.`); onCoins(); }
+        if (r.killed) { lines.push(`🏆 ${v.name} đã bị hạ! ${bossRewardNote(v.boss ?? "")}`); onCoins(); }
         if (r.cleared) { lines.push("🏆 Hạ Dơi Chúa — hầm ngục đã được dọn sạch!"); onCoins(); }
         if (r.dmg > 0) {
           const now = performance.now();

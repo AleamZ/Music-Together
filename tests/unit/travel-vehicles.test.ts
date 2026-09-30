@@ -5,7 +5,7 @@ describe("vehicles", () => {
   it("lists bike, moto, car with the approved prices and times", () => {
     expect(VEHICLES.map((v) => [v.id, v.price, v.tripMs])).toEqual([["bike", 5000, 10000], ["moto", 30000, 5000], ["car", 150000, 2000]]);
     expect(WALK_TRIP_MS).toBe(15000);
-    expect(SKIP_COST).toBe(20);
+    expect(SKIP_COST).toBe(50);                                    // economy v2 (0104 skip_trip)
   });
   it("uses the fastest owned vehicle, ignores unknown ids", () => {
     expect(tripVehicle([])).toBeNull();

@@ -6,7 +6,8 @@ export type VehicleId = "bike" | "moto" | "car";
 export interface Vehicle { id: VehicleId; name: string; price: number; tripMs: number; icon: string }
 
 export const WALK_TRIP_MS = 15000;
-export const SKIP_COST = 20;
+/** The xe ôm (skip_trip; economy v2 0104: was 20). */
+export const SKIP_COST = 50;
 
 export const VEHICLES: readonly Vehicle[] = [
   { id: "bike", name: "Xe đạp", price: 5000, tripMs: 10000, icon: "🚲" },
