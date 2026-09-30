@@ -5,8 +5,8 @@ import { formatXu } from "@/lib/game/fishing/catalog";
 import { VISIBILITIES, type Visibility } from "@/lib/game/housing/apartment";
 import {
   houseEnter, houseErrText, houseRoomLeave, houseRoomPrice, houseRoomRent, houseSetVisibility, LAND_PRICE, LAND_REFUND_SHARE, lotBuy, lotSell,
-  lotUpkeep, REPOSSESS_DAYS, RENT_OWNER_PERCENT, ROOFS, ROOM_RENT_DAYS, ROOM_RENT_MAX, ROOM_RENT_MIN, UPKEEP, UPKEEP_DAYS,
-  type HouseLayout, type HouseList,
+  lotUpkeep, REPOSSESS_DAYS, REPOSSESS_REFUND_SHARE, RENT_OWNER_PERCENT, ROOFS, ROOM_RENT_DAYS, ROOM_RENT_MAX, ROOM_RENT_MIN, UPKEEP,
+  UPKEEP_DAYS, type HouseLayout, type HouseList,
 } from "@/lib/game/housing/house";
 import { durationText } from "@/lib/game/housing/motel";
 import { ParchmentModal } from "../Parchment";
@@ -54,6 +54,7 @@ export default function LotModal({ token, roomId, lot, state, coins, hasFlat, on
   };
 
   const refund = LAND_PRICE * LAND_REFUND_SHARE;
+  const seized = LAND_PRICE * REPOSSESS_REFUND_SHARE;                  // econ v2 (0105): a repossession pays back less
   const arrears = mine?.paidUntilMs != null && mine.paidUntilMs <= now;
   const roofName = ROOFS.find((r) => r.id === info?.roof)?.name ?? "";
   return (
@@ -65,7 +66,7 @@ export default function LotModal({ token, roomId, lot, state, coins, hasFlat, on
           <section className="flex flex-col gap-2" data-testid="lot-free">
             <p>
               Đất trống 20 × 14 ô. Giá <b>{formatXu(LAND_PRICE)}</b> (đã gồm {UPKEEP_DAYS} ngày phí giữ đất), sau đó {formatXu(UPKEEP)} mỗi {UPKEEP_DAYS} ngày.
-              Nợ phí quá {REPOSSESS_DAYS} ngày thì thành phố thu hồi và trả lại {formatXu(refund)}.
+              Tự trả đất thì thành phố hoàn {formatXu(refund)}; nợ phí quá {REPOSSESS_DAYS} ngày thì bị thu hồi, chỉ được hoàn {formatXu(seized)}.
             </p>
             {hasHome && <p>🏠 Bạn đã có nhà (căn hộ, lô đất hoặc phòng thuê) — mỗi người một nhà thôi.</p>}
             <div>
@@ -80,7 +81,7 @@ export default function LotModal({ token, roomId, lot, state, coins, hasFlat, on
             <p className="text-xl font-bold text-burgundy">🏡 Lô {lot} của bạn · {info.grid ? `nhà mái ${roofName.toLowerCase()}` : "chưa xây"}</p>
             <p>
               {arrears
-                ? <>⚠️ Nợ phí giữ đất! Còn {durationText((mine.repossessMs ?? now) - now)} trước khi bị thu hồi. Chưa đóng phí thì không xây và không cho thuê được.</>
+                ? <>⚠️ Nợ phí giữ đất! Còn {durationText((mine.repossessMs ?? now) - now)} trước khi bị thu hồi (chỉ hoàn {formatXu(seized)}). Chưa đóng phí thì không xây và không cho thuê được.</>
                 : <>Phí giữ đất còn {durationText((mine.paidUntilMs ?? now) - now)}.</>}
               {mine.buildCost > 0 && <> · Đã xây hết {formatXu(mine.buildCost)}.</>}
             </p>

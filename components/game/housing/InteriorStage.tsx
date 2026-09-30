@@ -322,7 +322,7 @@ export default function InteriorStage<L extends StageLayout>(props: InteriorStag
   // --- the sleep cutscene's end
   useEffect(() => {
     if (sleepAt === null) return;
-    const id = setTimeout(() => { setSleepAt(null); setMsg("☀️ Dậy rồi! Ngủ ngon 24 giờ: đói, khát chậm hơn và đi nhanh hơn."); }, SLEEP_MS);
+    const id = setTimeout(() => { setSleepAt(null); setMsg("☀️ Dậy rồi! Ngủ ngon 24 giờ: đói, khát chậm hơn, đi nhanh hơn và thể lực hồi nhanh hơn."); }, SLEEP_MS);
     return () => clearTimeout(id);
   }, [sleepAt]);
 

@@ -1,5 +1,6 @@
-// v19.2 Chung cư Phú Mỹ + nội thất: the rules of 0041_apartments.sql (authoritative; tests/unit/apartment-sql.test.ts pins
-// the literals), the interior grid shared by the decorating mode and the walking, the parsers and the RPCs.
+// v19.2 Chung cư Phú Mỹ + nội thất: the rules of 0041_apartments.sql (authoritative; the rent of econ v2 is
+// 0105_econ_sinks.sql's; tests/unit/apartment-sql.test.ts pins the literals), the interior grid shared by the decorating
+// mode and the walking, the parsers and the RPCs.
 import { supabase } from "@/lib/supabase";
 import type { Grid } from "@/lib/game/movement";
 import type { Vec } from "@/lib/game/types";
@@ -9,7 +10,8 @@ import { parseMotelState, type MotelState } from "./motel";
 // ---------------------------------------------------------------- rules
 
 export const APT_COUNT = 12;
-export const APT_RENT = 1500;
+/** econ v2 (0105): per APT_RENT_DAYS (was 1 500). */
+export const APT_RENT = 2000;
 export const APT_RENT_DAYS = 30;
 export const APT_BUY = 25000;
 /** Selling a bought unit back to the city pays this share of the list price. */
