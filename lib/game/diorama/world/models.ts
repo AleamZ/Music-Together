@@ -1,3 +1,4 @@
+import { petColors, petWear, type PetLook3D } from "./pet-looks";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Roof } from "@/lib/game/housing/lot";
@@ -469,9 +470,88 @@ const PETS: Record<Exclude<PetSpecies, "vet">, QuadSpec> = {
   cho: { body: [0.32, 0.32, 0.52], color: 0xdaa65c, belly: 0xf6e6ca, head: 0.21, mask: 0xf6e6ca, snout: 0.09, snoutColor: 0xf6e6ca, ears: "floppy", earColor: 0xa8783a, leg: 0.2, legW: 0.1, paw: 0xf6e6ca, tail: "curl", collar: 0x2a7ad2, eye: 1.05 },
 };
 
-export function petModel(mats: ModelMats, sp: PetSpecies): Creature {
-  if (sp === "vet") return bird(mats, { color: 0x3cb043, wing: 0x2a8a36, beak: 0xf0c040, head: 0xe0402a, belly: 0x8ad05a, tail: 0x2a6ad0, crest: 0xe0402a }, 1.1);
-  return quad(mats, PETS[sp], 1);
+/** A pet in its variant's colours (or form 2's coat), wearing its head / neck / body items (world/pet-looks.ts). */
+export function petModel(mats: ModelMats, sp: PetSpecies, look: PetLook3D = {}): Creature {
+  const c = petColors(sp, look);
+  if (sp === "vet") {
+    const cr = bird(mats, { color: c.fur, wing: c.wing, beak: c.beak, head: c.fur, belly: c.light, tail: c.shade, crest: c.shade }, 1.1);
+    // the parrot's head is part of its body mesh: centre (0, 0.56, 0.17), radius ~0.15
+    dressPet(mats, cr.body, look, { top: [0, 0.71, 0.15], r: 0.15, neck: [0, 0.44, 0.24], neckR: 0.12, body: null });
+    return cr;
+  }
+  const base = PETS[sp];
+  const spec: QuadSpec = {
+    ...base, color: c.fur, belly: c.light, mask: base.mask !== undefined ? c.light : undefined,
+    stripes: base.stripes !== undefined ? c.shade : undefined, tailColor: base.tailColor !== undefined ? c.shade : undefined,
+    tailTip: base.tailTip !== undefined ? c.light : undefined, earColor: base.earColor !== undefined ? c.shade : undefined,
+    snoutColor: base.snoutColor !== undefined ? c.light : undefined, paw: base.paw !== undefined ? c.light : undefined,
+    collar: look.neck ? undefined : base.collar,                              // its own collar only when nothing is worn
+  };
+  const cr = quad(mats, spec, 1);
+  const [bw, bh, bl] = spec.body, hr = spec.head, neck = spec.neck ?? 0;
+  const cy = neck + hr * 0.3, cz = neck * 0.38 + hr * 0.5, y0 = spec.leg + bh / 2;
+  if (cr.head) dressPet(mats, cr.head, { ...look, body: null }, { top: [0, cy + hr * 0.9, cz - hr * 0.1], r: hr, neck: [0, -hr * 0.1, hr * 0.15], neckR: hr * 0.85, body: null });
+  dressPet(mats, cr.body, { body: look.body }, { top: [0, 0, 0], r: hr, neck: [0, 0, 0], neckR: 0, body: { size: [bw, bh, bl], y: y0 } });
+  return cr;
+}
+
+/** Put a pet's items on: a hat on `top` (head radius `r`), neckwear round `neck`, knitwear over the trunk. */
+function dressPet(mats: ModelMats, on: THREE.Object3D, look: PetLook3D, at: {
+  top: V; r: number; neck: V; neckR: number; body: { size: V; y: number } | null;
+}): void {
+  const p = new Paint(), r = at.r, [tx, ty, tz] = at.top;
+  const hat = petWear(look.head);
+  switch (hat?.kind) {
+    case "party":                                                            // a striped cone with a pompom
+      p.add(new THREE.ConeGeometry(0.5, 1, 10), 0xd9362b, tx, ty + r * 0.55, tz, -0.15, 0, 0.15, r * 0.8, r * 1.2, r * 0.8);
+      p.add(new THREE.TorusGeometry(0.5, 0.08, 4, 12), 0x3d6fd1, tx, ty + r * 0.35, tz, Math.PI / 2 - 0.15, 0, 0, r * 0.62, r * 0.62, r * 0.62);
+      ell(p, 0xf6d24a, [r * 0.3, r * 0.3, r * 0.3], [tx + r * 0.08, ty + r * 1.15, tz - r * 0.08]);
+      break;
+    case "bow":                                                              // two loops and a knot, on top to one side
+      for (const sd of [-1, 1]) ell(p, hat.color, [r * 0.5, r * 0.36, r * 0.24], [tx + r * 0.3 + sd * r * 0.28, ty, tz], [0, 0, sd * 0.5]);
+      ell(p, hat.knot, [r * 0.2, r * 0.2, r * 0.2], [tx + r * 0.3, ty, tz]);
+      break;
+    case "tophat":
+      p.add(new THREE.CylinderGeometry(0.5, 0.5, 1, 12), 0x1f1b1e, tx, ty + r * 0.05, tz, 0, 0, 0, r * 1.5, r * 0.12, r * 1.5);
+      p.add(new THREE.CylinderGeometry(0.5, 0.5, 1, 12), 0x1f1b1e, tx, ty + r * 0.55, tz, 0, 0, 0, r * 0.95, r * 0.9, r * 0.95);
+      p.add(new THREE.CylinderGeometry(0.5, 0.5, 1, 12), 0xc0303a, tx, ty + r * 0.22, tz, 0, 0, 0, r * 1.0, r * 0.2, r * 1.0);
+      break;
+    case "nonla":                                                            // a mini nón lá
+      p.add(new THREE.ConeGeometry(0.5, 1, 14), 0xe8cf7a, tx, ty + r * 0.3, tz, 0, 0, 0, r * 2.2, r * 0.75, r * 2.2);
+      break;
+    case "beanie":                                                           // a knit cap with a white rim and pompom
+      p.add(new THREE.SphereGeometry(0.5, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0xc0303a, tx, ty - r * 0.25, tz, 0, 0, 0, r * 1.9, r * 1.4, r * 1.9);
+      p.add(new THREE.TorusGeometry(0.5, 0.12, 4, 14), 0xf4f1ec, tx, ty - r * 0.25, tz, Math.PI / 2, 0, 0, r * 1.9, r * 1.9, r * 1.9);
+      ell(p, 0xf4f1ec, [r * 0.34, r * 0.34, r * 0.34], [tx, ty + r * 0.5, tz]);
+      break;
+  }
+  const nk = petWear(look.neck), [nx, ny, nz] = at.neck, nr = at.neckR;
+  switch (nk?.kind) {
+    case "band":                                                             // a collar, with a tag or a bell
+      p.add(new THREE.TorusGeometry(0.5, 0.1, 5, 16), nk.color, nx, ny, nz, Math.PI / 2 + 0.35, 0, 0, nr * 2, nr * 2, nr * 2);
+      if (nk.charm !== null) ell(p, nk.charm, [nr * (nk.bell ? 0.5 : 0.36), nr * (nk.bell ? 0.5 : 0.36), nr * 0.3], [nx, ny - nr * 0.45, nz + nr * 0.9]);
+      break;
+    case "bandana":                                                          // a band and a triangle hanging in front
+      p.add(new THREE.TorusGeometry(0.5, 0.12, 5, 16), nk.color, nx, ny, nz, Math.PI / 2 + 0.35, 0, 0, nr * 2, nr * 2, nr * 2);
+      p.add(new THREE.ConeGeometry(0.5, 1, 3), nk.color, nx, ny - nr * 0.55, nz + nr * 0.8, Math.PI, 0, 0, nr * 1.3, nr * 0.9, nr * 0.25);
+      break;
+    case "bowtie":
+      for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 4), nk.color, nx + sd * nr * 0.35, ny, nz + nr * 0.3, 0, 0, sd * Math.PI / 2, nr * 0.55, nr * 0.6, nr * 0.3);
+      ell(p, darker(nk.color, 0.7), [nr * 0.25, nr * 0.25, nr * 0.2], [nx, ny, nz + nr * 0.32]);
+      break;
+    case "scarf":                                                            // a thick wrap and a tail down the chest
+      p.add(new THREE.TorusGeometry(0.5, 0.2, 6, 16), nk.color, nx, ny, nz, Math.PI / 2 + 0.35, 0, 0, nr * 2, nr * 2, nr * 2);
+      p.add(new THREE.BoxGeometry(1, 1, 1), darker(nk.color, 0.85), nx + nr * 0.35, ny - nr * 0.7, nz + nr * 0.75, 0.2, 0, 0.15, nr * 0.45, nr * 1.1, nr * 0.18);
+      break;
+  }
+  const kn = petWear(look.body);
+  if (kn?.kind === "knit" && at.body) {                                     // a jumper over the front two-thirds, striped
+    const [bw, bh, bl] = at.body.size, y = at.body.y;
+    ell(p, kn.a, [bw * 1.08, bh * 1.06, bl * 0.72], [0, y + bh * 0.02, bl * 0.1], [0, 0, 0], [12, 8]);
+    for (const f of [-0.12, 0.06, 0.24]) p.add(new THREE.TorusGeometry(0.5, 0.07, 4, 16), kn.b, 0, y + bh * 0.02, bl * f, 0, 0, 0, bw * 1.08 * Math.sqrt(1 - (f / 0.46) ** 2), bh * 1.06 * Math.sqrt(1 - (f / 0.46) ** 2), 1);
+  }
+  const m = mats.creature1(p);
+  if (m) on.add(m);
 }
 
 const DOG_COAT: Record<string, [number, number | undefined, number | undefined]> = {

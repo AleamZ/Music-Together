@@ -1,3 +1,4 @@
+import type { PetLook3D } from "./pet-looks";
 import type { PetSpecies } from "@/lib/game/pets/catalog";
 import type { BossId, WildSpeciesId } from "@/lib/game/realm/model";
 import type { Roof } from "@/lib/game/housing/lot";
@@ -19,7 +20,7 @@ export interface LiveHouse { /** LOTS index (Khu nhà). */ lot: number; owned: b
 export interface LiveBoat { id: string; x: number; y: number; /** The rower's billboard id (the chibi rides in it). */ riderId?: string | null }
 export interface LiveDig { id: string; x: number; y: number; state: "hint" | "dug" }
 export interface LiveFishing { id: string; x: number; y: number; /** 0…1 how hard the fish pulls. */ tension: number; /** A fish is on. */ hooked: boolean }
-export interface LivePet { id: string; ownerId: string; species: PetSpecies; x: number; y: number }
+export interface LivePet { id: string; ownerId: string; species: PetSpecies; x: number; y: number; look?: PetLook3D }
 export interface LiveVehicle { riderId: string; kind: VehicleKind; color?: number }
 export interface LiveGate { id: string; x: number; y: number; /** The road's direction across the gate (radians, 0 = +x). */ dir: number; /** Width, px. */ w: number; open: boolean; guard: boolean }
 export interface LiveCritter { id: string; x: number; y: number; /** A rat knocked over (on its side). */ fallen?: boolean }
@@ -139,7 +140,7 @@ export function liveFromFrame(f: Pick<DioramaFrame, "billboards" | "gameplay">, 
     dogs: [...(extra.dogs ?? []), ...g.dogs.map((d) => ({ id: d.id, x: d.x, y: d.y }))],
     leaps: [...(extra.leaps ?? []), ...g.leaps],
     // P4: the pets at their owners' heels and everyone's bobbers (mine and the others' from realtime)
-    pets: [...(extra.pets ?? []), ...(g.pets ?? []).map((p) => ({ id: `pet:${p.ownerId}`, ownerId: p.ownerId, species: p.species, x: p.x, y: p.y }))],
+    pets: [...(extra.pets ?? []), ...(g.pets ?? []).map((p) => ({ id: `pet:${p.ownerId}`, ownerId: p.ownerId, species: p.species, x: p.x, y: p.y, look: p.look }))],
     fishing: [...(extra.fishing ?? []), ...(g.anglers ?? []).map(castLive)],
     nets: [...(extra.nets ?? []), ...(g.nets ?? []).map((n) => ({ ...n, id: `net:${n.id}`, throwerId: n.id }))],
   };

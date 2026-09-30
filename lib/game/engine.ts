@@ -462,7 +462,8 @@ export class GameEngine {
         return { x: l.x0 + (l.x1 - l.x0) * k, y: l.y0 + (l.y1 - l.y0) * k, h: k >= 1 ? 0 : Math.sin(k * Math.PI) };
       }),
       gates: (this.worldMap?.gates ?? []).map((g) => ({ id: g.id, at: g.at, barrier: g.barrier })),
-      pets: this.pets.drawn().map((p) => ({ ownerId: p.id, species: p.look.species, x: p.x, y: p.y })),        // P4
+      pets: this.pets.drawn().map((p) => ({ ownerId: p.id, species: p.look.species, x: p.x, y: p.y,
+        look: { variant: p.look.variant, form: p.look.form, head: p.look.head, neck: p.look.neck, body: p.look.body } })),        // P4
       anglers: this.anglersFrame(t),                                                                            // P4
       nets: this.netsFrame(t),
     };

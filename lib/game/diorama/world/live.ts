@@ -1,3 +1,4 @@
+import { petKey } from "./pet-looks";
 import * as THREE from "three";
 import { CO_TU_LOOK } from "@/lib/game/look";
 import { LOTS } from "@/lib/game/maps/khu-nha";
@@ -374,7 +375,7 @@ export class LiveLayer {
 
     const petSlots = new Map<string, number>();
     for (const pet of live.pets ?? []) {
-      const { e, c } = this.creature(`pet:${pet.id}`, pet.species, () => petModel(this.mats, pet.species));
+      const { e, c } = this.creature(`pet:${pet.id}`, petKey(pet.species, pet.look), () => petModel(this.mats, pet.species, pet.look));
       let { x, y } = pet;
       const owner = people.feetOf(pet.ownerId);
       if (!Number.isFinite(x) && owner) {
