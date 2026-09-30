@@ -7,10 +7,10 @@ import { STORM_TEXT } from "@/lib/game/weather/rpc";
 import {
   FISHING_KINDS, isRarity, shopItemFromRow, speciesFromRow, type FishingCatalog, type Rarity, type ShopItemRow, type SpeciesRow,
 } from "./catalog";
-import { BAD_SPOT, DAILY_LIMIT_TEXT } from "./messages";
+import { BAD_SPOT, DAILY_LIMIT_TEXT, NEEDS_PARTS } from "./messages";
 import { extrasErrorText } from "./extras";
 import { parseFishPrices, type FishPrices } from "./prices";
-import { parseFishingState, type FishingState, type Loadout } from "./state";
+import { parseFishingState, type FishingState, type GearSlot, type Loadout } from "./state";
 
 // Supabase calls for the fishing RPCs (spec §8.3). Every answer carries the account's full state.
 
@@ -158,6 +158,58 @@ export async function setLoadout(token: string, l: Loadout): Promise<FishingStat
   return stateOf((await call("set_loadout", { p_session_token: token, p_rod: l.rod, p_bobber: l.bobber, p_bait: l.bait })).state);
 }
 
+/** 0110: mount (`item`) or unmount (null) one slot of the rig. */
+export async function fishingEquip(token: string, slot: GearSlot, item: string | null): Promise<FishingState> {
+  return stateOf((await call("fishing_equip", { p_session_token: token, p_slot: slot, p_item: item })).state);
+}
+
+/** 0110: where a groundbait is thrown — the pond cell (as start_cast), or the river in world px (as the river casts). */
+export type GroundbaitSpot = { map: "pond"; col: number; row: number } | { map: "song_cai" | "wild"; x: number; y: number };
+
+/** 0110: one bag of groundbait on my spot (10 minutes, 48 px around it). */
+export async function throwGroundbait(roomId: string, token: string, item: string, spot: GroundbaitSpot): Promise<FishingState> {
+  const [x, y] = spot.map === "pond" ? [spot.col, spot.row] : [spot.x, spot.y];
+  return stateOf((await call("throw_groundbait", {
+    p_room_id: roomId, p_session_token: token, p_item: item, p_map: spot.map, p_x: x, p_y: y,
+  })).state);
+}
+
+/** 0110: a species' habits in Sổ tay câu cá. */
+export interface FishHabit {
+  id: string;
+  /** The hook class it needs; null = any hook. */
+  hook: string | null;
+  baits: string[];
+  groundbaits: string[];
+  /** The Vietnam clock hours it bites; null = always. */
+  hours: number[] | null;
+  note: string;
+}
+export interface Notebook { hour: number; species: FishHabit[] }
+
+const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+
+/** 0110: parse fishing_notebook's answer. */
+export function parseNotebook(r: Record<string, unknown>): Notebook {
+  const list = Array.isArray(r.species) ? r.species : [];
+  return {
+    hour: Number(r.hour ?? 0),
+    species: list.map((x) => {
+      const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+      return {
+        id: String(o.id ?? ""), hook: typeof o.hook === "string" ? o.hook : null, baits: strs(o.baits), groundbaits: strs(o.groundbaits),
+        hours: Array.isArray(o.hours) ? o.hours.filter((h): h is number => typeof h === "number") : null,
+        note: typeof o.note === "string" ? o.note : "",
+      };
+    }),
+  };
+}
+
+/** 0110: Sổ tay câu cá (the notebook must be bought: 'no notebook'). */
+export async function fetchNotebook(token: string): Promise<Notebook> {
+  return parseNotebook(await call("fishing_notebook", { p_session_token: token }));
+}
+
 export interface StartCast {
   castId: string; biteMs: number; windowMs: number; difficulty: number; minReelMs: number; zonePct: number;
   /** Only when the bobber shows it. */
@@ -174,6 +226,8 @@ export interface StartCast {
   serverHook: boolean;
   /** 0059: a hooked cast this one replaced, given up: what it cost (null: none). */
   abandoned: Abandoned | null;
+  /** 0110: the groundbait working on this spot (its item), or null. */
+  groundbait?: string | null;
   state: FishingState;
 }
 
@@ -216,22 +270,30 @@ export async function startCast(roomId: string, token: string, cell?: { col: num
     minReelMs: Number(r.min_reel_ms), zonePct: Number(r.zone_pct), rarity: isRarity(r.rarity) ? r.rarity : null,
     baitSwitched: r.bait_switched === true, spot: r.spot === "shore" ? "shore" : "dock", bites: r.bites !== false,
     reelSeed: r.reel_seed == null ? null : Number(r.reel_seed) >>> 0, serverHook: "abandoned" in r,
-    abandoned: parseAbandoned(r.abandoned), state: stateOf(r.state),
+    abandoned: parseAbandoned(r.abandoned), groundbait: typeof r.groundbait === "string" ? r.groundbait : null, state: stateOf(r.state),
   };
 }
 
 export interface CaughtFish { id: string; speciesId: string; weightG: number; price: number; rarity: Rarity }
-export type LostWhy = "expired" | "gave_up" | "too_early" | "full" | "no_bite" | "overboard" | "reel_invalid" | "outdated";
+export type LostWhy = "expired" | "gave_up" | "too_early" | "full" | "no_bite" | "overboard" | "reel_invalid" | "outdated"
+  /** 0110: a won reel's fish heavier than the rig's weakest part. */
+  | "line_snap" | "rod_snap";
+/** 0110: what broke: the fish, its weight, the limit, and whether the line is gone (its last snap). */
+export interface Snap { speciesId: string; weightG: number; limitG: number; lineGone: boolean }
 /** v18.1: what falling into the pond cost: the rod (lost or not) and the hunger taken. */
 export interface Overboard { rod: string; rodLost: boolean; hunger: number }
 /** `rodBroke` (v18.2): the cast wore the rod down to 0 (it is unequipped; absent from an older server = false). */
 export type FinishCast =
-  | { result: "caught"; fish: CaughtFish; record: boolean; state: FishingState; rodBroke?: boolean }
+  /** `extra` (0110): the multi-hook's other fish landed with it. */
+  | { result: "caught"; fish: CaughtFish; record: boolean; state: FishingState; rodBroke?: boolean; extra?: CaughtFish[] }
   /** `anticheat`: the envelope of a reel reported too fast (finishCast always sets it; null when there is none).
    *  `overboard` (v18.1): set when why is "overboard". */
-  | { result: "lost"; why: LostWhy; state: FishingState; anticheat?: AnticheatInfo | null; overboard?: Overboard; rodBroke?: boolean };
+  | { result: "lost"; why: LostWhy; state: FishingState; anticheat?: AnticheatInfo | null; overboard?: Overboard; rodBroke?: boolean;
+      /** 0110: set when why is line_snap / rod_snap. */
+      snap?: Snap };
 
-const LOST_WHYS: readonly LostWhy[] = ["expired", "too_early", "full", "no_bite", "overboard", "reel_invalid", "outdated"];
+const LOST_WHYS: readonly LostWhy[] = ["expired", "too_early", "full", "no_bite", "overboard", "reel_invalid", "outdated",
+  "line_snap", "rod_snap"];
 
 /** The reel's input for the server's replay (0046): the ticks where the hold flipped, and the tick it ended on. */
 export interface ReelInput { toggles: number[]; ticks: number; used?: { zonePct: number; difficulty: number; minReelMs: number } }
@@ -252,8 +314,9 @@ export async function finishCast(token: string, castId: string, success: boolean
   const rodBroke = r.rod_broke === true;
   if (r.result === "caught" && r.fish && typeof r.fish === "object") {
     const f = r.fish as Record<string, unknown>;
+    const extra = netFish(r.extra);                                            // 0110: the multi-hook's other fish
     return {
-      result: "caught", record: r.record === true, state, ...(rodBroke ? { rodBroke } : {}),
+      result: "caught", record: r.record === true, state, ...(rodBroke ? { rodBroke } : {}), ...(extra.length ? { extra } : {}),
       fish: {
         id: String(f.id), speciesId: String(f.species_id), weightG: Number(f.weight_g), price: Number(f.price),
         rarity: isRarity(f.rarity) ? f.rarity : 1,
@@ -265,6 +328,10 @@ export async function finishCast(token: string, castId: string, success: boolean
   if (why === "overboard") {
     const o = (r.overboard && typeof r.overboard === "object" ? r.overboard : {}) as Record<string, unknown>;
     lost.overboard = { rod: String(o.rod ?? "rod_wood"), rodLost: o.rod_lost === true, hunger: Number(o.hunger ?? 5) };   // econ v2: 5
+  }
+  if ((why === "line_snap" || why === "rod_snap") && r.snap && typeof r.snap === "object") {   // 0110
+    const o = r.snap as Record<string, unknown>;
+    lost.snap = { speciesId: String(o.species_id ?? ""), weightG: Number(o.weight_g ?? 0), limitG: Number(o.limit_g ?? 0), lineGone: o.line_gone === true };
   }
   return lost;
 }
@@ -349,6 +416,11 @@ export function fishingErrorMessage(err: unknown): string {
     case "rate limited": return "Thao tác quá nhanh — chờ một chút rồi thử lại nhé.";                                    // 0108
     case "daily cast limit": return DAILY_LIMIT_TEXT;
     case "rod broken": return "Cần này gãy rồi — mang tới tiệm chú Tư sửa nhé.";
+    case "rod needs parts": return NEEDS_PARTS;                                                                  // 0110
+    case "bad slot": return "Không lắp được món này vào đây.";                                                   // 0110
+    case "no groundbait": return "Hết thính loại này — tiệm chú Tư có bán.";                                    // 0110
+    case "groundbait full": return "Mỗi loại thính chỉ giữ được 99 bao.";                                       // 0110
+    case "no notebook": return "Bạn chưa có Sổ tay câu cá — tiệm chú Tư có bán.";                              // 0110
     case "not worn": return "Cần còn tốt, chưa cần sửa.";
     case "no net": return "Bạn chưa có lưới — tiệm chú Tư có bán.";
     case "throw not found": return "Lưới đã trôi mất rồi.";

@@ -60,7 +60,7 @@ describe("BagPanel", () => {
     fireEvent.click(within(bucket).getByRole("button", { name: "Thả" }));
     expect(onRelease).toHaveBeenCalledWith("f2");
     fireEvent.click(within(screen.getByText("Cần tre").closest("li")!).getByRole("button", { name: "Dùng" }));
-    expect(onEquip).toHaveBeenCalledWith({ rod: "rod_bamboo", bobber: "bobber_feather", bait: "bait_worm" });
+    expect(onEquip).toHaveBeenCalledWith("rod", "rod_bamboo");                                  // 0110: fishing_equip(slot, item)
     expect(screen.queryByText("Phao xốp")).toBeNull(); // not owned
     expect(screen.getByText("Mồi tép × 2")).toBeInTheDocument();
     expect(screen.getByText("Xô nhỏ · đựng 5 con")).toBeInTheDocument();

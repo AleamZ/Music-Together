@@ -150,6 +150,9 @@ begin
     format('select public.sell_fish_market(%L, %L)', t, array[o]),
     format('select public.release_fish(%L, %L)', t, o),
     format('select public.repair_rod(%L, %L)', t, 'rod_wood'),
+    format('select public.fishing_equip(%L, %L, %L)', t, 'hook', 'hook_small'),                     -- 0110
+    format('select public.throw_groundbait(%L, %L, %L, %L, 37, 25)', room, t, 'gb_cam', 'pond'),      -- 0110
+    format('select public.fishing_notebook(%L)', t),                                                  -- 0110
     -- farm and land
     format('select public.rent_plot(%L, %L, 5)', room, t),
     format('select public.buy_plot(%L, %L, 1)', room, t),
@@ -246,7 +249,7 @@ begin
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 91, format('%s guarded calls', n);
+  assert n = 94, format('%s guarded calls', n);                                            -- 0110: +3, 0111: +6
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);

@@ -9,6 +9,7 @@ import TreasurePanel from "./TreasurePanel";
 import CatchCard from "./CatchCard";
 import DepotPanel from "./DepotPanel";
 import NetOverlay from "./NetOverlay";
+import NotebookPanel from "./NotebookPanel";
 import RecordsPanel from "./RecordsPanel";
 import ReelOverlay from "./ReelOverlay";
 import ShopPanel from "./ShopPanel";
@@ -63,8 +64,9 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
       )}
       {caught && <CatchCard fish={caught.fish} name={name} record={caught.record} onClose={fishing.dismissCatch} />}
       {panel === "bag" && (
-        <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equip} onRelease={fishing.release} onClose={closePanel}
-          farm={farm} />
+        <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equipSlot} onRelease={fishing.release} onClose={closePanel}
+          farm={farm} groundbaitPick={fishing.groundbaitReady} onPickGroundbait={fishing.pickGroundbait}
+          onGroundbait={(item) => fishing.throwGroundbait(item)} onNotebook={() => fishing.openPanel("notebook")} />
       )}
       {panel === "depot" && (
         <DepotPanel state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids)} onClose={closePanel}
@@ -76,6 +78,7 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
       )}
       {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onRepair={fishing.repair} onClose={closePanel} />}
       {panel === "records" && <RecordsPanel catalog={catalog} load={fishing.loadBoard} onClose={closePanel} />}
+      {panel === "notebook" && <NotebookPanel catalog={catalog} load={fishing.loadNotebook} onClose={closePanel} />}{/* 0110 */}
       {/* v21 (0076): the boat, the battles, the treasure maps */}
       <BattleChip board={x.board} speciesName={speciesName} onOpen={() => fishing.openPanel("battle")} />
       {x.battleResult && <BattleResult won={x.battleResult.won} prize={x.battleResult.prize} onClose={x.dismissBattleResult} />}

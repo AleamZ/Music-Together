@@ -6,7 +6,7 @@ import type { FishingData } from "@/hooks/useFishing";
 import { canHook, reelParamsFor, type CastInfo } from "@/lib/game/fishing/cast";
 import { RARITY_COLOR } from "@/lib/game/fishing/catalog";
 import { SWING_MS } from "@/lib/game/fishing/geometry";
-import { abandonedText, BAIT_SWITCHED, lostText, overboardText, ROD_BROKE } from "@/lib/game/fishing/messages";
+import { abandonedText, BAIT_SWITCHED, extraText, lostText, overboardText, ROD_BROKE } from "@/lib/game/fishing/messages";
 import { cellOf } from "@/lib/game/fishing/shore";
 import type { ReelParams, ReelResult } from "@/lib/game/fishing/reel";
 import type { CaughtFish } from "@/lib/game/fishing/rpc";
@@ -51,7 +51,7 @@ interface Live {
 }
 
 /** One cast at a time: start_cast → swing → wait → bite → hook → reel → finish_cast (spec §6.1). */
-export function useCastSession({ roomId, data, canvas, toast, itemName }: {
+export function useCastSession({ roomId, data, canvas, toast, itemName, speciesName }: {
   roomId: string;
   /** `hookCast` (0059): the server-timed hook; without it a cast with no seed plays as before 0046. */
   data: Pick<FishingData, "startCast" | "finishCast"> & Partial<Pick<FishingData, "hookCast">>;
@@ -59,6 +59,8 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
   toast: (text: string) => void;
   /** v18.1: a shop item's display name (a rod lost in the pond); the id by default. */
   itemName?: (id: string) => string;
+  /** 0110: a species' display name (the extra fish, a snapped line); the id by default. */
+  speciesName?: (id: string) => string;
 }): CastSession {
   const [view, setView] = useState<CastView>({ phase: "idle" });
   const [caught, setCaught] = useState<{ fish: CaughtFish; record: boolean } | null>(null);
@@ -66,9 +68,11 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
   const { startCast, finishCast, hookCast } = data;
   const toastRef = useRef(toast);
   const itemNameRef = useRef<(id: string) => string>((id) => id);
+  const speciesNameRef = useRef<(id: string) => string>((id) => id);
   useEffect(() => {
     toastRef.current = toast;
     itemNameRef.current = itemName ?? ((id) => id);
+    speciesNameRef.current = speciesName ?? ((id) => id);
   });
 
   const clearTimers = (l: Live) => {
@@ -96,6 +100,7 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
     if (r.result === "caught") {
       canvas()?.landCatch(r.fish.speciesId, r.fish.weightG, handFish(r.state)?.speciesId ?? null);
       setCaught({ fish: r.fish, record: r.record });
+      if (r.extra?.length) toastRef.current(extraText(r.extra.map((f) => speciesNameRef.current(f.speciesId))));   // 0110
     } else if (r.overboard) {
       // v18.1: into the pond — swim mode until I climb onto the bank
       canvas()?.setFishing({ phase: "idle" });
@@ -104,9 +109,12 @@ export function useCastSession({ roomId, data, canvas, toast, itemName }: {
     } else {
       canvas()?.setFishing({ phase: "idle" });
       // a reel reported too fast as a strike: the warning or the ban modal shows instead (anti-cheat §12.1)
-      if ((r.anticheat?.strike ?? 0) < 1) toastRef.current(lostText(cause, success ? r.why : null, r.state.fishCap));
+      if ((r.anticheat?.strike ?? 0) < 1) {
+        toastRef.current(lostText(cause, success ? r.why : null, r.state.fishCap, r.snap,
+          r.snap ? speciesNameRef.current(r.snap.speciesId) : ""));                         // 0110: a snap names the fish
+      }
     }
-    if (r.rodBroke) toastRef.current(ROD_BROKE);                                          // v18.2
+    if (r.rodBroke && !(r.result === "lost" && r.why === "rod_snap")) toastRef.current(ROD_BROKE);   // v18.2 (0110: the snap said it)
   }, [canvas, finishCast]);
 
   const cast = useCallback((spot: Interactable) => {

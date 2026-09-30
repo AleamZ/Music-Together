@@ -547,3 +547,27 @@ then deploy the client. Every player RPC is guarded by `_ac_account`; the admin 
   wallet only on the claim, as the new ledger reasons `admin_gift` and `gift_code` (faucets in /admin → Kinh tế, never
   scaled by the bot score); every admin gift is recorded in `mail_batches`.
 - Smoke: `tests/sql/mailbox-smoke.sql` (see `tests/sql/README.md`).
+
+## Câu cá v3: đồ câu lắp ráp (0110)
+
+`supabase/migrations/0110_fishing_v3.sql` is **additive and re-runnable**; run it after `0109`, then deploy the client.
+Spec: `docs/superpowers/specs/2026-09-30-fishing-v3-design.md`.
+
+- **Cần gỗ** stays a complete kit (its own small hook, a 3 kg line, its phao): newcomers fish as before, mostly small,
+  common fish. Every other rod is sold **bare**: it needs a **lưỡi** and a **dây** mounted before it casts
+  (`'rod needs parts'`); a **máy xoay** (faster, easier reel) and a **phao** (longer hook window; none = 0.7 s) are
+  optional. Rods already owned stay, bare. Parts mount and unmount in **Giỏ đồ** (`fishing_equip`).
+- **Breaks:** a won reel heavier than the rig's weakest part snaps the line (3 snaps, then it is gone) or the rod
+  (durability 0, repair at chú Tư's as before). Rods break at 6 / 12 / 30 / 60 kg (tre … cần thủ); lines hold 4 / 12 /
+  30 / 60 kg.
+- **Hooks:** some species take only their hook (lưỡi tôm, lưỡi câu lươn, lưỡi lớn); a 2- or 3-point hook sometimes lands
+  one or two more fish (random, subject to the bucket).
+- **Mồi / thính:** each species likes some baits (×2) and groundbaits (×3 when thrown on the spot, 10 minutes, the
+  thrower's own casts and nets only). Some species bite only at certain hours (Vietnam time).
+- **Sổ tay câu cá** (500 xu) shows every species' hook, baits, groundbaits and hours (`fishing_notebook`); without it the
+  habits are not served at all (they live in `fish_habits`, not readable by the client).
+- More buckets (Xô vừa 10, Thùng xốp 30, Thùng đá 50) and nets that bring rarer fish (Lưới rê, Lưới chài cước).
+- Four new species: lươn đồng, cá tai tượng, ba ba gai, cá chình. Prices stay on the economy v2 scale; a matched mid
+  kit (carbon + lưỡi lớn + dây dù + máy 3000 + phao xốp ≈ 2 550 xu) earns about what carbon + phao đèn did.
+
+`tests/sql/fishing-v3-smoke.sql` checks it (with `-v fixtures=<repo>/tests/fixtures/reel-cases.json`).

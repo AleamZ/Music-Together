@@ -9,7 +9,10 @@ import {
 import { critterCount, heldBox, lowerFirst, visitsLeft } from "@/lib/game/farm/gather";
 import type { FarmMine } from "@/lib/game/farm/state";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
-import { baitCount, ownsItem, rodBroken, wearFor, type FishingState, type Loadout, type Wear } from "@/lib/game/fishing/state";
+import { missingText, ownedOfSlot, rigLines } from "@/lib/game/fishing/gear";
+import {
+  baitCount, groundbaitCount, ownsItem, rodBroken, wearFor, type FishingState, type GearSlot, type Loadout, type Wear,
+} from "@/lib/game/fishing/state";
 import FishLine from "./FishLine";
 
 /** v18.2: a small durability bar (green → amber → red) with the count. */
@@ -122,17 +125,31 @@ function Critters({ farm }: { farm: BagFarm }) {
   );
 }
 
-/** 🎒 Giỏ đồ (spec §10.2, v15.2 R29, v15.3 §13.4): the fish (hand, then bucket), the owned rods and bobbers, the baits,
- *  the bait box and bucket, and — once the field has loaded — the farm tools and the cua & ốc. */
-export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose, farm = null }: {
+/** 0110: when a groundbait stops working, as the Vietnam clock reads it ("14:05"). */
+function untilText(until: string): string {
+  return new Date(until).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
+}
+
+/** 🎒 Giỏ đồ (spec §10.2, v15.2 R29, v15.3 §13.4): the fish (hand, then bucket), the rig (0110: the rod and its parts —
+ *  hook, line, reel, phao — mounted and unmounted here), the baits, the groundbait, the bait box and bucket, and — once
+ *  the field has loaded — the farm tools and the cua & ốc. */
+export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose, farm = null, groundbaitPick = null,
+  onPickGroundbait, onGroundbait, onNotebook }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
   /** An RPC is in flight: the buttons wait. */
   busy: boolean;
-  onEquip: (loadout: Loadout) => void;
+  /** 0110: mount an item on a slot, or unmount it (null). */
+  onEquip: (slot: GearSlot, item: string | null) => void;
   onRelease: (fishId: string) => void;
   onClose: () => void;
   farm?: BagFarm | null;
+  /** 0110: the groundbait the HUD throws, picking one, and throwing one where I last fished. */
+  groundbaitPick?: string | null;
+  onPickGroundbait?: (item: string) => void;
+  onGroundbait?: (item: string) => void;
+  /** 0110: open Sổ tay câu cá (only once bought). */
+  onNotebook?: () => void;
 }) {
   if (!state || !catalog) {
     return (
@@ -145,13 +162,16 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
   const [inHand, ...inBucket] = state.fish;
   const kind = (k: ShopItem["kind"]) => catalog.items.filter((i) => i.kind === k);
   const owned = (k: "rod" | "bobber") => kind(k).filter((i) => ownsItem(state, i));
+  const rig = state.rig ?? null;
+  const missing = missingText(rig);
   const bucket = kind("bucket").filter((i) => ownsItem(state, i)).sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0))[0];
   const box = kind("bait_box").filter((i) => ownsItem(state, i)).sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0))[0];
 
-  const gearRow = (item: ShopItem, slot: keyof Loadout, count?: number) => {
+  const gearRow = (item: ShopItem, slot: keyof Loadout & GearSlot, count?: number) => {
     const using = state.loadout[slot] === item.id;
     const wear = wearFor(state, item.id);
     const broken = slot === "rod" && rodBroken(state, item.id);
+    const removable = slot === "hook" || slot === "line" || slot === "reel" || slot === "bobber";                // 0110
     return (
       <li key={item.id} className="flex items-center gap-2 py-0.5">
         <ItemIcon id={item.id} scale={2} />
@@ -163,13 +183,29 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
         {broken ? (
           <span className="text-base text-burgundy">Gãy — sửa ở tiệm chú Tư</span>
         ) : using ? (
-          <span className="text-base text-burgundy">✓ Đang dùng</span>
+          <span className="flex items-center gap-1">
+            <span className="text-base text-burgundy">✓ Đang dùng</span>
+            {removable && <button type="button" className="pch-btn text-base" disabled={busy} onClick={() => onEquip(slot, null)}>Tháo</button>}
+          </span>
         ) : (
-          <button type="button" className="pch-btn" disabled={busy} onClick={() => onEquip({ ...state.loadout, [slot]: item.id })}>Dùng</button>
+          <button type="button" className="pch-btn" disabled={busy} onClick={() => onEquip(slot, item.id)}>{removable ? "Lắp" : "Dùng"}</button>
         )}
       </li>
     );
   };
+  /** 0110: one part's section: the owned ones (mount / unmount), or where to buy one. */
+  const partSection = (slot: "hook" | "line" | "reel", title: string) => {
+    const mine = ownedOfSlot(slot, catalog.items, state.owned);
+    return (
+      <section key={slot}>
+        <h3 className="text-xl text-burgundy">{title}</h3>
+        {mine.length === 0 ? <p className="text-base opacity-75">Chưa có — tiệm chú Tư bán.</p>
+          : <ul>{mine.map((i) => gearRow(i, slot))}</ul>}
+      </section>
+    );
+  };
+  const gbKinds = kind("groundbait");
+  const gbOn = state.groundbaitOn ?? null;
 
   return (
     <ParchmentModal title="🎒 Giỏ đồ" onClose={onClose} className="sm:max-w-4xl">
@@ -202,8 +238,18 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
         </section>
         <section>
           <h3 className="text-xl text-burgundy">Cần câu</h3>
+          {rig && (
+            <p className="text-base leading-tight opacity-80" data-testid="rig-summary">
+              {rig.kit ? "Cần gỗ đủ bộ sẵn (lưỡi, dây, phao) — đồ lắp chỉ dùng cho cần khác. " : ""}{rigLines(rig).join(" · ")}
+            </p>
+          )}
+          {missing && <p className="text-base text-burgundy" role="alert">⚠️ {missing}</p>}
           <ul>{owned("rod").map((i) => gearRow(i, "rod"))}</ul>
         </section>
+        {/* 0110: the parts */}
+        {partSection("hook", "Lưỡi câu")}
+        {partSection("line", "Dây câu")}
+        {partSection("reel", "Máy xoay")}
         {kind("net").some((i) => state.owned.includes(i.id)) && (
           <section>
             <h3 className="text-xl text-burgundy">Lưới</h3>
@@ -232,6 +278,39 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
           <h3 className="text-xl text-burgundy">Mồi</h3>
           <ul>{kind("bait").map((i) => gearRow(i, "bait", baitCount(state, i.id)))}</ul>
         </section>
+        {gbKinds.length > 0 && (
+          <section>
+            <h3 className="text-xl text-burgundy">Thính</h3>
+            {gbOn && (
+              <p className="text-base text-burgundy">
+                🌾 {catalog.items.find((i) => i.id === gbOn.item)?.name ?? gbOn.item} đang tỏa mùi · tới {untilText(gbOn.until)}
+              </p>
+            )}
+            <ul>
+              {gbKinds.map((i) => {
+                const n = groundbaitCount(state, i.id);
+                return (
+                  <li key={i.id} className="flex items-center gap-2 py-0.5">
+                    <ItemIcon id={i.id} scale={2} />
+                    <span className="min-w-0 flex-1 truncate">{i.name} × {n}</span>
+                    {groundbaitPick === i.id && n > 0 ? <span className="text-base text-burgundy">✓ Đang chọn</span>
+                      : onPickGroundbait && <button type="button" className="pch-btn text-base" disabled={n < 1} onClick={() => onPickGroundbait(i.id)}>Chọn</button>}
+                    {onGroundbait && (
+                      <button type="button" className="pch-btn text-base" disabled={busy || n < 1} onClick={() => onGroundbait(i.id)}>Rải</button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-base opacity-75">Rải ở chỗ vừa câu (hoặc bấm “Rải thính” ở mép ao): 10 phút, loài ưa thính cắn nhiều gấp 3.</p>
+          </section>
+        )}
+        {state.notebook && onNotebook && (
+          <section>
+            <h3 className="text-xl text-burgundy">Sổ tay câu cá</h3>
+            <button type="button" className="pch-btn" onClick={onNotebook}>📖 Mở sổ tay</button>
+          </section>
+        )}
         <section>
           <h3 className="text-xl text-burgundy">Đồ nghề</h3>
           <ul>
