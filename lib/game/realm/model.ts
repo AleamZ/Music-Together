@@ -62,9 +62,12 @@ export const WILD_ITEMS: Readonly<Record<WildItemId, { name: string; icon: strin
   thit_ran_ri_ca: { name: "Thịt rắn ri cá", icon: "🥩", price: 100 },
 };
 export const isWildItem = (v: unknown): v is WildItemId => typeof v === "string" && Object.hasOwn(WILD_ITEMS, v);
-/** The night market pays 30 % more (integer division as in the SQL). */
+/** The night market's premium (econ v2, 0103 wild_sell: +10 %, was +30 %) and the day's kills (0103: 40, was 60). */
+export const NIGHT_MARKET_PCT = 10;
+export const WILD_DAILY_KILLS = 40;
+/** The night market pays 10 % more (integer division as in the SQL); the thương lái then pays its share of it. */
 export const sellPrice = (item: WildItemId, qty: number, night: boolean): number =>
-  night ? Math.floor((WILD_ITEMS[item].price * qty * 13) / 10) : WILD_ITEMS[item].price * qty;
+  night ? Math.floor((WILD_ITEMS[item].price * qty * (100 + NIGHT_MARKET_PCT)) / 100) : WILD_ITEMS[item].price * qty;
 
 export const WILD_AREAS: ReadonlyArray<{ map: MapId; x: number; y: number; w: number; h: number }> = [
   { map: "field", x: 60, y: 48, w: 600, h: 22 }, { map: "field", x: 60, y: 448, w: 440, h: 20 },

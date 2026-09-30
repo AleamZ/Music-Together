@@ -5,11 +5,14 @@ import {
   BOSS_DEFS, BOSS_SCHEDULE, DUNGEON_FEE, DUNGEON_ROOMS, WILD_AREAS, WILD_CAP, WILD_ITEMS, WILD_SPECIES, beat, inArena,
   isNightVN, sellPrice, wildXY, GATE, STALL,
 } from "@/lib/game/realm/model";
+import { NIGHT_MARKET_PCT, WILD_DAILY_KILLS } from "@/lib/game/realm/model";
 import { effects, kindOf } from "@/lib/game/weather/model";
 
 const SQL = readFileSync("supabase/migrations/0075_world_bosses.sql", "utf8");
 /** 0097 re-made _wild_species / _wild_items (the forest's animals and meats): the newest body wins. */
 const SQL97 = readFileSync("supabase/migrations/0097_forest_complete.sql", "utf8");
+/** Econ v2 (0103): wild_sell's night market, the day's kills. */
+const SQL103 = readFileSync("supabase/migrations/0103_econ_crafts.sql", "utf8");
 /** The body of a function (up to its closing $$). */
 function body(name: string): string {
   for (const sql of [SQL97, SQL]) {
@@ -88,7 +91,11 @@ describe("realm model", () => {
   });
   it("night market prices", () => {
     expect(sellPrice("da_soi", 3, false)).toBe(360);
-    expect(sellPrice("long_vu", 3, true)).toBe(46);
+    expect(sellPrice("long_vu", 3, true)).toBe(39);                     // econ v2 (0103): +10 % (was +30 %: 46)
+    expect(SQL103).toContain("(v_price * p_qty * 11) / 10");
+    expect(SQL103).toContain(`p.kills >= ${WILD_DAILY_KILLS} then raise exception 'daily cap'`);
+    expect(SQL103).toContain(`v_ok := p.kills < ${WILD_DAILY_KILLS} and`);
+    expect(NIGHT_MARKET_PCT).toBe(10);
   });
   it("the arena margin", () => {
     const a = { map: "bai_dat" as const, x: 316, y: 60, w: 168, h: 316 };

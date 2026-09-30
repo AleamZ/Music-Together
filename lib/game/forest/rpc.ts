@@ -1,5 +1,7 @@
 // The forest's RPCs (0096): chopping, logs, axes, cooking, dishes, and the state they share. Every outcome is the
 // server's; the answers are parsed defensively (a malformed field becomes a safe default).
+import { parseNpcQuota, type NpcQuota } from "@/lib/game/economy/npc";
+import { DAILY_MAX_LOGS } from "@/lib/game/forest/catalog";
 import { supabase } from "@/lib/supabase";
 
 export interface ForestState {
@@ -77,9 +79,11 @@ export async function chopFinish(token: string, presses: readonly number[]): Pro
   };
 }
 
-export const woodSell = async (token: string, item: string, qty: number) => {
+/** A sale at the stall (0103: through the thương lái): what was paid, what it kept back, its day (null before econ v2). */
+export interface StallSale { earned: number; cut: number; npc: NpcQuota | null; forest: ForestState }
+export const woodSell = async (token: string, item: string, qty: number): Promise<StallSale> => {
   const o = await call("wood_sell", { p_session_token: token, p_item: item, p_qty: qty });
-  return { earned: num(o.earned), forest: parseForest(o.forest) };
+  return { earned: num(o.earned), cut: num(o.npc_cut), npc: parseNpcQuota(o.npc), forest: parseForest(o.forest) };
 };
 /** 0097: repair a tool at the stall (its price a point × the missing points). */
 export const toolRepair = async (token: string, item: string) => {
@@ -105,9 +109,9 @@ export async function cookFinish(token: string, a: readonly number[], b: readonl
   };
 }
 
-export const cookSell = async (token: string, dish: string, quality: number, qty: number) => {
+export const cookSell = async (token: string, dish: string, quality: number, qty: number): Promise<StallSale> => {
   const o = await call("cook_sell", { p_session_token: token, p_dish: dish, p_quality: quality, p_qty: qty });
-  return { earned: num(o.earned), forest: parseForest(o.forest) };
+  return { earned: num(o.earned), cut: num(o.npc_cut), npc: parseNpcQuota(o.npc), forest: parseForest(o.forest) };
 };
 export const cookEat = async (token: string, dish: string, quality: number) => {
   const o = await call("cook_eat", { p_session_token: token, p_dish: dish, p_quality: quality });
@@ -123,6 +127,7 @@ export function forestErrorText(e: unknown): string {
   if (m.includes("nothing to repair")) return "Đồ còn nguyên, chưa cần sửa.";
   if (m.includes("no axe")) return "Rìu hư rồi, đem đi sửa nha!";
   if (m.includes("felled")) return "Cây mới đốn, chờ mọc lại nghen!";
+  if (m.includes("daily log limit")) return `Hôm nay đốn đủ ${DAILY_MAX_LOGS} khúc gỗ rồi — mai quay lại nghen!`;
   if (m.includes("not a chef")) return "Chỉ Đầu bếp mới nấu được — chọn nghề Đầu bếp (phím 3).";
   if (m.includes("no ingredients")) return "Thiếu nguyên liệu.";
   if (m.includes("too tired")) return "Hết thể lực — nghỉ một lát đã.";
