@@ -79,14 +79,14 @@ describe("DepotPanel", () => {
     render(<DepotPanel state={{ ...STATE, fish: [] }} catalog={CATALOG} busy={false} onSell={() => {}} onClose={() => {}} />);
     expect(screen.queryByRole("button", { name: /Bán hết/ })).toBeNull();
   });
-  it("shows Vựa cá Chợ Lớn's prices at ×1.2, rounded down, with the badge (v18.5)", () => {
+  it("shows Vựa cá Chợ Lớn's prices at ×1.1 (econ v2), rounded down, with the badge (v18.5)", () => {
     const onSell = vi.fn();
     render(<DepotPanel market state={STATE} catalog={CATALOG} busy={false} onSell={onSell} onClose={() => {}} />);
-    expect(screen.getByText("Giá chợ +20%")).toBeInTheDocument();
+    expect(screen.getByText("Giá chợ +10%")).toBeInTheDocument();
     expect(screen.getByText("🐟 Vựa cá Chợ Lớn · chú Hai")).toBeInTheDocument();
-    expect(within(screen.getByText("Cá lóc").closest("li")!).getByText("86 xu")).toBeInTheDocument();
-    expect(within(screen.getByText("Cá rô đồng").closest("li")!).getByText("6 xu")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Bán hết (2 con · 92 xu)" }));
+    expect(within(screen.getByText("Cá lóc").closest("li")!).getByText("79 xu")).toBeInTheDocument();
+    expect(within(screen.getByText("Cá rô đồng").closest("li")!).getByText("5 xu")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Bán hết (2 con · 84 xu)" }));
     expect(onSell).toHaveBeenLastCalledWith(["f1", "f2"]);
   });
 });
@@ -134,7 +134,7 @@ describe("RecordsPanel", () => {
   it("shows the room's fish prices: the multiplier, when they change, and each species now", async () => {
     render(<RecordsPanel catalog={CATALOG} load={async () => BOARD} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("tab", { name: "Giá cá" }));
-    expect(await screen.findByText("Hệ số phòng ×2,24 · tài sản trung bình 100.000 xu · giá đổi lúc 15:00")).toBeInTheDocument();
+    expect(await screen.findByText("Hệ số giá cá toàn server ×2,24 · mùa cá đổi lúc 15:00")).toBeInTheDocument();
     const [, ro, loc] = screen.getAllByRole("row");
     expect(within(ro).getByText("45 xu/kg")).toBeInTheDocument();
     expect(within(ro).getByText("113 xu/kg ▲")).toBeInTheDocument();
