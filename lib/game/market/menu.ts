@@ -1,5 +1,6 @@
 // Chợ Lớn's restaurant menu (v18.4, spec §18.4). Display copy of 0026_market.sql's meal_catalog, which is
-// authoritative (a test pins them equal); the discount formula matches _fish_discount_pct.
+// authoritative (a test pins them equal); the discount formula matches _fish_discount_pct and, since econ v2, the cap of
+// 0105's eat_meal (the xu off ≤ FISH_DISCOUNT_MAX_X × the fish's price).
 
 export interface MealItem { id: string; name: string; kind: "food" | "drink"; price: number; hunger: number; thirst: number; fishDish: boolean }
 
@@ -24,7 +25,20 @@ export function fishDiscountPct(rarity: number, weightG: number): number {
   return Math.max(20, Math.min(80, pct));
 }
 
-export function mealPrice(item: MealItem, fish: { rarity: number; weightG: number } | null): number {
-  if (!item.fishDish || !fish) return item.price;
-  return item.price - Math.floor((item.price * fishDiscountPct(fish.rarity, fish.weightG)) / 100);
+/** econ v2 (0105): the xu off a fish dish is at most this many times the fish's price (its price at the catch). */
+export const FISH_DISCOUNT_MAX_X = 3;
+
+/** A fish brought to the kitchen: its rarity, weight and stored price (FishRow's). */
+export interface DishFish { rarity: number; weightG: number; price: number }
+
+/** The xu off `item` for giving up `fish`: the rarity/weight percentage, at most FISH_DISCOUNT_MAX_X × the fish's price
+ *  (eat_meal's 'discount'); 0 for a dish that takes no fish. */
+export function fishDiscountXu(item: MealItem, fish: DishFish | null): number {
+  if (!item.fishDish || !fish) return 0;
+  return Math.min(Math.floor((item.price * fishDiscountPct(fish.rarity, fish.weightG)) / 100),
+    FISH_DISCOUNT_MAX_X * Math.max(0, Math.floor(fish.price)));
+}
+
+export function mealPrice(item: MealItem, fish: DishFish | null): number {
+  return item.price - fishDiscountXu(item, fish);
 }

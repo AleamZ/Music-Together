@@ -52,14 +52,15 @@ describe("RestaurantModal", () => {
     const select = screen.getByLabelText("Chọn cá") as HTMLSelectElement;
     expect(select.value).toBe("");
     expect(select.options[0].textContent).toBe("Không dùng cá");
-    // the rarer, heavier fish ranks first
-    expect(select.options[1].textContent).toMatch(/Cá lóc · 2\.6 kg · −54%/);
-    expect(select.options[2].textContent).toMatch(/Cá rô · 0\.4 kg · −21%/);
+    // the most xu off ranks first; econ v2: at most 3 × the fish's price (54 % of 600 = 324 → 270; 21 % = 126 → 30)
+    expect(select.options[1].textContent).toMatch(/Cá lóc · 2\.6 kg · giá 90 xu · −270 xu/);
+    expect(select.options[2].textContent).toMatch(/Cá rô · 0\.4 kg · giá 10 xu · −30 xu/);
     const item = MENU.find((m) => m.id === "ca_kho_to")!;
     fireEvent.change(select, { target: { value: "f2" } });
-    const expected = mealPrice(item, { rarity: 3, weightG: 2600 });
+    const expected = mealPrice(item, { rarity: 3, weightG: 2600, price: 90 });
+    expect(expected).toBe(330);
     expect(screen.getByTestId("final-price").textContent).toBe(`${expected} xu`);
-    expect(screen.getAllByText("−54%").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("−270 xu").length).toBeGreaterThan(0);
   });
 
   it("orders once and reports the result", async () => {

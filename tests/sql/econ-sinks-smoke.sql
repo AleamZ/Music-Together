@@ -8,6 +8,7 @@
 --   3. S4 housing: the prices; the upkeep pays 1 500; giving a lot back pays 20 000, a repossession 10 000; the
 --      apartment rent is 2 000, buying 25 000, selling back 17 500; the helpers stay private.
 --   4. The motel: a night 300, a month 6 000 (a third cheaper than 30 nights), 60 days ahead at most.
+--   5. eat_meal: a fish dish's discount is the 20–80 % of _fish_discount_pct, at most 3 × the fish's price; 'discount'.
 \set ON_ERROR_STOP on
 set time zone 'UTC';
 set client_min_messages = warning;
@@ -197,6 +198,38 @@ begin
   assert pg_temp.fails(format('select public.motel_rent(%L, %L)', x.t2, 'night'), 'too far ahead'), '60 days ahead at most';
   assert (select count(*) from public.coin_ledger where account_id = x.a2 and reason = 'motel' and delta = -6000) = 2, 'two month rows';
   raise notice 'motel ok';
+end $$;
+
+-- ---------- 5. The fish dishes: the discount is at most 3 × the fish's price ----------
+do $$
+declare x esv; j jsonb; f uuid; r1 text := (select id from public.fish_species where rarity = 1 order by id limit 1);
+        r3 text := (select id from public.fish_species where rarity = 3 order by id limit 1);
+begin
+  select * into x from esv;
+  perform public._wallet_lock(x.a); perform public._pay(x.a, 5000, 'daily', 'smoke');
+  -- a 5 xu common fish (21 %: 126 off a cá kho tộ) buys only 15 xu off
+  insert into public.fish (account_id, species_id, weight_g, price) values (x.a, r1, 400, 5) returning id into f;
+  assert public._fish_discount_pct(1, 400) = 21, 'the formula stays';
+  j := public.eat_meal(x.t, 'ca_kho_to', f);
+  assert (j->>'paid')::int = 585 and (j->>'discount')::int = 15 and (j->>'discount_pct')::int = 21, format('capped %s', j);
+  assert not exists (select 1 from public.fish where id = f), 'the fish is eaten';
+  assert exists (select 1 from public.coin_ledger where account_id = x.a and reason = 'meal' and delta = -585), 'charged 585';
+  -- a 30 xu rarity-3 fish of 2.6 kg (54 %: 270 off a canh chua) buys 90
+  insert into public.fish (account_id, species_id, weight_g, price) values (x.a, r3, 2600, 30) returning id into f;
+  j := public.eat_meal(x.t, 'canh_chua', f);
+  assert (j->>'paid')::int = 410 and (j->>'discount')::int = 90 and (j->>'discount_pct')::int = 54, format('capped %s', j);
+  -- a dear fish: the percentage binds (324 < 3 000)
+  insert into public.fish (account_id, species_id, weight_g, price) values (x.a, r3, 2600, 1000) returning id into f;
+  j := public.eat_meal(x.t, 'ca_kho_to', f);
+  assert (j->>'paid')::int = 276 and (j->>'discount')::int = 324, format('the percentage %s', j);
+  -- no fish: the full price, no discount; a fish on a dish that takes none is refused
+  j := public.eat_meal(x.t, 'ca_chien');
+  assert (j->>'paid')::int = 550 and (j->>'discount')::int = 0 and (j->>'discount_pct')::int = 0, format('no fish %s', j);
+  insert into public.fish (account_id, species_id, weight_g, price) values (x.a, r1, 400, 5) returning id into f;
+  assert pg_temp.fails(format('select public.eat_meal(%L, %L, %L)', x.t, 'pho_bo', f), 'not a fish dish'), 'not a fish dish';
+  assert pg_temp.fails(format('select public.eat_meal(%L, %L, %L)', x.t2, 'ca_kho_to', f), 'fish not found'), 'someone else''s fish';
+  delete from public.fish where id = f;
+  raise notice 'fish dishes ok';
 end $$;
 
 select 'econ sinks smoke ok';

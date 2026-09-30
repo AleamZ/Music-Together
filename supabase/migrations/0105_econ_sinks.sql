@@ -1,8 +1,8 @@
 -- =========================================================
 -- 0105_econ_sinks.sql — Kinh tế v2, the sinks (spec docs/superpowers/specs/2026-09-30-economy-v2-design.md §8).
 -- ADDITIVE and re-runnable. Run after 0104 (it also applies right after 0100: 0101–0104 re-create none of its
--- functions). The re-created functions are copied verbatim from their newest bodies (0077, 0042, 0041, 0039) with only
--- the lines marked "econ v2" changed. The potion fees (S3) are 0103's.
+-- functions). The re-created functions are copied verbatim from their newest bodies (0077, 0042, 0041, 0039, 0038) with
+-- only the lines marked "econ v2" changed. The potion fees (S3) are 0103's.
 --   A. S1 meal_buffs (0077's rows): a buff is priced by what it earns. The fish dishes' rare-fish lift
 --      10 / 15 / 12 / 5 % → 4 / 6 / 5 / 2 % (cá kho tộ / canh chua / cá chiên / sinh tố); the stamina regen of
 --      phở / nước dừa / cà phê sữa / trà đá +50 / 40 / 30 / 20 % → +30 / 25 / 20 / 10 %. The durations, the strength and
@@ -20,6 +20,8 @@
 --   D. The motel (_motel_price, 0039): a night 100 → 300, a month 2 000 → 6 000 (still a third cheaper than 30 nights).
 --      Even at ×1.2 a night's "Ngủ ngon" lifts the 200 casts/h stamina cap to 240 for a day, so it is priced by that
 --      value, as the buffs are. Stays already paid keep their days.
+--   E. eat_meal (0038): a fish dish's discount for giving up a fish is the 20–80 % of _fish_discount_pct, but at most
+--      3 × the fish's stored price in xu (a 5 xu fish no longer buys 100+ xu of food); the answer gains 'discount'.
 -- =========================================================
 
 -- ---------- A. S1: the meal buffs ----------
@@ -87,8 +89,50 @@ create or replace function public._motel_price(p_plan text) returns integer
 language sql immutable set search_path = public, extensions
 as $$ select case p_plan when 'night' then 300 when 'month' then 6000 end $$;   -- econ v2: night 100 → 300, month 2000 → 6000
 
+-- ---------- E. The fish dishes: the discount is at most 3 × the fish's price ----------
+-- A fish dish (cá kho tộ, canh chua, cá chiên) takes one fish from the bag for 20–80 % off (_fish_discount_pct, by the
+-- fish's rarity and weight). Fish are worth ≈ 5–60 xu since 0101, so the percentage alone turned a 5 xu fish into 100+ xu
+-- of food; the xu off is now also at most 3 × the fish's stored price (its price at the catch). The answer gains
+-- 'discount' (the xu off); 'discount_pct' stays the formula's percentage.
+create or replace function public.eat_meal(p_session_token text, p_item text, p_fish_id uuid default null) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $$
+declare
+  v_account uuid; m public.meal_catalog; v_rarity int; v_weight int; v_pct int := 0; v_price int; v_coins int; v_bal int; v_vitals jsonb;
+  v_cured boolean := false;                                                                         -- v18.9
+  v_fish_price int;                                                                                 -- econ v2
+begin
+  v_account := public._auth_account(p_session_token);
+  select * into m from public.meal_catalog where id = p_item;
+  if not found then raise exception 'unknown meal' using errcode = '22023'; end if;
+  if p_fish_id is not null then
+    if not m.fish_dish then raise exception 'not a fish dish' using errcode = '22023'; end if;
+    select s.rarity, f.weight_g, f.price into v_rarity, v_weight, v_fish_price                    -- econ v2: + the fish's price
+      from public.fish f join public.fish_species s on s.id = f.species_id
+      where f.id = p_fish_id and f.account_id = v_account for update of f;
+    if not found then raise exception 'fish not found' using errcode = '22023'; end if;
+    v_pct := public._fish_discount_pct(v_rarity, v_weight);
+  end if;
+  v_price := m.price - least((m.price * v_pct) / 100, 3 * coalesce(v_fish_price, 0));              -- econ v2: ≤ 3 × the fish's price
+  perform public._wallet_lock(v_account);
+  select coins into v_coins from public.wallets where account_id = v_account;
+  if coalesce(v_coins, 0) < v_price then raise exception 'insufficient funds' using errcode = '22023'; end if;
+  v_bal := public._pay(v_account, -v_price, 'meal', 'meal: ' || p_item);
+  if p_fish_id is not null then delete from public.fish where id = p_fish_id and account_id = v_account; end if;
+  v_vitals := public._vitals_restore(v_account, m.hunger, m.thirst);
+  if p_item in ('pho_bo', 'bun_bo', 'canh_chua') then                                              -- v18.9: a hot dish
+    update public.rain_state set cold_until = null, cold_wet_s = 0
+     where account_id = v_account and cold_until > now();
+    v_cured := found;
+  end if;
+  return jsonb_build_object('paid', v_price, 'discount_pct', v_pct, 'coins', v_bal, 'vitals', v_vitals,
+                            'cured', v_cured, 'discount', m.price - v_price);                       -- v18.9; econ v2: + 'discount' (xu)
+end; $$;
+
 revoke all on function public._stamina_rate(uuid, boolean) from public, anon, authenticated;
 revoke all on function public._house_price(text) from public, anon, authenticated;
 revoke all on function public._house_sweep() from public, anon, authenticated;
 revoke all on function public._apt_price(text) from public, anon, authenticated;
 revoke all on function public._motel_price(text) from public, anon, authenticated;
+revoke all on function public.eat_meal(text, text, uuid) from public;
+grant execute on function public.eat_meal(text, text, uuid) to anon, authenticated;
