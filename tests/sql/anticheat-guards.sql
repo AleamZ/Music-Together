@@ -40,6 +40,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'admin_estate_flags(text)', 'admin_fight_config(text,jsonb)', 'admin_fight_list(text)', 'admin_fight_log(text,uuid)',
      'news_admin_list(text)', 'news_post_delete(text,uuid)', 'news_post_upsert(text,uuid,text,text,text,boolean)',
      'admin_economy(text)', 'admin_econ_params(text)', 'admin_econ_set(text,text,numeric)',   -- economy watch/v2 (0099/0100)
+     'admin_bot_list(text)', 'admin_bot_clear(text,uuid)',                                  -- the bot score (0109)
      -- reads
      'fishing_state(text)', 'fishing_board(uuid,text)', 'field_state(uuid,text)', 'dog_state(text)',
      'card_lobby(uuid,text)', 'card_state(uuid,text,text)', 'card_hand(uuid,text,text)', 'card_tick(uuid,text,text)',
