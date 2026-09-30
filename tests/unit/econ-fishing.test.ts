@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BOAT, extrasErrorText, TREASURE_PER_DAY } from "@/lib/game/fishing/extras";
+import { BOAT, extrasErrorText, TREASURE_PER_DAY, treasureTodayText } from "@/lib/game/fishing/extras";
 
 // 0101_econ_fishing.sql (Kinh tế v2, fishing): every re-created function is its newest body plus the lines marked
 // "-- econ v2" (an added line), "… -- econ v2 was: <old line>" (a changed one) — the convention of
@@ -57,6 +57,7 @@ describe("0101: every re-created function is its newest body plus the econ v2 li
     ["sell_fish(", "0015_anticheat.sql"],
     ["sell_fish_market(", "0057_server_position.sql"],
     ["fishing_board(", "0015_anticheat.sql"],
+    ["_fx_extras_state(", "0076_fishing_extras.sql"],
   ];
   for (const [sig, from] of cases) {
     it(sig.slice(0, sig.indexOf("(")), () => {
@@ -138,5 +139,16 @@ describe("0101's numbers", () => {
     expect(body(SQL, "sell_fish_market(")).toContain("v_pay := public._npc_sale(v_account, v_gross);");
     for (const sig of ["sell_fish(", "sell_fish_market("]) expect(body(SQL, sig)).toContain("'npc', public._npc_quota(v_account)");
     expect(body(SQL, "fishing_board(")).toContain("'npc', public._npc_quota(v_account));");
+  });
+  it("I: the bait and the nets at the new fish prices (shop_items)", () => {
+    const shop = Object.fromEntries([...SQL.matchAll(/^ {4}\('((?:bait|net)_\w+)',\s+(\d+)\)/gm)].map((m) => [m[1], Number(m[2])]));
+    expect(shop).toEqual({ bait_shrimp: 1, bait_bloodworm: 3, bait_gold: 6, net_small: 50, net_big: 120 });
+  });
+  it("J: the extras state answers the day's chests; the treasure panel's line", () => {
+    expect(body(SQL, "_fx_extras_state(")).toContain(
+      "'found_today', (select count(*) from public.treasure_maps where account_id = p_account and found_at >= public._vn_day_start()),");
+    expect(treasureTodayText(0)).toBe("Hôm nay: 0/3 kho báu");
+    expect(treasureTodayText(2)).toBe("Hôm nay: 2/3 kho báu");
+    expect(treasureTodayText(TREASURE_PER_DAY + 1)).toBe("Hôm nay: 3/3 kho báu — đủ rồi, mai đào tiếp nhé.");
   });
 });

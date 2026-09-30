@@ -17,6 +17,9 @@ describe("fishing texts", () => {
     expect(digText(3)).toBe("🪱 Đào được 3 trùn đất!");
     expect(digWaitText(32)).toBe("Đất còn cứng, chờ 32 giây nữa nhé.");
     expect(saleText(3, 1245)).toBe("Bán 3 con · +1.245 xu");
+    // econ v2 (0101): the thương lái's cut, when it kept any
+    expect(saleText(3, 25000, 5000)).toBe("Bán 3 con · +25.000 xu — Thương lái đã mua nhiều hôm nay nên bớt 5.000 xu.");
+    expect(saleText(3, 1245, 0)).toBe("Bán 3 con · +1.245 xu");
   });
   it("says why a cast cannot start, like the server does", () => {
     expect(blockerText("no_bait", 0)).toBe("Hết mồi — đào trùn hoặc mua mồi ở tiệm nhé.");

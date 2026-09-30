@@ -1,3 +1,4 @@
+import { npcCutNote } from "@/lib/game/economy/npc";
 import type { Interactable } from "@/lib/game/maps/types";
 import { formatXu } from "./catalog";
 import type { LostWhy } from "./rpc";
@@ -49,8 +50,10 @@ export function digWaitText(sec: number): string {
   return `Đất còn cứng, chờ ${sec} giây nữa nhé.`;
 }
 
-export function saleText(sold: number, earned: number): string {
-  return `Bán ${sold} con · +${formatXu(earned)}`;
+/** A sale's toast; `cut` (econ v2, 0101): what the thương lái kept back, said after the pay when there was any. */
+export function saleText(sold: number, earned: number, cut = 0): string {
+  const note = npcCutNote(cut);
+  return `Bán ${sold} con · +${formatXu(earned)}${note ? ` — ${note}` : ""}`;
 }
 
 /** Why a cast cannot start (same wording as the server errors, spec §8.6). */

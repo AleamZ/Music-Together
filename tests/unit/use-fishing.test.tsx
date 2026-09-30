@@ -255,6 +255,18 @@ describe("useFishingController", () => {
     expect(result.current.interact({ ...mound, kind: "portal" })).toBe(false);
   });
 
+  it("econ v2 (0101): toasts a sale with the thương lái's cut, and one it paid in full without", async () => {
+    rpc.sellFish.mockResolvedValueOnce({ sold: 2, earned: 900, npcCut: 100, npc: { gross: 21100, full: 20000, half: 40000, tailPct: 20 }, state: state() });
+    rpc.sellFish.mockResolvedValueOnce({ sold: 1, earned: 40, npcCut: 0, npc: null, state: state() });
+    const { result, toasts } = setup();
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { result.current.sell(["a", "b"]); await vi.advanceTimersByTimeAsync(0); });
+    expect(toasts.at(-1)).toBe("Bán 2 con · +900 xu — Thương lái đã mua nhiều hôm nay nên bớt 100 xu.");
+    await act(async () => { result.current.sell(["c"], true); await vi.advanceTimersByTimeAsync(0); });
+    expect(toasts.at(-1)).toBe("Bán 1 con · +40 xu");
+    expect(rpc.sellFish).toHaveBeenLastCalledWith("tok", ["c"], true);
+  });
+
   it("0047: shows no cap at a fishing spot and does not tick for the old counters", async () => {
     const capped = state({ casts_left: 0, casts_today_left: 0, day_resets_at: new Date(serverNow() + 3_600_000).toISOString() });
     rpc.fetchFishingState.mockResolvedValue(capped);
