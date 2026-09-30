@@ -49,6 +49,14 @@ describe("📜 Sổ luật (spec §14)", () => {
       { who: "A", xu: 2000 }, { who: "B", xu: 16000 }, { who: "C", xu: -18000 },
     ]);
     expect(ruleText(rulesPage("poker", 1000).sections[4].examples[0].lines[3])).toBe("Pot chính 24.000 (A, B, C); pot phụ 20.000 (A, C).");
+    // Kinh tế v2 (0106): đền làng past the hold is shared pro rata, computed with xidachCap
+    expect(rulesPage("xidach", 1000).sections[4].examples[0].net).toEqual([
+      { who: "A", xu: 500 }, { who: "B", xu: -2000 }, { who: "C", xu: 500 }, { who: "D", xu: 500 }, { who: "Cái", xu: 500 },
+    ]);
+    expect(rulesPage("xidach", 10000).sections[4].examples[0].net.map((n) => n.xu)).toEqual([5000, -20000, 5000, 5000, 5000]);
+    const denLang = rulesPage("xidach").sections[4].lines.map(ruleText).join(" ");
+    expect(denLang).not.toMatch(/trừ thành âm/);
+    expect(denLang).toMatch(/Ví không bao giờ bị âm/);
   });
 
   it("gives every poker hand rank a matching example, strongest first", () => {

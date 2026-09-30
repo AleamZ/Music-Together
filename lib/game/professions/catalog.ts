@@ -49,7 +49,7 @@ export const PERK_TEXT: Readonly<Record<PerkKey, string>> = {
   buff_power_pct: "Buff đồ ăn mạnh hơn {v}%",
   meal_pct: "Hoàn {v}% tiền ăn uống",
   potion_pct: "Hoàn {v}% tiền pha thuốc",
-  market_sell_pct: "Bán ở chợ, sạp, đấu giá được thêm {v}%",
+  market_sell_pct: "Phí bán ở chợ, sạp, đấu giá giảm {v} điểm % (còn ít nhất 2 %)",
   buy_pct: "Hoàn {v}% tiền mua ở cửa hàng",
   shop_rent_pct: "Hoàn {v}% tiền thuê sạp, phí đăng bán",
   upgrade_pct: "Hoàn {v}% tiền nâng cấp",

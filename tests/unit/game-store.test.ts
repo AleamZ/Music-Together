@@ -72,6 +72,9 @@ describe("storeErrorMessage", () => {
     expect(storeErrorMessage({ message: "recipient already owns item" })).toBe("Người nhận đã có món đồ này rồi!");
     expect(storeErrorMessage({ message: "not owned" })).toBe("Bạn chưa sở hữu món đồ này.");
     expect(storeErrorMessage(new Error("network failure"))).toBe("Giao dịch không thành công — vui lòng thử lại!");
+    // Kinh tế v2 (0106): a gift goes to someone in one of my rooms, 5 a day
+    expect(storeErrorMessage({ message: "recipient not in your rooms" })).toBe("Chỉ tặng được cho người cùng phòng với bạn.");
+    expect(storeErrorMessage({ message: "gift limit" })).toBe("Mỗi ngày chỉ tặng được 5 món — mai tặng tiếp nhé.");
   });
 });
 

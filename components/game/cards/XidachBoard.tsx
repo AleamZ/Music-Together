@@ -208,6 +208,11 @@ export default function XidachBoard({
           {[...new Set(last.lines.filter((l) => l.why === "den_lang").map((l) => l.from))].map((s) => (
             <p key={s} className="text-xs font-bold text-red-400">{`💥 ${name(s)} quá 28 điểm — đền cả làng!`}</p>
           ))}
+          {last.capped.length > 0 && (
+            <p className="text-xs text-amber-200">
+              {`⚖️ ${last.capped.map(name).join(", ")} không đủ đền hết: chỉ mất số xu đã giữ trên bàn, chia cho từng người theo tỷ lệ.`}
+            </p>
+          )}
           <div className="flex flex-col gap-1 text-xs">
             {Object.entries(last.hands).map(([s, h]) => {
               const seatNum = Number(s);

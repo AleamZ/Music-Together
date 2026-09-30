@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import {
-  econErrText, kindIcon, leftText, SALE_FEE_PERCENT, saleShare, STALL_DAY, STALL_MAX_DAYS, STALL_SLOTS, type EconState, type Stall,
+  econErrText, kindIcon, leftText, SALE_FEE_MIN_PERCENT, SALE_FEE_PERCENT, saleShare, STALL_DAY, STALL_MAX_DAYS, STALL_SLOTS, type EconState, type Stall,
 } from "@/lib/game/economy/model";
 import { econState, marketCancel, shopBuy, shopRent, shopStock } from "@/lib/game/economy/rpc";
 import { ParchmentModal } from "../Parchment";
@@ -59,7 +59,7 @@ export default function StallModal({ token, onChanged, onClose, onStalls }: { to
         <StallRowView rented={(state?.stalls ?? []).map((s) => s.renterName !== null)} notes={0} />
         <p className="text-base">
           chú Bảy: &quot;Thuê sạp {formatXu(STALL_DAY)} một ngày (tối đa {STALL_MAX_DAYS} ngày), bày {STALL_SLOTS} món, giá tự đặt. Bà con mua cả lúc
-          con đi vắng; chợ thu {SALE_FEE_PERCENT} % mỗi món bán được.&quot;
+          con đi vắng; chợ thu {SALE_FEE_PERCENT} % mỗi món bán được (Thương nhân có kỹ năng Mồm mép: {SALE_FEE_MIN_PERCENT} %).&quot;
         </p>
         {error && <p role="alert" className="text-red-700">{error}</p>}
         {notice && <p className="text-emerald-800">{notice}</p>}
