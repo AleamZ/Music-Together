@@ -4,9 +4,10 @@ import { HudSlotted } from "../hud/HudSlot";
 import { useState } from "react";
 import type { UseMining } from "@/hooks/useMining";
 import {
-  BUFF_NAME, CRAFT_ITEMS, craftItem, effectText, ingredientName, MAX_UPGRADE, PICKAXES, pickaxe, RECIPES, UPGRADE_CHANCE,
-  UPGRADE_MATS, upgradeCoins, upgradeEffectText,
+  BUFF_NAME, CRAFT_ITEMS, craftItem, DAILY_DIGS, effectText, ingredientName, MAX_UPGRADE, PICKAXES, pickaxe, RECIPES,
+  UPGRADE_CHANCE, UPGRADE_MATS, upgradeCoins, upgradeEffectText,
 } from "@/lib/game/mining/catalog";
+import { npcQuotaLine } from "@/lib/game/economy/npc";
 import type { MineState } from "@/lib/game/mining/rpc";
 import { rarityInfo } from "@/lib/game/rarity";
 import { ParchmentModal } from "../Parchment";
@@ -60,6 +61,7 @@ function ShopPanel({ m }: { m: UseMining }) {
           <button type="button" className={`pch-btn ${tab === "buy" ? "pch-btn-primary" : ""}`} onClick={() => setTab("buy")}>Mua cuốc</button>
           <span className="ml-auto self-center">💰 {s?.coins ?? "…"} xu</span>
         </div>
+        {tab === "sell" && m.npc && <p className="text-base opacity-80">{npcQuotaLine(m.npc)}</p>}
         {tab === "sell" && (sellable.length === 0 ? <p>Chưa có quặng hay thảo dược nào để bán.</p> : (
           <ul className="flex flex-col gap-1">
             {sellable.map((i) => (
@@ -94,7 +96,8 @@ function ShopPanel({ m }: { m: UseMining }) {
             })}
           </ul>
         )}
-        <p className="text-base opacity-80">Quặng càng hiếm càng cần cuốc tốt: vàng, ngọc cần cuốc thép; kim cương, tinh thể lửa cần cuốc kim cương.</p>
+        <p className="text-base opacity-80">Quặng càng hiếm càng cần cuốc tốt: vàng, ngọc cần cuốc thép; kim cương, tinh thể lửa cần cuốc kim cương.
+          Mỗi ngày đào tối đa {DAILY_DIGS} lượt.</p>
       </div>
     </ParchmentModal>
   );

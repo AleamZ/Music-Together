@@ -120,7 +120,8 @@ begin
   assert (select qty from public.craft_bag where account_id = a and item_id = 'pot_hunger') = 2, 'two potions';
   assert (select qty from public.craft_bag where account_id = a and item_id = 'herb_nam') = 6, 'ingredients taken at the finish';
   assert (select qty from public.potion_quality where account_id = a and item_id = 'pot_hunger' and tier = 3) = 2, 'quality kept';
-  assert exists (select 1 from public.coin_ledger where account_id = a and reason = 'potion' and delta = -20), 'fee';
+  assert exists (select 1 from public.coin_ledger where account_id = a and reason = 'potion'
+                   and delta = -2 * (select fee from public.potion_recipes where id = 'pot_hunger')), 'fee';   -- 2 × 10, 2 × 60 from 0103
   assert exists (select 1 from public.game_events where account_id = a and kind = 'potion_brewed' and (meta->>'quality')::int = 3), 'event';
   assert (select value from public.player_stamina where account_id = a) < 100, 'stamina spent';
   assert jsonb_array_length(r->'state'->'quality') = 1, 'state shows the quality';

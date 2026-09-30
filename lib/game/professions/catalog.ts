@@ -142,7 +142,7 @@ export type BuffKey = "speed" | "rare_fish" | "strength" | "stamina_regen" | "lu
 export const BUFF_TEXT: Readonly<Record<BuffKey, { icon: string; name: string; unit: string }>> = {
   speed: { icon: "💨", name: "Nhanh nhẹn", unit: "% tốc độ đi" },
   rare_fish: { icon: "🍀", name: "Hên cá", unit: "% cá hiếm" },
-  strength: { icon: "💪", name: "Sức mạnh", unit: "% bớt tốn thể lực (đào, đấu)" },
+  strength: { icon: "💪", name: "Sức mạnh", unit: "% bớt tốn thể lực (đào, chặt cây, đấu)" },
   stamina_regen: { icon: "🔋", name: "Sung sức", unit: "% hồi thể lực" },
   luck: { icon: "✨", name: "May mắn (thuốc)", unit: " bậc" },
   miner: { icon: "⛏️", name: "Thợ mỏ (thuốc)", unit: " quặng" },
@@ -166,8 +166,9 @@ export const MEAL_BUFFS: readonly { meal: string; key: BuffKey; value: number; m
   { meal: "sinh_to", key: "rare_fish", value: 5, minutes: 20 },
 ];
 
-export const SWITCH_FEE = 500;
-export const RESET_FEE = 300;
+/** Econ v2 (0103 profession_choose / skill_reset / _prof_json): 2 000 and 1 000 (were 500 and 300). */
+export const SWITCH_FEE = 2000;
+export const RESET_FEE = 1000;
 export const SWITCH_COOLDOWN_H = 24;
 export const MAX_LEVEL = 20;
 /** Stamina (0077): the base max, the regen (per second), the sprint cost (per second) and speed factor. */

@@ -1,5 +1,6 @@
-// The mine's catalogs (v21 #19, #26, #89): 0072's seed rows, mirrored for the panels. tests/unit/mining-catalog.test.ts
-// pins every row against supabase/migrations/0072_mining_crafting.sql. The server decides every price, roll and cost.
+// The mine's catalogs (v21 #19, #26, #89): 0072's seed rows, mirrored for the panels. tests/unit/mining.test.ts pins
+// every row against supabase/migrations/0072_mining_crafting.sql, the prices and fees against 0103_econ_crafts.sql (econ v2:
+// ores ÷ 4, potion fees). The server decides every price, roll and cost.
 
 export type CraftKind = "ore" | "herb" | "potion";
 
@@ -25,15 +26,15 @@ const i = (id: string, kind: CraftKind, name: string, rarity: number, price: num
   ({ id, kind, name, rarity, price, hardness, minTier, respawnS, xp, icon });
 
 export const CRAFT_ITEMS: readonly CraftItem[] = [
-  i("ore_da", "ore", "Đá", 1, 4, 2, 1, 30, 2, "🪨"),
-  i("ore_than", "ore", "Than", 1, 10, 2, 1, 45, 3, "⚫"),
-  i("ore_dong", "ore", "Quặng đồng", 2, 25, 3, 1, 90, 5, "🟠"),
-  i("ore_sat", "ore", "Quặng sắt", 2, 40, 3, 2, 120, 6, "⚙️"),
-  i("ore_bac", "ore", "Quặng bạc", 3, 80, 4, 2, 180, 10, "🥈"),
-  i("ore_vang", "ore", "Quặng vàng", 3, 160, 4, 3, 300, 15, "🥇"),
-  i("ore_ngoc", "ore", "Ngọc lục bảo", 4, 320, 4, 3, 420, 22, "💚"),
-  i("ore_kimcuong", "ore", "Kim cương", 5, 700, 5, 4, 600, 35, "💎"),
-  i("ore_tinhthe", "ore", "Tinh thể lửa", 6, 2000, 5, 4, 900, 70, "🔥"),
+  i("ore_da", "ore", "Đá", 1, 1, 2, 1, 30, 2, "🪨"),
+  i("ore_than", "ore", "Than", 1, 3, 2, 1, 45, 3, "⚫"),
+  i("ore_dong", "ore", "Quặng đồng", 2, 6, 3, 1, 90, 5, "🟠"),
+  i("ore_sat", "ore", "Quặng sắt", 2, 10, 3, 2, 120, 6, "⚙️"),
+  i("ore_bac", "ore", "Quặng bạc", 3, 20, 4, 2, 180, 10, "🥈"),
+  i("ore_vang", "ore", "Quặng vàng", 3, 40, 4, 3, 300, 15, "🥇"),
+  i("ore_ngoc", "ore", "Ngọc lục bảo", 4, 80, 4, 3, 420, 22, "💚"),
+  i("ore_kimcuong", "ore", "Kim cương", 5, 175, 5, 4, 600, 35, "💎"),
+  i("ore_tinhthe", "ore", "Tinh thể lửa", 6, 500, 5, 4, 900, 70, "🔥"),
   i("herb_nam", "herb", "Nấm hang", 1, 3, null, null, 60, 1, "🍄"),
   i("herb_reu", "herb", "Rêu phát sáng", 2, 8, null, null, 90, 2, "🌿"),
   i("herb_linhchi", "herb", "Nấm linh chi", 3, 30, null, null, 180, 4, "🍂"),
@@ -62,13 +63,13 @@ export const pickaxe = (id: string): Pickaxe | undefined => PICKAXES.find((p) =>
 export type PotionEffect = "hunger" | "thirst" | "vitals" | "cure" | "luck" | "miner";
 export interface Recipe { id: string; effect: PotionEffect; amount: number; durationS: number; fee: number; ingredients: Readonly<Record<string, number>> }
 export const RECIPES: readonly Recipe[] = [
-  { id: "pot_hunger", effect: "hunger", amount: 40, durationS: 0, fee: 10, ingredients: { herb_nam: 2 } },
-  { id: "pot_thirst", effect: "thirst", amount: 40, durationS: 0, fee: 10, ingredients: { herb_reu: 2 } },
-  { id: "pot_canh", effect: "vitals", amount: 60, durationS: 0, fee: 20, ingredients: { fish: 1, herb_nam: 1 } },
+  { id: "pot_hunger", effect: "hunger", amount: 40, durationS: 0, fee: 60, ingredients: { herb_nam: 2 } },
+  { id: "pot_thirst", effect: "thirst", amount: 40, durationS: 0, fee: 25, ingredients: { herb_reu: 2 } },
+  { id: "pot_canh", effect: "vitals", amount: 60, durationS: 0, fee: 120, ingredients: { fish: 1, herb_nam: 1 } },
   { id: "pot_cure", effect: "cure", amount: 0, durationS: 0, fee: 30, ingredients: { herb_linhchi: 1, herb_reu: 1, ore_than: 1 } },
-  { id: "pot_miner", effect: "miner", amount: 1, durationS: 600, fee: 60, ingredients: { herb_linhchi: 1, ore_sat: 2, ore_bac: 1 } },
-  { id: "pot_luck", effect: "luck", amount: 1, durationS: 600, fee: 80, ingredients: { herb_linhchi: 2, ore_vang: 1 } },
-  { id: "pot_luck2", effect: "luck", amount: 2, durationS: 1800, fee: 300, ingredients: { herb_linhchi: 3, ore_ngoc: 1, ore_kimcuong: 1 } },
+  { id: "pot_miner", effect: "miner", amount: 1, durationS: 600, fee: 300, ingredients: { herb_linhchi: 1, ore_sat: 2, ore_bac: 1 } },
+  { id: "pot_luck", effect: "luck", amount: 1, durationS: 600, fee: 150, ingredients: { herb_linhchi: 2, ore_vang: 1 } },
+  { id: "pot_luck2", effect: "luck", amount: 2, durationS: 1800, fee: 600, ingredients: { herb_linhchi: 3, ore_ngoc: 1, ore_kimcuong: 1 } },
 ];
 
 /** What a potion does, in words. */
@@ -103,7 +104,13 @@ export const UPGRADE_MATS: ReadonlyArray<Readonly<Record<string, number>>> = [
 ];
 export const UPGRADE_CHANCE: readonly number[] = [900, 750, 600, 450, 300];
 export const MAX_UPGRADE = 5;
-export const upgradeCoins = (price: number | null, level: number): number => Math.max(50, Math.floor(((price ?? 0) * (level + 1)) / 4));
+
+/** Econ v2 (0103): digs a Vietnam day (mine_start), the stamina of a herb gather (gather_herb). */
+export const DAILY_DIGS = 200;
+export const HERB_STAMINA = 1;
+/** Coins a try (0103: the floor 200 × (level + 1), so a starter rod or stone pick no longer upgrades for pocket change). */
+export const upgradeCoins = (price: number | null, level: number): number =>
+  Math.max(200 * (level + 1), Math.floor(((price ?? 0) * (level + 1)) / 4));
 export const upgradeMax = (base: number | null, level: number): number | null => (base === null ? null : Math.floor((base * (100 + 20 * level)) / 100));
 
 /** What an upgrade level does, in words. */

@@ -161,7 +161,10 @@ begin
   assert j->>'buff' = 'hunt_chance' and public._buff(a, 'hunt_chance') = 5, format('buff %s', j);
   j := public.cook_eat(t, 'chuot_dong_nuong_sa', 3);
   assert public._buff(a, 'hunt_chance') = 3, 'replaced, not stacked';
-  assert (select until from public.player_buffs where account_id = a and kind = 'hunt_chance') between now() + interval '17 minutes' and now() + interval '19 minutes', '12 min × 150 %';
+  -- 12 min × the Tuyệt phẩm % (_cook_pct: 150 % in 0096, 125 % from 0103's econ v2)
+  assert (select until from public.player_buffs where account_id = a and kind = 'hunt_chance')
+         between now() + make_interval(mins => floor(12 * public._cook_pct(3) / 100.0)::int - 1)
+             and now() + make_interval(mins => floor(12 * public._cook_pct(3) / 100.0)::int + 1), '12 min × the quality''s %';
   assert (select count(*) from public._cook_recipes()) = 10, 'ten dishes';
   assert (select count(*) from public._cook_recipes() r where r.fish is not null and not exists (select 1 from public.fish_species f where f.id = r.fish)) = 0, 'every fish is a catch';
   j := public.forest_state(t);

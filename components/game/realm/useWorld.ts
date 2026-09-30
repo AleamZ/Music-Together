@@ -4,6 +4,7 @@
 // handed to the canvas (animals, bosses, the gate, the stall), the party dots for the minimap and the actions. Every
 // outcome comes back from the server.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { npcCutNote, type NpcQuota } from "@/lib/game/economy/npc";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import { drawAnimal, drawBoss, drawBossBar, drawGate, drawStall } from "@/lib/game/realm/art";
 import { GATE, STALL, speciesOf, wildXY, type WildAction, type WildItemId } from "@/lib/game/realm/model";
@@ -61,6 +62,8 @@ export function useWorld(o: WorldOpts) {
   const floatsRef = useRef<Array<{ dmg: number; at: number }>>([]);
   const [wild, setWild] = useState<WildView | null>(null);
   const [combo, setCombo] = useState<ComboView | null>(null);
+  /** Econ v2: the thương lái's day after my last sale at the stall (null until I sell). */
+  const [npc, setNpc] = useState<NpcQuota | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -218,7 +221,12 @@ export function useWorld(o: WorldOpts) {
   const wildClose = () => setWild(null);
 
   const sell = (item: WildItemId, qty: number) =>
-    void run(() => wildSell(token, item, qty), (r) => { toast(`💰 Bán được ${r.earned} xu`); onCoins(); });
+    void run(() => wildSell(token, item, qty), (r) => {
+      if (r.npc) setNpc(r.npc);
+      const cut = npcCutNote(r.cut);
+      toast(`💰 Bán được ${r.earned} xu${cut ? ` · ${cut}` : ""}`);
+      onCoins();
+    });
 
   // v22 (0083): the combo strike (bosses and the dungeon)
   const startCombo = (kind: "boss" | "dungeon", ref: number, target: number, view: Pick<ComboView, "name" | "boss" | "icon">) => {
@@ -291,7 +299,7 @@ export function useWorld(o: WorldOpts) {
     stop: () => void run(() => snowStop(token, roomId), () => onWeather()),
   };
 
-  return { state, offset, here, inWild, busy, lastHit, act, sell, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
+  return { state, offset, here, inWild, busy, lastHit, act, sell, npc, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
 }
 
 export type World = ReturnType<typeof useWorld>;

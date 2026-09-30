@@ -9,6 +9,8 @@ const SQL = readFileSync("supabase/migrations/0077_professions.sql", "utf8").rep
 
 /** 0096 adds Thợ săn and Tiều phu (their rows follow 0077's). */
 const SQL96 = readFileSync("supabase/migrations/0096_forest_professions.sql", "utf8").replace(/\r\n/g, "\n");
+/** Econ v2 (0103): the switch and reset fees. */
+const SQL103 = readFileSync("supabase/migrations/0103_econ_crafts.sql", "utf8").replace(/\r\n/g, "\n");
 
 /** The rows of the seed `insert into public.<table> … values … on conflict` (0077's, then 0096's). */
 function seedRows(table: string): string[] {
@@ -38,7 +40,10 @@ describe("professions catalog = the 0077 + 0096 seeds", () => {
       .toEqual(MEAL_BUFFS.map((b) => `'${b.meal}', '${b.key}', ${b.value}, ${b.minutes}`));
   });
   it("fees and a text for every perk", () => {
-    expect(SQL).toContain(`'switch_fee', ${SWITCH_FEE}, 'reset_fee', ${RESET_FEE}`);
+    expect(SQL103).toContain(`'switch_fee', ${SWITCH_FEE}, 'reset_fee', ${RESET_FEE}`);
+    expect(SQL103).toContain(`perform public._pay(v_account, -${SWITCH_FEE}, 'profession'`);
+    expect(SQL103).toContain(`perform public._pay(v_account, -${RESET_FEE}, 'skill_reset'`);
+    expect([SWITCH_FEE, RESET_FEE]).toEqual([2000, 1000]);
     for (const n of SKILL_NODES) expect(PERK_TEXT[n.perk]).toContain("{v}");
     for (const p of PROFESSIONS) expect(SKILL_NODES.filter((n) => n.prof === p.id)).toHaveLength(6);
   });
