@@ -215,7 +215,7 @@ function mineAnswer(r: Record<string, unknown>): MineAnswer {
   return { serverNow: typeof r.server_now === "string" ? r.server_now : null, mine: mineOf(r.mine) };
 }
 
-/** `market` (v18.5): sold at Vựa nông sản Chợ Lớn, +20%. */
+/** `market` (v18.5): sold at Vựa nông sản Chợ Lớn, +10% (econ v2). */
 export async function sellRice(token: string, variety: string, dry: boolean, kg: number, market = false): Promise<MineAnswer> {
   return mineAnswer(await call(market ? "sell_rice_market" : "sell_rice", { p_session_token: token, p_variety: variety, p_dry: dry, p_kg: kg }));
 }

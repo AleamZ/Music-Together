@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  adminEconomy, compactXu, ECON_WINDOWS, GROUP_LABEL, groupFlows, inflationPerDay, reasonLabel,
-  type EconDay, type EconomyReport, type EconWindow,
+  adminEconomy, adminEconParams, adminEconSet, compactXu, ECON_WINDOWS, GROUP_LABEL, groupFlows, inflationPerDay, reasonLabel,
+  type EconDay, type EconomyReport, type EconParam, type EconWindow,
 } from "@/lib/admin-economy";
 import { formatXu } from "@/lib/game/fishing/catalog";
 
@@ -131,7 +131,56 @@ export default function EconomyTab({ token }: { token: string }) {
 
   if (error && !r) return <p className="text-burgundy">{error}</p>;
   if (!r) return <p className="text-ink/60">Đang tải…</p>;
-  return <EconomyView r={r} busy={busy} onReload={reload} />;
+  return (
+    <div className="flex flex-col gap-4">
+      <EconomyView r={r} busy={busy} onReload={reload} />
+      <ParamsEditor token={token} />
+    </div>
+  );
+}
+
+const PARAM_LABEL: Record<string, string> = {
+  fish_mult: "Hệ số giá cá toàn server", npc_full: "Thương lái: mốc đủ giá (xu/ngày)", npc_half: "Thương lái: mốc 50 % (xu/ngày)",
+  npc_tail_pct: "Thương lái: % trả sau mốc 50 %", p2p_fee_pct: "Phí xu giữa người chơi (%)",
+};
+
+/** The econ_params knobs (0100): root changes one, the server checks its range and answers the new list. */
+function ParamsEditor({ token }: { token: string }) {
+  const [list, setList] = useState<EconParam[] | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => { void adminEconParams(token).then(setList).catch(() => setMsg("Chưa đọc được thông số (cần migration 0100).")); }, [token]);
+  const save = (p: EconParam) => {
+    const v = Number((draft[p.key] ?? String(p.value)).replace(",", "."));
+    if (!Number.isFinite(v) || v < p.min || v > p.max) { setMsg(`${PARAM_LABEL[p.key] ?? p.key}: nhập từ ${p.min} đến ${p.max}.`); return; }
+    if (!window.confirm(`Đổi "${PARAM_LABEL[p.key] ?? p.key}" từ ${p.value} thành ${v}? Có hiệu lực ngay cho mọi người chơi.`)) return;
+    adminEconSet(token, p.key, v).then((x) => { setList(x); setDraft((d) => ({ ...d, [p.key]: "" })); setMsg("Đã lưu."); })
+      .catch(() => setMsg("Không lưu được, thử lại nhé."));
+  };
+  return (
+    <section className="rounded-xl border border-gold-200 bg-cream p-3 text-sm">
+      <h3 className="mb-1 font-semibold text-burgundy">Thông số kinh tế</h3>
+      <p className="mb-2 text-xs text-ink/70">Chỉnh từng bước nhỏ rồi theo dõi dòng xu vài ngày trước khi chỉnh tiếp.</p>
+      {msg && <p className="mb-2 text-xs text-burgundy" role="status">{msg}</p>}
+      {!list && !msg && <p className="text-ink/60">Đang tải…</p>}
+      <ul className="flex flex-col gap-2">
+        {(list ?? []).map((p) => (
+          <li key={p.key} className="flex flex-wrap items-center gap-2 border-b border-gold-200/60 pb-2">
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">{PARAM_LABEL[p.key] ?? p.key} <span className="font-normal text-ink/60">= {p.value.toLocaleString("vi-VN")}</span></div>
+              <div className="text-xs text-ink/70">{p.note}</div>
+              {p.updatedBy && <div className="text-xs text-ink/50">Sửa bởi {p.updatedBy}{p.updatedAt ? `, ${new Date(p.updatedAt).toLocaleString("vi-VN")}` : ""}</div>}
+            </div>
+            <input className="w-28 rounded border border-gold-200 bg-white px-2 py-0.5 text-right" inputMode="decimal"
+              aria-label={`Giá trị mới cho ${PARAM_LABEL[p.key] ?? p.key}`} placeholder={String(p.value)}
+              value={draft[p.key] ?? ""} onChange={(e) => setDraft((d) => ({ ...d, [p.key]: e.target.value }))} />
+            <button onClick={() => save(p)} disabled={!(draft[p.key] ?? "").trim()}
+              className="rounded-full border border-gold-200 px-3 py-0.5 text-burgundy disabled:opacity-50">Lưu</button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 /** The report itself (no fetching): the window picker, the tiles, the two charts and the tables. */
@@ -168,6 +217,12 @@ export function EconomyView({ r, busy = false, onReload }: { r: EconomyReport; b
         <Tile label="Ví top 10% / top 1%" value={compactXu(r.dist.p90)} sub={`top 1%: ${compactXu(r.dist.p99)}`} />
         <Tile label="10 ví giàu nhất nắm" value={`${r.dist.top10Share.toLocaleString("vi-VN")}%`} sub={`ví lớn nhất ${compactXu(r.dist.max)}`} />
       </div>
+      {r.npcToday && (
+        <p className="rounded-xl border border-gold-200 bg-cream px-3 py-2 text-sm">
+          <strong className="text-burgundy">Thương lái hôm nay:</strong> {r.npcToday.accounts} người bán hàng trị giá {xu(r.npcToday.gross)} xu,
+          nhận {xu(r.npcToday.paid)} xu{r.npcToday.overFull > 0 ? ` · ${r.npcToday.overFull} người đã vượt mốc đủ giá` : ""}.
+        </p>
+      )}
 
       <FlowChart days={r.daily} />
       <SupplyChart days={r.daily} />

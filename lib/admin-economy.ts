@@ -14,7 +14,11 @@ export interface EconomyReport {
   flows: Record<EconWindow, EconFlow[]>;
   daily: EconDay[];
   rooms: Array<{ name: string; mult: number; wealth: number }>;
+  /** 0100: today's thương lái — goods sold to NPCs (catalog value), what they paid, accounts past the full-price mark. */
+  npcToday: { gross: number; paid: number; accounts: number; overFull: number } | null;
 }
+/** 0100 econ_params: a knob root can change without a migration. */
+export interface EconParam { key: string; value: number; min: number; max: number; note: string; updatedAt: string | null; updatedBy: string | null }
 export type EconWindow = "d1" | "d7" | "d30";
 export const ECON_WINDOWS: { id: EconWindow; label: string; days: number }[] = [
   { id: "d1", label: "24 giờ", days: 1 }, { id: "d7", label: "7 ngày", days: 7 }, { id: "d30", label: "30 ngày", days: 30 },
@@ -135,7 +139,32 @@ export function parseEconomy(data: unknown): EconomyReport {
       return { day: String(t.day ?? ""), in: num(t.in), out: num(t.out), net: num(t.net), accounts: num(t.accounts), supply: num(t.supply) };
     }),
     rooms: arr(o.rooms).map((x) => { const t = obj(x); return { name: String(t.name ?? ""), mult: num(t.mult), wealth: num(t.wealth) }; }),
+    npcToday: o.npc_today && typeof o.npc_today === "object"
+      ? (() => { const t = obj(o.npc_today); return { gross: num(t.gross), paid: num(t.paid), accounts: num(t.accounts), overFull: num(t.over_full) }; })()
+      : null,
   };
+}
+
+export function parseEconParams(data: unknown): EconParam[] {
+  return arr(data).map((x) => {
+    const t = obj(x);
+    return {
+      key: String(t.key ?? ""), value: num(t.value), min: num(t.min), max: num(t.max), note: String(t.note ?? ""),
+      updatedAt: typeof t.updated_at === "string" ? t.updated_at : null, updatedBy: typeof t.updated_by === "string" ? t.updated_by : null,
+    };
+  }).filter((p) => p.key !== "");
+}
+
+export async function adminEconParams(token: string): Promise<EconParam[]> {
+  const { data, error } = await supabase.rpc("admin_econ_params", { p_session_token: token });
+  if (error) throw error;
+  return parseEconParams(data);
+}
+
+export async function adminEconSet(token: string, key: string, value: number): Promise<EconParam[]> {
+  const { data, error } = await supabase.rpc("admin_econ_set", { p_session_token: token, p_key: key, p_value: value });
+  if (error) throw error;
+  return parseEconParams(data);
 }
 
 export async function adminEconomy(token: string): Promise<EconomyReport> {

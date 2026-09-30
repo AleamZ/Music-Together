@@ -8,7 +8,7 @@ import { critterPrice, lowerFirst } from "@/lib/game/farm/gather";
 import type { CritterPrices, FarmMine } from "@/lib/game/farm/state";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import { formatMult } from "@/lib/game/fishing/prices";
-import { marketPrice } from "@/lib/game/market/depots";
+import { MARKET_DEPOT_LABEL, marketPrice } from "@/lib/game/market/depots";
 import FieldStatus from "./FieldStatus";
 import Stepper from "./Stepper";
 
@@ -143,7 +143,7 @@ export default function RiceDepotPanel({
   onClose: () => void;
   critters?: DepotCritters | null;
   rats?: DepotRats | null;
-  /** Vựa nông sản · cô Tư at Chợ Lớn (v18.5): the same rice and hoa màu at +20% (a display copy; the market RPCs pay). */
+  /** Vựa nông sản · cô Tư at Chợ Lớn (v18.5): the same rice and hoa màu at +10% (econ v2; a display copy; the market RPCs pay). */
   market?: boolean;
 }) {
   const pay = market ? marketPrice : (xu: number) => xu;
@@ -161,7 +161,7 @@ export default function RiceDepotPanel({
     <ParchmentModal title={market ? "🌾 Vựa nông sản Chợ Lớn · cô Tư" : "🌾 Vựa lúa · cô Út"} onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         {market && (
-          <span className="self-start rounded border border-emerald-400 bg-emerald-100 px-2 font-bold text-emerald-800">Giá chợ +20%</span>
+          <span className="self-start rounded border border-emerald-400 bg-emerald-100 px-2 font-bold text-emerald-800">Giá chợ {MARKET_DEPOT_LABEL}</span>
         )}
         {!mine || !catalog ? (
           <FieldStatus failed={failed} onReload={onReload} />

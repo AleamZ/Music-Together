@@ -9,7 +9,7 @@ import type { FishRow } from "@/lib/game/fishing/state";
 export default function FishLine({ fish, species, price, children }: {
   fish: FishRow;
   species: FishSpecies | undefined;
-  /** The price shown when it is not the fish's own (Vựa cá Chợ Lớn pays +20%, v18.5). */
+  /** The price shown when it is not the fish's own (Vựa cá Chợ Lớn pays +10% since econ v2, v18.5). */
   price?: number;
   children?: ReactNode;
 }) {

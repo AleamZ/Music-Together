@@ -20,7 +20,8 @@ describe("fish prices (economy spec §5)", () => {
     expect(parseFishPrices({ mult: 2.24, wealth: 100000, ends_at: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12, bad: "x" } }))
       .toEqual({ mult: 2.24, wealth: 100000, endsAt: "2026-09-25T08:00:00+00:00", factors: { ca_ro: 1.12 } });
     expect(parseFishPrices(undefined)).toBeNull();
-    expect(parseFishPrices({ mult: 0.5, ends_at: "2026-09-25T08:00:00+00:00" })).toBeNull();
+    expect(parseFishPrices({ mult: 0, ends_at: "2026-09-25T08:00:00+00:00" })).toBeNull();
+    expect(parseFishPrices({ mult: 0.8, ends_at: "2026-09-25T08:00:00+00:00" })?.mult).toBe(0.8);   // econ v2: may go below 1
     expect(parseFishPrices({ mult: 2, ends_at: 5 })).toBeNull();
     expect(parseFishPrices({ mult: 2, wealth: "?", ends_at: "2026-09-25T08:00:00+00:00" }))
       .toEqual({ mult: 2, wealth: 0, endsAt: "2026-09-25T08:00:00+00:00", factors: {} });

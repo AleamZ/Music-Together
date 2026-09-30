@@ -144,11 +144,11 @@ export const MARKET_INTERACTABLES: Interactable[] = [
     use: { x: 680, y: 176 }, face: "up",
   },
   {
-    id: "market_fish_depot", kind: "market_fish_depot", label: "Vựa cá Chợ Lớn", prompt: "Bán cá (+20%) · chú Hai", rect: FISH_DEPOT_STALL,
+    id: "market_fish_depot", kind: "market_fish_depot", label: "Vựa cá Chợ Lớn", prompt: "Bán cá (+10%) · chú Hai", rect: FISH_DEPOT_STALL,
     use: counterUse(FISH_DEPOT_STALL), face: "up",
   },
   {
-    id: "market_farm_depot", kind: "market_farm_depot", label: "Vựa nông sản", prompt: "Bán lúa, hoa màu (+20%) · cô Tư",
+    id: "market_farm_depot", kind: "market_farm_depot", label: "Vựa nông sản", prompt: "Bán lúa, hoa màu (+10%) · cô Tư",
     rect: FARM_DEPOT_STALL, use: counterUse(FARM_DEPOT_STALL), face: "up",
   },
   {

@@ -266,7 +266,7 @@ export async function finishCast(token: string, castId: string, success: boolean
   return lost;
 }
 
-/** Sells fish to cô Ba at the pond, or (`market`, v18.5) to Vựa cá Chợ Lớn, which pays +20%. */
+/** Sells fish to cô Ba at the pond, or (`market`, v18.5) to Vựa cá Chợ Lớn, which pays +10% (econ v2). */
 export async function sellFish(token: string, ids: string[], market = false): Promise<{ sold: number; earned: number; state: FishingState }> {
   const r = await call(market ? "sell_fish_market" : "sell_fish", { p_session_token: token, p_fish_ids: ids });
   return { sold: Number(r.sold ?? 0), earned: Number(r.earned ?? 0), state: stateOf(r.state) };

@@ -1,7 +1,8 @@
 import type { FishSpecies } from "./catalog";
 
-/** The room's fish price index from fishing_board (economy spec §5): the multiplier, the average wealth behind it,
- *  when the 3-hour period ends, and each species' season factor. */
+/** The room's fish price index from fishing_board (economy spec §5): the multiplier (econ v2: one server-wide knob, 1.00
+ *  by default, which root may set below 1), the room's average wealth (display only since v2), when the 3-hour period
+ *  ends, and each species' season factor. */
 export interface FishPrices {
   mult: number;
   wealth: number;
@@ -36,7 +37,7 @@ export function parseFishPrices(v: unknown): FishPrices | null {
   if (!v || typeof v !== "object") return null;
   const o = v as Record<string, unknown>;
   const mult = Number(o.mult);
-  if (!Number.isFinite(mult) || mult < 1 || typeof o.ends_at !== "string") return null;
+  if (!Number.isFinite(mult) || mult <= 0 || typeof o.ends_at !== "string") return null;
   const wealth = Number(o.wealth);
   const factors: Record<string, number> = {};
   if (o.factors && typeof o.factors === "object") {

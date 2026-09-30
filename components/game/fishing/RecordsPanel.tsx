@@ -98,8 +98,7 @@ export default function RecordsPanel({ catalog, load, onClose }: {
           prices ? (
             <>
               <p>
-                Hệ số phòng {formatMult(prices.mult)} · tài sản trung bình {formatXu(prices.wealth)} · giá đổi lúc{" "}
-                {endsAtText(prices.endsAt)}
+                Hệ số giá cá toàn server {formatMult(prices.mult)} · mùa cá đổi lúc {endsAtText(prices.endsAt)}
               </p>
               <table className="w-full text-left">
                 <thead className="text-base opacity-80">

@@ -3,11 +3,11 @@
 import { ParchmentModal } from "@/components/game/Parchment";
 import { formatXu, type FishingCatalog } from "@/lib/game/fishing/catalog";
 import type { FishingState } from "@/lib/game/fishing/state";
-import { marketPrice } from "@/lib/game/market/depots";
+import { MARKET_DEPOT_LABEL, marketPrice } from "@/lib/game/market/depots";
 import FishLine from "./FishLine";
 
 /** 🐟 Vựa cá · cô Ba (spec §10.2): sell one fish or all of them. `market` (v18.5): Vựa cá Chợ Lớn · chú Hai, which pays
- *  +20% (a display copy; the server's sell_fish_market decides what is paid). */
+ *  +10% (econ v2; a display copy; the server's sell_fish_market decides what is paid). */
 export default function DepotPanel({ state, catalog, busy, onSell, onClose, market = false }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
@@ -23,7 +23,7 @@ export default function DepotPanel({ state, catalog, busy, onSell, onClose, mark
     <ParchmentModal title={market ? "🐟 Vựa cá Chợ Lớn · chú Hai" : "🐟 Vựa cá · cô Ba"} onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">
         {market && (
-          <span className="self-start rounded border border-emerald-400 bg-emerald-100 px-2 font-bold text-emerald-800">Giá chợ +20%</span>
+          <span className="self-start rounded border border-emerald-400 bg-emerald-100 px-2 font-bold text-emerald-800">Giá chợ {MARKET_DEPOT_LABEL}</span>
         )}
         {!state ? (
           <p>Đang tải giỏ đồ…</p>
