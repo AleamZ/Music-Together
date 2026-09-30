@@ -104,3 +104,11 @@ describe("net throw poses", () => {
     expect(previewTime("net_throw", 4)).toBe(1);
   });
 });
+
+describe("two-handed rod", () => {
+  it("strikes back over the shoulder when the reel begins, then winds with the rod lower", () => {
+    const strike = poseAt("reel", 0.15), winding = poseAt("reel", 2);
+    expect(strike.armR.x).toBeGreaterThan(winding.armR.x + 0.8);
+    for (const p of [poseAt("cast", 3), poseAt("bite", 1), winding]) expect(p.armL.z).toBeLessThan(-0.6);   // the left hand across on the rod
+  });
+});

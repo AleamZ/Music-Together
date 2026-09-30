@@ -8,13 +8,24 @@ export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel"
 export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch", "net_hold", "net_throw", "net_pull", "net_won"];
 /** Actions that play once from their start (the caller passes the time since the action began, not a running clock):
  *  the cast's throw, then the rod held out while the line waits. */
-export const ONE_SHOT_ACTS: ReadonlySet<CharAct> = new Set<CharAct>(["cast", "net_throw"]);
+export const ONE_SHOT_ACTS: ReadonlySet<CharAct> = new Set<CharAct>(["cast", "reel", "net_throw"]);
 /** The cast's throw (s): wind-up, snap, follow-through; then the hold. */
 export const CAST_S = 0.95;
 
 /** The net's throw (s): the wind-up and twist, the fling (the net leaves the hands at NET_RELEASE_S), then the hold. */
 export const NET_THROW_S = 1.0;
 export const NET_RELEASE_S = 0.5;
+
+/** The strike (giật cần) when the reel begins, like the 2D rod's STRIKE_MS: whipped back over the shoulder, then down. */
+export const STRIKE_S = 0.48;
+
+/** Both hands on the rod (the 2D angler's grip): the left fist follows the right one along the rod, reaching across the
+ *  body to the butt behind it, bent a little more; `crank` turns it in a small circle (winding the reel). */
+function twoHands(p: Pose, crank = 0): void {
+  p.armL.x = p.armR.x + 0.35 + Math.sin(crank) * 0.08;
+  p.armL.z = -0.85 + Math.cos(crank) * 0.05;
+  p.elbowL = Math.min(2.2, p.elbowR + 0.95 + Math.cos(crank) * 0.15);
+}
 
 /** A preview's clock for an action (the dev lab, the wardrobe): a one-shot action replays every 3 s. */
 export function previewTime(act: CharAct, t: number): number {
@@ -154,9 +165,9 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
         const wind = Math.min(1, k / 0.45), snap = k < 0.45 ? 0 : Math.min(1, (k - 0.45) / 0.18), settle = k < 0.63 ? 0 : (k - 0.63) / (CAST_S - 0.63);
         const e = settle * settle * (3 - 2 * settle);
         const swing = k < 0.45 ? -2.5 * wind : k < 0.63 ? -2.5 + 3.7 * snap : 1.2 - 0.95 * e;
-        p.armR.x = swing; p.armL.x = 0.4 + swing * 0.25;
+        p.armR.x = swing;
         p.elbowR = k < 0.45 ? 0.3 + 1.1 * wind : k < 0.63 ? 1.4 - 1.3 * snap : 0.1 + 0.2 * e;
-        p.elbowL = 0.8;
+        twoHands(p);
         p.lean = k < 0.45 ? -0.12 * wind : k < 0.63 ? 0.16 * snap : 0.16 - 0.12 * e;
         p.squash = k < 0.45 ? -0.02 * wind : 0.02 * (1 - snap);
         p.headX = k < 0.45 ? -0.1 * wind : 0.08;
@@ -165,7 +176,7 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       const b = Math.sin(s * TAU * 0.35), nod = Math.sin(s * TAU * 0.6);
       // the grip at the right hip, the long rod out over the water ~30° up; the left hand resting near the reel
       p.armR.x = 0.25 + nod * 0.03; p.armR.z = 0.2; p.elbowR = 0.3;
-      p.armL.x = 0.45; p.armL.z = -0.15; p.elbowL = 0.9;
+      twoHands(p);
       p.lean = 0.04;
       p.bob = b * 0.008 - 0.004;
       p.squash = b * 0.01;
@@ -178,7 +189,7 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       const j = Math.sin(s * TAU * 3.2), tug = Math.max(0, Math.sin(s * TAU * 1.3));
       p.rod = 1;
       p.armR.x = 0.5 + tug * 0.3 + j * 0.05; p.armR.z = 0.2; p.elbowR = 0.45 + tug * 0.15;
-      p.armL.x = 0.6 + tug * 0.25; p.armL.z = -0.15; p.elbowL = 0.85;
+      twoHands(p);
       p.lean = -0.14 - tug * 0.06;
       p.legL.x = 0.35; p.kneeL = 0.3; p.legR.x = -0.25; p.kneeR = 0.12; p.ankleR = 0.2;
       p.bob = -0.015 + j * 0.006;
@@ -190,10 +201,21 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
     }
     case "reel": {
       // the rod held up ~45° in the right hand, the left hand cranking the reel's handle in circles
-      const r = Math.sin(s * TAU * 2.2), c = Math.cos(s * TAU * 2.2);
-      p.armR.x = 0.45 + r * 0.04; p.armR.z = 0.2; p.elbowR = 0.35;
-      p.armL.x = 0.55 + r * 0.15; p.armL.z = -0.2 + c * 0.05; p.elbowL = 1.0 + c * 0.25;
-      p.lean = -0.1;
+      // ONE SHOT from the strike (t = since the reel began): the rod whipped back over the shoulder and brought down,
+      // then held ~45° while the front hand winds the reel; the rod dips and bobs under the fish's pull
+      const k = Math.max(0, t);
+      p.armR.z = 0.2;
+      if (k < STRIKE_S) {
+        const w = Math.sin(Math.PI * Math.min(1, (k / STRIKE_S) * 1.4));
+        p.armR.x = 0.45 + w * 1.5; p.elbowR = 0.35 + w * 0.5;
+        p.lean = -0.1 - w * 0.12;
+        twoHands(p);
+      } else {
+        const a = s * TAU * 2.2, pullDip = Math.sin(s * TAU * 0.9) * 0.08;
+        p.armR.x = 0.45 + pullDip; p.elbowR = 0.35;
+        twoHands(p, a);
+        p.lean = -0.1;
+      }
       p.legL.x = 0.25; p.kneeL = 0.2; p.legR.x = -0.15; p.kneeR = 0.06;
       p.rod = 1;
       break;
