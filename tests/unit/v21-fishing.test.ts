@@ -29,7 +29,9 @@ describe("0076 is the client's", () => {
     for (const x of SQL.matchAll(/\('\w+',\s+'[^']+',\s+(\d), .*'deep'\)/g)) expect(Number(x[1])).toBeGreaterThanOrEqual(3);
   });
   it("the machines' prices", () => {
-    const body = SQL.slice(SQL.indexOf("function public._machine_price("));
+    // econ v2: 0102_econ_farm.sql re-creates _machine_price (the processor 10 000 → 50 000), the newest body
+    const farm = readFileSync("supabase/migrations/0102_econ_farm.sql", "utf8").replace(/\r\n/g, "\n");
+    const body = farm.slice(farm.indexOf("function public._machine_price("));
     for (const m of MACHINES) expect(body).toContain(`when '${m.id}' then ${m.price}`);
   });
   it("the battle options", () => {

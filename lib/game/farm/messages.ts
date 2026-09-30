@@ -3,7 +3,8 @@ import { positionErrorText } from "@/lib/game/position";
 import { vitalsErrorMessage } from "@/lib/game/vitals-rpc";
 import { STORM_TEXT } from "@/lib/game/weather/rpc";
 import { COAT_NAME, type DogCoat, type DogNameProblem, type DogStatus } from "../dog";
-import { AMMO_PELLET, TOOL_SLING, type CritterKind, type UplandCrop } from "./catalog";
+import { npcCutNote } from "../economy/npc";
+import { AMMO_PELLET, landNet, SALE_MAX, SALE_MIN, SUBLEASE_MAX, TOOL_SLING, type CritterKind, type UplandCrop } from "./catalog";
 import { GATHER, lowerFirst } from "./gather";
 import { RAT, type RatRecent } from "./rats";
 import type { CatchAnswer } from "./rpc";
@@ -57,7 +58,9 @@ export const NOT_OPEN_153 = "Bắt cua, mò ốc chưa mở — chủ phòng c�
 export const NOT_OPEN_17 = "Mùa chuột chưa mở — chủ phòng cần chạy migration 0019.";
 export const FIELD_LOADING = "Đang tải đồng ruộng…";
 export const FIELD_FAILED = "Chưa tải được đồng ruộng — thử lại nhé.";
-export const FARM_LIMIT_TEXT = "Bạn đang canh tác 2 thửa rồi.";
+/** Econ v2 (0102): the limits count every room. */
+export const FARM_LIMIT_TEXT = "Bạn đang canh tác 2 thửa rồi (tính cả các sảnh).";
+export const OWN_LAND_TEXT = "Bạn đã có một thửa đất tư — mỗi người chỉ một thửa (tính cả các sảnh).";
 export const NO_SEED = "Chưa có giống — ghé tiệm anh Hai.";
 export const TOO_FAST = "Từ từ thôi…";
 /** A harvest round past the server's window (`work expired`), or one left idle until then (v15.2 R6). */
@@ -182,9 +185,15 @@ export function pestSnailText(plot: number, snails: CatchAnswer | null, boxName:
   return `🐌 Bắt ốc thửa ${plot} — ${boxWord(boxName)} đầy, thả ${e} con xuống mương.`;
 }
 
-/** cô Út's toast for sell_critters (§13.4), from its `sold`. */
-export function critterSaleText(n: number, xu: number): string {
-  return `💰 Bán ${n} con cua ốc được ${xu.toLocaleString("vi-VN")} xu.`;
+/** A sale's toast with the thương lái's cut after it, when there was one (econ v2). */
+const withCut = (text: string, cut: number): string => {
+  const note = npcCutNote(cut);
+  return note ? `${text} ${note}` : text;
+};
+
+/** cô Út's toast for sell_critters (§13.4), from its `sold` (what was paid) and, econ v2, the thương lái's `cut`. */
+export function critterSaleText(n: number, xu: number, cut = 0): string {
+  return withCut(`💰 Bán ${n} con cua ốc được ${xu.toLocaleString("vi-VN")} xu.`, cut);
 }
 
 export function boughtText(itemName: string, qty: number): string {
@@ -225,8 +234,23 @@ export function ratSpawnText(plot: number): string {
 export function dogCatchText(dog: string): string {
   return `🐕 ${dog} vồ được một con chuột! Đem bán cho cô Út nhé.`;
 }
-export function ratSaleText(n: number, xu: number): string {
-  return `💰 Bán ${n} con chuột được ${xu.toLocaleString("vi-VN")} xu.`;
+export function ratSaleText(n: number, xu: number, cut = 0): string {
+  return withCut(`💰 Bán ${n} con chuột được ${xu.toLocaleString("vi-VN")} xu.`, cut);
+}
+
+// Econ v2 (0102): player land deals — the band, the sublease cap and what the seller or owner receives.
+const vnd = (n: number): string => `${n.toLocaleString("vi-VN")} xu`;
+/** The seller's (or the owner's) share of a deal at `price`, with the fee when there is one. */
+export function landNetText(price: number, feePct: number): string {
+  return feePct > 0 ? `bạn nhận ${vnd(landNet(price, feePct))} (phí ${feePct}% bị đốt)` : `bạn nhận ${vnd(price)}`;
+}
+/** Under the sale price field: the band and the fee. */
+export function saleRuleText(feePct: number): string {
+  return `Giá từ ${vnd(SALE_MIN)} đến ${vnd(SALE_MAX)}` + (feePct > 0 ? `; bán được bạn nhận ${100 - feePct}% (phí ${feePct}% bị đốt).` : ".");
+}
+/** Under the sublease price field: the cap and the fee. */
+export function subleaseRuleText(feePct: number): string {
+  return `Tối đa ${vnd(SUBLEASE_MAX)} một vụ` + (feePct > 0 ? `; có người thuê bạn nhận ${100 - feePct}% (phí ${feePct}% bị đốt).` : ".");
 }
 
 /** The field chip (§12.1) while rats are live: its text and its aria-label. */
@@ -352,7 +376,7 @@ export function farmErrorMessage(err: unknown, itemName?: string, action?: strin
       return round ? "Hết hạn thuê — phần lúa chưa gặt đã mất." : tp ? "Hết hạn thuê — mạ trên thửa đã mất." : "Thửa này không phải của bạn.";
     case "plot taken": return "Thửa này đã có người canh tác.";
     case "farm limit": return FARM_LIMIT_TEXT;
-    case "already own land": return "Bạn đã có đất tư trong phòng này.";
+    case "already own land": return OWN_LAND_TEXT;
     case "not for sale": return "Thửa này không rao bán.";
     case "price changed": return "Giá vừa đổi — xem lại nhé.";
     case "offer expired":

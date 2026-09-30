@@ -1,5 +1,6 @@
 // The field_state JSON (spec §11.5; v15.2 §11.6; v15.3 §11.7; v17 §10.5), camelCased, with times as ms since the epoch.
 // Pure.
+import { parseNpcQuota, type NpcQuota } from "../economy/npc";
 import { parseDog, type DogView } from "../dog";
 import { GATHER } from "./gather";
 import { parseRatBag, parseRatCaps, parseRats, type FieldRats, type RatBag, type RatCaps } from "./rats";
@@ -125,11 +126,17 @@ export interface FarmMine {
   ratCaps: RatCaps;
   /** v17: the account's dog (null: none yet, or before 0019). */
   dog: DogView | null;
+  /** Econ v2 (0102): the thương lái's day — the crabs, snails and rats sold to NPCs today (null or absent before 0102). */
+  npc?: NpcQuota | null;
 }
 
 export interface FieldMine extends FarmMine {
   ownedPlot: number | null;
   farming: number[];
+  /** Econ v2 (0102): the plots I farm in every room, and whether I own a private plot in any room (null or absent before
+   *  0102: the limits were per room). */
+  farmTotal?: number | null;
+  ownsLand?: boolean | null;
   myOffers: OfferView[];
   incomingOffers: OfferView[];
 }
@@ -143,6 +150,9 @@ export interface FieldState {
   critterPrices: CritterPrices | null;
   /** v17: the field's rats; null before 0019. */
   rats: FieldRats | null;
+  /** Econ v2 (0102): the % of a plot sale or a sublease that is burned — the seller or owner gets the rest (0 or absent
+   *  before). */
+  p2pFeePct?: number;
 }
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
@@ -271,7 +281,7 @@ export function parseFarmMine(json: unknown): FarmMine | null {
   const tank = t ? { item: typeof t.item === "string" ? t.item : null, charges: num(t.charges) } : null;
   return {
     items, rice, coins: num(m.coins), giftClaimed: m.gift_claimed === true, produce, tank, ...parseGather(m),
-    rats: parseRatBag(m.rats), ratCaps: parseRatCaps(m.rat_caps), dog: parseDog(m.dog),
+    rats: parseRatBag(m.rats), ratCaps: parseRatCaps(m.rat_caps), dog: parseDog(m.dog), npc: parseNpcQuota(m.npc),
   };
 }
 
@@ -296,11 +306,14 @@ export function parseFieldState(json: unknown): FieldState | null {
       ...base,
       ownedPlot: numOrNull(m.owned_plot),
       farming: arr(m.farming).filter((x): x is number => typeof x === "number"),
+      farmTotal: numOrNull(m.farm_total),
+      ownsLand: typeof m.owns_land === "boolean" ? m.owns_land : null,
       myOffers: offers(m.my_offers),
       incomingOffers: offers(m.incoming_offers),
     },
     critterPrices: numOrNull(cp.mult) === null ? null : { mult: num(cp.mult), endsAt: time(cp.ends_at) },
     rats: parseRats(j.rats),
+    p2pFeePct: num(j.p2p_fee_pct, 0),
   };
 }
 

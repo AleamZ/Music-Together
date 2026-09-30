@@ -182,14 +182,20 @@ export function uplandHours(u: UplandCrop, k: number): number {
   return (u.stages[u.stages.length - 1]?.untilH ?? 0) + (u.pickGapH ?? 0) * (k - 1);
 }
 
-// The land rules' numbers — the server's constants in 0013 (spec §7; the prices are economy spec §3.1).
+// The land rules' numbers — the server's constants in 0013 (spec §7; the prices are economy spec §3.1), and since econ
+// v2 (0102_econ_farm.sql) the sale band, the sublease cap and the limits counted across all rooms.
 export const RENT_PRICE = 10_000;
 export const PLOT_PRICE = 800_000;
 export const SELL_BACK_PRICE = 400_000;
 export const LEASE_HOURS = 96;
-export const SUBLEASE_MAX = 100_000;
-export const SALE_MAX = 5_000_000;
+/** A season's sublease: 1 … SUBLEASE_MAX xu (econ v2: was 100 000). */
+export const SUBLEASE_MAX = 50_000;
+/** A sale listing or a purchase offer between players: SALE_MIN … SALE_MAX xu (econ v2: was 1 … 5 000 000). */
+export const SALE_MIN = 400_000;
+export const SALE_MAX = 2_400_000;
+/** Plots farmed at once, and private plots owned, per account in all rooms together (econ v2: was per room). */
 export const FARM_LIMIT = 2;
+export const OWN_LIMIT = 1;
 export const OFFER_HOURS = 24;
 export const DRY_HOURS = 3;
 export const DRYING_SLOTS = 4;
@@ -235,6 +241,12 @@ export const PELLET_STEP = 10;
 /** What the harvester costs for a plot with `parts` already cut. */
 export function harvesterPrice(parts: number): number {
   return HARVESTER_PART_PRICE * (HARVEST_PARTS - parts);
+}
+
+/** What the seller of a plot, or the owner of a sublease, receives for a deal at `price` (econ v2, 0102 `_land_sale` /
+ *  `_farm_do_rent_sublease`): floor(price × (100 − feePct) / 100). The buyer pays the price; the fee is burned. */
+export function landNet(price: number, feePct: number): number {
+  return Math.floor((price * (100 - feePct)) / 100);
 }
 
 /** What cô Út pays for hoa màu, fresh: kg · price_per_kg (sell_produce). */

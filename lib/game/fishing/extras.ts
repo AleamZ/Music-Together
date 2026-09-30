@@ -10,12 +10,12 @@ export const BOAT = { pier: { x: 378, y: 206 }, deck: { x: 356, y: 116 }, price:
 /** 0076's deep-water species (rarity 3–5; the dock never lands them). */
 export const DEEP_SPECIES: readonly string[] = ["ca_leo", "ca_bong_tuong", "ca_chien", "ca_duoi_song", "ca_tra_dau", "rua_mai_vang"];
 
-/** 0076 _machine_price(). */
+/** _machine_price() (0076; econ v2's 0102 re-prices the processor). */
 export type MachineId = "sprinkler" | "harvester" | "processor";
 export const MACHINES: ReadonlyArray<{ id: MachineId; name: string; price: number; blurb: string }> = [
   { id: "sprinkler", name: "Máy tưới", price: 6000, blurb: "Đưa mực nước thửa của bạn tới mức cần chỉ một lần bấm, ở đâu cũng được." },
   { id: "harvester", name: "Máy gặt riêng", price: 15000, blurb: "Gặt trọn thửa lúa chín trong 30 giây — không tốn tiền thuê." },
-  { id: "processor", name: "Máy chế biến", price: 10000, blurb: "Biến lúa khô và hoa màu thành hàng giá trị cao hơn." },
+  { id: "processor", name: "Máy chế biến", price: 50000, blurb: "Biến lúa khô và hoa màu thành hàng giá trị cao hơn." },   // econ v2 (0102): was 10 000
 ];
 
 /** Fishing battle options (0076 fb_create). */
