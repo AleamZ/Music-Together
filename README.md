@@ -523,3 +523,27 @@ A change applies at once. Aim for a daily net flow of 0–1 % of the supply; if 
 - `market_list` / `auction_create` take the wallet lock before counting what is already listed, so two parallel calls cannot list one asset twice.
 
 `tests/sql/anticheat-v3-smoke.sql` checks it (with `-v fixtures=<repo>/tests/fixtures/reel-cases.json`).
+
+## Hòm thư và code quà (0111)
+
+`supabase/migrations/0111_mailbox.sql` is **additive and re-runnable**; run it after `0109` (0110 is another change),
+then deploy the client. Every player RPC is guarded by `_ac_account`; the admin ones by `_auth_root`.
+
+- **📬 Hòm thư** (toolbar button, red badge = unread): what a player receives now waits in a mail until they press
+  **Nhận** (or **Nhận tất cả**). Trades (each side's items and xu after the 5 % burn; the payer pays at once), Chợ người
+  chơi / sạp purchases (the goods to the buyer, the share to the seller), auctions (the goods to the winner, the share to
+  the seller), admin gifts and gift codes all arrive here. The claim is atomic and happens once (the mail row is locked);
+  when there is no room (`bucket full`, `bait full`, `bag full` over 99, a fashion item already owned) it is refused and
+  the mail stays. A fish in a mail is held in escrow (`mail_fish`, like the fridge): it cannot be sold, listed or used
+  until claimed. 0106's trade rules are unchanged; `trade_daily_in` counts the trade mails sent today, claimed or not.
+- **Expiry:** 30 days. An unclaimed trade mail goes back to its giver once (a "Hoàn trả" mail; the burned 5 % stays
+  burned); any other unclaimed mail (market, admin, code, return) is dropped with its escrow. A wiped account's
+  unclaimed mail is dropped.
+- **Code quà:** the code box in the mailbox. A code gives a mail (never a direct grant), once per account, up to its
+  `max_uses`, between its start and end, while enabled. 10 wrong codes in an hour lock the box for the rest of that hour
+  and log the soft anti-cheat event `code_bruteforce`.
+- **/admin → Quà & code:** send a gift (xu ≤ 1 000 000 and up to 8 items — bait, seeds, fertiliser, pesticide, ammo,
+  pet food 1–99, or fashion items) to listed usernames or to every account; create, list and disable codes. Xu enter a
+  wallet only on the claim, as the new ledger reasons `admin_gift` and `gift_code` (faucets in /admin → Kinh tế, never
+  scaled by the bot score); every admin gift is recorded in `mail_batches`.
+- Smoke: `tests/sql/mailbox-smoke.sql` (see `tests/sql/README.md`).

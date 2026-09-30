@@ -7,6 +7,7 @@ import {
   type Asset, type Offer, type Trade, type TradeState,
 } from "@/lib/game/economy/model";
 import { econState, tradeCancel, tradeConfirm, tradeOffer } from "@/lib/game/economy/rpc";
+import { MAIL_DAYS } from "@/lib/game/mail/model";
 import { ParchmentModal } from "../Parchment";
 
 const keyOf = (a: { kind: string; ref: string }) => `${a.kind}:${a.ref}`;
@@ -81,6 +82,10 @@ export default function TradeWindow({ token, trade, onState, onChanged }: {
     <ParchmentModal title={`🤝 Giao dịch với ${trade.partnerName}`} onClose={() => void run(() => tradeCancel(token, trade.id))} className="sm:max-w-2xl">
       <div className="flex flex-col gap-3 overflow-y-auto font-vt text-lg leading-tight" data-testid="trade-window">
         <p className="text-base">Hai bên đưa đồ vào, cùng bấm xác nhận thì đổi ngay. Phải đứng gần nhau; bỏ không {TRADE_IDLE_MIN} phút thì tự huỷ.</p>
+        <p className="text-base" data-testid="trade-mail-note">
+          📬 Đổi xong, đồ và xu bên kia đưa sẽ gửi vào Hòm thư của bạn (nút 📬 trên thanh công cụ) — mở thư và bấm &quot;Nhận&quot;. Thư
+          không nhận trong {MAIL_DAYS} ngày sẽ trả lại người đưa.
+        </p>
         <p className="text-sm opacity-80">
           Xu đưa qua giao dịch bị đốt {trade.feePct} % (người nhận được {100 - trade.feePct} %); người nhận xu cần tài khoản từ {RECV_MIN_DAYS} ngày
           tuổi và cấp {RECV_MIN_LEVEL} trở lên. Đồ vật thì đổi thoải mái, không mất phí.

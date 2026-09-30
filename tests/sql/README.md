@@ -157,3 +157,18 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   `auction_create` lock the wallet before the reserved sum). Needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json`;
   it switches the mode to `enforce` and back, and deletes its accounts and room. Re-apply 0108 after any smoke that
   `\i`s 0064 or 0073 (they put the old `_ac_guard` / `market_list` back).
+
+## Hòm thư (0111)
+
+- `mailbox-smoke.sql` (0111: the mailbox and gift codes — a trade delivers into both mailboxes (the payer pays at once,
+  the receiver's xu less the burn and its items wait; the escrowed fish is not sellable or listable; one claim, a second
+  and another account's refused; `trade_daily_in` counts the mail); a fish to a full bucket and a stack over 99 are
+  refused and the mail stays, `mail_claim_all` lists the refusal; the board purchase and an auction deliver by mail;
+  admin gifts to usernames / to all, root only, `admin_gift` on the claim; codes case-insensitive, once per account,
+  `max_uses`, expired / not started / disabled, the 10-failure lock and the soft `code_bruteforce`; an expired trade mail
+  returns to its giver, a market mail is dropped with its escrow; delete only claimed or empty mail; the wipe): chain-level,
+  re-runs 0111 twice with `\i`; it turns `room_creation_open` on and the mode to `log`, restores both, and deletes its
+  accounts, room, codes and gift batches. **Re-apply 0111 after `econ-p2p-smoke.sql` or `v21-economy-smoke.sql`** (they put
+  0106's / 0073's `trade_confirm`, `_econ_buy`, `_econ_settle` and `_econ_trade_left` back, which deliver directly).
+  `anticheat-guards.sql` lists the four admin RPCs and calls the six player RPCs in its lock / build loops (91 calls), so
+  it needs 0111.
