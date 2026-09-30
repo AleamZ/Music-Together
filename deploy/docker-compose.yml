@@ -1,5 +1,6 @@
 # The VPS stack (deploy/README.md). `app` is the Next.js server on 127.0.0.1:3000 (never exposed directly); the domain
-# reaches it through ONE of:
+# reaches it through ONE of (deploy.sh picks "quick" by itself while no tunnel token is set):
+#   - profile "quick":  a temporary https://….trycloudflare.com link, before the domain is ready
 #   - profile "tunnel": Cloudflare Tunnel (cloudflared) — works behind a NAT VPS with no open 80/443, HTTPS by Cloudflare
 #   - profile "caddy":  Caddy on 80/443 with automatic Let's Encrypt (needs those two ports forwarded to the VPS)
 # One stack per branch (dev, main): scripts/vps/deploy.sh runs it as project "music-together-<branch>" from that
@@ -25,6 +26,15 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on: [app]
+    restart: unless-stopped
+
+  # no domain yet: a Cloudflare quick tunnel — a free random https://<words>.trycloudflare.com link, no account needed
+  # (it changes on every restart; deploy.sh prints it)
+  quicktunnel:
+    profiles: ["quick"]
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://app:3000
     depends_on: [app]
     restart: unless-stopped
 

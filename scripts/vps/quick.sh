@@ -29,6 +29,7 @@ if [ "$SAME" = y ] || [ "$SAME" = Y ]; then URL_M="$URL"; KEY_M="$KEY"; else
   URL_M=$(ask "Supabase URL cho main"); KEY_M=$(ask "Supabase key cho main"); fi
 
 say "3/4  Cloudflare Tunnel token (Zero Trust → Networks → Tunnels → tunnel → chuỗi eyJ…). Chưa có thì Enter."
+echo "   (chưa có domain: cứ Enter — web sẽ chạy trên link tạm miễn phí https://….trycloudflare.com)"
 TD=$(ask "Token tunnel DEV  (dev.muziktogether.io.vn)")
 TM=$(ask "Token tunnel MAIN (muziktogether.io.vn)")
 
@@ -49,7 +50,7 @@ done
 say "Trạng thái"
 docker ps --format 'table {{.Names}}\t{{.Status}}' | grep music-together || echo "(chưa có container nào)"
 for e in dev main; do
-  grep -q '^CLOUDFLARE_TUNNEL_TOKEN=.\+' "/opt/music-together-$e/.env" || echo "⚠️  $e chưa có token tunnel → chưa lên domain (chạy lại script khi có token)"
+  grep -q '^CLOUDFLARE_TUNNEL_TOKEN=.\+' "/opt/music-together-$e/.env" || echo "ℹ️  $e đang dùng link tạm miễn phí *.trycloudflare.com (xem dòng 🌐 ở trên). Có domain thì chạy lại script, dán token."
 done
 
 say "Để bật tự động deploy, vào GitHub → Settings → Secrets and variables → Actions, thêm 4 secret:"
