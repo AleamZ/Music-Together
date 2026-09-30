@@ -56,8 +56,10 @@ export function useLiveDig(sync: LiveSync | null, period: number, need: number, 
       const seenAt = liveRef.current.at.current?.[cur.hits + 1];
       const on = cur.centres[cur.hits] >= 0 && seenAt !== undefined && now - seenAt >= GATE_GUARD_MS;
       while (cur.tick < due && cur.outcome === "open") {
-        const hit = struck.current && on && canStrike(cur);
-        struck.current = false;
+        // a press is stamped on the tick it was made (the last one due), not on the first of a catch-up after a slow
+        // frame: an earlier tick could claim the strike before its vein showed, and the server refuses that
+        const hit = struck.current && on && canStrike(cur) && cur.tick === due - 1;
+        if (cur.tick === due - 1) struck.current = false;
         const before = cur.hits;
         cur = stepMineRound(cur, hit);
         if (hit) {
