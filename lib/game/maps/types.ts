@@ -13,7 +13,7 @@ export type InteractKind =
   | "card_table" | "card_rules" | "crab_hole" | "snail_bed"
   // v18.4: Chợ Lớn's restaurant counter and clothes shop counter
   | "restaurant" | "clothes_shop"
-  // v18.5: Chợ Lớn's vehicle stall, and its fish and produce depots (they pay +20%)
+  // v18.5: Chợ Lớn's vehicle stall, and its fish and produce depots (they pay +10% since econ v2)
   | "vehicle_shop" | "market_fish_depot" | "market_farm_depot"
   // v18.6: anh Ba's salon at Chợ Lớn
   | "salon"

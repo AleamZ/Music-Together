@@ -42,16 +42,17 @@ export interface FieldData {
     Promise<(MineAnswer & { crab: CatchAnswer & { hits: number } }) | null>;
   /** Mò ốc (v15.3 §7.3): 1–3 snails from bed `bed`; `boxName` as for crabStart. */
   pickSnailBed: (bed: number, boxName?: string) => Promise<(MineAnswer & { snails: CatchAnswer }) | null>;
-  /** Sells every critter of a kind to cô Út, or all of them (null), at their stored prices (v15.3 R15). */
-  sellCritters: (kind: string | null) => Promise<(MineAnswer & { sold: { n: number; xu: number } }) | null>;
+  /** Sells every critter of a kind to cô Út, or all of them (null), at their stored prices (v15.3 R15); econ v2: `cut` is
+   *  what the thương lái kept back. */
+  sellCritters: (kind: string | null) => Promise<(MineAnswer & { sold: { n: number; xu: number; cut: number } }) | null>;
   /** v17 (§6.1): aim the ná at a live rat. A refusal's text goes to `onError` when given (the SlingGame shows it). */
   slingStart: (rat: number, onError?: (text: string) => void, at?: { x: number; y: number }) => Promise<{ state: FieldState; aim: SlingAim } | null>;
   /** A shot; a hit catches. Refusals read in the SlingGame's context ("too fast" is "Đang nạp đạn…"). */
   slingShoot: (rat: number, hit: boolean, onError?: (text: string) => void, input?: SlingShotInput) => Promise<{ state: FieldState; shot: ShotAnswer } | null>;
   /** My dog's pounce (§7.2); a refusal's text goes to `onError` when given (the auto-hunt shows none). */
   dogHunt: (rat: number, onError?: (text: string) => void) => Promise<{ state: FieldState; price: number } | null>;
-  /** cô Út buys every rat in the bag at the prices fixed at each catch (§5.6). */
-  sellRats: () => Promise<(MineAnswer & { sold: { count: number; xu: number } }) | null>;
+  /** cô Út buys every rat in the bag at the prices fixed at each catch (§5.6); econ v2: `cut` as for sellCritters. */
+  sellRats: () => Promise<(MineAnswer & { sold: { count: number; xu: number; cut: number } }) | null>;
   /** Someone changed a plot (`fp`): one refetch FP_GATHER_MS after the first of a burst, and refetch starts at least
    *  FP_MIN_GAP_MS apart. */
   plotChanged: () => void;

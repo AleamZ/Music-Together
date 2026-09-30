@@ -47,6 +47,8 @@ export default function StatsPanel({ token }: { token: string }) {
   const [stats, setStats] = useState<AnticheatStats | null>(null);
   const [minBuild, setMinBuild] = useState("");
   const [hard, setHard] = useState("");
+  const [rateSoft, setRateSoft] = useState("");
+  const [rateBlock, setRateBlock] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -54,6 +56,8 @@ export default function StatsPanel({ token }: { token: string }) {
     setStats(s);
     setMinBuild(String(s.config.min_client_build));
     setHard(String(s.config.auto_blacklist_hard));
+    setRateSoft(String(s.config.rate_soft_per_min ?? ""));
+    setRateBlock(String(s.config.rate_block_per_min ?? ""));
   }, []);
   const load = useCallback(() => adminAnticheatStats(token).then(show), [token, show]);
   useEffect(() => {
@@ -110,6 +114,19 @@ export default function StatsPanel({ token }: { token: string }) {
             <span>vi phạm cứng trong 30 ngày (≥ 2 ngày khác nhau)</span>
             <button type="button" className={BUTTON} disabled={busy} onClick={() => saveConfig({ auto_blacklist_hard: Number(hard || "0") })}>Lưu</button>
           </div>
+          {stats.config.rate_soft_per_min != null && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span>Mỗi tài khoản gọi máy chủ quá</span>
+              <input aria-label="Ngưỡng cảnh báo mỗi phút" inputMode="numeric" value={rateSoft}
+                onChange={(e) => setRateSoft(e.target.value.replace(/\D/g, "").slice(0, 6))} className="w-16 rounded border border-gold-200 px-1" />
+              <span>lần/phút thì ghi nhận, tới</span>
+              <input aria-label="Ngưỡng chặn mỗi phút" inputMode="numeric" value={rateBlock}
+                onChange={(e) => setRateBlock(e.target.value.replace(/\D/g, "").slice(0, 6))} className="w-16 rounded border border-gold-200 px-1" />
+              <span>lần/phút thì chặn tới hết phút</span>
+              <button type="button" className={BUTTON} disabled={busy}
+                onClick={() => saveConfig({ rate_soft_per_min: Number(rateSoft || "0"), rate_block_per_min: Number(rateBlock || "0") })}>Lưu</button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-1">
             <label className="flex items-center gap-1">
               <input type="checkbox" checked={stats.config.stats_enabled} disabled={busy}

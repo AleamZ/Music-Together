@@ -24,8 +24,9 @@ interface ApartmentModalProps {
   onClose: () => void;
 }
 
-/** 🏢 Chung cư Phú Mỹ · chú Sáu (v19.2): the 12 flats (3 floors × 4) to rent (1500 xu / 30 days) or buy (25 000 xu); my
- *  home (enter, extend, buy, move out, who may come in) and the knocks on my door; the other flats (enter or knock). */
+/** 🏢 Chung cư Phú Mỹ · chú Sáu (v19.2): the 12 flats (3 floors × 4) to rent (2 000 xu / 30 days since econ v2) or buy
+ *  (25 000 xu); my home (enter, extend, buy, move out, who may come in) and the knocks on my door; the other flats (enter
+ *  or knock). */
 export default function ApartmentModal({ token, roomId, state, coins, onState, onEnter, onClose }: ApartmentModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

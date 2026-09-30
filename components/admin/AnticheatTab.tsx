@@ -23,6 +23,9 @@ const FOOTNOTE = "Ghi nhận mềm, ghi nhận lúc chỉ ghi nhận, của root
 export const CODE_LABEL: Record<string, string> = {
   reel_too_fast: "Kéo cá quá nhanh",
   reel_mismatch: "Kết quả kéo cá không khớp",
+  client_tamper: "Sửa thông số trên trình duyệt",
+  rate_high: "Gọi máy chủ quá nhiều (cảnh báo)",
+  rate_block: "Gọi máy chủ dồn dập (đã chặn)",
   reel_bad_input: "Thao tác kéo cá bất thường",
   quality_range: "Điểm cấy/gặt sai",
   bad_plot: "Số thửa sai",
@@ -56,6 +59,7 @@ export const CODE_LABEL: Record<string, string> = {
   fight_lookahead: "Phản xạ đấu võ nhanh hơn người (thấy trước)",
   stat_outlier: "Thống kê bất thường",
   auto_blacklist: "Tự động vào danh sách đen",
+  code_bruteforce: "Dò code quà (sai 10 lần/giờ)",
 };
 const OUTCOME_LABEL: Record<string, string> = {
   soft: "Tín hiệu mềm",

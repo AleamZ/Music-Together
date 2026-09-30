@@ -54,13 +54,33 @@ describe("0064–0067: every re-created function is its newest body plus the mar
       expect(body(M(dst), sig)).toContain(`-- ${tag}`);
     });
   }
-  it("no later migration re-creates them again — but 0078, verbatim but for its marked lines", () => {
+  it("no later migration re-creates them again — but 0078 and 0101, verbatim but for their marked lines", () => {
+    // v21 fixes: the catch flag (mt.catch); econ v2 fishing: the battle's room (mt.catch_room) and the net haul's effort
+    const tags: Record<string, string[]> = {
+      "0078_v21_fixes.sql": ["0078"], "0101_econ_fishing.sql": ["econ v2", "0078"], "0108_anticheat_v3.sql": ["0108"],
+      // Câu cá v3 (0110): 0101's finish_cast and net_haul plus the snaps, the extra hooks and the nets' pick
+      "0110_fishing_v3.sql": ["0110", "econ v2", "0078"],
+      // review fixes (0113): 0110's finish_cast with the reel round moved below the snap (the 6-arg form comes first)
+      "0113_review_fixes.sql": ["0113", "0110", "econ v2", "0078"],
+    };
     const later = readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0067");
     for (const f of later) {
       for (const [sig, , dst] of cases) {
         if (!read(`supabase/migrations/${f}`).includes(`function public.${sig.slice(0, sig.indexOf("("))}(`)) continue;
-        expect(f, sig).toBe("0078_v21_fixes.sql");                                   // v21 fixes: the catch flag (mt.catch)
-        expect(unmarked(body(M(f.slice(0, -4)), sig), "0078")).toBe(body(M(dst), sig));
+        // economy v2 (0104) re-creates the 2-arg pet_tick (the sóc's forage; tests/unit/econ-rewards.test.ts), never the
+        // 1-arg stub 0066 left
+        if (f === "0104_econ_rewards.sql" && sig === "pet_tick(p_session_token text)") {
+          expect(read(`supabase/migrations/${f}`)).not.toContain("function public.pet_tick(p_session_token text)");
+          continue;
+        }
+        // anti-cheat v3 (0108) adds a 7-arg finish_cast (the client's word) that calls the 6-arg one, never re-creating it
+        if (f === "0108_anticheat_v3.sql" && sig === "finish_cast(") {
+          expect(read(`supabase/migrations/${f}`)).toContain("p_client jsonb) returns jsonb");
+          expect(read(`supabase/migrations/${f}`).match(/create or replace function public\.finish_cast\(/g)).toHaveLength(1);
+          continue;
+        }
+        expect(Object.keys(tags), `${sig} in ${f}`).toContain(f);
+        expect(tags[f].reduce((b, tag) => unmarked(b, tag), body(M(f.slice(0, -4)), sig))).toBe(body(M(dst), sig));
       }
     }
   });

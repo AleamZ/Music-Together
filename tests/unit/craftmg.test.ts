@@ -47,7 +47,7 @@ describe("the crafting minigames (lib/game/craftmg/games.ts = 0084's replays)", 
     expect(anvilNudge(10)).toBe(100);
     expect(anvilNudge(5)).toBe(0);
     expect(anvilNudge(99)).toBe(100);
-    expect([0, 7, 8, 10, 11, 12].map(sortBonus)).toEqual([0, 0, 2, 2, 5, 5]);
+    expect([0, 7, 8, 10, 11, 12].map(sortBonus)).toEqual([0, 0, 1, 1, 2, 2]);   // econ v2 (0102 _sort_bonus): was 2 / 5 %
     expect(ANVIL.strikes).toBe(5);
   });
 

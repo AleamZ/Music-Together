@@ -167,8 +167,11 @@ begin
   perform pg_temp.cast_of('{"zone_pct": 25, "difficulty": 10, "min_reel_ms": 2000}', 5, 5, 4, true);
   h0 := (select hunger from public.vitals where account_id = a);
   c := public.start_cast(room, t, d[1], d[2]);
-  assert c->'abandoned'->>'big' = 'true' and (c->'abandoned'->>'hunger')::int = 10, format('abandoned big %s', c);
-  assert (select hunger from public.vitals where account_id = a) < h0 - 9, 'the hunger is taken';
+  -- the fall's hunger is _overboard_outcome's (0031: 10; econ v2, 0101: 5)
+  assert c->'abandoned'->>'big' = 'true'
+         and (c->'abandoned'->>'hunger')::int = (public._overboard_outcome('rod_wood', 1)->>'hunger')::int, format('abandoned big %s', c);
+  assert (select hunger from public.vitals where account_id = a) < h0 - ((public._overboard_outcome('rod_wood', 1)->>'hunger')::int - 1),
+         'the hunger is taken';
   perform pg_temp.cast_of('{"zone_pct": 25, "difficulty": 10, "min_reel_ms": 2000}', 5, 5, 4, false);
   c := public.start_cast(room, t, d[1], d[2]);
   assert c->'abandoned'->>'big' = 'false' and (c->'abandoned'->>'hunger')::int = 0, format('abandoned small %s', c);

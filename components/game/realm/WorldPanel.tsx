@@ -5,13 +5,15 @@
 import { useState } from "react";
 import { ParchmentModal } from "@/components/game/Parchment";
 import {
-  BOSS_DEFS, DUNGEON_FEE, DUNGEON_ROOMS, MAX_COMBO, PARTY_MAX, RAID_ARENA, WILD_ITEMS, WILD_SPECIES, beat, inArena, sellPrice,
-  type WildItemId,
+  BOSS_DEFS, BOSS_PAID_PER_DAY, DUNGEON_BASE, DUNGEON_FEE, DUNGEON_PAID_PER_DAY, DUNGEON_POT, DUNGEON_ROOMS, MAX_COMBO, PARTY_MAX,
+  RAID_ARENA, WILD_ITEMS, WILD_SPECIES, beat, inArena, sellPrice, type WildItemId,
 } from "@/lib/game/realm/model";
 import type { WorldState } from "@/lib/game/realm/rpc";
 import type { MapId } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 import type { World } from "./useWorld";
+import { NIGHT_MARKET_PCT, WILD_DAILY_KILLS } from "@/lib/game/realm/model";
+import { npcQuotaLine } from "@/lib/game/economy/npc";
 
 export type WorldTab = "world" | "wild" | "party" | "boss" | "dungeon";
 const TABS: ReadonlyArray<[WorldTab, string]> = [
@@ -49,7 +51,7 @@ function WorldTabView(p: { world: World; state: WorldState; now: number; isOwner
   const { world: w, state: s, now } = p;
   return (
     <div className="flex flex-col gap-2">
-      <p>{s.night ? "🌙 Đang là ban đêm (18:00–06:00): cáo, sói, gấu và đom đóm ra đồng; chợ đêm mua đồ săn giá +30 %; Sói Ma lúc 22:00." : "☀️ Đang là ban ngày: chim sẻ và hươu sao ra đồng; sạp thợ săn mở ở Bãi đất trống."}</p>
+      <p>{s.night ? `🌙 Đang là ban đêm (18:00–06:00): cáo, sói, gấu và đom đóm ra rừng tràm; chợ đêm mua đồ săn giá +${NIGHT_MARKET_PCT} %; Sói Ma lúc 22:00.` : "☀️ Đang là ban ngày: chim sẻ và hươu sao ra rừng tràm; sạp thợ săn mở ở Bãi đất trống."}</p>
       <p>Giờ Việt Nam: <b>{p.vnTime(now)}</b></p>
       <div className="pch p-2">
         <p className="font-bold">❄️ Tuyết</p>
@@ -78,9 +80,10 @@ function WildTab({ w, s, atStall }: { w: World; s: WorldState; atStall: boolean 
   const items = (Object.keys(WILD_ITEMS) as WildItemId[]).filter((k) => (bag[k] ?? 0) > 0);
   return (
     <div className="flex flex-col gap-2">
-      <p>Thú hoang sống ở Đồng lúa, Ao câu và Bãi đất trống. Lại gần để <b>săn</b>, <b>đặt bẫy</b> hoặc <b>chụp ảnh</b>. Ban đêm sói và gấu nguy hiểm: săn trượt sẽ bị hất văng, có thể ngất.</p>
+      <p>Thú hoang sống trong rừng tràm (Rừng tràm, cổng nam Bãi đất trống). Lại gần để <b>săn</b>, <b>đặt bẫy</b> hoặc <b>chụp ảnh</b>. Ban đêm sói và gấu nguy hiểm: săn trượt sẽ bị hất văng, có thể ngất. Mỗi ngày săn, bẫy tối đa {WILD_DAILY_KILLS} con.</p>
       <div className="pch p-2">
-        <p className="font-bold">🎒 Túi đồ săn {s.night ? "· 🏮 Chợ đêm +30 %" : ""}</p>
+        <p className="font-bold">🎒 Túi đồ săn {s.night ? `· 🏮 Chợ đêm +${NIGHT_MARKET_PCT} %` : ""}</p>
+        {w.npc && <p className="text-sm opacity-80">{npcQuotaLine(w.npc)}</p>}
         {items.length === 0 && <p>Chưa có gì.</p>}
         {items.map((k) => (
           <div key={k} className="flex items-center justify-between gap-2">
@@ -92,7 +95,7 @@ function WildTab({ w, s, atStall }: { w: World; s: WorldState; atStall: boolean 
           </div>
         ))}
         {!atStall && items.length > 0 && <p className="text-sm opacity-80">Mang đến sạp thợ săn (Bãi đất trống, gần cầu) để bán.</p>}
-        <p className="text-sm opacity-80">Hôm nay đã săn: {s.wild?.killsToday ?? 0}/60</p>
+        <p className="text-sm opacity-80">Hôm nay đã săn: {s.wild?.killsToday ?? 0}/{WILD_DAILY_KILLS}</p>
       </div>
       <div className="pch p-2">
         <p className="font-bold">📷 Album</p>
@@ -185,7 +188,11 @@ function BossTab({ w, s, now, mapId, pos, clock, vnTime }: { w: World; s: WorldS
       {raidDef && (
         <div className="pch p-2">
           <p className="font-bold">🐗 Boss tổ đội: {raidDef.name}</p>
-          <p className="text-sm">Cần tổ đội có ≥ 3 thành viên cùng đứng trong đấu trường giữa Bãi đất trống. Mỗi đội gọi 1 lần/giờ.</p>
+          <p className="text-sm">
+            Cần tổ đội có ≥ 3 thành viên cùng đứng trong đấu trường giữa Bãi đất trống. Mỗi người chỉ góp vào 1 lần gọi mỗi giờ
+            (lập lại đội cũng vậy). Mỗi ngày chỉ {BOSS_PAID_PER_DAY} trận boss tổ đội và {BOSS_PAID_PER_DAY} trận boss mưa/tuyết có xu,
+            sau đó chỉ có kinh nghiệm.
+          </p>
           <button type="button" className="pch-btn pch-btn-primary mt-1 px-2 py-0.5" disabled={w.busy || !s.party || !inRaid} onClick={() => w.summon()}>
             Gọi {raidDef.name}
           </button>
@@ -203,7 +210,11 @@ function DungeonTab({ w, s, now, atGate, clock }: { w: World; s: WorldState; now
   const b = beat(since);
   return (
     <div className="flex flex-col gap-2">
-      <p>Hầm ngục tổ đội: 4 phòng quái, phòng cuối là <b>Dơi Chúa</b>. Vé vào {DUNGEON_FEE} xu/người; thưởng theo công sức (5 lượt/ngày). Đứng ở cổng hầm (Bãi đất trống, phía tây) trong suốt trận.</p>
+      <p>
+        Hầm ngục (một mình hoặc cả tổ đội): 4 phòng quái, phòng cuối là <b>Dơi Chúa</b>. Vé vào {DUNGEON_FEE} xu/người. Dọn xong, mỗi
+        người có góp sức nhận {DUNGEON_BASE} xu cộng phần của quỹ {DUNGEON_POT} xu × số người, chia theo
+        công sức ({DUNGEON_PAID_PER_DAY} lượt có thưởng mỗi ngày). Đứng ở cổng hầm (Bãi đất trống, phía tây) trong suốt trận.
+      </p>
       {!atGate && <p className="text-sm opacity-80">Bạn chưa đứng ở cổng hầm ngục.</p>}
       {!run || run.status !== "open" ? (
         <>
@@ -213,7 +224,7 @@ function DungeonTab({ w, s, now, atGate, clock }: { w: World; s: WorldState; now
             Vào hầm ({DUNGEON_FEE} xu)
           </button>
           {!s.party && <p className="text-sm">Cần có tổ đội (lập một mình cũng được).</p>}
-          <p className="text-sm opacity-80">Lượt đã dọn hôm nay: {s.clearsToday}/5</p>
+          <p className="text-sm opacity-80">Lượt đã dọn hôm nay: {s.clearsToday}/{DUNGEON_PAID_PER_DAY}</p>
         </>
       ) : (
         <div className="pch p-2">

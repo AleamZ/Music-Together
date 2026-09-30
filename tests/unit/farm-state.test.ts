@@ -72,11 +72,20 @@ describe("parseFieldState", () => {
     expect(s.mine).toEqual({
       items: { seed_nep: 2 }, rice: { nep: { wet: 0, dry: 70 } }, coins: 1230, giftClaimed: true, produce: {}, tank: null,
       critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
-      rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
-      ownedPlot: 3, farming: [7],
+      rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null, npc: null,
+      ownedPlot: 3, farming: [7], farmTotal: null, ownsLand: null,
       myOffers: [{ id: "o1", plot: 2, price: 8000, expiresAt: ms("2026-09-26T10:00:00Z"), buyer: null }],
       incomingOffers: [{ id: "o2", plot: 3, price: 8500, expiresAt: ms("2026-09-26T09:00:00Z"), buyer: LAN }],
     });
+    expect(s.p2pFeePct).toBe(0);
+  });
+  it("reads econ v2's totals, the fee and the thương lái's day (0102)", () => {
+    const v2 = parseFieldState({
+      ...ANSWER, p2p_fee_pct: 5,
+      mine: { ...ANSWER.mine, farm_total: 2, owns_land: true, npc: { gross: 1200, full: 20000, half: 40000, tail_pct: 20 } },
+    })!;
+    expect(v2.p2pFeePct).toBe(5);
+    expect(v2.mine).toMatchObject({ farmTotal: 2, ownsLand: true, npc: { gross: 1200, full: 20000, half: 40000, tailPct: 20 } });
   });
   it("refuses what is not a field state", () => {
     expect(parseFieldState(null)).toBeNull();

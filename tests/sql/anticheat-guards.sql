@@ -17,6 +17,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
    where f.sig not in (
      -- accounts, rooms, the music, chat and feedback: not game actions
      'register(text,text)', 'login(text,text)', 'me(text)', 'logout(text)',
+     'change_password(text,text,text)', 'account_auth_state(text)',   -- email accounts (0112); the auth-only RPCs are not anon's
      'create_room(text,text,text)', 'join_room(text,text,text)', 'rename_room(uuid,text,text)', 'kick_member(uuid,text,uuid)',
      'assign_dj(uuid,text,uuid)', 'transfer_admin(uuid,text,uuid)', 'set_play_mode(uuid,text,text)',
      'update_room_settings(uuid,text,integer,boolean,text[],integer,boolean)', 'touch_room(uuid,text)',
@@ -39,6 +40,11 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'admin_anticheat_stats_run(text)', 'admin_blacklist_set(text,uuid,boolean,text)', 'admin_stat_review(text,uuid)',
      'admin_estate_flags(text)', 'admin_fight_config(text,jsonb)', 'admin_fight_list(text)', 'admin_fight_log(text,uuid)',
      'news_admin_list(text)', 'news_post_delete(text,uuid)', 'news_post_upsert(text,uuid,text,text,text,boolean)',
+     'admin_economy(text)', 'admin_econ_params(text)', 'admin_econ_set(text,text,numeric)',   -- economy watch/v2 (0099/0100)
+     'admin_bot_list(text)', 'admin_bot_clear(text,uuid)',                                  -- the bot score (0109)
+     'admin_mail_send(text,jsonb,text,text,integer,jsonb)', 'admin_code_list(text)',        -- the mailbox and codes (0111)
+     'admin_code_create(text,text,text,integer,jsonb,integer,timestamp with time zone,timestamp with time zone)',
+     'admin_code_disable(text,bigint)',
      -- reads
      'fishing_state(text)', 'fishing_board(uuid,text)', 'field_state(uuid,text)', 'dog_state(text)',
      'card_lobby(uuid,text)', 'card_state(uuid,text,text)', 'card_hand(uuid,text,text)', 'card_tick(uuid,text,text)',
@@ -50,6 +56,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'progress_state(text)', 'progress_leaderboard(text,text)',   -- v21 progression (0070)
      'quest_state(text)', 'login_state(text)', 'arena_state(text)', 'photo_list(text)', 'photo_get(text,bigint)',
      'photo_delete(text,bigint)',                                 -- v21 quests (0071): reads, and deleting one's own photo
+     'story_state(text)',                                         -- the story chain (0114): a read
      'profession_state(text)',                                    -- v21 professions (0077): a read
      'fb_state(uuid,text)', 'fishing_extras_state(text)',         -- v21 fishing (0076): reads (fb_state settles lazily)
      -- the position and the heartbeat: they run during a lock by design (0057), and judge every claim themselves
@@ -144,6 +151,9 @@ begin
     format('select public.sell_fish_market(%L, %L)', t, array[o]),
     format('select public.release_fish(%L, %L)', t, o),
     format('select public.repair_rod(%L, %L)', t, 'rod_wood'),
+    format('select public.fishing_equip(%L, %L, %L)', t, 'hook', 'hook_small'),                     -- 0110
+    format('select public.throw_groundbait(%L, %L, %L, %L, 37, 25)', room, t, 'gb_cam', 'pond'),      -- 0110
+    format('select public.fishing_notebook(%L)', t),                                                  -- 0110
     -- farm and land
     format('select public.rent_plot(%L, %L, 5)', room, t),
     format('select public.buy_plot(%L, %L, 1)', room, t),
@@ -217,7 +227,17 @@ begin
     format('select public.ring_accept(%L, %L, 1, 100, 0)', room, t),
     -- the pet's heartbeat (0066)
     format('select public.pet_tick(%L)', t),
-    format('select public.pet_tick(%L, %L)', t, room)];
+    format('select public.pet_tick(%L, %L)', t, room),
+    -- the mailbox and gift codes (0111)
+    format('select public.mail_list(%L)', t),
+    format('select public.mail_read(%L, 1)', t),
+    format('select public.mail_claim(%L, 1)', t),
+    format('select public.mail_claim_all(%L)', t),
+    format('select public.mail_delete(%L, 1)', t),
+    format('select public.redeem_code(%L, %L)', t, 'GUARD'),
+    -- the story chain (0114)
+    format('select public.story_accept(%L, %L)', t, 's01_chao'),
+    format('select public.story_turn_in(%L, %L, 368, 222)', t, 's01_chao')];
 end $$;
 
 insert into public.anticheat_status (account_id, locked_until)
@@ -233,7 +253,7 @@ begin
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 85, format('%s guarded calls', n);
+  assert n = 96, format('%s guarded calls', n);                                            -- 0110: +3, 0111: +6, 0114: +2
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);

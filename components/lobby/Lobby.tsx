@@ -9,6 +9,8 @@ import { createRoom } from "@/lib/supabase";
 import FeedbackButton from "@/components/feedback/FeedbackButton";
 import Logo from "@/components/brand/Logo";
 import ThemeToggle from "@/components/brand/ThemeToggle";
+import AccountModal from "@/components/auth/AccountModal";
+import LinkEmailBanner from "@/components/auth/LinkEmailBanner";
 
 export default function Lobby() {
   const { account, token, logout } = useAuth();
@@ -18,6 +20,7 @@ export default function Lobby() {
   const [roomName, setRoomName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   // Rooms are no longer created at will (0093): only root keeps the form — the path the paid private rooms will use.
   async function doCreate(e: React.FormEvent) {
@@ -37,10 +40,14 @@ export default function Lobby() {
           <FeedbackButton />
           {account?.isRoot && <Link href="/admin" className="rounded-lg border border-gold bg-cream px-3 py-1 text-sm text-burgundy">⚙️ Quản trị</Link>}
           <span className="flex items-center gap-2 rounded-full border border-gold bg-cream px-3 py-1 text-sm">
-            👤 <b>{account?.username}</b> · <button onClick={() => logout()} className="text-burgundy-accent">Đăng xuất</button>
+            👤 <button onClick={() => setAccountOpen(true)} title="Tài khoản" className="font-bold text-ink">{account?.username}</button>
+            · <button onClick={() => logout()} className="text-burgundy-accent">Đăng xuất</button>
           </span>
         </div>
       </header>
+
+      <LinkEmailBanner onLink={() => setAccountOpen(true)} />
+      {accountOpen && <AccountModal onClose={() => setAccountOpen(false)} />}
 
       <h2 className="mb-2 font-cormorant text-xl text-burgundy">Sảnh chung</h2>
       {loading ? <p className="text-ink/60">Đang tải…</p>

@@ -1,19 +1,28 @@
-// v19.1 Nhà nghỉ + giấc ngủ: the rules of 0039_motel.sql (authoritative) and its RPCs. The client uses the rules only to
-// show prices and to apply the walk buff of the state the server returned.
+// v19.1 Nhà nghỉ + giấc ngủ: the rules of 0039_motel.sql (authoritative; the prices and the rest's stamina factor are
+// 0105's, econ v2) and its RPCs. The client uses the rules only to show prices and to apply the walk buff of the state
+// the server returned.
 import { supabase } from "@/lib/supabase";
 
 export type MotelPlan = "night" | "month";
 
+/** econ v2 (0105): a night 300 (was 100), a month 6 000 (was 2 000) — still a third cheaper than 30 nights. */
 export const MOTEL_PLANS: ReadonlyArray<{ id: MotelPlan; name: string; price: number; hours: number }> = [
-  { id: "night", name: "Một đêm", price: 100, hours: 24 },
-  { id: "month", name: "Một tháng", price: 2000, hours: 30 * 24 },
+  { id: "night", name: "Một đêm", price: 300, hours: 24 },
+  { id: "month", name: "Một tháng", price: 6000, hours: 30 * 24 },
 ];
 /** Prepaid at most this far ahead. */
 export const MOTEL_MAX_AHEAD_DAYS = 60;
-/** "Ngủ ngon": hunger and thirst drain ×0.7 and walking ×1.07, for 24 h after a sleep (one sleep per Vietnam day). */
+/** "Ngủ ngon", for 24 h after a sleep (one sleep per Vietnam day): hunger and thirst drain ×0.7 (0040), walking ×1.07
+ *  and stamina regen ×REST_STAMINA (the server's _stamina_rate). */
 export const REST_DRAIN = 0.7;
 export const REST_WALK = 1.07;
+/** econ v2 (0105_econ_sinks.sql): the rested stamina regen factor, ×1.5 before. */
+export const REST_STAMINA = 1.2;
 export const REST_HOURS = 24;
+const pct = (f: number): number => Math.round(Math.abs(f - 1) * 100);
+/** The buff in words (the motel panel, the rest chip): "đói và khát chậm hơn 30 %, đi nhanh hơn 7 %, thể lực hồi nhanh hơn 20 %". */
+export const REST_EFFECT_TEXT =
+  `đói và khát chậm hơn ${pct(REST_DRAIN)} %, đi nhanh hơn ${pct(REST_WALK)} %, thể lực hồi nhanh hơn ${pct(REST_STAMINA)} %`;
 /** The sleep cutscene. */
 export const SLEEP_MS = 4200;
 

@@ -175,7 +175,11 @@ export function reelTimingSuspect(t: ReelTiming): boolean {
 }
 
 /** What the overlay hands back: the local outcome plus what finish_cast replays. */
-export interface ReelResult { caught: boolean; toggles: number[]; ticks: number }
+/** `used` (0108): the zone / difficulty / min reel the overlay really simulated — finish_cast checks them against the cast's
+ *  stored params, so a page edited to widen the zone is caught even when its reel is lost. */
+export interface ReelResult { caught: boolean; toggles: number[]; ticks: number; used?: ReelUsed }
+export interface ReelUsed { zonePct: number; difficulty: number; minReelMs: number }
+export const reelUsed = (p: ReelParams): ReelUsed => ({ zonePct: p.zonePct, difficulty: p.difficulty, minReelMs: p.minReelMs });
 
 /** Records the hold state tick by tick as the compact list finish_cast takes. */
 export class ReelRecorder {

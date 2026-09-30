@@ -15,24 +15,26 @@ import { nameTag } from "@/lib/game/social";
 import { lookFromRow } from "@/lib/game/character";
 
 const SQL = readFileSync("supabase/migrations/0070_progression.sql", "utf8").replace(/\r\n/g, "\n");
-const fnBody = (name: string) => {
-  const from = SQL.indexOf(`create or replace function public.${name}(`);
+/** Economy v2 re-created the level reward, the caps and the teleport fee (the newest bodies). */
+const SQL104 = readFileSync("supabase/migrations/0104_econ_rewards.sql", "utf8").replace(/\r\n/g, "\n");
+const fnBody = (name: string, sql = SQL) => {
+  const from = sql.indexOf(`create or replace function public.${name}(`);
   expect(from, name).toBeGreaterThanOrEqual(0);
-  return SQL.slice(from, SQL.indexOf("$$;", from) + 3);
+  return sql.slice(from, sql.indexOf("$$;", from) + 3);
 };
 
 describe("0070's numbers are the client's", () => {
   it("the level curve and rewards", () => {
     expect(fnBody("_pg_xp_at")).toContain("100 * (p_level - 1) + 25 * (p_level - 1) * (p_level - 2)");
-    expect(fnBody("_pg_level_reward")).toContain("when p_level % 5 = 0 then 150 * p_level else 50 * p_level");
+    expect(fnBody("_pg_level_reward", SQL104)).toContain("when p_level % 5 = 0 then 60 * p_level else 20 * p_level");
     expect([xpAt(1), xpAt(2), xpAt(3), xpAt(10)]).toEqual([0, 100, 250, 2700]);
     expect([levelFor(0), levelFor(99), levelFor(100), levelFor(2699), levelFor(2700), levelFor(1e9)]).toEqual([1, 1, 2, 9, 10, 99]);
-    expect([levelReward(2), levelReward(5)]).toEqual([100, 750]);
+    expect([levelReward(2), levelReward(5)]).toEqual([40, 300]);
     expect(levelProgress(175)).toEqual({ level: 2, into: 75, span: 150, frac: 0.5 });
   });
 
   it("the daily caps", () => {
-    const m = fnBody("_pg_cap").match(/'fish' then (\d+) when 'earn' then (\d+) when 'fight' then (\d+) when 'grant' then (\d+)/)!;
+    const m = fnBody("_pg_cap", SQL104).match(/'fish' then (\d+) when 'earn' then (\d+) when 'fight' then (\d+) when 'grant' then (\d+)/)!;
     expect(m.slice(1).map(Number)).toEqual([XP_CAPS.fish, XP_CAPS.earn, XP_CAPS.fight, XP_CAPS.grant]);
   });
 
@@ -65,7 +67,7 @@ describe("0070's numbers are the client's", () => {
       expect(spots.some((s) => s.x === w.x && s.y === w.y), w.id).toBe(true);
     }
     expect(SQL).toContain(`${WAYPOINT_RADIUS} ^ 2`);
-    expect(SQL).toContain(`c_fee constant integer := ${TELEPORT_FEE}`);
+    expect(SQL104).toContain(`c_fee constant integer := ${TELEPORT_FEE}`);
   });
 
   it("every refusal has a text", () => {

@@ -4,11 +4,11 @@ import { useCallback, useState } from "react";
 import { parseViewMode, VIEW_MODE_KEY, type ViewMode } from "@/lib/view-mode";
 
 export function readStoredMode(): ViewMode {
-  if (typeof window === "undefined") return "classic";
+  if (typeof window === "undefined") return "game";
   try {
     return parseViewMode(window.localStorage.getItem(VIEW_MODE_KEY));
   } catch {
-    return "classic";
+    return "game";
   }
 }
 

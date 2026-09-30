@@ -887,8 +887,8 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     setBusy(true);
     try {
       const r = await sellCatch(kind);
-      // what she paid, from the answer (the prices were fixed at the catch)
-      if (r) live.current.toast(critterSaleText(r.sold.n, r.sold.xu));
+      // what she paid, from the answer (the prices were fixed at the catch), and what the thương lái kept (econ v2)
+      if (r) live.current.toast(critterSaleText(r.sold.n, r.sold.xu, r.sold.cut));
       return r !== null;
     } finally {
       setBusy(false);
@@ -899,7 +899,7 @@ export function useFarmController({ token, roomId, accountId, mapId, canvas, toa
     setBusy(true);
     try {
       const r = await sellBag();
-      if (r) live.current.toast(ratSaleText(r.sold.count, r.sold.xu));
+      if (r) live.current.toast(ratSaleText(r.sold.count, r.sold.xu, r.sold.cut));
       return r !== null;
     } finally {
       setBusy(false);

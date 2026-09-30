@@ -1,4 +1,6 @@
 import { AnticheatError, screenAnswer } from "@/lib/anticheat";
+import { parseNpcQuota, type NpcQuota } from "@/lib/game/economy/npc";
+import { DAILY_DIGS } from "@/lib/game/mining/catalog";
 import { supabase } from "@/lib/supabase";
 
 // Supabase calls for Mỏ đá (0072): the mine's state, the dig (replayed strikes; since 0087 played live — the veins come
@@ -112,9 +114,11 @@ export async function gatherHerb(roomId: string, token: string, node: number): P
   return { item: str(r.item), qty: num(r.qty, 1), state: stateOf(r) };
 }
 
-export async function sellOre(token: string, item: string, qty: number): Promise<{ xu: number; state: MineState }> {
+/** Sell at chú Tám's counter (0103: through the thương lái — `xu` is what was paid, `cut` what it kept back, `npc` the day). */
+export async function sellOre(token: string, item: string, qty: number)
+  : Promise<{ xu: number; cut: number; npc: NpcQuota | null; state: MineState }> {
   const r = await call("sell_ore", { p_session_token: token, p_item: item, p_qty: qty });
-  return { xu: num(obj(r.sold).xu), state: stateOf(r) };
+  return { xu: num(obj(r.sold).xu), cut: num(r.npc_cut), npc: parseNpcQuota(r.npc), state: stateOf(r) };
 }
 
 export async function buyPickaxe(token: string, tool: string): Promise<MineState> {
@@ -133,7 +137,7 @@ export function mineErrorMessage(err: unknown): string {
     "node empty": "Chỗ này vừa bị đào hết — chờ mọc lại nhé.",
     "no pickaxe": "Cần một cây cuốc chim — mua ở lán chú Tám.",
     "pickaxe too weak": "Cuốc của bạn không đủ cứng cho loại quặng này.",
-    "daily dig limit": "Hôm nay đào đủ rồi — mai quay lại nhé.",
+    "daily dig limit": `Hôm nay đào đủ ${DAILY_DIGS} lượt rồi — mai quay lại nhé.`,
     "dig not found": "Lượt đào đã hết hạn.",
     "not enough coins": "Không đủ xu.",
     "not enough items": "Không đủ nguyên liệu.",

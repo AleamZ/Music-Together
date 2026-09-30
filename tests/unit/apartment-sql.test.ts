@@ -8,10 +8,13 @@ import {
 const SQL = readFileSync("supabase/migrations/0041_apartments.sql", "utf8").replace(/\r\n/g, "\n");
 const MOTEL = readFileSync("supabase/migrations/0039_motel.sql", "utf8").replace(/\r\n/g, "\n");
 const RATS = readFileSync("supabase/migrations/0019_v17_rats.sql", "utf8").replace(/\r\n/g, "\n");
+/** econ v2: 0105 re-creates _apt_price with the new rent. */
+const SINKS = readFileSync("supabase/migrations/0105_econ_sinks.sql", "utf8").replace(/\r\n/g, "\n");
 
 describe("v19.2 apartments: the TS rules mirror 0041", () => {
   it("prices, lengths, caps and the grid", () => {
-    expect(SQL).toContain(`when 'rent' then ${APT_RENT} when 'buy' then ${APT_BUY} when 'sell' then ${APT_BUY * APT_SELL_SHARE} end`);
+    expect(SINKS).toContain(`when 'rent' then ${APT_RENT} when 'buy' then ${APT_BUY} when 'sell' then ${APT_BUY * APT_SELL_SHARE} end`);
+    expect(SQL).toContain(`when 'rent' then 1500 when 'buy' then ${APT_BUY} when 'sell' then ${APT_BUY * APT_SELL_SHARE} end`);   // v19.2's rent
     expect(SQL).toContain(`+ interval '${APT_RENT_DAYS} days'`);
     expect(SQL).toContain(`now() + interval '${APT_MAX_AHEAD_DAYS} days'`);
     expect(SQL).toContain(`paid_until + interval '${APT_GRACE_DAYS} days' <= now()`);

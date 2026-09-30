@@ -11,10 +11,12 @@ import {
 } from "@/lib/game/pets/v2";
 
 const SQL = readFileSync("supabase/migrations/0074_pets_aquarium.sql", "utf8").replace(/\r\n/g, "\n");
+/** Economy v2 re-made _pv2 (5 paid PvE wins) and the NPCs' prizes (× 0.6): the newest copies. */
+const SQL104 = readFileSync("supabase/migrations/0104_econ_rewards.sql", "utf8").replace(/\r\n/g, "\n");
 
 describe("v21 pets: the TS rules mirror 0074", () => {
   it("the _pv2 literals", () => {
-    const pv2 = (k: string) => Number(new RegExp(`when '${k}' then (\\d+)`).exec(SQL)?.[1]);
+    const pv2 = (k: string) => Number(new RegExp(`when '${k}' then (\\d+)`).exec(SQL104)?.[1]);
     expect(pv2("gacha_price")).toBe(GACHA_PRICE);
     expect(pv2("pity")).toBe(GACHA_PITY);
     expect(pv2("max_pets")).toBe(MAX_PETS_V2);
@@ -51,7 +53,7 @@ describe("v21 pets: the TS rules mirror 0074", () => {
     const skills = [...SQL.matchAll(/\('([a-z]+)', '([^']+)', '(hit|guard|heal)', (\d+), (\d+), (\d+), (\d+), (\d+), '(pet|fish|both)', \d+\)/g)]
       .map((m) => ({ id: m[1], name: m[2], kind: m[3], power: +m[4], acc: +m[5], minLevel: +m[6], minForm: +m[7], price: +m[8], who: m[9] }));
     expect(skills).toEqual(SKILLS);
-    const npcs = [...SQL.matchAll(/\('([a-z_]+)', '([^']+)', '(wild|trainer)', '([a-z]+)', '([a-z]+)', (\d+), (\d+), (\d+), (\d+), (\d+), '\{([a-z,]+)\}', (\d+), \d+\)/g)]
+    const npcs = [...SQL104.matchAll(/\('([a-z_]+)', '([^']+)', '(wild|trainer)', '([a-z]+)', '([a-z]+)', (\d+), (\d+), (\d+), (\d+), (\d+), '\{([a-z,]+)\}', (\d+), \d+\)/g)]
       .map((m) => ({ id: m[1], name: m[2], kind: m[3], species: m[4], variant: m[5], level: +m[6], hp: +m[7], atk: +m[8], def: +m[9], spd: +m[10], skills: m[11].split(","), reward: +m[12] }));
     expect(npcs).toEqual(NPCS);
     for (const d of AQUA_DECOR) expect(SQL).toContain(`when '${d.id}' then ${d.price}`);

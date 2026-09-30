@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { FishRow } from "@/lib/game/fishing/state";
-import { MENU, fishDiscountPct, mealPrice, type MealItem } from "@/lib/game/market/menu";
+import { FISH_DISCOUNT_MAX_X, MENU, fishDiscountXu, mealPrice, type MealItem } from "@/lib/game/market/menu";
 import { eatMeal, marketErrorMessage, type MealResult } from "@/lib/game/market/rpc";
 import { ParchmentModal } from "./Parchment";
 
@@ -27,8 +27,9 @@ function errText(e: unknown): string {
   return marketErrorMessage(msg);
 }
 
-/** Chợ Lớn's restaurant (v18.4): the menu on parchment cards; a 🐟 dish can take one fish from the bag for a discount.
- *  Prices shown are a display copy; the server decides what is charged. */
+/** Chợ Lớn's restaurant (v18.4): the menu on parchment cards; a 🐟 dish can take one fish from the bag for a discount
+ *  (econ v2: at most FISH_DISCOUNT_MAX_X × the fish's price). Prices shown are a display copy; the server decides what is
+ *  charged. */
 export default function RestaurantModal({ token, fish, rarityOf, speciesName, onAte, onClose }: RestaurantModalProps) {
   const [tab, setTab] = useState<Tab>("food");
   const [selectedId, setSelectedId] = useState<string>(() => MENU.find((m) => m.kind === "food")!.id);
@@ -38,11 +39,15 @@ export default function RestaurantModal({ token, fish, rarityOf, speciesName, on
 
   const items = MENU.filter((m) => m.kind === tab);
   const selected: MealItem = MENU.find((m) => m.id === selectedId) ?? items[0];
+  // the most xu off first, then the cheaper fish (the same discount for less), then the heavier
   const rankedFish = fish
-    .map((f) => ({ f, pct: fishDiscountPct(rarityOf(f.speciesId), f.weightG) }))
-    .sort((a, b) => b.pct - a.pct || b.f.weightG - a.f.weightG);
+    .map((f) => {
+      const dish = { rarity: rarityOf(f.speciesId), weightG: f.weightG, price: f.price };
+      return { f, dish, off: fishDiscountXu(selected, dish) };
+    })
+    .sort((a, b) => b.off - a.off || a.f.price - b.f.price || b.f.weightG - a.f.weightG);
   const chosen = selected.fishDish ? rankedFish.find((x) => x.f.id === fishId) ?? null : null;
-  const finalPrice = mealPrice(selected, chosen ? { rarity: rarityOf(chosen.f.speciesId), weightG: chosen.f.weightG } : null);
+  const finalPrice = mealPrice(selected, chosen ? chosen.dish : null);
 
   const pick = (id: string) => {
     setSelectedId(id);
@@ -81,7 +86,7 @@ export default function RestaurantModal({ token, fish, rarityOf, speciesName, on
               🥤 Uống
             </button>
           </div>
-          <span className="text-sm opacity-75">Món 🐟 rẻ hơn nếu bạn mang cá tới!</span>
+          <span className="text-sm opacity-75">Món 🐟 rẻ hơn nếu bạn mang cá tới (bớt tối đa gấp {FISH_DISCOUNT_MAX_X} giá con cá)!</span>
         </div>
 
         <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] content-start gap-2">
@@ -135,9 +140,9 @@ export default function RestaurantModal({ token, fish, rarityOf, speciesName, on
                 onChange={(e) => { setFishId(e.target.value); setError(null); }}
               >
                 <option value="">Không dùng cá</option>
-                {rankedFish.map(({ f, pct }) => (
+                {rankedFish.map(({ f, off }) => (
                   <option key={f.id} value={f.id}>
-                    {`${speciesName(f.speciesId)} · ${(f.weightG / 1000).toFixed(1)} kg · −${pct}%`}
+                    {`${speciesName(f.speciesId)} · ${(f.weightG / 1000).toFixed(1)} kg · giá ${f.price} xu · −${off} xu`}
                   </option>
                 ))}
               </select>
@@ -150,7 +155,7 @@ export default function RestaurantModal({ token, fish, rarityOf, speciesName, on
               {chosen && <span className="text-base line-through opacity-60">{selected.price} xu</span>}
               <span className="text-xl font-bold text-amber-800" data-testid="final-price">{finalPrice} xu</span>
               {chosen && (
-                <span className="rounded border border-emerald-400 bg-emerald-100 px-1 text-base font-bold text-emerald-800">−{chosen.pct}%</span>
+                <span className="rounded border border-emerald-400 bg-emerald-100 px-1 text-base font-bold text-emerald-800">−{chosen.off} xu</span>
               )}
             </span>
             <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => void order()}>

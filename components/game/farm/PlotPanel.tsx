@@ -157,7 +157,7 @@ export default function PlotPanel({ no, state, catalog, failed, me, busy, now, o
   const tab = handbookTabFor(p?.crop ?? null, v, now, ratted);
   const tabs = catalog ? handbookTabs(catalog.uplands, catalog.critters, catalog.items) : [];
   const tabName = (id: string) => tabs.find(([t]) => t === id)?.[1];
-  const ctx: LandCtx | null = state ? { me, plots: state.plots, mine: state.mine } : null;
+  const ctx: LandCtx | null = state ? { me, plots: state.plots, mine: state.mine, feePct: state.p2pFeePct } : null;
   return (
     <ParchmentModal title={`🌾 Thửa ${no} · ${no <= 4 ? "đất tư" : "đất làng"}`} onClose={onClose} className="sm:max-w-3xl">
       <div className="flex flex-col gap-2 font-vt text-lg leading-tight">

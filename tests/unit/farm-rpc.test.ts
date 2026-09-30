@@ -154,7 +154,7 @@ describe("account RPCs", () => {
       serverNow: "2026-09-25T10:00:00+00:00",
       mine: {
         items: { seed_nep: 2 }, rice: {}, coins: 10, giftClaimed: true, produce: {}, tank: null, critters: {}, critterCap: 3, gather: { readyAt: {}, leftToday: 200, dayResetsAt: null },
-        rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
+        rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null, npc: null,
       },
     });
     expect(h.rpc).toHaveBeenLastCalledWith("sell_rice", { p_session_token: "tok", p_variety: "nep", p_dry: true, p_kg: 10 });
@@ -207,10 +207,17 @@ describe("v15.3 (§11.4)", () => {
     h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine: { ...mine, critters: {} }, sold: { n: 2, xu: 52 } }, error: null });
     const sold = await sellCritters("tok", null);
     expect(h.rpc).toHaveBeenLastCalledWith("sell_critters", { p_session_token: "tok", p_kind: null });
-    expect(sold).toMatchObject({ sold: { n: 2, xu: 52 }, mine: { critters: {} } });
+    expect(sold).toMatchObject({ sold: { n: 2, xu: 52, cut: 0 }, mine: { critters: {} } });
     h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine, sold: { n: 1, xu: 26 } }, error: null });
     await sellCritters("tok", "cua_dong");
     expect(h.rpc).toHaveBeenLastCalledWith("sell_critters", { p_session_token: "tok", p_kind: "cua_dong" });
+    // econ v2 (0102): the thương lái's cut and day come with the sale
+    const npc = { gross: 25000, full: 20000, half: 40000, tail_pct: 20 };
+    h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine: { ...mine, critters: {}, npc }, sold: { n: 10, xu: 12500 }, npc_cut: 2500, npc },
+                                  error: null });
+    expect(await sellCritters("tok", null)).toMatchObject({
+      sold: { n: 10, xu: 12500, cut: 2500 }, mine: { npc: { gross: 25000, full: 20000, half: 40000, tailPct: 20 } },
+    });
   });
   it("reads the picker's snails from pick_snails, none before 0018", async () => {
     h.rpc.mockResolvedValueOnce({ data: { ...FIELD, snails: { caught: [{ kind: "oc_buou_vang", price: 4 }], escaped: 2 } }, error: null });
@@ -313,7 +320,9 @@ describe("v17 (§10.4)", () => {
     h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine: { ...MINE, rats: { count: 0, value: 0 } }, sold: { count: 3, xu: 486 } }, error: null });
     const r = await sellRats("tok");
     expect(h.rpc).toHaveBeenLastCalledWith("sell_rats", { p_session_token: "tok" });
-    expect(r).toMatchObject({ sold: { count: 3, xu: 486 }, mine: { rats: { count: 0, value: 0 } } });
+    expect(r).toMatchObject({ sold: { count: 3, xu: 486, cut: 0 }, mine: { rats: { count: 0, value: 0 } } });
+    h.rpc.mockResolvedValueOnce({ data: { server_now: NOW, mine: MINE, sold: { count: 10, xu: 8500 }, npc_cut: 11500 }, error: null });
+    expect((await sellRats("tok")).sold).toEqual({ count: 10, xu: 8500, cut: 11500 });
   });
 });
 

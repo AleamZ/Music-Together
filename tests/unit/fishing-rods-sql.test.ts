@@ -8,6 +8,7 @@ describe("0034_rods_nets.sql (v18.2)", () => {
   it("adds the new stock with its prices and durability", () => {
     expect(SQL).toContain("('rod_fiber',  'rod',  'Cần sợi thủy tinh',  700,");
     expect(SQL).toContain("('rod_master', 'rod',  'Cần thủ',           5000,");
+    // (0034's prices; econ v2's 0101_econ_fishing.sql re-prices the bait and the nets: tests/unit/econ-fishing.test.ts)
     expect(SQL).toMatch(/\('net_small',\s+'net',\s+'Lưới nhỏ',\s+250,.*\b20,\s+24,/);
     expect(SQL).toMatch(/\('net_big',\s+'net',\s+'Lưới lớn',\s+600,.*\b30,\s+36,/);
     expect(SQL).toMatch(/\('bait_gold',\s+'bait', 'Mồi vàng',\s+25,/);

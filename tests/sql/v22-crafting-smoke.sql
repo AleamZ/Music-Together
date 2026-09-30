@@ -120,7 +120,8 @@ begin
   assert (select qty from public.craft_bag where account_id = a and item_id = 'pot_hunger') = 2, 'two potions';
   assert (select qty from public.craft_bag where account_id = a and item_id = 'herb_nam') = 6, 'ingredients taken at the finish';
   assert (select qty from public.potion_quality where account_id = a and item_id = 'pot_hunger' and tier = 3) = 2, 'quality kept';
-  assert exists (select 1 from public.coin_ledger where account_id = a and reason = 'potion' and delta = -20), 'fee';
+  assert exists (select 1 from public.coin_ledger where account_id = a and reason = 'potion'
+                   and delta = -2 * (select fee from public.potion_recipes where id = 'pot_hunger')), 'fee';   -- 2 × 10, 2 × 60 from 0103
   assert exists (select 1 from public.game_events where account_id = a and kind = 'potion_brewed' and (meta->>'quality')::int = 3), 'event';
   assert (select value from public.player_stamina where account_id = a) < 100, 'stamina spent';
   assert jsonb_array_length(r->'state'->'quality') = 1, 'state shows the quality';
@@ -223,8 +224,10 @@ begin
   perform pg_temp.seed(a, 'sort', (sharp->>'seed')::bigint);
   c0 := (select coins from public.wallets where account_id = a);
   r := public.process_sort_finish(t, pg_temp.ints(sharp->'ticks'), pg_temp.ints(sharp->'dirs'), 12);
-  assert r->>'result' = 'collected' and (r->>'bonus_pct')::int = 5 and (r->>'bonus')::int = 960, format('collected %s', r);
-  assert (select coins from public.wallets where account_id = a) >= c0 + 960, 'bonus paid';
+  -- econ v2: the recipe's value is data that 0102 re-prices (gạo trắng 9 600 → 8 150), so the bonus is read from it
+  assert r->>'result' = 'collected' and (r->>'bonus_pct')::int = 5
+     and (r->>'bonus')::int = (select value from public.processor_recipes where id = 'gao_trang') * 2 * 5 / 100, format('collected %s', r);
+  assert (select coins from public.wallets where account_id = a) >= c0 + (r->>'bonus')::int, 'bonus paid';
   assert (select qty from public.processed_goods where account_id = a and recipe = 'gao_trang') = 2, 'goods';
   assert exists (select 1 from public.anticheat_events where account_id = a and code = 'sort_timing'), 'soft timing';
   assert exists (select 1 from public.game_events where account_id = a and kind = 'crop_processed' and (meta->>'sort')::int = 12), 'event';

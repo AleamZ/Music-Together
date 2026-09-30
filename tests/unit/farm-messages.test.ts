@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   bedLevelsText, bedResultText, boughtText, CRAB_GAVE_UP, crabResultText, critterSaleText, crittersFullText, dogCatchText, dogRestingText,
-  durationText, farmErrorMessage, GATHER_LIMIT_TEXT, GIFT_TEXT, harvesterDoneText, harvesterStartText, harvestText, isMissingRpc, loadedText,
+  durationText, farmErrorMessage, GATHER_LIMIT_TEXT, GIFT_TEXT, harvesterDoneText, harvesterStartText, harvestText, isMissingRpc, landNetText,
+  loadedText,
   NO_PELLETS, NOT_OPEN_152, NOT_OPEN_153, NOT_OPEN_17, partsDoneText, partText, PEST_NAME, PEST_REMEDY, pestSnailText, PHASE_NAME,
   pickingText, produceSaleText, produceSummary, RAT_DAILY_LIMIT_TEXT, ratChipLabel, ratChipText, ratGoneText, ratLimitText, ratPlotText,
-  ratPrompt, ratSaleText, ratSpawnText, riceSaleText, riceSummary, SLING_CANCEL, SLING_HELP, slingGear, slingHitText, slingStatus,
-  slingTitle, uplandPhaseName,
+  ratPrompt, ratSaleText, ratSpawnText, riceSaleText, riceSummary, saleRuleText, SLING_CANCEL, SLING_HELP, slingGear, slingHitText,
+  slingStatus, slingTitle, subleaseRuleText, uplandPhaseName,
 } from "@/lib/game/farm/messages";
 import { critterFromRow, uplandFromRow, type UplandCropRow } from "@/lib/game/farm/catalog";
 import fixtures from "@/tests/fixtures/upland-cases.json";
@@ -16,8 +17,8 @@ describe("farmErrorMessage", () => {
     const m = (message: string, item?: string) => farmErrorMessage({ message }, item);
     expect(m("not your plot")).toBe("Thửa này không phải của bạn.");
     expect(m("plot taken")).toBe("Thửa này đã có người canh tác.");
-    expect(m("farm limit")).toBe("Bạn đang canh tác 2 thửa rồi.");
-    expect(m("already own land")).toBe("Bạn đã có đất tư trong phòng này.");
+    expect(m("farm limit")).toBe("Bạn đang canh tác 2 thửa rồi (tính cả các sảnh).");                       // econ v2
+    expect(m("already own land")).toBe("Bạn đã có một thửa đất tư — mỗi người chỉ một thửa (tính cả các sảnh).");
     expect(m("not for sale")).toBe("Thửa này không rao bán.");
     expect(m("price changed")).toBe("Giá vừa đổi — xem lại nhé.");
     expect([m("offer expired"), m("offer not found")]).toEqual(["Đề nghị không còn nữa.", "Đề nghị không còn nữa."]);
@@ -194,6 +195,9 @@ describe("v15.3 texts (§11.8, §13.2, §13.4)", () => {
     expect(pestSnailText(5, null, null)).toBe("Đã bắt ốc bươu vàng.");
     expect(critterSaleText(6, 230)).toBe("💰 Bán 6 con cua ốc được 230 xu.");
     expect(critterSaleText(40, 1250)).toBe("💰 Bán 40 con cua ốc được 1.250 xu.");
+    // econ v2: the thương lái's cut after the sale, when it kept some back
+    expect(critterSaleText(40, 1250, 0)).toBe("💰 Bán 40 con cua ốc được 1.250 xu.");
+    expect(critterSaleText(10, 12500, 2500)).toBe("💰 Bán 10 con cua ốc được 12.500 xu. Thương lái đã mua nhiều hôm nay nên bớt 2.500 xu.");
   });
   it("adds the critters held to the HUD's line", () => {
     expect(produceSummary({ nep: { wet: 0, dry: 70 } }, { khoai: 180 }, 12)).toBe("🌾 70 kg khô · 0 kg ướt · 🧺 180 kg màu · 🦀 12");
@@ -250,6 +254,7 @@ describe("v17 texts (§10.6, §12)", () => {
     expect(dogCatchText("Mực")).toBe("🐕 Mực vồ được một con chuột! Đem bán cho cô Út nhé.");
     expect(ratSaleText(3, 450)).toBe("💰 Bán 3 con chuột được 450 xu.");
     expect(ratSaleText(12, 4032)).toBe("💰 Bán 12 con chuột được 4.032 xu.");
+    expect(ratSaleText(10, 8500, 11500)).toBe("💰 Bán 10 con chuột được 8.500 xu. Thương lái đã mua nhiều hôm nay nên bớt 11.500 xu.");
     expect(ratChipText(2)).toBe("🐀 Mùa chuột · 2 con");
     expect(ratChipLabel(2)).toBe("Mùa chuột: 2 con chuột đang phá đồng — mở Sổ tay");
     expect(ratPlotText(2, 3.2)).toBe("🐀 2 con chuột đang ăn · đã mất ~3% (tối đa 10%)");
@@ -269,5 +274,16 @@ describe("v17 texts (§10.6, §12)", () => {
     expect(ratGoneText({ ...r, how: "fled", by: null })).toBe("Chuột chạy về hang rồi.");
     expect(ratGoneText(null)).toBe("Chuột chạy về hang rồi.");
     expect(SLING_CANCEL).toBe("Thôi (Esc)");
+  });
+});
+
+describe("land deals (econ v2, 0102)", () => {
+  it("says what the seller or owner receives, the band and the sublease cap", () => {
+    expect(landNetText(1_000_000, 5)).toBe("bạn nhận 950.000 xu (phí 5% bị đốt)");
+    expect(landNetText(777_777, 10)).toBe("bạn nhận 699.999 xu (phí 10% bị đốt)");
+    expect(landNetText(50_000, 0)).toBe("bạn nhận 50.000 xu");
+    expect(saleRuleText(5)).toBe("Giá từ 400.000 xu đến 2.400.000 xu; bán được bạn nhận 95% (phí 5% bị đốt).");
+    expect(saleRuleText(0)).toBe("Giá từ 400.000 xu đến 2.400.000 xu.");
+    expect(subleaseRuleText(5)).toBe("Tối đa 50.000 xu một vụ; có người thuê bạn nhận 95% (phí 5% bị đốt).");
   });
 });

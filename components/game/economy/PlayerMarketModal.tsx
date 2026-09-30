@@ -5,7 +5,7 @@ import { centreOf, CoinFly, Confetti } from "../celebrate/Fx";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import {
   AUCTION_CAP_PERCENT, AUCTION_HOURS, AUCTION_MIN_VALUE, BAND_MAX_PERCENT, BAND_MIN_PERCENT, econErrText, kindIcon, kindName,
-  leftText, LIST_FEE_PERCENT, LIST_HOURS, listFee, SALE_FEE_PERCENT, saleShare, SNIPE_SECONDS,
+  leftText, LIST_FEE_PERCENT, LIST_HOURS, listFee, SALE_FEE_MIN_PERCENT, SALE_FEE_PERCENT, saleShare, SNIPE_SECONDS,
   type AssetKind, type Auction, type EconState, type Listing,
 } from "@/lib/game/economy/model";
 import { auctionBid, auctionCancel, auctionCreate, econState, marketBuy, marketCancel, marketList } from "@/lib/game/economy/rpc";
@@ -125,7 +125,7 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
       ) : l.stall === null && (confirm === l.id ? (
         <span className="flex flex-wrap items-center gap-2">
           <span>Mua {l.name} với giá {formatXu(l.price)}?</span>
-          <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => void act(() => marketBuy(token, l.id, l.price), `Đã mua ${l.name}!`)}>Đồng ý mua</button>
+          <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => void act(() => marketBuy(token, l.id, l.price), `Đã mua ${l.name}! Hàng đã gửi vào 📬 Hòm thư.`)}>Đồng ý mua</button>
           <button type="button" className="pch-btn" onClick={() => setConfirm(null)}>Thôi</button>
         </span>
       ) : (
@@ -175,12 +175,14 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
       <div className="flex flex-col gap-3 overflow-y-auto font-vt text-lg leading-tight" data-testid="player-market">
         {flies.map((f) => <CoinFly key={f.k} from={f.from} amount={f.amount} onDone={() => setFlies((all) => all.filter((x) => x.k !== f.k))} />)}
         {won > 0 && <Confetti key={won} count={40} />}
-        {won > 0 && <p role="status" className="text-emerald-800">🏆 Bạn đã thắng một phiên đấu giá — món hàng đã vào giỏ!</p>}
+        {won > 0 && <p role="status" className="text-emerald-800">🏆 Bạn đã thắng một phiên đấu giá — món hàng đã gửi vào 📬 Hòm thư!</p>}
         <StallRowView rented={(state?.stalls ?? []).map((s) => s.renterName !== null)} notes={state?.listings.length ?? 0} />
         <p className="text-base">
           Mua bán cá, đồ thời trang và nông sản giữa bà con. Giá trong khoảng {BAND_MIN_PERCENT} %–{BAND_MAX_PERCENT} % giá trị,
-          phí đăng tin {LIST_FEE_PERCENT} % (hết hạn không ai mua thì hoàn một nửa), chợ thu {SALE_FEE_PERCENT} % khi bán được.
+          phí đăng tin {LIST_FEE_PERCENT} % (hết hạn không ai mua thì hoàn một nửa), chợ thu {SALE_FEE_PERCENT} % khi bán được
+          (Thương nhân có kỹ năng Mồm mép: chỉ {SALE_FEE_MIN_PERCENT} %).
         </p>
+        <p className="text-sm opacity-80" data-testid="market-mail-note">📬 Hàng mua, hàng thắng đấu giá và tiền bán được đều gửi về Hòm thư — mở thư để nhận.</p>
         <div className="flex flex-wrap gap-1" role="tablist">
           {TABS.map((t) => (
             <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`pch-btn px-2 py-0.5 ${tab === t.id ? "pch-btn-primary" : ""}`}
@@ -236,7 +238,7 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
                 </select>
               </label>
               <SellForm assets={state.assets} minValue={AUCTION_MIN_VALUE} busy={busy}
-                note={(p) => `Giá khởi điểm ${formatXu(p.price)} · bán được bạn nhận ${100 - SALE_FEE_PERCENT} % giá cuối.`}
+                note={(p) => `Giá khởi điểm ${formatXu(p.price)} · bán được bạn nhận ${100 - SALE_FEE_PERCENT} % giá cuối (Thương nhân có Mồm mép: ${100 - SALE_FEE_MIN_PERCENT} %).`}
                 submit={{
                   label: (p) => `Mở phiên ${hours} giờ · từ ${formatXu(p.price)}`,
                   onSubmit: (p) => void act(() => auctionCreate(token, p.asset.kind, p.asset.ref, p.qty, p.price, hours), "Đã mở phiên đấu giá!"),
