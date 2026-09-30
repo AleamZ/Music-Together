@@ -23,7 +23,8 @@ services:
   cloudflared:
     profiles: ["tunnel"]
     image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run
+    # --url: the origin for a tunnel made on the VPS (cloudflared tunnel create); a dashboard tunnel uses its own routes
+    command: tunnel --no-autoupdate run --url http://app:3000
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on: [app]
