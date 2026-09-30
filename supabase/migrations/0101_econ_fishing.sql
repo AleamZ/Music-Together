@@ -21,7 +21,7 @@
 --      stack; casts_luck is now a no-op and casts_prof spends the stamina only. A pond cast picks a pond species itself
 --      (it drew the reel from any species of the rarity, deep ones too, and casts_zz_water swapped the fish afterwards;
 --      that trigger stays, idle). The bobber shows the cast fish's rarity.
---   F. F6 effort: a cast costs hunger 0.35 / thirst 0.45 (was 1.8 / 2.2), a net haul 0.6 / 0.7 (was 3 / 3.5), a fall
+--   F. F6 effort: a cast costs hunger 0.35 / thirst 0.45 (was 1.8 / 2.2), and so does a net haul (was 3 / 3.5); a fall
 --      overboard 5 hunger (was 10: _overboard_outcome for the rod, finish_net for the net). The perk fish_effort_pct
 --      still lowers them (_fishing_effort is unchanged).
 --   G. F7 thương lái (0100's _npc_sale): sell_fish and sell_fish_market pay through it — the gross is the fish's prices
@@ -30,7 +30,9 @@
 --   H. A fishing battle scores only the catches made in its room: finish_cast and finish_net pass the cast's room to
 --      _fx_on_fish in mt.catch_room (a river cast in another hall no longer wins a pond battle).
 --   I. The shop at the new fish prices (the old bait and nets cost more than the fish they bring): Mồi tép 5 → 1,
---      Mồi trùn chỉ 12 → 3, Mồi vàng 25 → 6 xu a bait; Lưới nhỏ 250 → 50 (20 hauls), Lưới lớn 600 → 120 xu (30 hauls).
+--      Mồi trùn chỉ 12 → 3, Mồi vàng 25 → 4 xu a bait; Lưới nhỏ 250 → 50 (20 hauls), Lưới lớn 600 → 120 xu (30 hauls).
+--      Mồi vàng gets Mồi trùn chỉ's rarity (×2 Hiếm, ×2 Quý, ×3 Huyền thoại; was ×1.5) and keeps its faster bite: the
+--      same fish for 1 xu more, worth it only to a player whose casts are bound by time rather than stamina.
 --   J. The treasure panel's day: _fx_extras_state (fishing_extras_state) answers found_today — the chests found this
 --      Vietnam day, of the 3 allowed.
 -- Re-created from their newest bodies, only the lines marked "econ v2" changed: start_cast (0059), start_river_cast
@@ -458,7 +460,7 @@ begin
     update public.inventory set durability = v_d - 1 where account_id = v_account and item_id = t.net;
   end if;
   perform public._vitals_apply(v_account);
-  v_vitals := public._fishing_effort(v_account, 0.6, 0.7);   -- econ v2 was: v_vitals := public._fishing_effort(v_account, 3, 3.5);
+  v_vitals := public._fishing_effort(v_account, 0.35, 0.45);   -- econ v2 was: v_vitals := public._fishing_effort(v_account, 3, 3.5);
   v_in := jsonb_build_object('press', p_press, 'release', p_release, 'aim_x', p_aim_x, 'aim_y', p_aim_y, 'hits', p_hits);
   if now() > t.started_at + interval '120 seconds' then
     delete from public.net_throws where id = t.id;
@@ -1064,11 +1066,14 @@ update public.shop_items s set price = v.price
   from (values
     ('bait_shrimp',       1),   -- Mồi tép       was   5 a bait
     ('bait_bloodworm',    3),   -- Mồi trùn chỉ  was  12
-    ('bait_gold',         6),   -- Mồi vàng      was  25
+    ('bait_gold',         4),   -- Mồi vàng      was  25
     ('net_small',        50),   -- Lưới nhỏ      was 250 (20 hauls)
     ('net_big',         120)    -- Lưới lớn      was 600 (30 hauls)
   ) v(id, price)
  where s.id = v.id and s.price is distinct from v.price;
+-- Mồi vàng: Mồi trùn chỉ's rarity (was ×1.5 / ×1.5 / ×1.5); its bite_boost 0.6 (bites 40 % sooner) stays
+update public.shop_items set mult_hiem = 2, mult_quy = 2, mult_legend = 3
+ where id = 'bait_gold' and (mult_hiem, mult_quy, mult_legend) is distinct from (2, 2, 3);
 
 -- ---------- J. The treasure panel's day ----------
 -- _fx_extras_state (0076_fishing_extras.sql's, verbatim but for the line marked econ v2): found_today, the chests found

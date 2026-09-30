@@ -315,7 +315,8 @@ begin
   assert (select prosrc like '%set hunger = greatest(0, hunger - 5) where account_id = v_account returning * into v_vit;%'
                  and prosrc like '%''rod_lost'', false, ''hunger'', 5),%'
             from pg_proc where proname = 'finish_net' and pronargs = 5), 'the net''s overboard';
-  assert (select prosrc like '%_fishing_effort(v_account, 0.6, 0.7)%' from pg_proc where proname = 'net_haul' and pronargs = 7), 'the haul';
+  assert (select prosrc like '%_fishing_effort(v_account, 0.35, 0.45)%' from pg_proc where proname = 'net_haul' and pronargs = 7),
+    'a haul costs what a cast costs';
   perform pg_temp.fresh(a);
   insert into public.casts (account_id, room_id, species_id, weight_g, min_reel_ms, bite_at, expires_at, spot, bites, big, rod,
                             reel_seed, reel_params, hooked_at)
@@ -479,7 +480,11 @@ declare c uuid := pg_temp.u('c'); t text := pg_temp.v('tc'); v_last bigint;
 begin
   assert (select jsonb_object_agg(id, price) from public.shop_items
            where id in ('bait_shrimp', 'bait_bloodworm', 'bait_gold', 'net_small', 'net_big'))
-       = '{"bait_shrimp": 1, "bait_bloodworm": 3, "bait_gold": 6, "net_small": 50, "net_big": 120}'::jsonb, 'the prices';
+       = '{"bait_shrimp": 1, "bait_bloodworm": 3, "bait_gold": 4, "net_small": 50, "net_big": 120}'::jsonb, 'the prices';
+  -- Mồi vàng: Mồi trùn chỉ's rarity, and still the faster bite
+  assert (select (g.mult_hiem, g.mult_quy, g.mult_legend) = (b.mult_hiem, b.mult_quy, b.mult_legend) and g.bite_boost < 1
+            and (g.mult_hiem, g.mult_quy, g.mult_legend) = (2::real, 2::real, 3::real)
+            from public.shop_items g, public.shop_items b where g.id = 'bait_gold' and b.id = 'bait_bloodworm'), 'Mồi vàng''s rarity';
   insert into public.wallets (account_id) values (c) on conflict do nothing;
   update public.wallets set coins = 1000 where account_id = c;
   delete from public.inventory where account_id = c
@@ -491,7 +496,7 @@ begin
   perform public.buy_item(t, 'net_small');
   perform public.buy_item(t, 'net_big');
   assert (select array_agg(-delta order by id) from public.coin_ledger where account_id = c and id > v_last and reason = 'buy')
-       = array[10, 15, 12, 50, 120], 'what the shop charged';
+       = array[10, 15, 8, 50, 120], 'what the shop charged';
   assert (select coins from public.wallets where account_id = c)
        = 1000 + (select sum(delta) from public.coin_ledger where account_id = c and id > v_last), 'the wallet follows the ledger';
   assert (select jsonb_object_agg(item_id, coalesce(durability, qty)) from public.inventory where account_id = c

@@ -132,6 +132,8 @@ describe("ShopPanel", () => {
     fireEvent.click(within(shrimp).getByRole("button", { name: "Mua 10 · 50 xu" }));
     expect(onBuy).toHaveBeenLastCalledWith("bait_shrimp", 10);
     expect(within(shrimp).getByRole("button", { name: "Tối đa 15" })).toBeInTheDocument();
+    // econ v2 (0101): one line before the bait — a better bait wants a better rod
+    expect(screen.getAllByText("Mồi xịn hợp với cần xịn — cần tre trở lên mới giữ được cá hiếm.")).toHaveLength(1);
   });
 });
 

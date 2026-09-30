@@ -107,7 +107,10 @@ export function describeItem(it: ShopItem): string {
       return parts.join(" · ");
     }
     case "bait":
-      if ((it.biteBoost ?? 1) < 1) return `Cá cắn nhanh hơn, gần bờ dễ cắn · cá hiếm ×${decimal(it.multHiem)}`;
+      // econ v2 (0101): Mồi vàng has Mồi trùn chỉ's ×2 / ×3 and the faster bite
+      if ((it.biteBoost ?? 1) < 1) {
+        return `Cá cắn nhanh hơn, gần bờ dễ cắn · cá hiếm ×${decimal(it.multHiem)}${it.multLegend > it.multHiem ? `, huyền thoại ×${decimal(it.multLegend)}` : ""}`;
+      }
       if (it.multLegend > it.multHiem) return `Cá hiếm ×${decimal(it.multHiem)}, huyền thoại ×${decimal(it.multLegend)}`;
       if (it.multHiem > 1) return `Cá hiếm trở lên ×${decimal(it.multHiem)}`;
       return "Mồi thường — đào ở bãi trùn";

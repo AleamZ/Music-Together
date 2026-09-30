@@ -16,6 +16,8 @@ export const DAILY_LIMIT_TEXT = "Câu mệt rồi — nghỉ chút rồi câu ti
 
 /** v18.2: the rod wore down to 0 on this cast. */
 export const ROD_BROKE = "💥 Cần câu gãy rồi — đã đổi sang cần gỗ. Mang tới tiệm chú Tư sửa nhé!";
+/** Econ v2 (0101): the shop's line by the bait — a better bait brings rarer fish, which the wooden rod cannot hold. */
+export const BAIT_HINT = "Mồi xịn hợp với cần xịn — cần tre trở lên mới giữ được cá hiếm.";
 /** v18.2: net texts. */
 export const NO_NET = "Bạn chưa có lưới — tiệm chú Tư có bán.";
 export const NET_TOO_EARLY = "Kéo lưới vội quá, cá thoát hết rồi.";
