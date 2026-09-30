@@ -168,7 +168,7 @@ export default function FashionStoreModal({
     }
   };
 
-  const handleTransferred = (itemId: string, recipientName: string) => {
+  const handleTransferred = (itemId: string, recipientName: string, giftsLeft?: number) => {
     setOwnedIds((prev) => {
       const next = new Set(prev);
       next.delete(itemId);
@@ -181,7 +181,7 @@ export default function FashionStoreModal({
       return next;
     });
     setTransferringItem(null);
-    showToast(`🎁 Đã pass lại đồ cho ${recipientName} thành công!`);
+    showToast(`🎁 Đã pass lại đồ cho ${recipientName} thành công!${giftsLeft !== undefined ? ` Hôm nay còn tặng được ${giftsLeft} món.` : ""}`);
   };
 
   const myGender = previewLook.gender === "nu" ? "nu" : "nam";

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EconState, Listing, TradeState } from "@/lib/game/economy/model";
+import type { EconState, Listing, Trade, TradeState } from "@/lib/game/economy/model";
 
 const rpc = vi.hoisted(() => ({
   econState: vi.fn(), marketList: vi.fn(), marketCancel: vi.fn(), marketBuy: vi.fn(), auctionCreate: vi.fn(), auctionBid: vi.fn(),
@@ -89,7 +89,7 @@ describe("TradeWindow", () => {
   it("offers coins, then confirms at the revision", async () => {
     rpc.econState.mockResolvedValue(state({ coins: 1000 }));
     const t0 = { id: 4, rev: 1, opener: true, partnerId: "p", partnerName: "Bình", mine: { coins: 0, items: [] },
-      theirs: { coins: 50, items: [] }, myOk: false, theirOk: false };
+      theirs: { coins: 50, items: [] }, myOk: false, theirOk: false, feePct: 5, myRecv: null, theirRecv: null };
     const next: TradeState = { trade: { ...t0, rev: 2, mine: { coins: 100, items: [] } }, lastDone: null, coins: 1000, serverNowMs: 0 };
     rpc.tradeOffer.mockResolvedValue(next);
     const onState = vi.fn();
@@ -104,5 +104,37 @@ describe("TradeWindow", () => {
     rpc.tradeConfirm.mockResolvedValue(next);
     fireEvent.click(screen.getByRole("button", { name: /Xác nhận đổi/ }));
     await waitFor(() => expect(rpc.tradeConfirm).toHaveBeenCalledWith("t", 4, 2));
+  });
+});
+
+describe("TradeWindow: the xu leg (Kinh tế v2)", () => {
+  const trade = (over: Partial<Trade> = {}): Trade => ({
+    id: 5, rev: 3, opener: true, partnerId: "p", partnerName: "Bình", mine: { coins: 1000, items: [] },
+    theirs: { coins: 0, items: [] }, myOk: false, theirOk: false, feePct: 5,
+    myRecv: { ok: true, left: 50_000 }, theirRecv: { ok: true, left: 50_000 }, ...over,
+  });
+
+  it("shows what the receiver gets after the 5 % burn", async () => {
+    rpc.econState.mockResolvedValue(state({ coins: 5000 }));
+    render(<TradeWindow token="t" trade={trade()} onState={() => {}} onChanged={() => {}} />);
+    expect(screen.getByTestId("trade-xu-leg")).toHaveTextContent("Bình nhận 950");
+    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Xác nhận đổi/ })).toBeEnabled());
+  });
+
+  it("warns and holds the confirmation when the receiver is too new", async () => {
+    rpc.econState.mockResolvedValue(state({ coins: 5000 }));
+    render(<TradeWindow token="t" trade={trade({ theirRecv: { ok: false, left: 50_000 } })} onState={() => {}} onChanged={() => {}} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Bình chưa nhận xu được");
+    expect(screen.getByRole("button", { name: /Xác nhận đổi/ })).toBeDisabled();
+  });
+
+  it("warns when I would pass today's allowance", async () => {
+    rpc.econState.mockResolvedValue(state({ coins: 5000 }));
+    render(<TradeWindow token="t" trade={trade({ mine: { coins: 0, items: [] }, theirs: { coins: 2000, items: [] },
+      myRecv: { ok: true, left: 1000 } })} onState={() => {}} onChanged={() => {}} />);
+    expect(screen.getByTestId("trade-xu-leg")).toHaveTextContent("Bạn nhận 1.900");
+    expect(screen.getByRole("alert")).toHaveTextContent("Hôm nay bạn chỉ còn nhận được 1.000");
+    expect(screen.getByRole("button", { name: /Xác nhận đổi/ })).toBeDisabled();
   });
 });

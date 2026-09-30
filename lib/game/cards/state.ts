@@ -99,7 +99,12 @@ export interface XidachLast {
   cancelled: boolean;
   hands: Record<number, { cards: Card[]; kind: XidachKind; points: number }>;
   lines: XidachLastLine[];
+  /** What each seat really won or lost: escrow + net ≥ 0 (0106 caps every loss at the seat's escrow). */
   net: Record<number, number>;
+  /** 0106: the seats that owed more than they had on the table, and paid what they had pro rata. */
+  capped: number[];
+  /** 0106: the rounding of those pro-rata payments that nobody received. */
+  burned: number;
 }
 
 interface StateBase {
@@ -354,7 +359,7 @@ function xidachLast(o: Obj): XidachLast | null {
     if (from === null || to === null || xu === null || why === null) return null;
     return { from, to, xu, why: why as XidachLastLine["why"] };
   }) ?? [];
-  return { handNo, dealer, cancelled, hands, lines, net };
+  return { handNo, dealer, cancelled, hands, lines, net, capped: ints(o.capped) ?? [], burned: int(o.burned) ?? 0 };
 }
 
 /** card_state (§11.4). */

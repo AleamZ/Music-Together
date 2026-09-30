@@ -5,7 +5,7 @@ import type { CatalogItem } from "@/lib/game/character";
 import type { Member } from "@/lib/supabase";
 import ItemIcon from "./ItemIcon";
 import { ParchmentModal } from "./Parchment";
-import { storeErrorMessage, transferFashionItem } from "@/lib/game/store";
+import { GIFTS_PER_DAY, storeErrorMessage, transferFashionItem } from "@/lib/game/store";
 
 interface ItemTransferDialogProps {
   item: CatalogItem;
@@ -13,7 +13,8 @@ interface ItemTransferDialogProps {
   myAccountId: string;
   members: Member[];
   onlineIds: string[];
-  onTransferred: (itemId: string, recipientName: string) => void;
+  /** giftsLeft: the gifts I may still give today (Kinh tế v2), when the server says. */
+  onTransferred: (itemId: string, recipientName: string, giftsLeft?: number) => void;
   onClose: () => void;
 }
 
@@ -48,8 +49,8 @@ export default function ItemTransferDialog({
     setTransferring(true);
     setError(null);
     try {
-      await transferFashionItem(token, selectedAccountId, item.id);
-      onTransferred(item.id, selectedMember?.username ?? "bạn bè");
+      const res = await transferFashionItem(token, selectedAccountId, item.id);
+      onTransferred(item.id, selectedMember?.username ?? "bạn bè", res?.gifts_left);
     } catch (e) {
       setError(storeErrorMessage(e));
       setTransferring(false);
@@ -110,7 +111,8 @@ export default function ItemTransferDialog({
         {error && <p className="text-base text-burgundy-accent" role="alert">{error}</p>}
 
         <p className="text-xs opacity-70 italic">
-          * Khi pass đồ, món này sẽ chuyển sang tủ đồ của người nhận và bạn sẽ không còn sở hữu nữa.
+          * Khi pass đồ, món này sẽ chuyển sang tủ đồ của người nhận và bạn sẽ không còn sở hữu nữa. Chỉ tặng được cho người
+          cùng phòng, mỗi ngày tối đa {GIFTS_PER_DAY} món.
         </p>
 
         {/* Action buttons */}

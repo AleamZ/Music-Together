@@ -266,3 +266,78 @@ export function xidachSettle(p: {
 
   return { lines, net };
 }
+
+/** One money line of a hand (0021's pub.lines / last.lines): `from` pays `to` `xu`. */
+export interface XidachMoneyLine { from: number; to: number; xu: number }
+
+/** What a hand's lines really pay (Kinh tế v2, 0106 _xd_cap). */
+export interface XidachCap {
+  /** Each seat's result: escrow + net ≥ 0 for every seat. */
+  net: Record<number, number>;
+  /** The seats that owed more than they had on the table, in seat order. */
+  capped: number[];
+  /** The floors' remainder that nobody receives: the nets sum to −burned. */
+  burned: number;
+}
+
+/**
+ * A seat never loses more than its escrow (0106 `_xd_cap`, verbatim arithmetic; tests/fixtures/xidach-cap-cases.json
+ * pins this, the SQL and a Python reference):
+ * - the lines between two seats both ways are netted into one edge;
+ * - a seat that owes more than it has on the table (its escrow plus what it receives) is short. Its edges are scaled
+ *   pro rata (floor) to what it has, and that is repeated until nothing changes. After 64 rounds without a fixed point,
+ *   a short seat pays at most its escrow;
+ * - a short seat loses everything it had on the table, and the floors' remainder is burned.
+ */
+export function xidachCap(lines: readonly XidachMoneyLine[], escrow: Readonly<Record<number, number>>): XidachCap {
+  const seats = [...new Set([...Object.keys(escrow).map(Number), ...lines.flatMap((l) => [l.from, l.to])])].sort((a, b) => a - b);
+  const esc = (s: number) => escrow[s] ?? 0;
+  const edges: Array<{ from: number; to: number; amt: number }> = [];
+  for (const a of seats) {
+    for (const b of seats) {
+      if (b <= a) continue;
+      const d = lines.reduce((sum, l) => sum + (l.from === a && l.to === b ? l.xu : l.from === b && l.to === a ? -l.xu : 0), 0);
+      if (d > 0) edges.push({ from: a, to: b, amt: d });
+      else if (d < 0) edges.push({ from: b, to: a, amt: -d });
+    }
+  }
+  const inOf = (s: number, pay: readonly number[]) => edges.reduce((sum, e, i) => sum + (e.to === s ? pay[i] : 0), 0);
+  const owedOf = (s: number) => edges.reduce((sum, e) => sum + (e.from === s ? e.amt : 0), 0);
+  let pay = edges.map((e) => e.amt);
+  let changed = true;
+  for (let k = 0; k < 64 && changed; k++) {
+    const next = [...pay];
+    changed = false;
+    for (const s of seats) {
+      const avail = esc(s) + inOf(s, pay), owed = owedOf(s);
+      if (owed <= avail) continue;
+      edges.forEach((e, i) => {
+        if (e.from !== s) return;
+        next[i] = Math.floor((e.amt * avail) / owed);
+        if (next[i] !== pay[i]) changed = true;
+      });
+    }
+    pay = next;
+  }
+  if (changed) {
+    pay = edges.map((e) => {
+      const owed = owedOf(e.from);
+      return owed > esc(e.from) ? Math.floor((e.amt * esc(e.from)) / owed) : e.amt;
+    });
+  }
+  const net: Record<number, number> = {};
+  const capped: number[] = [];
+  let burned = 0;
+  for (const s of seats) {
+    const got = inOf(s, pay), owed = owedOf(s);
+    const paid = edges.reduce((sum, e, i) => sum + (e.from === s ? pay[i] : 0), 0);
+    let charge = paid;
+    if (owed > paid) {
+      charge = esc(s) + got;
+      capped.push(s);
+      burned += esc(s) + got - paid;
+    }
+    net[s] = got - charge;
+  }
+  return { net, capped, burned };
+}

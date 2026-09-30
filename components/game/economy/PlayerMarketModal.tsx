@@ -5,7 +5,7 @@ import { centreOf, CoinFly, Confetti } from "../celebrate/Fx";
 import { formatXu } from "@/lib/game/fishing/catalog";
 import {
   AUCTION_CAP_PERCENT, AUCTION_HOURS, AUCTION_MIN_VALUE, BAND_MAX_PERCENT, BAND_MIN_PERCENT, econErrText, kindIcon, kindName,
-  leftText, LIST_FEE_PERCENT, LIST_HOURS, listFee, SALE_FEE_PERCENT, saleShare, SNIPE_SECONDS,
+  leftText, LIST_FEE_PERCENT, LIST_HOURS, listFee, SALE_FEE_MIN_PERCENT, SALE_FEE_PERCENT, saleShare, SNIPE_SECONDS,
   type AssetKind, type Auction, type EconState, type Listing,
 } from "@/lib/game/economy/model";
 import { auctionBid, auctionCancel, auctionCreate, econState, marketBuy, marketCancel, marketList } from "@/lib/game/economy/rpc";
@@ -179,7 +179,8 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
         <StallRowView rented={(state?.stalls ?? []).map((s) => s.renterName !== null)} notes={state?.listings.length ?? 0} />
         <p className="text-base">
           Mua bán cá, đồ thời trang và nông sản giữa bà con. Giá trong khoảng {BAND_MIN_PERCENT} %–{BAND_MAX_PERCENT} % giá trị,
-          phí đăng tin {LIST_FEE_PERCENT} % (hết hạn không ai mua thì hoàn một nửa), chợ thu {SALE_FEE_PERCENT} % khi bán được.
+          phí đăng tin {LIST_FEE_PERCENT} % (hết hạn không ai mua thì hoàn một nửa), chợ thu {SALE_FEE_PERCENT} % khi bán được
+          (Thương nhân có kỹ năng Mồm mép: chỉ {SALE_FEE_MIN_PERCENT} %).
         </p>
         <div className="flex flex-wrap gap-1" role="tablist">
           {TABS.map((t) => (
@@ -236,7 +237,7 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
                 </select>
               </label>
               <SellForm assets={state.assets} minValue={AUCTION_MIN_VALUE} busy={busy}
-                note={(p) => `Giá khởi điểm ${formatXu(p.price)} · bán được bạn nhận ${100 - SALE_FEE_PERCENT} % giá cuối.`}
+                note={(p) => `Giá khởi điểm ${formatXu(p.price)} · bán được bạn nhận ${100 - SALE_FEE_PERCENT} % giá cuối (Thương nhân có Mồm mép: ${100 - SALE_FEE_MIN_PERCENT} %).`}
                 submit={{
                   label: (p) => `Mở phiên ${hours} giờ · từ ${formatXu(p.price)}`,
                   onSubmit: (p) => void act(() => auctionCreate(token, p.asset.kind, p.asset.ref, p.qty, p.price, hours), "Đã mở phiên đấu giá!"),

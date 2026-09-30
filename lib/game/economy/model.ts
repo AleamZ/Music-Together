@@ -6,6 +6,8 @@ export type AssetKind = "fish" | "fashion" | "produce";
 
 /** % of a sale burned (board, stall, auction). */
 export const SALE_FEE_PERCENT = 5;
+/** Kinh tế v2 (0106): the thương nhân perk market_sell_pct lowers that fee, to at least this. */
+export const SALE_FEE_MIN_PERCENT = 2;
 /** The price band, % of the NPC value. */
 export const BAND_MIN_PERCENT = 50;
 export const BAND_MAX_PERCENT = 300;
@@ -22,8 +24,8 @@ export const AUCTION_INC_MIN = 10;
 export const AUCTION_CAP_PERCENT = 500;
 export const SNIPE_SECONDS = 120;
 export const AUCTION_HOURS = [1, 6, 12, 24] as const;
-/** Stalls: rent per day, at most 7 days ahead, 8 items, 6 stalls. */
-export const STALL_DAY = 200;
+/** Stalls: rent per day (Kinh tế v2, 0106: 200 → 500), at most 7 days ahead, 8 items, 6 stalls. */
+export const STALL_DAY = 500;
 export const STALL_MAX_DAYS = 7;
 export const STALL_SLOTS = 8;
 export const STALLS = 6;
@@ -31,6 +33,13 @@ export const STALLS = 6;
 export const TRADE_PX = 320;
 export const TRADE_IDLE_MIN = 10;
 export const TRADE_ITEMS = 8;
+/** Kinh tế v2 (0106): the xu of a trade burn TRADE_FEE_PERCENT % (the knob p2p_fee_pct; the window shows the live value);
+ *  only an account at least RECV_MIN_DAYS days old at level RECV_MIN_LEVEL receives xu, at most TRADE_DAILY_IN a day
+ *  (the knob trade_daily_in). Items stay free. */
+export const TRADE_FEE_PERCENT = 5;
+export const RECV_MIN_DAYS = 3;
+export const RECV_MIN_LEVEL = 5;
+export const TRADE_DAILY_IN = 50_000;
 
 export const inBand = (price: number, value: number): boolean =>
   Number.isInteger(price) && value > 0 && price * 100 >= value * BAND_MIN_PERCENT && price * 100 <= value * BAND_MAX_PERCENT;
@@ -42,10 +51,17 @@ export const band = (value: number): { min: number; max: number } => ({
 
 export const listFee = (price: number): number => Math.max(LIST_FEE_MIN, Math.floor((price * LIST_FEE_PERCENT) / 100));
 
-export const saleShare = (price: number): { seller: number; fee: number } => {
-  const seller = Math.floor((price * (100 - SALE_FEE_PERCENT)) / 100);
+/** The sale fee of a seller with `perk` % of market_sell_pct (0106 _econ_fee_pct). */
+export const saleFeePercent = (perk = 0): number => Math.max(SALE_FEE_MIN_PERCENT, SALE_FEE_PERCENT - Math.min(30, Math.max(0, perk)));
+
+export const saleShare = (price: number, feePct = SALE_FEE_PERCENT): { seller: number; fee: number } => {
+  const seller = Math.floor((price * (100 - feePct)) / 100);
   return { seller, fee: price - seller };
 };
+
+/** What the receiver of `gross` xu in a trade gets (0106 _econ_trade_got). */
+export const tradeReceives = (gross: number, feePct = TRADE_FEE_PERCENT): number =>
+  Math.floor((Math.max(0, gross) * (100 - feePct)) / 100);
 
 export const minBid = (start: number, top: number | null): number =>
   top === null ? start : top + Math.max(AUCTION_INC_MIN, Math.floor((top * AUCTION_INC_PERCENT + 99) / 100));
@@ -137,14 +153,24 @@ export function parseEconState(data: unknown): EconState | null {
 }
 
 export interface Offer { coins: number; items: Asset[] }
+/** 0106: may this side receive xu (account age and level), and how much more today. */
+export interface Recv { ok: boolean; left: number }
 export interface Trade {
   id: number; rev: number; opener: boolean; partnerId: string; partnerName: string; mine: Offer; theirs: Offer; myOk: boolean; theirOk: boolean;
+  /** 0106: the burn on the xu leg, in %; who may receive (null from an older server). */
+  feePct: number; myRecv: Recv | null; theirRecv: Recv | null;
 }
 export interface TradeState { trade: Trade | null; lastDone: { id: number; partnerName: string; status: string } | null; coins: number; serverNowMs: number }
 
 const offer = (v: unknown): Offer => {
   const o = obj(v);
   return { coins: num(o?.coins) ?? 0, items: some(o?.items, parseAsset) };
+};
+
+const recv = (v: unknown): Recv | null => {
+  const o = obj(v);
+  const left = o ? num(o.left) : null;
+  return o && typeof o.ok === "boolean" && left !== null ? { ok: o.ok, left } : null;
 };
 
 export function parseTradeState(data: unknown): TradeState | null {
@@ -156,6 +182,7 @@ export function parseTradeState(data: unknown): TradeState | null {
   const trade: Trade | null = t && id !== null && rev !== null ? {
     id, rev, opener: t.opener === true, partnerId: str(t.partner_id) ?? "", partnerName: str(t.partner_name) ?? "Ai đó",
     mine: offer(t.mine), theirs: offer(t.theirs), myOk: t.my_ok === true, theirOk: t.their_ok === true,
+    feePct: num(t.fee_pct) ?? TRADE_FEE_PERCENT, myRecv: recv(t.my_recv), theirRecv: recv(t.their_recv),
   } : null;
   const d = obj(r.last_done);
   const did = d ? num(d.id) : null;
@@ -165,6 +192,18 @@ export function parseTradeState(data: unknown): TradeState | null {
     coins: num(r.coins) ?? 0,
     serverNowMs: now,
   };
+}
+
+/** The xu leg of a trade as it stands (0106): who receives the net, what they get after the burn, and what would make
+ *  the server refuse it — 'age' (account too new or level too low) or 'limit' (over today's allowance). Null: no xu move. */
+export interface XuLeg { toMe: boolean; gross: number; got: number; blocked: "age" | "limit" | null; left: number | null }
+export function tradeXuLeg(t: Trade): XuLeg | null {
+  const net = t.theirs.coins - t.mine.coins;                  // what I gain
+  if (net === 0) return null;
+  const toMe = net > 0, gross = Math.abs(net), got = tradeReceives(gross, t.feePct);
+  const r = toMe ? t.myRecv : t.theirRecv;
+  const blocked = r === null ? null : !r.ok ? "age" : got > r.left ? "limit" : null;
+  return { toMe, gross, got, blocked, left: r?.left ?? null };
 }
 
 /** What the server takes as an offer. */
@@ -212,6 +251,8 @@ const REFUSALS: ReadonlyArray<[string, string]> = [
   ["no trade", "Giao dịch đã đóng."],
   ["offer changed", "Đề nghị vừa thay đổi — xem lại rồi xác nhận lần nữa."],
   ["empty trade", "Chưa ai đưa gì vào giao dịch."],
+  ["cannot receive xu", `Người nhận xu phải có tài khoản từ ${RECV_MIN_DAYS} ngày tuổi và đạt cấp ${RECV_MIN_LEVEL} trở lên (đồ vật thì đổi thoải mái).`],
+  ["receive limit", "Số xu này vượt mức người nhận còn được nhận qua giao dịch hôm nay — bớt xu lại hoặc mai đổi tiếp nhé."],
   ["account locked", "Tài khoản đang bị tạm khoá."],
   ["client outdated", "Trang đã cũ — tải lại trang nhé."],
 ];
