@@ -66,7 +66,9 @@ import CameraZoomControl from "./CameraZoomControl";
 import Camera3dControl from "./Camera3dControl";
 import { HudSlotContext } from "./hud/HudSlot";
 import GuideTracker from "./guide/GuideTracker";
-import { foldClass, useFold } from "./hud/useFold";
+import { useFold } from "./hud/useFold";
+import { HudGroupItems, HudMenu, HudTabs, useHudGroup, type HudGroup } from "./hud/HudMenu";
+import { RotateOverlay, TouchControls } from "./hud/TouchHud";
 import ForestHud from "./forest/ForestHud";
 import CityMapModal from "./CityMapModal";
 import CardOverlays from "./cards/CardOverlays";
@@ -102,7 +104,7 @@ import RestaurantModal from "./RestaurantModal";
 import RideButton from "./RideButton";
 import LiftHud from "./LiftHud";
 import KeyBadge from "./KeyBadge";
-import HotkeysHelp from "./HotkeysHelp";
+import HotkeysHelp, { HotkeysList } from "./HotkeysHelp";
 import { useHotkeys } from "@/hooks/useHotkeys";
 import { useLift } from "@/hooks/useLift";
 import RoadTripOverlay from "./RoadTripOverlay";
@@ -160,7 +162,7 @@ import StaminaHud from "./professions/StaminaHud";                              
 import ProfessionModal from "./professions/ProfessionModal";                        // v21 (0077)
 import { useProfessions } from "@/hooks/useProfessions";                            // v21 (0077)
 import WeatherChip from "./WeatherChip";
-import PersonalSettings from "./PersonalSettings";
+import { PersonalSettingsPanel } from "./PersonalSettings";
 import { loadWeatherFx, saveWeatherFx } from "@/lib/game/weather/fx";
 import type { WeatherFx } from "@/lib/game/art/weather";
 import WeatherLocationDialog from "./WeatherLocationDialog";
@@ -260,8 +262,10 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const [fading, setFading] = useState(false);
   // the HUD's slot for the situational chips (components/game/hud/HudSlot.tsx)
   const [hudSlot, setHudSlot] = useState<HTMLDivElement | null>(null);
-  // the toolbar folds away (☰ on the status card), kept per browser; folded on a phone until chosen
-  const [toolsOpen, setToolsOpen] = useFold("mt.hud.tools");
+  // the HUD menu: grouped entry points (⚙️ 🎒 🧭 📜), every group closed until the player opens one (kept per browser)
+  const [hudGroup, setHudGroup] = useHudGroup();
+  // the minimap folds away (kept per browser); open from `sm` up until chosen
+  const [miniOpen, setMiniOpen] = useFold("mt.hud.minimap");
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const map = getMap(travel.mapId);
   const inWorld = worldMode && isZone(travel.mapId);
@@ -960,6 +964,120 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     : cardPresence?.map === "bai_dat" ? "🥊 Đang ở Bãi đất trống"
     : cardPresence?.map === "wild" ? "🌲 Đang dạo ngoài đồng" : "🎮 Đang dạo quanh sảnh";
 
+  const mailUnread = mail.box?.unread ?? 0;
+  const hudGroups: HudGroup[] = [
+    {
+      id: "settings", icon: "⚙️", label: "Cài đặt", hotkey: "settings", hotkeyBadge: <KeyBadge id="settings" />,
+      content: (
+        <HudTabs tabs={[
+          { id: "general", label: "Chung", content: <PersonalSettingsPanel weatherFx={weatherFx} onWeatherFx={changeWeatherFx} /> },
+          {
+            id: "camera", label: "Camera & zoom", reveal: true,
+            content: (
+              <div className="flex flex-col gap-1 font-vt text-base">
+                {worldMode ? <Camera3dControl /> : (
+                  <CameraZoomControl mapWidth={map.width} mapHeight={map.height} onZoomChange={(z) => canvasRef.current?.setZoom(z)} />
+                )}
+                <p className="text-sm opacity-75">Lăn chuột hoặc chụm hai ngón trên màn hình để zoom nhanh.</p>
+              </div>
+            ),
+          },
+          {
+            id: "hotkeys", label: "Phím tắt",
+            content: (
+              <div className="flex flex-col gap-1.5">
+                <HotkeysList />
+                <button type="button" className="pch-btn relative self-start font-vt text-base pointer-coarse:hidden" onClick={() => setHelpOpen(true)}>
+                  ⌨️ Mở bảng lớn<KeyBadge id="help" />
+                </button>
+              </div>
+            ),
+          },
+          {
+            id: "map", label: "Bản đồ",
+            content: (
+              <div className="flex flex-wrap gap-1 font-vt text-base">
+                <button type="button" className="pch-btn min-h-10 px-2" onClick={openWorldMap}>🗺️ Mở bản đồ thế giới</button>
+                <button type="button" className="pch-btn min-h-10 px-2" data-testid="minimap-toggle" aria-pressed={miniOpen !== false}
+                  onClick={() => setMiniOpen(miniOpen === false)}>
+                  {miniOpen === false ? "🧭 Hiện bản đồ nhỏ" : "🧭 Ẩn bản đồ nhỏ"}
+                </button>
+              </div>
+            ),
+          },
+        ]} />
+      ),
+    },
+    {
+      id: "bag", icon: "🎒", label: "Túi đồ", badge: mailUnread,
+      content: (
+        <HudGroupItems>
+          <button type="button" className="pch-btn relative" data-hotkey="bag" title="Giỏ đồ (B)" onClick={() => fishing.openPanel("bag")}>
+            🧺<span className="sr-only"> Giỏ đồ</span><KeyBadge id="bag" />
+          </button>
+          <button type="button" className="pch-btn relative" data-hotkey="wardrobe" title="Tủ đồ (I)" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
+            👕<span className="sr-only"> Tủ đồ</span><KeyBadge id="wardrobe" />
+          </button>
+          <button type="button" className="pch-btn relative" data-testid="mailbox-hud" onClick={() => setPanel("mailbox")}
+            title={mailUnread > 0 ? `Hòm thư: ${mailUnread} thư chưa đọc` : "Hòm thư · nhập code quà"}>
+            📬<span className="sr-only"> Hòm thư</span>
+            {mailUnread > 0 && (
+              <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-0.5 text-center font-sans text-[10px] leading-4 text-white"
+                data-testid="mailbox-unread">{Math.min(99, mailUnread)}</span>
+            )}
+          </button>
+          {fishing.handFish !== null && (
+            <button
+              type="button" className="pch-btn relative" data-hotkey="fish" aria-pressed={!fishing.fishStowed}
+              title={fishing.fishStowed ? "Lấy cá ra cầm trên tay (F)" : "Cất cá vào giỏ (F)"} onClick={fishing.toggleFishStowed}
+            >
+              🐟<span className="sr-only">{fishing.fishStowed ? " Lấy cá ra" : " Cất cá"}</span><KeyBadge id="fish" />
+            </button>
+          )}
+          {(rain.state?.umbrellas.length ?? 0) > 0 && (
+            <button type="button" className="pch-btn relative" data-hotkey="umbrellas" title="Ô của tôi (cầm tay) (U)" onClick={() => setPanel("umbrellas")}>
+              ☂️<span className="sr-only"> Ô của tôi</span><KeyBadge id="umbrellas" />
+            </button>
+          )}
+        </HudGroupItems>
+      ),
+    },
+    {
+      id: "play", icon: "🧭", label: "Hoạt động", badge: petChallenges > 0 || (map.id === "field" && farm.urgent > 0),
+      content: (
+        <HudGroupItems>
+          <button type="button" className="pch-btn relative" title="Chợ người chơi · đấu giá (4)" data-testid="player-market-hud" data-hotkey="playerMarket" onClick={() => setPanel("player_market")}>
+            🏪<span className="sr-only"> Chợ người chơi</span><KeyBadge id="playerMarket" />
+          </button>
+          <button type="button" className="pch-btn relative" title="Trại thú: trứng, nuôi dạy, đấu thú, cá chiến (5)" data-testid="pet-center-hud"
+            data-hotkey="petCenter" onClick={() => { setPanel("pet_center"); void reloadPets(); }}>
+            🐾<span className="sr-only"> Trại thú</span><KeyBadge id="petCenter" />
+            {petChallenges > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />}
+          </button>
+          {dog.dog && (
+            <button type="button" className="pch-btn relative truncate" data-hotkey="dog" title={`Chó của bạn: ${dog.dog.name}${dog.hungry ? " (đang đói)" : ""} (P)`}
+              onClick={() => setPanel("dog")}>{dogHudText(dog.dog.name, dog.hungry)}</button>
+          )}
+          {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
+        </HudGroupItems>
+      ),
+    },
+    {
+      id: "quests", icon: "📜", label: "Nhiệm vụ & tin tức", badge: news.unread,
+      content: (
+        <HudGroupItems>
+          <QuestHudButtons token={token} canPopup={!blocking} onOpen={openQuestPanel} />
+          {news.unread && (
+            <span className="pch-btn relative cursor-default" title="Báo Làng có tin mới — ghé sạp báo ở sảnh" data-testid="news-hud">
+              📰<span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />
+              <span className="sr-only"> Báo Làng có tin mới</span>
+            </span>
+          )}
+        </HudGroupItems>
+      ),
+    },
+  ];
+
   return (
     <HudSlotContext.Provider value={hudSlot}>
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
@@ -1020,7 +1138,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {inWorld && <ZoneToast zone={zone} />}{/* P2: the district I walk into */}
       {faint && <FaintOverlay untilMs={faint.until} serverNowMs={faint.serverNow} clientAtPerfMs={faint.at} onDone={endFaint} cause={faint.cause} count={vitalsState?.faintCount ?? 0} />}
 
-      <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex flex-wrap items-start justify-between gap-2">
+      <div className="pointer-events-none absolute left-[max(0.5rem,env(safe-area-inset-left))] right-[max(0.5rem,env(safe-area-inset-right))] top-[max(0.5rem,env(safe-area-inset-top))] z-10 flex flex-wrap items-start justify-between gap-2 pointer-coarse:right-16">
         {/* the left column: who I am and how I am (the status card), the toolbar, then the situational chips */}
         <div className="pointer-events-none flex w-[20rem] max-w-[calc(100vw-1rem)] flex-col items-stretch gap-1.5">
           <div className="pch pointer-events-auto flex flex-col gap-1.5 p-1.5 font-vt leading-none" data-testid="player-hud">
@@ -1031,11 +1149,6 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                   <span className="min-w-0 flex-1 truncate text-xl" title={`${myBadges ? `${myBadges} ` : ""}${myName}`}>
                     {myBadges ? `${myBadges} ` : ""}{myName}
                   </span>
-                  <button type="button" className="pch-btn shrink-0 px-1.5 py-0.5 text-base" aria-expanded={toolsOpen ?? undefined}
-                    aria-controls="hud-toolbar" title={toolsOpen === false ? "Mở thanh công cụ" : "Gập thanh công cụ"} data-testid="hud-tools-toggle"
-                    onClick={() => setToolsOpen(!(toolsOpen ?? window.matchMedia("(min-width: 640px)").matches))}>
-                    ☰<span className="sr-only"> Công cụ</span>
-                  </button>
                   <button type="button" className="pch-btn relative shrink-0 px-1.5 py-0.5 text-base tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng (1)" data-testid="profile-hud"
                     data-hotkey="profile" onClick={() => { setPanel("profile"); void progress.reload(); }}>
                     ⭐ {myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span><KeyBadge id="profile" />
@@ -1078,55 +1191,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               />
             </div>
           </div>
-          {/* the toolbar: square buttons of one size in three groups (me · things to do · the game), labels in the
-              tooltips and for screen readers; the camera on its own row */}
-          <nav id="hud-toolbar" className={`pch pointer-events-auto ${foldClass(toolsOpen)} flex-col gap-1 p-1 font-vt`} aria-label="Công cụ" data-testid="hud-toolbar">
-            <div className="flex flex-wrap items-center gap-1 text-lg leading-none [&_.pch-btn]:inline-flex [&_.pch-btn]:h-9 [&_.pch-btn]:min-w-9 [&_.pch-btn]:items-center [&_.pch-btn]:justify-center [&_.pch-btn]:px-1.5 [&_.pch-btn]:py-0">
-              <button type="button" className="pch-btn relative" data-hotkey="wardrobe" title="Tủ đồ (I)" onClick={() => setPanel("wardrobe")} disabled={savedLook === null}>
-                👕<span className="sr-only"> Tủ đồ</span><KeyBadge id="wardrobe" />
-              </button>
-              <button type="button" className="pch-btn relative" data-hotkey="bag" title="Giỏ đồ (B)" onClick={() => fishing.openPanel("bag")}>
-                🎒<span className="sr-only"> Giỏ đồ</span><KeyBadge id="bag" />
-              </button>
-              <button type="button" className="pch-btn relative" title="Chợ người chơi · đấu giá (4)" data-testid="player-market-hud" data-hotkey="playerMarket" onClick={() => setPanel("player_market")}>
-                🏪<span className="sr-only"> Chợ người chơi</span><KeyBadge id="playerMarket" />
-              </button>
-              <button type="button" className="pch-btn relative" data-testid="mailbox-hud" onClick={() => setPanel("mailbox")}
-                title={mail.box && mail.box.unread > 0 ? `Hòm thư: ${mail.box.unread} thư chưa đọc` : "Hòm thư · nhập code quà"}>
-                📬<span className="sr-only"> Hòm thư</span>
-                {(mail.box?.unread ?? 0) > 0 && (
-                  <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-0.5 text-center font-sans text-[10px] leading-4 text-white"
-                    data-testid="mailbox-unread">{Math.min(99, mail.box?.unread ?? 0)}</span>
-                )}
-              </button>
-              <button type="button" className="pch-btn relative" title="Trại thú: trứng, nuôi dạy, đấu thú, cá chiến (5)" data-testid="pet-center-hud"
-                data-hotkey="petCenter" onClick={() => { setPanel("pet_center"); void reloadPets(); }}>
-                🐾<span className="sr-only"> Trại thú</span><KeyBadge id="petCenter" />
-                {petChallenges > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />}
-              </button>
-              {fishing.handFish !== null && (
-                <button
-                  type="button" className="pch-btn relative" data-hotkey="fish" aria-pressed={!fishing.fishStowed}
-                  title={fishing.fishStowed ? "Lấy cá ra cầm trên tay (F)" : "Cất cá vào giỏ (F)"} onClick={fishing.toggleFishStowed}
-                >
-                  {fishing.fishStowed ? "🐟" : "🎒🐟"}<span className="sr-only">{fishing.fishStowed ? " Lấy cá ra" : " Cất cá"}</span><KeyBadge id="fish" />
-                </button>
-              )}
-              {(rain.state?.umbrellas.length ?? 0) > 0 && (
-                <button type="button" className="pch-btn relative" data-hotkey="umbrellas" title="Ô của tôi (cầm tay) (U)" onClick={() => setPanel("umbrellas")}>
-                  ☂️<span className="sr-only"> Ô của tôi</span><KeyBadge id="umbrellas" />
-                </button>
-              )}
-              {news.unread && (
-                <span className="pch-btn relative cursor-default" title="Báo Làng có tin mới — ghé sạp báo ở sảnh" data-testid="news-hud">
-                  📰<span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />
-                  <span className="sr-only"> Báo Làng có tin mới</span>
-                </span>
-              )}
-              {dog.dog && (
-                <button type="button" className="pch-btn max-w-24 truncate" data-hotkey="dog" title={`Chó của bạn: ${dog.dog.name}${dog.hungry ? " (đang đói)" : ""} (P)`}
-                  onClick={() => setPanel("dog")}>{dogHudText(dog.dog.name, dog.hungry)}</button>
-              )}
+          {/* the HUD menu: a few grouped entry points (⚙️ Cài đặt · 🎒 Túi đồ · 🧭 Hoạt động · 📜 Nhiệm vụ), all closed for a
+              newcomer; the ride button stays out as the one quick action */}
+          <div className="pointer-events-none flex items-start gap-1.5">
+            <HudMenu groups={hudGroups} open={hudGroup} onOpen={setHudGroup} />
+            <div className="pch pointer-events-auto p-1 font-vt text-lg leading-none empty:hidden [&_.pch-btn]:inline-flex [&_.pch-btn]:h-9 [&_.pch-btn]:min-w-9 [&_.pch-btn]:items-center [&_.pch-btn]:justify-center [&_.pch-btn]:pointer-coarse:h-11 [&_.pch-btn]:pointer-coarse:min-w-11">
               <RideButton
                 owned={vehicles.owned}
                 riding={riding}
@@ -1135,26 +1204,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                 onMount={mountOwn}
                 onDismount={dismount}
               />
-              {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
-              <span aria-hidden="true" className="mx-0.5 h-7 w-0.5 bg-parchment-300" />
-              <QuestHudButtons token={token} canPopup={!blocking} onOpen={openQuestPanel} />
-              {map.id === "field" && <FarmTasksButton urgent={farm.urgent} onClick={() => farm.openPanel({ kind: "tasks" })} />}
-              <span aria-hidden="true" className="mx-0.5 h-7 w-0.5 bg-parchment-300" />
-              <PersonalSettings weatherFx={weatherFx} onWeatherFx={changeWeatherFx} />
-              <button type="button" className="pch-btn relative pointer-coarse:hidden" title="Phím tắt (H)" onClick={() => setHelpOpen(true)}>
-                ⌨️<span className="sr-only"> Phím tắt</span><KeyBadge id="help" />
-              </button>
             </div>
-            <div className="flex flex-wrap items-center gap-1">
-              {worldMode ? <Camera3dControl /> : (
-                <CameraZoomControl
-                  mapWidth={map.width}
-                  mapHeight={map.height}
-                  onZoomChange={(z) => canvasRef.current?.setZoom(z)}
-                />
-              )}
-            </div>
-          </nav>
+          </div>
           <div ref={setHudSlot} className="pointer-events-auto flex flex-col items-start gap-1.5 empty:hidden" data-testid="hud-slot">
             <AnticheatChip secondsLeft={anticheat.secondsLeft} />
             {cards.seated && <CardSeatChip table={cards.seatTable} me={accountId} onOpen={() => cards.seated && cards.openPanel(cards.seated)} />}
@@ -1248,13 +1299,15 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       }} />{/* the newcomer's guide (lib/game/guide/model.ts) */}
       <MiningOverlays m={mining} showChip={map.id === "mo_da" || Object.keys(mining.state?.bag ?? {}).some((k) => k.startsWith("pot_")) || (mining.state?.buffs.length ?? 0) > 0} />{/* v21 Mỏ đá */}
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
+      <TouchControls disabled={blocking || faint !== null || trip !== null || hudGroup !== null} />{/* phones: stick + E / Space */}
+      <RotateOverlay />
 
-      <div className="pointer-events-none absolute bottom-18 right-3 z-10 hidden sm:block">
+      <div className={`pointer-events-none absolute bottom-18 right-3 z-10 ${miniOpen === false ? "hidden" : miniOpen ? "block" : "hidden sm:block"} pointer-coarse:hidden`}>
         {inWorld ? <WorldMiniMap getWorldPos={getWorldPos} getMarks={getMapMarks} zone={zone} waypoints={wpMarks} onOpenMap={openWorldMap} /> : <MiniMap mapId={travel.mapId} getLocalPos={() => canvasRef.current?.localPos() ?? null} onOpenMap={openWorldMap} />}
       </div>
-      <button type="button" className="pch-btn pointer-events-auto absolute bottom-18 right-3 z-10 px-2 py-1 font-vt text-lg sm:hidden" onClick={openWorldMap} aria-label="Mở bản đồ thế giới">🗺️</button>
+      <button type="button" className="pch-btn pointer-events-auto absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.5rem,env(safe-area-inset-top))] z-10 hidden h-11 min-w-11 px-2 py-1 font-vt text-lg pointer-coarse:inline-flex pointer-coarse:items-center pointer-coarse:justify-center" onClick={openWorldMap} aria-label="Mở bản đồ thế giới">🗺️</button>
 
-      <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
+      <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 flex justify-center">
         <HudChatBar
           onSend={(text) => send(formatChatMessageBody(text))}
           onReact={react}
