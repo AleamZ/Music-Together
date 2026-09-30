@@ -121,8 +121,11 @@ $$;
 do $$
 declare r integer; lo numeric; hi numeric;
 begin
-  assert (select count(*) from public.fish_species) = 23, 'the 23 species';
-  assert (select jsonb_object_agg(id, price_per_kg) from public.fish_species)
+  -- (0110_fishing_v3.sql adds four species on this scale: tests/sql/fishing-v3-smoke.sql checks them)
+  assert (select count(*) from public.fish_species where id not in ('luon_dong', 'ca_tai_tuong', 'ba_ba', 'ca_chinh')) = 23,
+    'the 23 species';
+  assert (select jsonb_object_agg(id, price_per_kg) from public.fish_species
+           where id not in ('luon_dong', 'ca_tai_tuong', 'ba_ba', 'ca_chinh'))
        = '{"ca_ro": 40, "ca_sac": 38, "ca_me_vinh": 30, "ca_loc": 10, "ca_tre": 15, "ca_chep": 9, "ca_tra": 8, "ca_that_lat": 27,
            "tom_cang": 129, "ca_leo": 9, "ca_bong_tuong": 27, "ca_lang": 12, "ca_ngat": 16, "ca_bong_lau": 16, "ca_he_vang": 45,
            "ca_chien": 8, "ca_duoi_song": 6, "ca_dua": 12, "ca_anh_vu": 35, "ca_ho": 21, "ca_tra_dau": 28, "rua_mai_vang": 49,

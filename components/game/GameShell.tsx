@@ -1199,7 +1199,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       <ForestHud token={token} mapId={map.id} canvas={getCanvas} blocked={blocking || faint !== null || trip !== null}
         toast={showToast} onCoins={reloadCoins} onPanel={setForestOpen} />{/* 0096 forest */}
       <HeatActions heat={heat} hidden={blocking || faint !== null || trip !== null || fishing.net !== null}
-        onNet={fishing.netReady && fishing.cast.phase === "idle" ? fishing.throwNet : null} />
+        onNet={fishing.netReady && fishing.cast.phase === "idle" ? fishing.throwNet : null}
+        onGroundbait={fishing.groundbaitReady && fishing.cast.phase === "idle"
+          ? (cell) => fishing.throwGroundbait(fishing.groundbaitReady!, cell) : null} />{/* 0110 */}
       {prompt && !blocking && (
         <button
           type="button"

@@ -6,11 +6,11 @@ import { syncClock } from "@/lib/game/farm/clock";
 import type { NpcQuota } from "@/lib/game/economy/npc";
 import type { FishingCatalog } from "@/lib/game/fishing/catalog";
 import {
-  buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, finishCast, finishNet, fishingErrorMessage, hookCast, netHaul, releaseFish,
-  repairRod, sellFish, setLoadout, startCast, startNet, type FinishCast, type FinishNet, type HookCast, type ReelInput, type NetHaul, type NetPull, type NetThrow,
-  type StartCast, type StartNet,
+  buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, fetchNotebook, finishCast, finishNet, fishingEquip, fishingErrorMessage,
+  hookCast, netHaul, releaseFish, repairRod, sellFish, setLoadout, startCast, startNet, throwGroundbait, type FinishCast, type FinishNet,
+  type GroundbaitSpot, type HookCast, type Notebook, type ReelInput, type NetHaul, type NetPull, type NetThrow, type StartCast, type StartNet,
 } from "@/lib/game/fishing/rpc";
-import type { FishingState, Loadout } from "@/lib/game/fishing/state";
+import type { FishingState, GearSlot, Loadout } from "@/lib/game/fishing/state";
 import { extrasErrorMessage, startBoatCast } from "@/lib/game/fishing/extras-rpc";
 import { startRiverCast } from "@/lib/game/river/rpc";
 
@@ -26,6 +26,12 @@ export interface FishingData {
   dig: () => Promise<{ gained: number } | null>;
   buy: (itemId: string, qty: number) => Promise<boolean>;
   equip: (loadout: Loadout) => Promise<boolean>;
+  /** 0110: mount (`item`) or unmount (null) one slot of the rig. */
+  equipSlot: (slot: GearSlot, item: string | null) => Promise<boolean>;
+  /** 0110: one bag of groundbait on a spot (the pond cell, or the river in world px). */
+  throwGroundbait: (roomId: string, item: string, spot: GroundbaitSpot) => Promise<boolean>;
+  /** 0110: Sổ tay câu cá (null: not bought, or an error — the toast says which). */
+  notebook: () => Promise<Notebook | null>;
   /** `market` (v18.5): sold at Vựa cá Chợ Lớn, +10% (econ v2). `npcCut` (0101): what the thương lái kept back. */
   sell: (ids: string[], market?: boolean) => Promise<{ sold: number; earned: number; npcCut: number } | null>;
   /** econ v2 (0101): the thương lái's day as the last sale (or learnNpc) told it; null until then. */
@@ -149,6 +155,18 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     }, [act, token]),
     buy: useCallback(async (itemId: string, qty: number) => (await act(() => buyItem(token, itemId, qty), (s) => s)) !== null, [act, token]),
     equip: useCallback(async (l: Loadout) => (await act(() => setLoadout(token, l), (s) => s)) !== null, [act, token]),
+    equipSlot: useCallback(async (slot: GearSlot, item: string | null) =>
+      (await act(() => fishingEquip(token, slot, item), (s) => s)) !== null, [act, token]),                        // 0110
+    throwGroundbait: useCallback(async (roomId: string, item: string, spot: GroundbaitSpot) =>
+      (await act(() => throwGroundbait(roomId, token, item, spot), (s) => s)) !== null, [act, token]),             // 0110
+    notebook: useCallback(async () => {
+      try {
+        return await fetchNotebook(token);
+      } catch (err) {
+        onErrorRef.current(fishingErrorMessage(err));
+        return null;
+      }
+    }, [token]),
     sell: useCallback(async (ids: string[], market = false) => {
       const r = await act(() => sellFish(token, ids, market), (x) => x.state);
       if (r) {                                                                            // econ v2 (0101): the thương lái

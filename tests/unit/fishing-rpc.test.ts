@@ -53,7 +53,8 @@ describe("fetchFishingCatalog", () => {
     expect(a.species[0]).toMatchObject({ id: "ca_ro", pricePerKg: 45 });
     expect(a.items[0]).toMatchObject({ id: "rod_wood", starter: true, zonePct: 25 });
     // farm items share shop_items since v15: the fishing shop asks for its own kinds only
-    expect(filters).toEqual([["kind", ["rod", "bobber", "bait", "bait_box", "bucket", "net", "fishing_kit"]]]);
+    expect(filters).toEqual([["kind", ["rod", "bobber", "bait", "bait_box", "bucket", "net", "fishing_kit",
+      "hook", "line", "reel", "groundbait", "fishbook"]]]);                                           // 0110: the parts
   });
 
   it("does not keep a rejected load: the next call queries again", async () => {

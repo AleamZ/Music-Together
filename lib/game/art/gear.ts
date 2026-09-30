@@ -1,9 +1,10 @@
+import { GEAR_V3_ICONS } from "./gear-v3";
 import type { PixelIcon } from "./icons";
 
 // 16×16 icons for the fishing gear (spec §11): rods, bobbers, baits, the bait boxes, buckets and the fishing kit.
 // "." transparent, "o" outline, other letters from the icon's own palette. Original art.
 
-export const GEAR_ICONS: Record<string, PixelIcon> = {
+const BASE_GEAR_ICONS: Record<string, PixelIcon> = {
   rod_wood: {
     rows: [
       "..............oo",
@@ -429,3 +430,6 @@ export const GEAR_ICONS: Record<string, PixelIcon> = {
     pal: { y: "#f2d27a", Y: "#c9962a", W: "#fff6d0", s: "#ffe08a" },
   },
 };
+
+/** Every gear icon: the stock above and Câu cá v3's parts (0110, gear-v3.ts). */
+export const GEAR_ICONS: Record<string, PixelIcon> = { ...BASE_GEAR_ICONS, ...GEAR_V3_ICONS };

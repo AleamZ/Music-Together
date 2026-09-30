@@ -58,6 +58,8 @@ describe("0064–0067: every re-created function is its newest body plus the mar
     // v21 fixes: the catch flag (mt.catch); econ v2 fishing: the battle's room (mt.catch_room) and the net haul's effort
     const tags: Record<string, string[]> = {
       "0078_v21_fixes.sql": ["0078"], "0101_econ_fishing.sql": ["econ v2", "0078"], "0108_anticheat_v3.sql": ["0108"],
+      // Câu cá v3 (0110): 0101's finish_cast and net_haul plus the snaps, the extra hooks and the nets' pick
+      "0110_fishing_v3.sql": ["0110", "econ v2", "0078"],
     };
     const later = readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0067");
     for (const f of later) {
