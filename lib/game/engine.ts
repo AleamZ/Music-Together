@@ -372,8 +372,10 @@ export class GameEngine {
       if (this.world.hammock(id)) return "sit";
       if (this.world.riding(id) || this.world.carrier(id)) return "ride";
       if (this.world.swim(id, t) === "swim") return "swim";
+      if (this.world.heat(id, t).warming) return "stretch";                           // khởi động by the pond
       const ph = this.world.fishing(id, t).phase;
       if (ph === 3) return "reel";
+      if (ph === 2) return "bite";
       if (ph !== 0) return "cast";
       const fa = this.world.farmAnim(id, t);                                            // 0097: chopping / cooking, as they told us
       if (fa === FARM_ANIM.chop) return "chop";
@@ -401,8 +403,8 @@ export class GameEngine {
     if (!this.aboard(t) && (!lying || this.view3d)) {
       const f = walkFrame(me);
       const ph = this.fishing.phase;
-      const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim"
-        : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : this.workAct ?? (waved.has(this.opts.localId) ? "wave" : undefined);
+      const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim" : this.warming(t) ? "stretch"
+        : ph === "reeling" ? "reel" : ph === "bite" ? "bite" : ph !== "idle" ? "cast" : this.workAct ?? (waved.has(this.opts.localId) ? "wave" : undefined);
       const boat = this.worldMap !== null && this.afloatAt(me.pos);                                               // P3: rowing Sông Cái
       out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
         act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined) });

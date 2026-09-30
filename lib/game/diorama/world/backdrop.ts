@@ -118,24 +118,38 @@ function scatter(): TreeSpot[] {
   return out;
 }
 
-function trees(mat: THREE.Material): THREE.InstancedMesh[] {
+/** Trees are instanced per tile (px; the near band finer), so the camera's frustum and far plane skip the tiles out of
+ *  view — one mesh round the whole world would be drawn (all its triangles) from anywhere. */
+const TILE = { near: 2400, far: 4800 } as const;
+
+function trees(mat: THREE.Material): { meshes: THREE.InstancedMesh[]; geos: THREE.BufferGeometry[] } {
   const spots = scatter();
-  const meshes: THREE.InstancedMesh[] = [];
+  const meshes: THREE.InstancedMesh[] = [], geos: THREE.BufferGeometry[] = [];
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), c = new THREE.Color();
   for (const kind of ["broad", "palm", "bamboo"] as Kind[]) for (const near of [true, false]) {
     const mine = spots.filter((t) => t.kind === kind && t.near === near);
     if (!mine.length) continue;
-    const im = new THREE.InstancedMesh(model(kind, near), mat, mine.length);
-    mine.forEach((t, i) => {
-      m.compose(p.set(t.x / U, t.h - 0.1, t.y / U), q.setFromAxisAngle(up, t.rot), s.setScalar(t.s * 1.3));
-      im.setMatrixAt(i, m);
-      im.setColorAt(i, c.setHex(PAL[kind][Math.floor(t.tint * PAL[kind].length)]));
-    });
-    im.name = `backdrop-${kind}-${near ? "near" : "far"}`;
-    im.computeBoundingSphere();
-    meshes.push(im);
+    const geo = model(kind, near), tile = near ? TILE.near : TILE.far;
+    geos.push(geo);
+    const tiles = new Map<string, TreeSpot[]>();
+    for (const t of mine) {
+      const key = `${Math.floor(t.x / tile)},${Math.floor(t.y / tile)}`;
+      const list = tiles.get(key);
+      if (list) list.push(t); else tiles.set(key, [t]);
+    }
+    for (const [key, list] of tiles) {
+      const im = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((t, i) => {
+        m.compose(p.set(t.x / U, t.h - 0.1, t.y / U), q.setFromAxisAngle(up, t.rot), s.setScalar(t.s * 1.3));
+        im.setMatrixAt(i, m);
+        im.setColorAt(i, c.setHex(PAL[kind][Math.floor(t.tint * PAL[kind].length)]));
+      });
+      im.name = `backdrop-${kind}-${near ? "near" : "far"}-${key}`;
+      im.computeBoundingSphere();
+      meshes.push(im);
+    }
   }
-  return meshes;
+  return { meshes, geos };
 }
 
 export interface Backdrop {
@@ -152,7 +166,7 @@ export function buildBackdrop(): Backdrop {
   const root = new THREE.Group();
   root.name = "backdrop";
   const treeMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  const ims = trees(treeMat);
+  const { meshes: ims, geos } = trees(treeMat);
   root.add(...ims);
   for (const o of [land, ...ims]) { o.matrixAutoUpdate = false; o.updateMatrix(); }
   return {
@@ -160,7 +174,8 @@ export function buildBackdrop(): Backdrop {
     tint() { /* lit by the scene's sun and fog */ },
     dispose() {
       land.geometry.dispose();
-      for (const im of ims) { im.geometry.dispose(); im.dispose(); }
+      for (const g of geos) g.dispose();
+      for (const im of ims) im.dispose();
       treeMat.dispose();
     },
   };

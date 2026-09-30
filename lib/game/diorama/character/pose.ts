@@ -4,8 +4,23 @@
 
 import type { FaceExpr } from "./voxel-face";
 
-export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "reel" | "swim" | "ride" | "wave" | "chop" | "cook";
-export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "reel", "swim", "ride", "wave", "chop", "cook"];
+export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "stretch";
+export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch"];
+/** Actions that play once from their start (the caller passes the time since the action began, not a running clock):
+ *  the cast's throw, then the rod held out while the line waits. */
+export const ONE_SHOT_ACTS: ReadonlySet<CharAct> = new Set<CharAct>(["cast"]);
+/** The cast's throw (s): wind-up, snap, follow-through; then the hold. */
+export const CAST_S = 0.95;
+
+/** A preview's clock for an action (the dev lab, the wardrobe): a one-shot action replays every 3 s. */
+export function previewTime(act: CharAct, t: number): number {
+  return ONE_SHOT_ACTS.has(act) ? t % 3 : t;
+}
+
+/** The bike's crank angle (radians) at pedalling time `t` (the pedal pose's legs and the bike's cranks share it). */
+export function pedalAngle(t: number, phase = 0): number {
+  return (t + phase) * Math.PI * 2 * 1.1;
+}
 
 /** Limb swing: `x` = pitch (forward +), `z` = roll (outward +). */
 export interface Limb { x: number; z: number }
@@ -126,17 +141,46 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       break;
     }
     case "cast": {
-      // wind up behind the head (elbow folded), snap forward (the elbow whips straight), hold (1.6 s loop)
-      const k = ((s % 1.6) + 1.6) % 1.6 / 1.6;
-      const wind = Math.min(1, k / 0.45), snap = k < 0.45 ? 0 : Math.min(1, (k - 0.45) / 0.15);
-      const swing = k < 0.45 ? -2.5 * wind : -2.5 + 3.7 * snap;
-      p.armR.x = swing; p.armL.x = 0.4 + swing * 0.25;
-      p.elbowR = k < 0.45 ? 0.3 + 1.1 * wind : 1.4 - 1.3 * snap;
-      p.elbowL = 0.8;
-      p.lean = k < 0.45 ? -0.12 * wind : 0.16 * snap;
-      p.legL.x = 0.3; p.kneeL = 0.25; p.legR.x = -0.2; p.kneeR = 0.08; p.ankleR = 0.15;
-      p.squash = k < 0.45 ? -0.02 * wind : 0.02 * (1 - snap);
+      // ONE SHOT (t = time since the cast began): wind the rod back over the shoulder, snap it forward, follow through,
+      // then hold it out over the water — the rod tip up and forward, breathing, the tip nodding with the float
+      const k = Math.max(0, t);
       p.rod = 1;
+      p.legL.x = 0.3; p.kneeL = 0.25; p.legR.x = -0.2; p.kneeR = 0.08; p.ankleR = 0.15;
+      if (k < CAST_S) {
+        const wind = Math.min(1, k / 0.45), snap = k < 0.45 ? 0 : Math.min(1, (k - 0.45) / 0.18), settle = k < 0.63 ? 0 : (k - 0.63) / (CAST_S - 0.63);
+        const e = settle * settle * (3 - 2 * settle);
+        const swing = k < 0.45 ? -2.5 * wind : k < 0.63 ? -2.5 + 3.7 * snap : 1.2 - 0.65 * e;
+        p.armR.x = swing; p.armL.x = 0.4 + swing * 0.25;
+        p.elbowR = k < 0.45 ? 0.3 + 1.1 * wind : k < 0.63 ? 1.4 - 1.3 * snap : 0.1 + 0.3 * e;
+        p.elbowL = 0.8;
+        p.lean = k < 0.45 ? -0.12 * wind : k < 0.63 ? 0.16 * snap : 0.16 - 0.12 * e;
+        p.squash = k < 0.45 ? -0.02 * wind : 0.02 * (1 - snap);
+        p.headX = k < 0.45 ? -0.1 * wind : 0.08;
+        break;
+      }
+      const b = Math.sin(s * TAU * 0.35), nod = Math.sin(s * TAU * 0.6);
+      p.armR.x = 0.55 + nod * 0.03; p.elbowR = 0.4;
+      p.armL.x = 0.55; p.armL.z = 0.12; p.elbowL = 0.6;
+      p.lean = 0.04;
+      p.bob = b * 0.008 - 0.004;
+      p.squash = b * 0.01;
+      p.headX = 0.12 + Math.sin(s * TAU * 0.09) * 0.03;
+      p.headZ = Math.sin(s * TAU * 0.07) * 0.04;
+      break;
+    }
+    case "bite": {
+      // a fish on: leaning back, both hands on the rod, the rod jerking up in quick tugs
+      const j = Math.sin(s * TAU * 3.2), tug = Math.max(0, Math.sin(s * TAU * 1.3));
+      p.rod = 1;
+      p.armR.x = 0.75 + tug * 0.35 + j * 0.06; p.elbowR = 0.55 + tug * 0.25;
+      p.armL.x = 0.85 + tug * 0.3; p.armL.z = 0.02; p.elbowL = 0.75;
+      p.lean = -0.14 - tug * 0.06;
+      p.legL.x = 0.35; p.kneeL = 0.3; p.legR.x = -0.25; p.kneeR = 0.12; p.ankleR = 0.2;
+      p.bob = -0.015 + j * 0.006;
+      p.squash = -0.015;
+      p.headX = -0.05;
+      p.roll = j * 0.02;
+      p.face = "happy";
       break;
     }
     case "reel": {
@@ -178,6 +222,51 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       p.lean = 0.12;
       p.bob = b * 0.04;
       p.squash = -b * 0.015;
+      break;
+    }
+    case "pedal": {
+      // on a bicycle: the feet go round with the cranks (each thigh rises and the knee folds as its pedal comes over
+      // the top), the hands on the bars, the hips rocking a little with each push; still when the bike stands
+      const a = pedalAngle(t, phase), aR = a + Math.PI;
+      p.drop = 0.24;
+      p.legL.x = 1.02 + Math.cos(a) * 0.3; p.legR.x = 1.02 + Math.cos(aR) * 0.3;
+      p.kneeL = 1.32 + Math.cos(a - 0.35) * 0.48; p.kneeR = 1.32 + Math.cos(aR - 0.35) * 0.48;
+      p.ankleL = 0.15 + Math.sin(a) * 0.2; p.ankleR = 0.15 + Math.sin(aR) * 0.2;
+      p.legL.z = p.legR.z = 0.12;
+      p.armL.x = p.armR.x = 1.15; p.armL.z = p.armR.z = 0.12;
+      p.elbowL = p.elbowR = 0.5;
+      p.lean = 0.18;
+      p.roll = Math.sin(a) * 0.035;
+      p.bob = Math.abs(Math.sin(a)) * 0.012;
+      p.headZ = -p.roll * 0.5;
+      break;
+    }
+    case "stretch": {
+      // khởi động (the warm-up by the pond, 4 s a round): arms overhead and a side bend each way, then two squats
+      // with the arms out in front
+      const k = ((s % 4) + 4) % 4;
+      if (k < 2) {
+        const u = k % 1, side = k < 1 ? 1 : -1, e = Math.sin(u * Math.PI);
+        p.armL.z = p.armR.z = 2.55; p.armL.x = p.armR.x = 0.1;
+        p.elbowL = p.elbowR = 0.2 + e * 0.15;
+        p.roll = side * e * 0.3;
+        p.headZ = side * e * 0.12;
+        p.legL.z = p.legR.z = 0.1;
+        p.bob = e * 0.02;
+        p.squash = e * 0.02;
+      } else {
+        const u = (k - 2) % 1, e = Math.sin(u * Math.PI) ** 2;
+        p.legL.x = p.legR.x = 1.0 * e;
+        p.kneeL = p.kneeR = 1.7 * e;
+        p.ankleL = p.ankleR = -0.7 * e;
+        p.legL.z = p.legR.z = 0.06 + e * 0.1;
+        p.drop = 0.34 * e;
+        p.lean = 0.32 * e;
+        p.armL.x = p.armR.x = 1.45 * e; p.armL.z = p.armR.z = 0.07 + e * 0.05;
+        p.elbowL = p.elbowR = 0.1;
+        p.headX = -0.2 * e;
+        p.squash = -0.02 * e;
+      }
       break;
     }
     case "wave": {

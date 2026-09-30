@@ -658,7 +658,8 @@ export function boatModel(mats: ModelMats): Boat {
   return { root, oar };
 }
 
-export interface Vehicle { root: THREE.Group; wheels: THREE.Object3D[]; radius: number }
+/** `crank`: the bike's pedals and crank arms (turned by the rider's pedalling: rotation.x = the crank angle). */
+export interface Vehicle { root: THREE.Group; wheels: THREE.Object3D[]; radius: number; crank?: THREE.Object3D }
 
 export function vehicleModel(mats: ModelMats, kind: VehicleKind, color: number): Vehicle {
   const root = new THREE.Group(), p = new Paint(), wheels: THREE.Object3D[] = [];
@@ -673,11 +674,21 @@ export function vehicleModel(mats: ModelMats, kind: VehicleKind, color: number):
     wheels.push(w);
   };
   let radius = 0.32;
+  let crank: THREE.Object3D | undefined;
   if (kind === "bike") {
     wheel(0.34, 0.06, 0, 0.62, true); wheel(0.34, 0.06, 0, -0.62, true);
     p.box(0.05, 0.05, 1.0, color, 0, 0.62, 0, -0.15).box(0.05, 0.55, 0.05, color, 0, 0.6, -0.2, 0.25)
       .box(0.05, 0.6, 0.05, color, 0, 0.62, 0.55, -0.3).box(0.6, 0.04, 0.04, 0x3a3a3a, 0, 0.95, 0.46)
-      .box(0.2, 0.06, 0.3, 0x2a2420, 0, 0.9, -0.22).box(0.28, 0.06, 0.26, 0x8a6a3a, 0, 0.55, -0.72);
+      .box(0.2, 0.06, 0.3, 0x2a2420, 0, 0.9, -0.22).box(0.28, 0.06, 0.26, 0x8a6a3a, 0, 0.55, -0.72)
+      .add(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 12), 0x8a8a8a, 0.05, 0.36, -0.04, 0, 0, Math.PI / 2);   // the chainring
+    // the cranks at the bottom bracket: the left arm up, the right one down (a = 0: the left foot at the top)
+    const r = 0.17, cp = new Paint()
+      .box(0.03, r, 0.04, 0x3a3a3a, -0.09, r / 2, 0).box(0.12, 0.03, 0.07, 0x22201e, -0.16, r, 0)
+      .box(0.03, r, 0.04, 0x3a3a3a, 0.09, -r / 2, 0).box(0.12, 0.03, 0.07, 0x22201e, 0.16, -r, 0);
+    crank = new THREE.Group();
+    crank.position.set(0, 0.36, -0.04);
+    crank.add(mats.baked1(cp)!);
+    root.add(crank);
   } else if (kind === "moto") {
     radius = 0.3;
     wheel(0.3, 0.12, 0, 0.7, false); wheel(0.3, 0.12, 0, -0.62, false);
@@ -695,7 +706,7 @@ export function vehicleModel(mats: ModelMats, kind: VehicleKind, color: number):
       .box(0.3, 0.1, 0.05, 0xe0342a, 0.5, 0.62, -1.26).box(0.3, 0.1, 0.05, 0xe0342a, -0.5, 0.62, -1.26);
   }
   root.add(mats.baked1(p)!);
-  return { root, wheels, radius };
+  return { root, wheels, radius, crank };
 }
 
 export interface Barrier { root: THREE.Group; pole: THREE.Object3D }

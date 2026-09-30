@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { Look } from "@/lib/game/types";
 import { ChibiFactory } from "./build";
-import { poseAt, type CharAct } from "./pose";
+import { poseAt, previewTime, type CharAct } from "./pose";
 import { ChibiRig } from "./rig";
 import { chibiSpec } from "./spec";
 import { addVoxelLights } from "./voxel-material";
@@ -68,7 +68,7 @@ export function mountChibiPreview(canvas: HTMLCanvasElement, look: Look, opts: {
     }
     if (!drag) { yaw += vel; vel *= 0.9; }
     rig.root.rotation.y = yaw;
-    rig.apply(poseAt(act, ms / 1000));
+    rig.apply(poseAt(act, previewTime(act, ms / 1000)));
     renderer.render(scene, camera);
     raf = requestAnimationFrame(loop);
   };

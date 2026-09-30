@@ -81,13 +81,18 @@ export class LiveLayer {
    *  far up each rider sits (CharacterLayer.setLifts). Call before CharacterLayer.update. */
   adjust(list: readonly Billboard[], live: WorldLive): Billboard[] {
     this.lift.clear();
-    const riding = new Map<string, number>();
-    for (const v of live.vehicles ?? []) riding.set(v.riderId, SEAT_LIFT[v.kind]);
+    const riding = new Map<string, { lift: number; bike: boolean }>();
+    for (const v of live.vehicles ?? []) riding.set(v.riderId, { lift: SEAT_LIFT[v.kind], bike: v.kind === "bike" });
     const boats = new Map<string, number>();
     for (const b of live.boats ?? []) if (b.riderId) boats.set(b.riderId, this.waterY(b.x, b.y));
     const out = list.map((b): Billboard => {
-      const lift = riding.get(b.id);
-      if (lift !== undefined) { this.lift.set(b.id, lift); return { ...b, act: b.act ?? "ride" }; }
+      const on = riding.get(b.id);
+      if (on) {
+        this.lift.set(b.id, on.lift);
+        // on a bicycle the rider pedals (the cranks turn with the feet); a moto or a car: seated
+        const act = b.act === undefined || b.act === "ride" ? (on.bike ? "pedal" : "ride") : b.act;
+        return { ...b, act };
+      }
       const wy = boats.get(b.id);
       if (wy !== undefined) {
         const l = wy + 0.56 - 0.28 - this.heightAt(b.x, b.y);                  // on the bench (the sit pose's hips ≈ 0.28 up)
@@ -311,6 +316,7 @@ export class LiveLayer {
       e.motion = stepMotion(e.motion, rider.pos.x * 16, rider.pos.z * 16, dt);
       const spin = (e.motion.speed / 16) * dt / veh.radius;
       for (const w of veh.wheels) w.rotation.x += reduced ? 0 : spin;
+      if (veh.crank && rider.crank !== null) veh.crank.rotation.x = rider.crank;
     }
 
     for (const g of live.gates ?? []) {

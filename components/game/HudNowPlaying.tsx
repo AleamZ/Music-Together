@@ -1,14 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { PlaybackController } from "@/hooks/usePlayback";
 import { formatClock } from "@/lib/format";
 import { computeElapsedMs } from "@/lib/identity";
 import type { QueueItem, Room } from "@/lib/supabase";
 import KeyBadge from "./KeyBadge";
 
-/** Top-right parchment card: what is playing, DJ transport (DJ only), volume, audio unlock, panel buttons.
- *  Under 640 px it collapses to a one-line chip (title, ▶/⏸ for the DJ, audio unlock) that expands on tap. */
+/** Top-right parchment card: what is playing, DJ transport (DJ only), volume, audio unlock, panel buttons. It folds to
+ *  a one-line chip (title, ▶/⏸ for the DJ, audio unlock) with ▴ and opens again with a tap; the choice is kept per
+ *  browser. Until one is made: folded under 640 px, open above. */
+const OPEN_KEY = "mt.hud.np";
+const noSubscribe = () => () => {};
+function readOpen(): boolean | null {
+  try {
+    const v = window.localStorage.getItem(OPEN_KEY);
+    return v === "1" ? true : v === "0" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function HudNowPlaying({ room, current, djName, canControl, playback, canOpenSettings, onOpenQueue, onOpenBoard, onOpenSettings }: {
   room: Room;
   current: QueueItem | null;
@@ -21,7 +33,14 @@ export default function HudNowPlaying({ room, current, djName, canControl, playb
   onOpenSettings: () => void;
 }) {
   const [elapsed, setElapsed] = useState(0);
-  const [open, setOpen] = useState(false);
+  // null: no choice yet (the CSS picks by width); true / false: the player's
+  const stored = useSyncExternalStore(noSubscribe, readOpen, () => null);            // null on the server: no mismatch
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const open = choice ?? stored;
+  const setOpen = (o: boolean) => {
+    setChoice(o);
+    try { window.localStorage.setItem(OPEN_KEY, o ? "1" : "0"); } catch { /* storage blocked: this page only */ }
+  };
   const { is_playing, started_at, paused_elapsed_ms } = room;
   useEffect(() => {
     const tick = () => setElapsed(computeElapsedMs({ is_playing, started_at, paused_elapsed_ms }));
@@ -39,7 +58,7 @@ export default function HudNowPlaying({ room, current, djName, canControl, playb
   const title = current?.title ?? "Chưa có bài nào";
   return (
     <>
-      <div className={`${open ? "hidden" : "flex"} pch pointer-events-auto max-w-[calc(100vw-1rem)] items-center gap-1.5 p-1 font-vt text-lg leading-none sm:hidden`}>
+      <div className={`${open === null ? "flex sm:hidden" : open ? "hidden" : "flex"} pch pointer-events-auto max-w-[calc(100vw-1rem)] items-center gap-1.5 p-1 font-vt text-lg leading-none`}>
         <button type="button" className="pch-btn min-w-0 max-w-52" onClick={() => setOpen(true)} aria-expanded={false} aria-label="Mở thẻ đang phát">
           <span className="block truncate">🎵 {title}</span>
         </button>
@@ -52,10 +71,10 @@ export default function HudNowPlaying({ room, current, djName, canControl, playb
           <button type="button" className="pch-btn pch-btn-primary" onClick={playback.unlock} aria-label="Bật âm thanh">🔈</button>
         )}
       </div>
-      <div className={`${open ? "flex" : "hidden sm:flex"} pch pointer-events-auto w-72 max-w-[calc(100vw-1rem)] flex-col gap-1.5 p-2 font-vt text-lg leading-none`}>
+      <div className={`${open === null ? "hidden sm:flex" : open ? "flex" : "hidden"} pch pointer-events-auto w-72 max-w-[calc(100vw-1rem)] flex-col gap-1.5 p-2 font-vt text-lg leading-none`}>
         <div className="flex items-start gap-1.5">
           <p className="min-w-0 flex-1 truncate text-xl" title={current?.title ?? undefined}>🎵 {title}</p>
-          <button type="button" className="pch-btn sm:hidden" onClick={() => setOpen(false)} aria-expanded={true} aria-label="Thu gọn">▴</button>
+          <button type="button" className="pch-btn px-1.5 py-0.5" onClick={() => setOpen(false)} aria-expanded={true} aria-label="Thu gọn" title="Thu gọn">▴</button>
         </div>
         <p className="truncate text-base opacity-80">🎧 {djName ? `DJ: ${djName}` : "Chưa có DJ"}</p>
         <div className="flex items-center gap-2 text-base">
