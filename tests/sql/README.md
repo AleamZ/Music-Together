@@ -157,3 +157,16 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   `auction_create` lock the wallet before the reserved sum). Needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json`;
   it switches the mode to `enforce` and back, and deletes its accounts and room. Re-apply 0108 after any smoke that
   `\i`s 0064 or 0073 (they put the old `_ac_guard` / `market_list` back).
+
+## Email accounts (0112)
+
+- `email-auth-smoke.sql` (0112: `account_auth` / `auth_rate` private to the definer, no email on `accounts`; the
+  auth-only RPCs `game_session_from_auth` / `account_create_for_auth` / `account_link_auth` are not anon's; no JWT,
+  an unknown or an unconfirmed auth user refused; register()'s name rules and one account per auth user; the session
+  works with `_auth_account`; a confirmed email change synced; the link needs the game token AND the JWT, is
+  idempotent, refuses a taken account or email, removes the legacy password (`login` → 'email login required');
+  banned accounts refused; legacy `change_password` (8–72, other sessions end); the rate limits; the
+  `legacy_register_open` switch; a deleted auth user drops the link): chain-level. A plain PostgreSQL has no Supabase
+  `auth` schema: it `\i`s `tests/sql/auth-stub.sql` first (auth.users, auth.uid() from `request.jwt.claim.sub`, the
+  roles — each only when missing), re-runs 0112 twice with `\i`, and rolls back its rows. For a **fresh chain** load
+  `auth-stub.sql` before `scripts/db/migrate-all.sh` (0112 references auth.users). Never on hosted Supabase.

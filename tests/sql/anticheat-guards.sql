@@ -17,6 +17,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
    where f.sig not in (
      -- accounts, rooms, the music, chat and feedback: not game actions
      'register(text,text)', 'login(text,text)', 'me(text)', 'logout(text)',
+     'change_password(text,text,text)', 'account_auth_state(text)',   -- email accounts (0112); the auth-only RPCs are not anon's
      'create_room(text,text,text)', 'join_room(text,text,text)', 'rename_room(uuid,text,text)', 'kick_member(uuid,text,uuid)',
      'assign_dj(uuid,text,uuid)', 'transfer_admin(uuid,text,uuid)', 'set_play_mode(uuid,text,text)',
      'update_room_settings(uuid,text,integer,boolean,text[],integer,boolean)', 'touch_room(uuid,text)',

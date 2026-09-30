@@ -1,9 +1,10 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
-import { registerAccount, loginAccount, fetchMe, logoutAccount, type Account } from "@/lib/auth";
+import { registerAccount, loginAccount, fetchMe, logoutAccount, type Account, type AuthResult } from "@/lib/auth";
 import { saveSession, loadSession, clearSession } from "@/lib/session";
 import { joinLobby, type LobbyHandle } from "@/lib/lobby";
+import { resumeEmailSession, signInEmail, signOutEmail } from "@/lib/email-auth";
 
 interface AuthState {
   account: Account | null;
@@ -12,6 +13,10 @@ interface AuthState {
   lobby: LobbyHandle | null;
   login: (u: string, p: string) => Promise<void>;
   register: (u: string, p: string) => Promise<void>;
+  /** Email login (0112). False: the email user has no game account yet (the /auth/callback page creates it). */
+  loginWithEmail: (email: string, password: string) => Promise<boolean>;
+  /** Takes a game session obtained elsewhere (the /auth pages). */
+  adoptSession: (r: AuthResult) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -32,42 +37,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLobby(lobbyRef.current);
   }, []);
 
-  useEffect(() => {
-    const s = loadSession();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!s) { setLoading(false); return; }
-    let active = true;
-    fetchMe(s.token).then((me) => {
-      if (!active) return;
-      if (me) { setAccount(me); setToken(s.token); startLobby(me); }
-      else clearSession();
-      setLoading(false);
-    });
-    return () => { active = false; lobbyRef.current?.unsubscribe(); lobbyRef.current = null; };
+  const adopt = useCallback(async (r: AuthResult) => {
+    saveSession({ accountId: r.accountId, username: r.username, token: r.token });
+    const acct = (await fetchMe(r.token)) ?? { accountId: r.accountId, username: r.username, isRoot: false };
+    setAccount(acct); setToken(r.token); startLobby(acct);
   }, [startLobby]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const s = loadSession();
+      const me = s ? await fetchMe(s.token) : null;
+      if (!active) return;
+      if (s && me) { setAccount(me); setToken(s.token); startLobby(me); setLoading(false); return; }
+      if (s) clearSession();
+      // no (valid) game session: a still signed-in email user gets a fresh one
+      try {
+        const r = await resumeEmailSession();
+        if (active && r) await adopt(r);
+      } catch { /* not signed in by email, or refused: the login screen */ }
+      if (active) setLoading(false);
+    })();
+    return () => { active = false; lobbyRef.current?.unsubscribe(); lobbyRef.current = null; };
+  }, [startLobby, adopt]);
 
   const login = useCallback(async (u: string, p: string) => {
-    const r = await loginAccount(u, p);
-    saveSession({ accountId: r.accountId, username: r.username, token: r.token });
-    const acct = (await fetchMe(r.token)) ?? { accountId: r.accountId, username: r.username, isRoot: false };
-    setAccount(acct); setToken(r.token); startLobby(acct);
-  }, [startLobby]);
+    await adopt(await loginAccount(u, p));
+  }, [adopt]);
 
   const register = useCallback(async (u: string, p: string) => {
-    const r = await registerAccount(u, p);
-    saveSession({ accountId: r.accountId, username: r.username, token: r.token });
-    const acct = (await fetchMe(r.token)) ?? { accountId: r.accountId, username: r.username, isRoot: false };
-    setAccount(acct); setToken(r.token); startLobby(acct);
-  }, [startLobby]);
+    await adopt(await registerAccount(u, p));
+  }, [adopt]);
+
+  const loginWithEmail = useCallback(async (email: string, password: string) => {
+    const r = await signInEmail(email, password);
+    if (!r) return false;
+    await adopt(r);
+    return true;
+  }, [adopt]);
 
   const logout = useCallback(async () => {
     if (token) await logoutAccount(token);
+    await signOutEmail();
     lobbyRef.current?.unsubscribe(); lobbyRef.current = null; setLobby(null);
     clearSession(); setAccount(null); setToken(null);
   }, [token]);
 
   return (
-    <Ctx.Provider value={{ account, token, loading, lobby, login, register, logout }}>
+    <Ctx.Provider value={{ account, token, loading, lobby, login, register, loginWithEmail, adoptSession: adopt, logout }}>
       {children}
     </Ctx.Provider>
   );
