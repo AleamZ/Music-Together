@@ -13,7 +13,7 @@ Mỗi ngày, thương lái mua **đủ giá 20.000 xu hàng đầu tiên** của
 ## Câu cá 🎣
 - Giá cá **không còn nhân theo độ giàu của phòng**: cả server chung một hệ số (×1,00), vẫn lên xuống theo mùa mỗi 3 giờ.
 - Giá từng loài được tính lại: cần xịn và câu sông vẫn lời hơn, nhưng không còn chênh gấp mấy chục lần.
-- Câu một lần **đói, khát ít hơn nhiều** (ăn uống rẻ hơn hẳn cho người mới). Mồi rẻ: tôm 1, trùn huyết 3, mồi vàng 6 xu; lưới 50 / 120 xu.
+- Câu một lần **đói, khát ít hơn nhiều** (ăn uống rẻ hơn hẳn cho người mới). Mồi rẻ: tôm 1, trùn huyết 3, mồi vàng 4 xu; lưới 50 / 120 xu (mỗi mẻ lưới đói, khát như một lần câu).
 - **Ghe 25.000 xu**, sông hoang cần cấp 3 như Sông Cái.
 - **Bản đồ kho báu** ít rơi hơn, rương 150–800 xu (hiếm khi 3.000), mỗi ngày đào tối đa **3 rương**.
 - Vựa Chợ Lớn trả **+10 %** (trước +20 %).

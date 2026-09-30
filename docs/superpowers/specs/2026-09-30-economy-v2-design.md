@@ -144,7 +144,7 @@ The river is worth ≈ 1.5× the pond with the same gear. Treasure adds ≈ 10 %
 | F6 | Hunger / thirst per net haul | 3 / 3.5 → **0.6 / 0.7** |
 | F6 | Overboard hunger | 10 → **5** |
 | F7 | `sell_fish`, `sell_fish_market` pay through the thương lái (§3.2); the depot panel shows the day's line and the cut | — |
-| F8 | Bait and nets, so better gear is never a loss after the price cut | shrimp / bloodworm / gold 5 / 12 / 25 → **1 / 3 / 6**; nets 250 / 600 → **50 / 120** |
+| F8 | Bait and nets, so better gear is never a loss after the price cut | shrimp / bloodworm / gold 5 / 12 / 25 → **1 / 3 / 4** (gold: bloodworm rarity, faster bite); nets 250 / 600 → **50 / 120**, net haul hunger / thirst 0.35 / 0.45 |
 | F9 | Fishing battles | score only catches made in the battle's room |
 
 - **Food.** At the cheapest restaurant mix a cast now costs ≈ 3 xu of food, ≈ 33 % of a starter's income per cast

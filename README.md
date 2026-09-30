@@ -486,7 +486,7 @@ give, and a 5 % burn on xu between players. Spec: `docs/superpowers/specs/2026-0
 
 - **Fish prices** no longer follow the room's wealth: one server-wide multiplier (×1.00) and the season factor. All 23
   species are re-priced; the river pays about 1.5× the pond; the boat costs 25 000 and the wild river needs level 3.
-  Hunger / thirst per cast 0.35 / 0.45 (was 1.8 / 2.2). Bait 1 / 3 / 6 xu, nets 50 / 120.
+  Hunger / thirst per cast 0.35 / 0.45 (was 1.8 / 2.2). Bait 1 / 3 / 4 xu, nets 50 / 120 (a net haul costs 0.35 / 0.45 like a cast).
 - **Thương lái:** each day an NPC buys your grind goods (fish, crabs, snails, rats, ores, logs, wild goods, dishes) at
   full price for the first 20 000 xu of catalog value, then 50 % up to 40 000, then 20 %. Sale panels show the day's line
   and what was cut. Farm harvests are not counted.
