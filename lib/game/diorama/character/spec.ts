@@ -6,6 +6,7 @@ import { ITEM_ART } from "@/lib/game/art/items";
 import { HAIR_COLOR, SKIN } from "@/lib/game/art/palettes";
 import { HAIR_STYLES, type Gender, type HairStyle, type Look } from "@/lib/game/types";
 import { bodyKey, normalizeBody, type BodyShape } from "@/lib/game/body";
+import { wear3d, type BottomKind, type HatKind, type NeckKind, type ShoeKind, type TopKind } from "./wear3d";
 
 // Pure: a Look → the parts of a 3D chibi and their colours. It goes through the 2D compositor's own resolution
 // (`resolveWear`: the same palette regions, sleeves, skirt lengths and shoe shapes), so every catalog item that the 2D
@@ -19,8 +20,8 @@ export function hex(c: string | null | undefined, fallback: string): string {
   return fallback;
 }
 
-export interface ChibiHat { shape: HatShape; main: string; shade: string; brim: string; accent: string }
-export interface ChibiNeck { kind: "scarf" | NeckStyle; main: string; shade: string; accent: string }
+export interface ChibiHat { shape: HatShape; kind: HatKind; main: string; shade: string; brim: string; accent: string }
+export interface ChibiNeck { kind: "scarf" | NeckStyle; model: NeckKind; main: string; shade: string; accent: string }
 export interface ChibiWrist { kind: WristKind; main: string; accent: string }
 export interface ChibiHairpin { kind: HairpinKind; main: string; accent: string }
 
@@ -46,7 +47,14 @@ export interface ChibiSpec {
   bottomShade: string;
   thigh: string;
   calf: string;
-  shoe: { shape: ShoeShape; main: string; sole: string };
+  shoe: { shape: ShoeShape; kind: ShoeKind; main: string; sole: string };
+  /** The dedicated 3D models of the worn top (or outfit) and bottom (wear3d.ts); null = none worn / plain. */
+  top3d: TopKind | null;
+  bottom3d: BottomKind | null;
+  /** The garment's own trim colours (its codes 1–4: collars, stripes, bows, prints), with fallbacks. */
+  trim: readonly [string, string, string, string];
+  /** The bottom's stripe / print colour. */
+  bottomTrim: string;
   /** A võ phục's belt. */
   belt: string | null;
   hat: ChibiHat | null;
@@ -67,14 +75,16 @@ function hatOf(id: string | null | undefined): ChibiHat | null {
   const c = a.colors;
   const main = hex(c.x ?? c.y, "#8a8f98");
   const shade = hex(c.X ?? c.Y, main);
-  return { shape: a.shape, main, shade, brim: hex(c.b ?? c.y, main), accent: hex(c.g ?? c.Z ?? c.B, shade) };
+  const kind = wear3d(id, "hat") ?? (a.shape as HatKind);
+  return { shape: a.shape, kind, main, shade, brim: hex(c.b ?? c.y, main), accent: hex(c.g ?? c.Z ?? c.B, shade) };
 }
 
 function neckOf(id: string | null | undefined): ChibiNeck | null {
   const a = id ? ITEM_ART[id] : undefined;
   if (!a || a.slot !== "neck") return null;
-  if (!a.style) return { kind: "scarf", main: hex(a.colors[0], "#f1ece0"), shade: hex(a.colors[1], "#2b2524"), accent: hex(a.colors[1], "#2b2524") };
-  return { kind: a.style, main: hex(a.colors[0], "#e8c43a"), shade: hex(a.colors[1], "#b08a20"), accent: hex(a.colors[2], "#3f9b43") };
+  const model: NeckKind = wear3d(id, "neck") ?? (a.style ?? "scarf");
+  if (!a.style) return { kind: "scarf", model, main: hex(a.colors[0], "#f1ece0"), shade: hex(a.colors[1], "#2b2524"), accent: hex(a.colors[1], "#2b2524") };
+  return { kind: a.style, model, main: hex(a.colors[0], "#e8c43a"), shade: hex(a.colors[1], "#b08a20"), accent: hex(a.colors[2], "#3f9b43") };
 }
 
 function wristOf(id: string | null | undefined): ChibiWrist | null {
@@ -94,6 +104,27 @@ function beltOf(look: Look): string | null {
   const { garments } = resolveWear(look);
   for (const g of garments) if (g.slot === "outfit" && g.colors["1"]) return hex(g.colors["1"], "#f6f6f2");
   return null;
+}
+
+const SHOE_KIND: Record<ShoeShape, ShoeKind> = { dep: "dep", shoe: "oxford", sneakers: "sneakers", boots: "boots", sandals: "sandals" };
+
+/** A worn garment's trim colours: a fashion model's codes 1–4, or an item's highlight and detail colours. */
+function trimOf(look: Look, detail: string): readonly [string, string, string, string] {
+  const { garments } = resolveWear(look);
+  const g = garments.find((x) => x.slot === "outfit") ?? garments.find((x) => x.slot === "top");
+  if (g) {
+    const c = g.colors;
+    const a = hex(c["1"] ?? c.K ?? c.u, detail);
+    return [a, hex(c["2"], a), hex(c["3"], a), hex(c["4"], a)];
+  }
+  const it = look.top ? ITEM_ART[look.top] : undefined;
+  if (it && it.slot === "top") return [hex(it.colors[3], detail), hex(it.colors[2], detail), hex(it.colors[1], detail), hex(it.colors[2], detail)];
+  return [detail, detail, detail, detail];
+}
+
+function bottomTrimOf(look: Look, bottom: string): string {
+  const it = look.bottom ? ITEM_ART[look.bottom] : undefined;
+  return it && it.slot === "bottom" ? hex(it.colors[2], bottom) : bottom;
 }
 
 const specCache = new Map<string, ChibiSpec>();
@@ -146,7 +177,11 @@ function buildSpec(look: Look, key: string): ChibiSpec {
     // shorts: the thigh in the bottom's cloth (knee-length ones and briefs down to mid-thigh) or skin; long: the cloth
     thigh: calf !== skin || thighCloth ? (calf !== skin ? calf : bottom) : skin,
     calf,
-    shoe: { shape, main: hex(pal.f, "#6b6f76"), sole: hex(pal.F, "#50545a") },
+    shoe: { shape, kind: wear3d(look.shoes, "shoes") ?? SHOE_KIND[shape], main: hex(pal.f, "#6b6f76"), sole: hex(pal.F, "#50545a") },
+    top3d: look.outfit && wear3d(look.outfit, "outfit") ? wear3d(look.outfit, "outfit") : look.top && !noTop ? wear3d(look.top, "top") ?? "tee" : null,
+    bottom3d: wear3d(look.bottom, "bottom"),
+    trim: trimOf(look, hex(pal.K ?? pal.t, skin)),
+    bottomTrim: bottomTrimOf(look, bottom),
     belt: beltOf(look),
     hat: hatOf(look.hat),
     neck: neckOf(look.neck),
