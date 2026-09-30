@@ -39,6 +39,7 @@ Mỗi ngày, thương lái mua **đủ giá 20.000 xu hàng đầu tiên** của
 
 ## Tiêu xu 🏠
 - Buff đồ ăn nhẹ hơn (cá hiếm +2–6 %, thể lực +10–30 %), ngủ ngon hồi thể lực ×1,2. Nhà nghỉ 300 xu/đêm, 6.000 xu/tháng.
+- Đổi cá lấy món cá ở quán: vẫn giảm 20–80 %, nhưng **bớt tối đa gấp 3 giá con cá**.
 - Phí giữ đất nhà 1.500 xu/30 ngày, thuê căn hộ 2.000 xu/30 ngày.
 
 ## Giữa người chơi 🤝

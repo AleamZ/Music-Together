@@ -501,7 +501,7 @@ give, and a 5 % burn on xu between players. Spec: `docs/superpowers/specs/2026-0
   50 + 250 × members × share (fee 100, 3 paid clears); the company quest shares 3 000 by contribution; the squirrel
   forages 150 a day while you move; pet / fish PvE 5 paid wins at × 0.6; teleport and xe ôm 50.
 - **Sinks:** meal buffs weaker (rare fish 2–6 %, stamina +10–30 %); "Ngủ ngon" stamina × 1.2; motel 300 / 6 000; lot
-  upkeep 1 500 per 30 days; apartment rent 2 000.
+  upkeep 1 500 per 30 days; apartment rent 2 000; a fish handed over for a fish dish takes at most 3 × its price off.
 - **Between players:** trades burn 5 % of the xu, receivers must be ≥ 3 days old and level ≥ 5, at most 50 000 a day;
   the trader perk lowers the market fee instead of paying on top; fashion gifts only to roommates, 5 a day; stalls 500 a
   day; Xì dách never leaves anyone in debt.
