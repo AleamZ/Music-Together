@@ -3,7 +3,8 @@ import * as THREE from "three";
 // The pixel-texture pass (the forest_house.glb look: small pixel textures on low-poly). No image textures: every lit
 // material gets a few lines of fragment shader that lay a 2-game-px texel grid over its faces (world space, the face's
 // dominant plane) and shade each texel by what its colour looks like —
-//   green → grass speckle; brown on a wall → planks (boards with seams); brown on the ground → dirt speckle;
+//   green on the ground → soft lawn mottling (leaves keep a speckle); brown on a wall → planks; brown on the ground →
+//   soft dirt mottling;
 //   straw → thatch (vertical streaks); grey / blue-grey → tin (corrugation); water materials → sparkle texels.
 // The pattern fades out where a texel gets smaller than a screen pixel (no shimmer far away). One patch per material,
 // chained after any onBeforeCompile it already has (the rice's wind). Cheap: a hash and a few compares per fragment.
@@ -26,6 +27,14 @@ const VERT_BODY = `
 const FRAG_DECL = `varying vec3 vPxW;
 varying vec3 vPxN;
 float pxHash(vec2 c) { return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453); }
+// smooth value noise (bilinear, smoothstep-eased) for soft ground mottling instead of per-texel grain
+float pxNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(pxHash(i), pxHash(i + vec2(1.0, 0.0)), f.x), mix(pxHash(i + vec2(0.0, 1.0)), pxHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+// soft patches (a few units across) plus a finer gentle ripple: -0.5 … 0.5
+float pxSoft(vec2 p) { return pxNoise(p * 0.18) * 0.65 + pxNoise(p * 0.6) * 0.35 - 0.5; }
 vec3 pxShade(vec3 col, float water) {
   vec3 an = abs(vPxN);
   bool top = an.y >= max(an.x, an.z);
@@ -42,9 +51,10 @@ vec3 pxShade(vec3 col, float water) {
   if (water > 0.5) {
     k = h > 0.92 ? 1.3 : (h < 0.25 ? 0.9 : 1.0);
   } else if (col.g >= col.r && col.g >= col.b && sat > 0.18) {
-    k = h > 0.82 ? 1.2 : (h < 0.18 ? 0.82 : 1.0 + (h - 0.5) * 0.1);                        // grass
+    if (top && an.y > 0.8) k = 1.0 + pxSoft(q) * 0.16 + (h > 0.975 ? 0.1 : 0.0);             // lawn: soft patches, rare glints
+    else k = h > 0.82 ? 1.2 : (h < 0.18 ? 0.82 : 1.0 + (h - 0.5) * 0.1);                   // leaves, hedges
   } else if (col.r > col.g && col.g > col.b && sat > 0.2 && mx < 0.78) {
-    if (top && an.y > 0.8) k = h > 0.8 ? 1.16 : (h < 0.2 ? 0.84 : 1.0 + (h - 0.5) * 0.08);                      // dirt
+    if (top && an.y > 0.8) k = 1.0 + pxSoft(q + 31.0) * 0.14 + (h > 0.98 ? -0.08 : 0.0);  // dirt: soft, a few pebbles
     else {                                                                                  // planks
       float row = floor(c.y / 4.0);
       float off = floor(pxHash(vec2(row, 7.0)) * 12.0);
