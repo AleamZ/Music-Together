@@ -1,71 +1,63 @@
-# Tự host trên VPS (chạy song song với Vercel)
+# Tự host trên VPS: 2 môi trường `dev` và `main` (chạy song song với Vercel)
 
-Vercel vẫn deploy như cũ. VPS là bản thứ hai, dùng domain riêng. Mỗi lần push lên `dev`, GitHub Actions chạy typecheck và unit test. Qua hết thì nó SSH vào VPS, build image Docker ngay trên server rồi khởi động lại.
+| Nhánh | Thư mục trên VPS | Cổng nội bộ | Domain (ví dụ) | Chế độ |
+|---|---|---|---|---|
+| `dev` | `/opt/music-together-dev` | 3001 | `dev.domain.com` | `NEXT_PUBLIC_APP_MODE=dev` |
+| `main` | `/opt/music-together-main` | 3000 | `domain.com` | `NEXT_PUBLIC_APP_MODE=prod` |
+
+Mỗi môi trường có code, file `.env`, container (project `music-together-<nhánh>`), cổng và Cloudflare Tunnel riêng. Khi push lên `dev`, CI chỉ deploy môi trường dev; push lên `main` thì chỉ deploy môi trường main.
 
 ```
-push dev ─▶ GitHub Actions: check (tsc, test) ─▶ SSH ─▶ VPS: scripts/vps/deploy.sh
-                                                         git pull → docker compose build → up
-domain ─▶ Cloudflare Tunnel (hoặc Caddy 80/443) ─▶ app:3000 (Next.js standalone)
+push dev  ─▶ Actions: check ─▶ SSH ─▶ deploy.sh dev  ─▶ /opt/music-together-dev  ─▶ tunnel dev  ─▶ dev.domain.com
+push main ─▶ Actions: check ─▶ SSH ─▶ deploy.sh main ─▶ /opt/music-together-main ─▶ tunnel main ─▶ domain.com
 ```
 
-## 1. Cài đặt server (làm một lần)
+> ⚠️ Nhánh `main` chỉ deploy được khi nó đã có `scripts/vps/` và `deploy/`, tức là sau khi `dev` đã được merge vào `main` ít nhất một lần.
 
-SSH vào VPS bằng tài khoản root, rồi chạy:
-
+## 1. Cài đặt VPS (một lần, dùng user root)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AleamZ/Music-Together/dev/scripts/vps/setup.sh | bash
 ```
+Script sẽ tạo `/opt/music-together-dev` và `/opt/music-together-main`, mỗi thư mục có sẵn một file `.env`. Cuối cùng nó in ra **VPS_SSH_KEY**; hãy lưu lại.
 
-Script này làm các việc sau:
-- cài Docker và git;
-- tạo user `deploy`;
-- clone repo vào `/opt/music-together` và tạo file `.env` để bạn điền;
-- in ra **khóa SSH riêng cho GitHub Actions**.
+## 2. Tạo 2 Cloudflare Tunnel (mỗi môi trường một cái)
+Cloudflare → Zero Trust → Networks → Tunnels → Create tunnel (Cloudflared):
+- Tunnel `mt-dev`: Public hostname `dev.domain.com` → Service `HTTP` → URL `app:3000`. Copy token.
+- Tunnel `mt-main`: Public hostname `domain.com` → Service `HTTP` → URL `app:3000`. Copy token.
 
-## 2. Điền `/opt/music-together/.env`
+URL luôn là `app:3000` vì mỗi tunnel chạy trong mạng riêng của môi trường đó.
 
+## 3. Điền 2 file `.env`
+```bash
+nano /opt/music-together-dev/.env     # Supabase của dev + CLOUDFLARE_TUNNEL_TOKEN của tunnel mt-dev
+nano /opt/music-together-main/.env    # Supabase của main + CLOUDFLARE_TUNNEL_TOKEN của tunnel mt-main
 ```
-NEXT_PUBLIC_SUPABASE_URL=...            # giống trên Vercel
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
-NEXT_PUBLIC_APP_MODE=prod
-PROXY=tunnel                            # tunnel (NAT VPS) hoặc caddy (nếu có cổng 80/443)
-CLOUDFLARE_TUNNEL_TOKEN=...             # khi PROXY=tunnel
-DOMAIN=game.example.com                 # khi PROXY=caddy
+Nếu dev và main dùng chung một project Supabase thì điền cùng giá trị. Tách riêng thì an toàn hơn cho dữ liệu thật.
+
+## 4. Deploy lần đầu bằng tay
+```bash
+su - deploy -c "/opt/music-together-dev/scripts/vps/deploy.sh dev"
+su - deploy -c "/opt/music-together-main/scripts/vps/deploy.sh main"
+docker ps     # mỗi môi trường có một container app và một container cloudflared
 ```
 
-## 3. Gắn domain
-
-**NAT VPS (không có cổng 80/443): dùng Cloudflare Tunnel.**
-1. Đưa domain lên Cloudflare (đổi nameserver).
-2. Vào Cloudflare Zero Trust → Networks → Tunnels → Create tunnel (loại cloudflared) → copy **token** vào `CLOUDFLARE_TUNNEL_TOKEN`.
-3. Trong tunnel đó, thêm **Public hostname**: domain của bạn → Service `HTTP` → URL `app:3000`.
-4. Cloudflare tự cấp HTTPS. Không cần mở thêm cổng nào trên VPS.
-
-**VPS có cổng 80/443 trỏ vào:**
-1. Đặt `PROXY=caddy` và `DOMAIN=...`.
-2. Trỏ bản ghi A của domain về IP VPS.
-3. Caddy tự lấy chứng chỉ Let's Encrypt.
-
-## 4. GitHub Actions
-
-Vào repo → Settings → Secrets and variables → Actions → New repository secret, thêm:
+## 5. CI/CD trên GitHub
+Vào Settings → Secrets and variables → Actions → New repository secret:
 
 | Secret | Giá trị |
 |---|---|
-| `VPS_HOST` | host SSH của VPS (vd. `vn-hn.cloudcode.io.vn`) |
-| `VPS_PORT` | cổng SSH (vd. `30359`) |
+| `VPS_HOST` | `vn-hn.cloudcode.io.vn` |
+| `VPS_PORT` | cổng SSH của VPS |
 | `VPS_USER` | `deploy` |
-| `VPS_SSH_KEY` | khóa riêng mà script in ra (toàn bộ, kể cả dòng BEGIN/END) |
+| `VPS_SSH_KEY` | khóa riêng mà setup.sh in ra |
 
-Tùy chọn: thêm Variable `DEPLOY_BRANCH` nếu muốn deploy nhánh khác, mặc định là `dev`.
-
-Để deploy lần đầu: Actions → **Deploy VPS** → Run workflow. Hoặc chạy tay trên server:
-`/opt/music-together/scripts/vps/deploy.sh dev`
+Workflow **Deploy VPS** tự chạy khi có push lên `dev` hoặc `main`. Muốn chạy tay thì vào Actions → Deploy VPS → Run workflow → chọn `dev` hoặc `main`. GitHub sẽ tạo 2 Environment `dev` và `main`. Bạn có thể bật **Required reviewers** cho `main` (Settings → Environments → main) để việc deploy production phải được duyệt.
 
 ## Vận hành
+| Việc | Lệnh |
+|---|---|
+| Log dev / main | `docker compose -p music-together-dev -f /opt/music-together-dev/deploy/docker-compose.yml logs -f app` (đổi `dev` thành `main`) |
+| Deploy lại | `su - deploy -c "/opt/music-together-<nhánh>/scripts/vps/deploy.sh <nhánh>"` |
+| Dừng một môi trường | `docker compose -p music-together-dev -f /opt/music-together-dev/deploy/docker-compose.yml down` |
 
-- Xem log: `cd /opt/music-together && docker compose -f deploy/docker-compose.yml logs -f app`
-- Quay về bản trước: `git -C /opt/music-together reset --hard <commit> && docker compose -f deploy/docker-compose.yml --env-file .env --profile tunnel up -d --build`
-- Bảo mật: sau khi đã thêm khóa SSH của bạn vào `/root/.ssh/authorized_keys`, chạy lại `setup.sh` để **tắt đăng nhập bằng mật khẩu**.
-
-Lint chưa được chặn trong CI vì repo còn 22 lỗi lint cũ nằm ngoài phần game. Khi sửa hết thì thêm `pnpm lint` vào job `check`.
+Lint chưa được chặn trong CI vì repo còn lỗi lint cũ nằm ngoài phần game. Khi sửa hết thì thêm `pnpm lint` vào job `check`.
