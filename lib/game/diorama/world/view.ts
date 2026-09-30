@@ -464,7 +464,7 @@ export class WorldView implements View3D {
   }
 
   setQuality(q: Quality | "auto"): void {
-    if (q === "auto") return;
+    if (q === "auto") { this.monitor.auto(); this.applyQuality(this.monitor.quality()); return; }
     this.monitor.force(q);
     this.applyQuality(q);
   }

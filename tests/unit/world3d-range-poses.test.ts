@@ -60,3 +60,23 @@ describe("chibi poses: fishing, pedalling, the warm-up", () => {
     expect(previewTime("walk", 4)).toBe(4);
   });
 });
+
+describe("the 3D quality setting", async () => {
+  const { parseQuality } = await import("@/lib/game/diorama/flag");
+  const { createFpsMonitor } = await import("@/lib/game/diorama/quality");
+  it("reads the stored choice, anything unknown is auto", () => {
+    expect(parseQuality("high")).toBe("high");
+    expect(parseQuality("low")).toBe("low");
+    expect(parseQuality(null)).toBe("auto");
+    expect(parseQuality("ultra")).toBe("auto");
+  });
+  it("goes back to the auto pick after a forced one", () => {
+    const m = createFpsMonitor({ window: 4, warmupMs: 0 });
+    m.force("low");
+    expect(m.quality()).toBe("low");
+    m.auto();
+    expect(m.quality()).toBe("high");
+    for (let i = 0; i < 4; i++) m.sample(50);                         // 20 fps: drops again by itself
+    expect(m.quality()).toBe("low");
+  });
+});
