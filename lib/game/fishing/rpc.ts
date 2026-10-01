@@ -9,6 +9,9 @@ import {
 } from "./catalog";
 import { BAD_SPOT, DAILY_LIMIT_TEXT, NEEDS_PARTS } from "./messages";
 import { extrasErrorText } from "./extras";
+import {
+  GROUNDBAIT_CAP_MINUTES, GROUNDBAIT_PLAYER_LIMIT, GROUNDBAIT_ROOM_LIMIT, parseGroundbaitSpots, type GroundbaitSpotView,
+} from "./groundbait-spots";
 import { parseFishPrices, type FishPrices } from "./prices";
 import { parseFishingState, rodOf, type FishingState, type GearSlot, type Loadout, type PartSlot, type RodInstance } from "./state";
 
@@ -205,12 +208,18 @@ export async function rodRepair(token: string, rodId: number): Promise<RodAnswer
 /** 0110: where a groundbait is thrown — the pond cell (as start_cast), or the river in world px (as the river casts). */
 export type GroundbaitSpot = { map: "pond"; col: number; row: number } | { map: "song_cai" | "wild"; x: number; y: number };
 
-/** 0110: one bag of groundbait on my spot (10 minutes, 48 px around it). */
+/** 0110: one bag of groundbait on my spot (10 minutes, 48 px around it). 0117: the spot is the room's (anyone fishing
+ *  within 48 px feels it); the same kind nearby is topped up instead (≤ 20 minutes, ×3). */
 export async function throwGroundbait(roomId: string, token: string, item: string, spot: GroundbaitSpot): Promise<FishingState> {
   const [x, y] = spot.map === "pond" ? [spot.col, spot.row] : [spot.x, spot.y];
   return stateOf((await call("throw_groundbait", {
     p_room_id: roomId, p_session_token: token, p_item: item, p_map: spot.map, p_x: x, p_y: y,
   })).state);
+}
+
+/** 0117: the room's active ổ thính (all maps), for the 2D / 3D views, the minimap and the HUD. */
+export async function fetchGroundbaitSpots(roomId: string, token: string): Promise<GroundbaitSpotView[]> {
+  return parseGroundbaitSpots(await call("groundbait_spots", { p_room_id: roomId, p_session_token: token }), Date.now());
 }
 
 /** 0110: a species' habits in Sổ tay câu cá. */
@@ -463,6 +472,9 @@ export function fishingErrorMessage(err: unknown): string {
     case "bad slot": return "Không lắp được món này vào đây.";                                                   // 0110
     case "no groundbait": return "Hết thính loại này — tiệm chú Tư có bán.";                                    // 0110
     case "groundbait full": return "Mỗi loại thính chỉ giữ được 99 bao.";                                       // 0110
+    case "spot full": return `Ổ thính này đã đậm rồi (tối đa ${GROUNDBAIT_CAP_MINUTES} phút) — để dành bao thính nhé.`;      // 0117
+    case "too many spots": return `Chỗ này đã có ${GROUNDBAIT_ROOM_LIMIT} ổ thính — rải vào một ổ có sẵn hoặc chờ ổ cũ tan.`; // 0117
+    case "spot limit": return `Mỗi người chỉ mở được ${GROUNDBAIT_PLAYER_LIMIT} ổ thính một lúc — chờ ổ cũ tan, hoặc rải thêm vào ổ cũ.`; // 0117
     case "no notebook": return "Bạn chưa có Sổ tay câu cá — tiệm chú Tư có bán.";                              // 0110
     case "not worn": return "Cần còn tốt, chưa cần sửa.";
     case "rod build": return "Đồ câu giờ lắp theo từng cây cần — mở Giỏ đồ › Cần câu.";                       // 0115

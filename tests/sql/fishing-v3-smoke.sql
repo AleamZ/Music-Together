@@ -9,7 +9,8 @@
 --      waits for them.
 --   3. fishing_equip: the slot, the kind, owning it, unmounting, a broken rod, the bait.
 --   4. The species: hook-gated ones only with their hook; hours; ×2 bait / ×3 groundbait weighting; a lift respects them.
---   5. Thính: throw_groundbait spends a bag on my spot; 48 px, 10 minutes, mine only; the cast answers it.
+--   5. Thính: throw_groundbait spends a bag on my spot; 48 px, 10 minutes; since 0117 the spot is the room's (anyone
+--      there feels it: tests/sql/groundbait-spots-smoke.sql has the rest); the cast answers it.
 --   6. The breaks: line_snap (3 snaps, then the line is gone), rod_snap (the rod to 0, unequipped, repairable).
 --   7. Multi-hook: the extras' odds, landed within the rig and the bucket.
 --   8. The reel and the phao in the cast's params.
@@ -27,6 +28,9 @@ set client_min_messages = warning;
 -- 0115 re-creates the rig, the shop, fishing_equip and finish_cast per rod instance: re-run it after, as the chain does
 \i supabase/migrations/0115_rod_builds.sql
 \i supabase/migrations/0115_rod_builds.sql
+-- 0117 re-creates the casts, net_haul and _fishing_state on the room's groundbait spots: re-run it after, too
+\i supabase/migrations/0117_groundbait_spots.sql
+\i supabase/migrations/0117_groundbait_spots.sql
 reset client_min_messages;
 update public.anticheat_config set mode = 'log';
 
@@ -358,22 +362,22 @@ begin
   assert r->'groundbait'->>'item' = 'gb_tom' and (r->'groundbait'->>'x')::int = 300 and (r->'groundbait'->>'y')::int = 204, format('%s', r);
   assert (select qty from public.inventory where account_id = a and item_id = 'gb_tom') = 4, 'one bag spent';
   assert r->'state'->'groundbait'->>'gb_tom' = '4' and r->'state'->'groundbait_on'->>'item' = 'gb_tom', 'the state';
-  assert public._groundbait_at(a, 'pond', 300, 204) = 'gb_tom' and public._groundbait_at(a, 'pond', 330, 230) = 'gb_tom', 'within 48 px';
-  assert public._groundbait_at(a, 'pond', 360, 204) is null, 'too far';
-  assert public._groundbait_at(a, 'song_cai', 300, 204) is null, 'another map';
-  assert public._groundbait_at(pg_temp.u('b'), 'pond', 300, 204) is null, 'only mine';
+  assert public._groundbait_at(a, 'pond', 300, 204, room) = 'gb_tom' and public._groundbait_at(a, 'pond', 330, 230, room) = 'gb_tom', 'within 48 px';
+  assert public._groundbait_at(a, 'pond', 360, 204, room) is null, 'too far';
+  assert public._groundbait_at(a, 'song_cai', 300, 204, room) is null, 'another map';
+  assert public._groundbait_at(pg_temp.u('b'), 'pond', 300, 204, room) = 'gb_tom', '0117: the room''s spot, not only mine';
   c := public.start_cast(room, t, 37, 25);
   assert c->>'groundbait' = 'gb_tom', format('the cast feels it %s', c);
-  update public.fishing_groundbait set expires_at = now() - interval '1 second' where account_id = a;
-  assert public._groundbait_at(a, 'pond', 300, 204) is null, 'after 10 minutes';
+  update public.groundbait_spots set expires_at = now() - interval '1 second' where room_id = room;
+  assert public._groundbait_at(a, 'pond', 300, 204, room) is null, 'after 10 minutes';
   perform pg_temp.fresh(a);
   c := public.start_cast(room, t, 37, 25);
   assert c->'groundbait' = 'null'::jsonb, 'gone';
-  -- another throw replaces it
+  -- another throw: a new spot (the spent one works no more)
   perform public.throw_groundbait(room, t, 'gb_tom', 'pond', 37, 25);
-  assert (select count(*) from public.fishing_groundbait where account_id = a) = 1
-     and (select expires_at > now() + interval '9 minutes' from public.fishing_groundbait where account_id = a), 'one, 10 minutes';
-  delete from public.fishing_groundbait where account_id = a;
+  assert (select count(*) from public.groundbait_spots where room_id = room and expires_at > now()) = 1
+     and (select expires_at > now() + interval '9 minutes' from public.groundbait_spots where room_id = room and expires_at > now()), 'one, 10 minutes';
+  delete from public.groundbait_spots where room_id = room;
   delete from public.casts where account_id = a;
   raise notice 'groundbait ok';
 end $$;
@@ -635,7 +639,7 @@ begin
   perform pg_temp.put(a, 'wild', 424, 1900);
   update public.player_pos set mode = 'w' where account_id = a;
   perform public.throw_groundbait(room, t, 'gb_tanh', 'wild', 424, 1900);
-  assert public._groundbait_at(a, 'wild', 430, 1900) = 'gb_tanh', 'the river''s groundbait';
+  assert public._groundbait_at(a, 'wild', 430, 1900, room) = 'gb_tanh', 'the river''s groundbait';
   perform pg_temp.fresh(a);
   perform pg_temp.put(a, 'wild', 424, 1900);
   update public.player_pos set mode = 'w' where account_id = a;
@@ -647,6 +651,7 @@ end $$;
 
 -- ---------- Clean up ----------
 delete from public.fishing_groundbait where account_id in (pg_temp.u('a'), pg_temp.u('b'));
+delete from public.groundbait_spots where room_id = pg_temp.u('room');
 delete from public.rooms where id = pg_temp.u('room');
 delete from public.accounts where id in (pg_temp.u('a'), pg_temp.u('b'));
 update public.app_flags set enabled = (select v::boolean from fv where k = 'flag_rooms') where key = 'room_creation_open';

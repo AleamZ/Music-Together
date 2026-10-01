@@ -314,8 +314,22 @@ hơn). Sửa cần ở chú Tư: **30 % giá cần**.
 | Thính thơm | 20 |
 | Thính tanh | 30 |
 
-Rải thính (nút **🌾 Rải thính** ở mép ao, hoặc từ ghe): trong **10 phút**, bán kính **48 px**, các loài thích loại thính đó
-được **×3** cơ hội — **chỉ cho chính bạn** (cần và lưới của bạn). Thính chỉ đổi loài *trong cùng độ hiếm*, không đổi độ hiếm.
+Rải thính (nút **🌾 Rải thính** ở mép ao, hoặc từ ghe — trên ao, ghe và Sông Cái) tạo một **ổ thính** ngay chỗ bạn đứng.
+Ổ thính thuộc về **chỗ câu trong phòng**, không thuộc riêng ai: **bất kỳ ai** trong phòng câu cần hoặc quăng lưới trong
+bán kính **48 px** quanh ổ đều được — các loài thích loại thính đó có **×3** cơ hội. Thính chỉ đổi loài *trong cùng độ
+hiếm*, không đổi độ hiếm. Mỗi phòng có ổ thính riêng (phòng khác không thấy, không được nhờ).
+
+| Luật ổ thính | |
+|---|---|
+| Một bao mở ổ mới | **10 phút** |
+| Rải **cùng loại** vào ổ có sẵn (trong 48 px, ổ của ai cũng được) | **+10 phút**, tối đa còn **20 phút**; ổ đậm dần ×2, ×3 (tối đa 3 bao). Ổ đã đầy 20 phút thì không nhận thêm (không mất bao) |
+| Rải **loại khác** cạnh ổ có sẵn | Thành **ổ riêng**, không thay ổ cũ; chỗ hai ổ chồng nhau thì ổ có tâm **gần** nhất có tác dụng |
+| Giới hạn | Mỗi người mở tối đa **2 ổ** cùng lúc (rải thêm vào ổ có sẵn không tính); mỗi bản đồ của phòng tối đa **8 ổ** |
+
+Trên màn hình: mỗi ổ là một vòng bong bóng nhuộm màu thính trên mặt nước (cám gạo vàng nhạt, tôm khô cam, thơm xanh lá,
+tanh tím) với nhãn "Ổ thính cám gạo · còn 7:12 · của Lan"; trong 3D là mảng màu trên mặt nước có bong bóng nổi; trên bản đồ
+nhỏ là một chấm cùng màu. Khi bạn đứng trong ổ, góc trên hiện "🌾 Đang câu trong ổ thính … · còn m:ss (cá ưa thính này ×3
+tỉ lệ)". Hết giờ ổ tự biến mất.
 
 #### Xô, thùng, bộ kit, sổ tay
 

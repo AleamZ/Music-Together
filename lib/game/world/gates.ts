@@ -2,6 +2,7 @@ import { BOAT } from "@/lib/game/fishing/extras";
 import type { MapId, Npc, Rect } from "@/lib/game/maps/types";
 import type { Vec } from "@/lib/game/types";
 import { MINE } from "./mine";
+import { SONG_CAI_ROUTE } from "./routes";
 import { ZONES } from "./zones";
 
 // P3 level gates (spec §1: "Level gates (song_cai lv3…) = bamboo barrier + guard at the zone border"): where a road
@@ -37,6 +38,12 @@ export const WORLD_GATES: readonly WorldGate[] = [
   {
     id: "gate_song_cai", map: "song_cai", at: pier, barrier: null,
     guard: { id: "guard_song_cai", name: "Lính gác bến", look: GUARD_LOOK, spot: { x: pier.x - 22, y: pier.y + 6, dir: "right" } },
+  },
+  // 0116: Sông Cái (lv3) by road: the guard stands by Bến đò at the road's end (the dock itself is the barrier)
+  {
+    id: "gate_song_cai_road", map: "song_cai", at: { ...SONG_CAI_ROUTE.landing }, barrier: null,
+    guard: { id: "guard_song_cai_road", name: "Lính gác bến đò", look: GUARD_LOOK,
+      spot: { x: SONG_CAI_ROUTE.landing.x + 26, y: SONG_CAI_ROUTE.landing.y + 4, dir: "left" } },
   },
   // Mỏ đá (lv5): across the apron before the mine mouth (the door itself is out of reach behind it)
   {

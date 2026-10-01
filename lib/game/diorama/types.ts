@@ -49,6 +49,8 @@ export interface GameplayFrame {
   anglers?: ReadonlyArray<{ id: string; x: number; y: number; facing: Facing; phase: 1 | 2 | 3 }>;
   /** Everyone's net throw: the thrower's feet, the phase and its age (ms), the net's centre (world px), radius, fish held. */
   nets?: ReadonlyArray<{ id: string; x: number; y: number; facing: Facing; show: "aim" | "charge" | "throw" | "sunk" | "pull" | "won"; since: number; cx: number; cy: number; r: number; k: number }>;
+  /** 0117: the room's ổ thính (world px): the kind's tint (0xrrggbb), how many bags in it, the label. */
+  groundbait?: ReadonlyArray<{ id: number; x: number; y: number; color: number; stacks: number; label: string }>;
 }
 
 /** What the engine hands the diorama each frame (the same state the 2D renderer draws). */

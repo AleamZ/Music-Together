@@ -92,8 +92,9 @@ describe("level gates", () => {
     expect(cell(b.x + b.w / 2, b.y + b.h / 2)).toBe(1);
 
     const noRiver = buildWorld(ZONE_IDS.filter((z) => z !== "song_cai"));
-    expect(noRiver.gates.map((g) => g.id).sort()).toEqual(["gate_mo_da", "gate_song_cai"]);
+    expect(noRiver.gates.map((g) => g.id).sort()).toEqual(["gate_mo_da", "gate_song_cai", "gate_song_cai_road"]);   // 0116: + Bến đò
     expect(noRiver.npcs.some((n) => n.id === "guard_song_cai")).toBe(true);
+    expect(noRiver.npcs.some((n) => n.id === "guard_song_cai_road")).toBe(true);
 
     const all = buildWorld();
     expect(all.gates).toEqual([]);

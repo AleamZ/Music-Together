@@ -1,5 +1,5 @@
 import { RIVER, RIVER_H, RIVER_W, riverWater } from "@/lib/game/river/geometry";
-import { JETTY } from "./song-cai";
+import { BEN_DO_DOCK, JETTY } from "./song-cai";
 import { propSprite } from "./props";
 import { C, ctx2d, makeCanvas, px, rect, rng, type Ctx, type SceneArt, type SceneLight } from "./scene-art";
 import type { GameMap } from "./types";
@@ -107,6 +107,14 @@ function paintJetty(c: Ctx): void {
   rect(c, C.goldLight, x + w - 3, y - 6, 4, 1);
 }
 
+/** 0116: Bến đò's dock, down from the north bank into the water (planks across, posts each side). */
+function paintBenDo(c: Ctx): void {
+  const { x, y, w, h } = BEN_DO_DOCK;
+  for (let yy = y + 6; yy < y + h; yy += 24) { rect(c, C.woodDeep, x - 3, yy, 3, 4); rect(c, C.woodDeep, x + w, yy, 3, 4); }
+  rect(c, C.outline, x - 1, y, w + 2, h + 1);
+  for (let yy = y; yy < y + h; yy += 4) { rect(c, C.woodLight, x, yy, w, 3); rect(c, C.wood, x, yy + 3, w, 1); }
+}
+
 /** Lục bình clumps drifting downstream: seeded lanes, positions from the time. */
 const HYACINTHS = Array.from({ length: 9 }, (_, i) => ({ y: 100 + ((i * 37) % 290), speed: 6 + (i % 4) * 2, off: i * 211 }));
 
@@ -117,6 +125,7 @@ export function paintSongCai(map: GameMap): SceneArt {
   paintShoals(g);
   paintRocks(g);
   paintJetty(g);
+  paintBenDo(g);
   const props = map.props.map(propSprite);
   const drawAnimated = (c: Ctx, t: number, camX: number, camY: number, reducedMotion: boolean) => {
     if (reducedMotion) return;

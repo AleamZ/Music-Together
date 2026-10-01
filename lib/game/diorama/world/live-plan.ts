@@ -46,7 +46,10 @@ export interface WorldLive {
   leaps?: LiveLeap[];
   /** Net throws (quăng lưới): the thrower, the phase and its age (ms), the net's centre (world px) and radius (px). */
   nets?: LiveNet[];
+  /** 0117: the ổ thính on the water (world px): a tinted patch 48 px round, bubbles, a label. */
+  groundbait?: LiveGroundbait[];
 }
+export interface LiveGroundbait { id: number; x: number; y: number; /** 0xrrggbb */ color: number; stacks: number; label: string }
 export interface LiveNet { id: string; throwerId: string; show: "aim" | "charge" | "throw" | "sunk" | "pull" | "won"; since: number; x: number; y: number; cx: number; cy: number; r: number; k: number }
 
 /** How far up a rider sits on a vehicle (units above the ground under the vehicle; the "ride" pose's hips are at 0.6). */
@@ -143,6 +146,7 @@ export function liveFromFrame(f: Pick<DioramaFrame, "billboards" | "gameplay">, 
     pets: [...(extra.pets ?? []), ...(g.pets ?? []).map((p) => ({ id: `pet:${p.ownerId}`, ownerId: p.ownerId, species: p.species, x: p.x, y: p.y, look: p.look }))],
     fishing: [...(extra.fishing ?? []), ...(g.anglers ?? []).map(castLive)],
     nets: [...(extra.nets ?? []), ...(g.nets ?? []).map((n) => ({ ...n, id: `net:${n.id}`, throwerId: n.id }))],
+    groundbait: [...(extra.groundbait ?? []), ...(g.groundbait ?? [])],                                       // 0117
   };
 }
 

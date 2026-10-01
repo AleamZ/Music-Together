@@ -107,6 +107,14 @@ bag is spent, and the account's single `fishing_groundbait` row is replaced: **a
 thrower's own casts and nets within 48 px of it, on the same map, for 10 minutes, feel it. (Scoped to the thrower so
 nobody can grief or farm another player's spot; the effect only reshuffles species within a rarity.)
 
+> **Superseded by 0117 (`supabase/migrations/0117_groundbait_spots.sql`, screenshots in `groundbait-spots/`):** groundbait
+> is per **spot** (ổ thính), not per angler. `groundbait_spots` rows are room + map scoped; `_groundbait_at(account, map,
+> x, y, room)` gives the nearest active spot of that room within 48 px to **anyone** casting or netting there. A throw of
+> the same kind within 48 px refreshes it (+10 min, ≤ 20 min left, stacks ≤ 3; < 1 min gained → `spot full`); another
+> kind is a separate spot; ≤ 8 active spots per room + map (`too many spots`), ≤ 2 new spots per thrower (`spot limit`).
+> `groundbait_spots(room, token, map)` lists them (position, kind, stacks, time left, the first thrower's name) for the
+> 2D / 3D views, the minimap and the HUD line.
+
 Nets (`net_haul`, `_net_pick`): each fish is Quý with 2 %·(rare_mult − 1), Hiếm with 10 %·(rare_mult − 1), else a Thường
 or Khá as before; never a hook-gated species; only those biting now; the thrower's groundbait (at the throw's cell,
 stored by `start_net` in `net_throws.x / y`) ×3. The old nets (rare ×1) are unchanged.
