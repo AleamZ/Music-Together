@@ -17,6 +17,7 @@ import type { CardGame } from "@/lib/game/cards/deck";
 import type { CardSeatIn } from "@/lib/game/diorama/zones/seats";
 import type { HouseDraw } from "@/lib/game/housing/lot";
 import { GameEngine, type WorldExtras, type HeatProbe, type LocalFishing, type LocalInfo, type RosterEntry } from "@/lib/game/engine";
+import type { GroundbaitSpotView } from "@/lib/game/fishing/groundbait-spots";                       // 0117
 import type { UmbrellaKind } from "@/lib/game/rain/model";
 import type { FieldRats } from "@/lib/game/farm/rats";
 import { phaseCode } from "@/lib/game/fishing/cast";
@@ -108,6 +109,10 @@ export interface GameCanvasHandle {
   setPlots: (plots: ReadonlyArray<PlotDraw>) => void;
   /** Which of the field's crab holes and snail beds are ready for me: those show their cue (v15.3 §13.1). */
   setGatherSpots: (spots: ReadonlyArray<{ id: string; ready: boolean }>) => void;
+  /** 0117: the room's ổ thính (drawn in 2D and 3D, on the minimap). */
+  setGroundbait?: (spots: readonly GroundbaitSpotView[]) => void;
+  /** 0117: the ổ thính I stand in, or null. */
+  groundbaitHere?: () => GroundbaitSpotView | null;
   /** Play a farm animation on my character and show it to the others (`fa`; 0 stops it). */
   farmAnim: (a: FarmAnim) => void;
   /** Tell the others that plot `p` (0 = the drying yard or the offers) changed: they fetch the field again (`fp`). */
@@ -155,7 +160,7 @@ export interface GameCanvasHandle {
   /** P2 world mode: where I stand in world px (the world minimap / city map), or null; and the zone my feet are in. */
   worldPos: () => Vec | null;
   /** P4 world map: the others in sight (world px) and whether I am in the boat. */
-  mapMarks: () => { others: Array<{ id: string; x: number; y: number }>; boat: boolean };
+  mapMarks: () => { others: Array<{ id: string; x: number; y: number }>; boat: boolean; baits?: Array<{ x: number; y: number; color: string }> };
   /** P4: the game state the 3D world draws besides the people (zone-local, as the hooks have it): the rented stalls,
    *  the realm's animals and bosses, a treasure dig, Khu nhà's owners… Each key replaces the last; houses and the
    *  rings' labels come in through setHouses / setRingLabels too. */
@@ -312,6 +317,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
   const ringLabelsRef = useRef<ReadonlyArray<string | null>>([]);
   const hiddenRef = useRef<readonly string[]>([]);
   const gatherRef = useRef<ReadonlyArray<{ id: string; ready: boolean }>>([]);
+  const groundbaitRef = useRef<readonly GroundbaitSpotView[]>([]);                     // 0117
   // P4: the world view's live feed (kept across worlds) and the world view up now
   const feedRef = useRef<LiveFeed | null>(null);
   const worldViewRef = useRef<WorldView | null>(null);
@@ -486,6 +492,11 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
         engineRef.current?.setPlots(plots);
         view3dRef.current?.setPlots(plots);                                        // the field's 3D crops
       },
+      setGroundbait: (spots) => {                                                      // 0117
+        groundbaitRef.current = spots;
+        engineRef.current?.setGroundbait(spots);
+      },
+      groundbaitHere: () => engineRef.current?.groundbaitHere() ?? null,
       setGatherSpots: (spots) => {
         gatherRef.current = spots;
         engineRef.current?.setGatherSpots(spots);
@@ -672,6 +683,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
     engine.setRingLabels(ringLabelsRef.current);
     engine.setHidden(hiddenRef.current);
     engine.setGatherSpots(gatherRef.current);
+    engine.setGroundbait?.(groundbaitRef.current);                                      // 0117
     engine.setLocal({ name: init.name, badges: init.badges, look: init.look, ...dogRef.current });
     if (zoomRef.current !== 1) engine.setZoom(zoomRef.current);
     if (map.id === "field" || wmap) engine.setRats(ratsRef.current);                      // P3: the field zone of the world too

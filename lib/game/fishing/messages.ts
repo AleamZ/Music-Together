@@ -28,7 +28,7 @@ export function snapText(why: "line_snap" | "rod_snap", snap: Snap | null | unde
 
 /** 0110: a groundbait thrown. */
 export function groundbaitText(name: string): string {
-  return `🌾 Đã rải ${name} — 10 phút tới, loài ưa thính này sẽ tụ về chỗ bạn câu.`;
+  return `🌾 Đã rải ${name} — ổ thính ở đây thêm 10 phút; ai câu quanh ổ cũng được loài ưa thính này tụ về.`;   // 0117: the spot's
 }
 /** 0110: a groundbait from the bag with no spot yet. */
 export const GROUNDBAIT_WHERE = "Quăng cần một lần ở chỗ muốn câu (hoặc đứng ở mép ao), rồi hãy rải thính.";

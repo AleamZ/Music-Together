@@ -202,6 +202,8 @@ export interface OverlayOpts {
   waypoints: readonly WaypointMark[];
   /** The canvas px per CSS px (text sizes). */
   dpr?: number;
+  /** 0117: the room's ổ thính (world px), a dot of the kind's tint. */
+  baits?: ReadonlyArray<{ x: number; y: number; color: string }>;
 }
 
 const PERSON: Readonly<Record<MapPerson["kind"], string>> = { party: "#22c55e", friend: "#38bdf8", other: "#f5f5f4" };
@@ -256,6 +258,13 @@ export function drawWorldMapFrame(ctx: CanvasRenderingContext2D, w: number, h: n
     ctx.closePath(); ctx.fill(); ctx.stroke();
     if (m.here) { ctx.strokeStyle = "#2f9e44"; ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.arc(p.x, p.y, s + 3 * k, 0, Math.PI * 2); ctx.stroke(); }
     if (o.labels === "all" && near) text(`🌀 ${m.name}`, p.x, p.y + s + 8 * k, 10);
+  }
+  for (const g of o.baits ?? []) {                                                  // 0117
+    const p = toCanvas(v, g);
+    ctx.fillStyle = g.color;
+    ctx.strokeStyle = "#1f4e5f";
+    ctx.lineWidth = 1.5 * k;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3.5 * k, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
   for (const pe of o.people) {
     const p = toCanvas(v, pe);
