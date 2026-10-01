@@ -115,7 +115,7 @@ export function seatPeople(list: readonly Billboard[], o: { cards: ReadonlyMap<s
     else if (o.hammock.has(b.id)) a = HAMMOCK_SEAT;
     else if (b.act === "sit") a = cafeSeats.find((s) => Math.abs(s.x - lx) < 0.5 && Math.abs(s.y - ly) < 0.5) ?? null;
     if (!a) return b;
-    return { ...b, x: a.x + o.origin.x, y: a.y + o.origin.y, act: "sit", yaw: a.yaw, lift: seatLift(a), vehicle: undefined };
+    return { ...b, x: a.x + o.origin.x, y: a.y + o.origin.y, act: a.kind === "hammock" ? "hammock" : "sit", yaw: a.yaw, lift: seatLift(a), vehicle: undefined };
   });
 }
 

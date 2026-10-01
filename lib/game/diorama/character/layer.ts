@@ -3,6 +3,7 @@ import { pxToWorld, type MapSize } from "../coords";
 import type { Billboard, Quality } from "../types";
 import { ChibiFactory, RIG } from "./build";
 import { FACING_YAW, locomotion, ONE_SHOT_ACTS, pedalAngle, poseAt, turnToward, yawOf, type CharAct } from "./pose";
+import { heldFor, umbrellaArm } from "./held";
 import { ChibiRig } from "./rig";
 import { chibiSpec } from "./spec";
 
@@ -215,7 +216,11 @@ export class CharacterLayer {
       a.walkT += dt * (act === "walk" || act === "run" ? Math.max(0.6, a.speed / 70) : act === "pedal" ? Math.min(1.6, a.speed / 90) : 1);
       const ground = this.groundAt(b.x, b.y);
       const swim = act === "swim" || (b.act === undefined && ground < WATER_DEPTH);
-      a.rig.apply(poseAt(swim ? "swim" : act, ONE_SHOT_ACTS.has(act) ? a.actT : a.walkT, a.phase, reduced));
+      const hf = heldFor(swim ? "swim" : act, { fish: b.hand, umbrella: b.umbrella && b.vehicle !== "car" });
+      a.rig.setHeld(hf.R, hf.L);
+      a.rig.setRodLook(b.rodLook ?? null);
+      const pose = poseAt(swim ? "swim" : act, ONE_SHOT_ACTS.has(act) ? a.actT : a.walkT, a.phase, reduced);
+      a.rig.apply(hf.L === "umbrella" ? umbrellaArm(pose) : pose);
       const w = pxToWorld(b, this.size);
       a.rig.root.position.set(w.x, (swim && ground < WATER_DEPTH ? ground + SWIM_LIFT : ground) + (this.lifts.get(b.id) ?? b.lift ?? 0), w.z);
       a.rig.root.rotation.y = a.yaw;

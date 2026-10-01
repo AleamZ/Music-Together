@@ -7,7 +7,9 @@ import NAMES from "./names.json";
 // The outfit gallery's sheets: close-ups (before/after), a signature-outfit sheet, and one sheet per slot that dresses
 // sample characters in every catalog item (boys and girls alternating, front and 3/4 views alternating).
 
-export interface Tile { look: Look; label: string; yaw: number; zoom?: number; detail?: "high" | "low"; focusY?: number; act?: CharAct; time?: number }
+export interface Tile { look: Look; label: string; yaw: number; zoom?: number; detail?: "high" | "low"; focusY?: number; act?: CharAct; time?: number;
+  /** 3D wave 1: what the fists hold, the rod look, or a fish species drawn instead of a chibi. */
+  held?: { R: string | null; L: string | null }; rodLook?: { rod: string; reel: string | null; bobber: string | null }; fish?: string }
 export interface Sheet { name: string; title: string; cols: number; tw: number; th: number; tiles: Tile[] }
 
 const names = NAMES as Record<string, string>;

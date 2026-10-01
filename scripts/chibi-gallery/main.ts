@@ -5,6 +5,9 @@ import { chibiSpec } from "@/lib/game/diorama/character/spec";
 import { poseAt } from "@/lib/game/diorama/character/pose";
 import { addVoxelLights } from "@/lib/game/diorama/character/voxel-material";
 import { closeupSheet, coverageMd, gallerySheets, type Sheet, type Tile } from "./sheets";
+import { wave1Sheets } from "./wave1";
+import { fishSpeciesGeometry } from "@/lib/game/diorama/world/models";
+import { heldMaterial, umbrellaArm } from "@/lib/game/diorama/character/held";
 
 // Offscreen outfit gallery (no DB): render.mjs bundles this with vite, opens it in Chromium and calls renderNamed.
 
@@ -25,11 +28,22 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   const cam = new THREE.PerspectiveCamera(30, tw / th, 0.1, 50);
   const f = new ChibiFactory(400);
   tiles.forEach((t, i) => {
+    if (t.fish) {                                                           // wave 1: a fish species, side on
+      const m = new THREE.Mesh(fishSpeciesGeometry(t.fish), heldMaterial());
+      m.rotation.y = -Math.PI / 2 + 0.35;
+      scene.add(m);
+      cam.position.set(0, 0.25, 1.6); cam.lookAt(0, 0, 0);
+      r.render(scene, cam);
+      scene.remove(m);
+    } else {
     const rig = new ChibiRig();
     const got = f.acquire(chibiSpec(t.look), t.detail ?? "high");
     rig.setParts(got.parts);
     rig.root.rotation.y = t.yaw;
-    rig.apply(t.act ? poseAt(t.act, t.time ?? 0.2) : poseAt("idle", 0.2, 0, true));
+    if (t.held) rig.setHeld(t.held.R, t.held.L);
+    if (t.rodLook) rig.setRodLook(t.rodLook);
+    const pose = t.act ? poseAt(t.act, t.time ?? 0.2) : poseAt("idle", 0.2, 0, true);
+    rig.apply(t.held?.L === "umbrella" ? umbrellaArm(pose) : pose);
     scene.add(rig.root);
     const z = t.zoom ?? 1, fy = t.focusY ?? 1.08;
     cam.position.set(0, fy + 0.3 / z, 5.0 / z); cam.lookAt(0, fy, 0);
@@ -37,6 +51,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
     scene.remove(rig.root);
     rig.detach();
     f.release(got.key);
+    }
     const x = (i % cols) * tw, y = top + Math.floor(i / cols) * (th + lab);
     g.drawImage(cv, x, y);
     g.fillStyle = "#2a1c18"; g.font = "14px sans-serif";
@@ -51,7 +66,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   r.dispose();
   return out.toDataURL("image/png");
 };
-const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets()];
+const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets(), ...wave1Sheets()];
 W.sheetNames = () => SHEETS.map((s) => s.name);
 W.coverage = () => coverageMd(SHEETS);
 W.renderNamed = (n: string) => {

@@ -11,7 +11,8 @@ interface RestaurantModalProps {
   fish: FishRow[];
   rarityOf: (speciesId: string) => number;
   speciesName: (id: string) => string;
-  onAte: (r: MealResult) => void;
+  /** `kind`: a dish or a drink (3D wave 1: the chibi eats from a bowl or drinks from a cup). */
+  onAte: (r: MealResult, kind?: "food" | "drink") => void;
   onClose: () => void;
 }
 
@@ -65,7 +66,7 @@ export default function RestaurantModal({ token, fish, rarityOf, speciesName, on
     setError(null);
     try {
       const res = await eatMeal(token, selected.id, chosen ? chosen.f.id : null);
-      onAte(res);
+      onAte(res, selected.kind);
       setFishId("");
     } catch (e) {
       setError(errText(e));
