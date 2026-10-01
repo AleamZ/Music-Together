@@ -42,6 +42,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
       scene.remove(m);
     } else if (t.enemy) {
       const c = enemyModel(mats, t.enemy.id);
+      if (c) {
       applyEnemyPose(c, enemyAnim(t.enemy.id, t.enemy.anim, t.enemy.t));
       c.root.rotation.y = t.yaw;
       scene.add(c.root);
@@ -49,6 +50,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
       cam.position.set(0, hh * 0.75, hh * 2.6 + 2); cam.lookAt(0, hh * 0.45, 0);
       r.render(scene, cam);
       scene.remove(c.root);
+      }
     } else {
     const rig = new ChibiRig();
     const got = f.acquire(chibiSpec(t.look), t.detail ?? "high");
