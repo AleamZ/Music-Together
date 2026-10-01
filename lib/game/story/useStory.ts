@@ -30,9 +30,8 @@ export function useStory(token: string | null, opts: { toast: (t: string) => voi
   /** Set by the layer: the shell's onInteract, to go on to the NPC's panel after a talk. */
   const resumeRef = useRef<((it: Interactable) => void) | null>(null);
   const bypass = useRef<string | null>(null);
-  const heard = useRef<Set<string>>(new Set());
   /** run, for its own chaining (a hand-in into the same NPC's next offer). */
-  const runRef = useRef<((npc: StoryNpcId, it: Interactable, s: StoryState, chained?: boolean) => Promise<void>) | null>(null);                             // hints / chatter already heard this session
+  const runRef = useRef<((npc: StoryNpcId, it: Interactable, s: StoryState, chained?: boolean) => Promise<void>) | null>(null);
 
   const put = useCallback((s: StoryState | null) => { stateRef.current = s; setState(s); }, []);
   const reload = useCallback(async () => {
@@ -70,7 +69,6 @@ export function useStory(token: string | null, opts: { toast: (t: string) => voi
     if (t.mode === "idle" || t.mode === "progress") {
       if (chained) { resume(it); return; }
       await say(t.lines);
-      heard.current.add(`${npc}:${t.quest?.id ?? "idle"}`);
       if (t.mode === "progress" && STEP_BY_ID.get(t.quest.id)?.claimFarmGift) {
         try { await claimFarmGift(token); } catch { /* shown by the next state */ }
         await reload();
@@ -123,8 +121,7 @@ export function useStory(token: string | null, opts: { toast: (t: string) => voi
     if (!npc || !s || s.finished || dialog) return false;
     const t = talkTo(s, npc);
     if (!t) return false;
-    if ((t.mode === "idle" || t.mode === "progress") && heard.current.has(`${npc}:${t.quest?.id ?? "idle"}`)
-        && !(t.mode === "progress" && STEP_BY_ID.get(t.quest.id)?.claimFarmGift)) return false;
+    // every talk opens the dialogue (hints and chatter too, not only the first time); E / Esc skips it
     void run(npc, it, s);
     return true;
   }, [dialog, run]);
