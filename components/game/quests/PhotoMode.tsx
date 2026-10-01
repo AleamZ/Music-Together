@@ -29,7 +29,7 @@ export default function PhotoMode({ token, mapId, onSaved, onClose }: {
   const [takenAt, setTakenAt] = useState(0);
 
   // wave 3: my 3D chibi holds the camera up while the photo mode is open
-  useEffect(() => { setLocalEmote("camera_up"); return () => setLocalEmote(null); }, []);
+  useEffect(() => { setLocalEmote("photo"); return () => setLocalEmote(null); }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };

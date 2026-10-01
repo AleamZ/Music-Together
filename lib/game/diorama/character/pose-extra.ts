@@ -6,10 +6,10 @@ import type { Pose } from "./pose";
 
 export type ExtraAct =
   | "hammer" | "stir" | "sort"                                  // craft mini-games: Rèn (anvil), Nấu thuốc (cauldron), Phân loại (nia)
-  | "dance" | "clap" | "camera_up"                                  // emotes: 🎉/🔥 dance, 👏 clap, 📷 holding the camera up
+   | "dance" | "clap"                                // emotes: 🎉/🔥 dance, 👏 clap; 📷 is wave 1's "photo"
   | "card_hold" | "card_play" | "card_deal" | "card_win"        // the card tables
   | "pillion";                                                  // the xe ôm's passenger, hands on the driver's waist
-export const EXTRA_ACTS: readonly ExtraAct[] = ["hammer", "stir", "sort", "dance", "clap", "camera_up", "card_hold", "card_play", "card_deal", "card_win", "pillion"];
+export const EXTRA_ACTS: readonly ExtraAct[] = ["hammer", "stir", "sort", "dance", "clap", "card_hold", "card_play", "card_deal", "card_win", "pillion"];
 const SET: ReadonlySet<string> = new Set(EXTRA_ACTS);
 export const isExtraAct = (a: string): a is ExtraAct => SET.has(a);
 
@@ -88,16 +88,6 @@ export function extraPose(p: Pose, act: ExtraAct, s: number): void {
       p.face = "happy";
       break;
     }
-    case "camera_up": {
-      // 📷 chụp ảnh: the camera up at the eyes in both hands, the elbows out; a small sway while framing
-      const w = Math.sin(s * TAU * 0.25);
-      p.armR.x = 1.25; p.armR.z = 0.45; p.elbowR = 2.05;
-      p.armL.x = 1.25; p.armL.z = 0.45; p.elbowL = 2.05;
-      p.headX = 0.05; p.headZ = w * 0.04;
-      p.legL.x = 0.18; p.legR.x = -0.12; p.kneeL = 0.12;
-      p.roll = w * 0.02;
-      break;
-    }
     case "card_hold": {
       // at the table: the hand of cards fanned in the left hand at the chest, the right hand resting on the table
       seated(p);
@@ -150,5 +140,5 @@ export function extraPose(p: Pose, act: ExtraAct, s: number): void {
 /** The acts' Vietnamese names (the dev lab, the review sheet). */
 export const EXTRA_ACT_LABEL: Record<ExtraAct, string> = {
   hammer: "Rèn (búa + đe)", stir: "Nấu thuốc (khuấy vạc)", sort: "Phân loại (sàng nia)", dance: "Nhảy múa", clap: "Vỗ tay",
-  camera_up: "Chụp ảnh (cầm máy)", card_hold: "Cầm bài", card_play: "Đánh bài", card_deal: "Chia bài", card_win: "Thắng ván", pillion: "Ngồi sau xe ôm",
+  card_hold: "Cầm bài", card_play: "Đánh bài", card_deal: "Chia bài", card_win: "Thắng ván", pillion: "Ngồi sau xe ôm",
 };

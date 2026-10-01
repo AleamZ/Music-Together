@@ -5,6 +5,7 @@ import type { Roof } from "@/lib/game/housing/lot";
 import type { PetSpecies } from "@/lib/game/pets/catalog";
 import type { BossId, WildSpeciesId } from "@/lib/game/realm/model";
 import type { VehicleKind } from "./live-plan";
+import { fishParams, type Fish3D } from "./fish3d";
 
 // Browser only: the low-poly toon models for the world's live things — animals and pets, the bosses, stalls, fight
 // rings, houses by roof, the ghe, vehicles, the bamboo barrier. Each model's static parts are baked into one vertex-
@@ -957,4 +958,76 @@ export class Labels {
     for (const e of this.cache.values()) { e.tex.dispose(); e.mat.dispose(); }
     this.cache.clear();
   }
+}
+
+// ---- 3D wave 1: per-species fish (fish3d.ts derives the parameters from the 2D icons) ----
+
+/** One species' fish as a paint job (outlined, one draw call): along +z (head forward), centred, `len` long. */
+export function fishSpeciesPaint(f: Fish3D): Paint {
+  const p = new Paint(0.04);
+  const L = f.len, D = f.depth, W = D * f.thin;
+  if (f.kind === "eel") {
+    // a long round body in an S, a pale belly line, a small head
+    tube(p, f.body, [[0, 0, -L * 0.6], [0.06, 0, -L * 0.25], [-0.05, 0, L * 0.1], [0, 0, L * 0.45]], D * 0.28, D * 0.32);
+    ell(p, f.belly, [D * 0.5, D * 0.3, L * 0.5], [0, -D * 0.12, 0]);
+    eyes(p, D * 0.12, L * 0.5, D * 0.14, D * 0.12);
+    return p;
+  }
+  if (f.kind === "shrimp") {
+    // tôm càng: a curled segmented body, two long blue claws, whiskers
+    for (let i = 0; i < 5; i++) ell(p, i % 2 ? f.body : f.accent, [W * (1 - i * 0.12), D * (0.9 - i * 0.1), L * 0.2], [0, -i * i * 0.01, L * 0.25 - i * L * 0.14]);
+    p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, -0.05, -L * 0.55, -Math.PI / 2, 0, 0, W * 0.9, L * 0.18, D * 0.3);
+    for (const sd of [-1, 1]) {
+      tube(p, f.fin, [[sd * W * 0.4, 0, L * 0.3], [sd * W * 0.9, 0.02, L * 0.6], [sd * W * 0.7, 0.02, L * 0.95]], D * 0.07, D * 0.13);
+      tube(p, f.accent, [[sd * W * 0.2, D * 0.2, L * 0.35], [sd * W * 0.8, D * 0.5, L * 0.8]], 0.008, 0.01);
+    }
+    eyes(p, D * 0.25, L * 0.36, W * 0.25, D * 0.14);
+    return p;
+  }
+  if (f.kind === "turtle") {
+    // rùa / ba ba: a domed shell, the plastron, four flippers, a head poking out
+    p.add(new THREE.SphereGeometry(0.5, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), f.body, 0, 0, 0, 0, 0, 0, L * 0.75, D * 1.2, L * 0.9);
+    ell(p, f.belly, [L * 0.72, D * 0.25, L * 0.86], [0, 0, 0]);
+    for (const [x, z] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) ell(p, f.fin, [L * 0.26, D * 0.18, L * 0.18], [x * L * 0.38, -0.01, z * L * 0.3], [0, x * z * 0.5, 0]);
+    ell(p, f.fin, [L * 0.2, D * 0.35, L * 0.3], [0, D * 0.12, L * 0.5]);
+    eyes(p, D * 0.22, L * 0.62, L * 0.06, D * 0.12);
+    return p;
+  }
+  if (f.kind === "ray") {
+    // cá đuối: a flat disc with wing tips, a long whip tail
+    ell(p, f.body, [L * 0.95, D * 0.35, L * 0.8], [0, 0, 0.02], [0, 0, 0], [12, 6]);
+    ell(p, f.belly, [L * 0.8, D * 0.2, L * 0.65], [0, -D * 0.08, 0.02]);
+    tube(p, f.fin, [[0, 0, -L * 0.35], [0, 0.02, -L * 0.7], [0, 0.05, -L * 1.05]], 0.02, 0.01);
+    eyes(p, D * 0.15, L * 0.28, L * 0.12, D * 0.14);
+    return p;
+  }
+  // a fish: the body, a paler belly, the pattern, the tail (V or fan), a dorsal fin, two side fins, the eyes
+  ell(p, f.body, [W, D, L * 0.82], [0, 0, 0.02], [0, 0, 0], [12, 8]);
+  ell(p, f.belly, [W * 0.82, D * 0.55, L * 0.66], [0, -D * 0.2, 0.04]);
+  if (f.pattern === "stripes") for (let i = 0; i < 3; i++) ell(p, f.accent, [W * 1.04, D * 0.86, L * 0.06], [0, 0.01, L * (0.2 - i * 0.18)], [0, 0, 0], [8, 6]);
+  else if (f.pattern === "spots") for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) ell(p, f.accent, [W * 0.18, D * 0.18, D * 0.18], [sd * W * 0.44, D * (0.12 - (i % 2) * 0.15), L * (0.22 - i * 0.13)], [0, 0, 0], [6, 4]);
+  const tz = -L * 0.48;
+  if (f.tail === "fork") for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, sd * D * 0.22, tz - L * 0.06, -Math.PI / 2 - sd * 0.55, 0, 0, W * 0.25, L * 0.24, D * 0.32);
+  else p.add(new THREE.ConeGeometry(0.5, 1, 6), f.fin, 0, 0, tz - L * 0.04, -Math.PI / 2, 0, 0, W * 0.22, L * 0.22, D * 0.9);
+  if (f.dorsal) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, D * 0.48, -L * 0.04, -0.45, 0, 0, W * 0.15, D * 0.45, L * 0.38);
+  for (const sd of [-1, 1]) ell(p, f.fin, [W * 0.12, D * 0.22, L * 0.16], [sd * W * 0.5, -D * 0.12, L * 0.16], [0.6, sd * 0.4, 0], [6, 4]);
+  eyes(p, D * 0.12, L * 0.3, W * 0.38, Math.max(0.035, D * 0.16));
+  return p;
+}
+
+const speciesGeos = new Map<string, THREE.BufferGeometry>();
+/** A species' outlined fish geometry (cached per species; shared by every held, landed or leaping fish). */
+export function fishSpeciesGeometry(id: string): THREE.BufferGeometry {
+  let g = speciesGeos.get(id);
+  if (!g) speciesGeos.set(id, (g = fishSpeciesPaint(fishParams(id)).geometry(true)));
+  return g;
+}
+
+/** A species' fish (the world's leaps, the catch display): one outlined draw call. */
+export function fishSpeciesModel(mats: ModelMats, id: string): THREE.Group {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(fishSpeciesGeometry(id), mats.creature);
+  m.castShadow = false;
+  g.add(m);
+  return g;
 }

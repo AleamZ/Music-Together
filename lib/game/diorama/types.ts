@@ -3,6 +3,7 @@ import type { WeatherFx } from "@/lib/game/art/weather";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 import type { WeatherKind } from "@/lib/game/weather/model";
 import type { CharAct } from "./character/pose";
+import type { RodLook } from "./character/held";
 import type { PetSpecies } from "@/lib/game/pets/catalog";
 
 /** A character drawn as a camera-facing billboard (its 24×48 chibi frame). */
@@ -25,6 +26,11 @@ export interface Billboard {
   lift?: number;
   /** P3: what they ride — a vehicle, or the boat on Sông Cái (absent: on foot). The vehicle model follows the feet. */
   vehicle?: "bike" | "moto" | "car" | "boat";
+  /** 3D wave 1: the fish species in hand (the 2D drawHeldFish; also the one held up by show_catch), the 2D umbrella
+   *  open over them, and the rod's look from their fishing loadout (absent = the default rod). */
+  hand?: string | null;
+  umbrella?: boolean;
+  rodLook?: RodLook;
 }
 
 /** P3: the gameplay things the 3D world shows beside the people (world px): the field's rats, the dogs, the pond's

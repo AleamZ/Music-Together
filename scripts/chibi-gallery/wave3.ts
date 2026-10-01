@@ -47,7 +47,7 @@ function emoteSheet(): Sheet {
   const tiles: Tile[] = [];
   for (const t of [0, 0.25, 0.5, 0.75]) tiles.push(act("dance", t, t < 0.5 ? NU : NAM, 0));
   tiles.push(act("clap", 0.1, NAM, 0), act("clap", 0.25, NU, TQ));
-  tiles.push(act("camera_up", 0.2, NU, TQ), act("camera_up", 0.2, NAM, -1.3));
+  tiles.push({ look: NU, act: "photo", time: 0.2, yaw: TQ, label: "Chụp ảnh (wave 1: photo + máy ảnh) · t=0.2s", zoom: 0.85, focusY: 0.9, more: [] });
   const seated = (a: ExtraAct, t: number, look: Look): Tile => ({
     look, act: a as CharAct, time: t, yaw: 0, label: `${EXTRA_ACT_LABEL[a]} (bàn bài) · t=${t}s`, noChibi: true,
     more: [{ look, act: a as CharAct, time: t, x: 0, y: SEAT, z: 0, yaw: 0 }], extra: cardTable,

@@ -17,7 +17,6 @@ export const HELD_BY_ACT: Partial<Record<CharAct, ReadonlyArray<{ kind: HeldKind
   hammer: [{ kind: "hammer", slot: "handR" }, { kind: "anvil", slot: "ground" }],
   stir: [{ kind: "spoon", slot: "handR" }, { kind: "cauldron", slot: "ground" }],
   sort: [{ kind: "nia", slot: "handR" }],
-  camera_up: [{ kind: "camera", slot: "handR" }],
   card_hold: [{ kind: "cards", slot: "handL" }],
   card_play: [{ kind: "cards", slot: "handL" }],
   card_deal: [{ kind: "deck", slot: "handL" }],

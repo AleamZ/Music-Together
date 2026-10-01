@@ -645,6 +645,11 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     if (onExhausted) onExhausted(until);
     else onExitGame();
   }, [lockedUntil, lockedNow, onExhausted, onExitGame]);
+  // 3D wave 1: my loadout's rod, reel and bobber on the 3D rod
+  const loadout = fishing.data.state?.loadout ?? null;
+  useEffect(() => {
+    canvasRef.current?.setRodLook?.(loadout ? { rod: loadout.rod, reel: loadout.reel ?? null, bobber: loadout.bobber } : null);
+  }, [loadout]);
   const endFaint = useCallback(() => {
     setFaint(null);
     void reloadVitals();
@@ -668,6 +673,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const rain = useRain({ token, canvasRef, fromVitals: vitalsState?.rain, raining: isRainy(weather?.kind), onCoinsChanged: reloadCoins, showToast });
   const rainCold = rain.cold;
   const starving = vitalsState ? isStarving(vitalsState) : false;
+  // 3D wave 1: my vital state on the 3D chibi — lying fainted while the faint screen is up, slumped while starving
+  useEffect(() => { canvasRef.current?.setVital?.(faint ? "faint" : starving ? "exhausted" : null); }, [faint, starving]);
   useEffect(() => {
     // riding is slowed by the room's weather (v18.8 effects.rideSpeed); v18.9: cảm lạnh halves every speed
     canvasRef.current?.setSpeedFactor((vitalsState ? speedFactor(vitalsState) : 1) * (riding ? rideWeather : 1) * (rainCold ? COLD_SPEED : 1));
@@ -1364,7 +1371,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
           fish={fishing.data.state?.fish ?? []}
           rarityOf={(id) => fishing.data.catalog?.species.find((s) => s.id === id)?.rarity ?? 1}
           speciesName={(id) => fishing.data.catalog?.species.find((s) => s.id === id)?.name ?? id}
-          onAte={() => {
+          onAte={(_r, kind) => {
+            canvasRef.current?.setVital?.(kind === "drink" ? "drink" : "eat", 3000);          // 3D wave 1
             void fishing.data.reload();
             void vitals.reload();
             showToast("Ngon quá! 😋");
@@ -1467,6 +1475,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             motel.apply(s);
             if (s.coins !== undefined) void fishing.data.reload();
           }}
+          onSleep={(on) => canvasRef.current?.setVital?.(on ? "sleep" : null)}
           onClose={close}
         />
       )}

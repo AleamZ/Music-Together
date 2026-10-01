@@ -6,7 +6,8 @@ import * as THREE from "three";
 import { HAIR_COLOR_LABEL, HAIR_STYLE_LABEL, SKIN_LABEL } from "@/lib/game/art/palettes";
 import { ChibiFactory } from "@/lib/game/diorama/character/build";
 import { LOOK_SLOTS, wearableIds, wearing, type LookSlot } from "@/lib/game/diorama/character/catalog";
-import { CHAR_ACTS, poseAt, previewTime, type CharAct } from "@/lib/game/diorama/character/pose";
+import { heldFor, WAVE1_LABEL } from "@/lib/game/diorama/character/held";
+import { CHAR_ACTS, poseAt, previewTime, type CharAct, type WAVE1_ACTS } from "@/lib/game/diorama/character/pose";
 import { ChibiRig } from "@/lib/game/diorama/character/rig";
 import { chibiSpec } from "@/lib/game/diorama/character/spec";
 import { addVoxelLights } from "@/lib/game/diorama/character/voxel-material";
@@ -19,6 +20,7 @@ import { GENDERS, HAIR_COLORS, HAIR_STYLES, SKIN_TONES, type Look } from "@/lib/
 const ACT_LABEL: Record<CharAct, string> = {
   idle: "Đứng thở", walk: "Đi bộ", run: "Chạy", sit: "Ngồi", cast: "Quăng cần", reel: "Kéo cần", swim: "Bơi", ride: "Cưỡi xe", wave: "Vẫy tay",
   chop: "Chặt cây", cook: "Nấu ăn", bite: "Cá cắn câu", pedal: "Đạp xe", stretch: "Khởi động", net_hold: "Cầm lưới", net_throw: "Tung lưới", net_pull: "Kéo lưới", net_won: "Giơ mẻ lưới",
+  ...(WAVE1_LABEL as Record<(typeof WAVE1_ACTS)[number], string>),
   ...EXTRA_ACT_LABEL,
 };
 const SLOT_LABEL: Record<LookSlot, string> = {
@@ -131,6 +133,8 @@ function CharacterLab() {
         m.camera.lookAt(0, s.close ? 1.45 : 1.05, 0);
         rig.root.rotation.y = yaw;
         rig.root.position.y = s.act === "swim" ? 0.5 : 0;
+        const hf = heldFor(s.act, { fish: "ca_loc" });
+        rig.setHeld(hf.R, hf.L);
         rig.apply(poseAt(s.act, previewTime(s.act, t)));
       });
     } catch (e) {

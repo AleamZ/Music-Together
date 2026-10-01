@@ -5,9 +5,14 @@
 import type { FaceExpr } from "./voxel-face";
 import { EXTRA_ACTS, extraPose, isExtraAct, type ExtraAct } from "./pose-extra";
 
-export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "stretch" | "net_hold" | "net_throw" | "net_pull" | "net_won"
+export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "stretch" | "net_hold" | "net_throw" | "net_pull" | "net_won" | "transplant" | "harvest" | "pump" | "spray" | "fertilize" | "crab" | "snails" | "prepare" | "dig" | "pick" | "pet" | "aim" | "show_catch" | "faint" | "sleep" | "exhausted" | "hammock" | "eat" | "drink" | "photo" | "mine"
   | ExtraAct;                                                              // wave 3: pose-extra.ts
-export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch", "net_hold", "net_throw", "net_pull", "net_won", ...EXTRA_ACTS];
+/** 3D wave 1: the twelve farm animations (named as FARM_ANIM's keys), the catch held up, the vital states, the camera
+ *  and the pickaxe. */
+export const WAVE1_ACTS = ["transplant", "harvest", "pump", "spray", "fertilize", "crab", "snails", "prepare", "dig", "pick", "pet", "aim",
+  "show_catch", "faint", "sleep", "exhausted", "hammock", "eat", "drink", "photo", "mine"] as const satisfies readonly CharAct[];
+export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch", "net_hold", "net_throw", "net_pull", "net_won",
+  ...WAVE1_ACTS, ...EXTRA_ACTS];
 /** Actions that play once from their start (the caller passes the time since the action began, not a running clock):
  *  the cast's throw, then the rod held out while the line waits. */
 export const ONE_SHOT_ACTS: ReadonlySet<CharAct> = new Set<CharAct>(["cast", "reel", "net_throw"]);
@@ -389,6 +394,8 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       p.bob = Math.sin(a * 2) * 0.004;
       break;
     }
+    default:
+      wave1Pose(act, p, s);
   }
   p.elbowL = clamp(p.elbowL, JOINT_LIMITS.elbow); p.elbowR = clamp(p.elbowR, JOINT_LIMITS.elbow);
   p.kneeL = clamp(p.kneeL, JOINT_LIMITS.knee); p.kneeR = clamp(p.kneeR, JOINT_LIMITS.knee);
@@ -422,3 +429,238 @@ export function turnToward(from: number, to: number, dt: number, rate = 12): num
 export function locomotion(speedPx: number): CharAct {
   return speedPx < 8 ? "idle" : speedPx > 105 ? "run" : "walk";
 }
+
+// ---- 3D wave 1: the farm animations, the catch held up, the vital states (the 2D farm-anim.ts / hammock / faint) ----
+
+/** A crouch: hips down by `d` (0…1), knees and ankles folding to keep the feet flat. */
+function crouch(p: Pose, d: number): void {
+  p.drop = 0.42 * d;
+  p.legL.x = p.legR.x = 0.9 * d;                                             // + the lean (wave1Pose keeps legs under)
+  p.kneeL = p.kneeR = 2.1 * d;
+  p.ankleL = p.ankleR = -0.65 * d;
+  p.legL.z = p.legR.z = 0.05 + 0.12 * d;
+  p.lean = 0.35 * d;
+}
+
+/** Lying on the back (faint, sleep, the hammock): the body pitched flat, the hips `drop` down. */
+function lying(p: Pose, drop: number): void {
+  p.lean = -Math.PI / 2;
+  p.drop = drop;
+  p.legL.x = p.legR.x = 0.06;
+  p.kneeL = p.kneeR = 0.1;
+  p.ankleL = p.ankleR = 0.5;
+}
+
+/** The wave-1 actions' poses (the hand-held tool comes from held.ts ACT_TOOL). */
+function wave1Pose(act: CharAct, p: Pose, s: number): void {
+  switch (act) {
+    case "transplant": {
+      // cấy lúa: bent over at the hips, the right hand pushing a seedling into the mud, the left holding the bunch
+      const k = (s / 1.1) % 1, push = Math.sin(k * Math.PI) ** 2;
+      p.lean = 0.95; p.drop = 0.12;
+      p.legL.x = p.legR.x = 0.35; p.kneeL = p.kneeR = 0.45; p.legL.z = p.legR.z = 0.16;
+      p.armR.x = 1.2 + push * 0.5; p.elbowR = 0.3 + (1 - push) * 0.5; p.armR.z = 0.1;
+      p.armL.x = 0.9; p.elbowL = 1.2; p.armL.z = 0.15;
+      p.headX = -0.45;
+      break;
+    }
+    case "harvest": {
+      // gặt lúa: crouched, the sickle sweeping in arcs at knee height, the left hand gathering the stalks
+      const a = Math.sin(s * TAU * 1.2);
+      crouch(p, 0.55);
+      p.armR.x = 1.05; p.armR.z = 0.35 + a * 0.45; p.elbowR = 0.45 - a * 0.2;
+      p.armL.x = 1.1; p.armL.z = -0.1; p.elbowL = 0.7;
+      p.roll = a * 0.05;
+      p.headX = 0.15;
+      break;
+    }
+    case "pump": {
+      // bơm nước: both hands on the pump's handle, pushing down and pulling up
+      const u = (Math.sin(s * TAU * 1.4) + 1) / 2;
+      p.armR.x = p.armL.x = 0.7 + u * 0.7; p.elbowR = p.elbowL = 1.3 - u * 0.9;
+      p.armR.z = p.armL.z = -0.05;
+      p.lean = 0.15 + u * 0.15;
+      p.kneeL = p.kneeR = 0.15 + (1 - u) * 0.25; p.drop = (1 - u) * 0.06;
+      p.headX = 0.25;
+      break;
+    }
+    case "spray": {
+      // phun thuốc: the wand out in the right hand sweeping side to side, the left working the tank's lever
+      const w = Math.sin(s * TAU * 0.8);
+      p.armR.x = 0.95; p.armR.z = 0.25 + w * 0.35; p.elbowR = 0.35;
+      p.armL.x = 0.5; p.armL.z = 0.1; p.elbowL = 1.6 + Math.max(0, Math.sin(s * TAU * 2)) * 0.4;
+      p.lean = 0.1; p.headX = 0.15; p.headZ = -w * 0.08;
+      break;
+    }
+    case "fertilize": {
+      // bón phân: the bag on the left arm, the right hand flinging granules out in a fan
+      const k = (s / 0.9) % 1, fling = k < 0.35 ? k / 0.35 : 1 - (k - 0.35) / 0.65;
+      p.armR.x = 0.3 + fling * 0.9; p.armR.z = 0.2 + fling * 0.5; p.elbowR = 1.2 - fling * 1.0;
+      p.armL.x = 0.55; p.armL.z = 0.12; p.elbowL = 1.45;
+      p.lean = 0.12; p.roll = -fling * 0.05;
+      break;
+    }
+    case "crab": {
+      // bắt cua: squatting at the dyke, the right hand darting into the hole, the basket in the left
+      const k = (s / 1.0) % 1, dart = k < 0.25 ? k / 0.25 : k < 0.5 ? 1 : 1 - (k - 0.5) / 0.5;
+      crouch(p, 0.85);
+      p.armR.x = 1.0 + dart * 0.55; p.elbowR = 0.9 - dart * 0.75; p.armR.z = 0.12;
+      p.armL.x = 0.55; p.armL.z = 0.35; p.elbowL = 0.9;
+      p.headX = 0.3;
+      break;
+    }
+    case "snails": {
+      // nhặt ốc: bending low, picking with the right hand in a rhythm, the basket in the left
+      const pk = Math.max(0, Math.sin(s * TAU * 1.5));
+      crouch(p, 0.6); p.lean = 0.7;
+      p.armR.x = 1.3 + pk * 0.3; p.elbowR = 0.3 + (1 - pk) * 0.6; p.armR.z = 0.1;
+      p.armL.x = 0.6; p.armL.z = 0.3; p.elbowL = 1.0;
+      p.headX = -0.2;
+      break;
+    }
+    case "prepare": {
+      // làm đất: the hoe raised over the shoulder with both hands and brought down into the soil
+      const k = (s / 0.9) % 1, up = k < 0.55 ? k / 0.55 : 1 - (k - 0.55) / 0.45;
+      const e = up * up * (3 - 2 * up);
+      p.armR.x = 0.6 + e * 2.0; p.elbowR = 0.5 + e * 0.6; p.armR.z = 0.1;
+      p.armL.x = 0.5 + e * 1.9; p.elbowL = 0.8 + e * 0.5; p.armL.z = 0.05;
+      p.lean = 0.35 - e * 0.35;
+      p.legL.x = 0.3; p.legR.x = -0.15; p.kneeL = 0.3; p.kneeR = 0.12;
+      p.headX = 0.2 - e * 0.15;
+      break;
+    }
+    case "dig": {
+      // đào khoai: the shovel pushed into the ground with the foot, then levered back
+      const k = (s / 1.2) % 1, push = Math.sin(k * Math.PI);
+      p.armR.x = 0.9 - push * 0.3; p.elbowR = 0.6 + push * 0.4; p.armR.z = 0.05;
+      p.armL.x = 1.1 - push * 0.2; p.elbowL = 0.9; p.armL.z = -0.05;
+      p.lean = 0.3 + push * 0.15;
+      p.legR.x = 0.6 * push; p.kneeR = 0.9 * push; p.legL.x = -0.1; p.kneeL = 0.2;
+      p.drop = 0.04 * push;
+      p.headX = 0.25;
+      break;
+    }
+    case "pick": {
+      // bẻ bắp / hái ớt: reaching up and out with the right hand, dropping into the basket on the left arm
+      const k = (s / 1.3) % 1, reach = Math.sin(k * Math.PI);
+      p.armR.x = 1.2 + reach * 0.9; p.armR.z = 0.3; p.elbowR = 0.9 - reach * 0.7;
+      p.armL.x = 0.5; p.armL.z = 0.25; p.elbowL = 1.3;
+      p.headX = -0.15 * reach; p.bob = reach * 0.02;
+      break;
+    }
+    case "pet": {
+      // vuốt chó: down on one knee, the right hand stroking back and forth at dog height
+      const w = Math.sin(s * TAU * 1.1);
+      p.drop = 0.36; p.legL.x = 1.5; p.kneeL = 1.6; p.legR.x = 0.1; p.kneeR = 2.2; p.ankleR = 0.6; p.ankleL = 0;
+      p.armR.x = 1.0 + w * 0.25; p.elbowR = 0.4; p.armR.z = 0.15;
+      p.armL.x = 0.5; p.elbowL = 1.1; p.armL.z = 0.1;
+      p.lean = 0.25; p.headX = 0.35; p.face = "happy";
+      break;
+    }
+    case "aim": {
+      // bắn ná: the left arm out holding the fork, the right hand drawing the band back to the cheek, then releasing
+      const k = (s / 1.6) % 1, draw = k < 0.7 ? k / 0.7 : 0;
+      p.armL.x = 1.55; p.armL.z = -0.05; p.elbowL = 0.05;
+      p.armR.x = 1.45; p.armR.z = -0.25 - draw * 0.15; p.elbowR = 0.6 + draw * 1.5;
+      p.legL.x = 0.25; p.legR.x = -0.2; p.kneeL = 0.15;
+      p.headX = 0.05; p.lean = -0.04;
+      break;
+    }
+    case "show_catch": {
+      // the fish held up high in the right hand for everyone to see, a happy bounce, the left fist up too
+      const b = Math.abs(Math.sin(s * TAU * 1.3));
+      p.armR.x = 1.9; p.armR.z = 0.35; p.elbowR = 0.35;
+      p.armL.x = 0.4; p.armL.z = 0.6; p.elbowL = 1.8;
+      p.bob = b * 0.04; p.squash = b * 0.02;
+      p.headX = -0.15; p.headZ = 0.12;
+      p.face = "happy";
+      break;
+    }
+    case "faint": {
+      // ngất: flat on the back, arms flung out, eyes shut, still
+      lying(p, 0.68);
+      p.armL.z = p.armR.z = 1.3; p.armL.x = p.armR.x = 0.3; p.elbowL = p.elbowR = 0.3;
+      p.legL.z = p.legR.z = 0.18;
+      p.headZ = 0.35;
+      p.face = "blink";
+      break;
+    }
+    case "sleep": {
+      // ngủ: on the back, hands folded on the belly, breathing slowly, eyes shut
+      lying(p, 0.68);
+      const b = Math.sin(s * TAU * 0.25);
+      p.armL.x = p.armR.x = 0.35; p.armL.z = p.armR.z = -0.25; p.elbowL = p.elbowR = 1.7;
+      p.squash = b * 0.015;
+      p.headZ = 0.2;
+      p.face = "blink";
+      break;
+    }
+    case "hammock": {
+      // nằm võng: lying in the cloth (the seat's lift puts the hips on it), hands behind the head, a lazy sway
+      lying(p, 0.56);
+      p.legL.x = p.legR.x = 0.25; p.kneeL = p.kneeR = 0.35;
+      p.armL.x = p.armR.x = 2.6; p.armL.z = p.armR.z = 0.5; p.elbowL = p.elbowR = 2.2;
+      p.roll = Math.sin(s * TAU * 0.3) * 0.08;
+      p.face = "happy";
+      break;
+    }
+    case "exhausted": {
+      // kiệt sức: slumped forward, shoulders dropped, arms hanging, knees soft, a heavy slow breath
+      const b = Math.sin(s * TAU * 0.4);
+      p.lean = 0.42 + b * 0.03; p.drop = 0.08;
+      p.kneeL = p.kneeR = 0.35; p.legL.x = p.legR.x = 0.12; p.ankleL = p.ankleR = -0.1;
+      p.armL.x = p.armR.x = 0.35; p.armL.z = p.armR.z = 0.02; p.elbowL = p.elbowR = 0.05;
+      p.headX = 0.45; p.headZ = 0.15;
+      p.squash = -0.03 + b * 0.01;
+      p.face = "blink";
+      break;
+    }
+    case "eat":
+    case "drink": {
+      // ăn: the bowl in the left hand at the chest, the right hand (chopsticks) to the mouth and back;
+      // uống: the cup raised to the lips in the right hand, the head tipping back as it drinks
+      const k = (s / (act === "eat" ? 1.0 : 1.6)) % 1, up = Math.sin(k * Math.PI);
+      if (act === "eat") {
+        p.armL.x = 0.85; p.armL.z = -0.2; p.elbowL = 1.6;
+        p.armR.x = 0.6 + up * 0.5; p.armR.z = -0.25; p.elbowR = 1.3 + up * 0.9;
+        p.headX = 0.2 - up * 0.1;
+      } else {
+        p.armR.x = 0.7 + up * 0.5; p.armR.z = -0.3; p.elbowR = 1.5 + up * 0.75;
+        p.armL.x = 0.1; p.elbowL = 0.25;
+        p.headX = -0.25 * up;
+      }
+      p.face = up > 0.8 ? "blink" : "open";
+      break;
+    }
+    case "photo": {
+      // chụp ảnh: the camera held up to the face in both hands
+      p.armR.x = p.armL.x = 1.2; p.armR.z = p.armL.z = -0.35; p.elbowR = p.elbowL = 1.75;
+      p.headX = 0.05;
+      p.bob = Math.sin(s * TAU * 0.35) * 0.006;
+      break;
+    }
+    case "mine": {
+      // đào mỏ: the pickaxe swung from over the head down to the rock
+      const k = (s / 0.85) % 1, up = k < 0.6 ? k / 0.6 : 1 - (k - 0.6) / 0.4;
+      const e = up * up * (3 - 2 * up);
+      p.armR.x = -0.2 + e * 2.9; p.armR.z = 0.15; p.elbowR = 0.3 + e * 0.5;
+      p.armL.x = -0.1 + e * 2.7; p.armL.z = 0.05; p.elbowL = 0.5 + e * 0.4;
+      p.lean = 0.4 - e * 0.35; p.kneeL = 0.3; p.kneeR = 0.2; p.legL.x = 0.25; p.legR.x = -0.1;
+      p.headX = 0.2 - e * 0.15;
+      break;
+    }
+    default:
+      break;
+  }
+  // the body's lean pitches the legs with it: swing them back under the hips so the feet stay on the ground
+  if (!LYING_ACTS.has(act)) { p.legL.x += p.lean; p.legR.x += p.lean; }
+}
+
+/** The 3D action for a FARM_ANIM key (the twelve farm animations and chop/cook share their names); undefined for
+ *  "stop" or an unknown name. */
+export function farmAct(name: string | undefined): CharAct | undefined {
+  return name && name !== "stop" && (CHAR_ACTS as readonly string[]).includes(name) ? (name as CharAct) : undefined;
+}
+
+/** The vital-state actions (lying, slumped, eating): they hold the body, so nothing else is drawn in the hands. */
+export const LYING_ACTS: ReadonlySet<CharAct> = new Set<CharAct>(["faint", "sleep", "hammock"]);

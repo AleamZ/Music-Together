@@ -17,7 +17,7 @@ import {
   type LiveBoss, type LiveNet, type Motion, type WakePoint, type WorldLive,
 } from "./live-plan";
 import {
-  barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, fishModel, houseModel, Labels,
+  barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, fishSpeciesModel, houseModel, Labels,
   lotSign, ModelMats, petModel, poseCreature, ratModel, ringModel, spearModel, stallModel, vehicleModel, wildAnimal,
   type Barrier, type Boat, type Creature, type Vehicle,
 } from "./models";
@@ -47,6 +47,8 @@ const BOB_FLIGHT_S = 0.45;
 const NET_FLIGHT_S = 0.55;
 /** The net draped from the hands before the throw: its radius and how far it hangs (units). */
 const HANG_R = 0.28, HANG_H = 0.75;
+/** Wave 1: the species that leap in the rivers and the pond (fish3d.ts models from the 2D icons). */
+const LEAP_SPECIES = ["ca_chep", "ca_ro", "ca_tra", "ca_loc", "ca_me_vinh", "ca_that_lat", "ca_lang"] as const;
 
 /** A cast net (chài), unit radius, flat at y = 0 with its centre raised by 1 (scale.y sets the dome): 16 spokes and
  *  5 rings as line segments. */
@@ -131,7 +133,7 @@ export class LiveLayer {
 
     ];
     spots.forEach(([x, y, w], i) => {
-      const g = fishModel(this.mats, [0xc8b060, 0x9aa8b0, 0xe08a4a][i % 3]);
+      const g = fishSpeciesModel(this.mats, LEAP_SPECIES[i % LEAP_SPECIES.length]);                // wave 1: real species
       g.visible = false;
       const splash = new THREE.Mesh(this.ringGeo, this.mats.foam);
       splash.visible = false;
@@ -444,7 +446,7 @@ export class LiveLayer {
       this.animate(c, e.motion, tm, false, reduced);
     }
     (live.leaps ?? []).forEach((l, i) => {
-      const e = this.get(`leap:${i}`, "fish", () => fishModel(this.mats, 0xc8b060));
+      const e = this.get(`leap:${i}`, "fish", () => fishSpeciesModel(this.mats, LEAP_SPECIES[(i * 5 + 2) % LEAP_SPECIES.length]));
       const wy = this.waterY(l.x, l.y);
       e.obj.visible = l.h > 0;
       e.obj.position.set(U(l.x), wy + l.h * 1.3 - 0.1, U(l.y));
