@@ -974,14 +974,24 @@ export function fishSpeciesPaint(f: Fish3D): Paint {
     return p;
   }
   if (f.kind === "shrimp") {
-    // tôm càng: a curled segmented body, two long blue claws, whiskers
-    for (let i = 0; i < 5; i++) ell(p, i % 2 ? f.body : f.accent, [W * (1 - i * 0.12), D * (0.9 - i * 0.1), L * 0.2], [0, -i * i * 0.01, L * 0.25 - i * L * 0.14]);
-    p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, -0.05, -L * 0.55, -Math.PI / 2, 0, 0, W * 0.9, L * 0.18, D * 0.3);
-    for (const sd of [-1, 1]) {
-      tube(p, f.fin, [[sd * W * 0.4, 0, L * 0.3], [sd * W * 0.9, 0.02, L * 0.6], [sd * W * 0.7, 0.02, L * 0.95]], D * 0.07, D * 0.13);
-      tube(p, f.accent, [[sd * W * 0.2, D * 0.2, L * 0.35], [sd * W * 0.8, D * 0.5, L * 0.8]], 0.008, 0.01);
+    // tôm càng: a body curled in a C (head forward, the tail tucked under), a fan tail, two long claws, antennae
+    const R = L * 0.22, n = 7;
+    for (let i = 0; i < n; i++) {
+      const a = -0.3 + (i / (n - 1)) * 2.6, k = 1 - i * 0.09;                         // from the head round under
+      ell(p, i % 2 ? f.body : f.accent, [W * k, D * 0.75 * k, L * 0.2], [0, Math.cos(a) * R - R * 0.4, Math.sin(a) * R], [-a, 0, 0]);
     }
-    eyes(p, D * 0.25, L * 0.36, W * 0.25, D * 0.14);
+    // the fan tail at the end of the curl, opening forward under the body
+    for (const sd of [-1, 0, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 4), f.fin, sd * W * 0.22, -R * 1.25, -R * 0.15, Math.PI / 2 + 0.25, sd * 0.35, 0, W * 0.35, L * 0.2, D * 0.12);
+    ell(p, f.body, [W * 1.05, D * 0.85, L * 0.34], [0, R * 0.55, R * 0.25]);                         // the head (carapace)
+    for (const sd of [-1, 1]) {
+      // the claw arm, then the open pincer
+      tube(p, f.fin, [[sd * W * 0.35, R * 0.35, R * 0.45], [sd * W * 0.9, R * 0.3, R * 1.1], [sd * W * 0.8, R * 0.35, R * 1.8]], D * 0.07, D * 0.1);
+      ell(p, f.fin, [D * 0.22, D * 0.18, L * 0.22], [sd * W * 0.8, R * 0.35, R * 2.05]);
+      tube(p, f.accent, [[sd * W * 0.7, R * 0.4, R * 2.15], [sd * W * 0.85, R * 0.45, R * 2.45]], 0.012, 0.012);
+      // antennae sweeping back over the body
+      tube(p, f.accent, [[sd * W * 0.15, R * 0.8, R * 0.6], [sd * W * 0.6, R * 1.5, R * 0.5], [sd * W * 0.9, R * 1.9, -R * 0.6]], 0.006, 0.006);
+    }
+    eyes(p, R * 0.85, R * 0.55, W * 0.32, D * 0.16);
     return p;
   }
   if (f.kind === "turtle") {
@@ -994,11 +1004,11 @@ export function fishSpeciesPaint(f: Fish3D): Paint {
     return p;
   }
   if (f.kind === "ray") {
-    // cá đuối: a flat disc with wing tips, a long whip tail
-    ell(p, f.body, [L * 0.95, D * 0.35, L * 0.8], [0, 0, 0.02], [0, 0, 0], [12, 6]);
-    ell(p, f.belly, [L * 0.8, D * 0.2, L * 0.65], [0, -D * 0.08, 0.02]);
-    tube(p, f.fin, [[0, 0, -L * 0.35], [0, 0.02, -L * 0.7], [0, 0.05, -L * 1.05]], 0.02, 0.01);
-    eyes(p, D * 0.15, L * 0.28, L * 0.12, D * 0.14);
+    // cá đuối: a flat diamond (the wing tips out to the sides), a paler underside, a long thin whip tail
+    p.add(new THREE.OctahedronGeometry(0.5, 0), f.body, 0, 0, 0, 0, 0, 0, L * 1.1, D * 0.3, L * 0.85);
+    p.add(new THREE.OctahedronGeometry(0.5, 0), f.belly, 0, -D * 0.04, 0, 0, 0, 0, L * 0.9, D * 0.2, L * 0.7);
+    tube(p, f.fin, [[0, 0, -L * 0.4], [0, 0.01, -L * 0.8], [0, 0.03, -L * 1.25]], 0.014, 0.006);
+    eyes(p, D * 0.14, L * 0.24, L * 0.08, D * 0.14);
     return p;
   }
   // a fish: the body, a paler belly, the pattern, the tail (V or fan), a dorsal fin, two side fins, the eyes
@@ -1006,9 +1016,12 @@ export function fishSpeciesPaint(f: Fish3D): Paint {
   ell(p, f.belly, [W * 0.82, D * 0.55, L * 0.66], [0, -D * 0.2, 0.04]);
   if (f.pattern === "stripes") for (let i = 0; i < 3; i++) ell(p, f.accent, [W * 1.04, D * 0.86, L * 0.06], [0, 0.01, L * (0.2 - i * 0.18)], [0, 0, 0], [8, 6]);
   else if (f.pattern === "spots") for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) ell(p, f.accent, [W * 0.18, D * 0.18, D * 0.18], [sd * W * 0.44, D * (0.12 - (i % 2) * 0.15), L * (0.22 - i * 0.13)], [0, 0, 0], [6, 4]);
-  const tz = -L * 0.48;
-  if (f.tail === "fork") for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, sd * D * 0.22, tz - L * 0.06, -Math.PI / 2 - sd * 0.55, 0, 0, W * 0.25, L * 0.24, D * 0.32);
-  else p.add(new THREE.ConeGeometry(0.5, 1, 6), f.fin, 0, 0, tz - L * 0.04, -Math.PI / 2, 0, 0, W * 0.22, L * 0.22, D * 0.9);
+  const tz = -L * 0.34;                                                         // the peduncle, inside the body
+  // the caudal fin: its narrow end (the peduncle) on the body, fanning out behind it — a cone with its apex pointing
+  // forward (+z) at the body; a forked tail is two such lobes splayed up and down (the notch between them)
+  const th = L * 0.26;
+  if (f.tail === "fork") for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, sd * th * 0.22, tz - th * 0.42, Math.PI / 2 - sd * 0.5, 0, 0, W * 0.2, th, D * 0.34);
+  else p.add(new THREE.ConeGeometry(0.5, 1, 6), f.fin, 0, 0, tz - th * 0.45, Math.PI / 2, 0, 0, W * 0.2, th, D * 0.85);
   if (f.dorsal) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, D * 0.48, -L * 0.04, -0.45, 0, 0, W * 0.15, D * 0.45, L * 0.38);
   for (const sd of [-1, 1]) ell(p, f.fin, [W * 0.12, D * 0.22, L * 0.16], [sd * W * 0.5, -D * 0.12, L * 0.16], [0.6, sd * 0.4, 0], [6, 4]);
   eyes(p, D * 0.12, L * 0.3, W * 0.38, Math.max(0.035, D * 0.16));

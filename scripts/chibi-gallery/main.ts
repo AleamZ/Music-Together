@@ -37,8 +37,9 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
     if (t.fish) {                                                           // wave 1: a fish species, side on
       const m = new THREE.Mesh(fishSpeciesGeometry(t.fish), heldMaterial());
       m.rotation.y = -Math.PI / 2 + 0.35;
+      if (t.fish === "ca_duoi_song") m.rotation.z = 0.7;                       // the flat ray, tilted to show its diamond
       scene.add(m);
-      cam.position.set(0, 0.25, 1.6); cam.lookAt(0, 0, 0);
+      cam.position.set(0, 0.55, 1.5); cam.lookAt(0, 0, 0);
       r.render(scene, cam);
       scene.remove(m);
     } else if (t.enemy) {
