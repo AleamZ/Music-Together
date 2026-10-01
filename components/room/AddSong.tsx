@@ -24,7 +24,7 @@ import SearchResults from "./SearchResults";
 const SUGGEST_DEBOUNCE_MS = 250;
 const BLUR_CLOSE_MS = 150;
 
-type Search = { id: number; query: string; results: SearchResult[] };
+type Search = { id: number; query: string; results: SearchResult[]; continuation: string | null };
 
 export default function AddSong({
   roomId,
@@ -104,9 +104,9 @@ export default function AddSong({
     searchCtrl.current = ctrl;
     setSearching(true);
     try {
-      const results = await fetchSearchResults(query, ctrl.signal);
+      const res = await fetchSearchResults(query, ctrl.signal);
       if (ctrl.signal.aborted) return;
-      setSearch({ id: ++searchSeq.current, query, results });
+      setSearch({ id: ++searchSeq.current, query, results: res.results, continuation: res.continuation });
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
       setError("Không tìm được, thử lại nhé.");
@@ -236,52 +236,143 @@ export default function AddSong({
   }
 
   return (
-    <div className="mb-1">
-      <form onSubmit={onSubmit} className="flex flex-wrap gap-2">
+    <div className="relative mb-1">
+      <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-0 flex-1">
-          <input value={input} onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={onKeyDown} onBlur={onBlur} onFocus={onFocus}
-            placeholder="Tìm bài hoặc dán link YouTube…" autoComplete="off"
-            role="combobox" aria-autocomplete="list"
+          {/* Prefix icon: Link or Search */}
+          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink/40">
+            {link ? "🔗" : "🔍"}
+          </span>
+
+          <input
+            value={input}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={onKeyDown}
+            onBlur={onBlur}
+            onFocus={onFocus}
+            placeholder="Tìm bài hát hoặc dán link YouTube…"
+            autoComplete="off"
+            role="combobox"
+            aria-autocomplete="list"
             aria-expanded={showSuggest && suggestions.length > 0}
             aria-controls="addsong-suggest-list"
             aria-activedescendant={showSuggest && activeIdx >= 0 ? `addsong-suggest-${activeIdx}` : undefined}
-            className="w-full rounded-lg border border-gold bg-cream px-3 py-2 text-sm text-ink" />
+            className="w-full rounded-lg border border-gold/70 bg-cream pl-8 pr-8 py-2 text-sm text-ink shadow-2xs transition-all placeholder:text-ink/40 focus:border-burgundy focus:ring-1 focus:ring-burgundy/30 outline-none"
+          />
+
+          {/* Clear input button */}
+          {input.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setInput("");
+                setSearch(null);
+                setSuggestions([]);
+                closeSuggest();
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-xs text-ink/40 hover:text-burgundy hover:bg-gold-200/30 transition-colors"
+              title="Xóa nội dung"
+              aria-label="Xóa nội dung tìm kiếm"
+            >
+              ✕
+            </button>
+          )}
+
+          {/* Autocomplete Suggestions Dropdown */}
           {showSuggest && suggestions.length > 0 && (
-            <ul role="listbox" id="addsong-suggest-list"
-              className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-gold bg-cream shadow">
+            <ul
+              role="listbox"
+              id="addsong-suggest-list"
+              className="absolute left-0 right-0 top-full z-40 mt-1.5 overflow-hidden rounded-xl border-2 border-gold bg-cream/95 shadow-xl backdrop-blur-md divide-y divide-gold-200/40"
+            >
               {suggestions.map((s, i) => (
-                <li key={s.text} role="option" id={`addsong-suggest-${i}`} aria-selected={i === activeIdx}
-                  onMouseDown={(e) => { e.preventDefault(); pick(s.text); }}
+                <li
+                  key={s.text}
+                  role="option"
+                  id={`addsong-suggest-${i}`}
+                  aria-selected={i === activeIdx}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pick(s.text);
+                  }}
                   onMouseEnter={() => setActiveIdx(i)}
-                  className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-ink ${i === activeIdx ? "bg-parchment-200" : ""}`}>
-                  {/* eslint-disable-next-line @next/next/no-img-element -- YouTube CDN thumb; next/image optimization isn't worth its cost here */}
-                  {s.thumb && <img src={s.thumb} alt="" className="h-6 w-8 rounded object-cover" />}
-                  <span className="truncate">{s.text}</span>
+                  className={`flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-ink transition-colors ${
+                    i === activeIdx ? "bg-gold-200/40 text-burgundy font-medium" : "hover:bg-gold-200/20"
+                  }`}
+                >
+                  <span className="text-xs text-gold-600">🔍</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- YouTube CDN thumb */}
+                  {s.thumb && <img src={s.thumb} alt="" className="h-6 w-9 rounded object-cover shadow-2xs shrink-0" />}
+                  <span className="truncate flex-1">{s.text}</span>
+                  <span className="text-[10px] text-ink/40">↵</span>
                 </li>
               ))}
             </ul>
           )}
         </div>
-        <button disabled={busy || searching || (link && remaining === 0)}
-          title={link && remaining === 0 ? ruleMessage({ code: "order_limit", max: rules.max_orders_per_member }) : undefined}
-          className="rounded-lg bg-burgundy px-3 py-2 font-cormorant font-bold text-cream disabled:opacity-60">
-          {busy || searching ? "…" : link ? "+ Thêm" : "Tìm"}
+
+        <button
+          disabled={busy || searching || (link && remaining === 0)}
+          title={
+            link && remaining === 0
+              ? ruleMessage({ code: "order_limit", max: rules.max_orders_per_member })
+              : undefined
+          }
+          className="flex items-center gap-1.5 rounded-lg border border-gold bg-burgundy px-3.5 py-2 font-cormorant text-sm font-bold text-cream shadow-xs transition-all hover:bg-burgundy-accent hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:scale-100"
+        >
+          {busy || searching ? (
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-cream border-t-transparent" />
+          ) : link ? (
+            <span>+ Thêm</span>
+          ) : (
+            <span>Tìm</span>
+          )}
         </button>
+
         {remaining !== null && (
-          <span className={`self-center whitespace-nowrap text-[11px] ${remaining === 0 ? "text-burgundy-accent" : "text-ink/60"}`}
-            title="Số bài bạn đang đặt / giới hạn của phòng">
+          <span
+            className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold tracking-wide transition-colors ${
+              remaining === 0
+                ? "border-red-300 bg-red-50 text-red-700"
+                : "border-gold-200/80 bg-cream/70 text-ink/70"
+            }`}
+            title="Số bài bạn đang đặt / giới hạn của phòng"
+          >
             Order: {orderLimit.mine}/{rules.max_orders_per_member}
           </span>
         )}
-        {error && <p className="w-full text-xs text-burgundy-accent">{error}</p>}
-        {notice && <p className="w-full text-xs text-burgundy">{notice}</p>}
+
+        {error && (
+          <p className="w-full text-xs font-medium text-burgundy-accent bg-red-50/80 border border-red-200/60 rounded-md px-2.5 py-1 flex items-center gap-1">
+            <span>⚠️</span>
+            <span>{error}</span>
+          </p>
+        )}
+        {notice && (
+          <p className="w-full text-xs font-medium text-green-800 bg-green-50/80 border border-green-200/60 rounded-md px-2.5 py-1 flex items-center gap-1">
+            <span>✓</span>
+            <span>{notice}</span>
+          </p>
+        )}
       </form>
+
+      {/* Floating Overlay Search Results */}
       {search && (
-        <SearchResults key={search.id} query={search.query} results={search.results}
-          roomId={roomId} token={token} rules={rules} willPend={willPend} orderLimit={orderLimit}
-          queue={queue} currentVideoId={currentVideoId} history={history}
-          onClose={() => setSearch(null)} />
+        <SearchResults
+          key={search.id}
+          query={search.query}
+          results={search.results}
+          continuation={search.continuation}
+          roomId={roomId}
+          token={token}
+          rules={rules}
+          willPend={willPend}
+          orderLimit={orderLimit}
+          queue={queue}
+          currentVideoId={currentVideoId}
+          history={history}
+          onClose={() => setSearch(null)}
+        />
       )}
     </div>
   );

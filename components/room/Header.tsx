@@ -20,6 +20,10 @@ export default function Header({
   queue = [],
   current = null,
   onEnterGame,
+  onResetLayout,
+  onToggleChat,
+  chatUnreadCount = 0,
+  chatHasServerNotice = false,
 }: {
   room: Room;
   members: Member[];
@@ -31,6 +35,10 @@ export default function Header({
   queue?: QueueItem[];
   current?: QueueItem | null;
   onEnterGame?: () => void;
+  onResetLayout?: () => void;
+  onToggleChat?: () => void;
+  chatUnreadCount?: number;
+  chatHasServerNotice?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
@@ -41,6 +49,28 @@ export default function Header({
         <Logo size={28} withWordmark={false} />
         <span className="font-playfair text-2xl font-bold text-burgundy">{room.name}</span>
         <ShareButtons code={room.code} title={room.name} />
+        {onToggleChat && (
+          <button
+            type="button"
+            onClick={onToggleChat}
+            className="relative flex items-center gap-1.5 rounded-lg border border-gold bg-cream px-2.5 py-1 text-xs font-semibold text-burgundy shadow-xs transition hover:bg-gold-200/30 active:scale-95 ml-1"
+            title="Mở ngăn kéo trò chuyện bên trái"
+            aria-label="Phòng trò chuyện"
+          >
+            <span>💬</span>
+            <span className="hidden sm:inline">Trò chuyện</span>
+            {chatUnreadCount > 0 && (
+              <span
+                className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white shadow-xs ${
+                  chatHasServerNotice ? "bg-amber-600 ring-2 ring-amber-300 animate-pulse" : "bg-red-600"
+                }`}
+              >
+                {chatHasServerNotice ? "🔔 " : ""}
+                {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+              </span>
+            )}
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-2">
         {onEnterGame && (
@@ -56,6 +86,18 @@ export default function Header({
           </button>
         )}
         <ThemeToggle />
+        {onResetLayout && (
+          <button
+            type="button"
+            onClick={onResetLayout}
+            className="hidden lg:flex items-center gap-1.5 rounded-lg border border-gold bg-cream px-2.5 py-1 text-sm font-medium text-burgundy shadow-xs transition hover:bg-gold-200/30 active:scale-95"
+            title="Khôi phục kích thước các khung về tỉ lệ mặc định"
+            aria-label="Đặt lại bố cục"
+          >
+            <span>📐</span>
+            <span className="hidden xl:inline">Đặt lại bố cục</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setChartOpen(true)}

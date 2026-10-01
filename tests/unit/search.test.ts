@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDurationText, extractSearchResults } from "@/lib/youtube/search";
+import { parseDurationText, extractSearchResults, extractContinuationToken } from "@/lib/youtube/search";
 
 describe("parseDurationText", () => {
   it("parses m:ss and mm:ss", () => {
@@ -73,5 +73,30 @@ describe("extractSearchResults", () => {
     expect(extractSearchResults(null)).toEqual([]);
     expect(extractSearchResults("not json")).toEqual([]);
     expect(extractSearchResults({})).toEqual([]);
+  });
+});
+
+describe("extractContinuationToken", () => {
+  it("extracts continuation token from FIXTURE", () => {
+    expect(extractContinuationToken(FIXTURE)).toBe("next-page");
+  });
+
+  it("extracts token from continuationEndpoint shape", () => {
+    const data = {
+      section: {
+        continuationItemRenderer: {
+          continuationEndpoint: {
+            continuationCommand: { token: "token-deep-nested" },
+          },
+        },
+      },
+    };
+    expect(extractContinuationToken(data)).toBe("token-deep-nested");
+  });
+
+  it("returns null when no continuation token present", () => {
+    expect(extractContinuationToken(null)).toBeNull();
+    expect(extractContinuationToken({})).toBeNull();
+    expect(extractContinuationToken({ foo: "bar" })).toBeNull();
   });
 });
