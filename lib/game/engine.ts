@@ -1683,9 +1683,21 @@ export class GameEngine {
       this.swimming = false;
       this.wetUntil = now + WET_MS;
       this.wetAnnounced = true;
+      const dest = this.local.path && this.local.path.length > 0 ? this.local.path[this.local.path.length - 1] : null;
+      // feet on a bank cell the land grid blocks (the water's edge): set them on the nearest walkable bank, or every step
+      // from here is refused and the player is stuck until they tap somewhere else
+      if (isBlockedAt(this.map, this.local.pos.x, this.local.pos.y)) {
+        const e = nearestEdge(this.toZone(this.local.pos, "pond"));
+        const at = e ? this.fromZone(e, "pond") : null;
+        if (at && !isBlockedAt(this.map, at.x, at.y)) {
+          this.local.pos = { x: at.x, y: at.y };
+          this.local.display = { x: at.x, y: at.y };
+        }
+      }
       if (this.local.path) {
-        // a tap-walk that crosses the bank stops here: the rest was planned on the swim grid
+        // a tap-walk that crosses the bank: the rest was planned on the swim grid; go on to the same spot on land
         setKeyboard(this.local, { x: 0, y: 0 });
+        if (dest && !isBlockedAt(this.map, dest.x, dest.y)) this.walkTo(dest);
       }
       this.announceNow();
       this.cb.onLeftWater?.();                                                     // v18.10: the immunity
