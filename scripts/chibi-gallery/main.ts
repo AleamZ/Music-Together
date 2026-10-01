@@ -4,6 +4,10 @@ import { ChibiRig } from "@/lib/game/diorama/character/rig";
 import { chibiSpec } from "@/lib/game/diorama/character/spec";
 import { poseAt } from "@/lib/game/diorama/character/pose";
 import { addVoxelLights } from "@/lib/game/diorama/character/voxel-material";
+import { ModelMats } from "@/lib/game/diorama/world/models";
+import { enemyAnim } from "@/lib/game/diorama/world/enemies";
+import { applyEnemyPose, enemyModel } from "@/lib/game/diorama/world/enemies3d";
+import { fightSheets } from "./fight-sheets";
 import { closeupSheet, coverageMd, gallerySheets, type Sheet, type Tile } from "./sheets";
 
 // Offscreen outfit gallery (no DB): render.mjs bundles this with vite, opens it in Chromium and calls renderNamed.
@@ -24,16 +28,27 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   addVoxelLights(scene, 2);
   const cam = new THREE.PerspectiveCamera(30, tw / th, 0.1, 50);
   const f = new ChibiFactory(400);
+  const mats = new ModelMats();
   tiles.forEach((t, i) => {
+    const c = t.enemy ? enemyModel(mats, t.enemy.id) : null;
+    if (c && t.enemy) {
+      applyEnemyPose(c, enemyAnim(t.enemy.id, t.enemy.anim, t.enemy.t));
+      c.root.rotation.y = t.yaw;
+      scene.add(c.root);
+      const hh = Math.max(1.6, c.height);
+      cam.position.set(0, hh * 0.75, hh * 2.6 + 2); cam.lookAt(0, hh * 0.45, 0);
+      r.render(scene, cam);
+      scene.remove(c.root);
+    }
     const rig = new ChibiRig();
     const got = f.acquire(chibiSpec(t.look), t.detail ?? "high");
     rig.setParts(got.parts);
     rig.root.rotation.y = t.yaw;
-    rig.apply(t.act ? poseAt(t.act, t.time ?? 0.2) : poseAt("idle", 0.2, 0, true));
+    rig.apply(t.pose ? t.pose : t.act ? poseAt(t.act, t.time ?? 0.2) : poseAt("idle", 0.2, 0, true));
     scene.add(rig.root);
     const z = t.zoom ?? 1, fy = t.focusY ?? 1.08;
     cam.position.set(0, fy + 0.3 / z, 5.0 / z); cam.lookAt(0, fy, 0);
-    r.render(scene, cam);
+    if (!c) r.render(scene, cam);
     scene.remove(rig.root);
     rig.detach();
     f.release(got.key);
@@ -51,7 +66,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   r.dispose();
   return out.toDataURL("image/png");
 };
-const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets()];
+const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets(), ...fightSheets()];
 W.sheetNames = () => SHEETS.map((s) => s.name);
 W.coverage = () => coverageMd(SHEETS);
 W.renderNamed = (n: string) => {

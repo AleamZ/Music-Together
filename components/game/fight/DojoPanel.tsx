@@ -7,6 +7,7 @@ import { enrollGate, enrollmentOf, examGate, practiceGate, type Gate } from "@/l
 import { STYLE_SPECIALS } from "@/lib/game/fight/moves";
 import { specialPoseIds, stancePoseIds } from "@/lib/game/fight/render/poses";
 import type { DojoState } from "@/lib/game/fight/rpc";
+import Fight3DToggle from "./Fight3DToggle";
 import RigPreview from "./RigPreview";
 
 const STATS: readonly [keyof ReturnType<typeof statsOf>, string][] = [
@@ -80,6 +81,7 @@ export default function DojoPanel({ state, error, coins, tab, nowMs, busy, onTab
             <SpritePreview look={lookOf} scale={3} className="rounded-sm bg-parchment" />
             <b>{m.master}</b>
             <RigPreview look={lookOf} style={m.id} rank={4} poses={stancePoseIds(m.id)} ms={420} label={`Thế đứng ${m.name}`} />
+            <Fight3DToggle />
           </div>
           <div className="flex min-w-0 flex-col gap-2">
             <p className="text-base italic">“{m.lore}”</p>
