@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { deleteItem, type QueueItem } from "@/lib/supabase";
+import ScrollTitle from "./ScrollTitle";
 
 function Spinner() {
   return <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-burgundy border-t-transparent align-middle" />;
@@ -32,7 +33,9 @@ export default function MyPending({ items, roomId, token }: { items: QueueItem[]
                 // eslint-disable-next-line @next/next/no-img-element -- YouTube CDN thumb; next/image optimization isn't worth its cost here
                 ? <img src={q.thumbnail_url} alt="" className="h-9 w-12 rounded object-cover" />
                 : <span className="flex h-9 w-12 items-center justify-center rounded bg-burgundy text-cream">▶</span>}
-              <div className="min-w-0 flex-1 truncate text-sm text-ink">{q.title || q.youtube_video_id}</div>
+              <div className="min-w-0 flex-1">
+                <ScrollTitle text={q.title || q.youtube_video_id} className="text-sm text-ink font-medium" />
+              </div>
               {busy ? <Spinner /> : (
                 <button title="Rút lại" onClick={() => withdraw(q.id)}
                   className="rounded border border-gold-200 bg-cream px-1.5 text-sm text-burgundy">✕</button>

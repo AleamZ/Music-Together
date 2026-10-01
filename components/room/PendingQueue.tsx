@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { approveAllPending, approveQueueItem, rejectQueueItem, type QueueItem } from "@/lib/supabase";
+import ScrollTitle from "./ScrollTitle";
 
 const FAIL = "Thao tác không thành công, thử lại nhé.";
 
@@ -47,7 +48,7 @@ export default function PendingQueue({ pending, roomId, token }: { pending: Queu
                 ? <img src={q.thumbnail_url} alt="" className="h-9 w-12 rounded object-cover" />
                 : <span className="flex h-9 w-12 items-center justify-center rounded bg-burgundy text-cream">▶</span>}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-ink">{q.title || q.youtube_video_id}</div>
+                <ScrollTitle text={q.title || q.youtube_video_id} className="text-sm font-medium text-ink" />
                 <div className="text-[11px] text-gold">do {q.added_by_name}</div>
               </div>
               <div className="flex w-14 items-center justify-end gap-1">

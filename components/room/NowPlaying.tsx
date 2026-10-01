@@ -13,6 +13,7 @@ import { useLyrics } from "@/hooks/useLyrics";
 import KaraokeView from "./KaraokeView";
 import KaraokeModal from "./KaraokeModal";
 import LyricSearchModal from "./LyricSearchModal";
+import ScrollTitle from "./ScrollTitle";
 import { getCategoryLabel, getIntroOffsetSuggestion, type SponsorSegment } from "@/lib/sponsorblock";
 import type { SkippedToastInfo } from "@/hooks/useSponsorBlock";
 
@@ -534,10 +535,10 @@ export default function NowPlaying(p: NowPlayingProps) {
                     className={`h-8.5 px-2.5 rounded-lg font-mono text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1 bg-[#0b1626] border border-[#00f0ff]/50 text-[#00f0ff] hover:border-[#00f0ff] shadow-[0_0_10px_rgba(0,240,255,0.3)] ${
                       lyricsHook.hasSynced ? "border-[#ff007f] text-[#ff77b9]" : ""
                     }`}
-                    title="Mở toàn màn hình sân khấu Karaoke"
+                    title="Xem lời bài hát (Lyrics)"
                   >
                     <span>🎤</span>
-                    <span className="hidden sm:inline">KARAOKE</span>
+                    <span className="hidden sm:inline">LYRICS</span>
                     {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-[#00f0ff] animate-ping" />}
                   </button>
                 </div>
@@ -706,10 +707,10 @@ export default function NowPlaying(p: NowPlayingProps) {
                     className={`h-8.5 px-2.5 rounded-lg font-mono text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1 bg-black/60 border border-[#76cb00]/40 text-[#84e800] hover:border-[#84e800] shadow-[0_0_8px_rgba(118,203,0,0.3)] ${
                       lyricsHook.hasSynced ? "border-[#ffde00] text-[#ffde00]" : ""
                     }`}
-                    title="Mở toàn màn hình sân khấu Karaoke"
+                    title="Xem lời bài hát (Lyrics)"
                   >
                     <span>🎤</span>
-                    <span className="hidden sm:inline">KARAOKE</span>
+                    <span className="hidden sm:inline">LYRICS</span>
                     {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-[#76cb00] animate-ping" />}
                   </button>
                 </div>
@@ -1163,10 +1164,10 @@ export default function NowPlaying(p: NowPlayingProps) {
               <button
                 onClick={() => setIsKaraokeModalOpen(true)}
                 className="px-3 py-1.5 rounded-md border-t border-b-2 font-mono text-xs shadow-[0_2px_5px_rgba(0,0,0,0.5)] active:translate-y-0.5 cursor-pointer flex items-center gap-1.5 transition bg-gradient-to-b from-[#331d10] to-[#1e1008] border-amber-700/50 border-b-black text-[#fcd34d] hover:border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
-                title="Mở toàn màn hình sân khấu Karaoke"
+                title="Xem lời bài hát (Lyrics)"
               >
                 <span>🎤</span>
-                <span>KARAOKE</span>
+                <span>LYRICS</span>
                 {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
               </button>
             </div>
@@ -1331,10 +1332,10 @@ export default function NowPlaying(p: NowPlayingProps) {
                     className={`h-8.5 px-2.5 rounded-lg font-mono text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1 bg-black/60 border border-cyan-400/40 text-cyan-300 hover:border-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.3)] ${
                       lyricsHook.hasSynced ? "border-[#ff0055] text-[#ff0055]" : ""
                     }`}
-                    title="Mở toàn màn hình sân khấu Karaoke"
+                    title="Xem lời bài hát (Lyrics)"
                   >
                     <span>🎤</span>
-                    <span className="hidden sm:inline">KARAOKE</span>
+                    <span className="hidden sm:inline">LYRICS</span>
                     {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />}
                   </button>
                 </div>
@@ -1501,10 +1502,10 @@ export default function NowPlaying(p: NowPlayingProps) {
                     className={`h-8.5 px-3 rounded-full border border-amber-400/40 bg-[#1f1a29] text-xs shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5 ${
                       lyricsHook.hasSynced ? "border-amber-400 text-amber-300" : "text-amber-200/80"
                     }`}
-                    title="Mở toàn màn hình sân khấu Karaoke"
+                    title="Xem lời bài hát (Lyrics)"
                   >
                     <span>🎤</span>
-                    <span className="hidden sm:inline">Karaoke</span>
+                    <span className="hidden sm:inline">Lyrics</span>
                     {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-ping" />}
                   </button>
                 </div>
@@ -1557,9 +1558,11 @@ export default function NowPlaying(p: NowPlayingProps) {
         {current ? (
           <div className="max-w-[92%] flex items-center justify-center gap-2.5 sm:gap-3">
             <div className="text-center min-w-0">
-              <h2 className="truncate font-cormorant text-lg font-bold text-burgundy sm:text-xl" title={current.title || current.youtube_video_id}>
-                {current.title || current.youtube_video_id}
-              </h2>
+              <ScrollTitle
+                as="h2"
+                text={current.title || current.youtube_video_id}
+                className="font-cormorant text-lg font-bold text-burgundy sm:text-xl"
+              />
               <p className="text-[11px] italic text-ink/80 leading-tight flex items-center justify-center gap-1.5">
                 <span>do <b className="text-burgundy">{current.added_by_name}</b> đóng góp</span>
                 {current.is_replay && (
@@ -1609,10 +1612,10 @@ export default function NowPlaying(p: NowPlayingProps) {
           <button
             onClick={() => setIsKaraokeModalOpen(true)}
             className="h-9 px-3 rounded-full border border-gold bg-cream text-xs text-burgundy shadow-xs transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1"
-            title="Mở toàn màn hình sân khấu Karaoke"
+            title="Xem lời bài hát (Lyrics)"
           >
             <span>🎤</span>
-            <span className="hidden sm:inline">Karaoke</span>
+            <span className="hidden sm:inline">Lyrics</span>
             {lyricsHook.hasSynced && <span className="h-1.5 w-1.5 rounded-full bg-burgundy animate-ping" />}
           </button>
           <label className="flex items-center gap-1 text-xs text-ink/80">
