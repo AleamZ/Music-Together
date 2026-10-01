@@ -8,7 +8,7 @@ DIR="${DIR:-/opt/music-together-$BRANCH}"
 [ -d "$DIR/.git" ] || { echo "no checkout at $DIR (run setup.sh)" >&2; exit 1; }
 cd "$DIR"
 git fetch --prune origin "$BRANCH"
-git checkout -q -B "$BRANCH" "origin/$BRANCH"
+git checkout -q -f -B "$BRANCH" "origin/$BRANCH"   # -f: a hand edit on the VPS never blocks a deploy
 git reset -q --hard "origin/$BRANCH"
 set -a; . ./.env; set +a
 export GIT_COMMIT_SHA="$(git rev-parse HEAD)"
