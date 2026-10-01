@@ -44,6 +44,8 @@ export function wave1Sheets(): Sheet[] {
     { name: "w1-tool-actions", title: "3D wave 1 — axe, pan, pickaxe, camera, bowl/cup, umbrella, fish in hand, show catch", cols: 3, tw: 300, th: 320, tiles: tools },
     { name: "w1-vital-poses", title: "3D wave 1 — vital states: faint, sleep, hammock, exhausted, eat, drink", cols: 3, tw: 300, th: 320, tiles: vital },
     { name: "w1-rod-looks", title: "3D wave 1 — rod looks per loadout (rod colour, reel, bobber)", cols: 5, tw: 300, th: 340, tiles: rods },
+    { name: "w1-prawn-closeup", title: "3D wave 1 — tôm càng xanh (tom_cang), close-up", cols: 2, tw: 480, th: 340,
+      tiles: [{ look: NAM, yaw: 0, fish: "tom_cang", zoom: 1.1, label: "tom_cang — side on" }, { look: NAM, yaw: 0, fish: "tom_cang", zoom: 0.7, label: "tom_cang — as in the grid" }] },
     { name: "w1-fish-species", title: "3D wave 1 — every fish species (from the 2D icons)", cols: 5, tw: 240, th: 170, tiles: fish },
   ];
 }

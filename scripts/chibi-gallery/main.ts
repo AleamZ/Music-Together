@@ -39,7 +39,8 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
       m.rotation.y = -Math.PI / 2 + 0.35;
       if (t.fish === "ca_duoi_song") m.rotation.z = 0.7;                       // the flat ray, tilted to show its diamond
       scene.add(m);
-      cam.position.set(0, 0.55, 1.5); cam.lookAt(0, 0, 0);
+      const fz = t.zoom ?? 1;
+      cam.position.set(0, 0.55 / fz, 1.5 / fz); cam.lookAt(0, 0, 0);
       r.render(scene, cam);
       scene.remove(m);
     } else if (t.enemy) {

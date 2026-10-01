@@ -963,7 +963,7 @@ export class Labels {
 // ---- 3D wave 1: per-species fish (fish3d.ts derives the parameters from the 2D icons) ----
 
 /** One species' fish as a paint job (outlined, one draw call): along +z (head forward), centred, `len` long. */
-export function fishSpeciesPaint(f: Fish3D): Paint {
+export function fishSpeciesPaint(f: Fish3D, fine: Paint = new Paint()): Paint {
   const p = new Paint(0.04);
   const L = f.len, D = f.depth, W = D * f.thin;
   if (f.kind === "eel") {
@@ -974,24 +974,33 @@ export function fishSpeciesPaint(f: Fish3D): Paint {
     return p;
   }
   if (f.kind === "shrimp") {
-    // tôm càng: a body curled in a C (head forward, the tail tucked under), a fan tail, two long claws, antennae
-    const R = L * 0.22, n = 7;
-    for (let i = 0; i < n; i++) {
-      const a = -0.3 + (i / (n - 1)) * 2.6, k = 1 - i * 0.09;                         // from the head round under
-      ell(p, i % 2 ? f.body : f.accent, [W * k, D * 0.75 * k, L * 0.2], [0, Math.cos(a) * R - R * 0.4, Math.sin(a) * R], [-a, 0, 0]);
+    // tôm càng xanh, side on: a carapace with a pointed rostrum, six tapering abdominal segments in a gentle curve
+    // (orange joints), a fan tail (telson + uropods), small walking legs, two long antennae sweeping back and the
+    // signature long slender blue claws reaching forward with small pincers. Head toward +z.
+    const S = Math.max(0.42, L * 0.62), BLUE = 0x3f6fb8, ORANGE = 0xe07a3a, body = 0x8a9c8e;   // big enough for the ink outline
+    ell(p, body, [S * 0.26, S * 0.28, S * 0.46], [0, 0, S * 0.2]);                                        // carapace
+    p.add(new THREE.ConeGeometry(0.5, 1, 4), body, 0, S * 0.06, S * 0.55, Math.PI / 2 - 0.15, 0, 0, S * 0.05, S * 0.3, S * 0.06);   // rostrum
+    let z = -S * 0.02;
+    for (let k = 0; k < 6; k++) {                                                                       // abdomen
+      const w = 1 - k * 0.1, len = S * 0.15 * w, y = -(k * k) * S * 0.006;
+      ell(p, body, [S * 0.22 * w, S * 0.22 * w, len * 1.25], [0, y, z - len / 2], [-0.06 * k, 0, 0]);
+      ell(p, ORANGE, [S * 0.2 * w, S * 0.2 * w, S * 0.025], [0, y, z], [-0.06 * k, 0, 0], [8, 4]);
+      z -= len;
     }
-    // the fan tail at the end of the curl, opening forward under the body
-    for (const sd of [-1, 0, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 4), f.fin, sd * W * 0.22, -R * 1.25, -R * 0.15, Math.PI / 2 + 0.25, sd * 0.35, 0, W * 0.35, L * 0.2, D * 0.12);
-    ell(p, f.body, [W * 1.05, D * 0.85, L * 0.34], [0, R * 0.55, R * 0.25]);                         // the head (carapace)
+    const ty = -(25) * S * 0.006;
+    p.add(new THREE.ConeGeometry(0.5, 1, 4), body, 0, ty, z - S * 0.09, Math.PI / 2, 0, 0, S * 0.06, S * 0.2, S * 0.04);   // telson
+    for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 4), BLUE, sd * S * 0.06, ty, z - S * 0.08, Math.PI / 2, sd * 0.45, 0, S * 0.1, S * 0.2, S * 0.03);
+    for (let k = 0; k < 4; k++) for (const sd of [-1, 1])                                               // walking legs (no ink)
+      fine.add(new THREE.CylinderGeometry(0.006, 0.004, S * 0.16, 4), ORANGE, sd * S * 0.07, -S * 0.17, S * (0.3 - k * 0.08), 0.25, 0, sd * 0.3);
     for (const sd of [-1, 1]) {
-      // the claw arm, then the open pincer
-      tube(p, f.fin, [[sd * W * 0.35, R * 0.35, R * 0.45], [sd * W * 0.9, R * 0.3, R * 1.1], [sd * W * 0.8, R * 0.35, R * 1.8]], D * 0.07, D * 0.1);
-      ell(p, f.fin, [D * 0.22, D * 0.18, L * 0.22], [sd * W * 0.8, R * 0.35, R * 2.05]);
-      tube(p, f.accent, [[sd * W * 0.7, R * 0.4, R * 2.15], [sd * W * 0.85, R * 0.45, R * 2.45]], 0.012, 0.012);
-      // antennae sweeping back over the body
-      tube(p, f.accent, [[sd * W * 0.15, R * 0.8, R * 0.6], [sd * W * 0.6, R * 1.5, R * 0.5], [sd * W * 0.9, R * 1.9, -R * 0.6]], 0.006, 0.006);
+      // antennae from the head front, arching up and back over the body
+      tube(fine, 0xc85a2a, [[sd * S * 0.04, S * 0.08, S * 0.45], [sd * S * 0.1, S * 0.24, S * 0.3], [sd * S * 0.14, S * 0.26, -S * 0.3], [sd * S * 0.16, S * 0.12, -S * 0.95]], 0.006, 0.006);
+      // the long slender claw: from under the head, forward, a small two-fingered pincer at the tip
+      tube(fine, BLUE, [[sd * S * 0.08, -S * 0.1, S * 0.3], [sd * S * 0.13, -S * 0.12, S * 0.62], [sd * S * 0.13, -S * 0.06, S * 0.9]], 0.014, 0.016);
+      ell(fine, ORANGE, [S * 0.05, S * 0.05, S * 0.05], [sd * S * 0.13, -S * 0.12, S * 0.62], [0, 0, 0], [6, 4]);
+      for (const f2 of [-1, 1]) fine.add(new THREE.ConeGeometry(0.5, 1, 4), BLUE, sd * S * 0.13, -S * 0.06 + f2 * S * 0.025, S * 0.99, Math.PI / 2 - f2 * 0.2, 0, 0, S * 0.03, S * 0.18, S * 0.03);
     }
-    eyes(p, R * 0.85, R * 0.55, W * 0.32, D * 0.16);
+    eyes(p, S * 0.12, S * 0.42, S * 0.1, S * 0.07);
     return p;
   }
   if (f.kind === "turtle") {
@@ -1032,7 +1041,19 @@ const speciesGeos = new Map<string, THREE.BufferGeometry>();
 /** A species' outlined fish geometry (cached per species; shared by every held, landed or leaping fish). */
 export function fishSpeciesGeometry(id: string): THREE.BufferGeometry {
   let g = speciesGeos.get(id);
-  if (!g) speciesGeos.set(id, (g = fishSpeciesPaint(fishParams(id)).geometry(true)));
+  if (!g) {
+    // the fine parts (a prawn's antennae and legs) are merged in without the ink hull, so they stay thin
+    const fine = new Paint();
+    const main = fishSpeciesPaint(fishParams(id), fine).geometry(true);
+    if (fine.empty) g = main;
+    else {
+      const thin = fine.geometry(false);
+      thin.setAttribute("outline", new THREE.BufferAttribute(new Float32Array(thin.getAttribute("position").count), 1));
+      g = mergeGeometries([main, thin], false) ?? main;
+      g.computeBoundingSphere();
+    }
+    speciesGeos.set(id, g);
+  }
   return g;
 }
 
