@@ -211,3 +211,15 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   farm gift), the hand-in beside the turn-in NPC ('too far'), paid once ('quest_reward' ref `story:<id>`, 330 xu in all),
   a locked account refused, veterans closed unpaid and a re-run sparing a chain begun). Re-runs 0114 with `\i` and
   deletes its accounts.
+
+## Cần câu lắp theo từng cây (0115)
+
+- `rod-builds-smoke.sql` (0115: two of one rod bought → two bare instances, parts stack; a mounted unit is bound to its
+  rod, the kit's hook / line / reel fixed; replacing and unmounting destroy; equip (mine, not broken), a bare rod refused
+  at the cast with nothing spent, the cast keeps its instance; a line snap wears the cast's rod's line even after a
+  switch; repair per instance (`_pay('repair')`, `repair_rod(item)` picks the worn one); rename, scrap; someone else's rod;
+  a legacy profile migrated (instances from the inventory rows, the parts moved not copied, twice without duplicates); a
+  mailed rod becomes instances; two parallel mounts of the last unit over `dblink` — one wins). Re-runs 0115 twice with
+  `\i`, needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json` and the `dblink` contrib (created and dropped); deletes
+  its accounts. `fishing-v3-smoke.sql` re-applies 0115 after 0110 / 0113 and mounts per rod; `econ-fishing-smoke.sql`
+  sets its rods as instances; `anticheat-guards.sql` calls the seven rod RPCs (103 guarded calls).

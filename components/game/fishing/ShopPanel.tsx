@@ -7,8 +7,10 @@ import { UmbrellaShelf } from "@/components/game/rain/UmbrellaShelf";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
 import { BAIT_HINT, ROD_HINT } from "@/lib/game/fishing/messages";
 import {
-  baitTotal, GROUNDBAIT_MAX, groundbaitCount, maxBuyQty, needsRepair, ownsItem, repairPrice, wearFor, type FishingState,
+  baitTotal, GROUNDBAIT_MAX, groundbaitCount, maxBuyQty, needsRepair, ownsItem, partCount, repairPrice, ROD_MAX, wearFor,
+  wornRods, type FishingState,
 } from "@/lib/game/fishing/state";
+import { rodName } from "./RodBuilds";
 
 const KIND_ORDER: ReadonlyArray<ShopItem["kind"]> = ["fishing_kit", "rod", "hook", "line", "reel", "bobber", "bait", "groundbait", "net",
   "bait_box", "bucket", "fishbook"];
@@ -33,8 +35,9 @@ function Tile({ item, state, busy, onBuy }: { item: ShopItem; state: FishingStat
     button = <button type="button" className="pch-btn" disabled>Đã có</button>;
   } else if (max < 1) {
     const full = item.kind === "bait" ? baitTotal(state) >= state.baitCap
-      : item.kind === "groundbait" && groundbaitCount(state, item.id) >= GROUNDBAIT_MAX;                          // 0110
-    button = <button type="button" className="pch-btn" disabled>{full ? (item.kind === "bait" ? "Hộp mồi đầy" : "Đầy 99 bao") : "Không đủ xu"}</button>;
+      : item.kind === "groundbait" ? groundbaitCount(state, item.id) >= GROUNDBAIT_MAX                            // 0110
+      : item.kind === "rod" && state.rods ? state.rods.length >= ROD_MAX : false;                                  // 0115
+    button = <button type="button" className="pch-btn" disabled>{full ? (item.kind === "bait" ? "Hộp mồi đầy" : item.kind === "rod" ? "Giỏ đầy cần" : "Đầy 99 bao") : "Không đủ xu"}</button>;
   } else {
     button = (
       <button type="button" className="pch-btn pch-btn-primary" disabled={busy} onClick={() => onBuy(item.id, stacks ? n : 1)}>
@@ -52,6 +55,13 @@ function Tile({ item, state, busy, onBuy }: { item: ShopItem; state: FishingStat
         </div>
       </div>
       <p className="text-base leading-tight opacity-80">{describeItem(item)}</p>
+      {/* 0115: rods are instances, parts stack: how many the bag holds */}
+      {state.rods && item.kind === "rod" && (
+        <p className="text-base opacity-70">Trong giỏ: {state.rods.filter((r) => r.item === item.id).length} cây · mua thêm thành cây mới (cần trần, lắp đồ trong Giỏ đồ)</p>
+      )}
+      {state.rods && ["hook", "line", "reel", "bobber"].includes(item.kind) && partCount(state, item.id) > 0 && (
+        <p className="text-base opacity-70">Trong giỏ: {partCount(state, item.id)}</p>
+      )}
       {stacks && choices.length > 1 && (
         <div className="flex flex-wrap gap-1" role="group" aria-label={`Số lượng ${item.name}`}>
           {choices.map((q) => (
@@ -93,15 +103,47 @@ function Repairs({ items, state, busy, onRepair }: { items: ShopItem[]; state: F
   );
 }
 
+/** 0115 🔧 Sửa cần per rod instance (several of one model may be worn differently). */
+function RodRepairs({ items, state, busy, onRepair }: {
+  items: ShopItem[]; state: FishingState; busy: boolean; onRepair: (rodId: number, name: string) => void;
+}) {
+  const worn = wornRods(state);
+  return (
+    <section>
+      <h3 className="text-xl text-burgundy">🔧 Sửa cần</h3>
+      {worn.length === 0 ? <p className="text-base opacity-80">Cần của bạn còn tốt cả.</p> : (
+        <ul className="flex flex-col gap-1">
+          {worn.map((r) => {
+            const model = items.find((i) => i.id === r.item);
+            const cost = model ? repairPrice(model) : 0;
+            const name = rodName(r, items);
+            return (
+              <li key={r.id} className="flex flex-wrap items-center gap-2">
+                <ItemIcon id={r.item} scale={2} />
+                <span className="flex-1">{name} · {r.durability}/{r.maxDurability}{(r.durability ?? 0) <= 0 ? " · gãy" : ""}</span>
+                <button type="button" className="pch-btn pch-btn-primary" disabled={busy || state.coins < cost} onClick={() => onRepair(r.id, name)}>
+                  Sửa · {formatXu(cost)}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** 🎣 Tiệm đồ câu · chú Tư (spec §10.2, v18.2): rods, nets, bobbers, bait, the bait box, buckets, and Sửa cần. Econ v2
  *  (0101): a line before the bait says a better bait wants a better rod. */
-export default function ShopPanel({ state, catalog, busy, onBuy, onRepair = () => {}, onClose }: {
+export default function ShopPanel({ state, catalog, busy, onBuy, onRepair = () => {}, onRepairRod, onClose }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
   busy: boolean;
   onBuy: (itemId: string, qty: number) => void;
   /** v18.2 Sửa cần. */
   onRepair?: (itemId: string) => void;
+  /** 0115: Sửa cần for one rod instance. */
+  onRepairRod?: (rodId: number, name: string) => void;
   onClose: () => void;
 }) {
   const items = (catalog?.items ?? [])
@@ -131,7 +173,8 @@ export default function ShopPanel({ state, catalog, busy, onBuy, onRepair = () =
                 </Fragment>
               ))}
             </ul>
-            <Repairs items={catalog.items} state={state} busy={busy} onRepair={onRepair} />
+            {state.rods && onRepairRod ? <RodRepairs items={catalog.items} state={state} busy={busy} onRepair={onRepairRod} />
+              : <Repairs items={catalog.items} state={state} busy={busy} onRepair={onRepair} />}
             <UmbrellaShelf />{/* v18.9 */}
           </>
         )}

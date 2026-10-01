@@ -12,6 +12,8 @@ set client_min_messages = warning;
 -- 0113 re-creates functions of this migration: re-run it after, as the chain does
 \i supabase/migrations/0113_review_fixes.sql
 \i supabase/migrations/0113_review_fixes.sql
+-- 0115 re-creates finish_cast / buy_item / the rig per rod instance over it: re-apply it, as the chain does
+\i supabase/migrations/0115_rod_builds.sql
 reset client_min_messages;
 
 create temp table bs (k text primary key, v text);

@@ -219,6 +219,11 @@ begin
   on conflict (account_id, item_id) do update set qty = 1, durability = excluded.durability;
   insert into public.fishing_profiles (account_id) values (a) on conflict do nothing;
   update public.fishing_profiles set rod = 'rod_master', bobber = 'bobber_lamp', bait = 'bait_worm' where account_id = a;
+  -- 0115: the rod is an instance with its own phao (the profile's columns only mirror it)
+  perform public._fishing_profile(a);
+  update public.fishing_profiles set rod_id = public._rod_add(a, 'rod_master') where account_id = a;
+  insert into public.rod_parts (rod_id, slot, item_id) select rod_id, 'bobber', 'bobber_lamp' from public.fishing_profiles where account_id = a;
+  perform public._rod_sync(a);
   for i in 1 .. 150 loop
     perform pg_temp.fresh(a);
     perform pg_temp.put(a, 'pond', 300, 204);
@@ -266,6 +271,8 @@ begin
   -- the wild river needs Sông Cái unlocked (level 3)
   update public.app_flags set enabled = true where key = 'unified_world';
   update public.fishing_profiles set rod = 'rod_wood', bobber = 'bobber_feather', bait = 'bait_worm' where account_id = a;
+  update public.fishing_profiles set rod_id = public._rod_kit(a) where account_id = a;   -- 0115: the kit instance
+  perform public._rod_sync(a);
   insert into public.player_progress (account_id, level) values (a, 2) on conflict (account_id) do update set level = 2;
   perform pg_temp.fresh(a);
   perform pg_temp.put(a, 'wild', 424, 1900);
@@ -299,6 +306,8 @@ declare a uuid := pg_temp.u('a'); t text := pg_temp.v('ta'); room uuid := pg_tem
         cid uuid; r jsonb;
 begin
   update public.fishing_profiles set rod = 'rod_wood', bobber = 'bobber_feather', bait = 'bait_worm' where account_id = a;
+  update public.fishing_profiles set rod_id = public._rod_kit(a) where account_id = a;   -- 0115: the kit instance
+  perform public._rod_sync(a);
   delete from public.player_skills where account_id = a;
   perform pg_temp.fresh(a);
   perform pg_temp.put(a, 'pond', 300, 204);

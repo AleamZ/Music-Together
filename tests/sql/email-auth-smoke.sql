@@ -8,6 +8,8 @@
 \i supabase/migrations/0112_email_auth.sql
 \i supabase/migrations/0113_review_fixes.sql
 \i supabase/migrations/0113_review_fixes.sql
+-- 0115 re-creates finish_cast / buy_item / the rig per rod instance over it: re-apply it, as the chain does
+\i supabase/migrations/0115_rod_builds.sql
 
 \o /dev/null
 begin;

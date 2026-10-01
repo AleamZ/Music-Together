@@ -167,6 +167,11 @@ export function heldFishGeometry(speciesId: string): { geo: THREE.BufferGeometry
 /** What the angler has on the rod: the rod item, the reel item (null = none) and the bobber item (null = none). */
 export interface RodLook { rod: string; reel: string | null; bobber: string | null }
 
+/** 0115: the look of one rod instance (the equipped one): its model and its own mounted reel and phao. */
+export function rodLookOf(r: { item: string; parts: { reel?: { item: string }; bobber?: { item: string } } } | null): RodLook | null {
+  return r ? { rod: r.item, reel: r.parts.reel?.item ?? null, bobber: r.parts.bobber?.item ?? null } : null;
+}
+
 /** The most painted colour of an item's 2D icon (gear.ts / gear-v3.ts), or `fallback`. */
 export function iconColor(id: string | null, fallback: number): number {
   const ic = id ? GEAR_ICONS[id] : undefined;

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { rodLookOf } from "@/lib/game/diorama/character/held";
+import { equippedRod } from "@/lib/game/fishing/state";
 import { readGfx, subscribeGfx, type GfxMode } from "@/lib/game/diorama/flag";
 import { markWorldFailed, unifiedWorldOn } from "@/lib/game/world/flag";
 import { worldArrival } from "@/lib/game/world/wild";
@@ -645,11 +647,16 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     if (onExhausted) onExhausted(until);
     else onExitGame();
   }, [lockedUntil, lockedNow, onExhausted, onExitGame]);
-  // 3D wave 1: my loadout's rod, reel and bobber on the 3D rod
-  const loadout = fishing.data.state?.loadout ?? null;
+  // 3D wave 1: my rod, reel and bobber on the 3D rod — 0115: the equipped rod instance's own parts (else the loadout)
+  const fishState = fishing.data.state;
+  const rodLook = useMemo(() => {
+    const eq = fishState ? equippedRod(fishState) : null;
+    const lo = fishState?.loadout ?? null;
+    return eq ? rodLookOf(eq) : lo ? { rod: lo.rod, reel: lo.reel ?? null, bobber: lo.bobber } : null;
+  }, [fishState]);
   useEffect(() => {
-    canvasRef.current?.setRodLook?.(loadout ? { rod: loadout.rod, reel: loadout.reel ?? null, bobber: loadout.bobber } : null);
-  }, [loadout]);
+    canvasRef.current?.setRodLook?.(rodLook);
+  }, [rodLook]);
   const endFaint = useCallback(() => {
     setFaint(null);
     void reloadVitals();

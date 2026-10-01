@@ -7,10 +7,11 @@ import type { NpcQuota } from "@/lib/game/economy/npc";
 import type { FishingCatalog } from "@/lib/game/fishing/catalog";
 import {
   buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, fetchNotebook, finishCast, finishNet, fishingEquip, fishingErrorMessage,
-  hookCast, netHaul, releaseFish, repairRod, sellFish, setLoadout, startCast, startNet, throwGroundbait, type FinishCast, type FinishNet,
+  hookCast, netHaul, releaseFish, repairRod, rodEquip, rodMount, rodRename, rodRepair, rodScrap, rodUnmount, sellFish, setLoadout,
+  startCast, startNet, throwGroundbait, type FinishCast, type FinishNet, type RodAnswer,
   type GroundbaitSpot, type HookCast, type Notebook, type ReelInput, type NetHaul, type NetPull, type NetThrow, type StartCast, type StartNet,
 } from "@/lib/game/fishing/rpc";
-import type { FishingState, GearSlot, Loadout } from "@/lib/game/fishing/state";
+import type { FishingState, GearSlot, Loadout, PartSlot } from "@/lib/game/fishing/state";
 import { extrasErrorMessage, startBoatCast } from "@/lib/game/fishing/extras-rpc";
 import { startRiverCast } from "@/lib/game/river/rpc";
 
@@ -28,6 +29,16 @@ export interface FishingData {
   equip: (loadout: Loadout) => Promise<boolean>;
   /** 0110: mount (`item`) or unmount (null) one slot of the rig. */
   equipSlot: (slot: GearSlot, item: string | null) => Promise<boolean>;
+  /** 0115: the rods one by one — mount a part from the bag onto a rod (bound; the old one destroyed), take one off
+   *  (destroyed), fish with a rod (null: Cần gỗ), name it, throw it away, repair it. null on an error (toasted). */
+  rods: {
+    mount: (rodId: number, slot: PartSlot, item: string) => Promise<RodAnswer | null>;
+    unmount: (rodId: number, slot: PartSlot) => Promise<RodAnswer | null>;
+    equip: (rodId: number | null) => Promise<RodAnswer | null>;
+    rename: (rodId: number, name: string) => Promise<RodAnswer | null>;
+    scrap: (rodId: number) => Promise<RodAnswer | null>;
+    repair: (rodId: number) => Promise<RodAnswer | null>;
+  };
   /** 0110: one bag of groundbait on a spot (the pond cell, or the river in world px). */
   throwGroundbait: (roomId: string, item: string, spot: GroundbaitSpot) => Promise<boolean>;
   /** 0110: Sổ tay câu cá (null: not bought, or an error — the toast says which). */
@@ -157,6 +168,14 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     equip: useCallback(async (l: Loadout) => (await act(() => setLoadout(token, l), (s) => s)) !== null, [act, token]),
     equipSlot: useCallback(async (slot: GearSlot, item: string | null) =>
       (await act(() => fishingEquip(token, slot, item), (s) => s)) !== null, [act, token]),                        // 0110
+    rods: {
+      mount: useCallback((rodId: number, slot: PartSlot, item: string) => act(() => rodMount(token, rodId, slot, item), (x) => x.state), [act, token]),
+      unmount: useCallback((rodId: number, slot: PartSlot) => act(() => rodUnmount(token, rodId, slot), (x) => x.state), [act, token]),
+      equip: useCallback((rodId: number | null) => act(() => rodEquip(token, rodId), (x) => x.state), [act, token]),
+      rename: useCallback((rodId: number, name: string) => act(() => rodRename(token, rodId, name), (x) => x.state), [act, token]),
+      scrap: useCallback((rodId: number) => act(() => rodScrap(token, rodId), (x) => x.state), [act, token]),
+      repair: useCallback((rodId: number) => act(() => rodRepair(token, rodId), (x) => x.state), [act, token]),
+    },
     throwGroundbait: useCallback(async (roomId: string, item: string, spot: GroundbaitSpot) =>
       (await act(() => throwGroundbait(roomId, token, item, spot), (s) => s)) !== null, [act, token]),             // 0110
     notebook: useCallback(async () => {

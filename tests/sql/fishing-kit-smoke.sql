@@ -15,6 +15,8 @@ delete from public.shop_items where kind in ('hook', 'line', 'reel', 'groundbait
 \i supabase/migrations/0098_fishing_kit.sql
 \i supabase/migrations/0098_fishing_kit.sql
 \i supabase/migrations/0110_fishing_v3.sql
+-- 0115 re-creates finish_cast / buy_item / the rig per rod instance over it: re-apply it, as the chain does
+\i supabase/migrations/0115_rod_builds.sql
 update public.story_quests q set reward_item = k.reward_item from kx_story k where q.id = k.id;
 reset client_min_messages;
 update public.anticheat_config set mode = 'log';

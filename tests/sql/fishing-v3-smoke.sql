@@ -24,6 +24,9 @@ set client_min_messages = warning;
 -- 0113 re-creates functions of this migration: re-run it after, as the chain does
 \i supabase/migrations/0113_review_fixes.sql
 \i supabase/migrations/0113_review_fixes.sql
+-- 0115 re-creates the rig, the shop, fishing_equip and finish_cast per rod instance: re-run it after, as the chain does
+\i supabase/migrations/0115_rod_builds.sql
+\i supabase/migrations/0115_rod_builds.sql
 reset client_min_messages;
 update public.anticheat_config set mode = 'log';
 
@@ -75,6 +78,32 @@ begin
   return 'no error';
 exception when others then
   return sqlerrm;
+end $$;
+-- 0115: the equipped rod instance; equip one of a model (made if none); put a part straight into its slot (a fixture)
+create or replace function pg_temp.rod(p uuid) returns bigint language sql stable as $$
+  select rod_id from public.fishing_profiles where account_id = p $$;
+create or replace function pg_temp.equip(p uuid, p_model text) returns void language plpgsql as $$
+declare v bigint;
+begin
+  if p_model = 'rod_wood' then v := public._rod_kit(p);
+  else
+    select id into v from public.rods where account_id = p and item_id = p_model order by id limit 1;
+    if v is null then
+      insert into public.rods (account_id, item_id, durability) select p, id, durability from public.shop_items where id = p_model
+      returning id into v;
+    end if;
+  end if;
+  update public.fishing_profiles set rod_id = v where account_id = p;
+  perform public._rod_sync(p);
+end $$;
+create or replace function pg_temp.mount(p uuid, p_slot text, p_item text) returns void language plpgsql as $$
+begin
+  delete from public.rod_parts where rod_id = pg_temp.rod(p) and slot = p_slot;
+  if p_item is not null then
+    insert into public.rod_parts (rod_id, slot, item_id, durability)
+    select pg_temp.rod(p), p_slot, id, case when kind = 'line' then durability end from public.shop_items where id = p_item;
+  end if;
+  perform public._rod_sync(p);
 end $$;
 -- a won reel of the fixtures, cast as the given fish with the given limits and extras; finish_cast's answer
 create or replace function pg_temp.land(a uuid, t text, room uuid, sp text, w integer, p_line text, line_g integer,
@@ -160,26 +189,31 @@ begin
   assert not exists (select 1 from public.casts where account_id = a), 'no cast';
   s := (public.fishing_state(t))->'rig';
   assert s->'missing' = '["hook", "line"]'::jsonb and not (s->>'ready')::boolean, format('missing %s', s);
-  -- the parts fill their empty slots
+  -- the parts go into the bag and are mounted on this rod (0115)
   perform public.buy_item(t, 'hook_large');
+  perform public.rod_mount(t, pg_temp.rod(a), 'hook', 'hook_large');
   assert pg_temp.err(format('select public.start_cast(%L, %L, 37, 25)', room, t)) = 'rod needs parts', 'still no line';
   perform public.buy_item(t, 'line_03');
   perform public.buy_item(t, 'reel_3000');
+  perform public.rod_mount(t, pg_temp.rod(a), 'line', 'line_03');
+  perform public.rod_mount(t, pg_temp.rod(a), 'reel', 'reel_3000');
   assert (select (hook, line, reel) = ('hook_large'::text, 'line_03'::text, 'reel_3000'::text) from public.fishing_profiles where account_id = a),
     'the parts mounted';
   c := public.start_cast(room, t, 37, 25);
   assert c ? 'cast_id', format('the rigged rod casts %s', c);
   assert (select (line, line_g, rod_g) = ('line_03'::text, 12000, 30000) from public.casts where id = (c->>'cast_id')::uuid),
     'the cast keeps its line and limits';
-  -- a second hook is 'already owned'; a part is not stackable
-  assert pg_temp.err(format('select public.buy_item(%L, %L)', t, 'hook_large')) = 'already owned', 'owned once';
+  -- 0115: a part stacks in the bag (a second hook is one more there)
+  perform public.buy_item(t, 'hook_large');
+  assert (select qty from public.inventory where account_id = a and item_id = 'hook_large') = 1, 'stackable';
   perform public.buy_item(t, 'line_02', 2);                              -- flagged (bad_qty), nothing bought
   assert not exists (select 1 from public.inventory where account_id = a and item_id = 'line_02'), 'one part at a time';
-  -- unmounting the line: refused again
-  perform public.fishing_equip(t, 'line', null);
+  -- unmounting the line (destroyed, 0115): refused again
+  perform public.rod_unmount(t, pg_temp.rod(a), 'line');
   perform pg_temp.fresh(a);
   assert pg_temp.err(format('select public.start_cast(%L, %L, 37, 25)', room, t)) = 'rod needs parts', 'no line, no cast';
-  perform public.fishing_equip(t, 'line', 'line_03');
+  perform public.buy_item(t, 'line_03');
+  perform public.rod_mount(t, pg_temp.rod(a), 'line', 'line_03');
   raise notice 'bare rod ok';
 end $$;
 
@@ -188,34 +222,37 @@ do $$
 declare a uuid := pg_temp.u('a'); t text := pg_temp.v('ta'); s jsonb;
 begin
   assert pg_temp.err(format('select public.fishing_equip(%L, %L, %L)', t, 'hat', 'hook_small')) = 'bad slot', 'a bad slot';
-  assert pg_temp.err(format('select public.fishing_equip(%L, %L, %L)', t, 'hook', 'hook_eel')) = 'item not available', 'not owned';
-  assert pg_temp.err(format('select public.fishing_equip(%L, %L, %L)', t, 'hook', 'line_03')) = 'item not available', 'wrong kind';
-  assert pg_temp.err(format('select public.fishing_equip(%L, %L, %L)', t, 'line', 'bait_worm')) = 'item not available', 'a bait is no line';
+  assert pg_temp.err(format('select public.fishing_equip(%L, %L, %L)', t, 'hook', 'hook_large')) = 'rod build', 'parts are per rod (0115)';
+  assert pg_temp.err(format('select public.rod_mount(%L, %s, %L, %L)', t, pg_temp.rod(a), 'hook', 'hook_eel')) = 'item not available', 'not owned';
+  assert pg_temp.err(format('select public.rod_mount(%L, %s, %L, %L)', t, pg_temp.rod(a), 'hook', 'line_03')) = 'item not available', 'wrong kind';
+  assert pg_temp.err(format('select public.rod_mount(%L, %s, %L, %L)', t, pg_temp.rod(a), 'line', 'bait_worm')) = 'item not available', 'a bait is no line';
   assert pg_temp.err(format('select public.fishing_equip(%L, %L, null)', t, 'bait')) = 'item not available', 'the bait is never empty';
   -- the bait may be one at 0 (as set_loadout allowed)
   perform public.fishing_equip(t, 'bait', 'bait_gold');
   assert (select bait from public.fishing_profiles where account_id = a) = 'bait_gold', 'bait chosen';
   perform public.fishing_equip(t, 'bait', 'bait_worm');
   -- no phao: a bare rod's 0.7 s window
-  perform public.fishing_equip(t, 'bobber', null);
+  perform pg_temp.mount(a, 'bobber', null);
   s := public.fishing_state(t);
   assert s->'loadout'->'bobber' = 'null'::jsonb and (s->'rig'->>'window_ms')::int = 700, format('no bobber %s', s->'rig');
-  perform public.fishing_equip(t, 'bobber', 'bobber_feather');
+  perform public.rod_mount(t, pg_temp.rod(a), 'bobber', 'bobber_feather');   -- a starter: free
   assert (public._fishing_rig(a)->>'window_ms')::int = 1500, 'the feather';
-  assert pg_temp.err(format('select public.fishing_equip(%L, %L, %L)', t, 'bobber', 'bobber_lamp')) = 'item not available', 'lamp not owned';
+  assert pg_temp.err(format('select public.rod_mount(%L, %s, %L, %L)', t, pg_temp.rod(a), 'bobber', 'bobber_lamp')) = 'item not available', 'lamp not owned';
   -- a broken rod is refused; the rod slot empty is Cần gỗ
-  update public.inventory set durability = 0 where account_id = a and item_id = 'rod_carbon';
+  update public.rods set durability = 0 where account_id = a and item_id = 'rod_carbon';
   perform public.fishing_equip(t, 'rod', null);
   assert (select rod from public.fishing_profiles where account_id = a) = 'rod_wood', 'rod null → Cần gỗ';
   assert pg_temp.err(format('select public.fishing_equip(%L, %L, %L)', t, 'rod', 'rod_carbon')) = 'rod broken', 'broken';
-  update public.inventory set durability = 300 where account_id = a and item_id = 'rod_carbon';
+  update public.rods set durability = 300 where account_id = a and item_id = 'rod_carbon';
   perform public.fishing_equip(t, 'rod', 'rod_carbon');
   -- someone else's part is not mine
-  assert pg_temp.err(format('select public.fishing_equip(%L, %L, %L)', pg_temp.v('tb'), 'hook', 'hook_large')) = 'item not available',
-    'b does not own a';
+  assert pg_temp.err(format('select public.rod_mount(%L, %s, %L, %L)', pg_temp.v('tb'), pg_temp.rod(a), 'hook', 'hook_large')) = 'rod not found',
+    'b does not own a''s rod';
   s := public.fishing_state(t);
   assert s->'loadout' @> '{"rod": "rod_carbon", "hook": "hook_large", "line": "line_03", "reel": "reel_3000"}'::jsonb
-     and s->'owned' @> '["hook_large", "line_03", "reel_3000"]'::jsonb and s->'wear' ? 'line_03', format('the state %s', s->'loadout');
+     and s->'owned' @> '["hook_large"]'::jsonb and s->'rig'->>'line' = 'line_03'
+     and (select x->'parts'->'line'->>'durability' from jsonb_array_elements(s->'rods') x where (x->>'equipped')::boolean) = '3',
+    format('the state %s', s->'loadout');
   raise notice 'equip ok';
 end $$;
 
@@ -351,8 +388,7 @@ begin
   r := pg_temp.land(a, t, room, 'ca_chep', 2900, 'line_02', 3000, 15000, 'rod_carbon', null);
   assert r->>'result' = 'caught', format('within the line %s', r);
   -- heavier than the line (the weaker part): line_snap, one snap worn
-  perform pg_temp.give(a, 'line_02');
-  update public.fishing_profiles set line = 'line_02' where account_id = a;
+  perform pg_temp.mount(a, 'line', 'line_02');
   select coalesce(sum(plays), 0), coalesce(sum(wins), 0), coalesce(sum(exact), 0) into v_p, v_w, v_x
     from public.ac_play_stats where account_id = a and game = 'reel';   -- 0113
   for i in 1 .. 3 loop
@@ -362,11 +398,11 @@ begin
     assert (r->'snap'->>'weight_g')::int = 3001 and (r->'snap'->>'limit_g')::int = 3000 and r->'snap'->>'species_id' = 'ca_chep', 'snap';
     assert not exists (select 1 from public.fish where account_id = a), 'no fish';
     if i < 3 then
-      assert (select durability from public.inventory where account_id = a and item_id = 'line_02') = 3 - i, 'a snap worn';
+      assert (select durability from public.rod_parts where rod_id = pg_temp.rod(a) and slot = 'line') = 3 - i, 'a snap worn';
       assert not (r->'snap'->>'line_gone')::boolean, 'still there';
     else
       assert (r->'snap'->>'line_gone')::boolean, 'the third snap: gone';
-      assert not exists (select 1 from public.inventory where account_id = a and item_id = 'line_02'), 'out of the bag';
+      assert not exists (select 1 from public.rod_parts where rod_id = pg_temp.rod(a) and slot = 'line'), 'off the rod';
       assert (select line from public.fishing_profiles where account_id = a) is null, 'unmounted';
     end if;
   end loop;
@@ -374,16 +410,15 @@ begin
   assert (select sum(plays) = v_p + 3 and sum(wins) = v_w and sum(exact) = v_x
             from public.ac_play_stats where account_id = a and game = 'reel'), 'a snap is a lost round';
   -- the rod the weaker part: rod_snap — the rod to 0, unequipped, rod_broke, repairable
-  update public.fishing_profiles set line = 'line_03' where account_id = a;
-  perform pg_temp.give(a, 'rod_fiber');
-  update public.fishing_profiles set rod = 'rod_fiber' where account_id = a;
+  perform pg_temp.mount(a, 'line', 'line_03');
+  perform pg_temp.equip(a, 'rod_fiber');
   perform pg_temp.fresh(a);
   r := pg_temp.land(a, t, room, 'ca_ho', 9000, 'line_braid', 20000, 8000, 'rod_fiber', null);
   assert r->>'result' = 'lost' and r->>'why' = 'rod_snap' and (r->>'rod_broke')::boolean, format('rod_snap %s', r);
-  assert (select durability from public.inventory where account_id = a and item_id = 'rod_fiber') = 0, 'the rod at 0';
+  assert (select durability from public.rods where account_id = a and item_id = 'rod_fiber') = 0, 'the rod at 0';
   assert (select rod from public.fishing_profiles where account_id = a) = 'rod_wood', 'back to Cần gỗ';
   r := public.repair_rod(t, 'rod_fiber');
-  assert (r->>'cost')::int = 210 and (select durability from public.inventory where account_id = a and item_id = 'rod_fiber') = 200,
+  assert (r->>'cost')::int = 210 and (select durability from public.rods where account_id = a and item_id = 'rod_fiber') = 200,
     format('repaired %s', r);
   -- the wooden rod (its own line): line_snap, nothing worn
   perform pg_temp.fresh(a);
@@ -417,8 +452,9 @@ begin
   assert public._cast_extras('{"hooks": 1, "hook_class": "small"}', 'rod_wood', 'bait_worm', 1, false, false, 0, null, 2) = '[]'::jsonb,
     'one point';
   -- a cast with lưỡi ba keeps its extras (random, not forced small)
-  perform pg_temp.give(a, 'hook_triple');
-  update public.fishing_profiles set rod = 'rod_carbon', hook = 'hook_triple', line = 'line_03' where account_id = a;
+  perform pg_temp.equip(a, 'rod_carbon');
+  perform pg_temp.mount(a, 'hook', 'hook_triple');
+  perform pg_temp.mount(a, 'line', 'line_03');
   n := 0;
   for i in 1 .. 200 loop
     perform pg_temp.fresh(a);
@@ -444,7 +480,7 @@ begin
   perform pg_temp.fresh(a);
   r := pg_temp.land(a, t, room, 'ca_ro', 200, 'line_03', 8000, 15000, 'rod_carbon', '[{"species_id": "ca_sac", "weight_g": 150}]');
   assert r->>'result' = 'caught' and r->'extra' = '[]'::jsonb, format('hands only: no extra %s', r);
-  update public.fishing_profiles set hook = 'hook_large' where account_id = a;
+  perform pg_temp.mount(a, 'hook', 'hook_large');
   raise notice 'multi-hook ok';
 end $$;
 
@@ -455,7 +491,7 @@ declare a uuid := pg_temp.u('a'); t text := pg_temp.v('ta'); room uuid := pg_tem
 begin
   -- Máy xoay 5000: difficulty − 10, min_reel_ms × 0.8; the client is told what the server stored
   perform pg_temp.give(a, 'reel_5000');
-  perform public.fishing_equip(t, 'reel', 'reel_5000');
+  perform public.rod_mount(t, pg_temp.rod(a), 'reel', 'reel_5000');
   for i in 1 .. 20 loop
     perform pg_temp.fresh(a);
     c := public.start_cast(room, t, 37, 25);
@@ -467,7 +503,7 @@ begin
        and (c->>'min_reel_ms')::int = x.min_reel_ms, format('reel 5000 %s %s', sp.id, x.reel_params);
   end loop;
   -- no reel on a bare rod: difficulty + 5, × 1.15
-  perform public.fishing_equip(t, 'reel', null);
+  perform public.rod_unmount(t, pg_temp.rod(a), 'reel');
   perform pg_temp.fresh(a);
   c := public.start_cast(room, t, 37, 25);
   select * into x from public.casts where id = (c->>'cast_id')::uuid;
@@ -475,14 +511,15 @@ begin
   v_d := least(100, sp.difficulty + 5);
   assert x.min_reel_ms = round((2000 + 40 * v_d) * 1.15) and (x.reel_params->>'difficulty')::int = v_d, format('no reel %s', x.reel_params);
   -- no phao on a bare rod: 0.7 s to hook
-  perform public.fishing_equip(t, 'bobber', null);
+  perform pg_temp.mount(a, 'bobber', null);
   perform pg_temp.fresh(a);
   c := public.start_cast(room, t, 37, 25);
   assert (c->>'window_ms')::int = 700 and c->'rarity' = 'null'::jsonb, format('no phao %s', c);
   -- Cần gỗ: the reel as before 0110
-  perform public.fishing_equip(t, 'bobber', 'bobber_feather');
   perform public.fishing_equip(t, 'rod', 'rod_wood');
-  perform public.fishing_equip(t, 'reel', 'reel_5000');                 -- mounted, but the kit has its own
+  perform pg_temp.give(a, 'reel_5000');
+  assert pg_temp.err(format('select public.rod_mount(%L, %s, %L, %L)', t, pg_temp.rod(a), 'reel', 'reel_5000')) = 'rod fixed',
+    'the kit has its own (0115)';
   perform pg_temp.fresh(a);
   c := public.start_cast(room, t, 37, 25);
   select * into x from public.casts where id = (c->>'cast_id')::uuid;
@@ -560,13 +597,13 @@ begin
   insert into public.player_progress (account_id, level) values (a, 3) on conflict (account_id) do update set level = 3;
   insert into public.boats (account_id) values (a) on conflict do nothing;
   perform public.fishing_equip(t, 'rod', 'rod_carbon');
-  perform public.fishing_equip(t, 'line', null);
+  perform pg_temp.mount(a, 'line', null);
   perform pg_temp.fresh(a);
   perform pg_temp.put(a, 'wild', 424, 1900);
   update public.player_pos set mode = 'w' where account_id = a;
   assert pg_temp.err(format('select public.start_river_cast_w(%L, %L, %L, 424, 1900)', room, t, 'wild')) = 'rod needs parts',
     'the river too';
-  perform public.fishing_equip(t, 'line', 'line_03');
+  perform pg_temp.mount(a, 'line', 'line_03');
 end $$;
 do $$
 declare a uuid := pg_temp.u('a'); t text := pg_temp.v('ta'); room uuid := pg_temp.u('room'); c jsonb; sp public.fish_species;
@@ -576,8 +613,10 @@ begin
   update public.map_levels set min_level = 3 where map = 'song_cai';
   insert into public.player_progress (account_id, level) values (a, 3) on conflict (account_id) do update set level = 3;
   insert into public.boats (account_id) values (a) on conflict do nothing;
-  perform pg_temp.give(a, 'hook_small');
-  update public.fishing_profiles set rod = 'rod_carbon', hook = 'hook_small', line = 'line_03', bait = 'bait_worm' where account_id = a;
+  perform pg_temp.equip(a, 'rod_carbon');
+  perform pg_temp.mount(a, 'hook', 'hook_small');
+  perform pg_temp.mount(a, 'line', 'line_03');
+  update public.fishing_profiles set bait = 'bait_worm' where account_id = a;
   -- a small hook on the river: never a lưỡi lớn species
   for i in 1 .. 150 loop
     perform pg_temp.fresh(a);

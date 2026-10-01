@@ -62,6 +62,8 @@ describe("0064–0067: every re-created function is its newest body plus the mar
       "0110_fishing_v3.sql": ["0110", "econ v2", "0078"],
       // review fixes (0113): 0110's finish_cast with the reel round moved below the snap (the 6-arg form comes first)
       "0113_review_fixes.sql": ["0113", "0110", "econ v2", "0078"],
+      // rods built one by one (0115): 0113's finish_cast wearing / snapping / losing the cast's own rod instance
+      "0115_rod_builds.sql": ["0115", "0113", "0110", "econ v2", "0078"],
     };
     const later = readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0067");
     for (const f of later) {
