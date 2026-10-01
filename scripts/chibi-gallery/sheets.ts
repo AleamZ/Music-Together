@@ -98,8 +98,8 @@ export function gallerySheets(): Sheet[] {
     { ...NAM, top: "top_aodai_yellow", bottom: "bottom_pants_silk_white", shoes: "shoes_dep_brown" },
     { ...NU, outfit: "fm_kimono", hair: "bun" },
   ];
-  const views: [string, number, CharAct?, number?][] = [["trước", 0], ["3/4", TQ], ["nghiêng", -Math.PI / 2], ["sau", Math.PI], ["đi bộ 3/4", TQ, "walk", 0.18], ["đi bộ nghiêng", -Math.PI / 2, "walk", 0.43]];
-  sheets.push({ name: "ao-dai", title: "Áo dài (và kimono) — trước / 3/4 / nghiêng / sau / đi bộ", cols: 6, tw: 250, th: 330,
+  const views: [string, number, CharAct?, number?][] = [["trước", 0], ["3/4", TQ], ["nghiêng", -Math.PI / 2], ["sau", Math.PI], ["đi 1/4 · 3/4", TQ, "walk", 0.05], ["đi 2/4 · 3/4", TQ, "walk", 0.18], ["đi 3/4 · 3/4", TQ, "walk", 0.3], ["đi 4/4 · 3/4", TQ, "walk", 0.43], ["đi 1/4 · nghiêng", -Math.PI / 2, "walk", 0.05], ["đi 2/4 · nghiêng", -Math.PI / 2, "walk", 0.18], ["đi 3/4 · nghiêng", -Math.PI / 2, "walk", 0.3], ["đi 4/4 · nghiêng", -Math.PI / 2, "walk", 0.43], ["ngồi · 3/4", TQ, "sit", 0.2], ["kéo cần · 3/4", TQ, "reel", 0.2]];
+  sheets.push({ name: "ao-dai", title: "Áo dài (và kimono) — trước / 3/4 / nghiêng / sau / đi bộ", cols: 8, tw: 220, th: 300,
     tiles: AO.flatMap((l, i) => views.map(([v, yaw, act, time]) => ({ look: l, label: `A${i + 1} ${wears(l)} · ${v}`, yaw, act, time }))) });
   sheets.push({ name: "outfits-signature", title: "Bộ đồ tiêu biểu (trước + 3/4)", cols: 8, tw: 250, th: 330, tiles: sig });
   const slotSheet = (slot: LookSlot, title: string, zoom?: number, focusY?: number, pick?: (id: string) => boolean, name?: string) => {

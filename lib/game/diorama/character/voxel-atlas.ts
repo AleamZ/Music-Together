@@ -62,7 +62,7 @@ export interface Shape {
 }
 
 interface Box { kind: "box"; min: RGBLike; max: RGBLike; paint: Painter; opts: BoxOpts }
-interface Surf { kind: "surf"; shape: Shape; paint: Painter; matrix?: THREE.Matrix4; sharp: number; ink: boolean }
+interface Surf { kind: "surf"; shape: Shape; paint: Painter; matrix?: THREE.Matrix4; sharp: number; ink: boolean; tag: number }
 type Piece = Box | Surf;
 
 interface FaceDef { dir: FaceDir; n: [number, number, number]; o: (a: Box) => THREE.Vector3; u: (a: Box) => THREE.Vector3; v: (a: Box) => THREE.Vector3 }
@@ -116,6 +116,8 @@ export class VoxelModel<S extends string> {
   sharp = 1;
   /** Whether the surfaces added from now on get the ink outline (off for pieces blended into another: no inner lines). */
   ink = true;
+  /** A number stored per vertex (attribute `tag`) for the surfaces added from now on (e.g. which bone skins them). */
+  tag = 0;
   constructor(private readonly names: readonly S[]) {
     for (const n of names) this.segs.set(n, []);
   }
@@ -131,7 +133,7 @@ export class VoxelModel<S extends string> {
   /** A sculpted surface in segment `seg`, painted at `sharp`× the build's texel density (and the model's current
    *  `sharp`): the pieces that carry painted detail (collars, trims, prints) get more texels than flat ones. */
   surface(seg: S, shape: Shape, paint: Painter, matrix?: THREE.Matrix4, sharp = 1): this {
-    this.segs.get(seg)?.push({ kind: "surf", shape, paint, matrix, sharp: sharp * this.sharp, ink: this.ink });
+    this.segs.get(seg)?.push({ kind: "surf", shape, paint, matrix, sharp: sharp * this.sharp, ink: this.ink, tag: this.tag });
     return this;
   }
 
@@ -251,10 +253,12 @@ export class VoxelModel<S extends string> {
     const geos = {} as Record<S, THREE.BufferGeometry>;
     const nm = new THREE.Matrix3();
     for (const name of this.names) {
-      const P: number[] = [], N: number[] = [], UV: number[] = [], O: number[] = [];
+      const P: number[] = [], N: number[] = [], UV: number[] = [], O: number[] = [], TG: number[] = [];
+      let tag = 0;
       let hull = 0;
       const emit = (p: THREE.Vector3, n: THREE.Vector3, uv: readonly [number, number], m?: THREE.Matrix4) => {
         O.push(hull);
+        TG.push(tag);
         const q = m ? p.clone().applyMatrix4(m) : p;
         const k = m ? n.clone().applyMatrix3(nm.getNormalMatrix(m)).normalize() : n;
         P.push(q.x * unit, q.y * unit, q.z * unit);
@@ -263,6 +267,7 @@ export class VoxelModel<S extends string> {
       };
       for (const r of rects) {
         if (r.seg !== name) continue;
+        tag = r.piece.kind === "surf" ? r.piece.tag : 0;
         const e = 0.02;                                                   // inset: never sample the neighbour's texels
         const u0 = (r.x + e) / width, u1 = (r.x + r.w - e) / width, v0 = (r.y + e) / height, v1 = (r.y + r.h - e) / height;
         if (r.piece.kind === "surf") {
@@ -306,6 +311,7 @@ export class VoxelModel<S extends string> {
       g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(N), 3));
       g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(UV), 2));
       g.setAttribute("outline", new THREE.BufferAttribute(new Float32Array(O), 1));
+      g.setAttribute("tag", new THREE.BufferAttribute(new Float32Array(TG), 1));
       g.computeBoundingSphere();
       geos[name] = g;
     }

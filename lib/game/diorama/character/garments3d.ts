@@ -469,6 +469,7 @@ function aoDaiPanels(m: M, s: ChibiSpec, g: TorsoGeo): void {
         p.z += dir * (0.32 * Math.min(1, k * 5) + 0.55 * k - 0.15 * p.x * p.x + 0.5 * k * k);   // tucked in at the waist, falls clear of the legs
       },
     });
+    m.tag = dir > 0 ? 1 : 2;                                                           // PANEL_FRONT / PANEL_BACK (build.ts)
     m.surface("hips", shape, (t) => {
       const hem = t.y < -9.6;
       if (hem) return shade(T, 0.85);
@@ -480,6 +481,7 @@ function aoDaiPanels(m: M, s: ChibiSpec, g: TorsoGeo): void {
       if (dir > 0 && segDist(t.x, t.y, 0.9, -6.2, 0.2, -8.6) < 0.06) return mix(T, TR, 0.5);
       return T;
     }, undefined, 1.5);
+    m.tag = 0;
   }
 }
 

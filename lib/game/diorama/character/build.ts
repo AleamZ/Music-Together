@@ -106,11 +106,23 @@ export function hipWeights(x: number, y: number, z: number): [number, number, nu
   return [1 - th, th * wl, th * (1 - wl)];
 }
 
+/** Vertex tags of the áo dài's front and back panels (skinned to the rig's panel bones 3 and 4). */
+export const PANEL_FRONT = 1, PANEL_BACK = 2;
+
 /** Adds skinIndex/skinWeight to the hips geometry (positions in world units at `unit` per model unit). */
 function skinHips(g: THREE.BufferGeometry, unit: number): void {
-  const pos = g.getAttribute("position"), n = pos.count;
+  const pos = g.getAttribute("position"), tags = g.getAttribute("tag"), n = pos.count;
   const idx = new Uint16Array(n * 4), wt = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
+    const tag = tags ? Math.round(tags.getX(i)) : 0;
+    if (tag === PANEL_FRONT || tag === PANEL_BACK) {
+      // an áo dài panel: pinned at the waist, below it on its own bone that follows the forward-most (front panel) or
+      // backward-most (back panel) thigh, so a swinging leg never pokes through it
+      const y = pos.getY(i) / unit, t = Math.max(0, Math.min(1, (1.2 - y) / 2.4)), w = t * t * (3 - 2 * t);
+      idx.set([0, tag === PANEL_FRONT ? 3 : 4, 0, 0], i * 4);
+      wt.set([1 - w, w, 0, 0], i * 4);
+      continue;
+    }
     const [p0, l, r] = hipWeights(pos.getX(i) / unit, pos.getY(i) / unit, pos.getZ(i) / unit);
     idx.set([0, 1, 2, 0], i * 4);
     wt.set([p0, l, r, 0], i * 4);
