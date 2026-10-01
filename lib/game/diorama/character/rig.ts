@@ -46,7 +46,7 @@ export class ChibiRig {
   private readonly m = {} as Record<Seg, THREE.Mesh<THREE.BufferGeometry, THREE.Material>>;
   /** The skinned pelvis/skirt and its three bones (pelvis, left thigh, right thigh). */
   private readonly hips = new THREE.SkinnedMesh<THREE.BufferGeometry, THREE.Material>(EMPTY, NONE);
-  private readonly bones = [new THREE.Bone(), new THREE.Bone(), new THREE.Bone()];
+  private readonly bones = [new THREE.Bone(), new THREE.Bone(), new THREE.Bone(), new THREE.Bone(), new THREE.Bone()];
   private skeleton: THREE.Skeleton | null = null;
   private readonly face: THREE.Mesh<THREE.BufferGeometry, THREE.Material> = new THREE.Mesh(EMPTY, NONE);
   private parts: ChibiParts | null = null;
@@ -68,7 +68,7 @@ export class ChibiRig {
     this.kneeR.add(this.m.calfR, this.ankleR);
     this.legL.add(this.m.thighL, this.kneeL);
     this.legR.add(this.m.thighR, this.kneeR);
-    this.body.add(this.m.torso, this.m.hips, this.bones[0], this.head, this.armL, this.armR, this.legL, this.legR);
+    this.body.add(this.m.torso, this.m.hips, this.bones[0], this.bones[3], this.bones[4], this.head, this.armL, this.armR, this.legL, this.legR);
     this.legL.add(this.bones[1]);
     this.legR.add(this.bones[2]);
     this.root.add(this.body);
@@ -131,6 +131,9 @@ export class ChibiRig {
     this.elbowR.rotation.x = -(p.elbowR + post.elbow);
     this.legL.rotation.set(-p.legL.x, 0, -(p.legL.z + post.legZ));
     this.legR.rotation.set(-p.legR.x, 0, p.legR.z + post.legZ);
+    // the áo dài panels (bones 3, 4): the front follows the forward-most thigh, the back the backward-most (clamped)
+    this.bones[3].rotation.x = -Math.min(1.7, Math.max(0, p.legL.x, p.legR.x));
+    this.bones[4].rotation.x = -Math.max(-0.9, Math.min(0, p.legL.x, p.legR.x));
     this.kneeL.rotation.x = p.kneeL;
     this.kneeR.rotation.x = p.kneeR;
     this.ankleL.rotation.x = p.ankleL;

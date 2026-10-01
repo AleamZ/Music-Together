@@ -6,6 +6,7 @@ import { FACE_EXPRS, FACE_H, FACE_W, facePixels, type FaceExpr, type FaceEyes } 
 import { VoxelModel, around, type Painter, type RGB, type Shape, type Texel } from "./voxel-atlas";
 import { lathe, roundBlock, smoothRings, spow, strand, type Ring } from "./voxel-shapes";
 import { mix, painted, pixelTexture, rgb, shade, solid, tone, voxelMaterial } from "./voxel-material";
+import { bottomPainter, buildHatKind, buildLegPieces, buildNeckPieces, buildSleevePieces, buildTopPieces, legCloth, topPainter } from "./garments3d";
 
 // Browser only (but DOM-free): a ChibiSpec → a sculpted, smooth low-poly chibi in clean flat colours. Every rig
 // segment (head, torso, upper arms, forearms, thighs, calves, the rod) is modelled from shaped pieces — a big rounded
@@ -105,11 +106,23 @@ export function hipWeights(x: number, y: number, z: number): [number, number, nu
   return [1 - th, th * wl, th * (1 - wl)];
 }
 
+/** Vertex tags of the áo dài's front and back panels (skinned to the rig's panel bones 3 and 4). */
+export const PANEL_FRONT = 1, PANEL_BACK = 2;
+
 /** Adds skinIndex/skinWeight to the hips geometry (positions in world units at `unit` per model unit). */
 function skinHips(g: THREE.BufferGeometry, unit: number): void {
-  const pos = g.getAttribute("position"), n = pos.count;
+  const pos = g.getAttribute("position"), tags = g.getAttribute("tag"), n = pos.count;
   const idx = new Uint16Array(n * 4), wt = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
+    const tag = tags ? Math.round(tags.getX(i)) : 0;
+    if (tag === PANEL_FRONT || tag === PANEL_BACK) {
+      // an áo dài panel: pinned at the waist, below it on its own bone that follows the forward-most (front panel) or
+      // backward-most (back panel) thigh, so a swinging leg never pokes through it
+      const y = pos.getY(i) / unit, t = Math.max(0, Math.min(1, (1.2 - y) / 2.4)), w = t * t * (3 - 2 * t);
+      idx.set([0, tag === PANEL_FRONT ? 3 : 4, 0, 0], i * 4);
+      wt.set([1 - w, w, 0, 0], i * 4);
+      continue;
+    }
     const [p0, l, r] = hipWeights(pos.getX(i) / unit, pos.getY(i) / unit, pos.getZ(i) / unit);
     idx.set([0, 1, 2, 0], i * 4);
     wt.set([p0, l, r, 0], i * 4);
@@ -149,6 +162,9 @@ export function proportions(spec: Pick<ChibiSpec, "gender" | "body">): Proportio
 
 /** Lathe smoothing (extra rings between the sculpted ones) for the model being built: high detail only. */
 let SMOOTH = 2;
+
+/** Atlas texels per model unit: high detail (desktop) and low (phones, crowds). */
+export const TEX_HIGH = 3, TEX_LOW = 1.5;
 
 /** The ink outline's width (world units). */
 const OUTLINE = 0.011;
@@ -244,7 +260,7 @@ function buildHead(m: M, s: ChibiSpec, P: Proportions): void {
   }
   const hp = hairPainter(s);
   // under a nón lá the hair is pressed down below the cone (nothing pokes through the palm leaf)
-  const ceil = s.hat?.shape === "nonla" ? (r: number) => nonlaY(r) - 0.45 : null;
+  const ceil = s.hat?.kind === "nonla" ? (r: number) => nonlaY(r) - 0.45 : null;
   const hm = ceil ? ({ surface: (seg: Seg, shape: Shape, paint: Painter, mat?: THREE.Matrix4) => m.surface(seg, underCeiling(shape, ceil), paint, mat) } as unknown as M) : m;
   buildHair(hm, s, hp, !!s.hat);
   if (s.hat) buildHat(m, s.hat);
@@ -384,8 +400,9 @@ function banded(base: string, band: string, y0: number, y1: number): Painter {
 }
 
 function buildHat(m: M, h: ChibiHat): void {
-  const surf = (s: Shape, p: Painter) => m.surface("head", s, p);
-  switch (h.shape) {
+  if (buildHatKind(m, h)) return;
+  const surf = (s: Shape, p: Painter) => m.surface("head", s, p, undefined, h.kind === "nonla" ? 1.5 : 1);
+  switch (h.kind) {
     case "nonla": {
       // a real nón lá: a tall pointed cone (height ≈ 1.05× the brim radius, ~45° sides, brim ≈ 2.2× the head's width)
       // sitting deep on the head — the brim at the brows, the whole skull inside — with a thin rolled rim, a few faint
@@ -506,28 +523,23 @@ function buildHairpin(m: M, s: ChibiSpec): void {
 // ---- torso (hips space: y 0 = the hip joints; chest 1.5..9, neck to 11) ----
 
 function chestPainter(s: ChibiSpec): Painter {
-  const T = rgb(s.torso), TS = rgb(s.torsoShade), D = rgb(s.detail), SK = rgb(s.skin);
-  const bare = s.torso === s.skin;
+  const SK = rgb(s.skin);
+  const bare = s.torso === s.skin && !s.top3d;
+  const cloth = topPainter(s);
   const band = s.band ? rgb(s.band) : null;
   const neck = s.neck && s.neck.kind !== "scarf" ? s.neck : null;
   return (t) => {
     const ax = Math.abs(t.x);
-    let c: RGB = T;
+    let c: RGB = SK;
     if (bare) {
       c = SK;
       if (band && t.y > 5.2 && t.y < 7.9) c = t.y < 5.6 ? shade(band, 0.85) : band;
       if (band && t.y >= 7.9 && Math.abs(ax - 1.9) < 0.3) c = band;
       if (!band && isFront(t) && ax < 0.3 && Math.abs(t.y - 3.2) < 0.3) c = rgb(s.skinShade);   // navel
     } else {
-      if (s.sleeve === "none" && t.y > 7.2 && ax > 2.2) c = SK;                   // tank top: bare shoulders, straps
-      if (t.z > 0) {
-        const open = t.y - 7.6;
-        if (open > 0 && ax < 0.4 + open * 0.8) c = SK;
-        else if (s.detail !== s.torso && open > -0.6 && ax < 0.4 + (open + 0.6) * 0.8 + 0.3) c = D;
-        else if (s.detail !== s.torso && isFront(t) && ax < 0.26 && t.y < 7.1 && t.y > 2) c = D;
-      }
-      if (t.y > 9.1 && ax < 1.6) c = SK;
-      if (t.y < 2.1 && t.y > 1.4) c = TS;
+      c = cloth(t);
+      if (s.sleeve === "none" && t.y > 7.2 && ax > 2.25 && s.top3d !== "maxi") c = SK;  // sleeveless: bare shoulders
+      if (t.y > 9.1 && ax < 1.6 && s.top3d !== "aodai" && s.top3d !== "kungfu") c = SK;
     }
     if (neck && t.z > 0) {
       if (ax < 1.8 && Math.abs(t.y - (7.8 + ax * 0.55)) < 0.28) c = rgb(neck.main);
@@ -538,6 +550,14 @@ function chestPainter(s: ChibiSpec): Painter {
 }
 
 function hipsPainter(s: ChibiSpec): Painter {
+  const p = bottomPainter(s, hipsBase(s));
+  if (s.top3d !== "aodai") return p;
+  // áo dài: the tunic covers the pelvis front and back down to the panels; only the sides (the slits) show trousers
+  const T = rgb(s.torso);
+  return (t) => (t.y > 0.2 || (Math.abs(t.n[2]) > 0.55 && Math.abs(t.x) < 2.4) ? T : p(t));
+}
+
+function hipsBase(s: ChibiSpec): (t: Texel) => RGB {
   const B = rgb(s.lower === "robe" ? s.torso : s.bottom), BS = rgb(s.lower === "robe" ? s.torsoShade : s.bottomShade);
   const belt = s.belt ? rgb(s.belt) : null;
   const jeans = s.calf !== s.skin && s.lower === "pants";
@@ -546,18 +566,23 @@ function hipsPainter(s: ChibiSpec): Painter {
     let c: RGB = t.y > 1 ? BS : B;
     if (belt && t.y > 0.3 && t.y < 1.5) c = isFront(t) && ax < 0.7 ? shade(belt, 0.75) : belt;
     else if (jeans && t.y > 0.8) c = isFront(t) && ax < 0.55 ? rgb("#cdb77a") : shade(B, 0.7);
-    else if (isFront(t) && ax < 0.15 && t.y < 0.8 && s.lower === "pants") c = shade(B, 0.8);
-    return shade(c, tone(t, 0.04));
+    else if (isFront(t) && ax < 0.08 && t.y < 0.8 && t.y > -1.2 && s.lower === "pants") c = shade(B, 0.8);
+    return c;
   };
 }
 
-function skirtPainter(base: string, shadeHex: string, pleats: boolean, placket?: string): Painter {
+function skirtPainter(base: string, shadeHex: string, pleats: boolean, placket?: string, denim = false): Painter {
   const a = rgb(base), b = rgb(shadeHex), p = placket ? rgb(placket) : null;
   return (t) => {
     let c: RGB = a;
-    if (pleats && Math.floor(t.u / 3) % 2 === 0) c = mix(a, b, 0.6);
+    if (pleats) {
+      const k = ((Math.atan2(t.z, t.x) / (Math.PI * 2)) + 1) * 28, f = k - Math.floor(k);
+      if (f < 0.1) c = mix(a, b, 0.85);                                                 // the fold line
+      else if (f < 0.5) c = mix(a, b, 0.35);                                            // the pleat's shaded face
+    }
     if (p && isFront(t) && Math.abs(t.x) < 0.3) c = p;
     if (t.v >= t.h - 2 && t.n[1] > -0.5) c = shade(c, 0.85);                   // hem
+    if (denim && isFront(t) && Math.abs(t.x) < 0.07) c = [214, 170, 80];
     return shade(c, tone(t, 0.04));
   };
 }
@@ -597,22 +622,49 @@ function buildTorso(m: M, s: ChibiSpec, P: Proportions): void {
   const cut = HIP_CUT, i = all.findIndex((r) => r.y < cut), a = all[i - 1], b = all[i], k = (a.y - cut) / (a.y - b.y);
   const mid: Ring = { y: cut, rx: a.rx + (b.rx - a.rx) * k, rz: a.rz + (b.rz - a.rz) * k, x: 0, z: (a.z ?? 0) + ((b.z ?? 0) - (a.z ?? 0)) * k };
   const paintBody: Painter = (t) => (t.y >= 1.5 ? chest(t) : hips(t));
-  m.surface("torso", lathe([...all.slice(0, i), mid], P.square, 24, front), paintBody);
-  m.surface("hips", lathe(densify([mid, ...all.slice(i)], 2), P.square, 24), paintBody);
+  // the body carries the painted garment detail: 3× the texel density (crisp collars, plackets, prints)
+  m.surface("torso", lathe([...all.slice(0, i), mid], P.square, 24, front), paintBody, undefined, 3);
+  m.surface("hips", lathe(densify([mid, ...all.slice(i)], 2), P.square, 24), paintBody, undefined, 3);
+  const frontZ = (x: number, y: number): number => {
+    const j = all.findIndex((r) => r.y <= y);
+    if (j <= 0) return 0;
+    const r0 = all[j - 1], r1 = all[j], k2 = (r0.y - y) / (r0.y - r1.y || 1);
+    const rx = r0.rx + (r1.rx - r0.rx) * k2, rz = r0.rz + (r1.rz - r0.rz) * k2, z0 = (r0.z ?? 0) + ((r1.z ?? 0) - (r0.z ?? 0)) * k2;
+    const cx = Math.min(1, Math.abs(x) / Math.max(0.01, rx)), e = P.square;
+    const ct = Math.pow(cx, 1 / e), st = Math.sqrt(Math.max(0, 1 - ct * ct));
+    let z = z0 + rz * Math.pow(st, e);
+    if (nu) {
+      const v = P.chest, rz2 = 0.7 + 0.22 * v, cz = 1.8 * P.depth + v - rz2, dy = (y - (cy - 0.1)) / (1.3 + 0.08 * v);
+      for (const sx of [-1, 1]) {
+        const dx = (x - sx * (lx - 0.08)) / (1.22 + 0.1 * v), q = 1 - dx * dx - dy * dy;
+        if (q > 0) z = Math.max(z, cz + rz2 * Math.sqrt(q));
+      }
+    } else {
+      const yy = y - cy, wy = Math.exp(-((yy / (yy < 0 ? sy * 0.8 : sy * 1.25)) ** 2));
+      z += P.chest * wy * Math.min(1, lobes(x));
+    }
+    return z;
+  };
+  buildTopPieces(m, s, { frontZ, depth: P.depth, hips: Math.max(P.hips, P.waist), low: SMOOTH < 2 });
+  buildNeckPieces(m, s, frontZ, SMOOTH < 2);
   if (nu) {
     // girls: two soft, slightly flattened ellipsoids blended into the chest (finely subdivided: smooth, never pointy),
     // clothed in the top's colours, with a soft flat shadow along their rounded underside
     const v = P.chest, rz = 0.7 + 0.22 * v, rx = 1.22 + 0.1 * v, ry = 1.3 + 0.08 * v, cz = 1.8 * P.depth + v - rz;
+    m.ink = false;                                                              // blended into the chest: no inner ink line
     for (const sx of [-1, 1]) {
       m.surface("torso", roundBlock([sx * (lx - 0.08), cy - 0.1, cz], [rx, ry, rz], 1, { seg: [16, 12] }), (t) => {
         const c = chest(t);
         return c && t.n[1] < -0.5 ? shade(c, 0.88) : c;
-      });
+      }, undefined, 3);
     }
+    m.ink = true;
   }
   // the neck flares into the trapezius
   const nk = P.neck;
+  m.ink = false;
   m.surface("torso", lathe(rings([[11.3, 0], [11.3, 1.05 * nk], [10.4, 1.1 * nk], [9.7, 1.3 * nk], [9.2, 1.85 * nk], [8.8, 0]]), 1, 12), solid(s.skinShade, 0.02));
+  m.ink = true;
   // skirts hang from the waist (open at the hem: a thin inturned lip), finely ringed so they bend smoothly with the legs
   const skirt = (r: readonly (readonly [number, number, number])[], p: Painter) => {
     const w = Math.max(P.hips, P.waist);
@@ -622,7 +674,7 @@ function buildTorso(m: M, s: ChibiSpec, P: Proportions): void {
     m.surface("hips", lathe(densify(rr.slice(0, -1), 5).concat(rr.slice(-1)), 0.8, 20), p);
   };
   switch (s.lower) {
-    case "skirt": skirt([[2.2, 3.15, 1.95], [-4.2, 4.3, 2.9], [-4.45, 4.0, 2.7], [-4.45, 0, 0]], skirtPainter(s.bottom, s.bottomShade, false)); break;
+    case "skirt": skirt([[2.2, 3.15, 1.95], [-4.2, 4.3, 2.9], [-4.45, 4.0, 2.7], [-4.45, 0, 0]], skirtPainter(s.bottom, s.bottomShade, s.bottom3d === "pleated", undefined, s.bottom3d === "denimskirt")); break;
     case "pleated": skirt([[2.2, 3.15, 1.95], [-4.8, 4.5, 3.0], [-5.05, 4.2, 2.8], [-5.05, 0, 0]], skirtPainter(s.bottom, s.bottomShade, true)); break;
     case "maxi": skirt([[2.2, 3.15, 1.95], [-4, 3.9, 2.6], [-11.4, 4.9, 3.3], [-11.7, 4.6, 3.1], [-11.7, 0, 0]], skirtPainter(s.bottom, s.bottomShade, false)); break;
     case "robe": skirt([[2.2, 3.3, 2.05], [-4, 3.9, 2.6], [-10.8, 4.6, 3.1], [-11.1, 4.3, 2.9], [-11.1, 0, 0]], skirtPainter(s.torso, s.torsoShade, false, s.detail)); break;
@@ -631,10 +683,6 @@ function buildTorso(m: M, s: ChibiSpec, P: Proportions): void {
   if (s.belt) {
     m.surface("hips", roundBlock([0.9, -0.9, 2.05], [0.35, 1.5, 0.2], 0.6, { seg: [6, 5] }), solid(s.belt));
     m.surface("hips", roundBlock([-0.1, -0.6, 2.05], [0.35, 1.2, 0.2], 0.6, { seg: [6, 5] }), solid(s.belt));
-  }
-  if (s.neck?.kind === "scarf") {
-    m.surface("torso", lathe(rings([[10.1, 0], [10.1, 1.6], [9.6, 2.35], [8.5, 2.5], [8.3, 0]], 0.85), 0.85, 14), solid(s.neck.main));
-    m.surface("torso", roundBlock([1.2, 7.2, 2.3], [0.6, 1.6, 0.3], 0.6, { seg: [6, 6] }), solid(s.neck.shade));
   }
 }
 
@@ -674,6 +722,7 @@ function buildArm(m: M, s: ChibiSpec, P: Proportions, side: -1 | 1): void {
     }, 0.02));
   m.surface(fo, strand([inner * 0.45 * hk, hy + 0.5, 0.55 * hk], [inner * 0.72 * hk, hy + 0.05, 0.95 * hk], [inner * 0.5 * hk, hy - 0.55, 1.0 * hk], [0.3 * hk, 0.22 * hk], [0.28 * hk, 0.2 * hk], [1, 0, 0], [6, 5]),
     solid(s.skin, 0.02));
+  buildSleevePieces(m, s, up, fo, k, L);
   if (side > 0 && s.wrist) {
     m.surface(fo, lathe(rings([[-3.2 * L, 0.9 * k], [-3.85 * L, 0.86 * k]], 1), 0.85, 12), solid(s.wrist.main));
     if (s.wrist.kind === "watch") m.surface(fo, roundBlock([0, -3.5 * L, 0.88 * k], [0.45, 0.42, 0.22], 0.5, { seg: [6, 4] }), solid(s.wrist.accent));
@@ -692,26 +741,28 @@ function buildLeg(m: M, s: ChibiSpec, P: Proportions, side: -1 | 1): void {
   const thigh = limb(nu
     ? [[0.9, 0], [0.8, 1.35], [0.3, 1.86], [-1.5, 1.78], [-3.5, 1.5], [-5.3, 1.2]]
     : [[0.9, 0], [0.8, 1.3], [0.3, 1.74], [-1.5, 1.7], [-3.5, 1.56], [-5.3, 1.34]], L, k);
+  const thighCloth = legCloth(s, side, "thigh", rgb(s.thigh), L), calfCloth = legCloth(s, side, "calf", rgb(s.calf), L);
   m.surface(th, lathe(rings([...thigh, ...roundEnd(-5.3 * L, (nu ? 1.2 : 1.34) * k, 1.0, -1)], 0.95), 0.85, 12), painted((t) => {
-    if (long) return rgb(s.thigh);
+    if (long) return thighCloth(t);
     if (briefs && t.y > -1.1) return t.y < -0.8 ? shade(bottom, 0.85) : bottom;
     return skin;
   }, 0.04));
   if (shorts) {
     const cloth = rgb(s.thigh);
     m.surface(th, lathe(rings(limb([[1.3, 0], [1.2, 1.6], [0.4, 2.05], [-3.3, 1.98], [-3.6, 1.55], [-3.6, 0]], L, k), 0.95), 0.85, 12),
-      painted((t) => (t.y < -3.1 * L ? shade(cloth, 0.78) : cloth), 0.04));
+      painted((t) => (t.y < -3.1 * L ? shade(cloth, 0.78) : thighCloth(t)), 0.04));
   }
   // calf: a dome at the knee (under the thigh's end), down to the ankle, closed inside the shoe
   const sh = s.shoe, main = rgb(sh.main), sole = rgb(sh.sole);
-  const boots = sh.shape === "boots", sneakers = sh.shape === "sneakers";
+  const boots = sh.kind === "boots" || sh.kind === "rainboots", sneakers = sh.kind === "sneakers";
   const ck = k * (nu ? 0.93 : 1), A = CALF * L;                                     // A: knee → ankle
   const calf = limb([[0, 1.36], [-1.4, 1.46], [-3.0, 1.3], [-4.6, 1.08], [-5.8, 0.98], [-6.2, 0.9]], L, ck);
   m.surface(ca, lathe(rings([...roundEnd(0, 1.36 * ck, 0.7, 1).reverse(), ...calf, ...roundEnd(-A, 0.9 * ck, 0.5, -1)], 0.95), 0.85, 12), painted((t) => {
-    if (long) return t.y < -A + 1.0 ? shade(rgb(s.calf), 0.85) : rgb(s.calf);
+    if (long) return t.y < -A + 1.0 ? shade(calfCloth(t), 0.85) : calfCloth(t);
     if (sneakers && t.y < -A + 1.3) return rgb("#f2eee6");
     return skin;
   }, 0.04));
+  buildLegPieces(m, s, ca, ck, A);
   if (boots) {
     m.surface(ca, lathe(rings([[-2.2 * L, 0], [-2.2 * L, 1.72 * ck], [-3.1 * L, 1.72 * ck], [-3.1 * L, 1.52 * ck], [-A - 0.2, 1.3 * ck], [-A - 0.2, 0]], 0.97), 0.75, 12),
       painted((t) => (t.y > -3.15 * L ? sole : main), 0.04));
@@ -720,18 +771,33 @@ function buildLeg(m: M, s: ChibiSpec, P: Proportions, side: -1 | 1): void {
   const f = P.foot, fb = (c: V3, r: V3, e: number, seg: [number, number], deform?: (p: THREE.Vector3) => void) =>
     roundBlock([c[0] * f, c[1] * f, c[2] * f], [r[0] * f, r[1] * f, r[2] * f], e, { seg, deform });
   const toe = (z0: number, k2: number) => (p: THREE.Vector3) => { if (p.z > z0 * f) p.y -= (p.z - z0 * f) * k2; };
-  if (sh.shape === "dep" || sh.shape === "sandals") {
+  if (sh.kind === "dep" || sh.kind === "sandals" || sh.kind === "toong") {
     m.surface(ft, fb([0, -0.85, 0.5], [1.26, 0.78, 1.92], 0.62, [12, 7], toe(1.1, 0.15)), solid(s.skin, 0.02));
     m.surface(ft, fb([0, -1.6, 0.5], [1.48, 0.24, 2.2], 0.4, [12, 4]), solid(sh.sole));
-    m.surface(ft, fb([0, -0.55, 1.0], [1.36, 0.26, 0.55], 0.5, [8, 4]), solid(sh.main));
-    if (sh.shape === "sandals") m.surface(ft, fb([0, -0.1, -0.9], [1.25, 0.24, 0.6], 0.5, [8, 4]), solid(sh.main));
+    if (sh.kind === "toong") {
+      // dép tông: a thong between the toes and two straps running back to the sides
+      for (const sx of [-1, 1]) m.surface(ft, strand([0, -0.95, 1.9 * f], [sx * 0.9 * f, -0.2, 1.0 * f], [sx * 1.3 * f, -1.2, 0.1 * f], [0.3, 0.26], [0.14, 0.12], [0, 1, 0], [4, 6]), solid(sh.main === "#fffde7" ? "#d9534f" : sh.main));
+    } else m.surface(ft, fb([0, -0.55, 1.0], [1.36, 0.26, 0.55], 0.5, [8, 4]), solid(sh.main));
+    if (sh.kind === "sandals") {
+      m.surface(ft, fb([0, -0.1, -0.9], [1.25, 0.24, 0.6], 0.5, [8, 4]), solid(sh.main));
+      m.surface(ft, fb([0, -0.35, 0.05], [1.32, 0.2, 0.3], 0.5, [8, 4]), solid(sh.main));
+    }
+  } else if (sh.kind === "oxford") {
+    m.surface(ft, fb([0, -0.8, 0.6], [1.4, 0.92, 2.1], 0.58, [14, 8], toe(1.2, 0.12)), painted((t) => {
+      if (t.n[1] > 0.35 && Math.abs(t.x) < 0.5 * f && t.z > 0.1 * f && t.z < 1.3 * f) return Math.floor(t.z / (0.3 * f)) % 2 ? shade(main, 1.8) : main;   // laces
+      if (t.z > 1.6 * f && t.n[1] > 0.2) return shade(main, 1.35);                                                                  // the glossy toe
+      return main;
+    }, 0.02), undefined, 2);
+    m.surface(ft, fb([0, -1.55, 0.6], [1.5, 0.22, 2.22], 0.4, [14, 4]), solid(sh.sole));
+    m.surface(ft, fb([0, -1.45, -1.25], [1.25, 0.34, 0.55], 0.5, [8, 4]), solid(sh.sole));
   } else {
     m.surface(ft, fb([0, -0.75, 0.6], [1.45, 1.0, 2.15], 0.58, [14, 8], toe(1.2, 0.12)), painted((t) => {
-      if (sneakers && t.n[1] > 0.4 && Math.abs(t.x) < 0.55 * f && t.z > 0.6 * f && t.z < 1.9 * f) return rgb("#f4f1ea");     // the laces panel
+      if (sneakers && t.n[1] > 0.4 && Math.abs(t.x) < 0.55 * f && t.z > 0.6 * f && t.z < 1.9 * f) return Math.floor(t.z / (0.32 * f)) % 2 ? rgb("#f4f1ea") : rgb("#c9c4ba");     // the laces panel
       if (sneakers && t.z > 1.9 * f) return rgb("#f4f1ea");                                                              // the toe cap
       return main;
-    }, 0.04));
-    m.surface(ft, fb([0, -1.55, 0.6], [1.56, 0.3, 2.28], 0.4, [14, 4]), solid(sh.sole));
+    }, 0.04), undefined, 2);
+    m.surface(ft, fb([0, -1.55, 0.6], [1.56, 0.3, 2.28], 0.4, [14, 4]), solid(sneakers ? "#f4f1ea" : sh.sole));
+    if (sneakers) m.surface(ft, fb([0, -1.62, 0.6], [1.58, 0.1, 2.3], 0.4, [14, 3]), solid(sh.sole));
   }
 }
 
@@ -778,7 +844,9 @@ export function buildChibi(spec: ChibiSpec, detail: Detail): { geos: Record<Seg,
   buildLeg(m, spec, P, -1);
   buildLeg(m, spec, P, 1);
   buildRod(m);
-  const out = detail === "high" ? m.build(3, VOX, 1, true) : m.build(1, VOX, 0.6, false);
+  // painted edges (collars, hems, hairlines, trims) are anti-aliased: 4×4 sub-samples high, 2×2 low
+  m.aa = detail === "high" ? 4 : 2;
+  const out = detail === "high" ? m.build(TEX_HIGH, VOX, 1, true) : m.build(TEX_LOW, VOX, 0.6, false);
   skinHips(out.geos.hips, VOX);
   return out;
 }
