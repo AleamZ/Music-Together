@@ -187,7 +187,7 @@ describe("0115: the migration", () => {
       expect(body(SQL, sig)).toContain("public._ac_account(p_session_token)");
       expect(guards).toContain(`public.${sig}`);
     }
-    expect(guards).toContain("assert n = 103");
+    expect(guards).toContain("assert n = 104");
     for (const t of ["rods", "rod_parts"]) {
       expect(SQL).toContain(`alter table public.${t} enable row level security;`);
       expect(SQL).toContain(`revoke all on public.${t} from anon, authenticated;`);
