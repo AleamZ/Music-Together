@@ -9,6 +9,7 @@ import {
   bridgeAt, heightGrid, KNOLLS, MAX_WALK_HEIGHT, MAX_WALK_SLOPE, onPath, slopeAtCell, waterAt,
 } from "./terrain";
 export { ROADS, TRAILS, type Road, type Trail } from "./roads";
+import { LANDING_NEAR, SONG_CAI_ROUTE } from "./routes";
 import { LANDMARKS } from "./scenery";
 import { WORLD_CELL, WORLD_H, WORLD_W, ZONES, type OutdoorMapId } from "./zones";
 
@@ -54,6 +55,13 @@ export const WILD_INTERACTABLES: readonly Interactable[] = [
     id: "mine_entrance", kind: "portal", label: "Cửa hầm mỏ", prompt: "Xuống hầm Mỏ đá",
     rect: { x: MINE_SOLID.x, y: MINE_SOLID.y, w: MINE_SOLID.w, h: MINE_SOLID.h }, use: { ...MINE.use }, face: "right",
     to: { map: "mo_da", arrive: MO_DA_ARRIVE },
+  },
+  // 0116: Bến đò Sông Cái at the end of the road out to the river (routes.ts): the Bến ghe panel — "Ra Sông Cái" rows
+  // from here (the server's river_row_start accepts the landing) and lands at the dock's foot
+  {
+    id: "song_cai_landing", kind: "boat", label: "Bến đò Sông Cái", prompt: "Bến đò · chèo ghe ra Sông Cái",
+    rect: { x: SONG_CAI_ROUTE.landing.x - LANDING_NEAR / 2, y: SONG_CAI_ROUTE.landing.y - 8, w: LANDING_NEAR, h: 24 },
+    use: { ...SONG_CAI_ROUTE.landing }, face: "down",
   },
 ];
 

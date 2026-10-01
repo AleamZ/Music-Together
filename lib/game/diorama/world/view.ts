@@ -25,6 +25,7 @@ import { liveFromFrame, type WorldLive } from "./live-plan";
 import { mergeStatic } from "./merge";
 import { InkPass, SkyDome } from "./post";
 import { buildBridges, buildLandmarks, buildSkyLife, buildWater, type Landmarks, type SkyLife, type Water } from "./props";
+import { buildSongCaiRoute } from "./song-cai-route";
 import { TerrainJobs } from "./terrain-jobs";
 import { chunkGeometry, landColor, LOD_STEPS } from "./terrain-mesh";
 import { buildDelta } from "./delta";
@@ -263,6 +264,7 @@ export class WorldView implements View3D {
         }
         this.water = buildWater();
         this.bridges = buildBridges();
+        this.bridges.add(buildSongCaiRoute());                           // 0116: Bến đò Sông Cái (routes.ts)
         this.landmarks = buildLandmarks();
         this.life = buildSkyLife();
         this.scene.add(this.water.root, this.bridges, this.landmarks.root, this.life.root);

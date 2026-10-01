@@ -223,3 +223,10 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   `\i`, needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json` and the `dblink` contrib (created and dropped); deletes
   its accounts. `fishing-v3-smoke.sql` re-applies 0115 after 0110 / 0113 and mounts per rod; `econ-fishing-smoke.sql`
   sets its rods as instances; `anticheat-guards.sql` calls the seven rod RPCs (103 guarded calls).
+
+## Đường ra Sông Cái (0116)
+
+- `song-cai-route-smoke.sql` (0116: `_song_cai_landing()` = lib/game/world/routes.ts; a world client walks the road
+  from Ao cá's exit down to Bến đò at walking pace (never "too far"), rows out from the landing and lands at the dock's
+  foot on Sông Cái; Cầu ao's pier still boards; a lv2 account is refused at the landing ("map locked"); far from both,
+  refused). Re-runs 0116 twice with `\i`; restores the `room_creation_open` / `unified_world` flags.

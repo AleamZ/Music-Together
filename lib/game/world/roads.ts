@@ -1,11 +1,12 @@
 import type { Vec } from "@/lib/game/types";
+import { SONG_CAI_ROUTE } from "./routes";
 
 // The roads of the wild (spec §1): polylines in world px that join the two ends of an old portal pair, plus the trails
 // (lib/game/world/terrain.ts) that lead to the river's bridges. Data only; wild.ts re-exports the roads.
 
 /** A road: a polyline in world px, `w` px wide, joining two openings' ends (`a`, `b`: "zone:portal"; "wild:mine" is the
  *  mine mouth on the eastern hills, lib/game/world/mine.ts). */
-export interface Road { id: string; a: string; b: string; pts: readonly Vec[]; w: number }
+export interface Road { id: string; a: string; b: string; pts: readonly Vec[]; w: number; /** The b end's height (units) when not its zone's plateau (0116: Bến đò sits on the bank above Sông Cái). */ hb?: number }
 
 // The openings' ends on the zone edges (world px), worked out from the portals' use points (see wild.ts OPENINGS):
 //   hall dock (1476, 880)    hall west (960, 716)     hall east (1600, 680)
@@ -28,6 +29,8 @@ export const ROADS: readonly Road[] = [
     pts: [{ x: 2940, y: 880 }, { x: 2940, y: 960 }, { x: 2800, y: 960 }, { x: 2800, y: 1040 }] },
   { id: "bai_dat_mine", a: "bai_dat:mo_da_gate", b: "wild:mine", w: 32,
     pts: [{ x: 3200, y: 1308 }, { x: 3280, y: 1308 }, { x: 3400, y: 1232 }, { x: 3624, y: 1232 }] },
+  // 0116: the road out to Sông Cái — off the hall–pond road at its corner below the pond, down to Bến đò (routes.ts)
+  { id: SONG_CAI_ROUTE.id, a: "pond:pond_exit", b: "song_cai:landing", w: SONG_CAI_ROUTE.w, pts: SONG_CAI_ROUTE.pts, hb: SONG_CAI_ROUTE.landingElev },
 ];
 
 /** A trail: a footpath off a road (`from`: the road's id) to a bridge over the river and the south bank. */
