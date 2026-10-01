@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RIG, SEGS, VOX, type BodyDims, type ChibiParts, type Seg } from "./build";
-import { REST, type Pose } from "./pose";
+import { REST, type CharAct, type Pose } from "./pose";
+import { setHeld, type HeldSlots } from "./held3d";
 
 // Browser only: one chibi on screen — a pivot hierarchy with a real two-bone chain per limb (hips → head;
 // shoulder → upper arm → ELBOW → forearm + hand; hip → thigh → KNEE → shin → ANKLE → foot) whose meshes point at the
@@ -50,6 +51,9 @@ export class ChibiRig {
   private skeleton: THREE.Skeleton | null = null;
   private readonly face: THREE.Mesh<THREE.BufferGeometry, THREE.Material> = new THREE.Mesh(EMPTY, NONE);
   private parts: ChibiParts | null = null;
+  /** Wave 3 (held3d.ts): what the fists hold and what stands at the feet for the current act. */
+  readonly held: HeldSlots = { handR: new THREE.Group(), handL: new THREE.Group(), ground: new THREE.Group() };
+  private heldAct: CharAct | null = null;
   private dims: BodyDims = DEFAULT_DIMS;
 
   constructor() {
@@ -72,6 +76,9 @@ export class ChibiRig {
     this.legL.add(this.bones[1]);
     this.legR.add(this.bones[2]);
     this.root.add(this.body);
+    this.elbowR.add(this.held.handR);
+    this.elbowL.add(this.held.handL);
+    this.root.add(this.held.ground);
     this.measure(DEFAULT_DIMS);
   }
 
@@ -91,6 +98,14 @@ export class ChibiRig {
     this.ankleL.position.y = this.ankleR.position.y = -d.calfLen;
     this.m.rod.position.set(0, -d.foreLen - 0.8 * VOX, 0.2 * VOX);
     this.m.rod.rotation.x = ROD_GRIP;                                     // along the forearm, as a rod is held
+    this.held.handR.position.y = this.held.handL.position.y = -d.foreLen;
+  }
+
+  /** Wave 3: shows the props of `act` (the hammer and anvil, the spoon and cauldron, the camera, the cards…). */
+  setAct(act: CharAct | null): void {
+    if (act === this.heldAct) return;
+    this.heldAct = act;
+    setHeld(this.held, act);
   }
 
   setParts(p: ChibiParts): void {

@@ -3,9 +3,11 @@
 // function of time, so it is testable and cheap. Joints stay within JOINT_LIMITS.
 
 import type { FaceExpr } from "./voxel-face";
+import { EXTRA_ACTS, extraPose, isExtraAct, type ExtraAct } from "./pose-extra";
 
-export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "stretch" | "net_hold" | "net_throw" | "net_pull" | "net_won";
-export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch", "net_hold", "net_throw", "net_pull", "net_won"];
+export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "stretch" | "net_hold" | "net_throw" | "net_pull" | "net_won"
+  | ExtraAct;                                                              // wave 3: pose-extra.ts
+export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch", "net_hold", "net_throw", "net_pull", "net_won", ...EXTRA_ACTS];
 /** Actions that play once from their start (the caller passes the time since the action began, not a running clock):
  *  the cast's throw, then the rod held out while the line waits. */
 export const ONE_SHOT_ACTS: ReadonlySet<CharAct> = new Set<CharAct>(["cast", "reel", "net_throw"]);
@@ -100,7 +102,8 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
   if (reduced) t = 0;
   const p: Pose = { ...REST, armL: { ...REST.armL }, armR: { ...REST.armR }, legL: { ...REST.legL }, legR: { ...REST.legR } };
   const s = t + phase;
-  switch (act) {
+  if (isExtraAct(act)) extraPose(p, act, s);                              // wave 3: crafts, emotes, cards, pillion
+  else switch (act) {
     case "idle": {
       // breathing, a slow weight shift from foot to foot (the loaded knee straight, the other relaxed), soft arms
       const b = Math.sin(s * TAU * 0.35), w = Math.sin(s * TAU * 0.09);

@@ -1,5 +1,6 @@
 import { petKey } from "./pet-looks";
 import * as THREE from "three";
+import { PILLION_LIFT, xeOmModel } from "./xeom";
 import { CO_TU_LOOK } from "@/lib/game/look";
 import { LOTS } from "@/lib/game/maps/khu-nha";
 import { pondDuckAt } from "@/lib/game/world/pond-life";
@@ -86,6 +87,8 @@ export class LiveLayer {
   private readonly labels = new Labels();
   private readonly entries = new Map<string, Entry>();
   private readonly lift = new Map<string, number>();
+  /** Wave 3: the riders carrying a passenger (their moto is drawn as a xe ôm, world/xeom.ts). */
+  private readonly xeom = new Set<string>();
   private readonly ringGeo = new THREE.RingGeometry(0.8, 1, 24);
   private readonly discGeo = new THREE.CircleGeometry(1, 24);
   private readonly planeGeo = new THREE.PlaneGeometry(1, 1);
@@ -150,7 +153,18 @@ export class LiveLayer {
     for (const v of live.vehicles ?? []) riding.set(v.riderId, { lift: SEAT_LIFT[v.kind], bike: v.kind === "bike" });
     const boats = new Map<string, number>();
     for (const b of live.boats ?? []) if (b.riderId) boats.set(b.riderId, this.waterY(b.x, b.y));
+    // wave 3: a passenger on the pillion (act "pillion", the engine puts them behind their driver): on the long seat;
+    // the driver within reach of them carries a xe ôm
+    this.xeom.clear();
+    for (const b of list) if (b.act === "pillion") {
+      this.lift.set(b.id, PILLION_LIFT);
+      for (const [id] of riding) {
+        const d = list.find((x) => x.id === id);
+        if (d && Math.hypot(d.x - b.x, d.y - b.y) < 16) this.xeom.add(id);
+      }
+    }
     const out = list.map((b): Billboard => {
+      if (b.act === "pillion") return b;
       const on = riding.get(b.id);
       if (on) {
         this.lift.set(b.id, on.lift);
@@ -391,7 +405,9 @@ export class LiveLayer {
 
     for (const v of live.vehicles ?? []) {
       const rider = people.feetOf(v.riderId);
-      const e = this.get(`veh:${v.riderId}`, `${v.kind}|${v.color ?? 0}`, () => new THREE.Group(), () => vehicleModel(this.mats, v.kind, v.color ?? 0xc0392b));
+      const taxi = v.kind !== "car" && this.xeom.has(v.riderId);              // wave 3: carrying someone: a xe ôm
+      const e = this.get(`veh:${v.riderId}`, `${v.kind}|${v.color ?? 0}${taxi ? "|xeom" : ""}`, () => new THREE.Group(),
+        () => (taxi ? xeOmModel(this.mats, v.color ?? 0xc0392b) : vehicleModel(this.mats, v.kind, v.color ?? 0xc0392b)));
       const veh = e.data as Vehicle;
       if (!veh.root.parent) e.obj.add(veh.root);
       e.obj.visible = !!rider && rider.visible;

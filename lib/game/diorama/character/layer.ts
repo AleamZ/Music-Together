@@ -216,6 +216,7 @@ export class CharacterLayer {
       const ground = this.groundAt(b.x, b.y);
       const swim = act === "swim" || (b.act === undefined && ground < WATER_DEPTH);
       a.rig.apply(poseAt(swim ? "swim" : act, ONE_SHOT_ACTS.has(act) ? a.actT : a.walkT, a.phase, reduced));
+      a.rig.setAct(swim ? null : act);                                   // wave 3: the act's props (held3d.ts)
       const w = pxToWorld(b, this.size);
       a.rig.root.position.set(w.x, (swim && ground < WATER_DEPTH ? ground + SWIM_LIFT : ground) + (this.lifts.get(b.id) ?? b.lift ?? 0), w.z);
       a.rig.root.rotation.y = a.yaw;

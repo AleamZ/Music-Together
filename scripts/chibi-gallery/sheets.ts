@@ -7,7 +7,13 @@ import NAMES from "./names.json";
 // The outfit gallery's sheets: close-ups (before/after), a signature-outfit sheet, and one sheet per slot that dresses
 // sample characters in every catalog item (boys and girls alternating, front and 3/4 views alternating).
 
-export interface Tile { look: Look; label: string; yaw: number; zoom?: number; detail?: "high" | "low"; focusY?: number; act?: CharAct; time?: number }
+export interface Tile { look: Look; label: string; yaw: number; zoom?: number; detail?: "high" | "low"; focusY?: number; act?: CharAct; time?: number;
+  /** Wave 3: more chibis in the tile (position x/z, lift y, yaw), scene objects (furniture, rooms, vehicles, pets), no
+   *  main chibi, and a camera (eye, target) of its own. */
+  more?: Array<{ look: Look; act?: CharAct; time?: number; x: number; y?: number; z: number; yaw: number }>;
+  extra?: () => import("three").Object3D;
+  noChibi?: boolean;
+  cam?: { eye: [number, number, number]; at: [number, number, number] } }
 export interface Sheet { name: string; title: string; cols: number; tw: number; th: number; tiles: Tile[] }
 
 const names = NAMES as Record<string, string>;

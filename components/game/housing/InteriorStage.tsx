@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { readGfx, subscribeGfx, type GfxMode } from "@/lib/game/diorama/flag";
+import type { Billboard } from "@/lib/game/diorama/types";
+import Interior3d from "./Interior3d";
 import { drawItem, setTankContents } from "@/lib/game/art/furniture";
 import { WALK_CYCLE } from "@/lib/game/art/layers";
 import { getCharacterFrames } from "@/lib/game/art/raster";
@@ -379,6 +382,17 @@ export default function InteriorStage<L extends StageLayout>(props: InteriorStag
     setSelected(hit ?? null);
   };
 
+  // wave 3: the 3D mode shows the room in 3D (the 2D canvas stays for decorating)
+  const gfx = useSyncExternalStore<GfxMode>(subscribeGfx, readGfx, () => "2d");
+  const show3d = gfx === "3d" && !decorating;
+  const people3d = useCallback((): Billboard[] => {
+    const out: Billboard[] = [];
+    if (live.current.sleepAt === null) out.push({ id: me.id, look: me.look, x: pos.current.x, y: pos.current.y, facing: facing.current, frame: 0, name: me.name, me: true });
+    for (const [id, o] of others.current) if (o.look) out.push({ id, look: o.look, x: o.x, y: o.y, facing: o.f, frame: 0, name: o.name });
+    return out;
+  }, [me.id, me.look, me.name]);
+  const walk3d = useCallback((w: Vec) => { if (inputRef.current) target.current = w; }, []);
+
   const storage = props.storage.filter((s) => !isSurface(furnitureOf(s.item)));
   const surfaces = props.storage.filter((s) => isSurface(furnitureOf(s.item)));
   const nearKind = near.kind;
@@ -395,8 +409,10 @@ export default function InteriorStage<L extends StageLayout>(props: InteriorStag
       </div>
       {props.banner}
       <div className="flex max-w-full flex-col items-center gap-2 lg:flex-row lg:items-start">
+        {show3d && <Interior3d w={W} h={H} gridTop={space.gridTop} wall={layout.wall} floor={layout.floor} items={layout.items}
+          people={people3d} onTap={walk3d} width={W * scale} height={H * scale} />}
         <canvas ref={canvasRef} width={W} height={H} data-testid="interior-canvas"
-          className="max-w-full touch-none rounded-sm border-4 border-[#5a381e] [image-rendering:pixelated]"
+          className={`max-w-full touch-none rounded-sm border-4 border-[#5a381e] [image-rendering:pixelated] ${show3d ? "hidden" : ""}`}
           style={{ width: W * scale, height: H * scale }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} />
         {decorating && (

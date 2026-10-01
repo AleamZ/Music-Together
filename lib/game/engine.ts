@@ -67,6 +67,8 @@ import { getMap } from "@/lib/game/maps/registry";
 import { interactablesNear, npcsNear, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { toWorld, zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 import { cardSeatMap, seatPeople, type CardSeatIn, type SeatAnchor } from "@/lib/game/diorama/zones/seats";
+import { cardAct, localEmote, reactionAct } from "@/lib/game/diorama/character/emote";
+import { PILLION_BACK } from "@/lib/game/diorama/world/xeom";
 import { worldSwimMap } from "@/lib/game/world/swim";
 import { boatWater, wildBoatInteractable, worldBoatMap } from "@/lib/game/world/boat";                           // 0095                                          // P3
 import { gateNear, type WorldGate } from "@/lib/game/world/gates";                              // P3
@@ -371,6 +373,10 @@ export class GameEngine {
     const out: Billboard[] = [];
     // the 3D chibi's action from the state the 2D renderer draws (P2): seated, riding, swimming, the rod, a reaction's wave
     const waved = new Set(this.reactions.filter((r) => r.id !== null && t - r.born < REACTION_MS).map((r) => r.id));
+    // wave 3: a reaction's emote (🎉/🔥 dance, 👏 claps, else the wave) and my busy act (craft, photo: emote.ts)
+    const emoted = new Map<string, CharAct>();
+    for (const r of this.reactions) if (r.id !== null && t - r.born < REACTION_MS) emoted.set(r.id, reactionAct(r.emoji));
+    const emote = (id: string): CharAct | undefined => (waved.has(id) ? emoted.get(id) ?? "wave" : undefined);
     const remoteAct = (id: string): CharAct | undefined => {
       if (this.world.hammock(id)) return "sit";
       if (this.world.riding(id) || this.world.carrier(id)) return "ride";
@@ -385,7 +391,7 @@ export class GameEngine {
       const fa = this.world.farmAnim(id, t);                                            // 0097: chopping / cooking, as they told us
       if (fa === FARM_ANIM.chop) return "chop";
       if (fa === FARM_ANIM.cook) return "cook";
-      return waved.has(id) ? "wave" : undefined;
+      return emote(id);
     };
     for (const e of this.world.roster.values()) {
       const label = e.name;
@@ -395,6 +401,11 @@ export class GameEngine {
         continue;
       }
       const a = this.world.actors.get(e.id);
+      if (a && this.visible(e.id, t) && this.carried(e.id, t)) {                     // wave 3: on the pillion, behind the driver
+        const pil = this.pillionSpot(e.id);
+        if (pil) out.push({ id: e.id, look: e.look, x: pil.x, y: pil.y, facing: pil.f, frame: 0, name: label, act: "pillion" });
+        continue;
+      }
       if (!a || !this.visible(e.id, t) || this.carried(e.id, t)) continue;
       const f = walkFrame(a);
       const boat = this.onBoat(a.display), veh = this.world.riding(e.id) ?? (boat ? "boat" : undefined);           // P3
@@ -410,10 +421,14 @@ export class GameEngine {
       const ph = this.fishing.phase;
       const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim" : this.warming(t) ? "stretch"
         : this.myNet(t) ? NET_ACT[this.myNet(t)!.s.show]
-        : ph === "reeling" ? "reel" : ph === "bite" ? "bite" : ph !== "idle" ? "cast" : this.workAct ?? (waved.has(this.opts.localId) ? "wave" : undefined);
+        : ph === "reeling" ? "reel" : ph === "bite" ? "bite" : ph !== "idle" ? "cast" : this.workAct ?? localEmote() ?? emote(this.opts.localId);
       const boat = this.worldMap !== null && this.afloatAt(me.pos);                                               // P3: rowing Sông Cái
       out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
         act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined) });
+    }
+    if (this.aboard(t)) {                                                           // wave 3: me on someone's pillion
+      const pil = this.pillionSpot(this.opts.localId);
+      if (pil) out.push({ id: this.opts.localId, look: this.localInfo.look, x: pil.x, y: pil.y, facing: pil.f, frame: 0, name: this.localInfo.name, me: true, act: "pillion" });
     }
     const wallNow = Date.now();
     if (wallNow - this.lightingAt > 1000) {
@@ -427,6 +442,11 @@ export class GameEngine {
       cards: this.cardSeatMap, origin: { x: hall.ox, y: hall.oy },
       hammock: new Set(out.filter((b) => (b.me ? lying : this.world.hammock(b.id))).map((b) => b.id)),
     }) : out;
+    // wave 3: the card players at their tables hold their cards, play now and then, and cheer with 🎉 (emote.ts)
+    if (hall) for (let i = 0; i < seated.length; i++) {
+      const b = seated[i];
+      if (b.act === "sit" && this.cardSeatMap.has(b.id)) seated[i] = { ...b, act: cardAct(t, (b.id.charCodeAt(0) % 7) / 7, emoted.get(b.id) === "dance") };
+    }
     return {
       t, focus: { x: me.display.x, y: me.display.y }, billboards: seated,
       night, warm: night > 0 && night < 1 ? Math.max(0, 1 - Math.abs(night - 0.5) * 2) : 0,
@@ -780,6 +800,17 @@ export class GameEngine {
   private aboard(now: number): boolean {
     const l = this.lift;
     return l?.role === "passenger" && this.world.actors.has(l.peer) && this.visible(l.peer, now) && this.world.riding(l.peer) !== null;
+  }
+
+  /** Wave 3: where a passenger sits on their driver's pillion (px, behind the driver along their facing), or null. */
+  private pillionSpot(id: string): { x: number; y: number; f: Facing } | null {
+    const me = this.opts.localId, l = this.lift;
+    const driver = id === me ? (l?.role === "passenger" ? l.peer : null) : l?.role === "driver" && l.peer === id ? me : this.world.carrier(id);
+    if (!driver) return null;
+    const d = driver === me ? this.local : this.world.actors.get(driver);
+    if (!d) return null;
+    const back = PILLION_BACK * 16, v = d.facing === "up" ? [0, -1] : d.facing === "down" ? [0, 1] : d.facing === "left" ? [-1, 0] : [1, 0];
+    return { x: d.display.x - v[0] * back, y: d.display.y - v[1] * back, f: d.facing };
   }
 
   /** Is member `id` drawn on someone's vehicle (their own actor is not drawn)? */

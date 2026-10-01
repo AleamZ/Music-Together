@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { setLocalEmote } from "@/lib/game/diorama/character/emote";
 import { questErrorMessage } from "@/lib/game/quests/model";
 import { captureCanvas, findGameCanvas, type Shot } from "@/lib/game/quests/photo";
 import { photoSave } from "@/lib/game/quests/rpc";
@@ -26,6 +27,9 @@ export default function PhotoMode({ token, mapId, onSaved, onClose }: {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [takenAt, setTakenAt] = useState(0);
+
+  // wave 3: my 3D chibi holds the camera up while the photo mode is open
+  useEffect(() => { setLocalEmote("camera_up"); return () => setLocalEmote(null); }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };

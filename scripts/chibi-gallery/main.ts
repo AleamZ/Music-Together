@@ -5,6 +5,7 @@ import { chibiSpec } from "@/lib/game/diorama/character/spec";
 import { poseAt } from "@/lib/game/diorama/character/pose";
 import { addVoxelLights } from "@/lib/game/diorama/character/voxel-material";
 import { closeupSheet, coverageMd, gallerySheets, type Sheet, type Tile } from "./sheets";
+import { wave3Sheets } from "./wave3";
 
 // Offscreen outfit gallery (no DB): render.mjs bundles this with vite, opens it in Chromium and calls renderNamed.
 
@@ -25,18 +26,27 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   const cam = new THREE.PerspectiveCamera(30, tw / th, 0.1, 50);
   const f = new ChibiFactory(400);
   tiles.forEach((t, i) => {
-    const rig = new ChibiRig();
-    const got = f.acquire(chibiSpec(t.look), t.detail ?? "high");
-    rig.setParts(got.parts);
-    rig.root.rotation.y = t.yaw;
-    rig.apply(t.act ? poseAt(t.act, t.time ?? 0.2) : poseAt("idle", 0.2, 0, true));
-    scene.add(rig.root);
+    // the tile's chibis (the main one unless noChibi, plus `more`), each with its act's props (rig.setAct)
+    const people = [...(t.noChibi ? [] : [{ look: t.look, act: t.act, time: t.time, x: 0, y: 0, z: 0, yaw: t.yaw }]), ...(t.more ?? [])];
+    const placed = people.map((p) => {
+      const rig = new ChibiRig();
+      const got = f.acquire(chibiSpec(p.look), t.detail ?? "high");
+      rig.setParts(got.parts);
+      rig.root.rotation.y = p.yaw;
+      rig.root.position.set(p.x, p.y ?? 0, p.z);
+      rig.apply(p.act ? poseAt(p.act, p.time ?? 0.2) : poseAt("idle", 0.2, 0, true));
+      rig.setAct(p.act ?? null);
+      scene.add(rig.root);
+      return { rig, key: got.key };
+    });
+    const extra = t.extra?.();
+    if (extra) scene.add(extra);
     const z = t.zoom ?? 1, fy = t.focusY ?? 1.08;
-    cam.position.set(0, fy + 0.3 / z, 5.0 / z); cam.lookAt(0, fy, 0);
+    if (t.cam) { cam.position.set(...t.cam.eye); cam.lookAt(...t.cam.at); }
+    else { cam.position.set(0, fy + 0.3 / z, 5.0 / z); cam.lookAt(0, fy, 0); }
     r.render(scene, cam);
-    scene.remove(rig.root);
-    rig.detach();
-    f.release(got.key);
+    if (extra) scene.remove(extra);
+    for (const p of placed) { scene.remove(p.rig.root); p.rig.detach(); f.release(p.key); }
     const x = (i % cols) * tw, y = top + Math.floor(i / cols) * (th + lab);
     g.drawImage(cv, x, y);
     g.fillStyle = "#2a1c18"; g.font = "14px sans-serif";
@@ -51,7 +61,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   r.dispose();
   return out.toDataURL("image/png");
 };
-const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets()];
+const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets(), ...wave3Sheets()];
 W.sheetNames = () => SHEETS.map((s) => s.name);
 W.coverage = () => coverageMd(SHEETS);
 W.renderNamed = (n: string) => {
