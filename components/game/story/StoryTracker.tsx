@@ -44,7 +44,32 @@ export function StoryTrackerCard({ state, mapId, me }: { state: StoryState; mapI
   );
 }
 
-export default function StoryTracker({ state, mapId, getLocalPos }: {
+/** The phone's one-line tracker pill (top-center): tap to open the quest sheet, ✕ to fold it to a 📜 dot. */
+export function StoryPill({ state, mapId, me, onExpand }: { state: StoryState; mapId: MapId; me: { x: number; y: number } | null; onExpand?: () => void }) {
+  const [hidden, setHidden] = useState(false);
+  const q = currentQuest(state);
+  if (!q || state.finished) return null;
+  const g = guidance(q, mapId, me);
+  const where = g.here ? "· ngay đây" : g.arrow ? `${g.arrow} ${g.dist} bước` : "";
+  if (hidden) {
+    return (
+      <button type="button" data-testid="story-pill-mini" aria-label="Hiện nhiệm vụ" onClick={() => setHidden(false)}
+        className="pch-btn pointer-events-auto fixed left-1/2 top-[max(0.25rem,env(safe-area-inset-top))] z-20 h-8 -translate-x-1/2 px-2 py-0 font-vt text-base opacity-80">📜</button>
+    );
+  }
+  return (
+    <div data-testid="story-pill" className="pch pointer-events-auto fixed left-1/2 top-[max(0.25rem,env(safe-area-inset-top))] z-20 flex h-8 max-w-[min(22rem,calc(100vw-14rem))] -translate-x-1/2 items-center gap-1 px-1 font-vt text-base leading-none opacity-90">
+      <button type="button" className="min-w-0 flex-1 truncate px-1 text-left" onClick={onExpand} data-testid="story-pill-open" title={q.title}>
+        📜 {q.title} {where}
+      </button>
+      <button type="button" aria-label="Thu gọn nhiệm vụ" className="shrink-0 px-1 opacity-70" onClick={() => setHidden(true)}>✕</button>
+    </div>
+  );
+}
+
+export default function StoryTracker({ state, mapId, getLocalPos, compact = false, onExpand }: {
+  compact?: boolean;
+  onExpand?: () => void;
   state: StoryState | null;
   mapId: MapId;
   /** My position on this map (none: no arrow, e.g. the 3D world). */
@@ -63,5 +88,10 @@ export default function StoryTracker({ state, mapId, getLocalPos }: {
     return () => window.clearInterval(id);
   }, [tracking]);
   if (!state || state.finished || !currentQuest(state)) return null;
-  return <HudSlotted><StoryTrackerCard state={state} mapId={mapId} me={me} /></HudSlotted>;
+  return (
+    <>
+      <HudSlotted><StoryTrackerCard state={state} mapId={mapId} me={me} /></HudSlotted>
+      {compact && <StoryPill state={state} mapId={mapId} me={me} onExpand={onExpand} />}
+    </>
+  );
 }

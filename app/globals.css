@@ -1311,3 +1311,25 @@ html[data-theme="miku"] .podium-card-3 .podium-stat {
 .game-ui .pch-btn-primary { background: var(--color-burgundy); color: var(--color-cream); }
 .game-ui .pch-btn[aria-pressed="true"]:hover,
 .game-ui .pch-btn-primary:hover { background: var(--color-burgundy-accent); }
+
+/* The compact phone HUD (components/game/hud/MobileHud.tsx): the centered bottom chips and minigame bars (fishing
+   buttons, the boat row, the farm card, the lift, the forest chip, the chop / cook bars) sit in the lane between the
+   stick (left) and the action buttons (right), above the 💬 button, never wider than that lane; the zone toast goes
+   under the story pill and the toast. */
+.game-ui[data-compact-hud] .left-1\/2:is(.bottom-24, .bottom-36, .bottom-48) {
+  max-width: calc(100vw - 20rem);
+  font-size: 1rem;
+  line-height: 1.15;
+}
+.game-ui[data-compact-hud] .left-1\/2.bottom-24 { bottom: max(3.75rem, calc(env(safe-area-inset-bottom) + 3.25rem)); }
+.game-ui[data-compact-hud] .left-1\/2.bottom-36 { bottom: max(6.75rem, calc(env(safe-area-inset-bottom) + 6.25rem)); }
+.game-ui[data-compact-hud] .left-1\/2.bottom-48 { bottom: max(9.5rem, calc(env(safe-area-inset-bottom) + 9rem)); }
+.game-ui[data-compact-hud] .left-1\/2:is(.bottom-24, .bottom-36, .bottom-48) :is(.text-xl, .text-2xl, .text-3xl),
+.game-ui[data-compact-hud] .left-1\/2.bottom-24:is(.text-xl, .text-2xl, .text-3xl) { font-size: 1.05rem; padding-block: 0.25rem; }
+.game-ui[data-compact-hud] .inset-x-0.bottom-28 { bottom: max(3.75rem, calc(env(safe-area-inset-bottom) + 3.25rem)); width: min(calc(100vw - 20rem), 360px); }
+.game-ui[data-compact-hud] .left-1\/2.top-16 { top: 4.5rem; font-size: 1.1rem; padding: 0.25rem 0.75rem; }
+.game-ui[data-compact-hud] .left-1\/2.top-24 { top: 4.5rem; }
+.game-ui[data-compact-hud] .left-1\/2.top-28 { top: 4.5rem; max-width: calc(100vw - 14rem); font-size: 1rem; }
+/* the reel minigame: centered and shorter, clear of the action buttons */
+.game-ui[data-compact-hud] [aria-label="Kéo cá"] > .pch { translate: -50% -50%; }
+.game-ui[data-compact-hud] [aria-label="Kéo cá"] > .pch > .h-56 { height: min(14rem, calc(100dvh - 9rem)); }
