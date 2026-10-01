@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ITEM_ART } from "@/lib/game/art/items";
+import { WEAR3D, wear3dDesc } from "@/lib/game/diorama/character/wear3d";
 import { BELT_COLORS } from "@/lib/game/art/uniforms";
 import * as THREE from "three";
 import { ChibiFactory, SEGS, buildChibi } from "@/lib/game/diorama/character/build";
@@ -207,4 +208,26 @@ describe("chibi poses", () => {
     for (let i = 0; i < 60; i++) y = turnToward(y, Math.PI / 2, 1 / 60, 12);
     expect(y).toBeCloseTo(Math.PI / 2);
   });
+});
+
+describe("chibi 3D wardrobe coverage", () => {
+  it("every 2D catalog item has a dedicated 3D model", () => {
+    const ids = wearableIds();
+    for (const slot of LOOK_SLOTS) for (const id of ids[slot]) {
+      expect(WEAR3D[id], `${slot}:${id} has no 3D mapping`).toBeTruthy();
+      expect(wear3dDesc(id), id).toBeTruthy();
+    }
+  });
+
+  it("every catalog item builds at both detail levels within budget", () => {
+    const ids = wearableIds();
+    for (const slot of LOOK_SLOTS) for (const id of ids[slot]) for (const detail of ["high", "low"] as const) {
+      const gender = /skirt|ao_dai|maxi/.test(id) ? ("nu" as const) : ("nam" as const);
+      const b = buildChibi(chibiSpec(wearing({ ...BARE, gender }, slot, id)), detail);
+      expect(Object.keys(b.geos).length, id).toBe(SEGS.length);                // draw calls per character unchanged
+      const tris = SEGS.reduce((n, s) => n + b.geos[s].getAttribute("position").count / 3, 0);
+      expect(tris, id).toBeLessThan(detail === "high" ? 20000 : 6000);
+      expect(b.width * b.height, id).toBeLessThanOrEqual(detail === "high" ? 1024 * 1024 : 256 * 256);
+    }
+  }, 300_000);
 });
