@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { JETTY } from "@/lib/game/maps/song-cai";
 import type { GameMap } from "@/lib/game/maps/types";
 import { RIVER, riverWater } from "@/lib/game/river/geometry";
+import { SONG_CAI_ROUTE } from "@/lib/game/world/routes";
+import { ZONES } from "@/lib/game/world/zones";
 import { pxLen } from "../coords";
 import { rng } from "../layout";
 import { Kit, labelNear, ZONE_WATER_Y, type Inst, type OutdoorOptions } from "./outdoor-kit";
@@ -19,6 +21,8 @@ import type { SignIcon } from "./signart";
 export type RiverGround = "grass" | "mud" | "water" | "rock" | "island" | "sand" | "jetty";
 
 const ISLAND = RIVER.rocks[RIVER.rocks.length - 1];
+/** 0116: Bến đò's dock (lib/game/world/routes.ts) in the zone's px: no reeds across it. */
+const DOCK_X0 = SONG_CAI_ROUTE.dock.x - ZONES.song_cai.ox, DOCK_X1 = DOCK_X0 + SONG_CAI_ROUTE.dock.w;
 
 /** The ground at one px (the 2D painter's order). */
 export function riverGroundAt(x: number, y: number): RiverGround {
@@ -74,6 +78,7 @@ export function riverLayout(map: GameMap, opts: OutdoorOptions = {}): RiverLayou
     const x = R() * map.width, north = k % 2 === 0;
     const y = north ? RIVER.y0 - 2 - R() * 8 : RIVER.y1 + 3 + R() * 8;
     if (x < JETTY.x + JETTY.w + 6 && y > JETTY.y - 20 && y < JETTY.y + JETTY.h + 10) continue;
+    if (north && x > DOCK_X0 - 10 && x < DOCK_X1 + 10) continue;          // 0116: Bến đò's dock crosses the north bank here
     reeds.push({ x, y, h: 8 + R() * 10, tip: R() < 0.45 });
   }
   const streaks: RiverLayout["streaks"] = [];

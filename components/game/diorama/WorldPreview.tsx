@@ -63,6 +63,9 @@ function camPresets(): Record<string, { pos: { x: number; y: number; z: number }
     shop: (() => { const s = villageShops()[0]; return look(s.x, s.y, 7, 7, s.yaw); })(),
     lua: { pos: { x: 20, y: 18, z: 130 }, yaw: -2.2, pitch: -0.3 },
     pondedge: look(1290, 1470, 16, 6, 0.1),
+    // the road out to Sông Cái: straight down over it (north up, as the 2D map), and along it from the pond
+    songcai: { pos: { x: 1330 / 16, y: heightAt(1330, 1620) + 70.8, z: 1620 / 16 + 70.8 / Math.tan(1.45) }, yaw: 0, pitch: -1.45 },
+    songcairoad: look(1312, 1600, 18, 9, 0.35),
   };
 }
 
@@ -163,6 +166,20 @@ export default function WorldPreview({ init = {} }: { init?: WorldPreviewInit })
           const w = (window as unknown as { __world: { snapAt: (n: string) => string } }).__world;
           const r = await fetch("/dev/world/snap", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: file, data: w.snapAt(name) }) });
           return r.ok ? ((await r.json()) as { file: string }).file : `failed ${r.status}`;
+        },
+        /** The 2D world map (the minimap's own renderer) over world rect (x0, y0, w, h) at `scale` canvas px per world
+         *  px, as a PNG data URL — the same viewpoint as a top-down 3D preset (resolves once the base has built). */
+        map2d: async (x0: number, y0: number, w: number, h: number, scale = 1) => {
+          const { worldMapBase, drawWorldMapFrame } = await import("@/lib/game/world/worldmap-canvas");
+          const { waypointMarks } = await import("@/lib/game/world/waypoints");
+          await new Promise<void>((res) => { if (worldMapBase(res)) res(); });
+          const c = document.createElement("canvas");
+          c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+          const ctx = c.getContext("2d")!;
+          drawWorldMapFrame(ctx, c.width, c.height, { x0, y0, scale }, {
+            labels: "all", me: null, heading: 0, boat: false, people: [], waypoints: waypointMarks(new Set(["ww_song_cai"]), null), dpr: 1,
+          });
+          return c.toDataURL("image/png");
         },
         bench: (n = 120) => {
           const t = performance.now();

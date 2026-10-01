@@ -2,6 +2,7 @@ import type { Vec } from "@/lib/game/types";
 import { canalCrossings, lotusPonds, stiltHouses } from "./delta";
 import { CABLE, LAKE } from "./nuicam";
 import { cumulative, pointAt, ROADS, TRAILS } from "./roads";
+import { SONG_CAI_ROUTE } from "./routes";
 import { CANALS, CANAL_HALF_W, canalDist, RIVER_PTS, riverAt, riverHalfWidth, STREAM_HALF_W, STREAM_PTS, zoneUnder } from "./terrain";
 import type { WaypointMark } from "./waypoints";
 import { BASE_H, BASE_W, baseRows, KIND_COLOUR, MAP_LABELS, MAP_STEP, toCanvas, ZONE_TINT, type MapView } from "./worldmap";
@@ -154,6 +155,7 @@ export function drawBaseShapes(ctx: CanvasRenderingContext2D): void {
     }
     flush();
   }
+  drawSongCaiRoute(ctx);
   for (const b of canalCrossings()) if (b.monkey) {                                  // cầu khỉ: a bamboo pole across
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(-b.yaw);
     ctx.fillStyle = "#c9a45a"; ctx.fillRect(-3, -b.len / 2, 6, b.len);
@@ -168,6 +170,23 @@ export function drawBaseShapes(ctx: CanvasRenderingContext2D): void {
     ctx.restore();
   }
   line(ctx, [CABLE.a, CABLE.b], 5, "#3b3b3b", [14, 8]);
+}
+
+/** 0116: Bến đò Sông Cái from routes.ts (the road itself is in ROADS): the dock's planks out into the river, the ghe
+ *  moored at its foot, the signpost at the junction — the same pieces the 3D world builds (diorama/world/song-cai-route.ts). */
+function drawSongCaiRoute(ctx: CanvasRenderingContext2D): void {
+  const R = SONG_CAI_ROUTE, d = R.dock;
+  ctx.fillStyle = "#3b2a1a";
+  ctx.fillRect(d.x - 3, d.y, d.w + 6, d.h + 3);
+  ctx.fillStyle = "#a8743f";
+  ctx.fillRect(d.x, d.y, d.w, d.h);
+  ctx.fillStyle = "#7a5230";
+  for (let y = d.y + 8; y < d.y + d.h; y += 10) ctx.fillRect(d.x, y, d.w, 2);
+  ctx.fillStyle = "#7a4a22"; ctx.strokeStyle = "#2a1d12"; ctx.lineWidth = 3;          // the ghe, beside the dock's foot
+  ctx.beginPath(); ctx.ellipse(R.dockFoot.x + 26, R.dockFoot.y - 4, 26, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#6b4a33"; ctx.fillRect(R.sign.x - 2, R.sign.y - 6, 4, 14);         // the signpost: a post and its board
+  ctx.fillStyle = "#e8c98a"; ctx.strokeStyle = "#3b2a1a"; ctx.lineWidth = 2;
+  ctx.fillRect(R.sign.x - 9, R.sign.y - 14, 26, 10); ctx.strokeRect(R.sign.x - 9, R.sign.y - 14, 26, 10);
 }
 
 // ------------------------------------------------------------------ the overlays (per frame)

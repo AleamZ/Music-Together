@@ -188,7 +188,7 @@ let paths: PathInfo[] | null = null;
 
 function roadInfo(r: Road): PathInfo {
   const ends = [zoneOf(r.a), zoneOf(r.b)].filter((z): z is OutdoorMapId => z !== null);
-  return { pts: r.pts, cum: cumulative(r.pts), w: r.w, h0: endElev(r.a), h1: endElev(r.b), trail: false, ends };
+  return { pts: r.pts, cum: cumulative(r.pts), w: r.w, h0: endElev(r.a), h1: r.hb ?? endElev(r.b), trail: false, ends };
 }
 
 /** Roads first (a trail starts on one: its first height is the road's there), then the trails. */
