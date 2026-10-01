@@ -20,11 +20,11 @@ import type { ZoneId } from "@/lib/game/world/zones";
 export interface MapFeed {
   getMe: () => Vec | null;
   /** The others in sight and my boat (world mode's engine); absent in 2D. */
-  getMarks?: () => { others: ReadonlyArray<{ id: string; x: number; y: number }>; boat: boolean };
+  getMarks?: () => { others: ReadonlyArray<{ id: string; x: number; y: number }>; boat: boolean; baits?: ReadonlyArray<{ x: number; y: number; color: string }> };
 }
 
 /** The party (their server positions, any map) and the others in sight, as dots. */
-function peopleOf(feed: MapFeed): { people: MapPerson[]; boat: boolean } {
+function peopleOf(feed: MapFeed): { people: MapPerson[]; boat: boolean; baits: ReadonlyArray<{ x: number; y: number; color: string }> } {
   const people: MapPerson[] = [];
   for (const d of allPartyDots()) {
     const w = mapPosToWorld(d.map, d);
@@ -32,7 +32,7 @@ function peopleOf(feed: MapFeed): { people: MapPerson[]; boat: boolean } {
   }
   const m = feed.getMarks?.();
   for (const o of m?.others ?? []) people.push({ id: o.id, x: o.x, y: o.y, kind: "other" });
-  return { people, boat: m?.boat ?? false };
+  return { people, boat: m?.boat ?? false, baits: m?.baits ?? [] };   // 0117: the ổ thính
 }
 
 /** My heading, from how I moved (kept while I stand). */
@@ -76,8 +76,8 @@ export default function WorldMiniMap({ getWorldPos, getMarks, zone, waypoints = 
         const me = getWorldPos();
         const s = MINI_ZOOMS[live.current.zi] * dpr;
         const v: MapView = me ? { x0: me.x - c.width / s / 2, y0: me.y - c.height / s / 2, scale: s } : fitView(c.width, c.height);
-        const { people, boat } = peopleOf({ getMe: getWorldPos, getMarks: live.current.getMarks });
-        drawWorldMapFrame(ctx, c.width, c.height, v, { labels: live.current.zi >= 2 ? "major" : "none", me, heading: heading(me), boat, people, waypoints: live.current.waypoints, dpr });
+        const { people, boat, baits } = peopleOf({ getMe: getWorldPos, getMarks: live.current.getMarks });
+        drawWorldMapFrame(ctx, c.width, c.height, v, { labels: live.current.zi >= 2 ? "major" : "none", me, heading: heading(me), boat, people, waypoints: live.current.waypoints, dpr, baits });
       }
       raf = requestAnimationFrame(draw);
     };

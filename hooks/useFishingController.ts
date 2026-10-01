@@ -6,6 +6,8 @@ import { isWildBoatSpot } from "@/lib/game/world/boat";
 import { useCastSession, type CastSession, type CastView } from "@/hooks/useCastSession";
 import { useFishing, type FishingData } from "@/hooks/useFishing";
 import { useFishingExtras, type FishingExtras } from "@/hooks/useFishingExtras";
+import { useGroundbaitSpots } from "@/hooks/useGroundbaitSpots";
+import type { GroundbaitSpotView } from "@/lib/game/fishing/groundbait-spots";
 import { BOAT_DECK_SPOT } from "@/lib/game/maps/pond";
 import { serverNow } from "@/lib/game/farm/clock";
 import {
@@ -71,6 +73,8 @@ export interface FishingController {
   pickGroundbait: (item: string) => void;
   /** 0110: throw one bag at this pond cell, or (no cell) where I last fished (the pond, Sông Cái or the wild river). */
   throwGroundbait: (item: string, cell?: { col: number; row: number }) => void;
+  /** 0117: the room's active ổ thính (anyone fishing within 48 px of one feels it), refreshed after my throws. */
+  groundbaitSpots: GroundbaitSpotView[];
   /** 0110: Sổ tay câu cá (null: not bought, or an error). */
   loadNotebook: () => Promise<Notebook | null>;
   /** fishing_board for this room (the records panel). */
@@ -338,6 +342,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   const equipSlot = useCallback((slot: GearSlot, item: string | null) => void run(() => mountSlot(slot, item)), [run, mountSlot]);   // 0110
   // 0110: thính — the one picked in the bag (or the first with bags), thrown at the pond's edge or where I last fished
   const [gbPick, setGbPick] = useState<string | null>(null);
+  const { spots: groundbaitSpots, reload: reloadSpots } = useGroundbaitSpots(token, roomId);   // 0117
   const gbItems = catalog?.items.filter((i) => i.kind === "groundbait") ?? [];
   const groundbaitReady = state
     ? (gbPick && groundbaitCount(state, gbPick) > 0 ? gbPick : gbItems.find((i) => groundbaitCount(state, i.id) > 0)?.id ?? null)
@@ -349,7 +354,8 @@ export function useFishingController({ token, roomId, accountId, canvas, current
       return;
     }
     if (await throwBag(roomId, item, spot)) toastRef.current(groundbaitText(itemName(item)));
-  }), [run, throwBag, roomId, itemName]);
+    reloadSpots();                                                                         // 0117: a refused throw too (someone else's)
+  }), [run, throwBag, roomId, itemName, reloadSpots]);
   // 0115: the rods one by one
   const rods = useMemo<RodActions>(() => ({
     mount: (rodId, slot, item) => void run(async () => {
@@ -558,6 +564,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     groundbaitReady,
     pickGroundbait: setGbPick,
     throwGroundbait,
+    groundbaitSpots,
     loadNotebook,
     repair,
     net,

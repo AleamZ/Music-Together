@@ -131,7 +131,7 @@ export function describeItem(it: ShopItem): string {
       return pct > 0 || ease > 0 ? `Thu cá nhanh hơn ${pct}% · cá dễ kéo hơn ${ease} bậc` : "Thu cá bình thường (không có máy: chậm hơn)";
     }
     case "groundbait":
-      return "Rải ở chỗ câu: 10 phút, loài thích thính này cắn nhiều gấp 3";
+      return "Rải thành ổ thính ở chỗ câu: 10 phút (rải thêm cùng loại: tới 20 phút), ai câu trong ổ cũng được — loài thích thính này cắn nhiều gấp 3";   // 0117
     case "fishbook":
       return "Ghi tập tính từng loài: lưỡi, mồi, thính ưa thích, giờ cắn câu";
     case "bobber": {

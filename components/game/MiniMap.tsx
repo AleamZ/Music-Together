@@ -42,9 +42,12 @@ export default function MiniMap({
   mapId,
   getLocalPos,
   onOpenMap,
+  getBaits,
 }: {
   mapId: MapId;
   getLocalPos: () => Vec | null;
+  /** 0117: the room's ổ thính on this map (map px), a dot of the kind's tint. */
+  getBaits?: () => ReadonlyArray<{ x: number; y: number; color: string }>;
   /** P4: open the world map (the button carries the M hotkey). */
   onOpenMap?: () => void;
 }) {
@@ -52,6 +55,10 @@ export default function MiniMap({
   const [sizeKey, setSizeKey] = useState<MiniMapSize>(getInitialSize);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+  const baitsRef = useRef(getBaits);
+  useEffect(() => {
+    baitsRef.current = getBaits;
+  });
 
   const map = getMap(mapId);
   const mapW = map.width;
@@ -138,6 +145,17 @@ export default function MiniMap({
         ctx.beginPath();
         ctx.arc(dx, dy, dotR - 0.5, 0, Math.PI * 2);
         ctx.fill();
+      }
+
+      // 0117: the ổ thính, a tinted dot ringed in the water's blue
+      for (const g of baitsRef.current?.() ?? []) {
+        ctx.strokeStyle = "#1f4e5f";
+        ctx.lineWidth = 1.5;
+        ctx.fillStyle = g.color;
+        ctx.beginPath();
+        ctx.arc(g.x * (miniW / mapW), g.y * (miniH / mapH), dotR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       }
 
       // Draw player position

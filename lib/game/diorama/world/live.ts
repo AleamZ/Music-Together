@@ -5,6 +5,7 @@ import { CO_TU_LOOK } from "@/lib/game/look";
 import { LOTS } from "@/lib/game/maps/khu-nha";
 import { pondDuckAt } from "@/lib/game/world/pond-life";
 import { RIVER } from "@/lib/game/river/geometry";
+import { GROUNDBAIT_RADIUS_PX } from "@/lib/game/fishing/gear";
 import type { Facing } from "@/lib/game/types";
 import { RIVER_LEVEL, ZONE_ELEV } from "@/lib/game/world/terrain";
 import { ZONES } from "@/lib/game/world/zones";
@@ -94,6 +95,7 @@ export class LiveLayer {
   private readonly ringGeo = new THREE.RingGeometry(0.8, 1, 24);
   private readonly discGeo = new THREE.CircleGeometry(1, 24);
   private readonly planeGeo = new THREE.PlaneGeometry(1, 1);
+  private readonly bubbleGeo = new THREE.IcosahedronGeometry(0.07, 0);                                  // 0117: the ổ thính's
   private readonly ambient: { fish: Array<{ g: THREE.Group; splash: THREE.Mesh; x: number; y: number; w: number; dir: number; seed: number }>; ducks: Array<{ c: Creature; a: number; r: number; speed: number }> };
   private frame = 0;
   private lastT = -1;
@@ -389,6 +391,40 @@ export class LiveLayer {
 
     for (const n of live.nets ?? []) this.net(n, people, t, tm, dt, reduced);
 
+    // 0117: the ổ thính — a tinted patch on the water as wide as it works, bubbles rising in it, its label above
+    for (const gb of live.groundbait ?? []) {
+      const e = this.get(`gb:${gb.id}`, `${gb.color}`, () => new THREE.Group(), () => {
+        const mat = new THREE.MeshBasicMaterial({ color: gb.color, transparent: true, opacity: 0.38, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+        mat.userData.own = true;
+        const patch = new THREE.Mesh(this.discGeo, mat);
+        patch.scale.setScalar(U(GROUNDBAIT_RADIUS_PX));
+        patch.renderOrder = 2;
+        const rim = new THREE.Mesh(this.ringGeo, mat);
+        rim.scale.setScalar(U(GROUNDBAIT_RADIUS_PX));
+        const bubbles = Array.from({ length: 12 }, () => new THREE.Mesh(this.bubbleGeo, this.mats.foam));
+        return { patch, rim, bubbles, label: null as THREE.Sprite | null, text: "" };
+      });
+      const p = e.data as { patch: THREE.Mesh; rim: THREE.Mesh; bubbles: THREE.Mesh[]; label: THREE.Sprite | null; text: string };
+      if (!p.patch.parent) e.obj.add(p.patch, p.rim, ...p.bubbles);
+      if (p.text !== gb.label) {
+        if (p.label) e.obj.remove(p.label);
+        p.label = this.labels.sprite(gb.label, "name", 0.36);
+        p.label.position.y = 1.5;
+        e.obj.add(p.label);
+        p.text = gb.label;
+      }
+      e.obj.position.set(U(gb.x), this.waterY(gb.x, gb.y) + 0.12, U(gb.y));
+      p.rim.scale.setScalar(U(GROUNDBAIT_RADIUS_PX) * (reduced ? 1 : 1 + Math.sin(tm / 700) * 0.03));
+      const n = 4 + 2 * Math.min(3, gb.stacks);
+      p.bubbles.forEach((m, i) => {
+        m.visible = i < n;
+        const k = reduced ? 0.4 : ((tm / (1300 + (i * 211) % 700)) + i * 0.37) % 1;
+        const a = i * 2.399, rad = U(GROUNDBAIT_RADIUS_PX) * 0.7 * Math.sqrt((i * 0.618) % 1);
+        m.position.set(Math.cos(a) * rad, 0.04 + k * 0.5, Math.sin(a) * rad);
+        m.scale.setScalar(0.5 + k * 0.7);
+      });
+    }
+
     const petSlots = new Map<string, number>();
     for (const pet of live.pets ?? []) {
       const { e, c } = this.creature(`pet:${pet.id}`, petKey(pet.species, pet.look), () => petModel(this.mats, pet.species, pet.look));
@@ -681,6 +717,7 @@ export class LiveLayer {
     this.ringGeo.dispose();
     this.discGeo.dispose();
     this.planeGeo.dispose();
+    this.bubbleGeo.dispose();
     this.lineMat.dispose();
     this.ropeMat.dispose();
     this.netGeo.dispose();

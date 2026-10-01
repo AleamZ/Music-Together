@@ -146,6 +146,8 @@ import SalonModal from "./SalonModal";
 import RatChip from "./farm/RatChip";
 import { FarmTasksButton } from "./farm/FarmTasks";
 import FishingHud, { CoinsChip } from "./fishing/FishingHud";
+import GroundbaitHud from "./fishing/GroundbaitHud";
+import { spotPoint, tintOf } from "@/lib/game/fishing/groundbait-spots";
 import FishingOverlays from "./fishing/FishingOverlays";
 import ExploreOverlays from "./river/ExploreOverlays";                                          // v22 (0086)
 import { useExplore } from "@/hooks/useExplore";                                                 // v22 (0086)
@@ -1365,6 +1367,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         onNet={fishing.netReady && fishing.cast.phase === "idle" ? fishing.throwNet : null}
         onGroundbait={fishing.groundbaitReady && fishing.cast.phase === "idle"
           ? (cell) => fishing.throwGroundbait(fishing.groundbaitReady!, cell) : null} />{/* 0110 */}
+      <GroundbaitHud spots={fishing.groundbaitSpots} canvas={getCanvas} hidden={blocking || faint !== null || trip !== null} />{/* 0117: ổ thính */}
       {prompt && !blocking && !(compact && fishing.cast.phase !== "idle") && (
         <button
           type="button"
@@ -1400,7 +1403,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       <RotateOverlay />
 
       <div className={`pointer-events-none absolute bottom-18 right-3 z-10 ${compact ? "!hidden" : ""} ${miniOpen === false ? "hidden" : miniOpen ? "block" : "hidden sm:block"} pointer-coarse:hidden`}>
-        {inWorld ? <WorldMiniMap getWorldPos={getWorldPos} getMarks={getMapMarks} zone={zone} waypoints={wpMarks} onOpenMap={openWorldMap} /> : <MiniMap mapId={travel.mapId} getLocalPos={() => canvasRef.current?.localPos() ?? null} onOpenMap={openWorldMap} />}
+        {inWorld ? <WorldMiniMap getWorldPos={getWorldPos} getMarks={getMapMarks} zone={zone} waypoints={wpMarks} onOpenMap={openWorldMap} /> : <MiniMap mapId={travel.mapId} getLocalPos={() => canvasRef.current?.localPos() ?? null} onOpenMap={openWorldMap}
+          getBaits={() => fishing.groundbaitSpots.flatMap((g) => { const p = spotPoint(g, { world: false, mapId: travel.mapId }); return p ? [{ ...p, color: tintOf(g.item) }] : []; })} />}
       </div>
       <button type="button" className={`pch-btn pointer-events-auto absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.5rem,env(safe-area-inset-top))] z-10 hidden h-11 min-w-11 px-2 py-1 font-vt text-lg ${compact ? "" : "pointer-coarse:inline-flex pointer-coarse:items-center pointer-coarse:justify-center"}` } onClick={openWorldMap} aria-label="Mở bản đồ thế giới">🗺️</button>
 

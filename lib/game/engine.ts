@@ -10,6 +10,8 @@ import { drawRat, ratFrame } from "@/lib/game/art/rats";
 import { drawBedCue, drawHoleCue } from "@/lib/game/art/gather-art";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { drawNetThrower } from "@/lib/game/art/netthrow";
+import { drawGroundbaitSpot } from "@/lib/game/art/groundbait";                                         // 0117
+import { spotAt, spotLabel, spotLabel3d, spotPoint, tintHex, tintOf, type GroundbaitSpotView } from "@/lib/game/fishing/groundbait-spots";
 import { facingTowards, netAlive, type NetShow, type NetState } from "@/lib/game/fishing/netcast";
 import { serverNow } from "@/lib/game/farm/clock";
 import { nearestRat, promptTarget, RAT_PROMPT_RANGE, ratAt, ratInteractable, type FieldRats } from "@/lib/game/farm/rats";
@@ -358,6 +360,27 @@ export class GameEngine {
     this.extras = fn;
   }
 
+  /** 0117: the room's ổ thính as the server has them (map px; the wild in world px), placed each frame: the zone's
+   *  origin added on the unified world, only those of this map on a per-map game. */
+  private gbSpots: readonly GroundbaitSpotView[] = [];
+  setGroundbait(spots: readonly GroundbaitSpotView[]): void {
+    this.gbSpots = spots;
+  }
+  private gbPlaced(): Array<{ at: Vec; spot: GroundbaitSpotView }> {
+    const now = Date.now(), view = { world: this.worldMap !== null, mapId: this.map.id as string };
+    const out: Array<{ at: Vec; spot: GroundbaitSpotView }> = [];
+    for (const spot of this.gbSpots) {
+      if (spot.untilMs <= now) continue;
+      const at = spotPoint(spot, view);
+      if (at) out.push({ at, spot });
+    }
+    return out;
+  }
+  /** 0117: the ổ thính my feet are in (the nearest within 48 px), or null. */
+  groundbaitHere(): GroundbaitSpotView | null {
+    return spotAt(this.gbPlaced(), this.local.pos, Date.now())?.spot ?? null;
+  }
+
   /** Diorama prototype: a 3D view draws the world instead of the 2D canvas (null = 2D). The game itself — input,
    *  movement, collision, the network — is unchanged; the view only reads the state each frame. */
   private view3d: View3D | null = null;
@@ -505,6 +528,8 @@ export class GameEngine {
         look: { variant: p.look.variant, form: p.look.form, head: p.look.head, neck: p.look.neck, body: p.look.body } })),        // P4
       anglers: this.anglersFrame(t),                                                                            // P4
       nets: this.netsFrame(t),
+      groundbait: this.gbPlaced().map((p) => ({ id: p.spot.id, x: p.at.x, y: p.at.y, color: tintHex(p.spot.item), stacks: p.spot.stacks,
+        label: spotLabel3d(p.spot, Date.now()) })),                                                             // 0117
     };
   }
 
@@ -578,7 +603,7 @@ export class GameEngine {
   }
 
   /** P4 world map: the others I can see (display px, world px in world mode) and whether I am in the boat. */
-  mapMarks(): { others: Array<{ id: string; x: number; y: number }>; boat: boolean } {
+  mapMarks(): { others: Array<{ id: string; x: number; y: number }>; boat: boolean; baits?: Array<{ x: number; y: number; color: string }> } {
     const t = performance.now(), others: Array<{ id: string; x: number; y: number }> = [];
     for (const e of this.world.roster.values()) {
       if (e.id === this.opts.localId) continue;
@@ -586,7 +611,8 @@ export class GameEngine {
       if (!a || !this.visible(e.id, t)) continue;
       others.push({ id: e.id, x: a.display.x, y: a.display.y });
     }
-    return { others, boat: this.worldMap !== null && this.afloat };
+    const baits = this.gbPlaced().map((p) => ({ x: p.at.x, y: p.at.y, color: tintOf(p.spot.item) }));           // 0117
+    return { others, boat: this.worldMap !== null && this.afloat, baits };
   }
 
   /** Where I stand (world px). */
@@ -1777,6 +1803,11 @@ export class GameEngine {
       if (l.x0 - camX < -24 || l.x0 - camX > this.vw + 24 || l.y0 - camY < -24 || l.y0 - camY > this.vh + 24) continue;
       drawLeap(b, { ...l, x0: l.x0 - camX, y0: l.y0 - camY, x1: l.x1 - camX, y1: l.y1 - camY }, t, reduced);
     }
+    // 0117: the room's ổ thính, on the water under the people
+    for (const g of this.gbPlaced()) {
+      if (g.at.x - camX < -60 || g.at.x - camX > this.vw + 60 || g.at.y - camY < -60 || g.at.y - camY > this.vh + 60) continue;
+      drawGroundbaitSpot(b, g.at.x - camX, g.at.y - camY, tintOf(g.spot.item), g.spot.stacks, t, reduced);
+    }
 
     const items: Array<{ y: number; draw: () => void }> = [];
     const amp = swayAmp(INDOOR_MAPS.has(this.map.id) ? null : this.weather, reduced, this.weatherFx);
@@ -2140,6 +2171,21 @@ export class GameEngine {
       c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
       c.fillStyle = "#fbf3dc";
       c.fillText(label, x, y + s * 0.3);
+    }
+
+    // 0117: each ổ thính's label over its patch: the kind, the time left, who threw it
+    const gbNow = Date.now();
+    for (const g of this.gbPlaced()) {
+      const text = spotLabel(g.spot, gbNow);
+      const [x, y] = dev(g.at.x, g.at.y - 46);
+      const w = Math.round(c.measureText(text).width + 3 * s), h = Math.round(4.8 * s);
+      if (x + w / 2 < 0 || x - w / 2 > this.canvas.width || y + h < 0 || y - h > this.canvas.height) continue;
+      c.fillStyle = "rgba(24, 58, 72, 0.86)";
+      c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
+      c.fillStyle = tintOf(g.spot.item);
+      c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), Math.max(2, Math.round(s)), h);
+      c.fillStyle = "#fbf3dc";
+      c.fillText(text, x, y + s * 0.3);
     }
 
     // the card tables' labels: the lobby's line over each table (v16 spec §5)

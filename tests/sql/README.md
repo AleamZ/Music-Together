@@ -188,6 +188,12 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
 
 ## Câu cá v3 (0110)
 
+- `groundbait-spots-smoke.sql` (0117, ổ thính: `psql -f tests/sql/groundbait-spots-smoke.sql` after the chain): the spots
+  are private, `groundbait_spots()` guarded; another player in the room feels a spot within 48 px (their cast answers
+  it), not outside; rooms isolated; the read RPC's fields; refresh (+10 min, 20-minute cap, stacks ≤ 3, `spot full`
+  spends nothing, the first thrower kept); a different kind is a separate spot (nearest centre wins); the limits (2 new
+  per thrower, a refresh still allowed; 8 per room + map; another room unaffected); expiry and the sweep.
+  `fishing-v3-smoke.sql` re-applies 0117 after 0115 and asserts the room's spot (not only mine).
 - `fishing-v3-smoke.sql` (0110: the parts, the rods' and lines' limits, Cần gỗ the kit, `fish_habits` not readable by
   anon, the 27 species on 0101's scale; a bare rod refused (`rod needs parts`, nothing spent), parts filling their
   slots, a bought rod waiting for them; `fishing_equip` (slot, kind, ownership, unmounting, a broken rod, the bait);
@@ -222,4 +228,4 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   mailed rod becomes instances; two parallel mounts of the last unit over `dblink` — one wins). Re-runs 0115 twice with
   `\i`, needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json` and the `dblink` contrib (created and dropped); deletes
   its accounts. `fishing-v3-smoke.sql` re-applies 0115 after 0110 / 0113 and mounts per rod; `econ-fishing-smoke.sql`
-  sets its rods as instances; `anticheat-guards.sql` calls the seven rod RPCs (103 guarded calls).
+  sets its rods as instances; `anticheat-guards.sql` calls the seven rod RPCs (103 guarded calls); 0117 adds `groundbait_spots` (104).
