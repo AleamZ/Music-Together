@@ -1,4 +1,4 @@
-import { extractSearchResults } from "@/lib/youtube/search";
+import { extractSearchResults, extractContinuationToken } from "@/lib/youtube/search";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -7,13 +7,28 @@ const INNERTUBE_CLIENT_VERSION = "2.20260918.00.00";
 // YouTube's "Type: Video" search filter — no channels / playlists / mixed shelves.
 const VIDEO_FILTER = "EgIQAQ==";
 const MAX_Q = 100;
-const CAP = 20;
+const CAP = 30;
 
 export async function GET(request: Request): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get("q") ?? "").trim();
-  if (!q || q.length > MAX_Q) return Response.json({ error: "Invalid query" }, { status: 400 });
+  const continuation = (searchParams.get("continuation") ?? "").trim();
+
+  if (!q && !continuation) return Response.json({ error: "Invalid query" }, { status: 400 });
+  if (q && q.length > MAX_Q) return Response.json({ error: "Invalid query" }, { status: 400 });
+
   try {
+    const bodyPayload = continuation
+      ? {
+          context: { client: { hl: "vi", gl: "VN", clientName: "WEB", clientVersion: INNERTUBE_CLIENT_VERSION } },
+          continuation,
+        }
+      : {
+          context: { client: { hl: "vi", gl: "VN", clientName: "WEB", clientVersion: INNERTUBE_CLIENT_VERSION } },
+          query: q,
+          params: VIDEO_FILTER,
+        };
+
     const res = await fetch("https://www.youtube.com/youtubei/v1/search?prettyPrint=false", {
       method: "POST",
       headers: {
@@ -27,17 +42,16 @@ export async function GET(request: Request): Promise<Response> {
         // datacenter (e.g. Vercel) request may otherwise get. Not a user credential.
         Cookie: "CONSENT=YES+1",
       },
-      body: JSON.stringify({
-        context: { client: { hl: "vi", gl: "VN", clientName: "WEB", clientVersion: INNERTUBE_CLIENT_VERSION } },
-        query: q,
-        params: VIDEO_FILTER,
-      }),
+      body: JSON.stringify(bodyPayload),
       next: { revalidate: 600 },
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return Response.json({ error: "Search failed" }, { status: 502 });
     const data: unknown = await res.json();
-    return Response.json({ results: extractSearchResults(data, CAP) });
+    return Response.json({
+      results: extractSearchResults(data, CAP),
+      continuation: extractContinuationToken(data),
+    });
   } catch {
     return Response.json({ error: "Search failed" }, { status: 502 });
   }

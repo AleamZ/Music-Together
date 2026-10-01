@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useChat } from "@/hooks/useChat";
 import type { ChatMessage } from "@/lib/chat";
 import { newFromOthers, notificationText } from "@/lib/chat-notify";
@@ -23,7 +23,10 @@ interface ChatPanelProps {
   room?: Room | null;
   onExpand?: () => void;
   isDrawer?: boolean;
+  isOpen?: boolean;
   onCloseDrawer?: () => void;
+  onUnreadChange?: (unread: number, hasServerNotice: boolean) => void;
+  onNewMessageToast?: (msg: ChatMessage) => void;
 }
 
 export default function ChatPanel({
@@ -35,13 +38,27 @@ export default function ChatPanel({
   room = null,
   onExpand,
   isDrawer = false,
+  isOpen = true,
   onCloseDrawer,
+  onUnreadChange,
+  onNewMessageToast,
 }: ChatPanelProps) {
   const { messages, send, remove, canDelete } = useChat(roomId, token, { accountId, isAdmin });
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
+  const unreadRef = useRef(0);
   const [notifyOn, setNotifyOn] = useState(true);
+
+  // Safely notify parent outside of render cycle
+  const notifyUnread = useCallback(
+    (count: number, serverNotice: boolean) => {
+      queueMicrotask(() => {
+        onUnreadChange?.(count, serverNotice);
+      });
+    },
+    [onUnreadChange]
+  );
 
   // Replying state
   const [replyingTo, setReplyingTo] = useState<{ id: string; username: string; body: string } | null>(null);
@@ -85,11 +102,15 @@ export default function ChatPanel({
   // Clear unread on visibility change when scrolled down
   useEffect(() => {
     function onVis() {
-      if (!document.hidden && atBottomRef.current) setUnread(0);
+      if (!document.hidden && atBottomRef.current && (!isDrawer || isOpen)) {
+        unreadRef.current = 0;
+        setUnread(0);
+        notifyUnread(0, false);
+      }
     }
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
-  }, []);
+  }, [isDrawer, isOpen, notifyUnread]);
 
   // Handle incoming messages
   useEffect(() => {
@@ -106,13 +127,25 @@ export default function ChatPanel({
     messages.forEach((m) => seenRef.current.add(m.id));
     const lastMsg = messages[messages.length - 1];
     const ownLast = !!lastMsg && lastMsg.account_id === accountId;
-    const away = !atBottomRef.current || (typeof document !== "undefined" && document.hidden);
+    const isClosedDrawer = isDrawer && !isOpen;
+    const away = isClosedDrawer || !atBottomRef.current || (typeof document !== "undefined" && document.hidden);
 
     if (fresh.length > 0 && away) {
-      setUnread((u) => u + fresh.length);
+      const next = unreadRef.current + fresh.length;
+      unreadRef.current = next;
+      setUnread(next);
+      const hasServer = fresh.some((m) => m.system === true || !m.account_id);
+      notifyUnread(next, hasServer);
+
+      const latest = fresh[fresh.length - 1];
+      if (onNewMessageToast) {
+        queueMicrotask(() => {
+          onNewMessageToast(latest);
+        });
+      }
+
       if (notifyOnRef.current) {
         playTing();
-        const latest = fresh[fresh.length - 1];
         notifyDesktop(latest.username, notificationText(latest));
       }
     }
@@ -120,22 +153,45 @@ export default function ChatPanel({
     if (atBottomRef.current || ownLast) {
       list?.scrollTo({ top: list.scrollHeight, behavior: ownLast ? "smooth" : "auto" });
     }
-    if (atBottomRef.current && !document.hidden) setUnread(0);
-  }, [messages, accountId]);
+    if (!isClosedDrawer && atBottomRef.current && !document.hidden) {
+      unreadRef.current = 0;
+      setUnread(0);
+      notifyUnread(0, false);
+    }
+  }, [messages, accountId, isDrawer, isOpen, notifyUnread, onNewMessageToast]);
+
+  useEffect(() => {
+    if (isOpen) {
+      unreadRef.current = 0;
+      setUnread(0);
+      notifyUnread(0, false);
+      setTimeout(() => {
+        if (listRef.current) {
+          listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+  }, [isOpen, notifyUnread]);
 
   function onScroll() {
     const list = listRef.current;
     if (!list) return;
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
     atBottomRef.current = atBottom;
-    if (atBottom && !document.hidden) setUnread(0);
+    if (atBottom && !document.hidden && (!isDrawer || isOpen)) {
+      unreadRef.current = 0;
+      setUnread(0);
+      notifyUnread(0, false);
+    }
   }
 
   function jumpToBottom() {
     const list = listRef.current;
     if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
     atBottomRef.current = true;
+    unreadRef.current = 0;
     setUnread(0);
+    notifyUnread(0, false);
   }
 
   function toggleNotify() {

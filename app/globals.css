@@ -32,6 +32,11 @@ body {
   background:
     radial-gradient(1200px 500px at 50% -10%, #f3ead0, transparent),
     linear-gradient(160deg, #ece3d0, #e2d6bd 70%, #d8c9aa);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center top;
+  min-height: 100vh;
   color: var(--foreground);
   font-family: var(--font-eb-garamond), ui-serif, Georgia, serif;
 }
@@ -51,6 +56,23 @@ body {
   100% { transform: translateY(-150px) scale(1.4); opacity: 0; }
 }
 .animate-float-up { animation: float-up 2s ease-out forwards; }
+
+/* ===== Marquee text scroll on hover ===== */
+@keyframes text-marquee-scroll {
+  0%, 15% {
+    transform: translateX(0);
+  }
+  65%, 80% {
+    transform: translateX(var(--marquee-distance, 0px));
+  }
+  95%, 100% {
+    transform: translateX(0);
+  }
+}
+.animate-marquee-hover {
+  animation: text-marquee-scroll var(--marquee-duration, 5s) cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  will-change: transform;
+}
 
 /* ===== Retro brown scrollbars (sync with the salon UI) ===== */
 /* Firefox (scrollbar-color/width are inherited, so this covers all scroll areas) */

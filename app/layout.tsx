@@ -29,9 +29,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="vi"
-      className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${ebGaramond.variable} ${playfair.variable} ${pixel.variable} ${vt323.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${ebGaramond.variable} ${playfair.variable} ${pixel.variable} ${vt323.variable} min-h-full antialiased`}
     >
-      <body className="min-h-full">
+      <body className="min-h-screen">
         <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('music-together:theme');if(t==='cozy'||t==='dragon')document.documentElement.setAttribute('data-theme',t)}catch(e){}" }} />
         {IS_PROD && <script dangerouslySetInnerHTML={{ __html: DISABLE_REACT_DEVTOOLS_SCRIPT }} />}
         <DevtoolsGuard>

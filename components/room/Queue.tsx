@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { bumpToTop, deleteItem, reorderItem, type QueueItem } from "@/lib/supabase";
 import { positionBetween } from "@/lib/queue";
+import ScrollTitle from "./ScrollTitle";
 
 function Spinner() {
   return <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-burgundy border-t-transparent align-middle" />;
@@ -65,9 +66,10 @@ export default function Queue({ queue, currentId, canManage, roomId, token }: {
                 ? <img src={q.thumbnail_url} alt="" className="h-9 w-12 shrink-0 rounded border border-gold-200/30 object-cover shadow-2xs" />
                 : <span className="flex h-9 w-12 shrink-0 items-center justify-center rounded bg-burgundy text-cream">▶</span>}
               <div className="min-w-0 flex-1">
-                <div className="line-clamp-2 text-sm font-medium leading-snug text-ink" title={q.title || q.youtube_video_id}>
-                  {q.title || q.youtube_video_id}
-                </div>
+                <ScrollTitle
+                  text={q.title || q.youtube_video_id}
+                  className="text-sm font-medium leading-snug text-ink"
+                />
                 <div className="mt-1 truncate text-xs text-gold flex items-center gap-1.5">
                   <span>do <b className="font-semibold text-ink">{q.added_by_name}</b></span>
                   {q.is_replay && (

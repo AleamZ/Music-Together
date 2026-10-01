@@ -68,13 +68,59 @@ export function extractSearchResults(data: unknown, cap = 20): SearchResult[] {
   return out;
 }
 
+/** Pure: find the next-page continuation token inside an InnerTube search response. */
+export function extractContinuationToken(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const obj = data as Record<string, unknown>;
+  const cir = obj.continuationItemRenderer as
+    | {
+        token?: unknown;
+        continuationEndpoint?: { continuationCommand?: { token?: unknown } };
+      }
+    | undefined;
+  if (cir && typeof cir === "object") {
+    const token =
+      (typeof cir.token === "string" && cir.token) ||
+      (typeof cir.continuationEndpoint?.continuationCommand?.token === "string" &&
+        cir.continuationEndpoint.continuationCommand.token);
+    if (token) return token;
+  }
+  if (Array.isArray(data)) {
+    for (const v of data) {
+      const found = extractContinuationToken(v);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const v of Object.values(obj)) {
+    const found = extractContinuationToken(v);
+    if (found) return found;
+  }
+  return null;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  continuation: string | null;
+}
+
 /** Client: search via the same-origin route. Throws on failure (AbortError passes through). */
-export async function fetchSearchResults(q: string, signal?: AbortSignal): Promise<SearchResult[]> {
-  const res = await fetch(`/api/yt/search?q=${encodeURIComponent(q)}`, { signal });
+export async function fetchSearchResults(
+  q: string,
+  signal?: AbortSignal,
+  continuation?: string | null,
+): Promise<SearchResponse> {
+  const url = continuation
+    ? `/api/yt/search?continuation=${encodeURIComponent(continuation)}`
+    : `/api/yt/search?q=${encodeURIComponent(q)}`;
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     const d = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(d.error ?? "Không tìm được");
   }
-  const d = (await res.json()) as { results?: SearchResult[] };
-  return d.results ?? [];
+  const d = (await res.json()) as { results?: SearchResult[]; continuation?: string | null };
+  return {
+    results: d.results ?? [],
+    continuation: d.continuation ?? null,
+  };
 }
