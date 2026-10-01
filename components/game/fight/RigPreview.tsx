@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { RIG_H, RIG_W, poseData, type PoseId } from "@/lib/game/fight/render/poses";
 import { paintFighter } from "@/lib/game/fight/render/rig";
 import { paintChibiFighter } from "@/lib/game/fight/render/chibi";
 import { readFighterArt } from "@/lib/game/fight/render/fighter-art";
 import type { Look } from "@/lib/game/types";
+import { readFight3D, subscribeFight3D } from "@/lib/game/fight/render/fight-view3d";
 import { prefersReduced } from "./Arena";
+import RigPreview3D from "./RigPreview3D";
 
 /** A fighter on a small canvas cycling through keyframes (a special's preview, the master performing a kata). Reduced
  *  motion shows the middle keyframe still. `step` forces a keyframe (the kata advances it per note). */
@@ -22,9 +24,11 @@ export default function RigPreview({ look, style, rank, poses, scale = 2, ms = 1
   label: string;
 }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
+  const in3d = useSyncExternalStore(subscribeFight3D, readFight3D, () => false);
   const key = poses.join(",");
   const list = useMemo(() => (key === "" ? [] : key.split(",")), [key]);
   useEffect(() => {
+    if (in3d) return;
     const cv = ref.current;
     const ctx = cv?.getContext("2d") ?? null;
     if (!cv || !ctx || list.length === 0) return;
@@ -47,7 +51,8 @@ export default function RigPreview({ look, style, rank, poses, scale = 2, ms = 1
     draw(0);
     const id = window.setInterval(() => draw(++i), ms);
     return () => window.clearInterval(id);
-  }, [list, look, style, rank, ms, step]);
+  }, [list, look, style, rank, ms, step, in3d]);
+  if (in3d) return <RigPreview3D look={look} style={style} rank={rank} poses={list} w={RIG_W * scale} h={RIG_H * scale} ms={ms} step={step} dim={dim} label={label} />;
   return (
     <canvas
       ref={ref}

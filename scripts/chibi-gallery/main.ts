@@ -4,6 +4,10 @@ import { ChibiRig } from "@/lib/game/diorama/character/rig";
 import { chibiSpec } from "@/lib/game/diorama/character/spec";
 import { poseAt } from "@/lib/game/diorama/character/pose";
 import { addVoxelLights } from "@/lib/game/diorama/character/voxel-material";
+import { ModelMats } from "@/lib/game/diorama/world/models";
+import { enemyAnim } from "@/lib/game/diorama/world/enemies";
+import { applyEnemyPose, enemyModel } from "@/lib/game/diorama/world/enemies3d";
+import { fightSheets } from "./fight-sheets";
 import { closeupSheet, coverageMd, gallerySheets, type Sheet, type Tile } from "./sheets";
 import { wave1Sheets } from "./wave1";
 import { fishSpeciesGeometry } from "@/lib/game/diorama/world/models";
@@ -27,6 +31,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   addVoxelLights(scene, 2);
   const cam = new THREE.PerspectiveCamera(30, tw / th, 0.1, 50);
   const f = new ChibiFactory(400);
+  const mats = new ModelMats();
   tiles.forEach((t, i) => {
     if (t.fish) {                                                           // wave 1: a fish species, side on
       const m = new THREE.Mesh(fishSpeciesGeometry(t.fish), heldMaterial());
@@ -35,6 +40,15 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
       cam.position.set(0, 0.25, 1.6); cam.lookAt(0, 0, 0);
       r.render(scene, cam);
       scene.remove(m);
+    } else if (t.enemy) {
+      const c = enemyModel(mats, t.enemy.id);
+      applyEnemyPose(c, enemyAnim(t.enemy.id, t.enemy.anim, t.enemy.t));
+      c.root.rotation.y = t.yaw;
+      scene.add(c.root);
+      const hh = Math.max(1.6, c.height);
+      cam.position.set(0, hh * 0.75, hh * 2.6 + 2); cam.lookAt(0, hh * 0.45, 0);
+      r.render(scene, cam);
+      scene.remove(c.root);
     } else {
     const rig = new ChibiRig();
     const got = f.acquire(chibiSpec(t.look), t.detail ?? "high");
@@ -42,7 +56,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
     rig.root.rotation.y = t.yaw;
     if (t.held) rig.setHeld(t.held.R, t.held.L);
     if (t.rodLook) rig.setRodLook(t.rodLook);
-    const pose = t.act ? poseAt(t.act, t.time ?? 0.2) : poseAt("idle", 0.2, 0, true);
+    const pose = t.pose ? t.pose : t.act ? poseAt(t.act, t.time ?? 0.2) : poseAt("idle", 0.2, 0, true);
     rig.apply(t.held?.L === "umbrella" ? umbrellaArm(pose) : pose);
     scene.add(rig.root);
     const z = t.zoom ?? 1, fy = t.focusY ?? 1.08;
@@ -66,7 +80,7 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   r.dispose();
   return out.toDataURL("image/png");
 };
-const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets(), ...wave1Sheets()];
+const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets(), ...wave1Sheets(), ...fightSheets()];
 W.sheetNames = () => SHEETS.map((s) => s.name);
 W.coverage = () => coverageMd(SHEETS);
 W.renderNamed = (n: string) => {
