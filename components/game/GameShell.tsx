@@ -72,6 +72,7 @@ import { useStory } from "@/lib/game/story/useStory";                           
 import { useFold } from "./hud/useFold";
 import { HudGroupItems, HudMenu, HudTabs, useHudGroup, type HudGroup } from "./hud/HudMenu";
 import { RotateOverlay, TouchControls } from "./hud/TouchHud";
+import { ChatFab, MobileDrawer, MobileMenuButton, MobileSheet, useCompactHud, type DrawerItem } from "./hud/MobileHud";
 import ForestHud from "./forest/ForestHud";
 import CityMapModal from "./CityMapModal";
 import CardOverlays from "./cards/CardOverlays";
@@ -267,6 +268,12 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   const [hudSlot, setHudSlot] = useState<HTMLDivElement | null>(null);
   // the HUD menu: grouped entry points (⚙️ 🎒 🧭 📜), every group closed until the player opens one (kept per browser)
   const [hudGroup, setHudGroup] = useHudGroup();
+  // phones held sideways: the compact HUD (components/game/hud/MobileHud.tsx) — a ☰ drawer and one sheet at a time
+  const compact = useCompactHud();
+  const [drawer, setDrawer] = useState(false);
+  const [sheet, setSheet] = useState<string | null>(null);
+  const closeSheet = useCallback(() => setSheet(null), []);
+  const closeDrawer = useCallback(() => setDrawer(false), []);
   // the minimap folds away (kept per browser); open from `sm` up until chosen
   const [miniOpen, setMiniOpen] = useFold("mt.hud.minimap");
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1096,6 +1103,118 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
     },
   ];
 
+  // the HUD's parts, placed in the top bar on a computer or in the ☰ sheets on a phone
+  const statusCard = (
+          <div className="pch pointer-events-auto flex flex-col gap-1.5 p-1.5 font-vt leading-none" data-testid="player-hud">
+            <div className="flex items-center gap-2">
+              <SpritePreview look={myLook} scale={2} className="shrink-0 rounded-sm bg-parchment" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-xl" title={`${myBadges ? `${myBadges} ` : ""}${myName}`}>
+                    {myBadges ? `${myBadges} ` : ""}{myName}
+                  </span>
+                  <button type="button" className="pch-btn relative shrink-0 px-1.5 py-0.5 text-base tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng (1)" data-testid="profile-hud"
+                    data-hotkey="profile" onClick={() => { setPanel("profile"); void progress.reload(); }}>
+                    ⭐ {myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span><KeyBadge id="profile" />
+                  </button>
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-base">
+                  <CoinsChip state={fishing.data.state} />
+                  <WeatherChip
+                    weather={weather}
+                    tempC={weatherSource.tempC}
+                    isOwner={isOwner}
+                    needsLocation={weatherSource.status === "needed"}
+                    onOpenLocation={() => setWeatherDialog(true)}
+                  />
+                </div>
+              </div>
+            </div>
+            {!connected && <span className="text-sm opacity-80">Đang kết nối thế giới…</span>}
+            {/* the body: hunger, thirst and stamina; then the passing states and the fishing / farm line */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t-2 border-parchment-300 pt-1.5 text-sm">
+              <VitalsHud state={vitals.state} nag={false} />
+              <StaminaHud stamina={profs.stamina} value={profs.staminaValue} state={profs.state} nowMs={profs.nowMs}
+                onOpen={() => setPanel("professions")} />{/* v21 (0077) */}
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm empty:hidden">
+              <VitalsNag state={vitals.state} />
+              <HeatChips chips={heat.chips} />
+              {motel.rested && <span data-testid="rest-chip" title={`Ngủ ngon: ${REST_EFFECT_TEXT}`} className="whitespace-nowrap">😴 Ngủ ngon</span>}
+              {rain.chips.map((c) => (
+                <span key={c.key} data-testid={`rain-${c.key}`} title={c.title}
+                  className={`whitespace-nowrap tabular-nums ${c.key === "cold" ? "text-sky-800" : ""}`}>{c.text}</span>
+              ))}
+              <FishingHud
+                state={fishing.data.state}
+                failed={fishing.data.failed}
+                onReload={() => void fishing.data.reload()}
+                riceLine={map.id === "field" && farm.data.state
+                  ? produceSummary(farm.data.state.mine.rice, farm.data.state.mine.produce, critterCount(farm.data.state.mine.critters))
+                  : null}
+              />
+            </div>
+          </div>
+  );
+  const rideBox = (
+            <div className="pch pointer-events-auto p-1 font-vt text-lg leading-none empty:hidden [&_.pch-btn]:inline-flex [&_.pch-btn]:h-9 [&_.pch-btn]:min-w-9 [&_.pch-btn]:items-center [&_.pch-btn]:justify-center [&_.pch-btn]:pointer-coarse:h-11 [&_.pch-btn]:pointer-coarse:min-w-11">
+              <RideButton
+                owned={vehicles.owned}
+                riding={riding}
+                last={lastRide}
+                keyEnabled={!blocking}
+                onMount={mountOwn}
+                onDismount={dismount}
+              />
+            </div>
+  );
+  const hudSlotBox = (
+          <div ref={setHudSlot} className="pointer-events-auto flex flex-col items-start gap-1.5 empty:hidden" data-testid="hud-slot">
+            <AnticheatChip secondsLeft={anticheat.secondsLeft} />
+            {cards.seated && <CardSeatChip table={cards.seatTable} me={accountId} onOpen={() => cards.seated && cards.openPanel(cards.seated)} />}
+          </div>
+  );
+  const countsBox = (
+        <div className="flex flex-col items-center gap-1">
+          <MapCounts counts={counts} world={inWorld} />
+          {map.id === "field" && (
+            <RatChip live={farm.data.state?.rats?.live.length ?? 0} onOpen={() => farm.openPanel({ kind: "handbook", tab: "rats" })} />
+          )}
+        </div>
+  );
+  const nowPlaying = (
+        <HudNowPlaying
+          room={room}
+          current={derived.current}
+          djName={djName}
+          canControl={role.canControlPlayback}
+          playback={playback}
+          canOpenSettings={role.isAdmin || role.isDj}
+          onOpenQueue={() => setPanel("queue")}
+          onOpenBoard={() => setPanel("board")}
+          onOpenSettings={() => setPanel("settings")}
+        />
+  );
+  const chatBar = (
+        <HudChatBar
+          onSend={(text) => send(formatChatMessageBody(text))}
+          onReact={react}
+          onOpenChat={() => setPanel("chat")}
+          onOpenMembers={() => setPanel("members")}
+          onlineCount={onlineIds.length}
+          onExitGame={onExitGame}
+        />
+  );
+  const drawerItems: DrawerItem[] = [
+    { id: "status", icon: "🧑", label: "Trạng thái" },
+    ...hudGroups.map((g) => ({ id: g.id, icon: g.icon, label: g.label, badge: g.badge })),
+    { id: "map", icon: "🗺️", label: "Bản đồ", onPick: openWorldMap },
+    { id: "ride", icon: "🚗", label: "Phương tiện" },
+    { id: "chat", icon: "💬", label: "Chat" },
+    { id: "members", icon: "👥", label: `Thành viên (${onlineIds.length})`, onPick: () => setPanel("members") },
+    { id: "classic", icon: "🖥️", label: "Giao diện cũ", onPick: onExitGame },
+  ];
+
   return (
     <HudSlotContext.Provider value={hudSlot}>
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
@@ -1156,100 +1275,59 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       {inWorld && <ZoneToast zone={zone} />}{/* P2: the district I walk into */}
       {faint && <FaintOverlay untilMs={faint.until} serverNowMs={faint.serverNow} clientAtPerfMs={faint.at} onDone={endFaint} cause={faint.cause} count={vitalsState?.faintCount ?? 0} />}
 
+      {compact ? (
+        <>
+          <MobileMenuButton open={drawer} onOpen={() => { setSheet(null); setDrawer(true); }}
+            badge={hudGroups.some((g) => !!g.badge)}
+            vitals={{
+              hunger: vitals.state?.hunger ?? null, thirst: vitals.state?.thirst ?? null,
+              stamina: profs.staminaValue === null ? null : (profs.staminaValue / (profs.stamina?.max ?? 100)) * 100,
+              coins: fishing.data.state?.coins ?? null,
+            }} />
+          <MobileDrawer open={drawer} items={drawerItems} onClose={closeDrawer} onPick={(id) => { setDrawer(false); setSheet(id); }} />
+          <MobileSheet id="status" title="🧑 Trạng thái" open={sheet === "status"} onClose={closeSheet}>
+            <div className="flex flex-col gap-2 [&_[data-testid=player-hud]]:shadow-none">
+              {statusCard}
+              {countsBox}
+              <div className="flex flex-wrap gap-1.5">{nowPlaying}</div>
+            </div>
+          </MobileSheet>
+          {hudGroups.map((g) => (
+            <MobileSheet key={g.id} id={g.id} title={`${g.icon} ${g.label}`} open={sheet === g.id} onClose={closeSheet}>
+              <div className="flex flex-col gap-2">
+                {g.id === "quests" && hudSlotBox}
+                {g.content}
+              </div>
+            </MobileSheet>
+          ))}
+          <MobileSheet id="ride" title="🚗 Phương tiện" open={sheet === "ride"} onClose={closeSheet}>
+            <div className="flex flex-wrap items-start gap-1.5">{rideBox}</div>
+          </MobileSheet>
+          <MobileSheet id="chat" title="💬 Chat" open={sheet === "chat"} onClose={closeSheet}>
+            <div className="flex justify-center pt-1 [&_.w-\[min\(40rem\,calc\(100vw-1rem\)\)\]]:w-full">{chatBar}</div>
+          </MobileSheet>
+          {!drawer && sheet === null && <ChatFab onOpen={() => setSheet("chat")} />}
+        </>
+      ) : (
       <div className="pointer-events-none absolute left-[max(0.5rem,env(safe-area-inset-left))] right-[max(0.5rem,env(safe-area-inset-right))] top-[max(0.5rem,env(safe-area-inset-top))] z-10 flex flex-wrap items-start justify-between gap-2 pointer-coarse:right-16">
         {/* the left column: who I am and how I am (the status card), the toolbar, then the situational chips */}
         <div className="pointer-events-none flex w-[20rem] max-w-[calc(100vw-1rem)] flex-col items-stretch gap-1.5">
-          <div className="pch pointer-events-auto flex flex-col gap-1.5 p-1.5 font-vt leading-none" data-testid="player-hud">
-            <div className="flex items-center gap-2">
-              <SpritePreview look={myLook} scale={2} className="shrink-0 rounded-sm bg-parchment" />
-              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="min-w-0 flex-1 truncate text-xl" title={`${myBadges ? `${myBadges} ` : ""}${myName}`}>
-                    {myBadges ? `${myBadges} ` : ""}{myName}
-                  </span>
-                  <button type="button" className="pch-btn relative shrink-0 px-1.5 py-0.5 text-base tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng (1)" data-testid="profile-hud"
-                    data-hotkey="profile" onClick={() => { setPanel("profile"); void progress.reload(); }}>
-                    ⭐ {myLevel}<span className="sr-only"> Hồ sơ, cấp {myLevel}</span><KeyBadge id="profile" />
-                  </button>
-                </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-base">
-                  <CoinsChip state={fishing.data.state} />
-                  <WeatherChip
-                    weather={weather}
-                    tempC={weatherSource.tempC}
-                    isOwner={isOwner}
-                    needsLocation={weatherSource.status === "needed"}
-                    onOpenLocation={() => setWeatherDialog(true)}
-                  />
-                </div>
-              </div>
-            </div>
-            {!connected && <span className="text-sm opacity-80">Đang kết nối thế giới…</span>}
-            {/* the body: hunger, thirst and stamina; then the passing states and the fishing / farm line */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t-2 border-parchment-300 pt-1.5 text-sm">
-              <VitalsHud state={vitals.state} nag={false} />
-              <StaminaHud stamina={profs.stamina} value={profs.staminaValue} state={profs.state} nowMs={profs.nowMs}
-                onOpen={() => setPanel("professions")} />{/* v21 (0077) */}
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm empty:hidden">
-              <VitalsNag state={vitals.state} />
-              <HeatChips chips={heat.chips} />
-              {motel.rested && <span data-testid="rest-chip" title={`Ngủ ngon: ${REST_EFFECT_TEXT}`} className="whitespace-nowrap">😴 Ngủ ngon</span>}
-              {rain.chips.map((c) => (
-                <span key={c.key} data-testid={`rain-${c.key}`} title={c.title}
-                  className={`whitespace-nowrap tabular-nums ${c.key === "cold" ? "text-sky-800" : ""}`}>{c.text}</span>
-              ))}
-              <FishingHud
-                state={fishing.data.state}
-                failed={fishing.data.failed}
-                onReload={() => void fishing.data.reload()}
-                riceLine={map.id === "field" && farm.data.state
-                  ? produceSummary(farm.data.state.mine.rice, farm.data.state.mine.produce, critterCount(farm.data.state.mine.critters))
-                  : null}
-              />
-            </div>
-          </div>
+          {statusCard}
           {/* the HUD menu: a few grouped entry points (⚙️ Cài đặt · 🎒 Túi đồ · 🧭 Hoạt động · 📜 Nhiệm vụ), all closed for a
               newcomer; the ride button stays out as the one quick action */}
           <div className="pointer-events-none flex items-start gap-1.5">
             <HudMenu groups={hudGroups} open={hudGroup} onOpen={setHudGroup} />
-            <div className="pch pointer-events-auto p-1 font-vt text-lg leading-none empty:hidden [&_.pch-btn]:inline-flex [&_.pch-btn]:h-9 [&_.pch-btn]:min-w-9 [&_.pch-btn]:items-center [&_.pch-btn]:justify-center [&_.pch-btn]:pointer-coarse:h-11 [&_.pch-btn]:pointer-coarse:min-w-11">
-              <RideButton
-                owned={vehicles.owned}
-                riding={riding}
-                last={lastRide}
-                keyEnabled={!blocking}
-                onMount={mountOwn}
-                onDismount={dismount}
-              />
-            </div>
+            {rideBox}
           </div>
-          <div ref={setHudSlot} className="pointer-events-auto flex flex-col items-start gap-1.5 empty:hidden" data-testid="hud-slot">
-            <AnticheatChip secondsLeft={anticheat.secondsLeft} />
-            {cards.seated && <CardSeatChip table={cards.seatTable} me={accountId} onOpen={() => cards.seated && cards.openPanel(cards.seated)} />}
-          </div>
+          {hudSlotBox}
         </div>
-        <div className="flex flex-col items-center gap-1">
-          <MapCounts counts={counts} world={inWorld} />
-          {map.id === "field" && (
-            <RatChip live={farm.data.state?.rats?.live.length ?? 0} onOpen={() => farm.openPanel({ kind: "handbook", tab: "rats" })} />
-          )}
-        </div>
-        <HudNowPlaying
-          room={room}
-          current={derived.current}
-          djName={djName}
-          canControl={role.canControlPlayback}
-          playback={playback}
-          canOpenSettings={role.isAdmin || role.isDj}
-          onOpenQueue={() => setPanel("queue")}
-          onOpenBoard={() => setPanel("board")}
-          onOpenSettings={() => setPanel("settings")}
-        />
+        {countsBox}
+        {nowPlaying}
       </div>
+      )}
 
-      <div className="pointer-events-none absolute left-1/2 top-1/3 z-20 flex -translate-x-1/2 flex-col items-center gap-2" role="status">
-        {toast && <p className="pch px-3 py-1.5 font-vt text-xl">{toast}</p>}
+      <div className={`pointer-events-none absolute left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-2 ${compact ? "top-[max(2.5rem,calc(env(safe-area-inset-top)+2.25rem))] max-w-[calc(100vw-14rem)]" : "top-1/3"}`} role="status">
+        {toast && <p className={`pch font-vt ${compact ? "px-2 py-0.5 text-base leading-tight" : "px-3 py-1.5 text-xl"}`} data-testid="hud-toast">{toast}</p>}
         {skipped && (
           <p className="pch px-3 py-1 font-vt text-lg">
             ⚡ Đã bỏ qua: {getCategoryLabel(skipped.category)} ({formatClock(skipped.start * 1000)} - {formatClock(skipped.end * 1000)})
@@ -1289,7 +1367,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         <button
           type="button"
           onClick={() => canvasRef.current?.interact()}
-          className="pch-btn pch-btn-primary absolute bottom-24 left-1/2 z-10 -translate-x-1/2 text-xl"
+          className={`pch-btn pch-btn-primary absolute left-1/2 z-10 -translate-x-1/2 ${compact ? "bottom-[max(3.75rem,calc(env(safe-area-inset-bottom)+3.25rem))] max-w-[calc(100vw-20rem)] truncate text-base" : "bottom-24 text-xl"}`}
+          data-testid="hud-prompt"
         >
           <span className="pointer-coarse:hidden">E · </span>
           {riding && interactBlocked(riding, prompt.kind) ? dismountText(prompt.prompt) : farmPrompt(prompt) ?? miningPrompt(prompt) ?? promptText(prompt)}
@@ -1311,27 +1390,20 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
       />
       <FarmOverlays farm={farm} me={accountId} onField={map.id === "field"} panelOpen={panelOpen} dog={coopDog} />
       <ExploreOverlays explore={explore} mapId={map.id} idle={!blocking && fishing.cast.phase === "idle" && faint === null} />{/* v22 (0086) */}
-      <StoryLayer story={story} mapId={travel.mapId} resume={onInteract}
+      <StoryLayer story={story} mapId={travel.mapId} resume={onInteract} compact={compact} onExpand={() => setSheet("quests")}
         getLocalPos={inWorld ? undefined : () => canvasRef.current?.localPos() ?? null} />{/* 0114: Chuyện làng (lib/game/story) */}
       <MiningOverlays m={mining} showChip={map.id === "mo_da" || Object.keys(mining.state?.bag ?? {}).some((k) => k.startsWith("pot_")) || (mining.state?.buffs.length ?? 0) > 0} />{/* v21 Mỏ đá */}
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
-      <TouchControls disabled={blocking || faint !== null || trip !== null || hudGroup !== null} />{/* phones: stick + E / Space */}
+      <TouchControls disabled={blocking || faint !== null || trip !== null || (compact ? drawer || sheet !== null : hudGroup !== null)} />{/* phones: stick + E / Space */}
       <RotateOverlay />
 
-      <div className={`pointer-events-none absolute bottom-18 right-3 z-10 ${miniOpen === false ? "hidden" : miniOpen ? "block" : "hidden sm:block"} pointer-coarse:hidden`}>
+      <div className={`pointer-events-none absolute bottom-18 right-3 z-10 ${compact ? "!hidden" : ""} ${miniOpen === false ? "hidden" : miniOpen ? "block" : "hidden sm:block"} pointer-coarse:hidden`}>
         {inWorld ? <WorldMiniMap getWorldPos={getWorldPos} getMarks={getMapMarks} zone={zone} waypoints={wpMarks} onOpenMap={openWorldMap} /> : <MiniMap mapId={travel.mapId} getLocalPos={() => canvasRef.current?.localPos() ?? null} onOpenMap={openWorldMap} />}
       </div>
-      <button type="button" className="pch-btn pointer-events-auto absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.5rem,env(safe-area-inset-top))] z-10 hidden h-11 min-w-11 px-2 py-1 font-vt text-lg pointer-coarse:inline-flex pointer-coarse:items-center pointer-coarse:justify-center" onClick={openWorldMap} aria-label="Mở bản đồ thế giới">🗺️</button>
+      <button type="button" className={`pch-btn pointer-events-auto absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.5rem,env(safe-area-inset-top))] z-10 hidden h-11 min-w-11 px-2 py-1 font-vt text-lg ${compact ? "" : "pointer-coarse:inline-flex pointer-coarse:items-center pointer-coarse:justify-center"}` } onClick={openWorldMap} aria-label="Mở bản đồ thế giới">🗺️</button>
 
       <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 flex justify-center">
-        <HudChatBar
-          onSend={(text) => send(formatChatMessageBody(text))}
-          onReact={react}
-          onOpenChat={() => setPanel("chat")}
-          onOpenMembers={() => setPanel("members")}
-          onlineCount={onlineIds.length}
-          onExitGame={onExitGame}
-        />
+        {!compact && chatBar}
       </div>
 
       {panel === "queue" && <QueuePanel room={room} derived={derived} role={role} token={token} onClose={close} />}

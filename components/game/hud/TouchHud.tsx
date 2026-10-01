@@ -62,7 +62,7 @@ export function RotateOverlay() {
   );
 }
 
-const RADIUS = 48;
+const RADIUS = 40;
 
 /** The stick: drag anywhere in its pad; the held WASD keys follow the push. */
 export function Joystick() {
@@ -105,9 +105,9 @@ export function Joystick() {
 
   return (
     <div data-testid="joystick" role="application" aria-label="Cần điều khiển: kéo để đi"
-      className="pointer-events-auto relative flex h-32 w-32 touch-none select-none items-center justify-center rounded-full border-4 border-parchment-300/80 bg-black/25"
+      className="pointer-events-auto relative flex h-28 w-28 touch-none opacity-80 select-none items-center justify-center rounded-full border-4 border-parchment-300/80 bg-black/25"
       onPointerDown={onDown} onPointerMove={onMove} onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release}>
-      <div className="h-14 w-14 rounded-full border-4 border-ink/40 bg-parchment/90 shadow-md"
+      <div className="h-12 w-12 rounded-full border-4 border-ink/40 bg-parchment/90 shadow-md"
         style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }} aria-hidden="true" />
     </div>
   );
@@ -119,7 +119,7 @@ function KeyButton({ code, label, sr, primary, testId }: { code: string; label: 
   const up = () => { if (down.current) { down.current = false; sendKey("keyup", code); } };
   return (
     <button type="button" data-testid={testId} aria-label={sr}
-      className={`pch-btn pointer-events-auto flex touch-none select-none items-center justify-center rounded-full font-vt leading-none ${primary ? "pch-btn-primary h-20 w-20 text-3xl" : "h-16 w-16 text-xl"}`}
+      className={`pch-btn pointer-events-auto flex touch-none select-none items-center justify-center rounded-full font-vt leading-none ${primary ? "pch-btn-primary h-16 w-16 text-3xl" : "h-14 w-14 text-xl"} opacity-85`}
       onPointerDown={(e) => { e.preventDefault(); down.current = true; sendKey("keydown", code); }}
       onPointerUp={up} onPointerCancel={up} onPointerLeave={up}
       onContextMenu={(e) => e.preventDefault()}>
@@ -134,7 +134,7 @@ export function TouchControls({ disabled = false }: { disabled?: boolean }) {
   if (!touch || disabled) return null;
   return (
     <div data-testid="touch-controls"
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-end justify-between pb-[max(4.5rem,calc(env(safe-area-inset-bottom)+4rem))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]`}>
+      className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between pb-[max(0.75rem,calc(env(safe-area-inset-bottom)+0.5rem))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]`}>
       <Joystick />
       <div className="flex items-end gap-3 pr-2">
         <KeyButton code="Space" label="␣" sr="Hành động: quăng cần, giật, kéo (giữ)" testId="touch-space" />
