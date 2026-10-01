@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import MobileHudDemo from "@/components/game/hud/MobileHudDemo";
-import { shortXu, useCompactHud } from "@/components/game/hud/MobileHud";
+import { NoRide, shortXu, useCompactHud } from "@/components/game/hud/MobileHud";
 
 afterEach(() => {
   cleanup();
@@ -74,6 +74,19 @@ describe("compact phone HUD", () => {
     fireEvent.click(screen.getByTestId("mobile-sheet-close-bag"));
     expect(screen.getByTestId("mobile-sheet-bag")).not.toBeVisible();
     expect(screen.getByTestId("joystick")).toBeInTheDocument();
+  });
+
+  it("the ride sheet closes after picking; with no vehicle it says where to buy one; the action button reads 🎣", () => {
+    phone();
+    render(<MobileHudDemo />);
+    expect(screen.getByTestId("touch-space")).toHaveTextContent("🎣");
+    fireEvent.click(screen.getByTestId("mobile-menu-button"));
+    fireEvent.click(screen.getByTestId("mobile-item-ride"));
+    fireEvent.click(screen.getByText("🚲 Xe đạp"));
+    expect(screen.getByTestId("mobile-sheet-ride")).not.toBeVisible();
+    cleanup();
+    render(<NoRide onMap={() => {}} />);
+    expect(screen.getByTestId("no-ride")).toHaveTextContent("Bạn chưa có xe — mua ở tiệm xe");
   });
 
   it("💬 opens the chat sheet with the input; the story pill opens the quest sheet", () => {

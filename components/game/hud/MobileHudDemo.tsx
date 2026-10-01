@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { ChatFab, MobileDrawer, MobileMenuButton, MobileSheet, type DrawerItem } from "./MobileHud";
+import { useCallback, useState, useSyncExternalStore } from "react";
+import { ChatFab, MobileDrawer, MobileMenuButton, MobileSheet, NoRide, type DrawerItem } from "./MobileHud";
+import ReelOverlay from "../fishing/ReelOverlay";
+import DialogueBox from "../story/DialogueBox";
 import { TouchControls } from "./TouchHud";
 import { StoryPill } from "../story/StoryTracker";
 import HudChatBar from "../HudChatBar";
@@ -26,11 +28,22 @@ const GROUPS = [
   { id: "quests", icon: "📜", label: "Nhiệm vụ & tin tức", badge: true },
 ];
 
+const noSubscribe = () => () => {};
+const readFrame = () => {
+  try { return new URLSearchParams(window.location.search).get("frame"); } catch { return null; }
+};
+
 export default function MobileHudDemo() {
   const [drawer, setDrawer] = useState(false);
   const [sheet, setSheet] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>("Xuống ao câu cá");
   const closeSheet = useCallback(() => setSheet(null), []);
+  // ?frame=reel | bite | dialogue | busy: the overlays the real game puts over the compact HUD
+  const asked = useSyncExternalStore(noSubscribe, readFrame, () => null);
+  const [done, setDone] = useState(false);
+  const frame = done ? null : asked;
+  const setFrame = (f: null) => setDone(f === null);
+  const dialogue = frame === "dialogue";
   const items: DrawerItem[] = [
     { id: "status", icon: "🧑", label: "Trạng thái" },
     ...GROUPS,
@@ -41,7 +54,7 @@ export default function MobileHudDemo() {
     { id: "classic", icon: "🖥️", label: "Giao diện cũ" },
   ];
   return (
-    <div className="game-ui fixed inset-0 overflow-hidden bg-[#5a8f32] text-ink" data-testid="mobile-hud-demo">
+    <div className="game-ui fixed inset-0 overflow-hidden bg-[#5a8f32] text-ink" data-testid="mobile-hud-demo" data-compact-hud="">
       <div aria-hidden="true" className="absolute inset-0"
         style={{ backgroundImage: "linear-gradient(rgba(0,0,0,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.08) 1px,transparent 1px)", backgroundSize: "32px 32px" }} />
       <div aria-hidden="true" className="absolute left-[55%] top-[45%] h-24 w-40 rounded-[50%] bg-[#3d8fd1]" />
@@ -53,8 +66,23 @@ export default function MobileHudDemo() {
       <div className="pointer-events-none absolute left-1/2 top-[max(2.5rem,calc(env(safe-area-inset-top)+2.25rem))] z-20 max-w-[calc(100vw-14rem)] -translate-x-1/2" role="status">
         {toast && <p className="pch px-2 py-0.5 font-vt text-base leading-tight" data-testid="hud-toast" onAnimationEnd={() => setToast(null)}>{toast}</p>}
       </div>
-      <button type="button" className="pch-btn pch-btn-primary absolute bottom-[max(3.75rem,calc(env(safe-area-inset-bottom)+3.25rem))] left-1/2 z-10 max-w-[calc(100vw-20rem)] -translate-x-1/2 truncate text-base">Câu cá</button>
-      <TouchControls disabled={drawer || sheet !== null} />
+      {frame === null && <button type="button" className="pch-btn pch-btn-primary absolute bottom-[max(3.75rem,calc(env(safe-area-inset-bottom)+3.25rem))] left-1/2 z-10 max-w-[calc(100vw-20rem)] -translate-x-1/2 truncate text-base">Câu cá</button>}
+      {frame === "reel" && <ReelOverlay params={{ zonePct: 0.3, difficulty: 0.4, minReelMs: 600000, seed: 7 }} rarity={3} onDone={() => setFrame(null)} />}
+      {(frame === "bite" || frame === "busy") && (
+        <button type="button" className="pch-btn pch-btn-primary absolute bottom-24 left-1/2 z-10 -translate-x-1/2 animate-pulse px-6 py-3 text-3xl motion-reduce:animate-none">❗ Giật cần!</button>
+      )}
+      {frame === "busy" && (
+        <>
+          <div className="pch absolute bottom-48 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 px-2 py-1 font-vt text-base">🪓 Gỗ 3 · 🔥 Lửa trại</div>
+          <div className="absolute bottom-36 left-1/2 z-10 -translate-x-1/2"><button type="button" className="pch-btn text-xl">🛵 Đi nhờ xe</button></div>
+          <p className="pch absolute left-1/2 top-16 z-30 -translate-x-1/2 px-4 py-2 font-vt text-2xl leading-none">Chợ Lớn</p>
+        </>
+      )}
+      {dialogue && (
+        <DialogueBox typeMs={0} lines={[{ speaker: "bac_ba_lang", text: "Con về rồi đó hả? Lại đây bác dặn chút chuyện trong làng nè." }]}
+          choices={[{ id: "ok", label: "Dạ, con nghe" }, { id: "later", label: "Để lát nữa" }]} onDone={() => setFrame(null)} />
+      )}
+      <TouchControls disabled={drawer || sheet !== null || dialogue} />
       {!drawer && sheet === null && <ChatFab onOpen={() => setSheet("chat")} />}
 
       <MobileDrawer open={drawer} items={items} onClose={() => setDrawer(false)} onPick={(id) => { setDrawer(false); setSheet(id); }} />
@@ -74,7 +102,12 @@ export default function MobileHudDemo() {
         </MobileSheet>
       ))}
       <MobileSheet id="ride" title="🚗 Phương tiện" open={sheet === "ride"} onClose={closeSheet}>
-        <div className="flex flex-wrap gap-1.5 text-lg"><button type="button" className="pch-btn min-h-11">🛵 Xe máy</button><button type="button" className="pch-btn min-h-11">🚲 Xe đạp</button></div>
+        {frame === "noride" ? <NoRide onMap={closeSheet} /> : (
+          <div className="flex flex-wrap gap-1.5 text-lg">
+            <button type="button" className="pch-btn min-h-11" onClick={closeSheet}>🛵 Xe máy</button>
+            <button type="button" className="pch-btn min-h-11" onClick={closeSheet}>🚲 Xe đạp</button>
+          </div>
+        )}
       </MobileSheet>
       <MobileSheet id="chat" title="💬 Chat" open={sheet === "chat"} onClose={closeSheet}>
         <div className="flex justify-center pt-1">

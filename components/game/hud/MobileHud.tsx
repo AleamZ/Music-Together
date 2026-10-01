@@ -128,6 +128,16 @@ export function ChatFab({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+/** The ride sheet when I own no vehicle: where to buy one. */
+export function NoRide({ onMap }: { onMap: () => void }) {
+  return (
+    <div className="flex flex-col items-start gap-2 text-lg" data-testid="no-ride">
+      <p>Bạn chưa có xe — mua ở tiệm xe (ông Tám, Chợ Lớn).</p>
+      <button type="button" className="pch-btn min-h-11 px-3" onClick={onMap}>🗺️ Xem đường đến tiệm xe</button>
+    </div>
+  );
+}
+
 function useEscape(on: boolean, close: () => void) {
   useEffect(() => {
     if (!on) return;

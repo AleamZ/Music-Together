@@ -137,7 +137,7 @@ export function TouchControls({ disabled = false }: { disabled?: boolean }) {
       className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between pb-[max(0.75rem,calc(env(safe-area-inset-bottom)+0.5rem))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]`}>
       <Joystick />
       <div className="flex items-end gap-3 pr-2">
-        <KeyButton code="Space" label="␣" sr="Hành động: quăng cần, giật, kéo (giữ)" testId="touch-space" />
+        <KeyButton code="Space" label="🎣" sr="Hành động: quăng cần, giật, kéo (giữ)" testId="touch-space" />
         <KeyButton code="KeyE" label="E" sr="Tương tác" primary testId="touch-interact" />
       </div>
     </div>

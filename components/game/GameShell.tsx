@@ -53,7 +53,7 @@ import { beatDue, posReport, posReportWorld, type RideReport } from "@/lib/game/
 import type { Interactable, MapId, Spot } from "@/lib/game/maps/types";
 import { overlayLocks } from "@/lib/game/overlays";
 import { skipTrip } from "@/lib/game/travel/rpc";
-import { CAR_LEFT_TEXT, canRide, dismountText, interactBlocked, mountRefusal } from "@/lib/game/travel/ride";
+import { CAR_LEFT_TEXT, canRide, dismountText, interactBlocked, mountRefusal, ownedVehicles } from "@/lib/game/travel/ride";
 import { isRoadTrip, tripForward, tripVehicle, VEHICLES, WALK_TRIP_MS, type Vehicle, type VehicleId } from "@/lib/game/travel/vehicles";
 import { badgesFor, buildRoster, freshChatBubbles, isHereOn, roleAccounts } from "@/lib/game/social";
 import type { Look } from "@/lib/game/types";
@@ -72,7 +72,7 @@ import { useStory } from "@/lib/game/story/useStory";                           
 import { useFold } from "./hud/useFold";
 import { HudGroupItems, HudMenu, HudTabs, useHudGroup, type HudGroup } from "./hud/HudMenu";
 import { RotateOverlay, TouchControls } from "./hud/TouchHud";
-import { ChatFab, MobileDrawer, MobileMenuButton, MobileSheet, useCompactHud, type DrawerItem } from "./hud/MobileHud";
+import { ChatFab, MobileDrawer, NoRide, MobileMenuButton, MobileSheet, useCompactHud, type DrawerItem } from "./hud/MobileHud";
 import ForestHud from "./forest/ForestHud";
 import CityMapModal from "./CityMapModal";
 import CardOverlays from "./cards/CardOverlays";
@@ -1163,8 +1163,8 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                 riding={riding}
                 last={lastRide}
                 keyEnabled={!blocking}
-                onMount={mountOwn}
-                onDismount={dismount}
+                onMount={(v) => { mountOwn(v); setSheet(null); }}
+                onDismount={() => { dismount(); setSheet(null); }}
               />
             </div>
   );
@@ -1218,7 +1218,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
   return (
     <HudSlotContext.Provider value={hudSlot}>
     <UmbrellaContext.Provider value={{ rain, coins: fishing.data.state?.coins ?? null }}>
-    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : map.id === "song_cai" ? "bg-[#3f7478]" : map.id === "rung_tram" ? "bg-[#3f5a2c]" : "bg-[#5a8f32]"}`}>
+    <div className={`game-ui fixed inset-0 overflow-hidden text-ink ${map.id === "hall" ? "bg-[#2f6e8f]" : map.id === "market" || map.id === "khu_nha" ? "bg-[#2f5e7a]" : map.id === "bai_dat" ? "bg-[#59616a]" : map.id === "ham_ngam" ? "bg-[#2e2c2a]" : map.id === "mo_da" ? "bg-[#4f4841]" : map.id === "song_cai" ? "bg-[#3f7478]" : map.id === "rung_tram" ? "bg-[#3f5a2c]" : "bg-[#5a8f32]"}`} data-compact-hud={compact ? "" : undefined}>
       <GameCanvas
         ref={canvasRef}
         roomId={room.id}
@@ -1301,7 +1301,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
             </MobileSheet>
           ))}
           <MobileSheet id="ride" title="🚗 Phương tiện" open={sheet === "ride"} onClose={closeSheet}>
-            <div className="flex flex-wrap items-start gap-1.5">{rideBox}</div>
+            {ownedVehicles(vehicles.owned).length === 0 && !riding ? (
+              <NoRide onMap={() => { setSheet(null); openWorldMap(); }} />
+            ) : <div className="flex flex-wrap items-start gap-1.5">{rideBox}</div>}
           </MobileSheet>
           <MobileSheet id="chat" title="💬 Chat" open={sheet === "chat"} onClose={closeSheet}>
             <div className="flex justify-center pt-1 [&_.w-\[min\(40rem\,calc\(100vw-1rem\)\)\]]:w-full">{chatBar}</div>
@@ -1363,7 +1365,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         onNet={fishing.netReady && fishing.cast.phase === "idle" ? fishing.throwNet : null}
         onGroundbait={fishing.groundbaitReady && fishing.cast.phase === "idle"
           ? (cell) => fishing.throwGroundbait(fishing.groundbaitReady!, cell) : null} />{/* 0110 */}
-      {prompt && !blocking && (
+      {prompt && !blocking && !(compact && fishing.cast.phase !== "idle") && (
         <button
           type="button"
           onClick={() => canvasRef.current?.interact()}
@@ -1394,7 +1396,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
         getLocalPos={inWorld ? undefined : () => canvasRef.current?.localPos() ?? null} />{/* 0114: Chuyện làng (lib/game/story) */}
       <MiningOverlays m={mining} showChip={map.id === "mo_da" || Object.keys(mining.state?.bag ?? {}).some((k) => k.startsWith("pot_")) || (mining.state?.buffs.length ?? 0) > 0} />{/* v21 Mỏ đá */}
       <CardOverlays cards={cards} me={accountId} coins={fishing.data.state?.coins ?? null} looks={looks} />
-      <TouchControls disabled={blocking || faint !== null || trip !== null || (compact ? drawer || sheet !== null : hudGroup !== null)} />{/* phones: stick + E / Space */}
+      <TouchControls disabled={blocking || faint !== null || trip !== null || (compact ? drawer || sheet !== null || story.dialog !== null : hudGroup !== null)} />{/* phones: stick + E / Space */}
       <RotateOverlay />
 
       <div className={`pointer-events-none absolute bottom-18 right-3 z-10 ${compact ? "!hidden" : ""} ${miniOpen === false ? "hidden" : miniOpen ? "block" : "hidden sm:block"} pointer-coarse:hidden`}>
