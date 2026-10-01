@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { setLocalEmote } from "@/lib/game/diorama/character/emote";
 import { ParchmentModal } from "@/components/game/Parchment";
 import type { FarmController, FarmSession } from "@/hooks/useFarmController";
 import { AnticheatError } from "@/lib/anticheat";
@@ -86,6 +87,9 @@ export default function MachinePanel({ farm, session, me, onClose }: { farm: Far
   const [auto, setAuto] = useState(readAuto);
   const [now, setNow] = useState(() => serverNow());
   const [sort, setSort] = useState<SortView | null>(null);
+  // wave 3: my 3D chibi sorts the grain on a nia while the sorting mini-game is open
+  const sorting = sort !== null;
+  useEffect(() => { if (!sorting) return; setLocalEmote("sort"); return () => setLocalEmote(null); }, [sorting]);
   const [splash, setSplash] = useState<string | null>(null);
   const splashAt = useCallback((key: string) => {
     setSplash(key);

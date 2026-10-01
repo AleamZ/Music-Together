@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { RIG, SEGS, VOX, type BodyDims, type ChibiParts, type Seg } from "./build";
-import { REST, type Pose } from "./pose";
+import { heldFishGeometry, heldMaterial, rodLookGeometry, toolGeometry, type RodLook, type ToolId } from "./held";
+import { REST, type CharAct, type Pose } from "./pose";
+import { setHeld, type HeldSlots } from "./held3d";
 
 // Browser only: one chibi on screen — a pivot hierarchy with a real two-bone chain per limb (hips → head;
 // shoulder → upper arm → ELBOW → forearm + hand; hip → thigh → KNEE → shin → ANKLE → foot) whose meshes point at the
@@ -50,7 +52,15 @@ export class ChibiRig {
   private skeleton: THREE.Skeleton | null = null;
   private readonly face: THREE.Mesh<THREE.BufferGeometry, THREE.Material> = new THREE.Mesh(EMPTY, NONE);
   private parts: ChibiParts | null = null;
+  /** Wave 3 (held3d.ts): what the fists hold and what stands at the feet for the current act. */
+  readonly held: HeldSlots = { handR: new THREE.Group(), handL: new THREE.Group(), ground: new THREE.Group() };
+  private heldAct: CharAct | null = null;
   private dims: BodyDims = DEFAULT_DIMS;
+  /** Wave 1: what each fist holds (a tool, a fish: one outlined mesh each, hidden when empty) and the rod's look. */
+  private readonly heldR = mesh();
+  private readonly heldL = mesh();
+  private heldKey = "";
+  private rodKey = "";
 
   constructor() {
     for (const s of SEGS) { this.m[s] = s === "hips" ? this.hips : mesh(); this.m[s].name = s; }
@@ -72,6 +82,13 @@ export class ChibiRig {
     this.legL.add(this.bones[1]);
     this.legR.add(this.bones[2]);
     this.root.add(this.body);
+    this.heldR.visible = this.heldL.visible = false;
+    this.heldR.name = "heldR"; this.heldL.name = "heldL";
+    this.elbowR.add(this.heldR);
+    this.elbowL.add(this.heldL);
+    this.elbowR.add(this.held.handR);
+    this.elbowL.add(this.held.handL);
+    this.root.add(this.held.ground);
     this.measure(DEFAULT_DIMS);
   }
 
@@ -91,6 +108,16 @@ export class ChibiRig {
     this.ankleL.position.y = this.ankleR.position.y = -d.calfLen;
     this.m.rod.position.set(0, -d.foreLen - 0.8 * VOX, 0.2 * VOX);
     this.m.rod.rotation.x = ROD_GRIP;                                     // along the forearm, as a rod is held
+    this.heldR.position.set(0, -d.foreLen - 0.8 * VOX, 0.2 * VOX);
+    this.heldL.position.set(0, -d.foreLen - 0.8 * VOX, 0.2 * VOX);
+    this.held.handR.position.y = this.held.handL.position.y = -d.foreLen;
+  }
+
+  /** Wave 3: shows the props of `act` (the hammer and anvil, the spoon and cauldron, the cards, the nia…). */
+  setAct(act: CharAct | null): void {
+    if (act === this.heldAct) return;
+    this.heldAct = act;
+    setHeld(this.held, act);
   }
 
   setParts(p: ChibiParts): void {
@@ -98,6 +125,9 @@ export class ChibiRig {
     for (const s of SEGS) { this.m[s].geometry = p[s]; this.m[s].material = p.material; }
     this.face.geometry = p.faceGeo;
     this.face.material = p.faces.open;
+    const rk = this.rodKey;
+    this.rodKey = "";
+    if (rk) { const [rod, reel, bobber] = rk.split("|"); this.setRodLook({ rod, reel: reel === "null" ? null : reel, bobber: bobber === "null" ? null : bobber }); }
     this.measure(p.dims);
     // bind the pelvis/skirt in the rest pose (the bones' inverses are taken from here)
     this.apply(REST);
@@ -109,6 +139,7 @@ export class ChibiRig {
 
   setShadow(on: boolean): void {
     for (const s of SEGS) this.m[s].castShadow = on;
+    this.heldR.castShadow = this.heldL.castShadow = on;
   }
 
   /** Show or hide the head (and the hat and face on it): first person hides my own. */
@@ -201,6 +232,38 @@ export class ChibiRig {
     return r.add(l).multiplyScalar(0.5);
   }
 
+  /** Wave 1: what the fists hold — a tool id or "fish:<species>" per hand (null = empty). Cheap when unchanged. */
+  setHeld(r: ToolId | string | null, l: ToolId | string | null = null): void {
+    const key = `${r ?? ""}|${l ?? ""}`;
+    if (key === this.heldKey) return;
+    this.heldKey = key;
+    for (const [m, id] of [[this.heldR, r], [this.heldL, l]] as const) {
+      if (!id) { m.visible = false; continue; }
+      const t = id.startsWith("fish:") ? heldFishGeometry(id.slice(5)) : toolGeometry(id as ToolId);
+      m.geometry = t.geo;
+      m.material = heldMaterial();
+      m.rotation.set(t.grip, id.startsWith("fish:") ? Math.PI / 2 : 0, 0);
+      m.scale.setScalar(id.startsWith("fish:") ? 0.7 : 1);
+      m.visible = true;
+    }
+  }
+
+  /** What each fist holds now ("" = empty), for tests and the review sheet. */
+  heldIds(): { R: string; L: string } {
+    const [R, L] = this.heldKey.split("|");
+    return { R: R ?? "", L: L ?? "" };
+  }
+
+  /** Wave 1: the rod's look from the fishing loadout (null = the default rod modelled with the look). */
+  setRodLook(l: RodLook | null): void {
+    const key = l ? `${l.rod}|${l.reel}|${l.bobber}` : "";
+    if (key === this.rodKey) return;
+    this.rodKey = key;
+    if (!this.parts) return;
+    this.m.rod.geometry = l ? rodLookGeometry(l) : this.parts.rod;
+    this.m.rod.material = l ? heldMaterial() : this.parts.material;
+  }
+
   /** Drops the geometry/material references (the factory owns them). */
   detach(): void {
     this.parts = null;
@@ -209,5 +272,7 @@ export class ChibiRig {
     for (const s of SEGS) { this.m[s].geometry = EMPTY; this.m[s].material = NONE; }
     this.face.geometry = EMPTY;
     this.face.material = NONE;
+    this.heldKey = ""; this.rodKey = "";
+    this.heldR.visible = this.heldL.visible = false;
   }
 }

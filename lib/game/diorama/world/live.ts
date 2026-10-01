@@ -1,5 +1,6 @@
 import { petKey } from "./pet-looks";
 import * as THREE from "three";
+import { PILLION_LIFT, xeOmModel } from "./xeom";
 import { CO_TU_LOOK } from "@/lib/game/look";
 import { LOTS } from "@/lib/game/maps/khu-nha";
 import { pondDuckAt } from "@/lib/game/world/pond-life";
@@ -16,7 +17,7 @@ import {
   type LiveBoss, type LiveNet, type Motion, type WakePoint, type WorldLive,
 } from "./live-plan";
 import {
-  barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, fishModel, houseModel, Labels,
+  barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, fishSpeciesModel, houseModel, Labels,
   lotSign, ModelMats, petModel, poseCreature, ratModel, ringModel, spearModel, stallModel, vehicleModel, wildAnimal,
   type Barrier, type Boat, type Creature, type Vehicle,
 } from "./models";
@@ -46,6 +47,8 @@ const BOB_FLIGHT_S = 0.45;
 const NET_FLIGHT_S = 0.55;
 /** The net draped from the hands before the throw: its radius and how far it hangs (units). */
 const HANG_R = 0.28, HANG_H = 0.75;
+/** Wave 1: the species that leap in the rivers and the pond (fish3d.ts models from the 2D icons). */
+const LEAP_SPECIES = ["ca_chep", "ca_ro", "ca_tra", "ca_loc", "ca_me_vinh", "ca_that_lat", "ca_lang"] as const;
 
 /** A cast net (chài), unit radius, flat at y = 0 with its centre raised by 1 (scale.y sets the dome): 16 spokes and
  *  5 rings as line segments. */
@@ -86,6 +89,8 @@ export class LiveLayer {
   private readonly labels = new Labels();
   private readonly entries = new Map<string, Entry>();
   private readonly lift = new Map<string, number>();
+  /** Wave 3: the riders carrying a passenger (their moto is drawn as a xe ôm, world/xeom.ts). */
+  private readonly xeom = new Set<string>();
   private readonly ringGeo = new THREE.RingGeometry(0.8, 1, 24);
   private readonly discGeo = new THREE.CircleGeometry(1, 24);
   private readonly planeGeo = new THREE.PlaneGeometry(1, 1);
@@ -128,7 +133,7 @@ export class LiveLayer {
 
     ];
     spots.forEach(([x, y, w], i) => {
-      const g = fishModel(this.mats, [0xc8b060, 0x9aa8b0, 0xe08a4a][i % 3]);
+      const g = fishSpeciesModel(this.mats, LEAP_SPECIES[i % LEAP_SPECIES.length]);                // wave 1: real species
       g.visible = false;
       const splash = new THREE.Mesh(this.ringGeo, this.mats.foam);
       splash.visible = false;
@@ -150,7 +155,18 @@ export class LiveLayer {
     for (const v of live.vehicles ?? []) riding.set(v.riderId, { lift: SEAT_LIFT[v.kind], bike: v.kind === "bike" });
     const boats = new Map<string, number>();
     for (const b of live.boats ?? []) if (b.riderId) boats.set(b.riderId, this.waterY(b.x, b.y));
+    // wave 3: a passenger on the pillion (act "pillion", the engine puts them behind their driver): on the long seat;
+    // the driver within reach of them carries a xe ôm
+    this.xeom.clear();
+    for (const b of list) if (b.act === "pillion") {
+      this.lift.set(b.id, PILLION_LIFT);
+      for (const [id] of riding) {
+        const d = list.find((x) => x.id === id);
+        if (d && Math.hypot(d.x - b.x, d.y - b.y) < 16) this.xeom.add(id);
+      }
+    }
     const out = list.map((b): Billboard => {
+      if (b.act === "pillion") return b;
       const on = riding.get(b.id);
       if (on) {
         this.lift.set(b.id, on.lift);
@@ -391,7 +407,9 @@ export class LiveLayer {
 
     for (const v of live.vehicles ?? []) {
       const rider = people.feetOf(v.riderId);
-      const e = this.get(`veh:${v.riderId}`, `${v.kind}|${v.color ?? 0}`, () => new THREE.Group(), () => vehicleModel(this.mats, v.kind, v.color ?? 0xc0392b));
+      const taxi = v.kind !== "car" && this.xeom.has(v.riderId);              // wave 3: carrying someone: a xe ôm
+      const e = this.get(`veh:${v.riderId}`, `${v.kind}|${v.color ?? 0}${taxi ? "|xeom" : ""}`, () => new THREE.Group(),
+        () => (taxi ? xeOmModel(this.mats, v.color ?? 0xc0392b) : vehicleModel(this.mats, v.kind, v.color ?? 0xc0392b)));
       const veh = e.data as Vehicle;
       if (!veh.root.parent) e.obj.add(veh.root);
       e.obj.visible = !!rider && rider.visible;
@@ -428,7 +446,7 @@ export class LiveLayer {
       this.animate(c, e.motion, tm, false, reduced);
     }
     (live.leaps ?? []).forEach((l, i) => {
-      const e = this.get(`leap:${i}`, "fish", () => fishModel(this.mats, 0xc8b060));
+      const e = this.get(`leap:${i}`, "fish", () => fishSpeciesModel(this.mats, LEAP_SPECIES[(i * 5 + 2) % LEAP_SPECIES.length]));
       const wy = this.waterY(l.x, l.y);
       e.obj.visible = l.h > 0;
       e.obj.position.set(U(l.x), wy + l.h * 1.3 - 0.1, U(l.y));

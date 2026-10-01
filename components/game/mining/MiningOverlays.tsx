@@ -1,7 +1,8 @@
 "use client";
 
 import { HudSlotted } from "../hud/HudSlot";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { setLocalEmote } from "@/lib/game/diorama/character/emote";
 import type { UseMining } from "@/hooks/useMining";
 import {
   BUFF_NAME, CRAFT_ITEMS, craftItem, DAILY_DIGS, effectText, ingredientName, MAX_UPGRADE, PICKAXES, pickaxe, RECIPES,
@@ -246,6 +247,9 @@ function BagPanel({ m }: { m: UseMining }) {
 }
 
 export default function MiningOverlays({ m, showChip }: { m: UseMining; showChip: boolean }) {
+  // wave 3: my 3D chibi hammers at the anvil / stirs the cauldron while a craft mini-game is open
+  const crafting = m.craft ? (m.craft.game === "brew" ? "stir" : "hammer") : null;
+  useEffect(() => { setLocalEmote(crafting); return () => setLocalEmote(null); }, [crafting]);
   return (
     <>
       {showChip && m.panel === null && m.dig === null && m.craft === null && (

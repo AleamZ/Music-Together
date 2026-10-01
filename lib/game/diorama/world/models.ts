@@ -5,6 +5,7 @@ import type { Roof } from "@/lib/game/housing/lot";
 import type { PetSpecies } from "@/lib/game/pets/catalog";
 import type { BossId, WildSpeciesId } from "@/lib/game/realm/model";
 import type { VehicleKind } from "./live-plan";
+import { fishParams, type Fish3D } from "./fish3d";
 
 // Browser only: the low-poly toon models for the world's live things — animals and pets, the bosses, stalls, fight
 // rings, houses by roof, the ghe, vehicles, the bamboo barrier. Each model's static parts are baked into one vertex-
@@ -957,4 +958,110 @@ export class Labels {
     for (const e of this.cache.values()) { e.tex.dispose(); e.mat.dispose(); }
     this.cache.clear();
   }
+}
+
+// ---- 3D wave 1: per-species fish (fish3d.ts derives the parameters from the 2D icons) ----
+
+/** One species' fish as a paint job (outlined, one draw call): along +z (head forward), centred, `len` long. */
+export function fishSpeciesPaint(f: Fish3D, fine: Paint = new Paint()): Paint {
+  const p = new Paint(0.04);
+  const L = f.len, D = f.depth, W = D * f.thin;
+  if (f.kind === "eel") {
+    // a long round body in an S, a pale belly line, a small head
+    tube(p, f.body, [[0, 0, -L * 0.6], [0.06, 0, -L * 0.25], [-0.05, 0, L * 0.1], [0, 0, L * 0.45]], D * 0.28, D * 0.32);
+    ell(p, f.belly, [D * 0.5, D * 0.3, L * 0.5], [0, -D * 0.12, 0]);
+    eyes(p, D * 0.12, L * 0.5, D * 0.14, D * 0.12);
+    return p;
+  }
+  if (f.kind === "shrimp") {
+    // tôm càng xanh, side on: a carapace with a pointed rostrum, six tapering abdominal segments in a gentle curve
+    // (orange joints), a fan tail (telson + uropods), small walking legs, two long antennae sweeping back and the
+    // signature long slender blue claws reaching forward with small pincers. Head toward +z.
+    const S = Math.max(0.42, L * 0.62), BLUE = 0x3f6fb8, ORANGE = 0xe07a3a, body = 0x8a9c8e;   // big enough for the ink outline
+    ell(p, body, [S * 0.26, S * 0.28, S * 0.46], [0, 0, S * 0.2]);                                        // carapace
+    p.add(new THREE.ConeGeometry(0.5, 1, 4), body, 0, S * 0.06, S * 0.55, Math.PI / 2 - 0.15, 0, 0, S * 0.05, S * 0.3, S * 0.06);   // rostrum
+    let z = -S * 0.02;
+    for (let k = 0; k < 6; k++) {                                                                       // abdomen
+      const w = 1 - k * 0.1, len = S * 0.15 * w, y = -(k * k) * S * 0.006;
+      ell(p, body, [S * 0.22 * w, S * 0.22 * w, len * 1.25], [0, y, z - len / 2], [-0.06 * k, 0, 0]);
+      ell(p, ORANGE, [S * 0.2 * w, S * 0.2 * w, S * 0.025], [0, y, z], [-0.06 * k, 0, 0], [8, 4]);
+      z -= len;
+    }
+    const ty = -(25) * S * 0.006;
+    p.add(new THREE.ConeGeometry(0.5, 1, 4), body, 0, ty, z - S * 0.09, Math.PI / 2, 0, 0, S * 0.06, S * 0.2, S * 0.04);   // telson
+    for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 4), BLUE, sd * S * 0.06, ty, z - S * 0.08, Math.PI / 2, sd * 0.45, 0, S * 0.1, S * 0.2, S * 0.03);
+    for (let k = 0; k < 4; k++) for (const sd of [-1, 1])                                               // walking legs (no ink)
+      fine.add(new THREE.CylinderGeometry(0.006, 0.004, S * 0.16, 4), ORANGE, sd * S * 0.07, -S * 0.17, S * (0.3 - k * 0.08), 0.25, 0, sd * 0.3);
+    for (const sd of [-1, 1]) {
+      // antennae from the head front, arching up and back over the body
+      tube(fine, 0xc85a2a, [[sd * S * 0.04, S * 0.08, S * 0.45], [sd * S * 0.1, S * 0.24, S * 0.3], [sd * S * 0.14, S * 0.26, -S * 0.3], [sd * S * 0.16, S * 0.12, -S * 0.95]], 0.006, 0.006);
+      // the long slender claw: from under the head, forward, a small two-fingered pincer at the tip
+      tube(fine, BLUE, [[sd * S * 0.08, -S * 0.1, S * 0.3], [sd * S * 0.13, -S * 0.12, S * 0.62], [sd * S * 0.13, -S * 0.06, S * 0.9]], 0.014, 0.016);
+      ell(fine, ORANGE, [S * 0.05, S * 0.05, S * 0.05], [sd * S * 0.13, -S * 0.12, S * 0.62], [0, 0, 0], [6, 4]);
+      for (const f2 of [-1, 1]) fine.add(new THREE.ConeGeometry(0.5, 1, 4), BLUE, sd * S * 0.13, -S * 0.06 + f2 * S * 0.025, S * 0.99, Math.PI / 2 - f2 * 0.2, 0, 0, S * 0.03, S * 0.18, S * 0.03);
+    }
+    eyes(p, S * 0.12, S * 0.42, S * 0.1, S * 0.07);
+    return p;
+  }
+  if (f.kind === "turtle") {
+    // rùa / ba ba: a domed shell, the plastron, four flippers, a head poking out
+    p.add(new THREE.SphereGeometry(0.5, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), f.body, 0, 0, 0, 0, 0, 0, L * 0.75, D * 1.2, L * 0.9);
+    ell(p, f.belly, [L * 0.72, D * 0.25, L * 0.86], [0, 0, 0]);
+    for (const [x, z] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) ell(p, f.fin, [L * 0.26, D * 0.18, L * 0.18], [x * L * 0.38, -0.01, z * L * 0.3], [0, x * z * 0.5, 0]);
+    ell(p, f.fin, [L * 0.2, D * 0.35, L * 0.3], [0, D * 0.12, L * 0.5]);
+    eyes(p, D * 0.22, L * 0.62, L * 0.06, D * 0.12);
+    return p;
+  }
+  if (f.kind === "ray") {
+    // cá đuối: a flat diamond (the wing tips out to the sides), a paler underside, a long thin whip tail
+    p.add(new THREE.OctahedronGeometry(0.5, 0), f.body, 0, 0, 0, 0, 0, 0, L * 1.1, D * 0.3, L * 0.85);
+    p.add(new THREE.OctahedronGeometry(0.5, 0), f.belly, 0, -D * 0.04, 0, 0, 0, 0, L * 0.9, D * 0.2, L * 0.7);
+    tube(p, f.fin, [[0, 0, -L * 0.4], [0, 0.01, -L * 0.8], [0, 0.03, -L * 1.25]], 0.014, 0.006);
+    eyes(p, D * 0.14, L * 0.24, L * 0.08, D * 0.14);
+    return p;
+  }
+  // a fish: the body, a paler belly, the pattern, the tail (V or fan), a dorsal fin, two side fins, the eyes
+  ell(p, f.body, [W, D, L * 0.82], [0, 0, 0.02], [0, 0, 0], [12, 8]);
+  ell(p, f.belly, [W * 0.82, D * 0.55, L * 0.66], [0, -D * 0.2, 0.04]);
+  if (f.pattern === "stripes") for (let i = 0; i < 3; i++) ell(p, f.accent, [W * 1.04, D * 0.86, L * 0.06], [0, 0.01, L * (0.2 - i * 0.18)], [0, 0, 0], [8, 6]);
+  else if (f.pattern === "spots") for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) ell(p, f.accent, [W * 0.18, D * 0.18, D * 0.18], [sd * W * 0.44, D * (0.12 - (i % 2) * 0.15), L * (0.22 - i * 0.13)], [0, 0, 0], [6, 4]);
+  const tz = -L * 0.34;                                                         // the peduncle, inside the body
+  // the caudal fin: its narrow end (the peduncle) on the body, fanning out behind it — a cone with its apex pointing
+  // forward (+z) at the body; a forked tail is two such lobes splayed up and down (the notch between them)
+  const th = L * 0.26;
+  if (f.tail === "fork") for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, sd * th * 0.22, tz - th * 0.42, Math.PI / 2 - sd * 0.5, 0, 0, W * 0.2, th, D * 0.34);
+  else p.add(new THREE.ConeGeometry(0.5, 1, 6), f.fin, 0, 0, tz - th * 0.45, Math.PI / 2, 0, 0, W * 0.2, th, D * 0.85);
+  if (f.dorsal) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, D * 0.48, -L * 0.04, -0.45, 0, 0, W * 0.15, D * 0.45, L * 0.38);
+  for (const sd of [-1, 1]) ell(p, f.fin, [W * 0.12, D * 0.22, L * 0.16], [sd * W * 0.5, -D * 0.12, L * 0.16], [0.6, sd * 0.4, 0], [6, 4]);
+  eyes(p, D * 0.12, L * 0.3, W * 0.38, Math.max(0.035, D * 0.16));
+  return p;
+}
+
+const speciesGeos = new Map<string, THREE.BufferGeometry>();
+/** A species' outlined fish geometry (cached per species; shared by every held, landed or leaping fish). */
+export function fishSpeciesGeometry(id: string): THREE.BufferGeometry {
+  let g = speciesGeos.get(id);
+  if (!g) {
+    // the fine parts (a prawn's antennae and legs) are merged in without the ink hull, so they stay thin
+    const fine = new Paint();
+    const main = fishSpeciesPaint(fishParams(id), fine).geometry(true);
+    if (fine.empty) g = main;
+    else {
+      const thin = fine.geometry(false);
+      thin.setAttribute("outline", new THREE.BufferAttribute(new Float32Array(thin.getAttribute("position").count), 1));
+      g = mergeGeometries([main, thin], false) ?? main;
+      g.computeBoundingSphere();
+    }
+    speciesGeos.set(id, g);
+  }
+  return g;
+}
+
+/** A species' fish (the world's leaps, the catch display): one outlined draw call. */
+export function fishSpeciesModel(mats: ModelMats, id: string): THREE.Group {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(fishSpeciesGeometry(id), mats.creature);
+  m.castShadow = false;
+  g.add(m);
+  return g;
 }

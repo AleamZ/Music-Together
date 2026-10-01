@@ -31,7 +31,8 @@ import { felledKeys, subscribeFelled } from "@/lib/game/forest/felled-store";
 import { felledPoints } from "@/lib/game/forest/near";
 import { createReplyScheduler, replyWindowMs, type ReplyScheduler } from "@/lib/game/net/replies";
 import type { VehicleId } from "@/lib/game/travel/vehicles";
-import type { LocalLift } from "@/lib/game/engine";
+import type { LocalLift, VitalAct } from "@/lib/game/engine";
+import type { RodLook } from "@/lib/game/diorama/character/held";
 import type { LiftMessage } from "@/lib/game/net/protocol";
 import type { LiftSend } from "@/lib/game/travel/lift";
 import type { Facing, Look, Vec } from "@/lib/game/types";
@@ -162,6 +163,10 @@ export interface GameCanvasHandle {
   zone: () => ZoneId | null;
   /** 0096: my chibi chops or cooks while that minigame runs (null: done). */
   setWork?: (a: "chop" | "cook" | null) => void;
+  /** 3D wave 1: my vital state on the 3D chibi (faint, sleep, exhausted, eat, drink, photo) for `ms` (null = until
+   *  cleared), and my fishing loadout's look on the 3D rod. */
+  setVital?: (v: VitalAct | null, ms?: number | null) => void;
+  setRodLook?: (l: RodLook | null) => void;
 }
 
 export interface GameCanvasProps {
@@ -557,6 +562,8 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
         send();
         if (a) workTimerRef.current = window.setInterval(send, 2000);
       },
+      setVital: (v, ms = null) => engineRef.current?.setVital(v, ms),
+      setRodLook: (l) => engineRef.current?.setRodLook(l),
       lastInputAt: () => inputAtRef.current,
       setZoom: (zoom: number) => {
         zoomRef.current = zoom;

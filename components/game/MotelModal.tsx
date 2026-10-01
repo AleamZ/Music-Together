@@ -49,12 +49,14 @@ interface MotelModalProps {
   /** An action returned a new state (and maybe a new balance). */
   onState: (s: MotelState) => void;
   onClose: () => void;
+  /** 3D wave 1: the sleep started (true) or ended (false), for the 3D chibi lying down. */
+  onSleep?: (on: boolean) => void;
 }
 
 /** 🏨 Nhà nghỉ Hoa Sen · cô Hồng (v19.1): rent a room by the night or the month; in the room, sleep once a day for
  *  "Ngủ ngon" (24 h: hunger and thirst −30 %, walking +7 %, stamina regen +20 %). The room is mine alone — nobody else
  *  sees it. */
-export default function MotelModal({ token, state, coins, look, onState, onClose }: MotelModalProps) {
+export default function MotelModal({ token, state, coins, look, onState, onClose, onSleep }: MotelModalProps) {
   const [inRoom, setInRoom] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,9 +66,13 @@ export default function MotelModal({ token, state, coins, look, onState, onClose
   const nowMs = state?.serverNowMs ?? 0;
   const sleeper: RoomLookColors = { skin: SKIN[look.skin].s, hair: HAIR_COLOR[look.hairColor].h };
 
+  const onSleepRef = useRef(onSleep);
+  useEffect(() => { onSleepRef.current = onSleep; });
   useEffect(() => {
     if (sleepAt === null) return;
-    const id = setTimeout(() => { setSleepAt(null); setWoke(true); }, SLEEP_MS);
+    const onSleep = onSleepRef.current;
+    onSleep?.(true);
+    const id = setTimeout(() => { setSleepAt(null); setWoke(true); onSleep?.(false); }, SLEEP_MS);
     return () => clearTimeout(id);
   }, [sleepAt]);
 

@@ -62,11 +62,14 @@ import type { PresenceDog } from "@/lib/presence-modes";
 import type { RoomWeather } from "@/lib/game/weather/model";
 import type { MapId } from "@/lib/game/maps/types";
 import type { Billboard, DioramaFrame, GameplayFrame, View3D } from "@/lib/game/diorama/types";
-import type { CharAct } from "@/lib/game/diorama/character/pose";
+import { farmAct, type CharAct } from "@/lib/game/diorama/character/pose";
+import type { RodLook } from "@/lib/game/diorama/character/held";
 import { getMap } from "@/lib/game/maps/registry";
 import { interactablesNear, npcsNear, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { toWorld, zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 import { cardSeatMap, seatPeople, type CardSeatIn, type SeatAnchor } from "@/lib/game/diorama/zones/seats";
+import { cardAct, localEmote, reactionAct } from "@/lib/game/diorama/character/emote";
+import { PILLION_BACK } from "@/lib/game/diorama/world/xeom";
 import { worldSwimMap } from "@/lib/game/world/swim";
 import { boatWater, wildBoatInteractable, worldBoatMap } from "@/lib/game/world/boat";                           // 0095                                          // P3
 import { gateNear, type WorldGate } from "@/lib/game/world/gates";                              // P3
@@ -171,6 +174,12 @@ const LEAP_GAP_MIN_MS = 3000;
 const LEAP_GAP_MAX_MS = 8000;
 const NO_KEYS: KeyState = { up: false, down: false, left: false, right: false };
 
+/** 3D wave 1: the vital-state actions the shell can show on my 3D chibi. */
+export type VitalAct = "faint" | "sleep" | "exhausted" | "eat" | "drink" | "photo";
+const FARM_NAMES = new Map<number, string>(Object.entries(FARM_ANIM).map(([k, v]) => [v, k]));
+/** A FARM_ANIM code's 3D action (undefined for stop / an unknown code). */
+const farmActOf = (code: number): CharAct | undefined => farmAct(FARM_NAMES.get(code));
+
 /** Canvas 2D game loop: input, local + remote actors, NPCs, fishing, camera, depth-sorted rendering, overlays.
  *  Browser only. */
 export class GameEngine {
@@ -225,6 +234,9 @@ export class GameEngine {
   private species = new Map<string, SpeciesInfo>();
   /** My farm animation and when it started. */
   private farm: { a: FarmAnim; at: number } | null = null;
+  /** 3D wave 1: my vital state for the 3D chibi (setVital) and my rod's look (setRodLook). */
+  private vital: { v: VitalAct; until: number | null } | null = null;
+  private rodLook: RodLook | null = null;
   /** v18.2: my net throw and when its phase began. */
   private netThrow: { s: NetState; at: number } | null = null;
   private plots = new Map<number, PlotDraw>();
@@ -371,8 +383,12 @@ export class GameEngine {
     const out: Billboard[] = [];
     // the 3D chibi's action from the state the 2D renderer draws (P2): seated, riding, swimming, the rod, a reaction's wave
     const waved = new Set(this.reactions.filter((r) => r.id !== null && t - r.born < REACTION_MS).map((r) => r.id));
+    // wave 3: a reaction's emote (🎉/🔥 dance, 👏 claps, else the wave) and my busy act (craft, photo: emote.ts)
+    const emoted = new Map<string, CharAct>();
+    for (const r of this.reactions) if (r.id !== null && t - r.born < REACTION_MS) emoted.set(r.id, reactionAct(r.emoji));
+    const emote = (id: string): CharAct | undefined => (waved.has(id) ? emoted.get(id) ?? "wave" : undefined);
     const remoteAct = (id: string): CharAct | undefined => {
-      if (this.world.hammock(id)) return "sit";
+      if (this.world.hammock(id)) return "hammock";                                    // wave 1: lying in it
       if (this.world.riding(id) || this.world.carrier(id)) return "ride";
       if (this.world.swim(id, t) === "swim") return "swim";
       if (this.world.heat(id, t).warming) return "stretch";                           // khởi động by the pond
@@ -383,9 +399,10 @@ export class GameEngine {
       if (ph === 2) return "bite";
       if (ph !== 0) return "cast";
       const fa = this.world.farmAnim(id, t);                                            // 0097: chopping / cooking, as they told us
-      if (fa === FARM_ANIM.chop) return "chop";
-      if (fa === FARM_ANIM.cook) return "cook";
-      return waved.has(id) ? "wave" : undefined;
+      const farmA = farmActOf(fa);                                                     // wave 1: all fourteen
+      if (farmA) return farmA;
+      if (this.world.fishing(id, t).landed) return "show_catch";                       // the catch held up
+      return emote(id);
     };
     for (const e of this.world.roster.values()) {
       const label = e.name;
@@ -395,10 +412,17 @@ export class GameEngine {
         continue;
       }
       const a = this.world.actors.get(e.id);
+      if (a && this.visible(e.id, t) && this.carried(e.id, t)) {                     // wave 3: on the pillion, behind the driver
+        const pil = this.pillionSpot(e.id);
+        if (pil) out.push({ id: e.id, look: e.look, x: pil.x, y: pil.y, facing: pil.f, frame: 0, name: label, act: "pillion" });
+        continue;
+      }
       if (!a || !this.visible(e.id, t) || this.carried(e.id, t)) continue;
       const f = walkFrame(a);
       const boat = this.onBoat(a.display), veh = this.world.riding(e.id) ?? (boat ? "boat" : undefined);           // P3
-      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label, act: boat ? "sit" : remoteAct(e.id), vehicle: veh });
+      const rf = this.world.fishing(e.id, t), rr = this.world.rain(e.id, t);                                       // wave 1
+      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label, act: boat ? "sit" : remoteAct(e.id), vehicle: veh,
+        hand: rf.hand ?? rf.landed?.speciesId ?? null, umbrella: rr.umbrella !== null && rf.phase === 0 });
     }
     const me = this.local;
     // P2: the world's NPCs near the camera's focus (the spatial hash), else the map's
@@ -408,12 +432,22 @@ export class GameEngine {
     if (!this.aboard(t) && (!lying || this.view3d)) {
       const f = walkFrame(me);
       const ph = this.fishing.phase;
-      const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim" : this.warming(t) ? "stretch"
+      const myFarmAct = this.farm && t - this.farm.at < FARM_ANIM_MS ? farmActOf(this.farm.a) : undefined;      // wave 1
+      const landed = this.landed && this.landed.until > performance.now() ? this.landed.speciesId : null;
+      const vital = this.vital && (this.vital.until === null || t < this.vital.until) ? this.vital.v : null;
+      const act0: CharAct | undefined = lying ? "hammock" : this.ridingV ? "ride" : this.swimming ? "swim" : this.warming(t) ? "stretch"
         : this.myNet(t) ? NET_ACT[this.myNet(t)!.s.show]
-        : ph === "reeling" ? "reel" : ph === "bite" ? "bite" : ph !== "idle" ? "cast" : this.workAct ?? (waved.has(this.opts.localId) ? "wave" : undefined);
+        : ph === "reeling" ? "reel" : ph === "bite" ? "bite" : ph !== "idle" ? "cast" : this.workAct ?? localEmote() ?? myFarmAct ?? (landed ? "show_catch" : undefined) ?? emote(this.opts.localId);
+      // wave 1: the vital states win (fainted, asleep, eating/drinking); exhausted only while standing still
+      const act: CharAct | undefined = vital && !this.swimming && !this.ridingV && (vital !== "exhausted" || (!me.moving && act0 === undefined)) ? vital : act0;
       const boat = this.worldMap !== null && this.afloatAt(me.pos);                                               // P3: rowing Sông Cái
       out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
-        act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined) });
+        act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined),
+        hand: this.hand ?? landed, umbrella: this.rainLook.umbrella !== null && ph === "idle", rodLook: this.rodLook ?? undefined });
+    }
+    if (this.aboard(t)) {                                                           // wave 3: me on someone's pillion
+      const pil = this.pillionSpot(this.opts.localId);
+      if (pil) out.push({ id: this.opts.localId, look: this.localInfo.look, x: pil.x, y: pil.y, facing: pil.f, frame: 0, name: this.localInfo.name, me: true, act: "pillion" });
     }
     const wallNow = Date.now();
     if (wallNow - this.lightingAt > 1000) {
@@ -427,6 +461,11 @@ export class GameEngine {
       cards: this.cardSeatMap, origin: { x: hall.ox, y: hall.oy },
       hammock: new Set(out.filter((b) => (b.me ? lying : this.world.hammock(b.id))).map((b) => b.id)),
     }) : out;
+    // wave 3: the card players at their tables hold their cards, play now and then, and cheer with 🎉 (emote.ts)
+    if (hall) for (let i = 0; i < seated.length; i++) {
+      const b = seated[i];
+      if (b.act === "sit" && this.cardSeatMap.has(b.id)) seated[i] = { ...b, act: cardAct(t, (b.id.charCodeAt(0) % 7) / 7, emoted.get(b.id) === "dance") };
+    }
     return {
       t, focus: { x: me.display.x, y: me.display.y }, billboards: seated,
       night, warm: night > 0 && night < 1 ? Math.max(0, 1 - Math.abs(night - 0.5) * 2) : 0,
@@ -670,6 +709,17 @@ export class GameEngine {
     if (this.reactions.length > 40) this.reactions.shift();
   }
 
+  /** 3D wave 1: my vital state shown on the 3D chibi (the faint screen, the motel's sleep, kiệt sức, a meal or a drink,
+   *  photo mode) for `ms` (null = until cleared); null clears it. */
+  setVital(v: VitalAct | null, ms: number | null = null): void {
+    this.vital = v === null ? null : { v, until: ms === null ? null : performance.now() + ms };
+  }
+
+  /** 3D wave 1: my fishing loadout's look on the 3D rod (rod item, reel, bobber); null = the default rod. */
+  setRodLook(l: RodLook | null): void {
+    this.rodLook = l;
+  }
+
   /** 0096: what my hands are busy with (chopping a tree, cooking) — the 3D chibi's action while a minigame runs. */
   setWork(a: "chop" | "cook" | null): void {
     this.workAct = a;
@@ -780,6 +830,17 @@ export class GameEngine {
   private aboard(now: number): boolean {
     const l = this.lift;
     return l?.role === "passenger" && this.world.actors.has(l.peer) && this.visible(l.peer, now) && this.world.riding(l.peer) !== null;
+  }
+
+  /** Wave 3: where a passenger sits on their driver's pillion (px, behind the driver along their facing), or null. */
+  private pillionSpot(id: string): { x: number; y: number; f: Facing } | null {
+    const me = this.opts.localId, l = this.lift;
+    const driver = id === me ? (l?.role === "passenger" ? l.peer : null) : l?.role === "driver" && l.peer === id ? me : this.world.carrier(id);
+    if (!driver) return null;
+    const d = driver === me ? this.local : this.world.actors.get(driver);
+    if (!d) return null;
+    const back = PILLION_BACK * 16, v = d.facing === "up" ? [0, -1] : d.facing === "down" ? [0, 1] : d.facing === "left" ? [-1, 0] : [1, 0];
+    return { x: d.display.x - v[0] * back, y: d.display.y - v[1] * back, f: d.facing };
   }
 
   /** Is member `id` drawn on someone's vehicle (their own actor is not drawn)? */

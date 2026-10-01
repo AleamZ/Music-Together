@@ -70,7 +70,7 @@ describe("RestaurantModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Cá kho tộ/ }));
     fireEvent.change(screen.getByLabelText("Chọn cá"), { target: { value: "f2" } });
     fireEvent.click(screen.getByRole("button", { name: "Gọi món" }));
-    await waitFor(() => expect(onAte).toHaveBeenCalledWith(res));
+    await waitFor(() => expect(onAte).toHaveBeenCalledWith(res, "food"));
     expect(eatMeal).toHaveBeenCalledTimes(1);
     expect(eatMeal).toHaveBeenCalledWith("tok", "ca_kho_to", "f2");
   });
