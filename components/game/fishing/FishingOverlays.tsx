@@ -66,7 +66,7 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
       {panel === "bag" && (
         <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equipSlot} onRelease={fishing.release} onClose={closePanel}
           farm={farm} groundbaitPick={fishing.groundbaitReady} onPickGroundbait={fishing.pickGroundbait}
-          onGroundbait={(item) => fishing.throwGroundbait(item)} onNotebook={() => fishing.openPanel("notebook")} />
+          onGroundbait={(item) => fishing.throwGroundbait(item)} onNotebook={() => fishing.openPanel("notebook")} rods={fishing.rods} />
       )}
       {panel === "depot" && (
         <DepotPanel state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids)} onClose={closePanel}
@@ -76,7 +76,7 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
         <DepotPanel market state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids, true)} onClose={closePanel}
           npc={npc} lastSale={lastSale} onNeedNpc={needNpc} />
       )}
-      {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onRepair={fishing.repair} onClose={closePanel} />}
+      {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onRepair={fishing.repair} onRepairRod={fishing.rods.repair} onClose={closePanel} />}
       {panel === "records" && <RecordsPanel catalog={catalog} load={fishing.loadBoard} onClose={closePanel} />}
       {panel === "notebook" && <NotebookPanel catalog={catalog} load={fishing.loadNotebook} onClose={closePanel} />}{/* 0110 */}
       {/* v21 (0076): the boat, the battles, the treasure maps */}

@@ -17,7 +17,18 @@ import { nearestWater } from "@/lib/game/fishing/shore";
 import {
   fetchFishingBoard, type CaughtFish, type FishingBoard, type GroundbaitSpot, type NetLostWhy, type NetPull, type NetThrow, type Notebook,
 } from "@/lib/game/fishing/rpc";
-import { baitTotal, bestNet, digWaitSec, groundbaitCount, handFish, type GearSlot, type Loadout } from "@/lib/game/fishing/state";
+import { baitTotal, bestNet, digWaitSec, groundbaitCount, handFish, type GearSlot, type Loadout, type PartSlot } from "@/lib/game/fishing/state";
+
+/** 0115: the bag's rod actions (each runs as a panel action: busy, toasts). */
+export interface RodActions {
+  mount: (rodId: number, slot: PartSlot, item: string) => void;
+  unmount: (rodId: number, slot: PartSlot) => void;
+  equip: (rodId: number | null) => void;
+  rename: (rodId: number, name: string) => void;
+  scrap: (rodId: number) => void;
+  /** `name`: for the toast. */
+  repair: (rodId: number, name: string) => void;
+}
 import type { ReelResult } from "@/lib/game/fishing/reel";
 import type { Interactable } from "@/lib/game/maps/types";
 import type { QueueItem } from "@/lib/supabase";
@@ -66,6 +77,8 @@ export interface FishingController {
   loadBoard: () => Promise<FishingBoard>;
   /** v18.2 Sửa cần at chú Tư's. */
   repair: (itemId: string) => void;
+  /** 0115: the rods one by one (the bag's Cần câu section, chú Tư's Sửa cần). */
+  rods: RodActions;
   /** v18.2: the net minigame in progress (the NetOverlay), or null. */
   net: NetView | null;
   /** v18.2: the net a throw would use, or null (none owned / not loaded). */
@@ -169,7 +182,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   const speciesName = useCallback((id: string) => itemCatalog?.species.find((s) => s.id === id)?.name ?? id, [itemCatalog]);   // 0110
   const session = useCastSession({ roomId, data: castData, canvas, toast, itemName, speciesName });
   const { state, failed, catalog, reload, claimDaily, dig, sell: sellFish, release: releaseFish, buy: buyItem, equip: setLoadout, repair: repairRod,
-    equipSlot: mountSlot, throwGroundbait: throwBag, notebook: loadNotebook } = data;
+    equipSlot: mountSlot, throwGroundbait: throwBag, notebook: loadNotebook, rods: rodRpc } = data;
   const [panel, setPanel] = useState<FishingPanel | null>(null);
   const extras = useFishingExtras({ token, roomId, canvas, toast, watching: panel === "battle", onCoins: () => void reload() });   // v21
   const stateRef = useRef(state);
@@ -337,6 +350,24 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     }
     if (await throwBag(roomId, item, spot)) toastRef.current(groundbaitText(itemName(item)));
   }), [run, throwBag, roomId, itemName]);
+  // 0115: the rods one by one
+  const rods = useMemo<RodActions>(() => ({
+    mount: (rodId, slot, item) => void run(async () => {
+      const r = await rodRpc.mount(rodId, slot, item);
+      if (r) toastRef.current(`🔧 Đã lắp ${itemName(item)}${r.destroyed ? ` — ${itemName(r.destroyed)} cũ đã bỏ` : ""}.`);
+    }),
+    unmount: (rodId, slot) => void run(async () => {
+      const r = await rodRpc.unmount(rodId, slot);
+      if (r?.destroyed) toastRef.current(`🗑️ Đã tháo và bỏ ${itemName(r.destroyed)}.`);
+    }),
+    equip: (rodId) => void run(() => rodRpc.equip(rodId)),
+    rename: (rodId, name) => void run(() => rodRpc.rename(rodId, name)),
+    scrap: (rodId) => void run(() => rodRpc.scrap(rodId)),
+    repair: (rodId, name) => void run(async () => {
+      const r = await rodRpc.repair(rodId);
+      if (r) toastRef.current(repairText(name, r.cost ?? 0));
+    }),
+  }), [run, rodRpc, itemName]);
   const repair = useCallback((itemId: string) => void run(async () => {
     const r = await repairRod(itemId);
     if (r) toastRef.current(repairText(itemName(itemId), r.cost));
@@ -523,6 +554,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     buy,
     equip,
     equipSlot,
+    rods,
     groundbaitReady,
     pickGroundbait: setGbPick,
     throwGroundbait,

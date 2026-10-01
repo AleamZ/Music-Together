@@ -11,24 +11,12 @@ import type { FarmMine } from "@/lib/game/farm/state";
 import { describeItem, formatXu, type FishingCatalog, type ShopItem } from "@/lib/game/fishing/catalog";
 import { missingText, ownedOfSlot, rigLines } from "@/lib/game/fishing/gear";
 import {
-  baitCount, groundbaitCount, ownsItem, rodBroken, wearFor, type FishingState, type GearSlot, type Loadout, type Wear,
+  baitCount, groundbaitCount, ownsItem, rodBroken, wearFor, type FishingState, type GearSlot, type Loadout,
 } from "@/lib/game/fishing/state";
+import type { RodActions } from "@/hooks/useFishingController";
 import FishLine from "./FishLine";
-
-/** v18.2: a small durability bar (green → amber → red) with the count. */
-function WearBar({ wear }: { wear: Wear }) {
-  const f = wear.max > 0 ? Math.max(0, Math.min(1, wear.left / wear.max)) : 0;
-  const color = f > 0.5 ? "#4caf50" : f > 0.2 ? "#e0a431" : "#c0392b";
-  return (
-    <span className="mt-0.5 flex items-center gap-1 text-sm opacity-90">
-      <span className="relative h-1.5 w-16 overflow-hidden rounded-sm border border-ink/60 bg-parchment-300" role="meter"
-        aria-valuemin={0} aria-valuemax={wear.max} aria-valuenow={wear.left} aria-label="Độ bền">
-        <span className="absolute inset-y-0 left-0" style={{ width: `${f * 100}%`, background: color }} />
-      </span>
-      {wear.left}/{wear.max}
-    </span>
-  );
-}
+import RodBuilds from "./RodBuilds";
+import WearBar from "./WearBar";
 
 /** The field's side of the bag (v15.2 R29): my farm stock, the farm catalog's items and critter kinds (none before 0018),
  *  the server's clock, and Nạp thuốc. */
@@ -134,7 +122,7 @@ function untilText(until: string): string {
  *  hook, line, reel, phao — mounted and unmounted here), the baits, the groundbait, the bait box and bucket, and — once
  *  the field has loaded — the farm tools and the cua & ốc. */
 export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose, farm = null, groundbaitPick = null,
-  onPickGroundbait, onGroundbait, onNotebook }: {
+  onPickGroundbait, onGroundbait, onNotebook, rods = null }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
   /** An RPC is in flight: the buttons wait. */
@@ -150,6 +138,8 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
   onGroundbait?: (item: string) => void;
   /** 0110: open Sổ tay câu cá (only once bought). */
   onNotebook?: () => void;
+  /** 0115: the rods one by one; with a server from 0115 (state.rods) the Cần câu section is the per-rod builder. */
+  rods?: RodActions | null;
 }) {
   if (!state || !catalog) {
     return (
@@ -204,6 +194,7 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
       </section>
     );
   };
+  const builds = rods !== null && (state.rods?.length ?? 0) > 0;                       // 0115
   const gbKinds = kind("groundbait");
   const gbOn = state.groundbaitOn ?? null;
 
@@ -236,7 +227,8 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
             </>
           )}
         </section>
-        <section>
+        {builds && rods && <RodBuilds state={state} items={catalog.items} busy={busy} actions={rods} />}
+        {!builds && <section>
           <h3 className="text-xl text-burgundy">Cần câu</h3>
           {rig && (
             <p className="text-base leading-tight opacity-80" data-testid="rig-summary">
@@ -245,11 +237,11 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
           )}
           {missing && <p className="text-base text-burgundy" role="alert">⚠️ {missing}</p>}
           <ul>{owned("rod").map((i) => gearRow(i, "rod"))}</ul>
-        </section>
-        {/* 0110: the parts */}
-        {partSection("hook", "Lưỡi câu")}
-        {partSection("line", "Dây câu")}
-        {partSection("reel", "Máy xoay")}
+        </section>}
+        {/* 0110: the parts (0115: mounted per rod, in RodBuilds) */}
+        {!builds && partSection("hook", "Lưỡi câu")}
+        {!builds && partSection("line", "Dây câu")}
+        {!builds && partSection("reel", "Máy xoay")}
         {kind("net").some((i) => state.owned.includes(i.id)) && (
           <section>
             <h3 className="text-xl text-burgundy">Lưới</h3>
@@ -270,10 +262,10 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
             </ul>
           </section>
         )}
-        <section>
+        {!builds && <section>
           <h3 className="text-xl text-burgundy">Phao</h3>
           <ul>{owned("bobber").map((i) => gearRow(i, "bobber"))}</ul>
-        </section>
+        </section>}
         <section>
           <h3 className="text-xl text-burgundy">Mồi</h3>
           <ul>{kind("bait").map((i) => gearRow(i, "bait", baitCount(state, i.id)))}</ul>

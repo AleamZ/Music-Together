@@ -1,5 +1,5 @@
 import { formatWeight, hookClassName, type ShopItem, type ShopKind } from "./catalog";
-import type { GearSlot, Rig } from "./state";
+import type { GearSlot, PartSlot, Rig } from "./state";
 
 // Câu cá v3 (0110_fishing_v3.sql): the modular gear's numbers as the server uses them, and the texts the bag, the shop and
 // the notebook show. Pure. tests/unit/fishing-v3.test.ts pins the numbers against the migration.
@@ -51,6 +51,36 @@ export function rigLines(rig: Rig): string[] {
   }
   out.push(`Giật cần trong ${String(Math.round(rig.windowMs / 100) / 10).replace(".", ",")} giây`);
   return out;
+}
+
+/** 0115: a rod's slots in the bag (the order of its card). */
+export const PART_SLOTS: readonly PartSlot[] = ["hook", "line", "reel", "bobber"];
+export const PART_SLOT_NAME: Record<PartSlot, string> = { hook: "Lưỡi", line: "Dây", reel: "Máy xoay", bobber: "Phao" };
+
+/** 0115: the heaviest fish a rig lands (its weakest part: the line or the rod); null = no limit. */
+export function rigLimitG(rig: Rig): number | null {
+  const xs = [rig.lineG, rig.rodG].filter((x): x is number => x != null);
+  return xs.length ? Math.min(...xs) : null;
+}
+
+/** 0115: a rod card's stats summary ("Chịu tối đa 12 kg · Kéo nhanh hơn 10% · …"). */
+export function rodSummary(rig: Rig): string {
+  const out: string[] = [];
+  const lim = rigLimitG(rig);
+  if (rig.ready && lim != null) out.push(`Chịu tối đa ${formatWeight(lim)}`);
+  out.push(`${hookClassName(rig.hookClass)}${rig.hooks > 1 ? ` · ${rig.hooks} mũi` : ""}`);
+  if (!rig.kit) {
+    const pct = Math.round((1 - rig.reelSpeed) * 100);
+    out.push(pct > 0 ? `Kéo nhanh hơn ${pct}%` : pct < 0 ? `Kéo chậm hơn ${-pct}% (chưa có máy xoay)` : "Kéo bình thường");
+  }
+  out.push(`Giật cần trong ${String(Math.round(rig.windowMs / 100) / 10).replace(".", ",")} giây`);
+  return out.join(" · ");
+}
+
+/** 0115: the warning before a part is bound to a rod (and, when the slot is taken, that the old one is thrown away). */
+export function mountWarning(partName: string, rodName: string, oldName: string | null): string {
+  const bind = `${partName} sẽ gắn chặt vào ${rodName}, không tháo sang cần khác được.`;
+  return oldName ? `${bind} ${oldName} cũ sẽ bị bỏ.` : bind;
 }
 
 /** What a bare rod still lacks, or null when it may cast. */

@@ -173,6 +173,47 @@ thương lái cap and 0101's prices are untouched.
 - **Messages:** `rod needs parts`, `line_snap` / `rod_snap` (the fish, its weight, the line's limit, a line in pieces),
   extra fish ("Lưỡi nhiều mũi dính thêm 2 con: …"), `no groundbait`, `groundbait full`, `no notebook`, `bad slot`.
 
+## 9b. Rods built one by one (0115)
+
+Migration `supabase/migrations/0115_rod_builds.sql` · smoke `tests/sql/rod-builds-smoke.sql` · unit
+`tests/unit/rod-builds.test.tsx` · client `components/game/fishing/RodBuilds.tsx`. The owner's ask: a rod is assembled
+part by part **per rod**; a part mounted on a rod can never go to another one. (§2's per-account hook / line / reel slots
+and `fishing_equip` part slots are superseded by this section.)
+
+- **Instances.** `rods` (id, account, model `item_id`, `durability`, optional `name` ≤ 24, `legacy`): any number, several
+  of one model too. A bought rod is a new bare instance in the bag (never auto-equipped); at most 20 rods an account (the
+  kit counted). Rods are no longer in `inventory`. **Cần gỗ** is one free kit instance per account (made by
+  `_fishing_profile`), its hook / line / no-reel built in and fixed; only its phao slot changes (it starts with a free
+  Phao lông gà).
+- **Slots.** `rod_parts` (rod, slot hook / line / reel / bobber, item, a line's snaps left). `rod_mount(token, rod, slot,
+  item)` takes **one** unit out of the stackable bag (parts now stack to 99; a starter phao is free) and binds it.
+  **Replacing destroys** the old part; **`rod_unmount` is allowed and destroys** the part (the client asks first: "… cũ sẽ
+  bị bỏ"). Nothing leads back to the bag, so a bound part can never reach another rod. Bait stays per account; groundbait
+  unchanged.
+- **Equip.** `fishing_profiles.rod_id` is the equipped instance; the old columns `rod / hook / line / reel / bobber` stay as
+  a **derived mirror** written only by `_rod_sync` (so the start_* bodies, which read `p.rod` / `p.bobber`, are unchanged
+  and honour it through `_rod_usable` and `_fishing_rig`, which reads the instance's own parts). `casts.rod_id` (a trigger
+  fills it under the profile's row lock) pins the instance a cast was made with: its wear, `rod_snap`, `line_snap` and an
+  overboard loss hit **that** rod even if another is equipped mid-cast (`finish_cast` re-created with `-- 0115` marks).
+  A broken rod falls back to the kit and is repaired per instance.
+- **RPCs** (all `_ac_account`; the profile, then the rod row, locked `for update`): `rod_list`, `rod_mount`,
+  `rod_unmount`, `rod_equip` (null = the kit; a broken one refused, a bare one allowed — the cast says `rod needs parts`),
+  `rod_rename`, `rod_scrap` (not the kit, not the equipped one; no refund), `rod_repair` (30 % of the price via
+  `_pay('repair')`; `repair_rod(item)` picks the equipped / most worn instance of that model). No `rod_sell`: rods are
+  not resold. `fishing_equip` keeps `rod` (an instance of that model) and `bait`; its part slots answer `rod build`.
+- **Old data** (once per profile — `rod_id` null — and re-runnable): every inventory rod row becomes `qty` instances with
+  its durability and the rows are removed; every profile gets its kit; the equipped model becomes that model's instance
+  (else the kit). The profile's phao moves onto the equipped instance; on a bare equipped rod its hook, line (with its
+  snaps) and reel too. Each moved part takes **its one unit** out of the bag (0110 kept exactly that unit there — moved,
+  not copied); a part no longer in the bag is skipped; a starter phao costs nothing. Parts of a player on Cần gỗ stay in
+  the bag, free to mount on any rod.
+- **Mailbox.** `_mail_gift_kinds` adds rod / hook / line / reel / bobber; `_mail_claim_one` turns a rod into that many
+  instances (`bag full` past 20).
+- **Client.** Giỏ đồ › Cần câu: a card per rod (durability, "Chịu tối đa X kg · Kéo nhanh hơn N % · …", missing parts), its
+  four slots as buttons and drop targets, a picker of the compatible parts in the bag, confirm dialogs for binding,
+  replacing and removing; Dùng cây này, Đặt tên, Bỏ cần. Tiệm chú Tư: Sửa cần per rod and the bag's counts. The 3D rod
+  (`rodLookOf`) shows the equipped instance's reel and phao.
+
 ## 10. Not in this change
 
 A news post for the players (the owner asked for none now). Repairing lines. Shared (room-wide) groundbait spots.

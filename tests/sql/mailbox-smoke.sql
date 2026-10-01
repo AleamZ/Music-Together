@@ -22,6 +22,8 @@ set client_min_messages = warning;
 -- 0113 re-creates functions of this migration: re-run it after, as the chain does
 \i supabase/migrations/0113_review_fixes.sql
 \i supabase/migrations/0113_review_fixes.sql
+-- 0115 re-creates finish_cast / buy_item / the rig per rod instance over it: re-apply it, as the chain does
+\i supabase/migrations/0115_rod_builds.sql
 reset client_min_messages;
 
 create temp table mx_was (k text primary key, v text);
@@ -286,7 +288,7 @@ begin
   end;
   assert pg_temp.fails(format('select public.admin_mail_send(%L, %L, ''x'', '''', 2000000, ''[]'')', pg_temp.t('root'), '{"all": true}'), 'bad xu'), 'xu cap';
   assert pg_temp.fails(format('select public.admin_mail_send(%L, %L, ''x'', '''', 1, %L)', pg_temp.t('root'), '{"all": true}',
-                              '[{"kind": "item", "ref": "rod_bamboo", "qty": 1}]'), 'bad items'), 'no rods';
+                              '[{"kind": "item", "ref": "net_cast", "qty": 1}]'), 'bad items'), 'no nets (0115: rods may be gifted — instances on claim)';
   assert pg_temp.fails(format('select public.admin_mail_send(%L, %L, ''x'', '''', 1, ''[]'')', pg_temp.t('root'), '{"usernames": []}'), 'bad target'), 'no one';
   j := public.admin_mail_send(pg_temp.t('root'), jsonb_build_object('usernames', jsonb_build_array(upper(pg_temp.n('ta')), 'nobody_mbx_zz')),
                               'Quà khai trương', 'Chúc mừng!', 777, '[{"kind": "item", "ref": "bait_shrimp", "qty": 5}]');

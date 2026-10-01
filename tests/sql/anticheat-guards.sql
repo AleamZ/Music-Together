@@ -154,6 +154,14 @@ begin
     format('select public.fishing_equip(%L, %L, %L)', t, 'hook', 'hook_small'),                     -- 0110
     format('select public.throw_groundbait(%L, %L, %L, %L, 37, 25)', room, t, 'gb_cam', 'pond'),      -- 0110
     format('select public.fishing_notebook(%L)', t),                                                  -- 0110
+    -- the rods, one by one (0115)
+    format('select public.rod_list(%L)', t),
+    format('select public.rod_mount(%L, 1, %L, %L)', t, 'hook', 'hook_small'),
+    format('select public.rod_unmount(%L, 1, %L)', t, 'hook'),
+    format('select public.rod_equip(%L, 1)', t),
+    format('select public.rod_rename(%L, 1, %L)', t, 'x'),
+    format('select public.rod_scrap(%L, 1)', t),
+    format('select public.rod_repair(%L, 1)', t),
     -- farm and land
     format('select public.rent_plot(%L, %L, 5)', room, t),
     format('select public.buy_plot(%L, %L, 1)', room, t),
@@ -253,7 +261,7 @@ begin
     e := pg_temp.guard_err(call);
     assert e = 'account locked|anticheat|seconds', format('%s → %s', call, e);
   end loop;
-  assert n = 96, format('%s guarded calls', n);                                            -- 0110: +3, 0111: +6, 0114: +2
+  assert n = 103, format('%s guarded calls', n);                                           -- 0110: +3, 0111: +6, 0114: +2, 0115: +7
   perform public.fishing_state(t);
   perform public.fishing_board(room, t);
   perform public.field_state(room, t);

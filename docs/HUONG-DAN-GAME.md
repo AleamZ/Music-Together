@@ -235,7 +235,15 @@ thú cưng, phí võ đường, phí hầm ngục 100, phí dịch chuyển 50, 
 
 **Cần gỗ** là bộ đủ sẵn (lưỡi nhỏ, dây 3 kg, phao lông gà), không bao giờ gãy — người mới cứ thế câu, chủ yếu cá nhỏ, cá
 thường. **Mọi cần khác bán "trơn"**: phải lắp **lưỡi** và **dây** thì mới quăng được (thiếu sẽ báo "Cần này chưa đủ đồ —
-lắp lưỡi và dây câu…"). **Máy xoay** và **phao** là tuỳ chọn. Lắp/tháo tự do trong **🎒 Giỏ đồ**.
+lắp lưỡi và dây câu…"). **Máy xoay** và **phao** là tuỳ chọn.
+
+**Mỗi cây cần lắp đồ riêng** (từ bản 0115): mua cần nào là có thêm **một cây** trong giỏ (mua 2 cần tre là có 2 cây,
+mỗi cây độ bền riêng, đặt tên riêng được). Lưỡi, dây, máy xoay, phao mua về nằm trong giỏ (chồng được tới 99 mỗi loại).
+Vào **🎒 Giỏ đồ › Cần câu**: mỗi cây là một thẻ có 4 ô **Lưỡi · Dây · Máy xoay · Phao** — bấm ô (hoặc kéo đồ thả vào ô)
+để lắp. **Đồ đã lắp gắn chặt vào cây đó**, không chuyển sang cần khác được. **Thay** đồ mới thì đồ cũ **bị bỏ**; **tháo**
+(không thay) cũng **bỏ luôn** — game luôn hỏi lại trước. Bấm **Dùng cây này** để câu bằng cây đó. Cần gỗ chỉ thay được phao
+(lưỡi, dây có sẵn). Dây đứt, cần mòn, cần gãy, sửa cần đều tính **theo từng cây**. Cây không dùng nữa có thể **Bỏ cần**
+(mất luôn đồ trên nó, không hoàn xu). Tối đa 20 cây trong giỏ.
 
 #### Cần câu
 

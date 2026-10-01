@@ -10,7 +10,7 @@ import {
 import { BAD_SPOT, DAILY_LIMIT_TEXT, NEEDS_PARTS } from "./messages";
 import { extrasErrorText } from "./extras";
 import { parseFishPrices, type FishPrices } from "./prices";
-import { parseFishingState, type FishingState, type GearSlot, type Loadout } from "./state";
+import { parseFishingState, rodOf, type FishingState, type GearSlot, type Loadout, type PartSlot, type RodInstance } from "./state";
 
 // Supabase calls for the fishing RPCs (spec §8.3). Every answer carries the account's full state.
 
@@ -161,6 +161,45 @@ export async function setLoadout(token: string, l: Loadout): Promise<FishingStat
 /** 0110: mount (`item`) or unmount (null) one slot of the rig. */
 export async function fishingEquip(token: string, slot: GearSlot, item: string | null): Promise<FishingState> {
   return stateOf((await call("fishing_equip", { p_session_token: token, p_slot: slot, p_item: item })).state);
+}
+
+/** 0115: an answer of the rod RPCs: the bag's rods, the state, and the part destroyed (replaced / taken off). */
+export interface RodAnswer { rods: RodInstance[]; state: FishingState; destroyed: string | null; cost?: number }
+function rodAnswer(r: Record<string, unknown>): RodAnswer {
+  return {
+    rods: (Array.isArray(r.rods) ? r.rods : []).map(rodOf).filter((x): x is RodInstance => x !== null),
+    state: stateOf(r.state), destroyed: typeof r.destroyed === "string" ? r.destroyed : null,
+    ...(typeof r.cost === "number" ? { cost: r.cost } : {}),
+  };
+}
+
+/** 0115: the rods in my bag, each with its parts and rig. */
+export async function rodList(token: string): Promise<RodInstance[]> {
+  const r = await call("rod_list", { p_session_token: token });
+  return (Array.isArray(r.rods) ? r.rods : []).map(rodOf).filter((x): x is RodInstance => x !== null);
+}
+/** 0115: mount one unit of `item` from the bag onto rod `rodId`'s slot — bound for good; a part already there is destroyed. */
+export async function rodMount(token: string, rodId: number, slot: PartSlot, item: string): Promise<RodAnswer> {
+  return rodAnswer(await call("rod_mount", { p_session_token: token, p_rod: rodId, p_slot: slot, p_item: item }));
+}
+/** 0115: take a part off a rod — it is destroyed. */
+export async function rodUnmount(token: string, rodId: number, slot: PartSlot): Promise<RodAnswer> {
+  return rodAnswer(await call("rod_unmount", { p_session_token: token, p_rod: rodId, p_slot: slot }));
+}
+/** 0115: fish with this rod (null: Cần gỗ). */
+export async function rodEquip(token: string, rodId: number | null): Promise<RodAnswer> {
+  return rodAnswer(await call("rod_equip", { p_session_token: token, p_rod: rodId }));
+}
+export async function rodRename(token: string, rodId: number, name: string): Promise<RodAnswer> {
+  return rodAnswer(await call("rod_rename", { p_session_token: token, p_rod: rodId, p_name: name }));
+}
+/** 0115: throw a rod away with its parts (no refund). */
+export async function rodScrap(token: string, rodId: number): Promise<RodAnswer> {
+  return rodAnswer(await call("rod_scrap", { p_session_token: token, p_rod: rodId }));
+}
+/** 0115: Sửa cần for one rod instance (30% of its price). */
+export async function rodRepair(token: string, rodId: number): Promise<RodAnswer> {
+  return rodAnswer(await call("rod_repair", { p_session_token: token, p_rod: rodId }));
 }
 
 /** 0110: where a groundbait is thrown — the pond cell (as start_cast), or the river in world px (as the river casts). */
@@ -426,6 +465,13 @@ export function fishingErrorMessage(err: unknown): string {
     case "groundbait full": return "Mỗi loại thính chỉ giữ được 99 bao.";                                       // 0110
     case "no notebook": return "Bạn chưa có Sổ tay câu cá — tiệm chú Tư có bán.";                              // 0110
     case "not worn": return "Cần còn tốt, chưa cần sửa.";
+    case "rod build": return "Đồ câu giờ lắp theo từng cây cần — mở Giỏ đồ › Cần câu.";                       // 0115
+    case "rod not found": return "Không thấy cây cần này trong giỏ.";                                           // 0115
+    case "rod fixed": return "Cần gỗ có sẵn lưỡi và dây — chỉ thay được phao.";                                // 0115
+    case "rod equipped": return "Đang dùng cây cần này — đổi sang cần khác trước đã.";                          // 0115
+    case "slot empty": return "Chỗ này chưa lắp gì.";                                                           // 0115
+    case "bag full": return "Giỏ đầy rồi (tối đa 20 cần, 99 món mỗi loại).";                                    // 0115
+    case "name too long": return "Tên cần tối đa 24 chữ.";                                                       // 0115
     case "no net": return "Bạn chưa có lưới — tiệm chú Tư có bán.";
     case "throw not found": return "Lưới đã trôi mất rồi.";
   }
