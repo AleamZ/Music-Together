@@ -65,7 +65,7 @@ export function betaSheets(): Sheet[] {
 export function beta2dSheets(): Record<string, () => string> {
   return {
     "beta-2d": () => {
-      const S = 6, cellW = 24 * S * 4 + 24, cellH = 48 * S + 40, top = 56;
+      const S = 6, cellH = 48 * S + 40, top = 56;
       const rows = LOOKS.length + 2;
       const out = document.createElement("canvas");
       out.width = 1300; out.height = top + rows * cellH;

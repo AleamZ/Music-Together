@@ -141,7 +141,11 @@ export async function fetchCharacters(accountIds: string[]): Promise<Map<string,
   let res = await run(cols());
   while (res.error && extra < EXTRA_COLUMNS.length - 1 && (res.error.code === "42703" || /belt|ug_title|pg_level|pg_title|body|beta_tier/.test(res.error.message ?? ""))) {
     // no belt means no 0051, so no 0052 either: straight to the plain columns; no ug_title: drop only that
-    extra = /belt/.test(res.error.message ?? "") ? EXTRA_COLUMNS.length - 1 : /ug_title/.test(res.error.message ?? "") ? EXTRA_COLUMNS.indexOf("belt") : extra + 1;   // v21: no pg_* drops only those
+    const msg = res.error.message ?? "";
+    const missing = ["belt", "ug_title", "pg_level", "pg_title", "body", "beta_tier"].find((c) => new RegExp(`\\b${c}\\b`).test(msg));
+    // drop to the first column set without the missing column (no belt: the plain columns); unknown: one step down
+    const next = missing ? EXTRA_COLUMNS.findIndex((set, i) => i > extra && !set.split(", ").includes(missing)) : -1;
+    extra = next > extra ? next : extra + 1;
     res = await run(cols());
   }
   if (res.error) throw res.error;

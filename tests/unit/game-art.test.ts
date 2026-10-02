@@ -128,7 +128,8 @@ describe("fashion models", () => {
     const doc = readFileSync(join(process.cwd(), "docs/superpowers/fashion-models-contract.md"), "utf8");
     const ids = [...new Set([...doc.matchAll(/`?(fm_[a-z_]+)`?/g)].map((m) => m[1]))].sort();
     expect(ids).toHaveLength(23);
-    expect([...GARMENT_ART_IDS].sort()).toEqual(ids);
+    // 0118: the Beta keepsakes are exclusive (not in the store contract)
+    expect([...GARMENT_ART_IDS].filter((id) => !id.startsWith("beta_")).sort()).toEqual(ids);
   });
   it("every garment composes on both bodies in all facings and frames with no unknown codes", () => {
     for (const id of GARMENT_ART_IDS) for (const gender of ["nam", "nu"] as const) {
@@ -165,7 +166,7 @@ describe("item art", () => {
     const seeded = [...sql.matchAll(/\('([a-z]+_[a-z_]+)',\s*'(hat|top|bottom|shoes|neck|wrist|hairpin|hand|pet)'/g)]
       .map((m) => `${m[1]}:${m[2]}`)
       .sort();
-    const art = Object.entries(ITEM_ART).map(([id, a]) => `${id}:${a.slot}`).sort();
+    const art = Object.entries(ITEM_ART).filter(([id]) => !id.startsWith("beta_")).map(([id, a]) => `${id}:${a.slot}`).sort();   // 0118 keepsakes aside
     expect(seeded).toHaveLength(140);
     expect(art).toEqual(seeded);
   });
