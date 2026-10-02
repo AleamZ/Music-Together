@@ -172,6 +172,16 @@ export function drawItem(c: Ctx, p: Placed, t = 0, tvOn = false): void {
       return;
     }
     case "plant": {
+      if (p.item === "beta_mascot") {
+        // 0118: the Kỷ niệm Beta mascot — a gold pedestal, a cream spirit with ears, a gold β medallion
+        rect(c, C.outline, x + 2, y + 12, 12, 4); rect(c, "#d4a72c", x + 3, y + 13, 10, 2);
+        rect(c, C.outline, x + 4, y + 4, 8, 9); rect(c, "#f6ecd2", x + 5, y + 5, 6, 7);
+        rect(c, C.outline, x + 4, y + 2, 2, 3); rect(c, C.outline, x + 10, y + 2, 2, 3); px(c, "#f6ecd2", x + 5, y + 3); px(c, "#f6ecd2", x + 10, y + 3);
+        px(c, C.outline, x + 6, y + 6); px(c, C.outline, x + 9, y + 6);
+        rect(c, "#d4a72c", x + 6, y + 8, 4, 4); px(c, "#7a5a10", x + 7, y + 8); px(c, "#7a5a10", x + 7, y + 9); px(c, "#7a5a10", x + 7, y + 10);
+        px(c, "#7a5a10", x + 7, y + 11); px(c, "#7a5a10", x + 8, y + 8); px(c, "#7a5a10", x + 8, y + 10);
+        return;
+      }
       rect(c, C.outline, x + 4, y + 9, 8, 6); rect(c, p.item === "plant_trau" ? "#e8e0d0" : C.redDark, x + 5, y + 10, 6, 4);
       if (p.item === "plant_lan") {
         rect(c, C.leafDark, x + 5, y + 5, 1, 5); rect(c, C.leafDark, x + 10, y + 4, 1, 6); rect(c, C.leafDark, x + 7, y + 2, 1, 8);

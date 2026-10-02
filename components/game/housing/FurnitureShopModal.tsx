@@ -63,6 +63,7 @@ export default function FurnitureShopModal({ token, coins, storage, onState, onC
         <ul className="grid gap-2 sm:grid-cols-2" data-testid="furniture-list">
           {FURNITURE.filter((f) => kinds.includes(f.kind)).map((f) => {
             const have = storage.filter((s) => s.item === f.id).length;
+            if (f.exclusive && have === 0) return null;                                       // 0118: never sold
             return (
               <li key={f.id} className="flex items-center gap-2 rounded-sm border-2 border-gold-200 bg-cream p-1.5">
                 <FurnitureIcon item={f.id} />
@@ -72,8 +73,10 @@ export default function FurnitureShopModal({ token, coins, storage, onState, onC
                     {STYLE_NAMES[f.style]}{f.w > 0 ? ` · ${f.w}×${f.h} ô` : ""}{have > 0 ? ` · kho: ${have}` : ""}
                   </span>
                   {NOTES[f.id] && <span className="text-sm">{NOTES[f.id]}</span>}
-                  <button type="button" className="pch-btn pch-btn-primary self-start" disabled={busy || (coins !== null && coins < f.price)}
-                    onClick={() => void buy(f.id, f.name)}>Mua · {formatXu(f.price)}</button>
+                  {f.exclusive ? <span className="text-sm font-bold text-gold-700">β Kỷ niệm Beta · không bán, không tặng</span> : (
+                    <button type="button" className="pch-btn pch-btn-primary self-start" disabled={busy || (coins !== null && coins < f.price)}
+                      onClick={() => void buy(f.id, f.name)}>Mua · {formatXu(f.price)}</button>
+                  )}
                 </div>
               </li>
             );

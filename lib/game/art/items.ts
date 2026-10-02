@@ -169,4 +169,9 @@ export const ITEM_ART: Record<string, ItemArt> = {
   acc_bandana: { slot: "hairpin", kind: "bandana", colors: ["#3a78d0", "#27569e", "#f4f4f4"] },
   acc_flower_clip: { slot: "hairpin", kind: "flower", colors: ["#fffaf0", "#f0d8c8", "#f5c030"] },
   acc_hair_tie: { slot: "hairpin", kind: "tie", colors: ["#7a4bd0", "#553098", "#7a4bd0"] },
+  // 0118 "Kỷ niệm Beta" (exclusive: never sold, given or traded): cream + gold. The áo and the set are fashion models
+  // (garments.ts: beta_ao, beta_set) with the β emblem.
+  beta_non: { slot: "hat", shape: "nonla", colors: { y: "#f6ecd2", Y: "#e2cf9e", Z: "#c9962a" } },
+  beta_quan: { slot: "bottom", kind: "long", colors: ["#f2e6c8", "#d9c79a", "#d4a72c"] },
+  beta_dep: { slot: "shoes", colors: ["#d4a72c", "#f2e6c8"] },
 };

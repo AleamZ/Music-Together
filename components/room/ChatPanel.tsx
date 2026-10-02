@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { fetchBetaTiers } from "@/lib/game/beta/rpc";
 import { useChat } from "@/hooks/useChat";
 import type { ChatMessage } from "@/lib/chat";
 import { newFromOthers, notificationText } from "@/lib/chat-notify";
@@ -80,6 +81,16 @@ export default function ChatPanel({
   const initializedRef = useRef(false);
   const notifyOnRef = useRef(notifyOn);
   const permAskedRef = useRef(false);
+
+  // 0118: the β frames of the room's members (characters.beta_tier), read once per member list
+  const memberKey = useMemo(() => members.map((m) => m.account_id).sort().join(","), [members]);
+  const [betaTiers, setBetaTiers] = useState<Map<string, number>>(() => new Map());
+  useEffect(() => {
+    let live = true;
+    const ids = memberKey ? memberKey.split(",") : [];
+    fetchBetaTiers(ids).then((t) => { if (live) setBetaTiers(t); }, () => {});
+    return () => { live = false; };
+  }, [memberKey]);
 
   // Current username
   const currentUsername = useMemo(() => {
@@ -445,6 +456,7 @@ export default function ChatPanel({
               onReply={handleReply}
               onDelete={(id) => remove(id).catch(() => {})}
               onJumpToReply={handleJumpToReply}
+              betaTier={m.account_id ? betaTiers.get(m.account_id) ?? null : null}
               onMentionUser={handleMentionUser}
             />
           ))

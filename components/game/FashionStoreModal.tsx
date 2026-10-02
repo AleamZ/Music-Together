@@ -15,6 +15,7 @@ import {
   filterStoreItems,
   genderTag,
   sellFashionItem,
+  isBetaItem,
   isUniformItem,
   storeErrorMessage,
   unequipItem,
@@ -363,6 +364,11 @@ export default function FashionStoreModal({
                                 {isBusy ? "…" : `Mua (${item.price}x)`}
                               </button>
                             )
+                          ) : isBetaItem(item.id) ? (
+                            // 0118: the Kỷ niệm Beta keepsakes — never sold or given
+                            <span className="flex flex-1 items-center justify-center whitespace-nowrap rounded border border-gold-200 bg-amber-50 px-1 text-sm font-bold text-amber-800">
+                              β Kỷ niệm Beta
+                            </span>
                           ) : isUniformItem(item.id) ? (
                             // v20.2: the dojo's võ phục — worn from the dojo or the wardrobe, never sold or given
                             <span className="flex flex-1 items-center justify-center whitespace-nowrap rounded border border-gold-200 px-1 text-sm">

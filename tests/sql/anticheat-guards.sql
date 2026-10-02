@@ -45,6 +45,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'admin_mail_send(text,jsonb,text,text,integer,jsonb)', 'admin_code_list(text)',        -- the mailbox and codes (0111)
      'admin_code_create(text,text,text,integer,jsonb,integer,timestamp with time zone,timestamp with time zone)',
      'admin_code_disable(text,bigint)',
+     'admin_beta_snapshot(text)', 'admin_beta_reset(text,text)', 'admin_beta_status(text)',   -- the end-of-Beta reset (0118)
      -- reads
      'fishing_state(text)', 'fishing_board(uuid,text)', 'field_state(uuid,text)', 'dog_state(text)',
      'card_lobby(uuid,text)', 'card_state(uuid,text,text)', 'card_hand(uuid,text,text)', 'card_tick(uuid,text,text)',
@@ -56,6 +57,7 @@ create or replace function pg_temp.unguarded() returns text language sql as $$
      'progress_state(text)', 'progress_leaderboard(text,text)',   -- v21 progression (0070)
      'quest_state(text)', 'login_state(text)', 'arena_state(text)', 'photo_list(text)', 'photo_get(text,bigint)',
      'photo_delete(text,bigint)',                                 -- v21 quests (0071): reads, and deleting one's own photo
+     'beta_me(text)',                                             -- the Beta perks (0118): a read
      'story_state(text)',                                         -- the story chain (0114): a read
      'profession_state(text)',                                    -- v21 professions (0077): a read
      'fb_state(uuid,text)', 'fishing_extras_state(text)',         -- v21 fishing (0076): reads (fb_state settles lazily)

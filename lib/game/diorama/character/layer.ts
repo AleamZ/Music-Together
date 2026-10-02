@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BETA_GOLD, isBetaTag } from "@/lib/game/beta/frame";
 import { pxToWorld, type MapSize } from "../coords";
 import type { Billboard, Quality } from "../types";
 import { ChibiFactory, RIG } from "./build";
@@ -55,6 +56,31 @@ interface Actor {
   actT: number;
   /** Casting real shadows now (near the camera, high quality). */
   shadow: boolean;
+}
+
+/** The 3D chibi's name tag (a rounded plate; a gold inner border round a Beta-framed name, 0118). */
+export function nameTagCanvas(text: string, me: boolean): HTMLCanvasElement {
+  const scale = 4, font = 9 * scale;
+  const cv = document.createElement("canvas");
+  const c = cv.getContext("2d");
+  if (!c) throw new Error("canvas-2d-unavailable");
+  c.font = `bold ${font}px monospace`;
+  const w = Math.ceil(c.measureText(text).width) + 8 * scale, h = font + 6 * scale;
+  cv.width = w; cv.height = h;
+  c.font = `bold ${font}px monospace`;
+  c.fillStyle = me ? "rgba(58, 36, 24, 0.85)" : "rgba(20, 20, 30, 0.65)";
+  c.beginPath();
+  c.roundRect(0, 0, w, h, 3 * scale);
+  c.fill();
+  if (isBetaTag(text)) {                                                                        // 0118: the Beta frame
+    c.strokeStyle = BETA_GOLD; c.lineWidth = 1.5 * scale;
+    c.beginPath(); c.roundRect(scale, scale, w - 2 * scale, h - 2 * scale, 2.5 * scale); c.stroke();
+  }
+  c.fillStyle = me ? "#ffe08a" : "#ffffff";
+  c.textBaseline = "middle";
+  c.textAlign = "center";
+  c.fillText(text, w / 2, h / 2 + scale / 2);
+  return cv;
 }
 
 export class CharacterLayer {
@@ -146,22 +172,8 @@ export class CharacterLayer {
     const key = `${me ? 1 : 0}|${text}`;
     const hit = this.tags.get(key);
     if (hit) return hit;
-    const scale = 4, font = 9 * scale;
-    const cv = document.createElement("canvas");
-    const c = cv.getContext("2d");
-    if (!c) throw new Error("canvas-2d-unavailable");
-    c.font = `bold ${font}px monospace`;
-    const w = Math.ceil(c.measureText(text).width) + 8 * scale, h = font + 6 * scale;
-    cv.width = w; cv.height = h;
-    c.font = `bold ${font}px monospace`;
-    c.fillStyle = me ? "rgba(58, 36, 24, 0.85)" : "rgba(20, 20, 30, 0.65)";
-    c.beginPath();
-    c.roundRect(0, 0, w, h, 3 * scale);
-    c.fill();
-    c.fillStyle = me ? "#ffe08a" : "#ffffff";
-    c.textBaseline = "middle";
-    c.textAlign = "center";
-    c.fillText(text, w / 2, h / 2 + scale / 2);
+    const cv = nameTagCanvas(text, me);
+    const w = cv.width, h = cv.height;
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.minFilter = THREE.LinearFilter;

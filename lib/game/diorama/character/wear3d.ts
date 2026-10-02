@@ -8,7 +8,7 @@
 export type TopKind =
   | "tee" | "striped" | "camo" | "tank" | "baba" | "polo" | "shirt" | "flannel" | "denimshirt" | "school" | "hoodie"
   | "vest" | "aodai" | "leather" | "denimjacket" | "sailor" | "varsity" | "cardigan" | "raincoat" | "jersey" | "chef"
-  | "suit" | "puffer" | "kimono" | "maxi" | "overalls" | "gi" | "tkd" | "kungfu" | "fighter";
+  | "suit" | "puffer" | "kimono" | "maxi" | "overalls" | "gi" | "tkd" | "kungfu" | "fighter" | "beta";
 export type BottomKind =
   | "pants" | "jeans" | "cargo" | "jogger" | "silk" | "shorts" | "camoshorts" | "hawaii" | "cargoshorts" | "rolled"
   | "skirt" | "pleated" | "denimskirt";
@@ -65,6 +65,8 @@ export const WEAR3D: Readonly<Record<string, Wear3D>> = {
   fm_ao_dai: o("aodai"), fm_kimono: o("kimono"), fm_maxi_dress: o("maxi"), fm_overalls: o("overalls"),
   vp_vovinam: o("gi"), vp_karate: o("gi"), vp_judo: o("gi"), vp_taekwondo: o("tkd"), vp_vinhxuan: o("kungfu"),
   vp_muaythai: o("fighter"), vp_boxing: o("fighter"),
+  // 0118 "Kỷ niệm Beta" (exclusive)
+  beta_ao: t("beta"), beta_set: o("beta"), beta_non: h("nonla"), beta_quan: b("silk"), beta_dep: s("dep"),
   // bottoms
   bottom_shorts_red: b("shorts"), bottom_shorts_blue: b("shorts"), bottom_shorts_black: b("shorts"), bottom_shorts_white: b("shorts"),
   bottom_shorts_yellow: b("shorts"), bottom_shorts_green: b("shorts"), bottom_shorts_pink: b("shorts"), bottom_shorts_camo: b("camoshorts"),
@@ -111,6 +113,7 @@ const DESC: Readonly<Record<string, string>> = {
   maxi: "maxi dress: fitted bodice, waist seam, floor-length flared skirt", overalls: "overalls: bib with pocket, shoulder straps, buttons, trousers",
   gi: "martial-arts gi: crossed lapels, belt knot with tails", tkd: "taekwondo dobok: black V collar, belt", kungfu: "Vịnh Xuân: mandarin collar, frog buttons, sash",
   fighter: "muay thai/boxing: bare torso, satin trunks with a waistband",
+  beta: "Kỷ niệm Beta: cream top, gold collar ring and hem, a gold β emblem on the chest",
   // bottoms
   pants: "trousers: fly seam, waistband", jeans: "jeans: stitched pockets, fly, belt loops", cargo: "cargo pants: flap side pockets on the thighs",
   jogger: "joggers: side stripe, cuffed ankles", silk: "silk trousers: wide, sheen, flowing", shorts: "shorts: hems above the knee",

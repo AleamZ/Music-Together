@@ -29,6 +29,15 @@ function segDist(x: number, y: number, ax: number, ay: number, bx: number, by: n
 /** A soft low-frequency pattern in [-1, 1] (camo blotches, prints). */
 const wave = (x: number, y: number, z: number, k = 1) => (Math.sin(x * 1.3 * k + y * 0.7 * k + 1.3) + Math.sin(y * 1.7 * k - z * 1.1 * k + x * 0.4 * k) + Math.sin(z * 0.9 * k + x * 0.8 * k - 0.4)) / 3;
 
+/** The β emblem's strokes centred at (cx, cy), about 1.5 units tall (0118). */
+function betaGlyph(x: number, y: number, cx: number, cy: number, w = 0.09): boolean {
+  const P: readonly [number, number][][] = [
+    [[-0.25, 0.65], [-0.25, -0.95]],
+    [[-0.25, 0.65], [0.1, 0.65], [0.28, 0.42], [0.1, 0.12], [-0.25, 0.12]],
+    [[0.1, 0.12], [0.34, -0.15], [0.14, -0.48], [-0.25, -0.48]],
+  ];
+  return P.some((l) => l.slice(1).some((b, i) => segDist(x - cx, y - cy, l[i][0], l[i][1], b[0], b[1]) < w));
+}
 /** A crew neckline: true above it (skin). */
 const aboveCrew = (ax: number, y: number, deep = 0) => ax < 1.75 && y > 8.75 - deep + 0.55 * (ax / 1.7) ** 2;
 /** Inside a V opening whose point is at y0 and which widens by k per unit up. */
@@ -202,6 +211,13 @@ export function topPainter(s: ChibiSpec): (t: Texel) => RGB {
         if (f && (digit(1, x, y, -0.55, 5.3) || digit(0, x, y, 0.55, 5.3))) return tr[0];
         if (bk && (digit(1, x, y, 0.55, 5.6, 0.17) || digit(0, x, y, -0.55, 5.6, 0.17))) return tr[0];
         return c;
+      }
+      case "beta": {                                                                          // 0118 Kỷ niệm Beta
+        if (aboveCrew(ax, y, 0.1)) return SK;
+        if (aboveCrew(ax, y, 0.45)) return tr[0];                                              // gold collar ring
+        if (f && betaGlyph(x, y, -0.95, 6.3)) return tr[0];                                    // β on the chest
+        if (f && ax < 0.06 && y < 8.3 && y > 2.1) return tr[0];                                // gold placket line
+        return hem ? tr[0] : c;
       }
       case "chef": {
         if (aboveCrew(ax, y, -0.3)) return SK;

@@ -35,7 +35,11 @@ export const VISIBILITIES: ReadonlyArray<{ id: Visibility; name: string; note: s
 export type FurnitureKind = "bed" | "table" | "chair" | "sofa" | "lamp" | "plant" | "rug" | "shelf" | "tv" | "fridge" | "wall" | "floor"
   | "aquarium" | "cabinet" | "painting";                                     // v21 (0074)
 export type FurnitureStyle = "go" | "hien_dai" | "may_tre";
-export interface Furniture { id: string; name: string; kind: FurnitureKind; style: FurnitureStyle; w: number; h: number; price: number; cap?: number }
+export interface Furniture {
+  id: string; name: string; kind: FurnitureKind; style: FurnitureStyle; w: number; h: number; price: number; cap?: number;
+  /** 0118: a "Kỷ niệm Beta" piece — granted by the end-of-Beta reset only, never sold, given or traded. */
+  exclusive?: boolean;
+}
 
 export const STYLE_NAMES: Record<FurnitureStyle, string> = { go: "Gỗ truyền thống", hien_dai: "Hiện đại", may_tre: "Mây tre" };
 
@@ -90,6 +94,8 @@ export const FURNITURE: readonly Furniture[] = [
   { id: "rug_batu", name: "Thảm Ba Tư", kind: "rug", style: "go", w: 4, h: 3, price: 900 },
   { id: "aquarium", name: "Bể cá nhỏ", kind: "aquarium", style: "hien_dai", w: 2, h: 1, price: 3000, cap: 4 },
   { id: "aquarium_big", name: "Bể cá lớn", kind: "aquarium", style: "hien_dai", w: 3, h: 1, price: 7000, cap: 8 },
+  // 0118: the end-of-Beta mascot (exclusive)
+  { id: "beta_mascot", name: "Linh vật Kỷ niệm Beta", kind: "plant", style: "hien_dai", w: 1, h: 1, price: 1, exclusive: true },
 ];
 
 const BY_ID = new Map(FURNITURE.map((f) => [f.id, f]));

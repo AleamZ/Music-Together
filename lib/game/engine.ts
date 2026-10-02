@@ -1,4 +1,5 @@
 import { createActor, idleFrame, setKeyboard, setPath, tickActor, walkFrame, type Actor } from "@/lib/game/actor";
+import { BETA_GOLD, isBetaTag } from "@/lib/game/beta/frame";
 import type { Frame } from "@/lib/game/art/layers";
 import {
   drawHarvester, drawPlotShimmer, drawUrgentRing, harvesterSpot, liveLook, lookKey, paintPlot, postLabel, type PlotDraw,
@@ -2267,6 +2268,10 @@ export class GameEngine {
       const bx = tagBoxes[i];
       c.fillStyle = tg.kind === "me" ? "rgba(139, 90, 43, 0.92)" : tg.kind === "npc" ? "rgba(47, 110, 143, 0.88)" : "rgba(58, 36, 24, 0.78)";
       c.fillRect(bx.x, bx.y, bx.w, bx.h);
+      if (isBetaTag(tg.label)) {                                                                // 0118: the Beta frame
+        c.strokeStyle = BETA_GOLD; c.lineWidth = Math.max(1, Math.round(0.6 * s));
+        c.strokeRect(bx.x + 0.5, bx.y + 0.5, bx.w - 1, bx.h - 1);
+      }
       c.fillStyle = "#fbf3dc";
       c.fillText(tg.label, bx.x + bx.w / 2, bx.y + bx.h / 2 + s * 0.3);
     });

@@ -39,6 +39,8 @@ export interface CharacterRow {
   pg_title?: string | null;
   /** Added by 0094: body proportions (lib/game/body.ts); null / absent reads as the default body. */
   body?: unknown;
+  /** Added by 0118: the Beta keepsake tier (the β name frame); absent / null reads as none. */
+  beta_tier?: number | null;
 }
 
 export { DEFAULT_LOOK };
@@ -79,6 +81,7 @@ export function lookFromRow(row: CharacterRow): Look {
     ...(typeof row.ug_title === "string" && row.ug_title.length > 0 && row.ug_title.length <= 40 ? { ugTitle: row.ug_title } : {}),
     ...(typeof row.pg_level === "number" && row.pg_level >= 1 && row.pg_level <= 99 ? { pgLevel: row.pg_level } : {}),
     ...(typeof row.pg_title === "string" && row.pg_title.length > 0 && row.pg_title.length <= 40 ? { pgTitle: row.pg_title } : {}),
+    ...(typeof row.beta_tier === "number" && row.beta_tier >= 0 && row.beta_tier <= 5 ? { beta: row.beta_tier } : {}),
     ...(row.body !== null && row.body !== undefined && !isDefaultBody(row.body, gender) ? { body: normalizeBody(row.body, gender) } : {}),
   };
 }
@@ -126,7 +129,7 @@ export function fetchCatalog(): Promise<CatalogItem[]> {
 const LOOK_COLUMNS = "account_id, skin, hair, hair_color, hat, top, bottom, shoes, neck, gender, outfit, wrist, hairpin";
 /** v20.3 / v20.4: the extra columns (0051's belt, 0052's ug_title); a database without them yet is read without them, once
  *  and for all this page. */
-const EXTRA_COLUMNS = ["belt, ug_title, pg_level, pg_title, body", "belt, ug_title, pg_level, pg_title", "belt, ug_title", "belt", ""] as const;
+const EXTRA_COLUMNS = ["belt, ug_title, pg_level, pg_title, body, beta_tier", "belt, ug_title, pg_level, pg_title, body", "belt, ug_title, pg_level, pg_title", "belt, ug_title", "belt", ""] as const;
 let extra = 0;
 
 /** Looks of the given accounts; accounts without a character are simply absent from the map. */
@@ -136,7 +139,7 @@ export async function fetchCharacters(accountIds: string[]): Promise<Map<string,
   const run = (cols: string) => supabase.from("characters").select(cols).in("account_id", accountIds);
   const cols = () => (EXTRA_COLUMNS[extra] ? `${LOOK_COLUMNS}, ${EXTRA_COLUMNS[extra]}` : LOOK_COLUMNS);
   let res = await run(cols());
-  while (res.error && extra < EXTRA_COLUMNS.length - 1 && (res.error.code === "42703" || /belt|ug_title|pg_level|pg_title|body/.test(res.error.message ?? ""))) {
+  while (res.error && extra < EXTRA_COLUMNS.length - 1 && (res.error.code === "42703" || /belt|ug_title|pg_level|pg_title|body|beta_tier/.test(res.error.message ?? ""))) {
     // no belt means no 0051, so no 0052 either: straight to the plain columns; no ug_title: drop only that
     extra = /belt/.test(res.error.message ?? "") ? EXTRA_COLUMNS.length - 1 : /ug_title/.test(res.error.message ?? "") ? EXTRA_COLUMNS.indexOf("belt") : extra + 1;   // v21: no pg_* drops only those
     res = await run(cols());

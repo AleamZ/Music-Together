@@ -40,6 +40,7 @@ export const FURNITURE3D_DESC: Record<string, string> = {
   cabinet_go: "wooden wardrobe", cabinet_hiendai: "glass-door cabinet", cabinet_maytre: "rattan cabinet",
   painting_sen: "lotus painting on an easel", painting_pho: "old-quarter painting on an easel", painting_bien: "sea painting on an easel",
   plant_lan: "orchid in a pot", plant_xuongrong: "cactus in a pot", plant_cau: "areca palm in a pot",
+  beta_mascot: "Kỷ niệm Beta mascot: a cream chibi spirit with a gold β medallion on a gold-rimmed round pedestal",
   lamp_ban: "desk lamp", lamp_hoian: "Hội An silk lantern on a stand", rug_tron: "round rug with rings",
   rug_batu: "Persian rug", aquarium: "small fish tank on a cabinet", aquarium_big: "big fish tank on a cabinet",
 };
@@ -147,6 +148,19 @@ function paintItem(p: Paint, id: string): boolean {
       return true;
     }
     case "plant": {
+      if (id === "beta_mascot") {
+        // 0118: a round pedestal, a cream chibi spirit (body, head, ears) holding a gold β medallion
+        p.add(cyl(0.34, 0.38, 0.16, 16), 0xd4a72c, 0, 0.08, 0).add(cyl(0.3, 0.3, 0.06, 16), 0xf6ecd2, 0, 0.19, 0)
+          .add(new THREE.SphereGeometry(0.22, 12, 8), 0xf6ecd2, 0, 0.42, 0, 0, 0, 0, 1, 1.1, 0.9)
+          .add(new THREE.SphereGeometry(0.2, 12, 8), 0xfffaf0, 0, 0.78, 0)
+          .add(new THREE.ConeGeometry(0.06, 0.14, 6), 0xf6ecd2, -0.12, 0.98, 0, 0, 0, 0.35)
+          .add(new THREE.ConeGeometry(0.06, 0.14, 6), 0xf6ecd2, 0.12, 0.98, 0, 0, 0, -0.35)
+          .add(new THREE.SphereGeometry(0.025, 6, 4), 0x2a1e1c, -0.07, 0.8, 0.18).add(new THREE.SphereGeometry(0.025, 6, 4), 0x2a1e1c, 0.07, 0.8, 0.18)
+          .add(cyl(0.11, 0.11, 0.03, 14), 0xd4a72c, 0, 0.44, 0.2, Math.PI / 2, 0, 0)
+          .box(0.025, 0.12, 0.012, 0x7a5a10, -0.025, 0.44, 0.22).box(0.04, 0.025, 0.012, 0x7a5a10, 0.01, 0.48, 0.22)
+          .box(0.04, 0.025, 0.012, 0x7a5a10, 0.01, 0.43, 0.22).box(0.02, 0.05, 0.012, 0x7a5a10, 0.035, 0.455, 0.22);
+        return true;
+      }
       pot(p, id === "plant_trau" ? 0xe8e0d0 : 0xb0503a);
       if (id === "plant_mai") {
         p.add(cyl(0.03, 0.05, 0.7, 6), 0x5a381e, 0, 0.65, 0).add(cyl(0.02, 0.03, 0.4, 5), 0x5a381e, 0.12, 0.8, 0, 0, 0, -0.7)
