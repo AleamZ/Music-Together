@@ -23,7 +23,7 @@ import type { WeatherKind } from "@/lib/game/weather/model";
 const KINDS: ReadonlyArray<WeatherKind | "none"> = ["none", "clear", "cloudy", "fog", "rain", "thunder", "storm", "snow"];
 const MODE_LABEL: Record<CameraMode, string> = { follow: "Theo người", overview: "Toàn cảnh", free: "Bay tự do" };
 const MAP_LABEL: Partial<Record<MapId, string>> = { pond: "Ao cá", hall: "Sảnh", market: "Chợ Lớn", khu_nha: "Khu nhà",
-  field: "Đồng lúa", bai_dat: "Bãi đất", mo_da: "Mỏ đá", song_cai: "Sông Cái",
+  field: "Đồng lúa", bai_dat: "Bãi đất", mo_da: "Mỏ đá", song_cai: "Sông Cái", ham_ngam: "Hầm đấu ngầm",
 };
 /** The map in the URL (?map=hall); the pond by default (and on the server). */
 function mapFromUrl(search: string): MapId {

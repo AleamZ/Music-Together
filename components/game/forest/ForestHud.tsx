@@ -9,13 +9,15 @@
 import { useCallback, useEffect, useState } from "react";
 import type { GameCanvasHandle } from "@/components/game/GameCanvas";
 import {
-  COOKED_TOAST, DAILY_FULL_LOGS, DISH_BUFF_TEXT, FISH_NAME, LOG_NAME, QUALITY_NAME, RECIPES, RUNG_TRAM_ORIGIN, TOOLS,
-  dishBuffMin, dishPrice, logPrice, recipeById, repairCost, toolById, treeById, treeKey, treeOf, type LogId, type Recipe,
+  COOK_STAMINA, COOKED_TOAST, DAILY_FULL_LOGS, DAILY_MAX_LOGS, DISH_BUFF_TEXT, FISH_NAME, LOG_NAME, QUALITY_NAME, RECIPES,
+  RUNG_TRAM_ORIGIN, TOOLS, dishBuffMin, dishPrice, dishStamina, logPrice, recipeById, repairCost, toolById, treeById, treeKey,
+  treeOf, type LogId, type Recipe,
 } from "@/lib/game/forest/catalog";
+import { npcCutNote, npcQuotaLine, type NpcQuota } from "@/lib/game/economy/npc";
 import { nearestTree, type NearTree } from "@/lib/game/forest/near";
 import {
   chopFinish, chopStart, cookEat, cookFinish, cookSell, cookStart, forestErrorText, forestState, toolBuy, toolRepair, woodSell,
-  type ForestState,
+  type ForestState, type StallSale,
 } from "@/lib/game/forest/rpc";
 import { liveSync } from "@/lib/game/mglive";
 import { near, STALL, WILD_ITEMS, isWildItem } from "@/lib/game/realm/model";
@@ -43,6 +45,8 @@ export default function ForestHud(props: {
   const [cook, setCook] = useState<CookView | null>(null);
   const [panel, setPanel] = useState<"cook" | "stall" | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Econ v2: the thương lái's day after my last sale at the stall (null until I sell). */
+  const [npc, setNpc] = useState<NpcQuota | null>(null);
 
   const [inForest, setInForest] = useState(false);
   const take = useCallback((s: ForestState) => { setState(s); setFelled(s.felled, s.serverNowMs); }, []);
@@ -79,6 +83,15 @@ export default function ForestHud(props: {
   const run = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
     setBusy(true);
     try { return await fn(); } catch (e) { toast(forestErrorText(e)); return null; } finally { setBusy(false); }
+  };
+  // a sale at the stall (econ v2: through the thương lái — the toast says what it kept back)
+  const sold = (r: StallSale | null) => {
+    if (!r) return;
+    take(r.forest);
+    if (r.npc) setNpc(r.npc);
+    const cut = npcCutNote(r.cut);
+    toast(`💰 +${r.earned} xu${cut ? ` · ${cut}` : ""}`);
+    onCoins();
   };
 
   const felled = (t: NearTree) => {
@@ -206,7 +219,7 @@ export default function ForestHud(props: {
                   const n = needs(r);
                   return (
                     <li key={r.id} className="flex items-center justify-between gap-2">
-                      <span>{r.name}<br /><small>{n.text} · {r.steps.length} bước{r.stamina > 0 ? ` · +${r.stamina} thể lực` : ""}{r.buff ? ` · ${DISH_BUFF_TEXT[r.buff](r.buffValue)} ${r.buffMin}′` : ""}</small></span>
+                      <span>{r.name}<br /><small>{n.text} · {r.steps.length} bước · tốn {COOK_STAMINA} thể lực{dishStamina(r, 1) > 0 ? ` · ăn +${dishStamina(r, 1)} thể lực` : ""}{r.buff ? ` · ${DISH_BUFF_TEXT[r.buff](r.buffValue)} ${r.buffMin}′` : ""}</small></span>
                       <button type="button" className="pch-btn px-2" disabled={busy || !n.ok || !pan} onClick={() => void startCook(r.id)}>Nấu</button>
                     </li>
                   );
@@ -215,11 +228,12 @@ export default function ForestHud(props: {
             ) : (
               <div className="flex flex-col gap-2">
                 <section>
-                  <b className="text-sm">Gỗ ({state.logsToday}/{DAILY_FULL_LOGS} khúc hôm nay giá đủ)</b>
+                  {npc && <p className="text-sm opacity-80">{npcQuotaLine(npc)}</p>}
+                  <b className="text-sm">Gỗ ({state.logsToday}/{DAILY_FULL_LOGS} khúc hôm nay giá đủ · tối đa {DAILY_MAX_LOGS} khúc/ngày)</b>
                   {state.wood.length === 0 ? <p className="text-sm">Chưa có gỗ.</p> : state.wood.map((w) => (
                     <div key={w.item} className="flex items-center justify-between text-sm">
                       <span>{LOG_NAME[w.item as LogId] ?? w.item}: {w.qty}{w.half > 0 ? ` + ${w.half} nửa giá` : ""} · {logPrice(w.item)} xu</span>
-                      <button type="button" className="pch-btn px-2" disabled={busy} onClick={() => void run(() => woodSell(token, w.item, w.qty + w.half)).then((r) => { if (r) { take(r.forest); toast(`💰 +${r.earned} xu`); onCoins(); } })}>Bán hết</button>
+                      <button type="button" className="pch-btn px-2" disabled={busy} onClick={() => void run(() => woodSell(token, w.item, w.qty + w.half)).then(sold)}>Bán hết</button>
                     </div>
                   ))}
                 </section>
@@ -232,7 +246,7 @@ export default function ForestHud(props: {
                         <span>{r?.name ?? d.dish} ({QUALITY_NAME[d.quality]}) ×{d.qty}</span>
                         <span className="flex gap-1">
                           <button type="button" className="pch-btn px-1" disabled={busy} onClick={() => void run(() => cookEat(token, d.dish, d.quality)).then((x) => { if (x) { take(x.forest); toast(`😋 +${x.gained} thể lực${r?.buff && d.quality > 0 ? ` · ${DISH_BUFF_TEXT[r.buff](r.buffValue)} ${dishBuffMin(r, d.quality)}′` : ""}`); } })}>Ăn</button>
-                          <button type="button" className="pch-btn px-1" disabled={busy || !r} onClick={() => void run(() => cookSell(token, d.dish, d.quality, 1)).then((x) => { if (x) { take(x.forest); toast(`💰 +${x.earned} xu`); onCoins(); } })}>Bán {r ? dishPrice(r, d.quality) : ""}</button>
+                          <button type="button" className="pch-btn px-1" disabled={busy || !r} onClick={() => void run(() => cookSell(token, d.dish, d.quality, 1)).then(sold)}>Bán {r ? dishPrice(r, d.quality) : ""}</button>
                         </span>
                       </div>
                     );

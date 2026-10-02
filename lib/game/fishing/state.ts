@@ -3,7 +3,49 @@ import type { ShopItem } from "./catalog";
 // The account's fishing state as every fishing RPC returns it (spec §8.2), camelCased, plus the rules the HUD needs. Pure.
 
 export interface FishRow { id: string; speciesId: string; weightG: number; price: number; caughtAt: string }
-export interface Loadout { rod: string; bobber: string; bait: string }
+/** 0110: the hook / line / reel slots (null: empty); the bobber may be empty too. */
+export interface Loadout { rod: string; bobber: string | null; bait: string; hook?: string | null; line?: string | null; reel?: string | null }
+/** 0110: a slot fishing_equip mounts. */
+export type GearSlot = "rod" | "hook" | "line" | "reel" | "bobber" | "bait";
+/** 0110: what the gear adds up to (the server's _fishing_rig). */
+export interface Rig {
+  rod: string;
+  /** Cần gỗ: its own hook, line and phao. */
+  kit: boolean;
+  /** The rod may cast (a bare rod needs a hook and a line). */
+  ready: boolean;
+  missing: Array<"hook" | "line">;
+  hookClass: string | null;
+  hooks: number;
+  /** What the line holds (g). */
+  lineG: number | null;
+  /** What breaks the rod (g); null = never. */
+  rodG: number | null;
+  reelSpeed: number;
+  reelEase: number;
+  windowMs: number;
+  showsRarity: boolean;
+}
+/** 0115: a slot of one rod instance. */
+export type PartSlot = "hook" | "line" | "reel" | "bobber";
+/** 0115: a part bound to a rod (a line's snaps left / max; null: never wears). */
+export interface RodPart { item: string; durability: number | null; maxDurability: number | null }
+/** 0115: one rod in the bag (an instance: several of one model may be owned), with its own bound parts. */
+export interface RodInstance {
+  id: number;
+  item: string;
+  name: string | null;
+  /** null: unbreakable (Cần gỗ). */
+  durability: number | null;
+  maxDurability: number | null;
+  /** Cần gỗ: its hook, line and no-reel are built in (only the phao changes). */
+  kit: boolean;
+  equipped: boolean;
+  parts: Partial<Record<PartSlot, RodPart>>;
+  rig: Rig | null;
+}
+/** 0110: the groundbait thrown and still working. */
+export interface GroundbaitOn { item: string; map: string; x: number; y: number; until: string }
 /** A running anti-cheat lock (anti-cheat spec R14): its end and the signal that caused it. */
 export interface FishingLock { until: string; code: string }
 export interface FishingState {
@@ -30,10 +72,25 @@ export interface FishingState {
   lock: FishingLock | null;
   /** v18.2: durability left and max of each owned rod and net that wears ({} before migration 0034). */
   wear: Record<string, Wear>;
+  /** 0110: groundbait bags by item id ({} before). */
+  groundbait?: Record<string, number>;
+  /** 0110: the groundbait working now, or null. */
+  groundbaitOn?: GroundbaitOn | null;
+  /** 0110: Sổ tay câu cá bought. */
+  notebook?: boolean;
+  /** 0110: the rig; null from a server before 0110. */
+  rig?: Rig | null;
+  /** 0115: the equipped rod instance, and every rod in the bag ([] before 0115). */
+  rodId?: number | null;
+  rods?: RodInstance[];
+  /** 0115: unmounted parts in the bag, by item id. */
+  parts?: Record<string, number>;
 }
 /** v18.2: [left, max]. */
 export interface Wear { left: number; max: number }
-export type CastBlocker = "no_bait" | "hands_full" | "bucket_full" | "cast_limit" | "daily_limit";
+export type CastBlocker = "no_bait" | "hands_full" | "bucket_full" | "cast_limit" | "daily_limit"
+  /** 0110: a bare rod without its hook and line. */
+  | "needs_parts";
 
 const num = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
@@ -58,7 +115,10 @@ export function parseFishingState(json: unknown): FishingState | null {
   return {
     coins: num(j.coins),
     dailyClaimed: j.daily_claimed === true,
-    loadout: { rod: str(lo.rod, "rod_wood"), bobber: str(lo.bobber, "bobber_feather"), bait: str(lo.bait, "bait_worm") },
+    loadout: {
+      rod: str(lo.rod, "rod_wood"), bobber: "bobber" in lo ? strOrNull(lo.bobber) : "bobber_feather", bait: str(lo.bait, "bait_worm"),
+      hook: strOrNull(lo.hook), line: strOrNull(lo.line), reel: strOrNull(lo.reel),
+    },
     owned: (Array.isArray(j.owned) ? j.owned : []).filter((x): x is string => typeof x === "string"),
     bait,
     baitCap: num(j.bait_cap, 20),
@@ -72,6 +132,85 @@ export function parseFishingState(json: unknown): FishingState | null {
     dayResetsAt: strOrNull(j.day_resets_at),
     lock: lockOf(j.lock),
     wear: wearOf(j.wear),
+    groundbait: countsOf(j.groundbait),
+    groundbaitOn: groundbaitOnOf(j.groundbait_on),
+    notebook: j.notebook === true,
+    rig: rigOf(j.rig),
+    rodId: typeof j.rod_id === "number" ? j.rod_id : null,                               // 0115
+    rods: Array.isArray(j.rods) ? j.rods.map(rodOf).filter((r): r is RodInstance => r !== null) : undefined,
+    parts: countsOf(j.parts),
+  };
+}
+
+const PART_SLOTS: readonly PartSlot[] = ["hook", "line", "reel", "bobber"];
+const numOrNullOf = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
+
+/** 0115: one rod of `rods`; null when malformed. */
+export function rodOf(v: unknown): RodInstance | null {
+  const r = obj(v);
+  if (typeof r.id !== "number" || typeof r.item !== "string") return null;
+  const parts: Partial<Record<PartSlot, RodPart>> = {};
+  const p = obj(r.parts);
+  for (const slot of PART_SLOTS) {
+    const x = obj(p[slot]);
+    if (typeof x.item === "string") {
+      parts[slot] = { item: x.item, durability: numOrNullOf(x.durability), maxDurability: numOrNullOf(x.max_durability) };
+    }
+  }
+  return {
+    id: r.id, item: r.item, name: strOrNull(r.name), durability: numOrNullOf(r.durability),
+    maxDurability: numOrNullOf(r.max_durability), kit: r.kit === true, equipped: r.equipped === true, parts, rig: rigOf(r.rig),
+  };
+}
+
+/** 0115: the equipped rod instance (null before 0115). */
+export function equippedRod(s: FishingState): RodInstance | null {
+  return s.rods?.find((r) => r.equipped) ?? null;
+}
+
+/** 0115: unmounted units of a part in the bag. */
+export function partCount(s: FishingState, id: string): number {
+  return s.parts?.[id] ?? 0;
+}
+
+/** 0115: a rod instance at durability 0 (stays in the bag, repairable, cannot be equipped). */
+export function rodInstanceBroken(r: RodInstance): boolean {
+  return r.durability !== null && r.durability <= 0;
+}
+
+/** 0115: rods chú Tư can repair (below their max). */
+export function wornRods(s: FishingState): RodInstance[] {
+  return (s.rods ?? []).filter((r) => r.durability !== null && r.maxDurability !== null && r.durability < r.maxDurability);
+}
+
+/** 0115: at most this many rods in the bag (the kit counted; buy_item / the mailbox refuse more). */
+export const ROD_MAX = 20;
+/** 0115: at most this many unmounted units of a part kind. */
+export const PART_MAX = 99;
+
+function countsOf(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, x] of Object.entries(obj(v))) out[k] = num(x);
+  return out;
+}
+
+function groundbaitOnOf(v: unknown): GroundbaitOn | null {
+  const g = obj(v);
+  if (typeof g.item !== "string" || typeof g.until !== "string") return null;
+  return { item: g.item, map: str(g.map, "pond"), x: num(g.x), y: num(g.y), until: g.until };
+}
+
+/** 0110: the `rig` of the state; null when absent (a server before 0110). */
+export function rigOf(v: unknown): Rig | null {
+  if (!v || typeof v !== "object") return null;
+  const r = v as Record<string, unknown>;
+  const numOrNull = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
+  return {
+    rod: str(r.rod, "rod_wood"), kit: r.kit === true, ready: r.ready !== false,
+    missing: (Array.isArray(r.missing) ? r.missing : []).filter((x): x is "hook" | "line" => x === "hook" || x === "line"),
+    hookClass: strOrNull(r.hook_class), hooks: num(r.hooks, 1), lineG: numOrNull(r.line_g), rodG: numOrNull(r.rod_g),
+    reelSpeed: num(r.reel_speed, 1), reelEase: num(r.reel_ease, 0), windowMs: num(r.window_ms, 1500),
+    showsRarity: r.shows_rarity === true,
   };
 }
 
@@ -123,9 +262,19 @@ export function baitTotal(s: FishingState): number {
   return Object.values(s.bait).reduce((a, b) => a + b, 0);
 }
 
+/** 0110: groundbait bags of one kind. */
+export function groundbaitCount(s: FishingState, id: string): number {
+  return s.groundbait?.[id] ?? 0;
+}
+
+/** 0110: the most bags of a groundbait kind (buy_item's cap). */
+export const GROUNDBAIT_MAX = 99;
+
 /** Owned: a starter item, a bought one, or a bucket / bait box / fishing kit no bigger than what the account already has. */
 export function ownsItem(s: FishingState, item: ShopItem): boolean {
-  if (item.starter || s.owned.includes(item.id)) return true;
+  if (item.starter) return true;
+  if (s.rods && ["rod", "hook", "line", "reel", "bobber"].includes(item.kind)) return false;   // 0115: instances / stacks
+  if (s.owned.includes(item.id)) return true;
   if (item.kind === "bucket") return (item.capacity ?? 0) <= s.fishCap - 1;
   if (item.kind === "bait_box") return (item.capacity ?? 0) <= s.baitCap;
   // Bộ câu cá: owned once both its bait box and its crate would add nothing (same rule as the server's buy_item).
@@ -136,6 +285,7 @@ export function ownsItem(s: FishingState, item: ShopItem): boolean {
 /** Why start_cast would refuse right now (same order as the server), or null. 0047: no hourly or daily cast cap any
  *  more — casts cost hunger and thirst ("cast_limit" / "daily_limit" stay in the type for old server errors only). */
 export function castBlocker(s: FishingState): CastBlocker | null {
+  if (s.rig && !s.rig.ready) return "needs_parts";                                     // 0110: before anything is spent
   if (s.fish.length >= s.fishCap) return s.fishCap <= 1 ? "hands_full" : "bucket_full";
   if (baitCount(s, s.loadout.bait) < 1 && baitCount(s, "bait_worm") < 1) return "no_bait";
   return null;
@@ -146,6 +296,9 @@ export function maxBuyQty(s: FishingState, item: ShopItem): number {
   if (item.price === null) return 0;
   const affordable = Math.floor(s.coins / item.price);
   if (item.kind === "bait") return Math.max(0, Math.min(99, s.baitCap - baitTotal(s), affordable));
+  if (item.kind === "groundbait") return Math.max(0, Math.min(99, GROUNDBAIT_MAX - groundbaitCount(s, item.id), affordable));   // 0110
+  if (s.rods && item.kind === "rod") return s.rods.length >= ROD_MAX || affordable < 1 ? 0 : 1;                             // 0115
+  if (s.rods && ["hook", "line", "reel", "bobber"].includes(item.kind)) return partCount(s, item.id) >= PART_MAX || affordable < 1 ? 0 : 1;
   return ownsItem(s, item) || affordable < 1 ? 0 : 1;
 }
 

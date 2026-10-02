@@ -1,4 +1,5 @@
 import { createActor, idleFrame, setKeyboard, setPath, tickActor, walkFrame, type Actor } from "@/lib/game/actor";
+import { BETA_GOLD, isBetaTag } from "@/lib/game/beta/frame";
 import type { Frame } from "@/lib/game/art/layers";
 import {
   drawHarvester, drawPlotShimmer, drawUrgentRing, harvesterSpot, liveLook, lookKey, paintPlot, postLabel, type PlotDraw,
@@ -10,7 +11,9 @@ import { drawRat, ratFrame } from "@/lib/game/art/rats";
 import { drawBedCue, drawHoleCue } from "@/lib/game/art/gather-art";
 import { drawHeldFish, drawRod } from "@/lib/game/art/fishing";
 import { drawNetThrower } from "@/lib/game/art/netthrow";
-import { facingTowards, netAlive, type NetState } from "@/lib/game/fishing/netcast";
+import { drawGroundbaitSpot } from "@/lib/game/art/groundbait";                                         // 0117
+import { spotAt, spotLabel, spotLabel3d, spotPoint, tintHex, tintOf, type GroundbaitSpotView } from "@/lib/game/fishing/groundbait-spots";
+import { facingTowards, netAlive, type NetShow, type NetState } from "@/lib/game/fishing/netcast";
 import { serverNow } from "@/lib/game/farm/clock";
 import { nearestRat, promptTarget, RAT_PROMPT_RANGE, ratAt, ratInteractable, type FieldRats } from "@/lib/game/farm/rats";
 import { getCharacterFrames } from "@/lib/game/art/raster";
@@ -35,7 +38,7 @@ import { formatWeight, RARITY_COLOR, type Rarity } from "@/lib/game/fishing/cata
 import { bobberPoint, SWING_MS } from "@/lib/game/fishing/geometry";
 import type { SceneArt } from "@/lib/game/maps/scene-art";
 import type { GameMap, Interactable, Spot } from "@/lib/game/maps/types";
-import { inputDir, isBlockedAt, WALK_SPEED, type KeyState } from "@/lib/game/movement";
+import { inputDir, isBlockedAt, turnInput, WALK_SPEED, type KeyState } from "@/lib/game/movement";
 import { SPRINT_SPEED } from "@/lib/game/professions/catalog";
 import { FARM_ANIM, facingToCode, MAX_PATH_POINTS, type FacingCode, type FarmAnim, type GameMessage, type Unit } from "@/lib/game/net/protocol";
 import { Pack, type DogWalker } from "@/lib/game/pack";
@@ -62,16 +65,22 @@ import type { PresenceDog } from "@/lib/presence-modes";
 import type { RoomWeather } from "@/lib/game/weather/model";
 import type { MapId } from "@/lib/game/maps/types";
 import type { Billboard, DioramaFrame, GameplayFrame, View3D } from "@/lib/game/diorama/types";
-import type { CharAct } from "@/lib/game/diorama/character/pose";
+import { farmAct, type CharAct } from "@/lib/game/diorama/character/pose";
+import type { RodLook } from "@/lib/game/diorama/character/held";
 import { getMap } from "@/lib/game/maps/registry";
 import { interactablesNear, npcsNear, type WorldMap, type Zoned } from "@/lib/game/world/compose";
 import { toWorld, zoneAt, zoneRect, type ZoneId } from "@/lib/game/world/zones";
 import { cardSeatMap, seatPeople, type CardSeatIn, type SeatAnchor } from "@/lib/game/diorama/zones/seats";
+import { cardAct, localEmote, reactionAct } from "@/lib/game/diorama/character/emote";
+import { PILLION_BACK } from "@/lib/game/diorama/world/xeom";
 import { worldSwimMap } from "@/lib/game/world/swim";
 import { boatWater, wildBoatInteractable, worldBoatMap } from "@/lib/game/world/boat";                           // 0095                                          // P3
 import { gateNear, type WorldGate } from "@/lib/game/world/gates";                              // P3
 
 export type { RosterEntry } from "@/lib/game/world";
+
+/** The 3D chibi's pose through a net throw's phases. */
+const NET_ACT: Readonly<Record<NetShow, CharAct>> = { aim: "net_hold", charge: "net_hold", throw: "net_throw", sunk: "net_pull", pull: "net_pull", won: "net_won" };
 
 /** v21 world: the extra sprites of map `map` at t — each drawn at its feet (x, y) in world px, sorted by y. */
 export type WorldExtras = (map: MapId, t: number, reduced: boolean) => ReadonlyArray<{ x: number; y: number; draw: (b: CanvasRenderingContext2D, camX: number, camY: number) => void }>;
@@ -168,6 +177,12 @@ const LEAP_GAP_MIN_MS = 3000;
 const LEAP_GAP_MAX_MS = 8000;
 const NO_KEYS: KeyState = { up: false, down: false, left: false, right: false };
 
+/** 3D wave 1: the vital-state actions the shell can show on my 3D chibi. */
+export type VitalAct = "faint" | "sleep" | "exhausted" | "eat" | "drink" | "photo";
+const FARM_NAMES = new Map<number, string>(Object.entries(FARM_ANIM).map(([k, v]) => [v, k]));
+/** A FARM_ANIM code's 3D action (undefined for stop / an unknown code). */
+const farmActOf = (code: number): CharAct | undefined => farmAct(FARM_NAMES.get(code));
+
 /** Canvas 2D game loop: input, local + remote actors, NPCs, fishing, camera, depth-sorted rendering, overlays.
  *  Browser only. */
 export class GameEngine {
@@ -222,6 +237,9 @@ export class GameEngine {
   private species = new Map<string, SpeciesInfo>();
   /** My farm animation and when it started. */
   private farm: { a: FarmAnim; at: number } | null = null;
+  /** 3D wave 1: my vital state for the 3D chibi (setVital) and my rod's look (setRodLook). */
+  private vital: { v: VitalAct; until: number | null } | null = null;
+  private rodLook: RodLook | null = null;
   /** v18.2: my net throw and when its phase began. */
   private netThrow: { s: NetState; at: number } | null = null;
   private plots = new Map<number, PlotDraw>();
@@ -343,6 +361,27 @@ export class GameEngine {
     this.extras = fn;
   }
 
+  /** 0117: the room's ổ thính as the server has them (map px; the wild in world px), placed each frame: the zone's
+   *  origin added on the unified world, only those of this map on a per-map game. */
+  private gbSpots: readonly GroundbaitSpotView[] = [];
+  setGroundbait(spots: readonly GroundbaitSpotView[]): void {
+    this.gbSpots = spots;
+  }
+  private gbPlaced(): Array<{ at: Vec; spot: GroundbaitSpotView }> {
+    const now = Date.now(), view = { world: this.worldMap !== null, mapId: this.map.id as string };
+    const out: Array<{ at: Vec; spot: GroundbaitSpotView }> = [];
+    for (const spot of this.gbSpots) {
+      if (spot.untilMs <= now) continue;
+      const at = spotPoint(spot, view);
+      if (at) out.push({ at, spot });
+    }
+    return out;
+  }
+  /** 0117: the ổ thính my feet are in (the nearest within 48 px), or null. */
+  groundbaitHere(): GroundbaitSpotView | null {
+    return spotAt(this.gbPlaced(), this.local.pos, Date.now())?.spot ?? null;
+  }
+
   /** Diorama prototype: a 3D view draws the world instead of the 2D canvas (null = 2D). The game itself — input,
    *  movement, collision, the network — is unchanged; the view only reads the state each frame. */
   private view3d: View3D | null = null;
@@ -368,17 +407,26 @@ export class GameEngine {
     const out: Billboard[] = [];
     // the 3D chibi's action from the state the 2D renderer draws (P2): seated, riding, swimming, the rod, a reaction's wave
     const waved = new Set(this.reactions.filter((r) => r.id !== null && t - r.born < REACTION_MS).map((r) => r.id));
+    // wave 3: a reaction's emote (🎉/🔥 dance, 👏 claps, else the wave) and my busy act (craft, photo: emote.ts)
+    const emoted = new Map<string, CharAct>();
+    for (const r of this.reactions) if (r.id !== null && t - r.born < REACTION_MS) emoted.set(r.id, reactionAct(r.emoji));
+    const emote = (id: string): CharAct | undefined => (waved.has(id) ? emoted.get(id) ?? "wave" : undefined);
     const remoteAct = (id: string): CharAct | undefined => {
-      if (this.world.hammock(id)) return "sit";
+      if (this.world.hammock(id)) return "hammock";                                    // wave 1: lying in it
       if (this.world.riding(id) || this.world.carrier(id)) return "ride";
       if (this.world.swim(id, t) === "swim") return "swim";
+      if (this.world.heat(id, t).warming) return "stretch";                           // khởi động by the pond
+      const nt = this.world.net(id, t);                                                // quăng lưới
+      if (nt) return NET_ACT[nt.s.show];
       const ph = this.world.fishing(id, t).phase;
       if (ph === 3) return "reel";
+      if (ph === 2) return "bite";
       if (ph !== 0) return "cast";
       const fa = this.world.farmAnim(id, t);                                            // 0097: chopping / cooking, as they told us
-      if (fa === FARM_ANIM.chop) return "chop";
-      if (fa === FARM_ANIM.cook) return "cook";
-      return waved.has(id) ? "wave" : undefined;
+      const farmA = farmActOf(fa);                                                     // wave 1: all fourteen
+      if (farmA) return farmA;
+      if (this.world.fishing(id, t).landed) return "show_catch";                       // the catch held up
+      return emote(id);
     };
     for (const e of this.world.roster.values()) {
       const label = e.name;
@@ -388,10 +436,17 @@ export class GameEngine {
         continue;
       }
       const a = this.world.actors.get(e.id);
+      if (a && this.visible(e.id, t) && this.carried(e.id, t)) {                     // wave 3: on the pillion, behind the driver
+        const pil = this.pillionSpot(e.id);
+        if (pil) out.push({ id: e.id, look: e.look, x: pil.x, y: pil.y, facing: pil.f, frame: 0, name: label, act: "pillion" });
+        continue;
+      }
       if (!a || !this.visible(e.id, t) || this.carried(e.id, t)) continue;
       const f = walkFrame(a);
       const boat = this.onBoat(a.display), veh = this.world.riding(e.id) ?? (boat ? "boat" : undefined);           // P3
-      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label, act: boat ? "sit" : remoteAct(e.id), vehicle: veh });
+      const rf = this.world.fishing(e.id, t), rr = this.world.rain(e.id, t);                                       // wave 1
+      out.push({ id: e.id, look: e.look, x: a.display.x, y: a.display.y, facing: a.facing, frame: f === 0 ? idle(a.display) : f, name: label, act: boat ? "sit" : remoteAct(e.id), vehicle: veh,
+        hand: rf.hand ?? rf.landed?.speciesId ?? null, umbrella: rr.umbrella !== null && rf.phase === 0 });
     }
     const me = this.local;
     // P2: the world's NPCs near the camera's focus (the spatial hash), else the map's
@@ -401,11 +456,22 @@ export class GameEngine {
     if (!this.aboard(t) && (!lying || this.view3d)) {
       const f = walkFrame(me);
       const ph = this.fishing.phase;
-      const act: CharAct | undefined = lying ? "sit" : this.ridingV ? "ride" : this.swimming ? "swim"
-        : ph === "reeling" ? "reel" : ph !== "idle" ? "cast" : this.workAct ?? (waved.has(this.opts.localId) ? "wave" : undefined);
+      const myFarmAct = this.farm && t - this.farm.at < FARM_ANIM_MS ? farmActOf(this.farm.a) : undefined;      // wave 1
+      const landed = this.landed && this.landed.until > performance.now() ? this.landed.speciesId : null;
+      const vital = this.vital && (this.vital.until === null || t < this.vital.until) ? this.vital.v : null;
+      const act0: CharAct | undefined = lying ? "hammock" : this.ridingV ? "ride" : this.swimming ? "swim" : this.warming(t) ? "stretch"
+        : this.myNet(t) ? NET_ACT[this.myNet(t)!.s.show]
+        : ph === "reeling" ? "reel" : ph === "bite" ? "bite" : ph !== "idle" ? "cast" : this.workAct ?? localEmote() ?? myFarmAct ?? (landed ? "show_catch" : undefined) ?? emote(this.opts.localId);
+      // wave 1: the vital states win (fainted, asleep, eating/drinking); exhausted only while standing still
+      const act: CharAct | undefined = vital && !this.swimming && !this.ridingV && (vital !== "exhausted" || (!me.moving && act0 === undefined)) ? vital : act0;
       const boat = this.worldMap !== null && this.afloatAt(me.pos);                                               // P3: rowing Sông Cái
       out.push({ id: this.opts.localId, look: this.localInfo.look, x: me.display.x, y: me.display.y, facing: me.facing, frame: f === 0 ? idle(me.display) : f, name: this.localInfo.name, me: true,
-        act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined) });
+        act: boat && !this.rodOut ? "sit" : act, vehicle: this.ridingV ?? (boat ? "boat" : undefined),
+        hand: this.hand ?? landed, umbrella: this.rainLook.umbrella !== null && ph === "idle", rodLook: this.rodLook ?? undefined });
+    }
+    if (this.aboard(t)) {                                                           // wave 3: me on someone's pillion
+      const pil = this.pillionSpot(this.opts.localId);
+      if (pil) out.push({ id: this.opts.localId, look: this.localInfo.look, x: pil.x, y: pil.y, facing: pil.f, frame: 0, name: this.localInfo.name, me: true, act: "pillion" });
     }
     const wallNow = Date.now();
     if (wallNow - this.lightingAt > 1000) {
@@ -419,6 +485,11 @@ export class GameEngine {
       cards: this.cardSeatMap, origin: { x: hall.ox, y: hall.oy },
       hammock: new Set(out.filter((b) => (b.me ? lying : this.world.hammock(b.id))).map((b) => b.id)),
     }) : out;
+    // wave 3: the card players at their tables hold their cards, play now and then, and cheer with 🎉 (emote.ts)
+    if (hall) for (let i = 0; i < seated.length; i++) {
+      const b = seated[i];
+      if (b.act === "sit" && this.cardSeatMap.has(b.id)) seated[i] = { ...b, act: cardAct(t, (b.id.charCodeAt(0) % 7) / 7, emoted.get(b.id) === "dance") };
+    }
     return {
       t, focus: { x: me.display.x, y: me.display.y }, billboards: seated,
       night, warm: night > 0 && night < 1 ? Math.max(0, 1 - Math.abs(night - 0.5) * 2) : 0,
@@ -454,9 +525,34 @@ export class GameEngine {
         return { x: l.x0 + (l.x1 - l.x0) * k, y: l.y0 + (l.y1 - l.y0) * k, h: k >= 1 ? 0 : Math.sin(k * Math.PI) };
       }),
       gates: (this.worldMap?.gates ?? []).map((g) => ({ id: g.id, at: g.at, barrier: g.barrier })),
-      pets: this.pets.drawn().map((p) => ({ ownerId: p.id, species: p.look.species, x: p.x, y: p.y })),        // P4
+      pets: this.pets.drawn().map((p) => ({ ownerId: p.id, species: p.look.species, x: p.x, y: p.y,
+        look: { variant: p.look.variant, form: p.look.form, head: p.look.head, neck: p.look.neck, body: p.look.body } })),        // P4
       anglers: this.anglersFrame(t),                                                                            // P4
+      nets: this.netsFrame(t),
+      groundbait: this.gbPlaced().map((p) => ({ id: p.spot.id, x: p.at.x, y: p.at.y, color: tintHex(p.spot.item), stacks: p.spot.stacks,
+        label: spotLabel3d(p.spot, Date.now()) })),                                                             // 0117
     };
+  }
+
+  /** My net throw while it is still shown, and how long its phase has gone (ms). */
+  private myNet(t: number): { s: NetState; since: number } | null {
+    const n = this.netThrow;
+    return n && netAlive(n.s.show, t - n.at) ? { s: n.s, since: t - n.at } : null;
+  }
+
+  /** Everyone's net throw (mine and the others'): the thrower's feet and facing, the phase and its age, where the net
+   *  lies (world px) and how wide. */
+  private netsFrame(t: number): GameplayFrame["nets"] {
+    const out: Array<NonNullable<GameplayFrame["nets"]>[number]> = [];
+    const put = (id: string, p: Vec, facing: Facing, n: { s: NetState; since: number }) =>
+      out.push({ id, x: p.x, y: p.y, facing, show: n.s.show, since: n.since, cx: p.x + n.s.dx, cy: p.y + n.s.dy, r: n.s.r, k: n.s.k });
+    const mine = this.myNet(t);
+    if (mine) put(this.opts.localId, this.local.display, this.local.facing, mine);
+    for (const [id, a] of this.world.actors) {
+      const n = this.world.net(id, t);
+      if (n && this.visible(id, t)) put(id, a.display, a.facing, n);
+    }
+    return out;
   }
 
   /** P4: everyone with a line in the water (mine and the others'), feet + facing + phase code (1 wait, 2 bite, 3 reel). */
@@ -508,7 +604,7 @@ export class GameEngine {
   }
 
   /** P4 world map: the others I can see (display px, world px in world mode) and whether I am in the boat. */
-  mapMarks(): { others: Array<{ id: string; x: number; y: number }>; boat: boolean } {
+  mapMarks(): { others: Array<{ id: string; x: number; y: number }>; boat: boolean; baits?: Array<{ x: number; y: number; color: string }> } {
     const t = performance.now(), others: Array<{ id: string; x: number; y: number }> = [];
     for (const e of this.world.roster.values()) {
       if (e.id === this.opts.localId) continue;
@@ -516,7 +612,8 @@ export class GameEngine {
       if (!a || !this.visible(e.id, t)) continue;
       others.push({ id: e.id, x: a.display.x, y: a.display.y });
     }
-    return { others, boat: this.worldMap !== null && this.afloat };
+    const baits = this.gbPlaced().map((p) => ({ x: p.at.x, y: p.at.y, color: tintOf(p.spot.item) }));           // 0117
+    return { others, boat: this.worldMap !== null && this.afloat, baits };
   }
 
   /** Where I stand (world px). */
@@ -639,6 +736,17 @@ export class GameEngine {
     if (this.reactions.length > 40) this.reactions.shift();
   }
 
+  /** 3D wave 1: my vital state shown on the 3D chibi (the faint screen, the motel's sleep, kiệt sức, a meal or a drink,
+   *  photo mode) for `ms` (null = until cleared); null clears it. */
+  setVital(v: VitalAct | null, ms: number | null = null): void {
+    this.vital = v === null ? null : { v, until: ms === null ? null : performance.now() + ms };
+  }
+
+  /** 3D wave 1: my fishing loadout's look on the 3D rod (rod item, reel, bobber); null = the default rod. */
+  setRodLook(l: RodLook | null): void {
+    this.rodLook = l;
+  }
+
   /** 0096: what my hands are busy with (chopping a tree, cooking) — the 3D chibi's action while a minigame runs. */
   setWork(a: "chop" | "cook" | null): void {
     this.workAct = a;
@@ -749,6 +857,17 @@ export class GameEngine {
   private aboard(now: number): boolean {
     const l = this.lift;
     return l?.role === "passenger" && this.world.actors.has(l.peer) && this.visible(l.peer, now) && this.world.riding(l.peer) !== null;
+  }
+
+  /** Wave 3: where a passenger sits on their driver's pillion (px, behind the driver along their facing), or null. */
+  private pillionSpot(id: string): { x: number; y: number; f: Facing } | null {
+    const me = this.opts.localId, l = this.lift;
+    const driver = id === me ? (l?.role === "passenger" ? l.peer : null) : l?.role === "driver" && l.peer === id ? me : this.world.carrier(id);
+    if (!driver) return null;
+    const d = driver === me ? this.local : this.world.actors.get(driver);
+    if (!d) return null;
+    const back = PILLION_BACK * 16, v = d.facing === "up" ? [0, -1] : d.facing === "down" ? [0, 1] : d.facing === "left" ? [-1, 0] : [1, 0];
+    return { x: d.display.x - v[0] * back, y: d.display.y - v[1] * back, f: d.facing };
   }
 
   /** Is member `id` drawn on someone's vehicle (their own actor is not drawn)? */
@@ -1496,7 +1615,9 @@ export class GameEngine {
     const locked = this.warming(now) || this.cramping(now)                  // v18.10: the stretch, a cramp
       || this.lift?.role === "passenger"                                    // v18.13: on someone's vehicle
       || this.struck(now);                                                  // v18.9: lightning
-    const dir = this.inputEnabled && !this.rodOut && !locked ? inputDir(this.keys) : { x: 0, y: 0 };
+    const keys = this.inputEnabled && !this.rodOut && !locked ? inputDir(this.keys) : { x: 0, y: 0 };
+    const yaw = this.view3d?.inputYaw?.() ?? null;                                 // first person: keys follow the look
+    const dir = yaw === null ? keys : turnInput(keys, yaw);
     if (this.warmUntil !== 0 && !this.warming(now)) {
       this.warmUntil = 0;
       this.announceNow();
@@ -1589,9 +1710,21 @@ export class GameEngine {
       this.swimming = false;
       this.wetUntil = now + WET_MS;
       this.wetAnnounced = true;
+      const dest = this.local.path && this.local.path.length > 0 ? this.local.path[this.local.path.length - 1] : null;
+      // feet on a bank cell the land grid blocks (the water's edge): set them on the nearest walkable bank, or every step
+      // from here is refused and the player is stuck until they tap somewhere else
+      if (isBlockedAt(this.map, this.local.pos.x, this.local.pos.y)) {
+        const e = nearestEdge(this.toZone(this.local.pos, "pond"));
+        const at = e ? this.fromZone(e, "pond") : null;
+        if (at && !isBlockedAt(this.map, at.x, at.y)) {
+          this.local.pos = { x: at.x, y: at.y };
+          this.local.display = { x: at.x, y: at.y };
+        }
+      }
       if (this.local.path) {
-        // a tap-walk that crosses the bank stops here: the rest was planned on the swim grid
+        // a tap-walk that crosses the bank: the rest was planned on the swim grid; go on to the same spot on land
         setKeyboard(this.local, { x: 0, y: 0 });
+        if (dest && !isBlockedAt(this.map, dest.x, dest.y)) this.walkTo(dest);
       }
       this.announceNow();
       this.cb.onLeftWater?.();                                                     // v18.10: the immunity
@@ -1682,6 +1815,11 @@ export class GameEngine {
     for (const l of this.leaps) {
       if (l.x0 - camX < -24 || l.x0 - camX > this.vw + 24 || l.y0 - camY < -24 || l.y0 - camY > this.vh + 24) continue;
       drawLeap(b, { ...l, x0: l.x0 - camX, y0: l.y0 - camY, x1: l.x1 - camX, y1: l.y1 - camY }, t, reduced);
+    }
+    // 0117: the room's ổ thính, on the water under the people
+    for (const g of this.gbPlaced()) {
+      if (g.at.x - camX < -60 || g.at.x - camX > this.vw + 60 || g.at.y - camY < -60 || g.at.y - camY > this.vh + 60) continue;
+      drawGroundbaitSpot(b, g.at.x - camX, g.at.y - camY, tintOf(g.spot.item), g.spot.stacks, t, reduced);
     }
 
     const items: Array<{ y: number; draw: () => void }> = [];
@@ -2048,6 +2186,21 @@ export class GameEngine {
       c.fillText(label, x, y + s * 0.3);
     }
 
+    // 0117: each ổ thính's label over its patch: the kind, the time left, who threw it
+    const gbNow = Date.now();
+    for (const g of this.gbPlaced()) {
+      const text = spotLabel(g.spot, gbNow);
+      const [x, y] = dev(g.at.x, g.at.y - 46);
+      const w = Math.round(c.measureText(text).width + 3 * s), h = Math.round(4.8 * s);
+      if (x + w / 2 < 0 || x - w / 2 > this.canvas.width || y + h < 0 || y - h > this.canvas.height) continue;
+      c.fillStyle = "rgba(24, 58, 72, 0.86)";
+      c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), w, h);
+      c.fillStyle = tintOf(g.spot.item);
+      c.fillRect(Math.round(x - w / 2), Math.round(y - h / 2), Math.max(2, Math.round(s)), h);
+      c.fillStyle = "#fbf3dc";
+      c.fillText(text, x, y + s * 0.3);
+    }
+
     // the card tables' labels: the lobby's line over each table (v16 spec §5)
     for (const it of this.map.interactables) {
       const text = it.kind === "card_table" && it.game ? this.cardTables[it.game] : undefined;
@@ -2115,6 +2268,10 @@ export class GameEngine {
       const bx = tagBoxes[i];
       c.fillStyle = tg.kind === "me" ? "rgba(139, 90, 43, 0.92)" : tg.kind === "npc" ? "rgba(47, 110, 143, 0.88)" : "rgba(58, 36, 24, 0.78)";
       c.fillRect(bx.x, bx.y, bx.w, bx.h);
+      if (isBetaTag(tg.label)) {                                                                // 0118: the Beta frame
+        c.strokeStyle = BETA_GOLD; c.lineWidth = Math.max(1, Math.round(0.6 * s));
+        c.strokeRect(bx.x + 0.5, bx.y + 0.5, bx.w - 1, bx.h - 1);
+      }
       c.fillStyle = "#fbf3dc";
       c.fillText(tg.label, bx.x + bx.w / 2, bx.y + bx.h / 2 + s * 0.3);
     });

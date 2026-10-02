@@ -29,11 +29,13 @@ export function HeatChips({ chips }: { chips: HeatView["chips"] }) {
 }
 
 /** The actions at the pond's edge ("Nhảy xuống ao", "Khởi động") and "Cứu" next to a cramping member. */
-export function HeatActions({ heat, hidden, onNet = null }: {
+export function HeatActions({ heat, hidden, onNet = null, onGroundbait = null }: {
   heat: HeatView;
   hidden: boolean;
   /** v18.2: "🕸️ Quăng lưới" from this edge cell (only while a net with throws is owned). */
   onNet?: ((cell: { col: number; row: number }) => void) | null;
+  /** 0110: "🌾 Rải thính" on this edge cell (only while a groundbait bag is owned). */
+  onGroundbait?: ((cell: { col: number; row: number }) => void) | null;
 }) {
   const p = heat.probe;
   if (hidden || !p) return null;
@@ -60,6 +62,11 @@ export function HeatActions({ heat, hidden, onNet = null }: {
       {onNet && (
         <button type="button" className="pch-btn text-base" data-hotkey="net" title="Quăng lưới (L)" onClick={() => p.edge && onNet({ col: p.edge.col, row: p.edge.row })}>
           <span className="pointer-coarse:hidden">L · </span>🕸️ Quăng lưới
+        </button>
+      )}
+      {onGroundbait && (
+        <button type="button" className="pch-btn text-base" title="Rải thính ở chỗ này" onClick={() => p.edge && onGroundbait({ col: p.edge.col, row: p.edge.row })}>
+          🌾 Rải thính
         </button>
       )}
     </div>

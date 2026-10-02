@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { questErrorMessage, type QuestCat } from "@/lib/game/quests/model";
+import { COMPANY_MIN_PCT, COMPANY_SHARE_MAX, companyShare, questErrorMessage, type QuestCat } from "@/lib/game/quests/model";
 import { questAccept, questClaim, questCompanyClaim, questState, type Quest, type QuestState } from "@/lib/game/quests/rpc";
 import { ParchmentModal } from "../Parchment";
 import { FillBar, RewardPop } from "../celebrate/Fx";
@@ -102,6 +102,8 @@ export default function QuestLogModal({ token, at, initialTab, onCoins, onOpenLo
   );
 
   const company = state?.company ?? null;
+  // economy v2 (0104): my part of the goal's pool, if it finished with my contribution as it stands
+  const myShare = company ? companyShare(company.coins, company.mine, company.goal) : 0;
   return (
     <ParchmentModal title="📜 Nhiệm vụ" onClose={onClose} className="sm:max-w-[720px]">
       <div className="relative flex min-h-0 flex-1 flex-col gap-3 font-vt text-lg" data-testid="quest-log">
@@ -136,11 +138,15 @@ export default function QuestLogModal({ token, at, initialTab, onCoins, onOpenLo
             {company ? (
               <div className="rounded border border-gold-300 p-2">
                 <div className="text-xl text-burgundy">{company.title}</div>
-                <p className="text-base">{company.descr} Ai góp sức đều nhận 🪙 {company.coins} · ✨ {company.xp} XP khi xong.</p>
+                <p className="text-base">
+                  {company.descr} Khi xong, quỹ 🪙 {company.coins.toLocaleString("vi-VN")} chia theo công góp: ai góp từ {COMPANY_MIN_PCT} % mục tiêu
+                  nhận phần của mình (tối đa {COMPANY_SHARE_MAX} xu) và ✨ {company.xp} XP.
+                </p>
                 <FillBar pct={Math.min(100, (company.progress / Math.max(1, company.goal)) * 100)} className="block h-4 w-full" color="bg-amber-500" />
                 <p className="text-base tabular-nums">
                   {company.progress.toLocaleString("vi-VN")}/{company.goal.toLocaleString("vi-VN")} · {company.contributors} người góp ·
                   bạn góp {company.mine.toLocaleString("vi-VN")}
+                  {company.mine > 0 && (myShare > 0 ? ` · phần của bạn ≈ ${myShare.toLocaleString("vi-VN")} xu` : " · góp thêm để có phần thưởng")}
                 </p>
               </div>
             ) : <p>Chưa có mục tiêu chung.</p>}

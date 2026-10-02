@@ -55,6 +55,11 @@ describe("describeItem", () => {
     expect(describeItem(item({ kind: "bait" }))).toBe("Mồi thường — đào ở bãi trùn");
     expect(describeItem(item({ kind: "bait", multHiem: 1.5, multQuy: 1.5, multLegend: 1.5 }))).toBe("Cá hiếm trở lên ×1,5");
     expect(describeItem(item({ kind: "bait", multHiem: 2, multQuy: 2, multLegend: 3 }))).toBe("Cá hiếm ×2, huyền thoại ×3");
+    // econ v2 (0101): Mồi vàng — the faster bite and Mồi trùn chỉ's rarity
+    expect(describeItem(item({ kind: "bait", multHiem: 2, multQuy: 2, multLegend: 3, biteBoost: 0.6000000238418579 })))
+      .toBe("Cá cắn nhanh hơn, gần bờ dễ cắn · cá hiếm ×2, huyền thoại ×3");
+    expect(describeItem(item({ kind: "bait", multHiem: 1.5, multQuy: 1.5, multLegend: 1.5, biteBoost: 0.6 })))
+      .toBe("Cá cắn nhanh hơn, gần bờ dễ cắn · cá hiếm ×1,5");
     expect(describeItem(item({ kind: "bait_box", capacity: 60 }))).toBe("Chứa 60 mồi");
     expect(describeItem(item({ kind: "bucket", capacity: 5 }))).toBe("Đựng 5 con cá");
   });

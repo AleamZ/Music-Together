@@ -127,7 +127,7 @@ describe("PlotPanel", () => {
     const { onAct } = renderPlot(7);
     expect(screen.getByText("Ruộng còn gốc rạ — chưa làm đất.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thuê · 10.000 xu" })).toBeDisabled();
-    expect(screen.getByText("Bạn đang canh tác 2 thửa rồi.")).toBeInTheDocument();
+    expect(screen.getByText("Bạn đang canh tác 2 thửa rồi (tính cả các sảnh).")).toBeInTheDocument();
     cleanup();
     renderPlot(2);
     expect(screen.getByRole("button", { name: "Làm ruộng lúa" })).toBeEnabled();

@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { HudSlotted } from "../hud/HudSlot";
+import { useEffect, useState } from "react";
+import { setLocalEmote } from "@/lib/game/diorama/character/emote";
 import type { UseMining } from "@/hooks/useMining";
 import {
-  BUFF_NAME, CRAFT_ITEMS, craftItem, effectText, ingredientName, MAX_UPGRADE, PICKAXES, pickaxe, RECIPES, UPGRADE_CHANCE,
-  UPGRADE_MATS, upgradeCoins, upgradeEffectText,
+  BUFF_NAME, CRAFT_ITEMS, craftItem, DAILY_DIGS, effectText, ingredientName, MAX_UPGRADE, PICKAXES, pickaxe, RECIPES,
+  UPGRADE_CHANCE, UPGRADE_MATS, upgradeCoins, upgradeEffectText,
 } from "@/lib/game/mining/catalog";
+import { npcQuotaLine } from "@/lib/game/economy/npc";
 import type { MineState } from "@/lib/game/mining/rpc";
 import { rarityInfo } from "@/lib/game/rarity";
 import { ParchmentModal } from "../Parchment";
@@ -59,6 +62,7 @@ function ShopPanel({ m }: { m: UseMining }) {
           <button type="button" className={`pch-btn ${tab === "buy" ? "pch-btn-primary" : ""}`} onClick={() => setTab("buy")}>Mua cuốc</button>
           <span className="ml-auto self-center">💰 {s?.coins ?? "…"} xu</span>
         </div>
+        {tab === "sell" && m.npc && <p className="text-base opacity-80">{npcQuotaLine(m.npc)}</p>}
         {tab === "sell" && (sellable.length === 0 ? <p>Chưa có quặng hay thảo dược nào để bán.</p> : (
           <ul className="flex flex-col gap-1">
             {sellable.map((i) => (
@@ -93,7 +97,8 @@ function ShopPanel({ m }: { m: UseMining }) {
             })}
           </ul>
         )}
-        <p className="text-base opacity-80">Quặng càng hiếm càng cần cuốc tốt: vàng, ngọc cần cuốc thép; kim cương, tinh thể lửa cần cuốc kim cương.</p>
+        <p className="text-base opacity-80">Quặng càng hiếm càng cần cuốc tốt: vàng, ngọc cần cuốc thép; kim cương, tinh thể lửa cần cuốc kim cương.
+          Mỗi ngày đào tối đa {DAILY_DIGS} lượt.</p>
       </div>
     </ParchmentModal>
   );
@@ -242,13 +247,18 @@ function BagPanel({ m }: { m: UseMining }) {
 }
 
 export default function MiningOverlays({ m, showChip }: { m: UseMining; showChip: boolean }) {
+  // wave 3: my 3D chibi hammers at the anvil / stirs the cauldron while a craft mini-game is open
+  const crafting = m.craft ? (m.craft.game === "brew" ? "stir" : "hammer") : null;
+  useEffect(() => { setLocalEmote(crafting); return () => setLocalEmote(null); }, [crafting]);
   return (
     <>
       {showChip && m.panel === null && m.dig === null && m.craft === null && (
-        <button type="button" className="pch-btn fixed left-2 top-40 z-20 font-vt text-lg" onClick={() => m.openPanel("bag")}
-          aria-label="Túi mỏ và thuốc">
-          🎒 Túi mỏ{(m.state?.buffs.length ?? 0) > 0 ? " · ✨" : ""}
-        </button>
+        <HudSlotted>
+          <button type="button" className="pch-btn font-vt text-lg" onClick={() => m.openPanel("bag")}
+            aria-label="Túi mỏ và thuốc">
+            🎒 Túi mỏ{(m.state?.buffs.length ?? 0) > 0 ? " · ✨" : ""}
+          </button>
+        </HudSlotted>
       )}
       {m.dig && <MineGame view={m.dig} onEnd={m.finishDig} onClose={m.closeDig} />}
       {m.craft && (

@@ -1,5 +1,6 @@
 // v21 progression (0070_progression.sql): the level curve, the map unlocks, the waypoints and the leaderboards' labels.
-// Pure; tests/unit/v21-progression.test.ts pins every constant here to the SQL seed.
+// Pure; tests/unit/v21-progression.test.ts pins every constant here to the SQL seed (economy v2's rewards, caps and fee:
+// 0104_econ_rewards.sql, pinned by tests/unit/econ-rewards.test.ts).
 import type { MapId } from "@/lib/game/maps/types";
 
 export const MAX_LEVEL = 99;
@@ -14,8 +15,8 @@ export function levelFor(xp: number): number {
   return l;
 }
 
-/** Coins paid on reaching level `l` (0070 _pg_level_reward). */
-export const levelReward = (l: number): number => (l % 5 === 0 ? 150 * l : 50 * l);
+/** Coins paid on reaching level `l` (0104 _pg_level_reward, economy v2: was 50·L / 150·L). Levels 1→99 pay 136 980. */
+export const levelReward = (l: number): number => (l % 5 === 0 ? 60 * l : 20 * l);
 
 /** Progress inside the current level: XP into it, XP the level spans, 0–1. */
 export function levelProgress(xp: number): { level: number; into: number; span: number; frac: number } {
@@ -26,8 +27,8 @@ export function levelProgress(xp: number): { level: number; into: number; span: 
   return { level, into, span, frac: span > 0 ? Math.min(1, Math.max(0, into / span)) : 1 };
 }
 
-/** The daily XP caps per bucket (0070 _pg_cap). */
-export const XP_CAPS = { fish: 1500, earn: 400, fight: 400, grant: 3000 } as const;
+/** The daily XP caps per bucket (0104 _pg_cap, economy v2: grant was 3 000). */
+export const XP_CAPS = { fish: 1500, earn: 400, fight: 400, grant: 1500 } as const;
 export type XpBucket = keyof typeof XP_CAPS;
 
 /** #92: the level a map opens at (0070 map_levels). Every existing map is open at level 1; a map missing here is open.
@@ -57,7 +58,8 @@ export const WAYPOINTS: readonly WaypointDef[] = [
   { id: "wp_bai_dat", name: "Bãi đất trống", map: "bai_dat", x: 400, y: 48, dir: "down", minLevel: 6 },
 ];
 export const WAYPOINT_RADIUS = 160;
-export const TELEPORT_FEE = 20;
+/** 0104 waypoint_travel (economy v2: was 20). */
+export const TELEPORT_FEE = 50;
 
 export type BoardId = "level" | "rich" | "fish" | "biggest" | "farmer" | "fights";
 export const BOARDS: ReadonlyArray<{ id: BoardId; label: string; unit: string }> = [

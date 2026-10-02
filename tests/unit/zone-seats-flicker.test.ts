@@ -130,7 +130,7 @@ describe("real seats", () => {
     const cafe = hallSeat("cafe:2")!;
     const out = seatPeople([person("h", o.ox + 128, o.oy + 212, { act: "sit" }), person("c", o.ox + cafe.x, o.oy + cafe.y, { act: "sit" })],
       { cards: new Map(), hammock: new Set(["h"]), origin: { x: o.ox, y: o.oy } });
-    expect(out[0]).toMatchObject({ x: o.ox + HAMMOCK_SEAT.x, y: o.oy + HAMMOCK_SEAT.y, act: "sit", lift: seatLift(HAMMOCK_SEAT) });
+    expect(out[0]).toMatchObject({ x: o.ox + HAMMOCK_SEAT.x, y: o.oy + HAMMOCK_SEAT.y, act: "hammock", lift: seatLift(HAMMOCK_SEAT) });
     expect(out[1]).toMatchObject({ x: o.ox + cafe.x, y: o.oy + cafe.y, yaw: 0, lift: seatLift(cafe) });
   });
 });

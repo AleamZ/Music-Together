@@ -139,7 +139,7 @@ export default function ProfessionModal({ token, state, nowMs, onState, onCoins,
         <section className="rounded-sm border border-ink/30 p-2 text-base">
           <h3 className="font-bold">⚡ Thể lực & buff</h3>
           <p>Giữ <kbd>Shift</kbd> để chạy (tốn 1 thể lực/giây). Câu cá 3, kéo lưới 5, đào mỏ 4, trận võ 8. Hồi đầy sau ~10 phút;
-            nhanh gấp 3 khi nằm võng, ×1,5 khi “Ngủ ngon”; ngủ nhà nghỉ hồi đầy ngay.</p>
+            nhanh gấp 3 khi nằm võng, ×1,2 khi “Ngủ ngon”; ngủ nhà nghỉ hồi đầy ngay.</p>
           <p className="mt-1">Món ăn ở Chợ Lớn cho buff: cơm tấm / bún bò 💪, phở / nước dừa / trà đá 🔋, bánh mì / nước mía / cà phê 💨,
             cá kho / canh chua / cá chiên / sinh tố 🍀.</p>
           {state.buffs.filter((b) => b.untilMs > nowMs).length > 0 && (

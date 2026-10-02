@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import type { FishingController } from "@/hooks/useFishingController";
 import BagPanel, { type BagFarm } from "./BagPanel";
 import BattlePanel, { BattleChip, BattleResult } from "./BattlePanel";
@@ -8,6 +9,7 @@ import TreasurePanel from "./TreasurePanel";
 import CatchCard from "./CatchCard";
 import DepotPanel from "./DepotPanel";
 import NetOverlay from "./NetOverlay";
+import NotebookPanel from "./NotebookPanel";
 import RecordsPanel from "./RecordsPanel";
 import ReelOverlay from "./ReelOverlay";
 import ShopPanel from "./ShopPanel";
@@ -28,6 +30,10 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
   const name = caught ? catalog?.species.find((s) => s.id === caught.fish.speciesId)?.name ?? caught.fish.speciesId : "";
   const x = fishing.extras;                                                          // v21 (0076)
   const speciesName = (id: string) => catalog?.species.find((s) => s.id === id)?.name ?? id;
+  // econ v2 (0101): the depot shows the thương lái's day; before the first sale it is read from the records board
+  const { npc, lastSale, learnNpc } = fishing.data;
+  const loadBoard = fishing.loadBoard;
+  const needNpc = useCallback(() => { loadBoard().then((b) => learnNpc(b.npc), () => {}); }, [loadBoard, learnNpc]);
   return (
     <>
       {cast.phase === "waiting" && (
@@ -58,15 +64,21 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
       )}
       {caught && <CatchCard fish={caught.fish} name={name} record={caught.record} onClose={fishing.dismissCatch} />}
       {panel === "bag" && (
-        <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equip} onRelease={fishing.release} onClose={closePanel}
-          farm={farm} />
+        <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equipSlot} onRelease={fishing.release} onClose={closePanel}
+          farm={farm} groundbaitPick={fishing.groundbaitReady} onPickGroundbait={fishing.pickGroundbait}
+          onGroundbait={(item) => fishing.throwGroundbait(item)} onNotebook={() => fishing.openPanel("notebook")} rods={fishing.rods} />
       )}
-      {panel === "depot" && <DepotPanel state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids)} onClose={closePanel} />}
+      {panel === "depot" && (
+        <DepotPanel state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids)} onClose={closePanel}
+          npc={npc} lastSale={lastSale} onNeedNpc={needNpc} />
+      )}
       {panel === "market_depot" && (
-        <DepotPanel market state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids, true)} onClose={closePanel} />
+        <DepotPanel market state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids, true)} onClose={closePanel}
+          npc={npc} lastSale={lastSale} onNeedNpc={needNpc} />
       )}
-      {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onRepair={fishing.repair} onClose={closePanel} />}
+      {panel === "shop" && <ShopPanel state={state} catalog={catalog} busy={busy} onBuy={fishing.buy} onRepair={fishing.repair} onRepairRod={fishing.rods.repair} onClose={closePanel} />}
       {panel === "records" && <RecordsPanel catalog={catalog} load={fishing.loadBoard} onClose={closePanel} />}
+      {panel === "notebook" && <NotebookPanel catalog={catalog} load={fishing.loadNotebook} onClose={closePanel} />}{/* 0110 */}
       {/* v21 (0076): the boat, the battles, the treasure maps */}
       <BattleChip board={x.board} speciesName={speciesName} onOpen={() => fishing.openPanel("battle")} />
       {x.battleResult && <BattleResult won={x.battleResult.won} prize={x.battleResult.prize} onClose={x.dismissBattleResult} />}

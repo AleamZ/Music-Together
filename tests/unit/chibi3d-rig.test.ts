@@ -138,3 +138,25 @@ describe("chibi joint chains", () => {
     f.dispose();
   }, 60_000);
 });
+
+describe("two hands on the rod (the left arm's IK)", () => {
+  it("closes the left hand on the rod's butt in every rod pose, for any body", () => {
+    for (const look of [nam, nu, { ...nam, body: { arms: 1, build: 1 } }, { ...nu, body: { arms: -1 } }]) {
+      const f = new ChibiFactory();
+      const rig = new ChibiRig();
+      rig.setParts(f.acquire(chibiSpec(look), "low").parts);
+      rig.root.rotation.y = 0.7;
+      for (const [act, t] of [["cast", 0.3], ["cast", 3], ["bite", 1.2], ["reel", 0.2], ["reel", 2.5]] as const) {
+        rig.apply(poseAt(act, t));
+        rig.root.updateMatrixWorld(true);
+        const rod = rig.root.getObjectByName("rod") as THREE.Mesh;
+        const butt = (rod.geometry.userData.butt as THREE.Vector3).clone().applyMatrix4(rod.matrixWorld);
+        const elbowL = rig.root.getObjectByName("foreL")!.parent!;
+        const d = proportions(chibiSpec(look)).dims;
+        const hand = new THREE.Vector3(0, -d.foreLen, 0).applyMatrix4(elbowL.matrixWorld);
+        expect(hand.distanceTo(butt)).toBeLessThan(0.08);
+      }
+      f.dispose();
+    }
+  });
+});

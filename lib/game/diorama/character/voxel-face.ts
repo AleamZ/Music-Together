@@ -1,7 +1,7 @@
 import type { Gender } from "@/lib/game/types";
 
 // Pure: the chibi's face as a transparent decal laid over the skin, drawn from clean flat shapes (antialiased
-// ellipses, arcs and strokes — no pixel noise) at 16 texels per face unit: brows, big anime eyes (sclera, a two-tone
+// ellipses, arcs and strokes — no pixel noise) at 24 texels per face unit: brows, big anime eyes (sclera, a two-tone
 // iris, pupil, two glints, the upper lash line), a hint of a nose, blush, mouth. Boys: slightly smaller eyes with a
 // plain lash line, thick straight brows, a flat mouth; girls: taller eyes with a thick winged lash line and a lower
 // lash, thin arched brows, stronger blush, a small smile. Expressions: open, blink (swapped in for a moment every few
@@ -10,7 +10,7 @@ import type { Gender } from "@/lib/game/types";
 export type FaceExpr = "open" | "blink" | "happy" | "surprised";
 export const FACE_EXPRS: readonly FaceExpr[] = ["open", "blink", "happy", "surprised"];
 /** Texels per face unit; the face is 8×9 units. */
-const R = 16;
+const R = 24;
 export const FACE_W = 8 * R;
 export const FACE_H = 9 * R;
 

@@ -62,7 +62,7 @@ export interface Shape {
 }
 
 interface Box { kind: "box"; min: RGBLike; max: RGBLike; paint: Painter; opts: BoxOpts }
-interface Surf { kind: "surf"; shape: Shape; paint: Painter; matrix?: THREE.Matrix4 }
+interface Surf { kind: "surf"; shape: Shape; paint: Painter; matrix?: THREE.Matrix4; sharp: number; ink: boolean; tag: number }
 type Piece = Box | Surf;
 
 interface FaceDef { dir: FaceDir; n: [number, number, number]; o: (a: Box) => THREE.Vector3; u: (a: Box) => THREE.Vector3; v: (a: Box) => THREE.Vector3 }
@@ -110,6 +110,14 @@ export interface VoxelBuild<S extends string> {
 /** Collects pieces per segment, then packs and paints one atlas and builds one geometry per segment. */
 export class VoxelModel<S extends string> {
   private readonly segs = new Map<S, Piece[]>();
+  /** Edge anti-aliasing: sub-samples per axis for texels on a painted edge (1 = off). */
+  aa = 1;
+  /** Texel density multiplier for the surfaces added from now on. */
+  sharp = 1;
+  /** Whether the surfaces added from now on get the ink outline (off for pieces blended into another: no inner lines). */
+  ink = true;
+  /** A number stored per vertex (attribute `tag`) for the surfaces added from now on (e.g. which bone skins them). */
+  tag = 0;
   constructor(private readonly names: readonly S[]) {
     for (const n of names) this.segs.set(n, []);
   }
@@ -122,9 +130,10 @@ export class VoxelModel<S extends string> {
     return this;
   }
 
-  /** A sculpted surface in segment `seg`. */
-  surface(seg: S, shape: Shape, paint: Painter, matrix?: THREE.Matrix4): this {
-    this.segs.get(seg)?.push({ kind: "surf", shape, paint, matrix });
+  /** A sculpted surface in segment `seg`, painted at `sharp`× the build's texel density (and the model's current
+   *  `sharp`): the pieces that carry painted detail (collars, trims, prints) get more texels than flat ones. */
+  surface(seg: S, shape: Shape, paint: Painter, matrix?: THREE.Matrix4, sharp = 1): this {
+    this.segs.get(seg)?.push({ kind: "surf", shape, paint, matrix, sharp: sharp * this.sharp, ink: this.ink, tag: this.tag });
     return this;
   }
 
@@ -135,7 +144,7 @@ export class VoxelModel<S extends string> {
     const rects: Rect[] = [];
     for (const [seg, pieces] of this.segs) for (const piece of pieces) {
       if (piece.kind === "surf") {
-        rects.push({ seg, piece, w: Math.max(2, Math.round(piece.shape.sizeU * res)), h: Math.max(2, Math.round(piece.shape.sizeV * res)), x: 0, y: 0 });
+        rects.push({ seg, piece, w: Math.max(2, Math.round(piece.shape.sizeU * res * piece.sharp)), h: Math.max(2, Math.round(piece.shape.sizeV * res * piece.sharp)), x: 0, y: 0 });
         continue;
       }
       for (const face of FACES) {
@@ -163,14 +172,16 @@ export class VoxelModel<S extends string> {
     while (height < y + shelf) height *= 2;
     const pixels = new Uint8Array(width * height * 4);
     const pos = new THREE.Vector3(), nrm = new THREE.Vector3();
+    // Every rectangle is painted at texel centres first; then each texel on an edge between two painted regions (a
+    // collar, a hairline, a hem: its colour differs from a neighbour's) is repainted as the average of an `aa`×`aa`
+    // grid of sub-samples, so painted edges come out anti-aliased (smooth, vector-like) instead of stair-stepped — at
+    // the cost of painting only the edge texels again.
+    const aa = Math.max(1, Math.round(this.aa));
     for (const r of rects) {
-      const put = (tu: number, tv: number, c: RGB | null) => {
-        const i = ((r.y + tv) * width + r.x + tu) * 4;
-        if (c) { pixels[i] = c[0]; pixels[i + 1] = c[1]; pixels[i + 2] = c[2]; pixels[i + 3] = 255; }
-      };
+      let sample: (fu: number, fv: number, tu: number, tv: number) => RGB | null;
       if (r.piece.kind === "surf") {
         // sample the shape on a modest grid once, then interpolate per texel (cheap: no shape calls per pixel)
-        const s = r.piece.shape;
+        const s = r.piece.shape, paint = r.piece.paint;
         const gu = Math.max(8, s.segU * 2), gv = Math.max(4, s.segV * 2);
         const GP = new Float32Array((gu + 1) * (gv + 1) * 3), GN = new Float32Array((gu + 1) * (gv + 1) * 3);
         for (let j = 0; j <= gv; j++) for (let i = 0; i <= gu; i++) {
@@ -180,7 +191,7 @@ export class VoxelModel<S extends string> {
           GN[k] = n.x; GN[k + 1] = n.y; GN[k + 2] = n.z;
         }
         const lerp = (A: Float32Array, fu: number, fv: number, out: THREE.Vector3) => {
-          const i = Math.min(gu - 1, Math.floor(fu)), j = Math.min(gv - 1, Math.floor(fv)), a = fu - i, b = fv - j;
+          const i = Math.max(0, Math.min(gu - 1, Math.floor(fu))), j = Math.max(0, Math.min(gv - 1, Math.floor(fv))), a = fu - i, b = fv - j;
           const k00 = (j * (gu + 1) + i) * 3, k10 = k00 + 3, k01 = k00 + (gu + 1) * 3, k11 = k01 + 3;
           const w00 = (1 - a) * (1 - b), w10 = a * (1 - b), w01 = (1 - a) * b, w11 = a * b;
           return out.set(
@@ -189,21 +200,46 @@ export class VoxelModel<S extends string> {
             A[k00 + 2] * w00 + A[k10 + 2] * w10 + A[k01 + 2] * w01 + A[k11 + 2] * w11,
           );
         };
-        for (let tv = 0; tv < r.h; tv++) for (let tu = 0; tu < r.w; tu++) {
-          const fu = ((tu + 0.5) / r.w) * gu, fv = ((tv + 0.5) / r.h) * gv;
+        sample = (fu0, fv0, tu, tv) => {
+          const fu = (fu0 / r.w) * gu, fv = (fv0 / r.h) * gv;
           lerp(GP, fu, fv, pos);
           lerp(GN, fu, fv, nrm);
           if (nrm.lengthSq() > 0) nrm.normalize();
-          put(tu, tv, r.piece.paint({ dir: dirOf(nrm), u: tu, v: tv, w: r.w, h: r.h, x: pos.x, y: pos.y, z: pos.z, n: [nrm.x, nrm.y, nrm.z], surface: true }));
-        }
-        continue;
+          return paint({ dir: dirOf(nrm), u: tu, v: tv, w: r.w, h: r.h, x: pos.x, y: pos.y, z: pos.z, n: [nrm.x, nrm.y, nrm.z], surface: true });
+        };
+      } else {
+        const f = r.face;
+        if (!f) continue;
+        const piece = r.piece, o = f.o(piece), U = f.u(piece), Vv = f.v(piece);
+        sample = (fu, fv, tu, tv) => {
+          pos.copy(o).addScaledVector(U, fu / r.w).addScaledVector(Vv, fv / r.h);
+          return piece.paint({ dir: f.dir, u: tu, v: tv, w: r.w, h: r.h, x: pos.x, y: pos.y, z: pos.z, n: f.n, surface: false });
+        };
       }
-      const f = r.face;
-      if (!f) continue;
-      const o = f.o(r.piece), U = f.u(r.piece), Vv = f.v(r.piece);
+      const at = (tu: number, tv: number) => ((r.y + tv) * width + r.x + tu) * 4;
       for (let tv = 0; tv < r.h; tv++) for (let tu = 0; tu < r.w; tu++) {
-        pos.copy(o).addScaledVector(U, (tu + 0.5) / r.w).addScaledVector(Vv, (tv + 0.5) / r.h);
-        put(tu, tv, r.piece.paint({ dir: f.dir, u: tu, v: tv, w: r.w, h: r.h, x: pos.x, y: pos.y, z: pos.z, n: f.n, surface: false }));
+        const c = sample(tu + 0.5, tv + 0.5, tu, tv), i = at(tu, tv);
+        if (c) { pixels[i] = c[0]; pixels[i + 1] = c[1]; pixels[i + 2] = c[2]; pixels[i + 3] = 255; }
+      }
+      if (aa < 2) continue;
+      const edge = new Uint8Array(r.w * r.h);
+      const differs = (a: number, b: number) => pixels[a + 3] !== pixels[b + 3] ||
+        Math.abs(pixels[a] - pixels[b]) + Math.abs(pixels[a + 1] - pixels[b + 1]) + Math.abs(pixels[a + 2] - pixels[b + 2]) > 24;
+      for (let tv = 0; tv < r.h; tv++) for (let tu = 0; tu < r.w; tu++) {
+        const i = at(tu, tv), k = tv * r.w + tu;
+        if (tu + 1 < r.w && differs(i, at(tu + 1, tv))) { edge[k] = 1; edge[k + 1] = 1; }
+        if (tv + 1 < r.h && differs(i, at(tu, tv + 1))) { edge[k] = 1; edge[k + r.w] = 1; }
+      }
+      for (let tv = 0; tv < r.h; tv++) for (let tu = 0; tu < r.w; tu++) {
+        if (!edge[tv * r.w + tu]) continue;
+        let R = 0, Gc = 0, B = 0, A = 0;
+        for (let sj = 0; sj < aa; sj++) for (let si = 0; si < aa; si++) {
+          const c = sample(tu + (si + 0.5) / aa, tv + (sj + 0.5) / aa, tu, tv);
+          if (c) { R += c[0]; Gc += c[1]; B += c[2]; A++; }
+        }
+        const i = at(tu, tv);
+        if (A) { pixels[i] = Math.round(R / A); pixels[i + 1] = Math.round(Gc / A); pixels[i + 2] = Math.round(B / A); }
+        pixels[i + 3] = Math.round((255 * A) / (aa * aa));
       }
     }
     for (const r of rects) {
@@ -217,10 +253,12 @@ export class VoxelModel<S extends string> {
     const geos = {} as Record<S, THREE.BufferGeometry>;
     const nm = new THREE.Matrix3();
     for (const name of this.names) {
-      const P: number[] = [], N: number[] = [], UV: number[] = [], O: number[] = [];
+      const P: number[] = [], N: number[] = [], UV: number[] = [], O: number[] = [], TG: number[] = [];
+      let tag = 0;
       let hull = 0;
       const emit = (p: THREE.Vector3, n: THREE.Vector3, uv: readonly [number, number], m?: THREE.Matrix4) => {
         O.push(hull);
+        TG.push(tag);
         const q = m ? p.clone().applyMatrix4(m) : p;
         const k = m ? n.clone().applyMatrix3(nm.getNormalMatrix(m)).normalize() : n;
         P.push(q.x * unit, q.y * unit, q.z * unit);
@@ -229,6 +267,7 @@ export class VoxelModel<S extends string> {
       };
       for (const r of rects) {
         if (r.seg !== name) continue;
+        tag = r.piece.kind === "surf" ? r.piece.tag : 0;
         const e = 0.02;                                                   // inset: never sample the neighbour's texels
         const u0 = (r.x + e) / width, u1 = (r.x + r.w - e) / width, v0 = (r.y + e) / height, v1 = (r.y + r.h - e) / height;
         if (r.piece.kind === "surf") {
@@ -247,7 +286,7 @@ export class VoxelModel<S extends string> {
             const list = face.dot(avg) >= 0 ? [a, b, c] : [a, c, b];
             const mat = r.piece.kind === "surf" ? r.piece.matrix : undefined;
             for (const q of list) emit(q.p, q.n, q.uv, mat);
-            if (outline) {
+            if (outline && r.piece.kind === "surf" && r.piece.ink) {
               hull = 1;
               for (const q of [list[0], list[2], list[1]]) emit(q.p, q.n, q.uv, mat);
               hull = 0;
@@ -272,6 +311,7 @@ export class VoxelModel<S extends string> {
       g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(N), 3));
       g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(UV), 2));
       g.setAttribute("outline", new THREE.BufferAttribute(new Float32Array(O), 1));
+      g.setAttribute("tag", new THREE.BufferAttribute(new Float32Array(TG), 1));
       g.computeBoundingSphere();
       geos[name] = g;
     }

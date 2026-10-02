@@ -1,9 +1,12 @@
 // v21 "world" (0075): the RPCs and the parser of world_state. The client sends intents and where it stands; the
 // server decides every outcome.
 import { AnticheatError, parseAnticheat, reportAnticheat } from "@/lib/anticheat";
+import { parseNpcQuota } from "@/lib/game/economy/npc";
 import { supabase } from "@/lib/supabase";
 import type { MapId } from "../maps/types";
-import { isWildItem, type BossId, type WildAction, type WildItemId, type WildSpeciesId, bossDef, speciesOf } from "./model";
+import {
+  isWildItem, type BossId, type WildAction, type WildItemId, type WildSpeciesId, bossDef, speciesOf, WILD_DAILY_KILLS,
+} from "./model";
 
 export interface WildAnimal { id: number; species: WildSpeciesId; hx: number; hy: number; seed: number; bornMs: number; expiresMs: number; photographed: boolean }
 export interface WildState { animals: WildAnimal[]; bag: Partial<Record<WildItemId, number>>; album: Record<string, number>; killsToday: number }
@@ -144,9 +147,10 @@ export const wildFinish = async (token: string, a: readonly number[], b: readonl
     knocked: r.knocked === true, fainted: r.fainted === true, wild: parseWild(r.wild),
   };
 };
+/** A sale at the stall (0103: through the thương lái — `cut` what it kept back, `npc` its day, null before econ v2). */
 export const wildSell = async (token: string, item: WildItemId, qty: number) => {
   const r = await call("wild_sell", { p_session_token: token, p_item: item, p_qty: qty });
-  return { earned: num(r.earned), coins: num(r.coins), wild: parseWild(r.wild) };
+  return { earned: num(r.earned), coins: num(r.coins), cut: num(r.npc_cut), npc: parseNpcQuota(r.npc), wild: parseWild(r.wild) };
 };
 
 const party = async (fn: string, args: Record<string, unknown>) => parseParty(await call(fn, args));
@@ -194,7 +198,7 @@ const TEXTS: Record<string, string> = {
   gone: "Con vật đã chạy mất.",
   cooldown: "Chậm lại một nhịp…",
   cannot: "Không làm vậy với con này được.",
-  "daily cap": "Hôm nay bạn săn đủ rồi (60 con).",
+  "daily cap": `Hôm nay bạn săn đủ rồi (${WILD_DAILY_KILLS} con).`,
   "already photographed": "Bạn đã chụp con này rồi.",
   "not at stall": "Hãy đến sạp thợ săn ở Bãi đất trống.",
   "not enough": "Không đủ hàng để bán.",
@@ -226,6 +230,7 @@ const TEXTS: Record<string, string> = {
   "too thirsty": "Bạn khát quá, uống gì đã.",
   exhausted: "Hôm nay bạn kiệt sức rồi.",
   "account locked": "Tài khoản đang bị tạm khóa.",
+  "rate limited": "Thao tác quá nhanh — chờ một chút rồi thử lại nhé.",                                                    // 0108
   outdated: "Trò chơi đã cập nhật — tải lại trang nhé.",                        // v22 (0083)
   stunned: "Bạn đang choáng — đợi một chút!",
   "round not found": "Lượt chơi đã hết.",

@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import type { MapId } from "@/lib/game/maps/types";
 import { MAP_IDS } from "@/lib/game/maps/types";
-import type { BoardId } from "./model";
+import { TELEPORT_FEE, type BoardId } from "./model";
 
 export interface Achievement {
   id: string; name: string; descr: string; stat: string; goal: number; reward: number; title: string | null;
@@ -58,7 +58,7 @@ export function parseProgress(data: unknown): ProgressState {
     other: { pets: pair(o.pets), outfits: pair(o.outfits), crops: pair(o.crops) },
     waypoints: arr(r.waypoints).map((w) => ({ id: String(w.id ?? ""), name: String(w.name ?? ""), map: String(w.map ?? ""), minLevel: num(w.min_level, 1), found: w.found === true })),
     atWaypoint: str(r.at_waypoint),
-    teleportFee: num(r.teleport_fee, 20),
+    teleportFee: num(r.teleport_fee, TELEPORT_FEE),
     mapLevels,
   };
 }

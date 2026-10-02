@@ -48,6 +48,14 @@ export function inputDir(k: KeyState): Vec {
   return { x: (k.right ? 1 : 0) - (k.left ? 1 : 0), y: (k.down ? 1 : 0) - (k.up ? 1 : 0) };
 }
 
+/** The keys' direction turned to a camera yaw (first person: W = where I look, D = to my right). yaw 0 looks north
+ *  (map up), like the third person; the result stays in map px axes (x right, y down). */
+export function turnInput(dir: Vec, yaw: number): Vec {
+  if (dir.x === 0 && dir.y === 0) return dir;
+  const fwd = -dir.y, fx = -Math.sin(yaw), fy = -Math.cos(yaw), rx = Math.cos(yaw), ry = -Math.sin(yaw);
+  return { x: rx * dir.x + fx * fwd, y: ry * dir.x + fy * fwd };
+}
+
 /** Keyboard facing: with diagonal input the horizontal component wins. */
 export function facingFor(dir: Vec, prev: Facing): Facing {
   if (dir.x < 0) return "left";

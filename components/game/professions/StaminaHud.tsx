@@ -25,7 +25,7 @@ export default function StaminaHud({ stamina, value, state, nowMs, onOpen }: {
         className={`flex items-center gap-0.5 ${low ? "text-red-700 motion-safe:animate-pulse" : ""}`}
       >
         <span aria-hidden="true">{stamina?.resting ? "😌" : "⚡"}</span>
-        <span className="relative h-2 w-9 overflow-hidden rounded-sm border border-ink/40 bg-parchment">
+        <span className="relative h-2.5 w-12 overflow-hidden rounded-sm border border-ink/40 bg-parchment">
           <span className="absolute inset-y-0 left-0" style={{ width: `${pct}%`, background: low ? "#c0392b" : "#5aa845" }} />
         </span>
         <span className="text-sm tabular-nums">{text}</span>

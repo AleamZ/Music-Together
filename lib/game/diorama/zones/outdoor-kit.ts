@@ -206,13 +206,16 @@ export class Kit {
     const t = pxLen(cell);
     const im = new THREE.InstancedMesh(this.unit, this.lam(0xffffff), cols * rows);
     im.receiveShadow = true;
-    const R = rng(seed);
+    const ph = rng(seed)() * 10;
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const g = at(c * cell + cell / 2, r * cell + cell / 2);
       const p = this.W(c * cell + cell / 2, r * cell + cell / 2);
       this.m4.makeScale(t, g.top - FLOOR, t).setPosition(p.x, (g.top + FLOOR) / 2, p.z);
       im.setMatrixAt(r * cols + c, this.m4);
-      im.setColorAt(r * cols + c, this.col.setHex(g.color).offsetHSL(0, 0, (R() - 0.5) * 0.035));
+      // a gentle, continuous shade over the ground (neighbouring cells alike) instead of a per-cell jitter
+      const x = c * cell / 64 + ph, y = r * cell / 64 - ph;
+      const soft = Math.sin(x * 1.7 + Math.sin(y * 1.3)) * 0.5 + Math.sin(y * 2.3 + Math.cos(x * 0.9)) * 0.5;
+      im.setColorAt(r * cols + c, this.col.setHex(g.color).offsetHSL(0, 0, soft * 0.012));
     }
     this.root.add(im);
     return im;

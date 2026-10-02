@@ -6,8 +6,18 @@
 \set ON_ERROR_STOP on
 set time zone 'UTC';
 set client_min_messages = warning;
+-- 0110 (Câu cá v3) sells kinds 0098's check does not know: their rows step aside while 0098 re-runs, and 0110 (re-runnable)
+-- puts them and its buy_item back (on a throwaway copy nobody owns them yet)
+-- (0114's story rewards point at some of them: set aside and put back too)
+create temp table kx_story as select id, reward_item from public.story_quests where reward_item is not null;
+update public.story_quests set reward_item = null where reward_item is not null;
+delete from public.shop_items where kind in ('hook', 'line', 'reel', 'groundbait', 'fishbook');
 \i supabase/migrations/0098_fishing_kit.sql
 \i supabase/migrations/0098_fishing_kit.sql
+\i supabase/migrations/0110_fishing_v3.sql
+-- 0115 re-creates finish_cast / buy_item / the rig per rod instance over it: re-apply it, as the chain does
+\i supabase/migrations/0115_rod_builds.sql
+update public.story_quests q set reward_item = k.reward_item from kx_story k where q.id = k.id;
 reset client_min_messages;
 update public.anticheat_config set mode = 'log';
 

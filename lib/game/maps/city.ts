@@ -53,10 +53,10 @@ export const CITY_PLACES: Readonly<Record<MapId, CityPlace>> = {
     id: "mo_da", icon: "⛏️", name: "Mỏ đá", at: { x: 94, y: 86 },
     places: ["10 mỏ quặng", "Bãi thảo dược", "Lán chú Tám (quặng, cuốc)", "Đe rèn", "Vạc thuốc bà Sáu"],
   },
-  // v22 (0086): past the pond, by boat only (Bến ghe on Cầu ao → chèo ghe)
+  // v22 (0086): past the pond — 0116: south of it, as in the world (the road down to Bến đò, then the ghe)
   song_cai: {
-    id: "song_cai", icon: "🛶", name: "Sông Cái", at: { x: 22, y: 90 },
-    places: ["Bến sông · ông Năm đò", "Bãi Lau", "Ghềnh Đá Đỏ", "Vũng Ngát", "Cù lao giữa sông"],
+    id: "song_cai", icon: "🛶", name: "Sông Cái", at: { x: 60, y: 96 },
+    places: ["Bến đò (đường từ Ao cá, cấp 3)", "Bến sông · ông Năm đò", "Bãi Lau", "Ghềnh Đá Đỏ", "Vũng Ngát", "Cù lao giữa sông"],
   },
   // 0097: through the gap in Bãi đất trống's south fence
   rung_tram: {

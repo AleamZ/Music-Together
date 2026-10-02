@@ -3,11 +3,12 @@ import type { GameMap, MapId } from "@/lib/game/maps/types";
 import type { Built } from "../build";
 import { buildBaiDatZone } from "./bai_dat";
 import { buildFieldZone } from "./field";
+import { buildHamNgamZone } from "./ham_ngam";
 import { buildMoDaZone } from "./mo_da";
 import { rigOf, type OutdoorBuilder, type OutdoorOptions } from "./outdoor-kit";
 import { buildSongCaiZone } from "./song_cai";
 
-// Browser only: the outdoor zones built straight from their map data (field, Bãi đất, Mỏ đá, Sông Cái), each a
+// Browser only: the outdoor zones built straight from their map data (field, Bãi đất, Mỏ đá, Sông Cái; the Hầm đấu ngầm too), each a
 // `(map, opts) => THREE.Group` with its runtime hooks on userData.rig — wrapped here as the pond's `Built` so
 // DioramaView drives them unchanged (lamps, bulbs, sway, roofs, quality thinning; animateWater hands over to the zone).
 
@@ -15,6 +16,7 @@ export const OUTDOOR_BUILDERS: Partial<Record<MapId, OutdoorBuilder>> = {
   field: buildFieldZone,
   bai_dat: buildBaiDatZone,
   mo_da: buildMoDaZone,
+  ham_ngam: buildHamNgamZone,
   song_cai: buildSongCaiZone,
 };
 

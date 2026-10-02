@@ -1,3 +1,4 @@
+import type { PetLook3D } from "./pet-looks";
 import type { PetSpecies } from "@/lib/game/pets/catalog";
 import type { BossId, WildSpeciesId } from "@/lib/game/realm/model";
 import type { Roof } from "@/lib/game/housing/lot";
@@ -19,7 +20,7 @@ export interface LiveHouse { /** LOTS index (Khu nhà). */ lot: number; owned: b
 export interface LiveBoat { id: string; x: number; y: number; /** The rower's billboard id (the chibi rides in it). */ riderId?: string | null }
 export interface LiveDig { id: string; x: number; y: number; state: "hint" | "dug" }
 export interface LiveFishing { id: string; x: number; y: number; /** 0…1 how hard the fish pulls. */ tension: number; /** A fish is on. */ hooked: boolean }
-export interface LivePet { id: string; ownerId: string; species: PetSpecies; x: number; y: number }
+export interface LivePet { id: string; ownerId: string; species: PetSpecies; x: number; y: number; look?: PetLook3D }
 export interface LiveVehicle { riderId: string; kind: VehicleKind; color?: number }
 export interface LiveGate { id: string; x: number; y: number; /** The road's direction across the gate (radians, 0 = +x). */ dir: number; /** Width, px. */ w: number; open: boolean; guard: boolean }
 export interface LiveCritter { id: string; x: number; y: number; /** A rat knocked over (on its side). */ fallen?: boolean }
@@ -43,7 +44,13 @@ export interface WorldLive {
   dogs?: LiveDog[];
   rats?: LiveCritter[];
   leaps?: LiveLeap[];
+  /** Net throws (quăng lưới): the thrower, the phase and its age (ms), the net's centre (world px) and radius (px). */
+  nets?: LiveNet[];
+  /** 0117: the ổ thính on the water (world px): a tinted patch 48 px round, bubbles, a label. */
+  groundbait?: LiveGroundbait[];
 }
+export interface LiveGroundbait { id: number; x: number; y: number; /** 0xrrggbb */ color: number; stacks: number; label: string }
+export interface LiveNet { id: string; throwerId: string; show: "aim" | "charge" | "throw" | "sunk" | "pull" | "won"; since: number; x: number; y: number; cx: number; cy: number; r: number; k: number }
 
 /** How far up a rider sits on a vehicle (units above the ground under the vehicle; the "ride" pose's hips are at 0.6). */
 export const SEAT_LIFT: Readonly<Record<VehicleKind, number>> = { bike: 0.32, moto: 0.3, car: -0.08 };
@@ -136,8 +143,10 @@ export function liveFromFrame(f: Pick<DioramaFrame, "billboards" | "gameplay">, 
     dogs: [...(extra.dogs ?? []), ...g.dogs.map((d) => ({ id: d.id, x: d.x, y: d.y }))],
     leaps: [...(extra.leaps ?? []), ...g.leaps],
     // P4: the pets at their owners' heels and everyone's bobbers (mine and the others' from realtime)
-    pets: [...(extra.pets ?? []), ...(g.pets ?? []).map((p) => ({ id: `pet:${p.ownerId}`, ownerId: p.ownerId, species: p.species, x: p.x, y: p.y }))],
+    pets: [...(extra.pets ?? []), ...(g.pets ?? []).map((p) => ({ id: `pet:${p.ownerId}`, ownerId: p.ownerId, species: p.species, x: p.x, y: p.y, look: p.look }))],
     fishing: [...(extra.fishing ?? []), ...(g.anglers ?? []).map(castLive)],
+    nets: [...(extra.nets ?? []), ...(g.nets ?? []).map((n) => ({ ...n, id: `net:${n.id}`, throwerId: n.id }))],
+    groundbait: [...(extra.groundbait ?? []), ...(g.groundbait ?? [])],                                       // 0117
   };
 }
 

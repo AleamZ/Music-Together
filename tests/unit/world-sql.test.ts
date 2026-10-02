@@ -5,11 +5,14 @@ import {
   BOSS_DEFS, BOSS_SCHEDULE, DUNGEON_FEE, DUNGEON_ROOMS, WILD_AREAS, WILD_CAP, WILD_ITEMS, WILD_SPECIES, beat, inArena,
   isNightVN, sellPrice, wildXY, GATE, STALL,
 } from "@/lib/game/realm/model";
+import { NIGHT_MARKET_PCT, WILD_DAILY_KILLS } from "@/lib/game/realm/model";
 import { effects, kindOf } from "@/lib/game/weather/model";
 
 const SQL = readFileSync("supabase/migrations/0075_world_bosses.sql", "utf8");
 /** 0097 re-made _wild_species / _wild_items (the forest's animals and meats): the newest body wins. */
 const SQL97 = readFileSync("supabase/migrations/0097_forest_complete.sql", "utf8");
+/** Econ v2 (0103): wild_sell's night market, the day's kills. */
+const SQL103 = readFileSync("supabase/migrations/0103_econ_crafts.sql", "utf8");
 /** The body of a function (up to its closing $$). */
 function body(name: string): string {
   for (const sql of [SQL97, SQL]) {
@@ -41,7 +44,11 @@ describe("0075 tables = model", () => {
     expect(Object.fromEntries(caps.map((m) => [m[1], +m[2]]))).toEqual(WILD_CAP);
   });
   it("bosses and the schedule", () => {
-    const rows = all(/\('(\w+)',\s*'([^']+)',\s*'(\w+)',\s*'(\w+)',\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/g, body("_boss_defs"));
+    // economy v2 (0104) re-made _boss_defs (the raid's pool): its body is the newest
+    const sql104 = readFileSync("supabase/migrations/0104_econ_rewards.sql", "utf8");
+    const at104 = sql104.indexOf("function public._boss_defs(");
+    const defs = sql104.slice(sql104.indexOf("$$", at104) + 2, sql104.indexOf("$$", sql104.indexOf("$$", at104) + 2));
+    const rows = all(/\('(\w+)',\s*'([^']+)',\s*'(\w+)',\s*'(\w+)',\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/g, defs);
     expect(rows.map((m) => ({
       id: m[1], name: m[2], kind: m[3], map: m[4], arena: { x: +m[5], y: +m[6], w: +m[7], h: +m[8] }, hp: +m[9], capPct: +m[10],
       pool: +m[11], durMin: +m[12], xp: +m[13],
@@ -52,7 +59,7 @@ describe("0075 tables = model", () => {
   it("dungeon rooms, fee, gate and stall", () => {
     const rows = all(/\((\d+),\s*'(\w+)',\s*'([^']+)',\s*(\d+),\s*(\d+)\)/g, body("_dg_rooms"));
     expect(rows.map((m) => ({ room: +m[1], mob: m[2], name: m[3], hp: +m[4], n: +m[5] }))).toEqual(DUNGEON_ROOMS);
-    expect(SQL).toContain(`< ${DUNGEON_FEE} then raise exception 'insufficient funds'`);
+    expect(readFileSync("supabase/migrations/0104_econ_rewards.sql", "utf8")).toContain(`< ${DUNGEON_FEE} then raise exception 'insufficient funds'`);   // economy v2
     expect(SQL).toContain(`'${GATE.map}', ${GATE.x}, ${GATE.y}, 'dungeon_start'`);
     expect(SQL).toContain(`'${STALL.map}', ${STALL.x}, ${STALL.y}, 'wild_sell'`);
   });
@@ -88,7 +95,11 @@ describe("realm model", () => {
   });
   it("night market prices", () => {
     expect(sellPrice("da_soi", 3, false)).toBe(360);
-    expect(sellPrice("long_vu", 3, true)).toBe(46);
+    expect(sellPrice("long_vu", 3, true)).toBe(39);                     // econ v2 (0103): +10 % (was +30 %: 46)
+    expect(SQL103).toContain("(v_price * p_qty * 11) / 10");
+    expect(SQL103).toContain(`p.kills >= ${WILD_DAILY_KILLS} then raise exception 'daily cap'`);
+    expect(SQL103).toContain(`v_ok := p.kills < ${WILD_DAILY_KILLS} and`);
+    expect(NIGHT_MARKET_PCT).toBe(10);
   });
   it("the arena margin", () => {
     const a = { map: "bai_dat" as const, x: 316, y: 60, w: 168, h: 316 };

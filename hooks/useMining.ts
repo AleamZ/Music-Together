@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnticheatError } from "@/lib/anticheat";
+import { npcCutNote, type NpcQuota } from "@/lib/game/economy/npc";
 import { craftItem } from "@/lib/game/mining/catalog";
 import {
   buyPickaxe, drinkPotion, gatherHerb, mineErrorMessage, mineFinish, mineStart, mineState, sellOre,
@@ -63,6 +64,8 @@ export interface UseMining {
   lastUpgrade: string | null;
   /** Client ms minus server ms at the last answer. */
   clockOffset: number;
+  /** Econ v2: the thương lái's day after my last sale here (null until I sell). */
+  npc: NpcQuota | null;
 }
 
 const itemName = (id: string): string => craftItem(id)?.name ?? id;
@@ -75,7 +78,9 @@ function digText(o: DigResult): string {
       + (o.toolBroke ? " · Cuốc đã gãy!" : "");
   }
   const why = { expired: "Hết giờ.", refused: "Lượt đào không hợp lệ.", gave_up: "Bỏ dở — không được gì.", taken: "Có người đào mất rồi!",
-    no_pickaxe: "Cuốc đã hỏng hoặc không còn — không được gì." }[o.why];                     // v21 fixes (0078)
+    no_pickaxe: "Cuốc đã hỏng hoặc không còn — không được gì.",
+    late: "Mạng chậm, nhát cuốc tới máy chủ trễ — thử đào lại nhé.",                          // 0087: not played live
+    outdated: "Lượt đào đã hết hạn — đào lại nhé." }[o.why];                     // v21 fixes (0078)
   return why + (o.toolBroke ? " Cuốc đã gãy!" : "");
 }
 
@@ -98,6 +103,7 @@ export function useMining({ token, roomId, mapId, toast, onCoins, onVitals }: {
   const [busy, setBusy] = useState(false);
   const [lastUpgrade, setLastUpgrade] = useState<string | null>(null);
   const [clockOffset, setClockOffset] = useState(0);
+  const [npc, setNpc] = useState<NpcQuota | null>(null);
   const live = useRef({ toast, onCoins, onVitals });
   useEffect(() => {
     live.current = { toast, onCoins, onVitals };
@@ -217,7 +223,9 @@ export function useMining({ token, roomId, mapId, toast, onCoins, onVitals }: {
   const sell = useCallback((item: string, qty: number) => void run(async () => {
     const r = await sellOre(token, item, qty);
     apply(r.state);
-    live.current.toast(`💰 Bán ${qty} ${itemName(item)}: +${r.xu} xu`);
+    if (r.npc) setNpc(r.npc);
+    const cut = npcCutNote(r.cut);
+    live.current.toast(`💰 Bán ${qty} ${itemName(item)}: +${r.xu} xu${cut ? ` · ${cut}` : ""}`);
     live.current.onCoins();
   }), [apply, run, token]);
 
@@ -307,6 +315,6 @@ export function useMining({ token, roomId, mapId, toast, onCoins, onVitals }: {
 
   return {
     state, panel, dig, craft, open: panel !== null || dig !== null || craft !== null, busy, interact, promptText, openPanel,
-    finishDig, closeDig, finishBrew, finishAnvil, closeCraft, sell, buy, brew, drink, upgrade, lastUpgrade, clockOffset,
+    finishDig, closeDig, finishBrew, finishAnvil, closeCraft, sell, buy, brew, drink, upgrade, lastUpgrade, clockOffset, npc,
   };
 }

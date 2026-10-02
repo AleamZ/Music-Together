@@ -103,3 +103,138 @@ ledger reasons, shop kinds or function overloads predate later rows and migratio
 - `forest-professions-smoke.sql` (0096: the rừng tràm grid `world_forest` = `lib/game/world/forest-grid.data.ts`; wild animals only on core forest cells (`_wild_cap` 0 on the zone maps), `wild_start` / `wild_finish` refuse 'not in forest'; Thợ săn and Tiều phu with their nodes; the starter tool once per account per nghề (`profession_choose`, the backfill); chopping — `_chop_hits` / `_cook_score` / `_tree_of` = `-v forest=…/forest-cases.json`, the honest live client on mg_sync, the peek (hard `chop_bad_input`), `chop_too_fast`, `chop_timing`, felling, the 40-log day, logs and axes at the stall; cooking — Đầu bếp only, the ingredients and fee at the start, the honest cook, the peek (`cook_bad_input`), eating and selling; the wipe): chain-level, re-runs 0096 twice with `\i`; run after the full chain — and **re-apply 0096 after any smoke that re-runs 0075 / 0077 / 0078 / 0083 / 0087** (they put the older `_wild_cap` / `_wild_fill` / `wild_start` / `wild_finish` / `profession_choose` / `_prof_json` / `_mg_events` back). `v21-professions-smoke.sql` counts 0077's eight nghề among the catalog (0096 adds two).
 - `forest-complete-smoke.sql` (0097: Rừng tràm, the 2D map that is a window of the world's forest — `_pos_maps` / `_pos_portals` / `_world_portals`, `_forest_xy`, the window's animals in the map's px; a 2D hunt (the bow wears) and a 2D chop in it; forest-content's six animals (three photo only), meats, ten dishes (the pan, the catch's fish by species, the buffs replaced, × the quality's %), the bow / pot / axe tiers; `tool_repair` by the point; Thợ săn xp for hunters only): chain-level, re-runs 0097 twice with `\i`; run after the full chain. `forest-professions-smoke.sql` drops `_cook_recipes` and `_prof_tools_catalog` before re-running 0096 (0097 re-made them with more columns) and `v21-professions-smoke.sql` deletes 0097's dish buffs before re-running 0077 — **re-apply 0096 (after dropping those two functions) and then 0097 after either**, and after any smoke that re-runs 0072 / 0075 / 0077 / 0078 / 0083 / 0087 / 0088.
 - `public-rooms-smoke.sql` (0093: three public halls `salon-592539` Sảnh Chính / `salon-cho-dem` Sảnh Chợ Đêm / `salon-song-que` Sảnh Sông Quê joined without a password; `create_room` refused but for root while `app_flags.room_creation_open` is off; older rooms kept but closed ('room closed') to all but their admin and root, in `join_room` and `_auth`; the first root in an ownerless hall becomes its admin): chain-level, re-runs 0093 twice with `\i`, rolls back its rows. **From 0093 on, the other smokes create rooms as ordinary accounts and have members join them: run them with the flag on** (`update public.app_flags set enabled = true where key = 'room_creation_open'` right after applying 0093 — on, the pre-0093 rules apply whole); this smoke switches it off inside its own transaction.
+
+## Economy v2 (0099–0106)
+
+Spec: `docs/superpowers/specs/2026-09-30-economy-v2-design.md`. These migrations re-create bodies from many earlier
+ones (0013 … 0098), so **re-apply 0099 … 0106 in order after any smoke that `\i`s an older migration** (the v21/v22 group
+smokes, `forest-*`, `anticheat-v2-*`, `faint-ladder`, `fishing-hunger`, `v18-*`, `v19-*`, `v20-rerun` …). Each econ
+smoke re-runs its own migration with `\i` (0101 and 0106 twice) and is re-runnable; all of them need
+`app_flags.room_creation_open` on (they turn it on and restore it, or expect it on — see 0093 above). They pass on the
+full chain in any order, except as noted.
+
+- `econ-core-smoke.sql` (0099 + 0100: the knobs and `admin_econ_set` (root, range, the fish snapshots re-priced at once);
+  the fish multiplier = the knob, not the room's wealth; the thương lái's 100 / 50 / 20 % marks, the day's totals and
+  `_npc_quota`; Chợ Lớn ×1.10; no `market_sell_pct` payout and the 1 500 xu perk day; `admin_economy`): chain-level; it
+  deletes its accounts and room at the end.
+- `econ-fishing-smoke.sql` (0101: the 23 species' prices and the lighter deep weights; the river bump 0.05 / 0.10; the
+  boat at 25 000 and the level gate on the wild river; one rarity lift ≤ 20 % rolled before the reel's difficulty; the
+  per-cast / net / overboard hunger and thirst; treasure drops, loot and 3 finds a day; `sell_fish` / `sell_fish_market`
+  through the thương lái; fishing battles scored in their own room; `-v fixtures=…/reel-cases.json`): chain-level. With
+  0101, `anticheat-v2-reel-hook-smoke.sql` expects the new overboard hunger (5).
+- `econ-farm-smoke.sql` (0102: plot caps across rooms (2 farmed + 1 private; over-cap accounts keep theirs); the
+  processor at 50 000, recipes ≈ 1.15×, the sort bonus +1 / +2 %; land sales and offers in 400 000–2 400 000 and
+  subleases ≤ 50 000, the seller / owner paid (100 − `p2p_fee_pct`) %; `crop_harvest` events; crabs, snails and rats
+  through the thương lái): chain-level. `v22-crafting-smoke.sql` and `v22-fixes-smoke.sql` now read the recipe value and
+  `_sort_bonus` instead of pinning 0076 / 0084's numbers.
+- `econ-crafts-smoke.sql` (0103: dish prices, quality 20 / 100 / 110 / 125 %, 2 stamina to cook, half back when eaten;
+  ores ÷ 4 and 200 digs a day; logs ÷ 3, 30 full-price logs and 150 a day; 40 kills and the +10 % night market; herbs
+  cost 1 stamina; the upgrade coin floor; `item_crafted` events; potion fees; switch 2 000 / reset 1 000; every sale
+  through the thương lái): chain-level. `forest-complete-smoke.sql` reads `_cook_pct(3)` and `v22-crafting-smoke.sql`
+  reads the fee from `potion_recipes`.
+- `econ-rewards-smoke.sql` (0104: raid pool 1 200 and 2 paid raid / weather-boss kills a day, the summon cooldown per
+  member; the dungeon's 50 + 250 × n × share, fee 100, 3 paid clears; level rewards 20·L / 60·L and the 1 500 grant cap;
+  the three smaller achievements and staked-only fight wins; the company pool of 3 000 by contribution; the squirrel's
+  150 a day while moving; pet / fish PvE 5 paid wins at × 0.6, PvP 5 %; "earned by work" without rewards and resales;
+  teleport / xe ôm 50; the farm dailies): chain-level.
+- `econ-sinks-smoke.sql` (0105: meal buffs; "Ngủ ngon" stamina × 1.2; lot upkeep 1 500 and the 10 000 repossession
+  refund (a sale still 20 000); apartment rent 2 000; motel 300 / 6 000): chain-level.
+- `econ-p2p-smoke.sql` (0106: Xì dách never goes below the escrow — the 8-seat, 3-bust hand sums to 0, no wallet < 0,
+  `_xd_cap` = `-v cap=…/xidach-cap-cases.json`; a debit below 0 refused even with `mt.allow_debt`; trades burn
+  `p2p_fee_pct` of the xu leg, receivers ≥ 3 days old and level ≥ 5, `trade_daily_in` a day; the trader perk as a fee
+  cut to ≥ 2 %; fashion gifts to roommates, 5 a day; stalls 500 a day): chain-level. Re-apply 0106 after
+  `v21-economy-smoke.sql` (it puts 0073's bodies back).
+
+Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" check is timing-sensitive under heavy load
+(`battle_press_too_fast`), and `unified-world-smoke.sql` / `dual-mode-smoke.sql` count `app_flags` rows without the
+`room_creation_open` flag that 0093 added.
+
+## Anti-cheat v3 (0108)
+
+- `anticheat-v3-smoke.sql` (0108: `_reel_claim_diff`; the 7-argument `finish_cast` — an honest claim lands the fish, a
+  widened zone (won or lost) is lost, spent and flagged `client_tamper`, strike 1 then 2; the 6-argument form unchanged;
+  the call budget in `_ac_guard` (`rate_high`, `rate_block`, `rate limited`, a new minute); `market_list` /
+  `auction_create` lock the wallet before the reserved sum). Needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json`;
+  it switches the mode to `enforce` and back, and deletes its accounts and room. Re-apply 0108 after any smoke that
+  `\i`s 0064 or 0073 (they put the old `_ac_guard` / `market_list` back).
+
+## Hòm thư (0111)
+
+- `mailbox-smoke.sql` (0111: the mailbox and gift codes — a trade delivers into both mailboxes (the payer pays at once,
+  the receiver's xu less the burn and its items wait; the escrowed fish is not sellable or listable; one claim, a second
+  and another account's refused; `trade_daily_in` counts the mail); a fish to a full bucket and a stack over 99 are
+  refused and the mail stays, `mail_claim_all` lists the refusal; the board purchase and an auction deliver by mail;
+  admin gifts to usernames / to all, root only, `admin_gift` on the claim; codes case-insensitive, once per account,
+  `max_uses`, expired / not started / disabled, the 10-failure lock and the soft `code_bruteforce`; an expired trade mail
+  returns to its giver, a market mail is dropped with its escrow; delete only claimed or empty mail; the wipe): chain-level,
+  re-runs 0111 twice with `\i`; it turns `room_creation_open` on and the mode to `log`, restores both, and deletes its
+  accounts, room, codes and gift batches. **Re-apply 0111 after `econ-p2p-smoke.sql` or `v21-economy-smoke.sql`** (they put
+  0106's / 0073's `trade_confirm`, `_econ_buy`, `_econ_settle` and `_econ_trade_left` back, which deliver directly).
+  `anticheat-guards.sql` lists the four admin RPCs and calls the six player RPCs in its lock / build loops (91 calls), so
+  it needs 0111.
+
+## Email accounts (0112)
+
+- `email-auth-smoke.sql` (0112: `account_auth` / `auth_rate` private to the definer, no email on `accounts`; the
+  auth-only RPCs `game_session_from_auth` / `account_create_for_auth` / `account_link_auth` are not anon's; no JWT,
+  an unknown or an unconfirmed auth user refused; register()'s name rules and one account per auth user; the session
+  works with `_auth_account`; a confirmed email change synced; the link needs the game token AND the JWT, is
+  idempotent, refuses a taken account or email, removes the legacy password (`login` → 'email login required');
+  banned accounts refused; legacy `change_password` (8–72, other sessions end); the rate limits; the
+  `legacy_register_open` switch; a deleted auth user drops the link): chain-level. A plain PostgreSQL has no Supabase
+  `auth` schema: it `\i`s `tests/sql/auth-stub.sql` first (auth.users, auth.uid() from `request.jwt.claim.sub`, the
+  roles — each only when missing), re-runs 0112 twice with `\i`, and rolls back its rows. For a **fresh chain** load
+  `auth-stub.sql` before `scripts/db/migrate-all.sh` (0112 references auth.users). Never on hosted Supabase.
+
+## Câu cá v3 (0110)
+
+- `groundbait-spots-smoke.sql` (0117, ổ thính: `psql -f tests/sql/groundbait-spots-smoke.sql` after the chain): the spots
+  are private, `groundbait_spots()` guarded; another player in the room feels a spot within 48 px (their cast answers
+  it), not outside; rooms isolated; the read RPC's fields; refresh (+10 min, 20-minute cap, stacks ≤ 3, `spot full`
+  spends nothing, the first thrower kept); a different kind is a separate spot (nearest centre wins); the limits (2 new
+  per thrower, a refresh still allowed; 8 per room + map; another room unaffected); expiry and the sweep.
+  `fishing-v3-smoke.sql` re-applies 0117 after 0115 and asserts the room's spot (not only mine).
+- `fishing-v3-smoke.sql` (0110: the parts, the rods' and lines' limits, Cần gỗ the kit, `fish_habits` not readable by
+  anon, the 27 species on 0101's scale; a bare rod refused (`rod needs parts`, nothing spent), parts filling their
+  slots, a bought rod waiting for them; `fishing_equip` (slot, kind, ownership, unmounting, a broken rod, the bait);
+  hook-gated species, hours, ×2 bait / ×3 groundbait (statistical, generous bounds) and the lift; `throw_groundbait`
+  (a bag spent, 48 px, 10 minutes, mine only, the cast answers it); `line_snap` (3 snaps, then gone) and `rod_snap`
+  (the rod to 0, unequipped, repairable); the extra hooks' odds and landing within the rig and the bucket; the reel's
+  and the phao's params; the notebook's gate; the new nets' rarity and the throw's spot; the new buckets; the river
+  casts): chain-level, re-runs 0110 twice with `\i`, needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json`; it
+  switches the `unified_world` flag and Sông Cái's level for its river checks and restores them, and deletes its
+  accounts and room. **Re-apply 0110 after any smoke that `\i`s 0034, 0059, 0098 or 0101** (they put the older
+  `start_cast` / `finish_cast` / `buy_item` / `start_net` / `net_haul` / `_fishing_state` back).
+- With 0110: `econ-fishing-smoke.sql` counts 0101's 23 species among the 27; `fishing-kit-smoke.sql` sets 0110's new
+  kinds aside while it re-runs 0098 (whose kind check does not know them) and re-applies 0110 after;
+  `anticheat-guards.sql` calls `fishing_equip`, `throw_groundbait` and `fishing_notebook` (88 guarded calls).
+
+
+## Chuyện làng (0114)
+
+- `story-quests-smoke.sql` (0114: the story chain end to end — one open step at a time and in order, progress read only
+  from records made after the accept (a bait buy, a sale at cô Ba vs at Vựa cá Chợ Lớn, catches, the story letter, the
+  farm gift), the hand-in beside the turn-in NPC ('too far'), paid once ('quest_reward' ref `story:<id>`, 330 xu in all),
+  a locked account refused, veterans closed unpaid and a re-run sparing a chain begun). Re-runs 0114 with `\i` and
+  deletes its accounts.
+
+## Cần câu lắp theo từng cây (0115)
+
+- `rod-builds-smoke.sql` (0115: two of one rod bought → two bare instances, parts stack; a mounted unit is bound to its
+  rod, the kit's hook / line / reel fixed; replacing and unmounting destroy; equip (mine, not broken), a bare rod refused
+  at the cast with nothing spent, the cast keeps its instance; a line snap wears the cast's rod's line even after a
+  switch; repair per instance (`_pay('repair')`, `repair_rod(item)` picks the worn one); rename, scrap; someone else's rod;
+  a legacy profile migrated (instances from the inventory rows, the parts moved not copied, twice without duplicates); a
+  mailed rod becomes instances; two parallel mounts of the last unit over `dblink` — one wins). Re-runs 0115 twice with
+  `\i`, needs `-v fixtures=<abs>/tests/fixtures/reel-cases.json` and the `dblink` contrib (created and dropped); deletes
+  its accounts. `fishing-v3-smoke.sql` re-applies 0115 after 0110 / 0113 and mounts per rod; `econ-fishing-smoke.sql`
+  sets its rods as instances; `anticheat-guards.sql` calls the seven rod RPCs (103 guarded calls).
+
+## Đường ra Sông Cái (0116)
+
+- `song-cai-route-smoke.sql` (0116: `_song_cai_landing()` = lib/game/world/routes.ts; a world client walks the road
+  from Ao cá's exit down to Bến đò at walking pace (never "too far"), rows out from the landing and lands at the dock's
+  foot on Sông Cái; Cầu ao's pier still boards; a lv2 account is refused at the landing ("map locked"); far from both,
+  refused). Re-runs 0116 twice with `\i`; restores the `room_creation_open` / `unified_world` flags.
+
+  sets its rods as instances; `anticheat-guards.sql` calls the seven rod RPCs (103 guarded calls); 0117 adds `groundbait_spots` (104).

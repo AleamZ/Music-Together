@@ -15,7 +15,7 @@ function Bar({ label, icon, value, low, color }: { label: string; icon: string; 
       className={`flex items-center gap-0.5 ${low ? "text-red-700 motion-safe:animate-pulse" : ""}`}
     >
       <span aria-hidden="true">{icon}</span>
-      <span className="relative h-2 w-9 overflow-hidden rounded-sm border border-ink/40 bg-parchment">
+      <span className="relative h-2.5 w-12 overflow-hidden rounded-sm border border-ink/40 bg-parchment">
         <span className="absolute inset-y-0 left-0" style={{ width: `${pct}%`, background: low ? "#c0392b" : color }} />
       </span>
       <span className="text-sm tabular-nums">{text}</span>
@@ -24,16 +24,21 @@ function Bar({ label, icon, value, low, color }: { label: string; icon: string; 
 }
 
 /** Hunger and thirst mini bars for the HUD card (v18.3); the exact values are in each bar's tooltip too. */
-export default function VitalsHud({ state }: { state: VitalsState | null }) {
+/** The "go eat" nudge on its own (the HUD shows it on the status line when the bars leave it out: `nag={false}`). */
+export function VitalsNag({ state }: { state: VitalsState | null }) {
+  return state && state.faintedUntilMs === null && shouldNag(state)
+    ? <span aria-label="Nhắc ăn uống" className="text-sm text-red-700">{NAG_HINT}</span>
+    : null;
+}
+
+export default function VitalsHud({ state, nag = true }: { state: VitalsState | null; nag?: boolean }) {
   const low = state ? lowWarn(state) : { hunger: false, thirst: false };
   const faints = state?.faintCount ?? 0;                                                // faint ladder
   return (
     <div className="flex items-center gap-2 font-vt text-base leading-none">
       <Bar label="Đói" icon="🍚" value={state?.hunger ?? null} low={low.hunger} color="#d9a441" />
       <Bar label="Khát" icon="💧" value={state?.thirst ?? null} low={low.thirst} color="#3d8fd1" />
-      {state && state.faintedUntilMs === null && shouldNag(state) && (
-        <span aria-label="Nhắc ăn uống" className="text-sm text-red-700">{NAG_HINT}</span>
-      )}
+      {nag && <VitalsNag state={state} />}
       {faints >= 1 && (
         <span
           aria-label="Số lần ngất hôm nay"

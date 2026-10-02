@@ -3,6 +3,7 @@ import { cardLabel, cardsOf, type Card, type CardGame } from "./deck";
 import { signedXu, xuNum } from "./messages";
 import { pkPots } from "./poker";
 import { tlSettle, type TlGame } from "./tienlen";
+import { xidachCap } from "./xidach";
 
 // 📜 Sổ luật (spec §14): the rules of the three games in Vietnamese, as static data. A line is text with card groups
 // ("[7♦]" in the source, shown as mini cards). The money examples are computed with tlSettle / caoSettle / pkPots at the
@@ -251,6 +252,18 @@ function poker(stake: number): RuleSection[] {
 }
 
 function xidach(stake: number): RuleSection[] {
+  // Kinh tế v2 (0106): B busts at a 5-seat table and owes 4 stakes on a 2-stake hold: each of the others gets ½ stake
+  const who = ["Cái", "A", "B", "C", "D"];
+  const cap = xidachCap([1, 2, 4, 5].map((to) => ({ from: 3, to, xu: stake })),
+    { 1: 8 * stake, 2: 2 * stake, 3: 2 * stake, 4: 2 * stake, 5: 2 * stake });
+  const denLang: RuleExample = {
+    title: `Đền làng khi không đủ (${xuNum(stake)} xu)`,
+    lines: [
+      ruleLine(`Bàn 5 người. B rút [K♠ Q♠ J♠] 30 điểm: phải đền 4 người × ${xuNum(stake)} = ${xuNum(4 * stake)} xu nhưng chỉ giữ ${xuNum(2 * stake)} xu trên bàn.`),
+      ruleLine(`B mất đúng ${xuNum(2 * stake)} xu; mỗi người còn lại được ${xuNum(cap.net[1] ?? 0)} xu.`),
+    ],
+    net: [2, 3, 4, 5, 1].map((s) => ({ who: who[s - 1], xu: cap.net[s] ?? 0 })),
+  };
   const example = {
     title: `Ván ví dụ (${xuNum(stake)} xu)`,
     lines: [
@@ -290,8 +303,8 @@ function xidach(stake: number): RuleSection[] {
     ]),
     section("Đền làng", [
       "Ai rút quá 28 điểm thì đền cả làng: trả 1 lần cược cho mỗi người còn trong ván.",
-      "Không đủ xu thì ví bị trừ thành âm; ví âm vẫn nhận xu bình thường nhưng chưa ngồi bàn được.",
-    ]),
+      "Không ai mất quá số xu đã giữ trên bàn (nhà con giữ 2 lần cược, nhà cái giữ số nhà con × 2 lần cược). Phải đền nhiều hơn thì chỉ trả hết số đã giữ, chia cho từng người theo tỷ lệ (làm tròn xuống, phần lẻ bỏ đi). Ví không bao giờ bị âm.",
+    ], [denLang]),
     section("Tính tiền", [
       "Thắng/thua so trực tiếp với nhà cái. Xì Bàng và Ngũ Linh ăn x2, thắng điểm thường ăn x1.",
       "Cùng điểm hoặc cùng Quắc thì hoà.",

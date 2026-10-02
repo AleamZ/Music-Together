@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnticheatError, reportLock, reportNoLock } from "@/lib/anticheat";
 import { syncClock } from "@/lib/game/farm/clock";
+import type { NpcQuota } from "@/lib/game/economy/npc";
 import type { FishingCatalog } from "@/lib/game/fishing/catalog";
 import {
-  buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, finishCast, finishNet, fishingErrorMessage, hookCast, netHaul, releaseFish,
-  repairRod, sellFish, setLoadout, startCast, startNet, type FinishCast, type FinishNet, type HookCast, type ReelInput, type NetHaul, type NetPull, type NetThrow,
-  type StartCast, type StartNet,
+  buyItem, claimDaily, digWorms, fetchFishingCatalog, fetchFishingState, fetchNotebook, finishCast, finishNet, fishingEquip, fishingErrorMessage,
+  hookCast, netHaul, releaseFish, repairRod, rodEquip, rodMount, rodRename, rodRepair, rodScrap, rodUnmount, sellFish, setLoadout,
+  startCast, startNet, throwGroundbait, type FinishCast, type FinishNet, type RodAnswer,
+  type GroundbaitSpot, type HookCast, type Notebook, type ReelInput, type NetHaul, type NetPull, type NetThrow, type StartCast, type StartNet,
 } from "@/lib/game/fishing/rpc";
-import type { FishingState, Loadout } from "@/lib/game/fishing/state";
+import type { FishingState, GearSlot, Loadout, PartSlot } from "@/lib/game/fishing/state";
 import { extrasErrorMessage, startBoatCast } from "@/lib/game/fishing/extras-rpc";
 import { startRiverCast } from "@/lib/game/river/rpc";
 
@@ -25,8 +27,30 @@ export interface FishingData {
   dig: () => Promise<{ gained: number } | null>;
   buy: (itemId: string, qty: number) => Promise<boolean>;
   equip: (loadout: Loadout) => Promise<boolean>;
-  /** `market` (v18.5): sold at Vựa cá Chợ Lớn, +20%. */
-  sell: (ids: string[], market?: boolean) => Promise<{ sold: number; earned: number } | null>;
+  /** 0110: mount (`item`) or unmount (null) one slot of the rig. */
+  equipSlot: (slot: GearSlot, item: string | null) => Promise<boolean>;
+  /** 0115: the rods one by one — mount a part from the bag onto a rod (bound; the old one destroyed), take one off
+   *  (destroyed), fish with a rod (null: Cần gỗ), name it, throw it away, repair it. null on an error (toasted). */
+  rods: {
+    mount: (rodId: number, slot: PartSlot, item: string) => Promise<RodAnswer | null>;
+    unmount: (rodId: number, slot: PartSlot) => Promise<RodAnswer | null>;
+    equip: (rodId: number | null) => Promise<RodAnswer | null>;
+    rename: (rodId: number, name: string) => Promise<RodAnswer | null>;
+    scrap: (rodId: number) => Promise<RodAnswer | null>;
+    repair: (rodId: number) => Promise<RodAnswer | null>;
+  };
+  /** 0110: one bag of groundbait on a spot (the pond cell, or the river in world px). */
+  throwGroundbait: (roomId: string, item: string, spot: GroundbaitSpot) => Promise<boolean>;
+  /** 0110: Sổ tay câu cá (null: not bought, or an error — the toast says which). */
+  notebook: () => Promise<Notebook | null>;
+  /** `market` (v18.5): sold at Vựa cá Chợ Lớn, +10% (econ v2). `npcCut` (0101): what the thương lái kept back. */
+  sell: (ids: string[], market?: boolean) => Promise<{ sold: number; earned: number; npcCut: number } | null>;
+  /** econ v2 (0101): the thương lái's day as the last sale (or learnNpc) told it; null until then. */
+  npc: NpcQuota | null;
+  /** econ v2: the last sale's pay and cut (a new object per sale), for the depot's note; null until then. */
+  lastSale: { earned: number; cut: number } | null;
+  /** econ v2: the thương lái's day from elsewhere (the records board) — the depot asks when it opens without one. */
+  learnNpc: (q: NpcQuota | null) => void;
   release: (id: string) => Promise<boolean>;
   /** `cell` (v18.1): the pond cell the cast starts from. */
   startCast: (roomId: string, cell?: { col: number; row: number }) => Promise<StartCast | null>;
@@ -59,6 +83,8 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
   const [state, setState] = useState<FishingState | null>(null);
   const [failed, setFailed] = useState(false);
   const [catalog, setCatalog] = useState<FishingCatalog | null>(null);
+  const [npc, setNpc] = useState<NpcQuota | null>(null);                                  // econ v2 (0101)
+  const [lastSale, setLastSale] = useState<{ earned: number; cut: number } | null>(null);
   const onErrorRef = useRef(onError);
   useEffect(() => {
     onErrorRef.current = onError;
@@ -128,7 +154,8 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
   }, [apply, reload]);
 
   return {
-    state, failed, catalog, reload,
+    state, failed, catalog, reload, npc, lastSale,
+    learnNpc: useCallback((q: NpcQuota | null) => { if (q) setNpc(q); }, []),
     claimDaily: useCallback(async () => {
       const r = await act(() => claimDaily(token), (x) => x.state);
       return r && { claimed: r.claimed, amount: r.amount };
@@ -139,9 +166,33 @@ export function useFishing(token: string, onError: (text: string) => void): Fish
     }, [act, token]),
     buy: useCallback(async (itemId: string, qty: number) => (await act(() => buyItem(token, itemId, qty), (s) => s)) !== null, [act, token]),
     equip: useCallback(async (l: Loadout) => (await act(() => setLoadout(token, l), (s) => s)) !== null, [act, token]),
+    equipSlot: useCallback(async (slot: GearSlot, item: string | null) =>
+      (await act(() => fishingEquip(token, slot, item), (s) => s)) !== null, [act, token]),                        // 0110
+    rods: {
+      mount: useCallback((rodId: number, slot: PartSlot, item: string) => act(() => rodMount(token, rodId, slot, item), (x) => x.state), [act, token]),
+      unmount: useCallback((rodId: number, slot: PartSlot) => act(() => rodUnmount(token, rodId, slot), (x) => x.state), [act, token]),
+      equip: useCallback((rodId: number | null) => act(() => rodEquip(token, rodId), (x) => x.state), [act, token]),
+      rename: useCallback((rodId: number, name: string) => act(() => rodRename(token, rodId, name), (x) => x.state), [act, token]),
+      scrap: useCallback((rodId: number) => act(() => rodScrap(token, rodId), (x) => x.state), [act, token]),
+      repair: useCallback((rodId: number) => act(() => rodRepair(token, rodId), (x) => x.state), [act, token]),
+    },
+    throwGroundbait: useCallback(async (roomId: string, item: string, spot: GroundbaitSpot) =>
+      (await act(() => throwGroundbait(roomId, token, item, spot), (s) => s)) !== null, [act, token]),             // 0110
+    notebook: useCallback(async () => {
+      try {
+        return await fetchNotebook(token);
+      } catch (err) {
+        onErrorRef.current(fishingErrorMessage(err));
+        return null;
+      }
+    }, [token]),
     sell: useCallback(async (ids: string[], market = false) => {
       const r = await act(() => sellFish(token, ids, market), (x) => x.state);
-      return r && { sold: r.sold, earned: r.earned };
+      if (r) {                                                                            // econ v2 (0101): the thương lái
+        if (r.npc) setNpc(r.npc);
+        setLastSale({ earned: r.earned, cut: r.npcCut });
+      }
+      return r && { sold: r.sold, earned: r.earned, npcCut: r.npcCut };
     }, [act, token]),
     release: useCallback(async (id: string) => (await act(() => releaseFish(token, id), (s) => s)) !== null, [act, token]),
     startCast: useCallback((roomId: string, cell?: { col: number; row: number }) => act(() => startCast(roomId, token, cell), (x) => x.state), [act, token]),

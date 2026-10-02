@@ -1,5 +1,6 @@
-// The forest's static tables — supabase/migrations/0096_forest_professions.sql is authoritative; tests/unit/forest.test.ts
-// pins every row equal to the SQL. Display and prediction only: every outcome is the server's.
+// The forest's static tables — supabase/migrations/0096_forest_professions.sql is authoritative (0097: the tools and the
+// dishes; 0103, econ v2: the log and dish prices, the quality %, the day's logs); tests/unit/forest.test.ts pins every row
+// equal to the SQL. Display and prediction only: every outcome is the server's.
 
 export type TreeId = "cay_tre" | "cay_keo" | "cay_thong" | "cay_soi" | "cay_go_do" | "cay_tram_huong" | "cay_than_moc";
 export type LogId = "go_tre" | "go_keo" | "go_thong" | "go_soi" | "go_do" | "go_tram_huong" | "go_than_moc";
@@ -18,13 +19,13 @@ export interface TreeKind {
 }
 
 export const TREES: readonly TreeKind[] = [
-  { id: "cay_tre", name: "Tre", need: 3, respawnMin: 2, log: "go_tre", logs: 2, price: 12, rare: false, upto: 350 },
-  { id: "cay_keo", name: "Keo", need: 4, respawnMin: 3, log: "go_keo", logs: 2, price: 18, rare: false, upto: 650 },
-  { id: "cay_thong", name: "Thông", need: 5, respawnMin: 5, log: "go_thong", logs: 2, price: 28, rare: false, upto: 820 },
-  { id: "cay_soi", name: "Sồi", need: 7, respawnMin: 8, log: "go_soi", logs: 2, price: 45, rare: true, upto: 920 },
-  { id: "cay_go_do", name: "Gõ đỏ", need: 9, respawnMin: 15, log: "go_do", logs: 2, price: 75, rare: true, upto: 970 },
-  { id: "cay_tram_huong", name: "Trầm hương", need: 12, respawnMin: 45, log: "go_tram_huong", logs: 1, price: 220, rare: true, upto: 993 },
-  { id: "cay_than_moc", name: "Thần mộc", need: 16, respawnMin: 120, log: "go_than_moc", logs: 1, price: 480, rare: true, upto: 1000 },
+  { id: "cay_tre", name: "Tre", need: 3, respawnMin: 2, log: "go_tre", logs: 2, price: 4, rare: false, upto: 350 },
+  { id: "cay_keo", name: "Keo", need: 4, respawnMin: 3, log: "go_keo", logs: 2, price: 6, rare: false, upto: 650 },
+  { id: "cay_thong", name: "Thông", need: 5, respawnMin: 5, log: "go_thong", logs: 2, price: 9, rare: false, upto: 820 },
+  { id: "cay_soi", name: "Sồi", need: 7, respawnMin: 8, log: "go_soi", logs: 2, price: 15, rare: true, upto: 920 },
+  { id: "cay_go_do", name: "Gõ đỏ", need: 9, respawnMin: 15, log: "go_do", logs: 2, price: 25, rare: true, upto: 970 },
+  { id: "cay_tram_huong", name: "Trầm hương", need: 12, respawnMin: 45, log: "go_tram_huong", logs: 1, price: 73, rare: true, upto: 993 },
+  { id: "cay_than_moc", name: "Thần mộc", need: 16, respawnMin: 120, log: "go_than_moc", logs: 1, price: 160, rare: true, upto: 1000 },
 ];
 
 export const LOG_NAME: Readonly<Record<LogId, string>> = {
@@ -42,8 +43,9 @@ export const treeKey = (cx: number, cy: number, k: number): string => `${cx}:${c
 export const treeById = (id: string): TreeKind | null => TREES.find((t) => t.id === id) ?? null;
 export const logPrice = (id: string): number => TREES.find((t) => t.log === id)?.price ?? 0;
 
-/** The day's full-price logs (from the 41st: half price). */
-export const DAILY_FULL_LOGS = 40;
+/** The day's full-price logs (econ v2, 0103: from the 31st, half price) and the day's most (then chop_start refuses). */
+export const DAILY_FULL_LOGS = 30;
+export const DAILY_MAX_LOGS = 150;
 /** Seconds between two chopping rounds, the stamina of one. */
 export const CHOP_COOLDOWN_S = 1.5;
 export const CHOP_STAMINA = 4;
@@ -101,18 +103,21 @@ const R = (id: RecipeId, name: string, meat: string | null, meatQty: number, fis
   steps: CookStep[], price: number, stamina: number, buff: DishBuff | null, buffValue: number, buffMin: number): Recipe =>
   ({ id, name, meat, meatQty, fish, fishQty, fee, steps, price, stamina, buff, buffValue, buffMin });
 
-/** 0097 _cook_recipes — forest-content's ten Mekong dishes (the Đầu bếp's only; a pan needed). */
+/** 0097 _cook_recipes — forest-content's ten Mekong dishes (the Đầu bếp's only; a pan needed). Econ v2 (0103) prices:
+ *  a fee-only dish sells for 0.8 × its fee (it is for buffs and stamina); an ingredient dish for its fee + 1.3 × the
+ *  ingredients' NPC value (meat at the stall's price; fish at its expected catch at the wooden rod, M = S = 1, on 0101's
+ *  fish prices: cá lóc 10.33, cá rô 5.33, cá sặc 4.43) + 20. */
 export const RECIPES: readonly Recipe[] = [
-  R("ca_loc_nuong_trui", "Cá lóc nướng trui", null, 0, "ca_loc", 1, 10, ["fire", "slice", "stir"], 155, 12, null, 0, 0),
-  R("canh_chua_ca_loc", "Canh chua cá lóc", null, 0, "ca_loc", 1, 10, ["slice", "fire", "stir"], 175, 16, "stamina_regen", 20, 10),
-  R("ca_ro_kho_tieu", "Cá rô kho tiêu", null, 0, "ca_ro", 2, 10, ["stir", "fire"], 145, 11, "rare_fish", 5, 12),
-  R("bong_sung_xao_toi", "Bông súng xào tỏi", null, 0, null, 0, 80, ["slice", "fire", "stir"], 115, 9, "speed", 5, 10),
-  R("goi_bong_dien_dien", "Gỏi bông điên điển", null, 0, null, 0, 120, ["slice", "fire", "stir"], 175, 13, "strength", 10, 12),
-  R("chuot_dong_nuong_sa", "Chuột đồng nướng sả", "thit_chuot_dong", 2, null, 0, 10, ["slice", "stir", "fire"], 180, 15, "hunt_chance", 3, 12),
-  R("com_tam_suon", "Cơm tấm sườn", null, 0, null, 0, 120, ["slice", "fire", "stir"], 170, 18, null, 0, 0),
-  R("lau_mam_ca_linh", "Lẩu mắm cá linh", null, 0, "ca_sac", 2, 26, ["slice", "fire", "stir"], 265, 22, "rare_fish", 10, 15),
-  R("chao_ga_rung", "Cháo gà rừng", "thit_ga_rung", 1, null, 0, 13, ["slice", "fire", "stir"], 220, 20, "stamina_regen", 30, 12),
-  R("chao_ran_dau_xanh", "Cháo rắn đậu xanh", "thit_ran_ri_ca", 1, null, 0, 16, ["slice", "fire", "stir"], 245, 21, "hunt_chance", 5, 15),
+  R("ca_loc_nuong_trui", "Cá lóc nướng trui", null, 0, "ca_loc", 1, 10, ["fire", "slice", "stir"], 43, 12, null, 0, 0),
+  R("canh_chua_ca_loc", "Canh chua cá lóc", null, 0, "ca_loc", 1, 10, ["slice", "fire", "stir"], 43, 16, "stamina_regen", 20, 10),
+  R("ca_ro_kho_tieu", "Cá rô kho tiêu", null, 0, "ca_ro", 2, 10, ["stir", "fire"], 44, 11, "rare_fish", 5, 12),
+  R("bong_sung_xao_toi", "Bông súng xào tỏi", null, 0, null, 0, 80, ["slice", "fire", "stir"], 64, 9, "speed", 5, 10),
+  R("goi_bong_dien_dien", "Gỏi bông điên điển", null, 0, null, 0, 120, ["slice", "fire", "stir"], 96, 13, "strength", 10, 12),
+  R("chuot_dong_nuong_sa", "Chuột đồng nướng sả", "thit_chuot_dong", 2, null, 0, 10, ["slice", "stir", "fire"], 121, 15, "hunt_chance", 3, 12),
+  R("com_tam_suon", "Cơm tấm sườn", null, 0, null, 0, 120, ["slice", "fire", "stir"], 96, 18, null, 0, 0),
+  R("lau_mam_ca_linh", "Lẩu mắm cá linh", null, 0, "ca_sac", 2, 26, ["slice", "fire", "stir"], 58, 22, "rare_fish", 10, 15),
+  R("chao_ga_rung", "Cháo gà rừng", "thit_ga_rung", 1, null, 0, 13, ["slice", "fire", "stir"], 144, 20, "stamina_regen", 30, 12),
+  R("chao_ran_dau_xanh", "Cháo rắn đậu xanh", "thit_ran_ri_ca", 1, null, 0, 16, ["slice", "fire", "stir"], 166, 21, "hunt_chance", 5, 15),
 ];
 /** forest-content's "cooked" toasts. */
 export const COOKED_TOAST: Readonly<Record<RecipeId, string>> = {
@@ -132,11 +137,13 @@ export const recipeById = (id: string): Recipe | null => RECIPES.find((r) => r.i
 export const QUALITY_NAME = ["Hỏng", "Đạt", "Ngon", "Tuyệt phẩm"] as const;
 /** 0096 _cook_quality. */
 export const cookQuality = (score: number): 0 | 1 | 2 | 3 => (score >= 90 ? 3 : score >= 70 ? 2 : score >= 40 ? 1 : 0);
-/** 0096 _cook_pct: the quality's % of the price and the stamina. */
-export const cookPct = (q: number): number => (q === 3 ? 150 : q === 2 ? 125 : q === 1 ? 100 : 20);
-/** cook_sell's pay for one dish; cook_eat's stamina. */
+/** _cook_pct (0103: 20 / 100 / 110 / 125, was 20 / 100 / 125 / 150): the quality's % of the price, the stamina and the buff. */
+export const cookPct = (q: number): number => (q === 3 ? 125 : q === 2 ? 110 : q === 1 ? 100 : 20);
+/** cook_sell's value of one dish (before the thương lái); cook_eat's stamina (0103: half of the recipe's × the quality's %). */
 export const dishPrice = (r: Recipe, q: number): number => Math.floor((r.price * cookPct(q)) / 100);
-export const dishStamina = (r: Recipe, q: number): number => (q === 0 ? 0 : Math.floor((r.stamina * cookPct(q)) / 100));
+export const dishStamina = (r: Recipe, q: number): number => (q === 0 ? 0 : Math.floor((r.stamina * cookPct(q)) / 200));
+/** The stamina a dish costs to cook (0103, cook_start). */
+export const COOK_STAMINA = 2;
 
 export const DISH_BUFF_TEXT: Readonly<Record<DishBuff, (v: number) => string>> = {
   stamina_regen: (v) => `hồi thể lực +${v}%`, rare_fish: (v) => `+${v}% cá hiếm`, speed: (v) => `+${v}% tốc độ`,

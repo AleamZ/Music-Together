@@ -5,6 +5,7 @@ import type { Vec } from "@/lib/game/types";
 import { FLOATING_MARKET, lotusPonds } from "./delta";
 import { MINE } from "./mine";
 import { CABLE, DI_LAC, GATE, LAKE, NUI, nuiHeight, TEMPLE } from "./nuicam";
+import { SONG_CAI_ROUTE } from "./routes";
 import { landUse, type LandUse } from "./scenery";
 import { canalDist, CANAL_HALF_W, fbm, hashAt, riverAt, streamAt, STREAM_HALF_W, zoneUnder } from "./terrain";
 import { isZone, toWorld, WORLD_H, WORLD_W, ZONES, type OutdoorMapId } from "./zones";
@@ -163,6 +164,9 @@ export const MAP_LABELS: readonly MapLabel[] = [
   { id: "khu_nha", icon: icon("khu_nha"), name: "Khu nhà", ...zc("khu_nha"), major: true },
   { id: "bai_dat", icon: icon("bai_dat"), name: "Bãi đất", ...zc("bai_dat"), major: true },
   { id: "song_cai", icon: icon("song_cai"), name: "Sông Cái", ...zc("song_cai"), major: true },
+  // 0116: the road out to Sông Cái (routes.ts): its signpost at the junction and Bến đò at its end
+  { id: "sign_song_cai", icon: "🪧", name: SONG_CAI_ROUTE.sign.text, x: SONG_CAI_ROUTE.sign.x + 70, y: SONG_CAI_ROUTE.sign.y, major: false },
+  { id: "ben_do", icon: "🛶", name: "Bến đò Sông Cái", x: SONG_CAI_ROUTE.landing.x + 78, y: SONG_CAI_ROUTE.landing.y + 14, major: false },
   { id: "mo_da", icon: icon("mo_da"), name: "Mỏ đá", x: MINE.mouth.x, y: MINE.mouth.y, major: true },
   { id: "rung_tram", icon: "🌲", name: "Rừng tràm", x: RT_ORIGIN.x + RT_W / 2, y: RT_ORIGIN.y + 70, major: true },
   { id: "nui", icon: "⛰️", name: "Núi Mây Xanh", x: NUI.x, y: NUI.y - NUI.r + 50, major: true },

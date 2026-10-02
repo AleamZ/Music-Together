@@ -36,7 +36,11 @@ describe("HudNowPlaying on a phone", () => {
     expect(chip.className).toMatch(/(^|\s)hidden(\s|$)/);
     expect(card.className).not.toMatch(/hidden/);
     fireEvent.click(screen.getByRole("button", { name: "Thu gọn" }));
-    expect(card.className).toMatch(/hidden sm:flex/);
+    expect(card.className).toMatch(/(^|\s)hidden(\s|$)/);                // folded on every screen now, and remembered
+    expect(card.className).not.toMatch(/sm:flex/);
+    expect(chip.className).toMatch(/(^|\s)flex(\s|$)/);
+    expect(window.localStorage.getItem("mt.hud.np")).toBe("0");
+    window.localStorage.removeItem("mt.hud.np");
   });
   it("keeps the DJ's play/pause in the chip", () => {
     render(

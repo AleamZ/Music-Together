@@ -214,8 +214,8 @@ export function sortInputError(ticks: readonly number[], dirs: readonly number[]
   if (dirs.some((d) => d !== 0 && d !== 1)) return "dir";
   return togglesError(ticks, SORT_TICKS, SORT_TICKS, SORT.maxInputs, SORT.rate);
 }
-/** The bonus % of the batch value (public._sort_bonus). */
-export const sortBonus = (score: number): number => (score >= 11 ? 5 : score >= 8 ? 2 : 0);
+/** The bonus % of the batch value (public._sort_bonus; econ v2, 0102: 1 / 2 %, was 2 / 5 %). */
+export const sortBonus = (score: number): number => (score >= 11 ? 2 : score >= 8 ? 1 : 0);
 
 export interface SortRound { kinds: number[]; tick: number; ticks: number[]; dirs: number[]; decided: (boolean | null)[]; score: number; done: boolean }
 export function createSort(seed: number): SortRound {

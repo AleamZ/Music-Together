@@ -1,9 +1,10 @@
+import { FISH_V3_ICONS } from "./gear-v3";
 import type { PixelIcon } from "./icons";
 
 // 16×16 icons for the twelve species (spec §11): "." transparent, "o" outline, other letters from the
 // icon's own palette. Original art — distinct silhouettes per species.
 
-export const FISH_ICONS: Record<string, PixelIcon> = {
+const BASE_FISH_ICONS: Record<string, PixelIcon> = {
   ca_ro: {
     rows: [
       "................",
@@ -489,3 +490,6 @@ export const FISH_ICONS: Record<string, PixelIcon> = {
     pal: { b: "#505650", B: "#777969", w: "#b6b7a4", s: "#666b62", S: "#454b46", O: "#343b39", k: "#161d1b" },
   },
 };
+
+/** Every species' icon: the ones above and Câu cá v3's four (0110, gear-v3.ts). */
+export const FISH_ICONS: Record<string, PixelIcon> = { ...BASE_FISH_ICONS, ...FISH_V3_ICONS };

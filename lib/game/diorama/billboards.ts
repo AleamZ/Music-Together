@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BETA_GOLD, isBetaTag } from "@/lib/game/beta/frame";
 import { getCharacterFrames } from "@/lib/game/art/raster";
 import { SPRITE_H, SPRITE_W } from "@/lib/game/art/layers";
 import { pxLen, pxToWorld, type MapSize } from "./coords";
@@ -80,6 +81,10 @@ export class BillboardLayer {
     c.beginPath();
     c.roundRect(0, 0, w, h, 3 * scale);
     c.fill();
+    if (isBetaTag(text)) {                                                                      // 0118: the Beta frame
+      c.strokeStyle = BETA_GOLD; c.lineWidth = 1.5 * scale;
+      c.beginPath(); c.roundRect(scale, scale, w - 2 * scale, h - 2 * scale, 2.5 * scale); c.stroke();
+    }
     c.fillStyle = me ? "#ffe08a" : "#ffffff";
     c.textBaseline = "middle";
     c.textAlign = "center";

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { MartialStyle } from "@/lib/game/fight/dojo";
 import { KATA_GOOD, KATA_LANES, KATA_REFILL, KATA_START, LANE_LABELS, judge, type KataChart, type KataJudgement } from "@/lib/game/fight/kata";
 import { specialPoseIds, stancePoseIds } from "@/lib/game/fight/render/poses";
+import Fight3DToggle from "./Fight3DToggle";
 import RigPreview from "./RigPreview";
 
 /** The keys of the eight lanes: ← → ↑ ↓ (or A D W S) and U I J K. */
@@ -187,6 +188,7 @@ export default function KataOverlay({ style, first, upto, length, total, more, p
         </div>
         <div className="flex flex-col items-center gap-2 sm:w-48">
           <RigPreview look={style.masterLook} style={style.id} rank={4} poses={moves} scale={3} step={hits} label={`${style.master} biểu diễn`} />
+          <Fight3DToggle />
           <p className="text-center text-base">{style.master} biểu diễn — đánh theo nhịp!</p>
           <div className="relative h-4 w-full rounded-sm border border-ink bg-parchment-200" aria-label="Điểm bài quyền" role="meter" aria-valuemin={0} aria-valuemax={max} aria-valuenow={shown}>
             <div className="h-full bg-burgundy" style={{ width: `${Math.min(100, (shown * 100) / Math.max(1, max))}%` }} />

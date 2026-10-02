@@ -5,7 +5,7 @@
 // time ahead — the arrows 2 s before their beat, the drift, the grains, the treats, the strokes, the trail 0.5–1.5 s
 // ahead; a "gate" (the hunted animal, the anvil's glow, the power meter's sweet spot, a dig's next vein) at a secret
 // tick, or when the strike that uncovers it has been stamped. The first sync starts the round's clock (tick 0 is when
-// its answer arrives here); every sync sends the inputs made so far, which the server stamps with its time — an input
+// its answer arrives here, less half its round trip); every sync sends the inputs made so far, which the server stamps with its time — an input
 // list may only grow, never run ahead of the server's clock, and each input must reach the server within 2 s of the
 // tick it claims (the client syncs every 0.2 s), so a round can only be played live. An input acting on a gate may not
 // claim a tick before that gate arrived (+ a human reaction): the overlays ignore presses for GATE_GUARD_MS after it.
@@ -106,12 +106,16 @@ export function useLive(sync: LiveSync | null, inputs: () => [readonly number[] 
     busy.current = true;
     again.current = false;
     last.current = performance.now();
+    const sentAt = last.current;
     const [a, b] = inputsRef.current();
     s(a ? a.slice() : null, b ? b.slice() : null).then((snap) => {
       const now = performance.now();
       if (t0.current === 0) {
-        t0.current = now;
-        setT0(now);
+        // tick 0 is when the server took the first sync: halfway through its round trip, not its arrival here (a slow
+        // first call would otherwise put every later input early on the server's clock)
+        const start = sentAt + (now - sentAt) / 2;
+        t0.current = start;
+        setT0(start);
         setReady(true);
       }
       let fresh = false;

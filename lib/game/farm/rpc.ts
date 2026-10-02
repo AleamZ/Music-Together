@@ -215,7 +215,7 @@ function mineAnswer(r: Record<string, unknown>): MineAnswer {
   return { serverNow: typeof r.server_now === "string" ? r.server_now : null, mine: mineOf(r.mine) };
 }
 
-/** `market` (v18.5): sold at Vựa nông sản Chợ Lớn, +20%. */
+/** `market` (v18.5): sold at Vựa nông sản Chợ Lớn, +10% (econ v2). */
 export async function sellRice(token: string, variety: string, dry: boolean, kg: number, market = false): Promise<MineAnswer> {
   return mineAnswer(await call(market ? "sell_rice_market" : "sell_rice", { p_session_token: token, p_variety: variety, p_dry: dry, p_kg: kg }));
 }
@@ -273,13 +273,17 @@ export async function pickSnailBed(roomId: string, token: string, bed: number): 
   return { ...mineAnswer(r), snails: catchOf(r.snails, "bad snail answer") };
 }
 
+/** The thương lái's cut on a sale (econ v2, 0102): 0 when it paid in full, or from a server before 0102. */
+const npcCut = (r: Record<string, unknown>): number => (isNum(r.npc_cut) && r.npc_cut > 0 ? r.npc_cut : 0);
+
 /** cô Út buys every critter of a kind (null: all of them) at the prices stored at the catch (R15); `sold` is what she
- *  paid, so an answer without it whole is malformed. */
-export async function sellCritters(token: string, kind: string | null): Promise<MineAnswer & { sold: { n: number; xu: number } }> {
+ *  paid, so an answer without it whole is malformed. Econ v2: the thương lái pays (`cut` is what it kept back). */
+export async function sellCritters(token: string, kind: string | null)
+  : Promise<MineAnswer & { sold: { n: number; xu: number; cut: number } }> {
   const r = await call("sell_critters", { p_session_token: token, p_kind: kind });
   const s = r.sold && typeof r.sold === "object" ? (r.sold as Record<string, unknown>) : {};
   if (!isNum(s.n) || !isNum(s.xu)) throw new Error("bad sale answer");
-  return { ...mineAnswer(r), sold: { n: s.n, xu: s.xu } };
+  return { ...mineAnswer(r), sold: { n: s.n, xu: s.xu, cut: npcCut(r) } };
 }
 
 /** The slingshot's aim (v17 §6.1): at this rat, from the server's start (the 2–60 s gate counts from it); (0063) the
@@ -357,10 +361,10 @@ export function feedDog(token: string): Promise<DogAnswer> {
 }
 
 /** cô Út buys every rat in the bag at the prices fixed at each catch (D12); `sold` is what she paid, so an answer
- *  without it whole is malformed. */
-export async function sellRats(token: string): Promise<MineAnswer & { sold: { count: number; xu: number } }> {
+ *  without it whole is malformed. Econ v2: the thương lái pays (`cut` is what it kept back). */
+export async function sellRats(token: string): Promise<MineAnswer & { sold: { count: number; xu: number; cut: number } }> {
   const r = await call("sell_rats", { p_session_token: token });
   const s = obj(r.sold);
   if (!isNum(s.count) || !isNum(s.xu)) throw new Error("bad sale answer");
-  return { ...mineAnswer(r), sold: { count: s.count, xu: s.xu } };
+  return { ...mineAnswer(r), sold: { count: s.count, xu: s.xu, cut: npcCut(r) } };
 }

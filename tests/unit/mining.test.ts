@@ -12,7 +12,17 @@ import { fishRarity, RARITY_INFO, rarityInfo, rarityOfTier } from "@/lib/game/ra
 import { parseMineState } from "@/lib/game/mining/rpc";
 
 const SQL = readFileSync("supabase/migrations/0072_mining_crafting.sql", "utf8");
+/** Econ v2 (0103): the ore prices, the potion fees and the upgrade floor — the newest values win over 0072's seed. */
+const SQL103 = readFileSync("supabase/migrations/0103_econ_crafts.sql", "utf8");
 const FIXTURE = "tests/fixtures/mine-cases.json";
+
+/** `(id, value)` pairs of 0103's `update public.<table> … from (values …)`. */
+function updates(table: string): Map<string, number> {
+  const at = SQL103.indexOf(`update public.${table} `);
+  expect(at, table).toBeGreaterThan(-1);
+  const list = SQL103.slice(SQL103.indexOf("(values", at), SQL103.indexOf(" v(id,", at));
+  return new Map([...list.matchAll(/\('(\w+)', (\d+)\)/g)].map((m) => [m[1], +m[2]]));
+}
 
 /** The body of `create or replace function public.<name>` up to its closing `$$`. */
 function body(name: string): string {
@@ -72,24 +82,36 @@ describe("the dig (lib/game/mining/game.ts = 0072's _mine_replay)", () => {
   });
 });
 
-describe("the catalogs are 0072's rows", () => {
+describe("the catalogs are 0072's rows (with 0103's prices and fees)", () => {
   it("craft_items", () => {
+    const prices = updates("craft_items");
+    expect([...prices.keys()]).toEqual(CRAFT_ITEMS.filter((i) => i.kind === "ore").map((i) => i.id));
     for (const it of CRAFT_ITEMS) {
       const q = (v: string | number | null) => (v === null ? "null" : typeof v === "string" ? `'${v}'` : String(v));
-      const re = new RegExp(`\\(${q(it.id)},\\s*${q(it.kind)},\\s*${q(it.name)},\\s*${it.rarity},\\s*${q(it.price)},\\s*${q(it.hardness)},\\s*${q(it.minTier)},\\s*${q(it.respawnS)},\\s*${it.xp},`);
+      const seeded = prices.has(it.id) ? "\\d+" : q(it.price);
+      const re = new RegExp(`\\(${q(it.id)},\\s*${q(it.kind)},\\s*${q(it.name)},\\s*${it.rarity},\\s*${seeded},\\s*${q(it.hardness)},\\s*${q(it.minTier)},\\s*${q(it.respawnS)},\\s*${it.xp},`);
       expect(SQL, it.id).toMatch(re);
+      if (prices.has(it.id)) expect(it.price, it.id).toBe(prices.get(it.id));
     }
     expect(CRAFT_ITEMS.map((i) => i.rarity)).toContain(6);
+    // ores ÷ 4 (econ v2)
+    expect(CRAFT_ITEMS.filter((i) => i.kind === "ore").map((i) => i.price)).toEqual([1, 3, 6, 10, 20, 40, 80, 175, 500]);
   });
 
   it("pickaxes and recipes", () => {
     for (const p of PICKAXES) {
       expect(SQL).toMatch(new RegExp(`\\('${p.id}',\\s*'${p.name}',\\s*${p.tier},\\s*${p.price},\\s*${p.durability},\\s*${p.rarity},`));
     }
+    const fees = updates("potion_recipes");
     for (const r of RECIPES) {
       const json = JSON.stringify(r.ingredients).replace(/:/g, ": ").replace(/,/g, ", ");
-      expect(SQL).toMatch(new RegExp(`\\('${r.id}',\\s*'${r.effect}',\\s*${r.amount},\\s*${r.durationS},\\s*${r.fee},\\s*'${json.replace(/[{}]/g, "\\$&")}'\\)`));
+      const fee = fees.has(r.id) ? "\\d+" : String(r.fee);
+      expect(SQL).toMatch(new RegExp(`\\('${r.id}',\\s*'${r.effect}',\\s*${r.amount},\\s*${r.durationS},\\s*${fee},\\s*'${json.replace(/[{}]/g, "\\$&")}'\\)`));
+      if (fees.has(r.id)) expect(r.fee, r.id).toBe(fees.get(r.id));
     }
+    expect(Object.fromEntries(RECIPES.map((r) => [r.id, r.fee]))).toEqual({
+      pot_hunger: 60, pot_thirst: 25, pot_canh: 120, pot_cure: 30, pot_miner: 300, pot_luck: 150, pot_luck2: 600,
+    });
   });
 
   it("the node pools and the upgrade rules", () => {
@@ -99,7 +121,10 @@ describe("the catalogs are 0072's rows", () => {
     expect([1, 4, 5, 8, 9, 10, 11, 13, 14].map(nodeZone)).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5]);
     expect(body("_upgrade_chance")).toContain(`array[${UPGRADE_CHANCE.join(", ")}]`);
     for (const m of UPGRADE_MATS) expect(body("_upgrade_mats")).toContain(`'${JSON.stringify(m).replace(/:/g, ": ").replace(/,/g, ", ")}'`);
-    expect(upgradeCoins(null, 0)).toBe(50);
+    expect(SQL103).toContain("select greatest(200 * (p_level + 1), (coalesce(p_price, 0) * (p_level + 1)) / 4)");
+    expect(upgradeCoins(null, 0)).toBe(200);
+    expect(upgradeCoins(null, 4)).toBe(1000);
+    expect(upgradeCoins(150, 2)).toBe(600);
     expect(upgradeCoins(5000, 1)).toBe(2500);
     expect(upgradeMax(300, 5)).toBe(600);
     expect(upgradeMax(null, 3)).toBeNull();

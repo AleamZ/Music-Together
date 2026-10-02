@@ -1,9 +1,11 @@
+import { petColors, petWear, type PetLook3D } from "./pet-looks";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Roof } from "@/lib/game/housing/lot";
 import type { PetSpecies } from "@/lib/game/pets/catalog";
 import type { BossId, WildSpeciesId } from "@/lib/game/realm/model";
 import type { VehicleKind } from "./live-plan";
+import { fishParams, type Fish3D } from "./fish3d";
 
 // Browser only: the low-poly toon models for the world's live things — animals and pets, the bosses, stalls, fight
 // rings, houses by roof, the ghe, vehicles, the bamboo barrier. Each model's static parts are baked into one vertex-
@@ -469,9 +471,88 @@ const PETS: Record<Exclude<PetSpecies, "vet">, QuadSpec> = {
   cho: { body: [0.32, 0.32, 0.52], color: 0xdaa65c, belly: 0xf6e6ca, head: 0.21, mask: 0xf6e6ca, snout: 0.09, snoutColor: 0xf6e6ca, ears: "floppy", earColor: 0xa8783a, leg: 0.2, legW: 0.1, paw: 0xf6e6ca, tail: "curl", collar: 0x2a7ad2, eye: 1.05 },
 };
 
-export function petModel(mats: ModelMats, sp: PetSpecies): Creature {
-  if (sp === "vet") return bird(mats, { color: 0x3cb043, wing: 0x2a8a36, beak: 0xf0c040, head: 0xe0402a, belly: 0x8ad05a, tail: 0x2a6ad0, crest: 0xe0402a }, 1.1);
-  return quad(mats, PETS[sp], 1);
+/** A pet in its variant's colours (or form 2's coat), wearing its head / neck / body items (world/pet-looks.ts). */
+export function petModel(mats: ModelMats, sp: PetSpecies, look: PetLook3D = {}): Creature {
+  const c = petColors(sp, look);
+  if (sp === "vet") {
+    const cr = bird(mats, { color: c.fur, wing: c.wing, beak: c.beak, head: c.fur, belly: c.light, tail: c.shade, crest: c.shade }, 1.1);
+    // the parrot's head is part of its body mesh: centre (0, 0.56, 0.17), radius ~0.15
+    dressPet(mats, cr.body, look, { top: [0, 0.71, 0.15], r: 0.15, neck: [0, 0.44, 0.24], neckR: 0.12, body: null });
+    return cr;
+  }
+  const base = PETS[sp];
+  const spec: QuadSpec = {
+    ...base, color: c.fur, belly: c.light, mask: base.mask !== undefined ? c.light : undefined,
+    stripes: base.stripes !== undefined ? c.shade : undefined, tailColor: base.tailColor !== undefined ? c.shade : undefined,
+    tailTip: base.tailTip !== undefined ? c.light : undefined, earColor: base.earColor !== undefined ? c.shade : undefined,
+    snoutColor: base.snoutColor !== undefined ? c.light : undefined, paw: base.paw !== undefined ? c.light : undefined,
+    collar: look.neck ? undefined : base.collar,                              // its own collar only when nothing is worn
+  };
+  const cr = quad(mats, spec, 1);
+  const [bw, bh, bl] = spec.body, hr = spec.head, neck = spec.neck ?? 0;
+  const cy = neck + hr * 0.3, cz = neck * 0.38 + hr * 0.5, y0 = spec.leg + bh / 2;
+  if (cr.head) dressPet(mats, cr.head, { ...look, body: null }, { top: [0, cy + hr * 0.9, cz - hr * 0.1], r: hr, neck: [0, -hr * 0.1, hr * 0.15], neckR: hr * 0.85, body: null });
+  dressPet(mats, cr.body, { body: look.body }, { top: [0, 0, 0], r: hr, neck: [0, 0, 0], neckR: 0, body: { size: [bw, bh, bl], y: y0 } });
+  return cr;
+}
+
+/** Put a pet's items on: a hat on `top` (head radius `r`), neckwear round `neck`, knitwear over the trunk. */
+function dressPet(mats: ModelMats, on: THREE.Object3D, look: PetLook3D, at: {
+  top: V; r: number; neck: V; neckR: number; body: { size: V; y: number } | null;
+}): void {
+  const p = new Paint(), r = at.r, [tx, ty, tz] = at.top;
+  const hat = petWear(look.head);
+  switch (hat?.kind) {
+    case "party":                                                            // a striped cone with a pompom
+      p.add(new THREE.ConeGeometry(0.5, 1, 10), 0xd9362b, tx, ty + r * 0.55, tz, -0.15, 0, 0.15, r * 0.8, r * 1.2, r * 0.8);
+      p.add(new THREE.TorusGeometry(0.5, 0.08, 4, 12), 0x3d6fd1, tx, ty + r * 0.35, tz, Math.PI / 2 - 0.15, 0, 0, r * 0.62, r * 0.62, r * 0.62);
+      ell(p, 0xf6d24a, [r * 0.3, r * 0.3, r * 0.3], [tx + r * 0.08, ty + r * 1.15, tz - r * 0.08]);
+      break;
+    case "bow":                                                              // two loops and a knot, on top to one side
+      for (const sd of [-1, 1]) ell(p, hat.color, [r * 0.5, r * 0.36, r * 0.24], [tx + r * 0.3 + sd * r * 0.28, ty, tz], [0, 0, sd * 0.5]);
+      ell(p, hat.knot, [r * 0.2, r * 0.2, r * 0.2], [tx + r * 0.3, ty, tz]);
+      break;
+    case "tophat":
+      p.add(new THREE.CylinderGeometry(0.5, 0.5, 1, 12), 0x1f1b1e, tx, ty + r * 0.05, tz, 0, 0, 0, r * 1.5, r * 0.12, r * 1.5);
+      p.add(new THREE.CylinderGeometry(0.5, 0.5, 1, 12), 0x1f1b1e, tx, ty + r * 0.55, tz, 0, 0, 0, r * 0.95, r * 0.9, r * 0.95);
+      p.add(new THREE.CylinderGeometry(0.5, 0.5, 1, 12), 0xc0303a, tx, ty + r * 0.22, tz, 0, 0, 0, r * 1.0, r * 0.2, r * 1.0);
+      break;
+    case "nonla":                                                            // a mini nón lá
+      p.add(new THREE.ConeGeometry(0.5, 1, 14), 0xe8cf7a, tx, ty + r * 0.3, tz, 0, 0, 0, r * 2.2, r * 0.75, r * 2.2);
+      break;
+    case "beanie":                                                           // a knit cap with a white rim and pompom
+      p.add(new THREE.SphereGeometry(0.5, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0xc0303a, tx, ty - r * 0.25, tz, 0, 0, 0, r * 1.9, r * 1.4, r * 1.9);
+      p.add(new THREE.TorusGeometry(0.5, 0.12, 4, 14), 0xf4f1ec, tx, ty - r * 0.25, tz, Math.PI / 2, 0, 0, r * 1.9, r * 1.9, r * 1.9);
+      ell(p, 0xf4f1ec, [r * 0.34, r * 0.34, r * 0.34], [tx, ty + r * 0.5, tz]);
+      break;
+  }
+  const nk = petWear(look.neck), [nx, ny, nz] = at.neck, nr = at.neckR;
+  switch (nk?.kind) {
+    case "band":                                                             // a collar, with a tag or a bell
+      p.add(new THREE.TorusGeometry(0.5, 0.1, 5, 16), nk.color, nx, ny, nz, Math.PI / 2 + 0.35, 0, 0, nr * 2, nr * 2, nr * 2);
+      if (nk.charm !== null) ell(p, nk.charm, [nr * (nk.bell ? 0.5 : 0.36), nr * (nk.bell ? 0.5 : 0.36), nr * 0.3], [nx, ny - nr * 0.45, nz + nr * 0.9]);
+      break;
+    case "bandana":                                                          // a band and a triangle hanging in front
+      p.add(new THREE.TorusGeometry(0.5, 0.12, 5, 16), nk.color, nx, ny, nz, Math.PI / 2 + 0.35, 0, 0, nr * 2, nr * 2, nr * 2);
+      p.add(new THREE.ConeGeometry(0.5, 1, 3), nk.color, nx, ny - nr * 0.55, nz + nr * 0.8, Math.PI, 0, 0, nr * 1.3, nr * 0.9, nr * 0.25);
+      break;
+    case "bowtie":
+      for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 4), nk.color, nx + sd * nr * 0.35, ny, nz + nr * 0.3, 0, 0, sd * Math.PI / 2, nr * 0.55, nr * 0.6, nr * 0.3);
+      ell(p, darker(nk.color, 0.7), [nr * 0.25, nr * 0.25, nr * 0.2], [nx, ny, nz + nr * 0.32]);
+      break;
+    case "scarf":                                                            // a thick wrap and a tail down the chest
+      p.add(new THREE.TorusGeometry(0.5, 0.2, 6, 16), nk.color, nx, ny, nz, Math.PI / 2 + 0.35, 0, 0, nr * 2, nr * 2, nr * 2);
+      p.add(new THREE.BoxGeometry(1, 1, 1), darker(nk.color, 0.85), nx + nr * 0.35, ny - nr * 0.7, nz + nr * 0.75, 0.2, 0, 0.15, nr * 0.45, nr * 1.1, nr * 0.18);
+      break;
+  }
+  const kn = petWear(look.body);
+  if (kn?.kind === "knit" && at.body) {                                     // a jumper over the front two-thirds, striped
+    const [bw, bh, bl] = at.body.size, y = at.body.y;
+    ell(p, kn.a, [bw * 1.08, bh * 1.06, bl * 0.72], [0, y + bh * 0.02, bl * 0.1], [0, 0, 0], [12, 8]);
+    for (const f of [-0.12, 0.06, 0.24]) p.add(new THREE.TorusGeometry(0.5, 0.07, 4, 16), kn.b, 0, y + bh * 0.02, bl * f, 0, 0, 0, bw * 1.08 * Math.sqrt(1 - (f / 0.46) ** 2), bh * 1.06 * Math.sqrt(1 - (f / 0.46) ** 2), 1);
+  }
+  const m = mats.creature1(p);
+  if (m) on.add(m);
 }
 
 const DOG_COAT: Record<string, [number, number | undefined, number | undefined]> = {
@@ -658,7 +739,8 @@ export function boatModel(mats: ModelMats): Boat {
   return { root, oar };
 }
 
-export interface Vehicle { root: THREE.Group; wheels: THREE.Object3D[]; radius: number }
+/** `crank`: the bike's pedals and crank arms (turned by the rider's pedalling: rotation.x = the crank angle). */
+export interface Vehicle { root: THREE.Group; wheels: THREE.Object3D[]; radius: number; crank?: THREE.Object3D }
 
 export function vehicleModel(mats: ModelMats, kind: VehicleKind, color: number): Vehicle {
   const root = new THREE.Group(), p = new Paint(), wheels: THREE.Object3D[] = [];
@@ -673,11 +755,21 @@ export function vehicleModel(mats: ModelMats, kind: VehicleKind, color: number):
     wheels.push(w);
   };
   let radius = 0.32;
+  let crank: THREE.Object3D | undefined;
   if (kind === "bike") {
     wheel(0.34, 0.06, 0, 0.62, true); wheel(0.34, 0.06, 0, -0.62, true);
     p.box(0.05, 0.05, 1.0, color, 0, 0.62, 0, -0.15).box(0.05, 0.55, 0.05, color, 0, 0.6, -0.2, 0.25)
       .box(0.05, 0.6, 0.05, color, 0, 0.62, 0.55, -0.3).box(0.6, 0.04, 0.04, 0x3a3a3a, 0, 0.95, 0.46)
-      .box(0.2, 0.06, 0.3, 0x2a2420, 0, 0.9, -0.22).box(0.28, 0.06, 0.26, 0x8a6a3a, 0, 0.55, -0.72);
+      .box(0.2, 0.06, 0.3, 0x2a2420, 0, 0.9, -0.22).box(0.28, 0.06, 0.26, 0x8a6a3a, 0, 0.55, -0.72)
+      .add(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 12), 0x8a8a8a, 0.05, 0.36, -0.04, 0, 0, Math.PI / 2);   // the chainring
+    // the cranks at the bottom bracket: the left arm up, the right one down (a = 0: the left foot at the top)
+    const r = 0.17, cp = new Paint()
+      .box(0.03, r, 0.04, 0x3a3a3a, -0.09, r / 2, 0).box(0.12, 0.03, 0.07, 0x22201e, -0.16, r, 0)
+      .box(0.03, r, 0.04, 0x3a3a3a, 0.09, -r / 2, 0).box(0.12, 0.03, 0.07, 0x22201e, 0.16, -r, 0);
+    crank = new THREE.Group();
+    crank.position.set(0, 0.36, -0.04);
+    crank.add(mats.baked1(cp)!);
+    root.add(crank);
   } else if (kind === "moto") {
     radius = 0.3;
     wheel(0.3, 0.12, 0, 0.7, false); wheel(0.3, 0.12, 0, -0.62, false);
@@ -695,7 +787,7 @@ export function vehicleModel(mats: ModelMats, kind: VehicleKind, color: number):
       .box(0.3, 0.1, 0.05, 0xe0342a, 0.5, 0.62, -1.26).box(0.3, 0.1, 0.05, 0xe0342a, -0.5, 0.62, -1.26);
   }
   root.add(mats.baked1(p)!);
-  return { root, wheels, radius };
+  return { root, wheels, radius, crank };
 }
 
 export interface Barrier { root: THREE.Group; pole: THREE.Object3D }
@@ -866,4 +958,110 @@ export class Labels {
     for (const e of this.cache.values()) { e.tex.dispose(); e.mat.dispose(); }
     this.cache.clear();
   }
+}
+
+// ---- 3D wave 1: per-species fish (fish3d.ts derives the parameters from the 2D icons) ----
+
+/** One species' fish as a paint job (outlined, one draw call): along +z (head forward), centred, `len` long. */
+export function fishSpeciesPaint(f: Fish3D, fine: Paint = new Paint()): Paint {
+  const p = new Paint(0.04);
+  const L = f.len, D = f.depth, W = D * f.thin;
+  if (f.kind === "eel") {
+    // a long round body in an S, a pale belly line, a small head
+    tube(p, f.body, [[0, 0, -L * 0.6], [0.06, 0, -L * 0.25], [-0.05, 0, L * 0.1], [0, 0, L * 0.45]], D * 0.28, D * 0.32);
+    ell(p, f.belly, [D * 0.5, D * 0.3, L * 0.5], [0, -D * 0.12, 0]);
+    eyes(p, D * 0.12, L * 0.5, D * 0.14, D * 0.12);
+    return p;
+  }
+  if (f.kind === "shrimp") {
+    // tôm càng xanh, side on: a carapace with a pointed rostrum, six tapering abdominal segments in a gentle curve
+    // (orange joints), a fan tail (telson + uropods), small walking legs, two long antennae sweeping back and the
+    // signature long slender blue claws reaching forward with small pincers. Head toward +z.
+    const S = Math.max(0.42, L * 0.62), BLUE = 0x3f6fb8, ORANGE = 0xe07a3a, body = 0x8a9c8e;   // big enough for the ink outline
+    ell(p, body, [S * 0.26, S * 0.28, S * 0.46], [0, 0, S * 0.2]);                                        // carapace
+    p.add(new THREE.ConeGeometry(0.5, 1, 4), body, 0, S * 0.06, S * 0.55, Math.PI / 2 - 0.15, 0, 0, S * 0.05, S * 0.3, S * 0.06);   // rostrum
+    let z = -S * 0.02;
+    for (let k = 0; k < 6; k++) {                                                                       // abdomen
+      const w = 1 - k * 0.1, len = S * 0.15 * w, y = -(k * k) * S * 0.006;
+      ell(p, body, [S * 0.22 * w, S * 0.22 * w, len * 1.25], [0, y, z - len / 2], [-0.06 * k, 0, 0]);
+      ell(p, ORANGE, [S * 0.2 * w, S * 0.2 * w, S * 0.025], [0, y, z], [-0.06 * k, 0, 0], [8, 4]);
+      z -= len;
+    }
+    const ty = -(25) * S * 0.006;
+    p.add(new THREE.ConeGeometry(0.5, 1, 4), body, 0, ty, z - S * 0.09, Math.PI / 2, 0, 0, S * 0.06, S * 0.2, S * 0.04);   // telson
+    for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 4), BLUE, sd * S * 0.06, ty, z - S * 0.08, Math.PI / 2, sd * 0.45, 0, S * 0.1, S * 0.2, S * 0.03);
+    for (let k = 0; k < 4; k++) for (const sd of [-1, 1])                                               // walking legs (no ink)
+      fine.add(new THREE.CylinderGeometry(0.006, 0.004, S * 0.16, 4), ORANGE, sd * S * 0.07, -S * 0.17, S * (0.3 - k * 0.08), 0.25, 0, sd * 0.3);
+    for (const sd of [-1, 1]) {
+      // antennae from the head front, arching up and back over the body
+      tube(fine, 0xc85a2a, [[sd * S * 0.04, S * 0.08, S * 0.45], [sd * S * 0.1, S * 0.24, S * 0.3], [sd * S * 0.14, S * 0.26, -S * 0.3], [sd * S * 0.16, S * 0.12, -S * 0.95]], 0.006, 0.006);
+      // the long slender claw: from under the head, forward, a small two-fingered pincer at the tip
+      tube(fine, BLUE, [[sd * S * 0.08, -S * 0.1, S * 0.3], [sd * S * 0.13, -S * 0.12, S * 0.62], [sd * S * 0.13, -S * 0.06, S * 0.9]], 0.014, 0.016);
+      ell(fine, ORANGE, [S * 0.05, S * 0.05, S * 0.05], [sd * S * 0.13, -S * 0.12, S * 0.62], [0, 0, 0], [6, 4]);
+      for (const f2 of [-1, 1]) fine.add(new THREE.ConeGeometry(0.5, 1, 4), BLUE, sd * S * 0.13, -S * 0.06 + f2 * S * 0.025, S * 0.99, Math.PI / 2 - f2 * 0.2, 0, 0, S * 0.03, S * 0.18, S * 0.03);
+    }
+    eyes(p, S * 0.12, S * 0.42, S * 0.1, S * 0.07);
+    return p;
+  }
+  if (f.kind === "turtle") {
+    // rùa / ba ba: a domed shell, the plastron, four flippers, a head poking out
+    p.add(new THREE.SphereGeometry(0.5, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), f.body, 0, 0, 0, 0, 0, 0, L * 0.75, D * 1.2, L * 0.9);
+    ell(p, f.belly, [L * 0.72, D * 0.25, L * 0.86], [0, 0, 0]);
+    for (const [x, z] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) ell(p, f.fin, [L * 0.26, D * 0.18, L * 0.18], [x * L * 0.38, -0.01, z * L * 0.3], [0, x * z * 0.5, 0]);
+    ell(p, f.fin, [L * 0.2, D * 0.35, L * 0.3], [0, D * 0.12, L * 0.5]);
+    eyes(p, D * 0.22, L * 0.62, L * 0.06, D * 0.12);
+    return p;
+  }
+  if (f.kind === "ray") {
+    // cá đuối: a flat diamond (the wing tips out to the sides), a paler underside, a long thin whip tail
+    p.add(new THREE.OctahedronGeometry(0.5, 0), f.body, 0, 0, 0, 0, 0, 0, L * 1.1, D * 0.3, L * 0.85);
+    p.add(new THREE.OctahedronGeometry(0.5, 0), f.belly, 0, -D * 0.04, 0, 0, 0, 0, L * 0.9, D * 0.2, L * 0.7);
+    tube(p, f.fin, [[0, 0, -L * 0.4], [0, 0.01, -L * 0.8], [0, 0.03, -L * 1.25]], 0.014, 0.006);
+    eyes(p, D * 0.14, L * 0.24, L * 0.08, D * 0.14);
+    return p;
+  }
+  // a fish: the body, a paler belly, the pattern, the tail (V or fan), a dorsal fin, two side fins, the eyes
+  ell(p, f.body, [W, D, L * 0.82], [0, 0, 0.02], [0, 0, 0], [12, 8]);
+  ell(p, f.belly, [W * 0.82, D * 0.55, L * 0.66], [0, -D * 0.2, 0.04]);
+  if (f.pattern === "stripes") for (let i = 0; i < 3; i++) ell(p, f.accent, [W * 1.04, D * 0.86, L * 0.06], [0, 0.01, L * (0.2 - i * 0.18)], [0, 0, 0], [8, 6]);
+  else if (f.pattern === "spots") for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) ell(p, f.accent, [W * 0.18, D * 0.18, D * 0.18], [sd * W * 0.44, D * (0.12 - (i % 2) * 0.15), L * (0.22 - i * 0.13)], [0, 0, 0], [6, 4]);
+  const tz = -L * 0.34;                                                         // the peduncle, inside the body
+  // the caudal fin: its narrow end (the peduncle) on the body, fanning out behind it — a cone with its apex pointing
+  // forward (+z) at the body; a forked tail is two such lobes splayed up and down (the notch between them)
+  const th = L * 0.26;
+  if (f.tail === "fork") for (const sd of [-1, 1]) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, sd * th * 0.22, tz - th * 0.42, Math.PI / 2 - sd * 0.5, 0, 0, W * 0.2, th, D * 0.34);
+  else p.add(new THREE.ConeGeometry(0.5, 1, 6), f.fin, 0, 0, tz - th * 0.45, Math.PI / 2, 0, 0, W * 0.2, th, D * 0.85);
+  if (f.dorsal) p.add(new THREE.ConeGeometry(0.5, 1, 5), f.fin, 0, D * 0.48, -L * 0.04, -0.45, 0, 0, W * 0.15, D * 0.45, L * 0.38);
+  for (const sd of [-1, 1]) ell(p, f.fin, [W * 0.12, D * 0.22, L * 0.16], [sd * W * 0.5, -D * 0.12, L * 0.16], [0.6, sd * 0.4, 0], [6, 4]);
+  eyes(p, D * 0.12, L * 0.3, W * 0.38, Math.max(0.035, D * 0.16));
+  return p;
+}
+
+const speciesGeos = new Map<string, THREE.BufferGeometry>();
+/** A species' outlined fish geometry (cached per species; shared by every held, landed or leaping fish). */
+export function fishSpeciesGeometry(id: string): THREE.BufferGeometry {
+  let g = speciesGeos.get(id);
+  if (!g) {
+    // the fine parts (a prawn's antennae and legs) are merged in without the ink hull, so they stay thin
+    const fine = new Paint();
+    const main = fishSpeciesPaint(fishParams(id), fine).geometry(true);
+    if (fine.empty) g = main;
+    else {
+      const thin = fine.geometry(false);
+      thin.setAttribute("outline", new THREE.BufferAttribute(new Float32Array(thin.getAttribute("position").count), 1));
+      g = mergeGeometries([main, thin], false) ?? main;
+      g.computeBoundingSphere();
+    }
+    speciesGeos.set(id, g);
+  }
+  return g;
+}
+
+/** A species' fish (the world's leaps, the catch display): one outlined draw call. */
+export function fishSpeciesModel(mats: ModelMats, id: string): THREE.Group {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(fishSpeciesGeometry(id), mats.creature);
+  m.castShadow = false;
+  g.add(m);
+  return g;
 }

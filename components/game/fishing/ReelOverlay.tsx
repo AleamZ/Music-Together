@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FISH_ICONS } from "@/lib/game/art/fish";
 import { RARITY_COLOR, type Rarity } from "@/lib/game/fishing/catalog";
-import { createReel, fishFloor, FX, PFX, REEL, ReelRecorder, stepReel, zoneHeight, type ReelParams, type ReelResult } from "@/lib/game/fishing/reel";
+import { createReel, fishFloor, FX, PFX, REEL, ReelRecorder, reelUsed, stepReel, zoneHeight, type ReelParams, type ReelResult } from "@/lib/game/fishing/reel";
 import { isTyping } from "@/lib/game/keys";
 
 /** An unknown rarity (the bobber does not reveal it) shows a grey fish. */
@@ -56,7 +56,7 @@ export default function ReelOverlay({ params, rarity, onDone }: {
       }
       setS(cur);
       if (cur.outcome) {
-        onDoneRef.current({ caught: cur.outcome === "caught", toggles: rec.toggles, ticks: cur.tick });
+        onDoneRef.current({ caught: cur.outcome === "caught", toggles: rec.toggles, ticks: cur.tick, used: reelUsed(params) });
         return;
       }
       raf = requestAnimationFrame(loop);

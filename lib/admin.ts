@@ -120,6 +120,15 @@ export interface AnticheatConfig {
   stats_every_min: number;
   /** The build number of the page that asked (the admin's own). */
   server_build: number;
+  /** 0108: calls per minute per account — past the soft line a soft rate_high, at the block line refused (absent before 0108). */
+  rate_soft_per_min?: number;
+  rate_block_per_min?: number;
+  /** 0109: the silent bot score — on/off, the two score lines and the share of the game's income kept at each. */
+  bot_enabled?: boolean;
+  bot_soft?: number;
+  bot_hard?: number;
+  bot_soft_pct?: number;
+  bot_hard_pct?: number;
 }
 export interface StatFlag {
   kind: "stat_win_rate" | "stat_exact_rate" | "stat_earnings" | "stat_marathon" | string;
@@ -177,4 +186,32 @@ export async function adminEstateFlags(token: string): Promise<EstateFlag[]> {
   if (error) throw error;
   const sales = (data as { sales?: unknown } | null)?.sales;
   return Array.isArray(sales) ? (sales as EstateFlag[]) : [];
+}
+
+// The silent bot score (0109): accounts scored in the last 3 days, highest first; keep_pct < 100 = their game income is
+// scaled down (nothing is shown to them).
+export interface BotSignals { session_h: number; hours_24: number; timing: number; rate: number; silent?: boolean }
+export interface BotRow {
+  account_id: string; username: string; score: number; signals: BotSignals; keep_pct: number;
+  scored_at: string; exempt_until: string | null;
+}
+export async function adminBotList(token: string): Promise<BotRow[]> {
+  const { data, error } = await supabase.rpc("admin_bot_list", { p_session_token: token });
+  if (error) throw error;
+  return (data ?? []) as BotRow[];
+}
+/** Exempts the account for 7 days (its income is never scaled until then). */
+export async function adminBotClear(token: string, accountId: string): Promise<BotRow[]> {
+  const { data, error } = await supabase.rpc("admin_bot_clear", { p_session_token: token, p_account_id: accountId });
+  if (error) throw error;
+  return (data ?? []) as BotRow[];
+}
+
+/** The signals in words (the order of the score's lines in 0109). */
+export function botSignalsText(s: BotSignals): string {
+  const parts = [`chơi liền ${s.session_h} giờ`, `có mặt ${s.hours_24}/24 giờ`];
+  if (s.timing > 0) parts.push(`${s.timing} lần nhịp bấm như máy`);
+  if (s.rate > 0) parts.push(`${s.rate} lần gọi máy chủ dồn dập`);
+  if (s.silent) parts.push("không chat 7 ngày");
+  return parts.join(" · ");
 }

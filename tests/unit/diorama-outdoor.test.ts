@@ -16,13 +16,13 @@ import type { MapId } from "@/lib/game/maps/types";
 import { RAID_ARENA } from "@/lib/game/realm/model";
 import { RIVER } from "@/lib/game/river/geometry";
 
-const OUTDOOR: MapId[] = ["field", "bai_dat", "mo_da", "song_cai"];
+const OUTDOOR: MapId[] = ["field", "bai_dat", "mo_da", "song_cai", "ham_ngam"];
 const rice = (stage: PlotLook["stage"], extra: Partial<PlotLook> = {}): PlotLook => ({
   crop: "rice", stage, progress: 0.5, water: 2, pests: [], wobble: false, cut: 0, picked: 0, pickings: 1, seed: 7919, ...extra,
 });
 
 describe("outdoor dioramas: registration", () => {
-  it("has a builder for each of the four maps and the 3D flag covers them (2D stays the default)", () => {
+  it("has a builder for each of these maps and the 3D flag covers them (2D stays the default)", () => {
     for (const id of OUTDOOR) {
       expect(OUTDOOR_BUILDERS[id]).toBeTypeOf("function");
       expect(DIORAMA_MAPS.has(id)).toBe(true);
@@ -196,5 +196,16 @@ describe("outdoor builders (Three.js, no WebGL)", () => {
     rig.setPlots!(demoFieldPlots(), Date.now());
     expect(count()).toBeGreaterThan(bare);
     rig.dispose();
+  });
+});
+
+describe("Hầm đấu ngầm (ham_ngam)", () => {
+  it("walls round the edge, the cage's mat, concrete elsewhere; feet a hair up on the mat", async () => {
+    const { hamGroundAt, hamHeightAt } = await import("@/lib/game/diorama/zones/ham_ngam");
+    expect(hamGroundAt(240, 10)).toBe("wall");
+    expect(hamGroundAt(5, 200)).toBe("wall");
+    expect(hamGroundAt(240, 176)).toBe("mat");
+    expect(hamGroundAt(100, 100)).toBe("floor");
+    expect(hamHeightAt(240, 176)).toBeGreaterThan(hamHeightAt(100, 100));
   });
 });

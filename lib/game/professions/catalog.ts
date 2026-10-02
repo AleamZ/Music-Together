@@ -49,7 +49,7 @@ export const PERK_TEXT: Readonly<Record<PerkKey, string>> = {
   buff_power_pct: "Buff đồ ăn mạnh hơn {v}%",
   meal_pct: "Hoàn {v}% tiền ăn uống",
   potion_pct: "Hoàn {v}% tiền pha thuốc",
-  market_sell_pct: "Bán ở chợ, sạp, đấu giá được thêm {v}%",
+  market_sell_pct: "Phí bán ở chợ, sạp, đấu giá giảm {v} điểm % (còn ít nhất 2 %)",
   buy_pct: "Hoàn {v}% tiền mua ở cửa hàng",
   shop_rent_pct: "Hoàn {v}% tiền thuê sạp, phí đăng bán",
   upgrade_pct: "Hoàn {v}% tiền nâng cấp",
@@ -142,32 +142,33 @@ export type BuffKey = "speed" | "rare_fish" | "strength" | "stamina_regen" | "lu
 export const BUFF_TEXT: Readonly<Record<BuffKey, { icon: string; name: string; unit: string }>> = {
   speed: { icon: "💨", name: "Nhanh nhẹn", unit: "% tốc độ đi" },
   rare_fish: { icon: "🍀", name: "Hên cá", unit: "% cá hiếm" },
-  strength: { icon: "💪", name: "Sức mạnh", unit: "% bớt tốn thể lực (đào, đấu)" },
+  strength: { icon: "💪", name: "Sức mạnh", unit: "% bớt tốn thể lực (đào, chặt cây, đấu)" },
   stamina_regen: { icon: "🔋", name: "Sung sức", unit: "% hồi thể lực" },
   luck: { icon: "✨", name: "May mắn (thuốc)", unit: " bậc" },
   miner: { icon: "⛏️", name: "Thợ mỏ (thuốc)", unit: " quặng" },
   hunt_chance: { icon: "🏹", name: "Tay săn (món rừng)", unit: " điểm % săn" },   // 0097
 };
 
-/** meal_catalog id → its timed buffs (0077 meal_buffs). */
+/** meal_catalog id → its timed buffs (0077 meal_buffs; the values of econ v2, 0105_econ_sinks.sql). */
 export const MEAL_BUFFS: readonly { meal: string; key: BuffKey; value: number; minutes: number }[] = [
   { meal: "com_tam", key: "strength", value: 15, minutes: 30 },
-  { meal: "pho_bo", key: "stamina_regen", value: 50, minutes: 30 },
+  { meal: "pho_bo", key: "stamina_regen", value: 30, minutes: 30 },
   { meal: "banh_mi", key: "speed", value: 5, minutes: 15 },
   { meal: "bun_bo", key: "strength", value: 20, minutes: 30 },
-  { meal: "ca_kho_to", key: "rare_fish", value: 10, minutes: 30 },
-  { meal: "canh_chua", key: "rare_fish", value: 15, minutes: 30 },
-  { meal: "ca_chien", key: "rare_fish", value: 12, minutes: 20 },
-  { meal: "tra_da", key: "stamina_regen", value: 20, minutes: 15 },
+  { meal: "ca_kho_to", key: "rare_fish", value: 4, minutes: 30 },
+  { meal: "canh_chua", key: "rare_fish", value: 6, minutes: 30 },
+  { meal: "ca_chien", key: "rare_fish", value: 5, minutes: 20 },
+  { meal: "tra_da", key: "stamina_regen", value: 10, minutes: 15 },
   { meal: "nuoc_mia", key: "speed", value: 8, minutes: 15 },
   { meal: "cafe_sua", key: "speed", value: 10, minutes: 20 },
-  { meal: "cafe_sua", key: "stamina_regen", value: 30, minutes: 20 },
-  { meal: "nuoc_dua", key: "stamina_regen", value: 40, minutes: 20 },
-  { meal: "sinh_to", key: "rare_fish", value: 5, minutes: 20 },
+  { meal: "cafe_sua", key: "stamina_regen", value: 20, minutes: 20 },
+  { meal: "nuoc_dua", key: "stamina_regen", value: 25, minutes: 20 },
+  { meal: "sinh_to", key: "rare_fish", value: 2, minutes: 20 },
 ];
 
-export const SWITCH_FEE = 500;
-export const RESET_FEE = 300;
+/** Econ v2 (0103 profession_choose / skill_reset / _prof_json): 2 000 and 1 000 (were 500 and 300). */
+export const SWITCH_FEE = 2000;
+export const RESET_FEE = 1000;
 export const SWITCH_COOLDOWN_H = 24;
 export const MAX_LEVEL = 20;
 /** Stamina (0077): the base max, the regen (per second), the sprint cost (per second) and speed factor. */

@@ -3,6 +3,7 @@ import type { WeatherFx } from "@/lib/game/art/weather";
 import type { Facing, Look, Vec } from "@/lib/game/types";
 import type { WeatherKind } from "@/lib/game/weather/model";
 import type { CharAct } from "./character/pose";
+import type { RodLook } from "./character/held";
 import type { PetSpecies } from "@/lib/game/pets/catalog";
 
 /** A character drawn as a camera-facing billboard (its 24×48 chibi frame). */
@@ -25,6 +26,11 @@ export interface Billboard {
   lift?: number;
   /** P3: what they ride — a vehicle, or the boat on Sông Cái (absent: on foot). The vehicle model follows the feet. */
   vehicle?: "bike" | "moto" | "car" | "boat";
+  /** 3D wave 1: the fish species in hand (the 2D drawHeldFish; also the one held up by show_catch), the 2D umbrella
+   *  open over them, and the rod's look from their fishing loadout (absent = the default rod). */
+  hand?: string | null;
+  umbrella?: boolean;
+  rodLook?: RodLook;
 }
 
 /** P3: the gameplay things the 3D world shows beside the people (world px): the field's rats, the dogs, the pond's
@@ -36,9 +42,15 @@ export interface GameplayFrame {
   leaps: ReadonlyArray<{ x: number; y: number; h: number }>;
   gates: ReadonlyArray<{ id: string; at: Vec; barrier: { x: number; y: number; w: number; h: number } | null }>;
   /** P4: the pets following their owners (the engine's PetFollowers; ownerId = the owner's account id). */
-  pets?: ReadonlyArray<{ ownerId: string; species: PetSpecies; x: number; y: number }>;
+  pets?: ReadonlyArray<{ ownerId: string; species: PetSpecies; x: number; y: number;
+    /** The variant, evolved form and the items worn (world/pet-looks.ts). */
+    look?: { variant?: string; form?: number; head?: string | null; neck?: string | null; body?: string | null } }>;
   /** P4: everyone fishing (mine and the others' from realtime): feet, facing, phase code (1 wait, 2 bite, 3 reel). */
   anglers?: ReadonlyArray<{ id: string; x: number; y: number; facing: Facing; phase: 1 | 2 | 3 }>;
+  /** Everyone's net throw: the thrower's feet, the phase and its age (ms), the net's centre (world px), radius, fish held. */
+  nets?: ReadonlyArray<{ id: string; x: number; y: number; facing: Facing; show: "aim" | "charge" | "throw" | "sunk" | "pull" | "won"; since: number; cx: number; cy: number; r: number; k: number }>;
+  /** 0117: the room's ổ thính (world px): the kind's tint (0xrrggbb), how many bags in it, the label. */
+  groundbait?: ReadonlyArray<{ id: number; x: number; y: number; color: number; stacks: number; label: string }>;
 }
 
 /** What the engine hands the diorama each frame (the same state the 2D renderer draws). */
@@ -63,6 +75,8 @@ export interface DioramaFrame {
 /** What the engine needs from a 3D view. */
 export interface View3D {
   render(f: DioramaFrame): void;
+  /** First person: the camera's yaw (radians), so the movement keys go where I look; null = map axes (third person). */
+  inputYaw?(): number | null;
 }
 
 export type CameraMode = "follow" | "overview" | "free";

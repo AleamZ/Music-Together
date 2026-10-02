@@ -16,9 +16,12 @@ export interface FishSpecies {
   id: string; name: string; rarity: Rarity; minG: number; maxG: number; pricePerKg: number; difficulty: number; sortOrder: number;
 }
 
-export type ShopKind = "rod" | "bobber" | "bait" | "bait_box" | "bucket" | "net" | "fishing_kit";
+export type ShopKind = "rod" | "bobber" | "bait" | "bait_box" | "bucket" | "net" | "fishing_kit"
+  /** Câu cá v3 (0110): the parts, the groundbait and the notebook. */
+  | "hook" | "line" | "reel" | "groundbait" | "fishbook";
 /** The shop_items kinds the fishing shop sells (the farm items share the table since v15). */
-export const FISHING_KINDS: readonly ShopKind[] = ["rod", "bobber", "bait", "bait_box", "bucket", "net", "fishing_kit"];
+export const FISHING_KINDS: readonly ShopKind[] = ["rod", "bobber", "bait", "bait_box", "bucket", "net", "fishing_kit",
+  "hook", "line", "reel", "groundbait", "fishbook"];
 const SHOP_KINDS: readonly string[] = FISHING_KINDS;
 
 export interface ShopItem {
@@ -40,6 +43,16 @@ export interface ShopItem {
   radiusPx?: number | null;
   /** v18.2: bait: the bite wait × this (< 1 = a boosting bait, which also raises a shore bite to 80%). */
   biteBoost?: number;
+  /** 0110: a rod's breaking weight (Cần gỗ: the "lớn" mark only — it never breaks). */
+  ratingG?: number | null;
+  /** 0110: a line's limit (Cần gỗ: its own line). */
+  lineG?: number | null;
+  /** 0110: a hook's class (small, large, shrimp, eel) and points (1–3); Cần gỗ: its own. */
+  hookClass?: string | null;
+  hookCount?: number | null;
+  /** 0110: a reel: min_reel_ms × reelSpeed, difficulty + reelEase. */
+  reelSpeed?: number | null;
+  reelEase?: number | null;
 }
 
 export interface FishingCatalog { species: FishSpecies[]; items: ShopItem[] }
@@ -55,6 +68,9 @@ export interface ShopItemRow {
   mult_hiem: number; mult_quy: number; mult_legend: number; capacity: number | null;
   /** v18.2 (absent before 0034). */
   durability?: number | null; radius_px?: number | null; bite_boost?: number | null;
+  /** 0110 (absent before). */
+  rating_g?: number | null; line_g?: number | null; hook_class?: string | null; hook_count?: number | null;
+  reel_speed?: number | null; reel_ease?: number | null;
 }
 
 export function speciesFromRow(r: SpeciesRow): FishSpecies {
@@ -72,6 +88,8 @@ export function shopItemFromRow(r: ShopItemRow): ShopItem {
     windowMs: r.window_ms, biteMinMs: r.bite_min_ms, biteMaxMs: r.bite_max_ms, showsRarity: r.shows_rarity,
     multHiem: r.mult_hiem ?? 1, multQuy: r.mult_quy ?? 1, multLegend: r.mult_legend ?? 1, capacity: r.capacity,
     durability: r.durability ?? null, radiusPx: r.radius_px ?? null, biteBoost: r.bite_boost ?? 1,
+    ratingG: r.rating_g ?? null, lineG: r.line_g ?? null, hookClass: r.hook_class ?? null, hookCount: r.hook_count ?? null,
+    reelSpeed: r.reel_speed ?? null, reelEase: r.reel_ease ?? null,
   };
 }
 
@@ -97,9 +115,25 @@ export function describeItem(it: ShopItem): string {
       const parts = [`Vùng giữ cá ${it.zonePct ?? 25}%`];
       if ((it.weightK ?? 2) < 2) parts.push("cá nặng hơn");
       if (it.rareMult > 1) parts.push(`cá hiếm +${Math.round((it.rareMult - 1) * 100)}%`);
+      // 0110: Cần gỗ is a whole kit; any other rod is bare (a hook and a line to mount) and breaks past its rating
+      if (it.hookClass) parts.push(`đủ bộ: ${hookClassName(it.hookClass)}, dây ${formatWeight(it.lineG ?? 0)}`);
+      else if (it.ratingG != null && it.durability != null) parts.push(`chịu ${formatWeight(it.ratingG)}`);
       if (it.durability != null) parts.push(`bền ${it.durability} lần`);
       return parts.join(" · ");
     }
+    case "hook":
+      return `${hookClassName(it.hookClass)}${(it.hookCount ?? 1) > 1 ? ` · ${it.hookCount} mũi — có khi dính ${it.hookCount} con` : ""}`;
+    case "line":
+      return `Chịu cá tới ${formatWeight(it.lineG ?? 0)} · đứt ${it.durability ?? 3} lần là hỏng`;
+    case "reel": {
+      const pct = Math.round((1 - (it.reelSpeed ?? 1)) * 100);
+      const ease = -(it.reelEase ?? 0);
+      return pct > 0 || ease > 0 ? `Thu cá nhanh hơn ${pct}% · cá dễ kéo hơn ${ease} bậc` : "Thu cá bình thường (không có máy: chậm hơn)";
+    }
+    case "groundbait":
+      return "Rải thành ổ thính ở chỗ câu: 10 phút (rải thêm cùng loại: tới 20 phút), ai câu trong ổ cũng được — loài thích thính này cắn nhiều gấp 3";   // 0117
+    case "fishbook":
+      return "Ghi tập tính từng loài: lưỡi, mồi, thính ưa thích, giờ cắn câu";
     case "bobber": {
       const parts = [`Giật cần trong ${decimal((it.windowMs ?? 1500) / 1000)} giây`];
       if ((it.biteMaxMs ?? 10_000) < 10_000) parts.push("cá cắn nhanh hơn");
@@ -107,7 +141,10 @@ export function describeItem(it: ShopItem): string {
       return parts.join(" · ");
     }
     case "bait":
-      if ((it.biteBoost ?? 1) < 1) return `Cá cắn nhanh hơn, gần bờ dễ cắn · cá hiếm ×${decimal(it.multHiem)}`;
+      // econ v2 (0101): Mồi vàng has Mồi trùn chỉ's ×2 / ×3 and the faster bite
+      if ((it.biteBoost ?? 1) < 1) {
+        return `Cá cắn nhanh hơn, gần bờ dễ cắn · cá hiếm ×${decimal(it.multHiem)}${it.multLegend > it.multHiem ? `, huyền thoại ×${decimal(it.multLegend)}` : ""}`;
+      }
       if (it.multLegend > it.multHiem) return `Cá hiếm ×${decimal(it.multHiem)}, huyền thoại ×${decimal(it.multLegend)}`;
       if (it.multHiem > 1) return `Cá hiếm trở lên ×${decimal(it.multHiem)}`;
       return "Mồi thường — đào ở bãi trùn";
@@ -118,6 +155,18 @@ export function describeItem(it: ShopItem): string {
     case "fishing_kit":
       return `Gồm Hộp mồi ${it.capacity ?? 0} (chứa ${it.capacity ?? 0} mồi) và Thùng cá ${it.capacity ?? 0} (đựng ${it.capacity ?? 0} con cá)`;
     case "net":
-      return `Quăng ${it.durability ?? 0} lần · 2–5 cá thường${(it.radiusPx ?? 0) >= 32 ? " · lưới rộng, thêm 1 con" : ""}`;
+      return `Quăng ${it.durability ?? 0} lần · 2–5 cá thường${(it.radiusPx ?? 0) >= 32 ? " · lưới rộng, thêm 1 con" : ""}`
+        + (it.rareMult > 1 ? ` · dễ dính cá hiếm (${Math.round(12 * (it.rareMult - 1))}%)` : "");   // 0110
+  }
+}
+
+/** 0110: a hook class's name. */
+export function hookClassName(c: string | null | undefined): string {
+  switch (c) {
+    case "small": return "Lưỡi nhỏ";
+    case "large": return "Lưỡi lớn";
+    case "shrimp": return "Lưỡi tôm";
+    case "eel": return "Lưỡi câu lươn";
+    default: return "Lưỡi";
   }
 }

@@ -513,7 +513,7 @@ begin
     exit when e >= 580;
   end loop;
   r := public.process_sort_finish(t, ticks, dirs, 11);
-  assert r->>'result' = 'collected' and (r->>'bonus_pct')::int = 5, format('sort %s', r);
+  assert r->>'result' = 'collected' and (r->>'bonus_pct')::int = public._sort_bonus(11), format('sort %s', r);   -- econ v2: 2 % (0102), 5 % (0084)
   assert pg_temp.flags(a, 'sort_timing') = 1, 'eleven on one reaction: soft flag (0087)';
   raise notice 'crafting ok';
 end $$;

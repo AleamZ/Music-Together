@@ -54,4 +54,6 @@ export interface Look {
   /** v22: body proportions (0094's characters.body; see lib/game/body.ts): sliders in [-1, 1] and an eye colour; absent
    *  or null reads as the body type's defaults. Only the 3D chibi uses it. */
   body?: Partial<import("./body").BodyShape> | null;
+  /** 0118: a Beta player's keepsake tier (0–5): the β name frame (characters.beta_tier; server-written, never bought). */
+  beta?: number | null;
 }

@@ -1,6 +1,7 @@
+import { npcCutNote } from "@/lib/game/economy/npc";
 import type { Interactable } from "@/lib/game/maps/types";
-import { formatXu } from "./catalog";
-import type { LostWhy } from "./rpc";
+import { formatWeight, formatXu } from "./catalog";
+import type { LostWhy, Snap } from "./rpc";
 import { castBlocker, digWaitSec, type CastBlocker, type FishingState } from "./state";
 
 // The fishing HUD's Vietnamese texts (spec §6, §10.1, §13). Pure.
@@ -13,8 +14,36 @@ export const SONG_BONUS = "🎵 Bài bạn gọi đã phát xong: +10 xu";
 /** An old server's daily cast cap error (0047 removed the cap; casts now cost hunger and thirst). */
 export const DAILY_LIMIT_TEXT = "Câu mệt rồi — nghỉ chút rồi câu tiếp nhé!";
 
+/** 0110: a bare rod without its hook and line (start_cast's 'rod needs parts'). */
+export const NEEDS_PARTS = "Cần này chưa đủ đồ — lắp lưỡi và dây câu (mở Giỏ đồ) rồi hãy quăng.";
+
+/** 0110: a won reel broke the rig — the line (gone after its last snap) or the rod (repairable at chú Tư's). */
+export function snapText(why: "line_snap" | "rod_snap", snap: Snap | null | undefined, name: string): string {
+  const fish = snap ? `${name} nặng ${formatWeight(snap.weightG)}` : "Con cá quá nặng";
+  if (why === "rod_snap") return `💥 ${fish} bẻ gãy cần — đã đổi sang cần gỗ. Mang tới tiệm chú Tư sửa nhé!`;
+  const lim = snap && snap.limitG > 0 ? ` (dây chịu ${formatWeight(snap.limitG)})` : "";
+  return snap?.lineGone ? `🧵 ${fish} làm đứt dây${lim} — dây câu hỏng hẳn rồi, mua dây mới nhé.`
+    : `🧵 ${fish} làm đứt dây${lim} — cá thoát mất!`;
+}
+
+/** 0110: a groundbait thrown. */
+export function groundbaitText(name: string): string {
+  return `🌾 Đã rải ${name} — ổ thính ở đây thêm 10 phút; ai câu quanh ổ cũng được loài ưa thính này tụ về.`;   // 0117: the spot's
+}
+/** 0110: a groundbait from the bag with no spot yet. */
+export const GROUNDBAIT_WHERE = "Quăng cần một lần ở chỗ muốn câu (hoặc đứng ở mép ao), rồi hãy rải thính.";
+
+/** 0110: the multi-hook's other fish, landed with the first. */
+export function extraText(names: string[]): string {
+  return `🎣 Lưỡi nhiều mũi dính thêm ${names.length} con: ${names.join(", ")}!`;
+}
+
 /** v18.2: the rod wore down to 0 on this cast. */
 export const ROD_BROKE = "💥 Cần câu gãy rồi — đã đổi sang cần gỗ. Mang tới tiệm chú Tư sửa nhé!";
+/** Econ v2 (0101): the shop's line by the bait — a better bait brings rarer fish, which the wooden rod cannot hold. */
+export const BAIT_HINT = "Mồi xịn hợp với cần xịn — cần tre trở lên mới giữ được cá hiếm.";
+/** 0110: the shop's line by the rods — a rod is sold bare. */
+export const ROD_HINT = "Cần bán trơn (trừ cần gỗ): lắp thêm lưỡi và dây câu mới quăng được; máy xoay, phao tùy chọn.";
 /** v18.2: net texts. */
 export const NO_NET = "Bạn chưa có lưới — tiệm chú Tư có bán.";
 export const NET_TOO_EARLY = "Kéo lưới vội quá, cá thoát hết rồi.";
@@ -49,8 +78,10 @@ export function digWaitText(sec: number): string {
   return `Đất còn cứng, chờ ${sec} giây nữa nhé.`;
 }
 
-export function saleText(sold: number, earned: number): string {
-  return `Bán ${sold} con · +${formatXu(earned)}`;
+/** A sale's toast; `cut` (econ v2, 0101): what the thương lái kept back, said after the pay when there was any. */
+export function saleText(sold: number, earned: number, cut = 0): string {
+  const note = npcCutNote(cut);
+  return `Bán ${sold} con · +${formatXu(earned)}${note ? ` — ${note}` : ""}`;
 }
 
 /** Why a cast cannot start (same wording as the server errors, spec §8.6). */
@@ -61,6 +92,7 @@ export function blockerText(b: CastBlocker, waitMin: number): string {
     case "bucket_full": return "Xô đầy rồi — ra vựa bán bớt nhé!";
     case "cast_limit": return waitMin > 0 ? `Câu mệt rồi — nghỉ chút nhé (còn ${waitMin} phút).` : DAILY_LIMIT_TEXT;
     case "daily_limit": return DAILY_LIMIT_TEXT;
+    case "needs_parts": return NEEDS_PARTS;
   }
 }
 
@@ -110,10 +142,12 @@ export const OUTDATED = "Cập nhật trang để câu tiếp";
 
 /** A cast ended without a fish: a missed bite, "Thu cần", or a reel the fish won — or, after a won reel, the server
  *  still said no (a full hand or bucket, or the time gate). */
-export function lostText(cause: "missed" | "reeled_in" | "reel" | "nobite", why: LostWhy | null, fishCap: number): string {
+export function lostText(cause: "missed" | "reeled_in" | "reel" | "nobite", why: LostWhy | null, fishCap: number,
+                         snap?: Snap | null, fishName = ""): string {
   if (cause === "nobite" || why === "no_bite") return NO_BITE;
   if (cause === "missed") return MISSED;
   if (cause === "reeled_in") return REELED_IN;
+  if (why === "line_snap" || why === "rod_snap") return snapText(why, snap, fishName);   // 0110
   if (why === "full") return blockerText(fishCap <= 1 ? "hands_full" : "bucket_full", 0);
   if (why === "outdated") return OUTDATED;
   return ESCAPED;

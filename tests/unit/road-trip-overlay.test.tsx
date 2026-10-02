@@ -55,7 +55,7 @@ describe("RoadTripOverlay", () => {
   });
   it("skipping with enough coins arrives at once", async () => {
     const { onArrive, onSkip } = setup();
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Bỏ qua (20 xu)" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Bỏ qua (50 xu)" })); });
     expect(onSkip).toHaveBeenCalledTimes(1);
     expect(onArrive).toHaveBeenCalledTimes(1);
     await act(async () => { vi.advanceTimersByTime(12000); });
@@ -63,12 +63,12 @@ describe("RoadTripOverlay", () => {
   });
   it("a refused skip says so and keeps going", async () => {
     const { onArrive } = setup({ onSkip: vi.fn(async () => false) });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Bỏ qua (20 xu)" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Bỏ qua (50 xu)" })); });
     expect(screen.getByText("Không đủ xu")).toBeInTheDocument();
     expect(onArrive).not.toHaveBeenCalled();
   });
   it("disables skip when coins are short", () => {
     setup({ coins: 10 });
-    expect(screen.getByRole("button", { name: "Bỏ qua (20 xu)" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Bỏ qua (50 xu)" })).toBeDisabled();
   });
 });

@@ -1,4 +1,5 @@
 import { RIVER, RIVER_CELL, RIVER_H, RIVER_W, riverWater } from "@/lib/game/river/geometry";
+import { SONG_CAI_ROUTE } from "@/lib/game/world/routes";
 import { SONG_CAI_ARRIVE } from "./arrivals";
 import { cityMapPost } from "./city-post";
 import { overlaps } from "./rect";
@@ -13,6 +14,12 @@ export const SC_CITY_POST = cityMapPost(96, 78);
 
 /** The west jetty's planks (land: the boat moors beside it). */
 export const JETTY: Rect = { x: 0, y: 226, w: 60, h: 28 };
+
+/** 0116: Bến đò's dock on the north bank (lib/game/world/routes.ts, in this map's px; the zone sits at (960, 1600)):
+ *  the road from Ao cá ends at its head, the ghe lands you at its foot (SONG_CAI_DOCK_LOCAL). Land: the boat skirts it. */
+export const BEN_DO_DOCK: Rect = {
+  x: SONG_CAI_ROUTE.dock.x - 960, y: 0, w: SONG_CAI_ROUTE.dock.w, h: SONG_CAI_ROUTE.dock.y + SONG_CAI_ROUTE.dock.h - 1600,
+};
 
 export const SC_INTERACTABLES: Interactable[] = [
   SC_CITY_POST.interactable,
@@ -44,7 +51,7 @@ export const SC_NPCS: Npc[] = [
   },
 ];
 
-export const SC_SOLIDS: Rect[] = [SC_CITY_POST.solid, JETTY];
+export const SC_SOLIDS: Rect[] = [SC_CITY_POST.solid, JETTY, BEN_DO_DOCK];
 
 export function buildSongCaiMap(): GameMap {
   const cols = RIVER_W / RIVER_CELL, rows = RIVER_H / RIVER_CELL;

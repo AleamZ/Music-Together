@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { varietyFromRow } from "@/lib/game/farm/catalog";
 import {
-  acceptRefusal, buyListedRefusal, buyPlotRefusal, farmingCount, harvesterRefusal, listRefusal, offerRefusal, reasonText, rentRefusal,
-  rentSubleaseRefusal, sellBackRefusal, subleaseRefusal, type LandCtx,
+  acceptRefusal, buyListedRefusal, buyPlotRefusal, farmingCount, farmingTotal, harvesterRefusal, listRefusal, offerRefusal, ownsLand,
+  reasonText, rentRefusal, rentSubleaseRefusal, sellBackRefusal, subleaseRefusal, type LandCtx,
 } from "@/lib/game/farm/land";
 import type { CropView, FieldMine, PlotView } from "@/lib/game/farm/state";
 
@@ -19,7 +19,9 @@ const mine = (coins: number): FieldMine => ({
   rats: { count: 0, value: 0 }, ratCaps: { hourLeft: 6, hourResetsAt: null, dayLeft: 24 }, dog: null,
   ownedPlot: null, farming: [], myOffers: [], incomingOffers: [],
 });
-const ctx = (plots: PlotView[], coins = 1_000_000): LandCtx => ({ me: "me", plots, mine: mine(coins) });
+const ctx = (plots: PlotView[], coins = 3_000_000): LandCtx => ({ me: "me", plots, mine: mine(coins) });
+/** Econ v2 (0102): the field state's totals over every room. */
+const everywhere = (c: LandCtx, farmTotal: number, owns: boolean): LandCtx => ({ ...c, mine: { ...c.mine, farmTotal, ownsLand: owns } });
 
 describe("farming and renting", () => {
   it("counts the plots I farm", () => {
@@ -32,7 +34,16 @@ describe("farming and renting", () => {
     const two = [plot(7, { farmer: ME, lease: LEASE }), plot(8, { farmer: ME, lease: LEASE })];
     expect(rentRefusal(free, ctx([free, ...two]))).toBe("farm limit");
     expect(rentRefusal(free, ctx([free], 9_999))).toBe("not enough coins");
-    expect(reasonText("farm limit")).toBe("Bạn đang canh tác 2 thửa rồi.");
+    expect(reasonText("farm limit")).toBe("Bạn đang canh tác 2 thửa rồi (tính cả các sảnh).");
+  });
+  it("counts every room with the server's total (econ v2), this room's without it", () => {
+    const free = plot(5), one = [plot(7, { farmer: ME, lease: LEASE })];
+    expect(farmingTotal(ctx([free, ...one]))).toBe(1);
+    expect(farmingTotal(everywhere(ctx([free, ...one]), 2, false))).toBe(2);
+    expect(rentRefusal(free, everywhere(ctx([free, ...one]), 2, false))).toBe("farm limit");
+    expect(rentRefusal(free, everywhere(ctx([free]), 1, false))).toBeNull();
+    // the room's own count never falls below what this room shows
+    expect(farmingTotal(everywhere(ctx([free, ...one]), 0, false))).toBe(1);
   });
 });
 
@@ -44,39 +55,54 @@ describe("buying land", () => {
     expect(buyPlotRefusal(plot(2, { lease: LEASE }), ctx([]))).toBe("leased");
     expect(buyPlotRefusal(p2, ctx([p2, plot(1, { owner: ME, farmer: LAN, lease: LEASE })]))).toBe("already own land");
     expect(buyPlotRefusal(p2, ctx([p2], 799_999))).toBe("not enough coins");
+    // econ v2: a private plot in another room, or two plots farmed there
+    expect(ownsLand(everywhere(ctx([p2]), 1, true))).toBe(true);
+    expect(buyPlotRefusal(p2, everywhere(ctx([p2]), 1, true))).toBe("already own land");
+    expect(buyPlotRefusal(p2, everywhere(ctx([p2]), 2, false))).toBe("farm limit");
+    expect(reasonText("already own land")).toBe("Bạn đã có một thửa đất tư — mỗi người chỉ một thửa (tính cả các sảnh).");
   });
   it("a listing, at its price", () => {
-    const listed = plot(3, { owner: LAN, farmer: LAN, salePrice: 9000 });
+    const listed = plot(3, { owner: LAN, farmer: LAN, salePrice: 900_000 });
     expect(buyListedRefusal(listed, ctx([listed]))).toBeNull();
-    expect(buyListedRefusal(listed, ctx([listed], 8999))).toBe("not enough coins");
-    expect(buyListedRefusal(plot(3, { owner: ME, salePrice: 9000 }), ctx([]))).toBe("invalid plot");
+    expect(buyListedRefusal(listed, ctx([listed], 899_999))).toBe("not enough coins");
+    expect(buyListedRefusal(listed, everywhere(ctx([listed]), 1, true))).toBe("already own land");
+    expect(buyListedRefusal(plot(3, { owner: ME, salePrice: 900_000 }), ctx([]))).toBe("invalid plot");
     expect(buyListedRefusal(plot(3, { owner: LAN }), ctx([]))).toBe("not for sale");
     expect(buyListedRefusal({ ...listed, crop: CROP }, ctx([]))).toBe("crop exists");
   });
-  it("offers: to an owner, at a sane price, if I own no land here", () => {
+  it("offers: to an owner, in the band (econ v2: 400 000–2 400 000), if I own no land anywhere", () => {
     const theirs = plot(3, { owner: LAN, farmer: LAN });
-    expect(offerRefusal(theirs, ctx([theirs]), 5000)).toBeNull();
+    expect(offerRefusal(theirs, ctx([theirs]), 400_000)).toBeNull();
+    expect(offerRefusal(theirs, ctx([theirs]), 2_400_000)).toBeNull();
+    expect(offerRefusal(theirs, ctx([theirs]), 399_999)).toBe("invalid price");
+    expect(offerRefusal(theirs, ctx([theirs]), 2_400_001)).toBe("invalid price");
     expect(offerRefusal(theirs, ctx([theirs]), 0)).toBe("invalid price");
-    expect(offerRefusal(theirs, ctx([theirs]), 5_000_001)).toBe("invalid price");
-    expect(offerRefusal(plot(2), ctx([]), 5000)).toBe("not for sale");
-    expect(offerRefusal(theirs, ctx([theirs, plot(1, { owner: ME, farmer: ME })]), 5000)).toBe("already own land");
+    expect(offerRefusal(plot(2), ctx([]), 500_000)).toBe("not for sale");
+    expect(offerRefusal(theirs, ctx([theirs, plot(1, { owner: ME, farmer: ME })]), 500_000)).toBe("already own land");
+    expect(offerRefusal(theirs, everywhere(ctx([theirs]), 1, true), 500_000)).toBe("already own land");
   });
   it("a sublease, at its price", () => {
     const sub = plot(1, { owner: LAN, farmer: LAN, subleasePrice: 300 });
     expect(rentSubleaseRefusal(sub, ctx([sub]))).toBeNull();
     expect(rentSubleaseRefusal({ ...sub, lease: LEASE }, ctx([]))).toBe("plot taken");
+    expect(rentSubleaseRefusal(sub, everywhere(ctx([sub]), 2, false))).toBe("farm limit");
   });
 });
 
 describe("the owner's land actions", () => {
   const mineBare = plot(1, { owner: ME, farmer: ME });
-  it("lists and subleases a bare, unleased plot", () => {
-    expect(listRefusal(mineBare, ctx([mineBare]), 5000)).toBeNull();
-    expect(listRefusal({ ...mineBare, crop: CROP }, ctx([]), 5000)).toBe("crop exists");
+  it("lists (in the band) and subleases (≤ 50 000) a bare, unleased plot", () => {
+    expect(listRefusal(mineBare, ctx([mineBare]), 400_000)).toBeNull();
+    expect(listRefusal(mineBare, ctx([mineBare]), 2_400_000)).toBeNull();
+    expect(listRefusal(mineBare, ctx([mineBare]), 399_999)).toBe("invalid price");
+    expect(listRefusal(mineBare, ctx([mineBare]), 2_400_001)).toBe("invalid price");
+    expect(listRefusal({ ...mineBare, crop: CROP }, ctx([]), 500_000)).toBe("crop exists");
     expect(listRefusal({ ...mineBare, crop: CROP }, ctx([]), null)).toBeNull();
-    expect(subleaseRefusal(mineBare, ctx([]), 100_001)).toBe("invalid price");
+    expect(subleaseRefusal(mineBare, ctx([]), 50_000)).toBeNull();
+    expect(subleaseRefusal(mineBare, ctx([]), 50_001)).toBe("invalid price");
+    expect(subleaseRefusal(mineBare, ctx([]), 0)).toBe("invalid price");
     expect(subleaseRefusal({ ...mineBare, lease: LEASE, farmer: LAN }, ctx([]), 300)).toBe("leased");
-    expect(listRefusal(plot(2, { owner: LAN }), ctx([]), 5000)).toBe("not your plot");
+    expect(listRefusal(plot(2, { owner: LAN }), ctx([]), 500_000)).toBe("not your plot");
   });
   it("sells back unless farming a crop on it; a renter's crop does not matter", () => {
     expect(sellBackRefusal(mineBare, ctx([]))).toBeNull();
@@ -84,7 +110,7 @@ describe("the owner's land actions", () => {
     expect(sellBackRefusal({ ...mineBare, crop: CROP, farmer: LAN, lease: LEASE }, ctx([]))).toBeNull();
   });
   it("accepts an offer on a bare, unleased plot", () => {
-    const offer = { id: "o", plot: 1, price: 5000, expiresAt: 0, buyer: LAN };
+    const offer = { id: "o", plot: 1, price: 500_000, expiresAt: 0, buyer: LAN };
     expect(acceptRefusal(offer, ctx([mineBare]))).toBeNull();
     expect(acceptRefusal(offer, ctx([{ ...mineBare, crop: CROP }]))).toBe("crop exists");
     expect(acceptRefusal({ ...offer, plot: 2 }, ctx([mineBare]))).toBe("not your plot");

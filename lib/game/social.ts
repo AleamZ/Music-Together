@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@/lib/chat";
 import { DEFAULT_LOOK } from "@/lib/game/look";
+import { betaFrame } from "@/lib/game/beta/frame";
 import type { RosterEntry } from "@/lib/game/engine";
 import type { MapId, Seating } from "@/lib/game/maps/types";
 import { assignSpots } from "@/lib/game/seating";
@@ -76,8 +77,10 @@ export function freshChatBubbles(messages: ChatMessage[], shown: ReadonlySet<str
 
 /** v20.4: a name tag with its season title ("Lan «Thủy quái mùa 1»"); v21: the level first and the worn achievement title
  *  over the season one ("Lv12 Lan «Lão ngư»"). */
-export const nameTag = (name: string, look: Pick<Look, "ugTitle" | "pgLevel" | "pgTitle"> | null | undefined): string => {
+export const nameTag = (name: string, look: Pick<Look, "ugTitle" | "pgLevel" | "pgTitle" | "beta"> | null | undefined): string => {
   const title = look?.pgTitle || look?.ugTitle;
-  const base = look?.pgLevel ? `Lv${look.pgLevel} ${name}` : name;
+  const framed = betaFrame(name, look?.beta);                                                  // 0118
+  const base = look?.pgLevel ? `Lv${look.pgLevel} ${framed}` : framed;
   return title ? `${base} «${title}»` : base;
 };
+

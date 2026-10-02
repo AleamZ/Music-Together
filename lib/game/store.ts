@@ -67,11 +67,15 @@ export interface StoreFilter {
 /** v20.2: a dojo uniform (vp_*): granted by the Võ đường, never bought, sold or given. */
 export const isUniformItem = (id: string): boolean => id.startsWith("vp_");
 
+/** 0118: a "Kỷ niệm Beta" item (beta_*): granted once by the end-of-Beta reset, never bought, sold, given or traded. */
+export const isBetaItem = (id: string): boolean => id.startsWith("beta_");
+
 /** Items shown in the fashion store grid: never starters; the store tab lists everything, "my items" the owned ones. */
 export function filterStoreItems(catalog: readonly CatalogItem[], f: StoreFilter): CatalogItem[] {
   return catalog.filter((item) => {
     if (item.starter) return false;
     if (f.tab === "store" && isUniformItem(item.id)) return false;             // v20.2: granted by the dojo, never sold
+    if (f.tab === "store" && isBetaItem(item.id)) return false;                // 0118: the Beta keepsakes are never sold
     if (f.tab === "my_items" && !f.ownedIds.has(item.id)) return false;
     if (f.category !== "all" && !categoryMatches(f.category, item.slot)) return false;
     if (f.fitsMe && !itemFitsGender(item, f.gender)) return false;
@@ -102,7 +106,12 @@ export interface TransferResult {
   item_id: string;
   sender_id: string;
   recipient_id: string;
+  /** Kinh tế v2 (0106): the gifts I may still give today (absent from an older server). */
+  gifts_left?: number;
 }
+
+/** Kinh tế v2 (0106 _econ_rule('gift_day')): fashion gifts per giver per Vietnam day, only to someone in one of my rooms. */
+export const GIFTS_PER_DAY = 5;
 
 /** Fetches the player's xu balance and owned fashion item ids. */
 export async function fetchMyWardrobe(token: string): Promise<WardrobeState> {
@@ -162,7 +171,10 @@ export function storeErrorMessage(err: unknown): string {
   if (msg.includes("cannot sell item")) return "Không thể bán món đồ này.";
   if (msg.includes("cannot transfer item")) return "Không thể tặng món đồ này.";
   if (msg.includes("invalid target account")) return "Tài khoản người nhận không hợp lệ.";
+  if (msg.includes("recipient not in your rooms")) return "Chỉ tặng được cho người cùng phòng với bạn.";
+  if (msg.includes("gift limit")) return `Mỗi ngày chỉ tặng được ${GIFTS_PER_DAY} món — mai tặng tiếp nhé.`;
   if (msg === "uniform" || msg.includes("uniform")) return "Võ phục do võ đường cấp — không mua, bán hay tặng được.";
+  if (msg.includes("exclusive item")) return "Đồ Kỷ niệm Beta là quà độc quyền — không mua, bán, tặng hay giao dịch được.";
   if (msg.includes("invalid session")) return "Phiên đăng nhập đã hết hạn — hãy đăng nhập lại.";
   return "Giao dịch không thành công — vui lòng thử lại!";
 }

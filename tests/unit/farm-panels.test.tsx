@@ -44,7 +44,7 @@ const STATE: FieldState = parseFieldState({
   plots: [
     bare(1, "private"),
     bare(2, "private", { owner: ME, farmer: ME }),
-    bare(3, "private", { owner: AN, farmer: AN, sale_price: 8000, sublease_price: 300 }),
+    bare(3, "private", { owner: AN, farmer: AN, sale_price: 800000, sublease_price: 300 }),
     bare(4, "private", { owner: LAN, farmer: LAN }),
     bare(5, "village", { farmer: LAN, lease: lease(30) }),
     bare(6, "village", { farmer: ME, lease: lease(5) }),
@@ -56,9 +56,10 @@ const STATE: FieldState = parseFieldState({
   ],
   mine: {
     items: { fert_urea: 98 }, rice: { nep: { wet: 30, dry: 50 } }, coins: 1000, gift_claimed: true, owned_plot: 2, farming: [2, 6],
-    my_offers: [{ id: "o1", plot: 4, price: 5000, expires_at: iso(20) }],
-    incoming_offers: [{ id: "o2", plot: 2, buyer: LAN, price: 9000, expires_at: iso(10) }],
+    my_offers: [{ id: "o1", plot: 4, price: 500000, expires_at: iso(20) }],
+    incoming_offers: [{ id: "o2", plot: 2, buyer: LAN, price: 900000, expires_at: iso(10) }],
   },
+  p2p_fee_pct: 5,
 })!;
 const noop = () => {};
 
@@ -114,18 +115,18 @@ describe("RiceDepotPanel", () => {
     expect(screen.queryByRole("button", { name: /Bán/ })).toBeNull();
     expect(screen.getByText("“Chưa có lúa hay hoa màu hả con? Thu hoạch xong mang qua, cô trả giá cao!”")).toBeInTheDocument();
   });
-  it("pays ×1.2, rounded down, at Chợ Lớn's Vựa nông sản (v18.5)", () => {
+  it("pays ×1.1 (econ v2), rounded down, at Chợ Lớn's Vựa nông sản (v18.5)", () => {
     const onSell = vi.fn();
     render(<RiceDepotPanel market mine={STATE.mine} catalog={CATALOG} failed={false} busy={false} onSell={onSell} onSellProduce={noop}
       onReload={noop} onClose={noop} />);
-    expect(screen.getByText("Giá chợ +20%")).toBeInTheDocument();
+    expect(screen.getByText("Giá chợ +10%")).toBeInTheDocument();
     const dry = screen.getByText("Nếp khô · 50 kg").closest("li")!;
-    expect(within(dry).getByText("21,6 xu/kg")).toBeInTheDocument();
-    fireEvent.click(within(dry).getByRole("button", { name: "Bán · 216 xu" }));
+    expect(within(dry).getByText("19,8 xu/kg")).toBeInTheDocument();
+    fireEvent.click(within(dry).getByRole("button", { name: "Bán · 198 xu" }));
     expect(onSell).toHaveBeenLastCalledWith("nep", true, 10);
-    expect(within(dry).getByRole("button", { name: "Bán hết · 1.080 xu" })).toBeInTheDocument();
+    expect(within(dry).getByRole("button", { name: "Bán hết · 990 xu" })).toBeInTheDocument();
     const wet = screen.getByText("Nếp ướt · 30 kg").closest("li")!;
-    expect(within(wet).getByRole("button", { name: "Bán hết · 453 xu" })).toBeInTheDocument();
+    expect(within(wet).getByRole("button", { name: "Bán hết · 415 xu" })).toBeInTheDocument();
   });
 });
 
@@ -173,12 +174,13 @@ describe("CoopPanel", () => {
 
   it("rents village plots, and says why not at the farming limit", () => {
     const onAct = renderCoop();
-    expect(screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "Bạn có 1.000 xu · đang canh tác 2/2 thửa.")).toBeInTheDocument();
+    expect(screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "Bạn có 1.000 xu · đang canh tác 2/2 thửa (tính cả các sảnh)."))
+      .toBeInTheDocument();
     expect(line("Thửa 5 · Lan đang thuê — còn 30 giờ")).toBeInTheDocument();
     expect(line("Thửa 6 · Bạn đang thuê — còn 5 giờ")).toBeInTheDocument();
     const free = line("Thửa 7 · Trống");
     expect(within(free).getByRole("button", { name: "Thuê · 10.000 xu" })).toBeDisabled();
-    expect(within(free).getByText("Bạn đang canh tác 2 thửa rồi.")).toBeInTheDocument();
+    expect(within(free).getByText("Bạn đang canh tác 2 thửa rồi (tính cả các sảnh).")).toBeInTheDocument();
     cleanup();
     const relaxed = { ...STATE, plots: STATE.plots.map((p) => (p.no === 6 ? { ...p, farmer: null, lease: null } : p)) };
     const act2 = renderCoop({ ...relaxed, mine: { ...relaxed.mine, coins: 10_000 } });
@@ -191,25 +193,30 @@ describe("CoopPanel", () => {
     renderCoop();
     tab("Đất tư");
     expect(within(line("Thửa 1 · làng bán")).getByRole("button", { name: "Mua · 800.000 xu" })).toBeDisabled();
-    expect(within(line("Thửa 1 · làng bán")).getByText("Bạn đã có đất tư trong phòng này.")).toBeInTheDocument();
-    expect(screen.getByText(/Thửa 3 · của An · rao bán 8\.000 xu · cho thuê 300 xu\/vụ/)).toBeInTheDocument();
+    expect(within(line("Thửa 1 · làng bán")).getByText("Bạn đã có một thửa đất tư — mỗi người chỉ một thửa (tính cả các sảnh)."))
+      .toBeInTheDocument();
+    expect(screen.getByText(/Thửa 3 · của An · rao bán 800\.000 xu · cho thuê 300 xu\/vụ/)).toBeInTheDocument();
   });
 
   it("buys a listing after asking, rents a sublease and sends an offer", () => {
     const relaxed = { ...STATE, plots: STATE.plots.map((p) => (p.no === 2 ? { ...p, owner: null, farmer: null } : p.no === 6 ? { ...p, farmer: null, lease: null } : p)) };
-    const onAct = renderCoop({ ...relaxed, mine: { ...relaxed.mine, coins: 9000 } });
+    const onAct = renderCoop({ ...relaxed, mine: { ...relaxed.mine, coins: 900_000 } });
     tab("Chợ đất");
-    fireEvent.click(within(line("Thửa 3 của An — bán 8.000 xu")).getByRole("button", { name: "Mua" }));
+    fireEvent.click(within(line("Thửa 3 của An — bán 800.000 xu")).getByRole("button", { name: "Mua" }));
     expect(onAct).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
-    expect(onAct).toHaveBeenLastCalledWith({ kind: "buy_listed", plot: 3, expected: 8000 }, "🏡 Đã mua thửa 3.");
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "buy_listed", plot: 3, expected: 800000 }, "🏡 Đã mua thửa 3.");
     fireEvent.click(within(line("Thửa 3 của An — cho thuê một vụ 300 xu")).getByRole("button", { name: "Thuê" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "rent_sublease", plot: 3, expected: 300 }, "Đã thuê thửa 3 của An một vụ.");
     fireEvent.click(screen.getByRole("button", { name: "Thửa 4 (Lan)" }));
+    // econ v2: offers are 400 000–2 400 000
+    expect(screen.getByText(/Giá từ 400\.000 xu đến 2\.400\.000 xu\./)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "6000" } });
+    expect(screen.getByRole("button", { name: "Gửi đề nghị" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "600000" } });
     fireEvent.click(screen.getByRole("button", { name: "Gửi đề nghị" }));
     fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
-    expect(onAct).toHaveBeenLastCalledWith({ kind: "offer", plot: 4, price: 6000 }, "Đã gửi đề nghị mua thửa 4 giá 6.000 xu.");
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "offer", plot: 4, price: 600000 }, "Đã gửi đề nghị mua thửa 4 giá 600.000 xu.");
   });
 
   /** I own no land here, so I may offer for An's plot 3 and Lan's plot 4. */
@@ -219,17 +226,17 @@ describe("CoopPanel", () => {
     const onAct = renderCoop(MARKET);
     tab("Chợ đất");
     fireEvent.click(screen.getByRole("button", { name: "Thửa 3 (An)" }));
-    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "7500" } });
+    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "750000" } });
     fireEvent.click(screen.getByRole("button", { name: "Gửi đề nghị" }));
-    expect(screen.getByText("⚠️ Trả giá thửa 3 với 7.500 xu?")).toBeInTheDocument();
+    expect(screen.getByText("⚠️ Trả giá thửa 3 với 750.000 xu?")).toBeInTheDocument();
     expect(onAct).not.toHaveBeenCalled();
     // a new price drops the open question: the next one names it
-    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "8000" } });
+    fireEvent.change(screen.getByLabelText("Giá"), { target: { value: "800000" } });
     expect(screen.queryByText(/Trả giá thửa/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Gửi đề nghị" }));
-    expect(screen.getByText("⚠️ Trả giá thửa 3 với 8.000 xu?")).toBeInTheDocument();
+    expect(screen.getByText("⚠️ Trả giá thửa 3 với 800.000 xu?")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
-    expect(onAct).toHaveBeenCalledWith({ kind: "offer", plot: 3, price: 8000 }, "Đã gửi đề nghị mua thửa 3 giá 8.000 xu.");
+    expect(onAct).toHaveBeenCalledWith({ kind: "offer", plot: 3, price: 800000 }, "Đã gửi đề nghị mua thửa 3 giá 800.000 xu.");
   });
 
   it("clears the typed price when another plot is chosen", () => {
@@ -272,23 +279,33 @@ describe("CoopPanel", () => {
     // nothing typed yet: the buttons wait without complaining
     expect(screen.getByRole("button", { name: "Rao bán" })).toBeDisabled();
     expect(screen.queryByText("Số không hợp lệ.")).toBeNull();
+    // econ v2: the band, the sublease cap and the seller's 95 %
+    expect(screen.getByText("Giá từ 400.000 xu đến 2.400.000 xu; bán được bạn nhận 95% (phí 5% bị đốt).")).toBeInTheDocument();
+    expect(screen.getByText("Tối đa 50.000 xu một vụ; có người thuê bạn nhận 95% (phí 5% bị đốt).")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Rao bán"), { target: { value: "12000" } });
+    expect(screen.getByRole("button", { name: "Rao bán" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Rao bán"), { target: { value: "1200000" } });
     fireEvent.click(screen.getByRole("button", { name: "Rao bán" }));
-    expect(onAct).toHaveBeenLastCalledWith({ kind: "list", plot: 2, price: 12000 }, "Đã rao bán thửa 2 giá 12.000 xu.");
-    fireEvent.change(screen.getByLabelText("Cho thuê một vụ"), { target: { value: "100001" } });
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "list", plot: 2, price: 1200000 },
+      "Đã rao bán thửa 2 giá 1.200.000 xu; bán được thì bạn nhận 1.140.000 xu (phí 5% bị đốt).");
+    fireEvent.change(screen.getByLabelText("Cho thuê một vụ"), { target: { value: "50001" } });
     expect(screen.getByRole("button", { name: "Cho thuê" })).toBeDisabled();
     expect(screen.getByText("Số không hợp lệ.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Cho thuê một vụ"), { target: { value: "50000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cho thuê" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "set_sublease", plot: 2, price: 50000 },
+      "Đã cho thuê thửa 2 giá 50.000 xu một vụ; có người thuê thì bạn nhận 47.500 xu (phí 5% bị đốt).");
     fireEvent.click(screen.getByRole("button", { name: "Bán lại cho làng · 400.000 xu" }));
     expect(screen.getByText("⚠️ Làng chỉ trả 400.000 xu (một nửa giá) — bán lại thửa 2?")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "sell_back", plot: 2 }, "Đã bán lại thửa 2 cho làng — nhận 400.000 xu.");
-    const offer = line("Lan trả 9.000 xu cho thửa 2 — còn 10 giờ");
+    const offer = line("Lan trả 900.000 xu cho thửa 2 — bạn nhận 855.000 xu (phí 5% bị đốt) — còn 10 giờ");
     fireEvent.click(within(offer).getByRole("button", { name: "Từ chối" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "decline_offer", offer: "o2" }, "Đã từ chối đề nghị.");
     fireEvent.click(within(offer).getByRole("button", { name: "Đồng ý" }));
     fireEvent.click(within(offer).getByRole("button", { name: "Vẫn làm" }));
-    expect(onAct).toHaveBeenLastCalledWith({ kind: "accept_offer", offer: "o2" }, "Đã bán thửa 2 — nhận 9.000 xu.");
-    fireEvent.click(within(line("Thửa 4 giá 5.000 xu — còn 20 giờ")).getByRole("button", { name: "Rút" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "accept_offer", offer: "o2" }, "Đã bán thửa 2 — nhận 855.000 xu.");
+    fireEvent.click(within(line("Thửa 4 giá 500.000 xu — còn 20 giờ")).getByRole("button", { name: "Rút" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "withdraw_offer", offer: "o1" }, "Đã rút đề nghị.");
   });
 });

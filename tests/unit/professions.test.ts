@@ -9,10 +9,14 @@ const SQL = readFileSync("supabase/migrations/0077_professions.sql", "utf8").rep
 
 /** 0096 adds Thợ săn and Tiều phu (their rows follow 0077's). */
 const SQL96 = readFileSync("supabase/migrations/0096_forest_professions.sql", "utf8").replace(/\r\n/g, "\n");
+/** econ v2: 0105 re-seeds 0077's meal buffs with the new values. */
+const SQL105 = readFileSync("supabase/migrations/0105_econ_sinks.sql", "utf8").replace(/\r\n/g, "\n");
+/** Econ v2 (0103): the switch and reset fees. */
+const SQL103 = readFileSync("supabase/migrations/0103_econ_crafts.sql", "utf8").replace(/\r\n/g, "\n");
 
 /** The rows of the seed `insert into public.<table> … values … on conflict` (0077's, then 0096's). */
-function seedRows(table: string): string[] {
-  return [SQL, SQL96].flatMap((sql) => {
+function seedRows(table: string, sqls: readonly string[] = [SQL, SQL96]): string[] {
+  return sqls.flatMap((sql) => {
     const from = sql.indexOf(`insert into public.${table} (`);
     if (from < 0) return [];
     const body = sql.slice(sql.indexOf("values", from), sql.indexOf("on conflict", from));
@@ -33,12 +37,17 @@ describe("professions catalog = the 0077 + 0096 seeds", () => {
       expect(rows[i].slice(0, 7)).toEqual([q(n.id), q(n.prof), q(n.name), q(n.perk), String(n.value), String(n.cost), q(n.req)]);
     });
   });
-  it("meal buffs", () => {
-    expect(seedRows("meal_buffs").map((r) => r.replace(/\s+/g, " ").trim()))
-      .toEqual(MEAL_BUFFS.map((b) => `'${b.meal}', '${b.key}', ${b.value}, ${b.minutes}`));
+  it("meal buffs (0105's values; 0077's meals, keys and minutes)", () => {
+    const row = (r: string) => r.replace(/\s+/g, " ").trim();
+    expect(seedRows("meal_buffs", [SQL105]).map(row)).toEqual(MEAL_BUFFS.map((b) => `'${b.meal}', '${b.key}', ${b.value}, ${b.minutes}`));
+    const keep = (r: string) => row(r).split(", ").filter((_, i) => i !== 2).join(", ");
+    expect(seedRows("meal_buffs", [SQL105]).map(keep)).toEqual(seedRows("meal_buffs", [SQL]).map(keep));
   });
   it("fees and a text for every perk", () => {
-    expect(SQL).toContain(`'switch_fee', ${SWITCH_FEE}, 'reset_fee', ${RESET_FEE}`);
+    expect(SQL103).toContain(`'switch_fee', ${SWITCH_FEE}, 'reset_fee', ${RESET_FEE}`);
+    expect(SQL103).toContain(`perform public._pay(v_account, -${SWITCH_FEE}, 'profession'`);
+    expect(SQL103).toContain(`perform public._pay(v_account, -${RESET_FEE}, 'skill_reset'`);
+    expect([SWITCH_FEE, RESET_FEE]).toEqual([2000, 1000]);
     for (const n of SKILL_NODES) expect(PERK_TEXT[n.perk]).toContain("{v}");
     for (const p of PROFESSIONS) expect(SKILL_NODES.filter((n) => n.prof === p.id)).toHaveLength(6);
   });

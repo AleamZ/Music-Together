@@ -6,16 +6,31 @@ import { isWildBoatSpot } from "@/lib/game/world/boat";
 import { useCastSession, type CastSession, type CastView } from "@/hooks/useCastSession";
 import { useFishing, type FishingData } from "@/hooks/useFishing";
 import { useFishingExtras, type FishingExtras } from "@/hooks/useFishingExtras";
+import { useGroundbaitSpots } from "@/hooks/useGroundbaitSpots";
+import type { GroundbaitSpotView } from "@/lib/game/fishing/groundbait-spots";
 import { BOAT_DECK_SPOT } from "@/lib/game/maps/pond";
 import { serverNow } from "@/lib/game/farm/clock";
 import {
-  abandonedText, BAIT_FULL, castRefusal, dailyText, digText, digWaitText, LOADING, NET_EXPIRED, netLostText, netText, NO_NET, NOT_LOADED,
-  promptText as promptFor, repairText, saleText, SONG_BONUS,
+  abandonedText, BAIT_FULL, castRefusal, dailyText, digText, digWaitText, GROUNDBAIT_WHERE, groundbaitText, LOADING, NET_EXPIRED, netLostText,
+  netText, NO_NET, NOT_LOADED, promptText as promptFor, repairText, saleText, SONG_BONUS,
 } from "@/lib/game/fishing/messages";
 import { NET_WON_MS, type NetInput } from "@/lib/game/fishing/netcast";
 import { nearestWater } from "@/lib/game/fishing/shore";
-import { fetchFishingBoard, type CaughtFish, type FishingBoard, type NetLostWhy, type NetPull, type NetThrow } from "@/lib/game/fishing/rpc";
-import { baitTotal, bestNet, digWaitSec, handFish, type Loadout } from "@/lib/game/fishing/state";
+import {
+  fetchFishingBoard, type CaughtFish, type FishingBoard, type GroundbaitSpot, type NetLostWhy, type NetPull, type NetThrow, type Notebook,
+} from "@/lib/game/fishing/rpc";
+import { baitTotal, bestNet, digWaitSec, groundbaitCount, handFish, type GearSlot, type Loadout, type PartSlot } from "@/lib/game/fishing/state";
+
+/** 0115: the bag's rod actions (each runs as a panel action: busy, toasts). */
+export interface RodActions {
+  mount: (rodId: number, slot: PartSlot, item: string) => void;
+  unmount: (rodId: number, slot: PartSlot) => void;
+  equip: (rodId: number | null) => void;
+  rename: (rodId: number, name: string) => void;
+  scrap: (rodId: number) => void;
+  /** `name`: for the toast. */
+  repair: (rodId: number, name: string) => void;
+}
 import type { ReelResult } from "@/lib/game/fishing/reel";
 import type { Interactable } from "@/lib/game/maps/types";
 import type { QueueItem } from "@/lib/supabase";
@@ -23,7 +38,9 @@ import type { QueueItem } from "@/lib/supabase";
 /** `market_depot` (v18.5): Vựa cá Chợ Lớn, the depot panel at +20%. */
 export type FishingPanel = "bag" | "depot" | "market_depot" | "shop" | "records"
   /** v21 (0076): Bến ghe, the battles' board, the treasure maps. */
-  | "boat" | "battle" | "treasure";
+  | "boat" | "battle" | "treasure"
+  /** 0110: Sổ tay câu cá. */
+  | "notebook";
 
 export interface FishingController {
   data: FishingData;
@@ -48,10 +65,24 @@ export interface FishingController {
   release: (fishId: string) => void;
   buy: (itemId: string, qty: number) => void;
   equip: (loadout: Loadout) => void;
+  /** 0110: mount (`item`) or unmount (null) one slot of the rig. */
+  equipSlot: (slot: GearSlot, item: string | null) => void;
+  /** 0110: the groundbait the HUD's "Rải thính" throws (the one picked in the bag, else the first with bags), or null. */
+  groundbaitReady: string | null;
+  /** 0110: pick the groundbait the HUD throws. */
+  pickGroundbait: (item: string) => void;
+  /** 0110: throw one bag at this pond cell, or (no cell) where I last fished (the pond, Sông Cái or the wild river). */
+  throwGroundbait: (item: string, cell?: { col: number; row: number }) => void;
+  /** 0117: the room's active ổ thính (anyone fishing within 48 px of one feels it), refreshed after my throws. */
+  groundbaitSpots: GroundbaitSpotView[];
+  /** 0110: Sổ tay câu cá (null: not bought, or an error). */
+  loadNotebook: () => Promise<Notebook | null>;
   /** fishing_board for this room (the records panel). */
   loadBoard: () => Promise<FishingBoard>;
   /** v18.2 Sửa cần at chú Tư's. */
   repair: (itemId: string) => void;
+  /** 0115: the rods one by one (the bag's Cần câu section, chú Tư's Sửa cần). */
+  rods: RodActions;
   /** v18.2: the net minigame in progress (the NetOverlay), or null. */
   net: NetView | null;
   /** v18.2: the net a throw would use, or null (none owned / not loaded). */
@@ -138,16 +169,24 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   const boatCasting = useRef(false);
   // v22 (0086): a cast on Sông Cái goes to start_river_cast from where the boat floats
   const riverAt = useRef<{ x: number; y: number; map?: "song_cai" | "wild" } | null>(null);
+  // 0110: where I last fished (a groundbait thrown from the bag lands there)
+  const lastSpot = useRef<GroundbaitSpot | null>(null);
   const castData = useMemo(() => ({
     ...data, startCast: (r: string, cell?: { col: number; row: number }) => {
       const river = riverAt.current;
       riverAt.current = null;
-      if (river) return data.startRiverCast(r, river);
+      if (river) {
+        lastSpot.current = { map: river.map ?? "song_cai", x: river.x, y: river.y };
+        return data.startRiverCast(r, river);
+      }
+      if (!boatCasting.current && cell) lastSpot.current = { map: "pond", col: cell.col, row: cell.row };
       return boatCasting.current ? data.startBoatCast(r) : data.startCast(r, cell);
     },
   }), [data]);
-  const session = useCastSession({ roomId, data: castData, canvas, toast, itemName });
-  const { state, failed, catalog, reload, claimDaily, dig, sell: sellFish, release: releaseFish, buy: buyItem, equip: setLoadout, repair: repairRod } = data;
+  const speciesName = useCallback((id: string) => itemCatalog?.species.find((s) => s.id === id)?.name ?? id, [itemCatalog]);   // 0110
+  const session = useCastSession({ roomId, data: castData, canvas, toast, itemName, speciesName });
+  const { state, failed, catalog, reload, claimDaily, dig, sell: sellFish, release: releaseFish, buy: buyItem, equip: setLoadout, repair: repairRod,
+    equipSlot: mountSlot, throwGroundbait: throwBag, notebook: loadNotebook, rods: rodRpc } = data;
   const [panel, setPanel] = useState<FishingPanel | null>(null);
   const extras = useFishingExtras({ token, roomId, canvas, toast, watching: panel === "battle", onCoins: () => void reload() });   // v21
   const stateRef = useRef(state);
@@ -292,7 +331,7 @@ export function useFishingController({ token, roomId, accountId, canvas, current
   }, []);
   const sell = useCallback((ids: string[], market = false) => void run(async () => {
     const r = await sellFish(ids, market);
-    if (r) toastRef.current(saleText(r.sold, r.earned));
+    if (r) toastRef.current(saleText(r.sold, r.earned, r.npcCut));                         // econ v2 (0101): the thương lái's cut
   }), [run, sellFish]);
   const release = useCallback((id: string) => void run(() => releaseFish(id)), [run, releaseFish]);
   const buy = useCallback((itemId: string, qty: number) => void run(async () => {
@@ -300,6 +339,41 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     if (await buyItem(itemId, qty)) toastRef.current(`🛒 Đã mua ${name}${qty > 1 ? ` × ${qty}` : ""}.`);
   }), [run, buyItem, catalog]);
   const equip = useCallback((l: Loadout) => void run(() => setLoadout(l)), [run, setLoadout]);
+  const equipSlot = useCallback((slot: GearSlot, item: string | null) => void run(() => mountSlot(slot, item)), [run, mountSlot]);   // 0110
+  // 0110: thính — the one picked in the bag (or the first with bags), thrown at the pond's edge or where I last fished
+  const [gbPick, setGbPick] = useState<string | null>(null);
+  const { spots: groundbaitSpots, reload: reloadSpots } = useGroundbaitSpots(token, roomId);   // 0117
+  const gbItems = catalog?.items.filter((i) => i.kind === "groundbait") ?? [];
+  const groundbaitReady = state
+    ? (gbPick && groundbaitCount(state, gbPick) > 0 ? gbPick : gbItems.find((i) => groundbaitCount(state, i.id) > 0)?.id ?? null)
+    : null;
+  const throwGroundbait = useCallback((item: string, cell?: { col: number; row: number }) => void run(async () => {
+    const spot: GroundbaitSpot | null = cell ? { map: "pond", col: cell.col, row: cell.row } : lastSpot.current;
+    if (!spot) {
+      toastRef.current(GROUNDBAIT_WHERE);
+      return;
+    }
+    if (await throwBag(roomId, item, spot)) toastRef.current(groundbaitText(itemName(item)));
+    reloadSpots();                                                                         // 0117: a refused throw too (someone else's)
+  }), [run, throwBag, roomId, itemName, reloadSpots]);
+  // 0115: the rods one by one
+  const rods = useMemo<RodActions>(() => ({
+    mount: (rodId, slot, item) => void run(async () => {
+      const r = await rodRpc.mount(rodId, slot, item);
+      if (r) toastRef.current(`🔧 Đã lắp ${itemName(item)}${r.destroyed ? ` — ${itemName(r.destroyed)} cũ đã bỏ` : ""}.`);
+    }),
+    unmount: (rodId, slot) => void run(async () => {
+      const r = await rodRpc.unmount(rodId, slot);
+      if (r?.destroyed) toastRef.current(`🗑️ Đã tháo và bỏ ${itemName(r.destroyed)}.`);
+    }),
+    equip: (rodId) => void run(() => rodRpc.equip(rodId)),
+    rename: (rodId, name) => void run(() => rodRpc.rename(rodId, name)),
+    scrap: (rodId) => void run(() => rodRpc.scrap(rodId)),
+    repair: (rodId, name) => void run(async () => {
+      const r = await rodRpc.repair(rodId);
+      if (r) toastRef.current(repairText(name, r.cost ?? 0));
+    }),
+  }), [run, rodRpc, itemName]);
   const repair = useCallback((itemId: string) => void run(async () => {
     const r = await repairRod(itemId);
     if (r) toastRef.current(repairText(itemName(itemId), r.cost));
@@ -485,6 +559,13 @@ export function useFishingController({ token, roomId, accountId, canvas, current
     release,
     buy,
     equip,
+    equipSlot,
+    rods,
+    groundbaitReady,
+    pickGroundbait: setGbPick,
+    throwGroundbait,
+    groundbaitSpots,
+    loadNotebook,
     repair,
     net,
     netReady,

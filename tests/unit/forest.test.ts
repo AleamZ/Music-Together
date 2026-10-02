@@ -4,8 +4,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  COOKED_TOAST, cookPct, cookQuality, dishBuffMin, dishPrice, dishStamina, RECIPES, repairCost, RUNG_TRAM_ORIGIN, starterOf, TOOLS,
-  TREES, treeKey, treeOf,
+  COOK_STAMINA, COOKED_TOAST, cookPct, cookQuality, DAILY_FULL_LOGS, DAILY_MAX_LOGS, dishBuffMin, dishPrice, dishStamina, RECIPES,
+  repairCost, RUNG_TRAM_ORIGIN, starterOf, TOOLS, TREES, treeKey, treeOf,
 } from "@/lib/game/forest/catalog";
 import {
   CHOP_WIN, chopBlows, chopHits, cookScore, heatAt, parseStep, stepsToParams, type CookStepEv,
@@ -14,10 +14,11 @@ import { parseForest } from "@/lib/game/forest/rpc";
 import { PROFESSIONS } from "@/lib/game/professions/catalog";
 
 const SQL = readFileSync("supabase/migrations/0096_forest_professions.sql", "utf8").replace(/\r\n/g, "\n");
-/** 0097 re-made some of 0096's functions: the newest body wins. */
+/** 0097 re-made some of 0096's functions, 0103 (econ v2) the prices: the newest body wins. */
 const SQL97 = readFileSync("supabase/migrations/0097_forest_complete.sql", "utf8").replace(/\r\n/g, "\n");
+const SQL103 = readFileSync("supabase/migrations/0103_econ_crafts.sql", "utf8").replace(/\r\n/g, "\n");
 function body(name: string): string {
-  for (const sql of [SQL97, SQL]) {
+  for (const sql of [SQL103, SQL97, SQL]) {
     const at = sql.indexOf(`function public.${name}(`);
     if (at < 0) continue;
     const start = sql.indexOf("$$", at);
@@ -54,17 +55,37 @@ describe("0096 tables = lib/game/forest/catalog.ts", () => {
       buff: q(m[11]), buffValue: +m[12], buffMin: +m[13],
     }))).toEqual(RECIPES);
     expect(body("_cook_quality")).toContain("when p_score >= 90 then 3 when p_score >= 70 then 2 when p_score >= 40 then 1 else 0");
-    expect(body("_cook_pct")).toContain("when 3 then 150 when 2 then 125 when 1 then 100 else 20");
+    expect(body("_cook_pct")).toContain("when 3 then 125 when 2 then 110 when 1 then 100 else 20");
     expect([0, 39, 40, 69, 70, 89, 90, 100].map(cookQuality)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
-    expect([0, 1, 2, 3].map(cookPct)).toEqual([20, 100, 125, 150]);
+    expect([0, 1, 2, 3].map(cookPct)).toEqual([20, 100, 110, 125]);
     const r = RECIPES.find((x) => x.id === "chao_ga_rung")!;
-    expect(dishPrice(r, 3)).toBe(330);
+    expect(dishPrice(r, 3)).toBe(180);
     expect(dishStamina(r, 0)).toBe(0);
-    expect(dishStamina(r, 2)).toBe(25);
+    expect(dishStamina(r, 2)).toBe(11);                                   // 0103: half of 20 × 110 %
+    expect(body("cook_eat")).toContain("floor(r.stamina * public._cook_pct(p_quality) / 200.0)");
     const snake = RECIPES.find((x) => x.id === "chao_ran_dau_xanh")!;
-    expect(dishBuffMin(snake, 3)).toBe(22);
+    expect(dishBuffMin(snake, 3)).toBe(18);
     expect(dishBuffMin(snake, 0)).toBe(0);
+    // econ v2 (0103): a fee-only dish sells for 0.8 × its fee, never more than the fee back; an ingredient dish for its fee
+    // + 1.3 × the ingredients' NPC value + 20 (meat at the stall's price, fish at its expected catch at the wooden rod,
+    // M = S = 1, on 0101's fish prices: cá lóc 10 xu/kg, cá rô 40, cá sặc 38)
+    const meat: Record<string, number> = { thit_chuot_dong: 35, thit_ga_rung: 85, thit_ran_ri_ca: 100 };
+    const fish: Record<string, number> = { ca_loc: 10.33, ca_ro: 5.33, ca_sac: 4.43 };
+    for (const x of RECIPES) {
+      const value = (x.meat ? x.meatQty * meat[x.meat] : 0) + (x.fish ? x.fishQty * fish[x.fish] : 0);
+      const want = x.meat || x.fish ? Math.round(x.fee + 1.3 * value + 20) : Math.round(0.8 * x.fee);
+      expect(x.price, x.id).toBe(want);
+      if (!x.meat && !x.fish) expect(dishPrice(x, 3), x.id).toBeLessThanOrEqual(x.fee);
+    }
     for (const x of RECIPES) expect(COOKED_TOAST[x.id]).toBeTruthy();
+  });
+  it("the day's logs, the cook's stamina (econ v2, 0103)", () => {
+    expect(body("chop_finish")).toContain(`least(v_qty, greatest(0, ${DAILY_MAX_LOGS} - pr.logs))`);
+    expect(body("chop_finish")).toContain(`least(v_qty, ${DAILY_FULL_LOGS} - pr.logs)`);
+    expect(body("chop_start")).toContain(`pr.logs >= ${DAILY_MAX_LOGS} then`);
+    expect(body("cook_start")).toContain(`_stamina_spend(v_acc, ${COOK_STAMINA}, 'cook')`);
+    expect(body("wood_sell")).toContain("least(10, floor(public._perk(v_acc, 'wood_sell_pct'))::int)");
+    expect(TREES.map((t) => t.price)).toEqual([4, 6, 9, 15, 25, 73, 160]);
   });
   it("the xp rules and the Thợ săn / Tiều phu nodes are seeded", () => {
     expect(SQL).toContain("('wild_hunt', '', 'tho_san', 10)");

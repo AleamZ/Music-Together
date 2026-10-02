@@ -5,6 +5,7 @@ import ItemIcon from "@/components/game/ItemIcon";
 import { ParchmentModal } from "@/components/game/Parchment";
 import { formatWeight, formatXu, RARITY_COLOR, type FishingCatalog } from "@/lib/game/fishing/catalog";
 import { endsAtText, formatMult, nowPricePerKg, trend } from "@/lib/game/fishing/prices";
+import { npcQuotaLine } from "@/lib/game/economy/npc";
 import type { FishingBoard } from "@/lib/game/fishing/rpc";
 
 type Tab = "records" | "richest" | "prices";
@@ -98,8 +99,7 @@ export default function RecordsPanel({ catalog, load, onClose }: {
           prices ? (
             <>
               <p>
-                Hệ số phòng {formatMult(prices.mult)} · tài sản trung bình {formatXu(prices.wealth)} · giá đổi lúc{" "}
-                {endsAtText(prices.endsAt)}
+                Hệ số giá cá toàn server {formatMult(prices.mult)} · mùa cá đổi lúc {endsAtText(prices.endsAt)}
               </p>
               <table className="w-full text-left">
                 <thead className="text-base opacity-80">
@@ -119,6 +119,7 @@ export default function RecordsPanel({ catalog, load, onClose }: {
                 </tbody>
               </table>
               <p className="text-base opacity-80">Giá chốt lúc câu được cá; bán sau vẫn giữ giá đó.</p>
+              {board.npc && <p className="text-base opacity-80">{npcQuotaLine(board.npc)}</p>}
             </>
           ) : (
             <p className="opacity-70">Chưa có bảng giá.</p>
