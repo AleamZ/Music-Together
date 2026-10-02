@@ -13,6 +13,7 @@ import { wave1Sheets } from "./wave1";
 import { fishSpeciesGeometry } from "@/lib/game/diorama/world/models";
 import { heldFor, heldMaterial, umbrellaArm } from "@/lib/game/diorama/character/held";
 import { wave3Sheets } from "./wave3";
+import { beta2dSheets, betaSheets } from "./beta";
 
 // Offscreen outfit gallery (no DB): render.mjs bundles this with vite, opens it in Chromium and calls renderNamed.
 
@@ -108,10 +109,12 @@ W.renderSheet = (tiles: Tile[], cols: number, tw: number, th: number, title: str
   r.dispose();
   return out.toDataURL("image/png");
 };
-const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets(), ...wave1Sheets(), ...fightSheets(), ...wave3Sheets()];
-W.sheetNames = () => SHEETS.map((s) => s.name);
+const SHEETS: Sheet[] = [closeupSheet(TAG), ...gallerySheets(), ...wave1Sheets(), ...fightSheets(), ...wave3Sheets(), ...betaSheets()];
+const SHEETS2D = beta2dSheets();                                                    // 0118: 2D canvases (sprites, nameplates)
+W.sheetNames = () => [...SHEETS.map((s) => s.name), ...Object.keys(SHEETS2D)];
 W.coverage = () => coverageMd(SHEETS);
 W.renderNamed = (n: string) => {
+  if (SHEETS2D[n]) return SHEETS2D[n]();
   const s = SHEETS.find((x) => x.name === n) as Sheet;
   return (W.renderSheet as (t: Tile[], c: number, w: number, h: number, ti: string) => string)(s.tiles, s.cols, s.tw, s.th, s.title);
 };

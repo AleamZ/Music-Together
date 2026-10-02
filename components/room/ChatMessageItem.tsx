@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { BETA_TITLE, betaFrame } from "@/lib/game/beta/frame";
 import type { ChatMessage } from "@/lib/chat";
 import { parseChatMessageBody, MENTION_REGEX } from "@/lib/chat-helpers";
 import { parseAnnouncement } from "@/lib/game/fishing/announce";
@@ -19,6 +20,8 @@ interface ChatMessageItemProps {
   onDelete: (id: string) => void;
   onJumpToReply: (messageId: string) => void;
   onMentionUser?: (username: string) => void;
+  /** 0118: the author's Beta keepsake tier (the β frame), when they were a Beta player. */
+  betaTier?: number | null;
 }
 
 export default function ChatMessageItem({
@@ -34,6 +37,7 @@ export default function ChatMessageItem({
   onDelete,
   onJumpToReply,
   onMentionUser,
+  betaTier = null,
 }: ChatMessageItemProps) {
   const isMe = !!message.account_id && message.account_id === currentAccountId;
   // A rare catch (v14) or a land sale (v15) posted by the server: a system line — no avatar, no reply; the room admin
@@ -169,8 +173,9 @@ export default function ChatMessageItem({
       <div className="min-w-0 flex-1">
         {/* Header: Author + Badges + Time */}
         <div className="flex flex-wrap items-baseline gap-1.5 leading-none mb-1">
-          <span className="font-playfair text-xs font-bold text-burgundy">
-            {message.username}
+          <span className={`font-playfair text-xs font-bold text-burgundy${betaTier != null ? " rounded-sm border border-amber-500 bg-amber-50 px-1" : ""}`}
+            title={betaTier != null ? BETA_TITLE : undefined}>
+            {betaFrame(message.username ?? "", betaTier)}
           </span>
 
           {isMe && (

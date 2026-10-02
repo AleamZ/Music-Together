@@ -80,15 +80,16 @@ describe("storeErrorMessage", () => {
 
 describe("100 fashion catalog items integrity", () => {
   it("defines exactly 140 total items in ITEM_ART (15 starters + 100 store fashion items + 15 accessories + 10 hats)", () => {
-    expect(Object.keys(ITEM_ART)).toHaveLength(140);
+    expect(Object.keys(ITEM_ART).filter((id) => !id.startsWith("beta_"))).toHaveLength(140);   // 0118 keepsakes aside
   });
 
   it("ensures each fashion slot has substantial variety", () => {
-    const hats = Object.values(ITEM_ART).filter((a) => a.slot === "hat");
-    const tops = Object.values(ITEM_ART).filter((a) => a.slot === "top");
-    const bottoms = Object.values(ITEM_ART).filter((a) => a.slot === "bottom");
-    const shoes = Object.values(ITEM_ART).filter((a) => a.slot === "shoes");
-    const neck = Object.values(ITEM_ART).filter((a) => a.slot === "neck");
+    const STORE = Object.fromEntries(Object.entries(ITEM_ART).filter(([id]) => !id.startsWith("beta_")));   // 0118 keepsakes aside
+    const hats = Object.values(STORE).filter((a) => a.slot === "hat");
+    const tops = Object.values(STORE).filter((a) => a.slot === "top");
+    const bottoms = Object.values(STORE).filter((a) => a.slot === "bottom");
+    const shoes = Object.values(STORE).filter((a) => a.slot === "shoes");
+    const neck = Object.values(STORE).filter((a) => a.slot === "neck");
 
     // 2 starter hats + 20 store hats + 10 hats (0029) = 32
     expect(hats.length).toBe(32);
@@ -100,7 +101,7 @@ describe("100 fashion catalog items integrity", () => {
     expect(shoes.length).toBe(18);
     // 2 starter neck + 15 store neck + 4 necklaces (0029) = 21
     expect(neck.length).toBe(21);
-    expect(Object.values(ITEM_ART).filter((a) => a.slot === "wrist")).toHaveLength(5);
-    expect(Object.values(ITEM_ART).filter((a) => a.slot === "hairpin")).toHaveLength(6);
+    expect(Object.values(STORE).filter((a) => a.slot === "wrist")).toHaveLength(5);
+    expect(Object.values(STORE).filter((a) => a.slot === "hairpin")).toHaveLength(6);
   });
 });

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import BetaBoostChip from "@/components/game/hud/BetaBoostChip";
+import { BETA_TITLE, betaFrame } from "@/lib/game/beta/frame";
 import { rodLookOf } from "@/lib/game/diorama/character/held";
 import { equippedRod } from "@/lib/game/fishing/state";
 import { readGfx, subscribeGfx, type GfxMode } from "@/lib/game/diorama/flag";
@@ -1112,8 +1114,9 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
               <SpritePreview look={myLook} scale={2} className="shrink-0 rounded-sm bg-parchment" />
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="min-w-0 flex-1 truncate text-xl" title={`${myBadges ? `${myBadges} ` : ""}${myName}`}>
-                    {myBadges ? `${myBadges} ` : ""}{myName}
+                  <span className={`min-w-0 flex-1 truncate text-xl${myLook.beta != null ? " rounded-sm border border-amber-500 px-1" : ""}`}
+                    title={`${myBadges ? `${myBadges} ` : ""}${myName}${myLook.beta != null ? ` — ${BETA_TITLE}` : ""}`}>
+                    {myBadges ? `${myBadges} ` : ""}{betaFrame(myName, myLook.beta)}
                   </span>
                   <button type="button" className="pch-btn relative shrink-0 px-1.5 py-0.5 text-base tabular-nums" title="Hồ sơ: cấp độ, thành tựu, danh hiệu, Fishdex, xếp hạng (1)" data-testid="profile-hud"
                     data-hotkey="profile" onClick={() => { setPanel("profile"); void progress.reload(); }}>
@@ -1122,6 +1125,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
                 </div>
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-base">
                   <CoinsChip state={fishing.data.state} />
+                  <BetaBoostChip token={token} />
                   <WeatherChip
                     weather={weather}
                     tempC={weatherSource.tempC}

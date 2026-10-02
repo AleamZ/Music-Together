@@ -473,6 +473,39 @@ export const GARMENT_ART: Record<string, GarmentArt> = {
   fm_sandals: { slot: "shoes", gender: "unisex", body: { shoe: "sandals" }, colors: { f: "#8b5a33", F: "#5e3a1f" } },
 };
 
+// ---- 0118 "Kỷ niệm Beta": cream + gold, a gold collar and a small β on the chest ----
+/** The β emblem, 3×6 px, its top-left at (x, y). */
+function betaGlyph(p: Pix, x: number, y: number, c = "1"): void {
+  p.v(x, y, y + 5, c);
+  p.set(x + 1, y, c); p.set(x + 2, y + 1, c); p.set(x + 1, y + 2, c);
+  p.set(x + 2, y + 3, c); p.set(x + 1, y + 4, c);
+}
+function betaChest(c: GarmentCtx, L: GarmentLayers, coat: boolean): void {
+  const u = L.under;
+  if (c.dir === "left") {
+    u.h(9, 13, 21, "1");
+    if (coat) { hemExt(c, u, 3); u.h(7, 16, ROW.hips + 2, "1"); }
+    return;
+  }
+  u.h(9, 14, 21, "1"); u.h(c.g.tL + 1, c.g.tR - 1, 22, "2");
+  if (coat) { hemExt(c, u, 3); u.h(c.g.hL - 1, c.g.hR + 1, ROW.hips + 2, "1"); }
+  if (c.dir === "up") return;
+  if (coat) u.v(12, 23, ROW.hips + 2, "1");
+  const [l] = span(c, 24);
+  betaGlyph(u, l + 1, 23);
+}
+GARMENT_ART.beta_ao = {
+  slot: "top", gender: "unisex", body: { sleeve: "short" },
+  colors: { t: "#f6ecd2", T: "#dccb9f", u: "#fffaf0", K: "#d4a72c", a: "#f6ecd2", A: "#dccb9f", 1: "#d4a72c", 2: "#a87e1c" },
+  draw(c, L) { betaChest(c, L, false); },
+};
+GARMENT_ART.beta_set = {
+  slot: "outfit", gender: "unisex", long: true, body: { sleeve: "long" },
+  colors: { t: "#f6ecd2", T: "#dccb9f", u: "#fffaf0", K: "#d4a72c", a: "#f6ecd2", A: "#dccb9f", p: "#d4b25a", P: "#a8842f", l: "#f6ecd2",
+    1: "#d4a72c", 2: "#a87e1c" },
+  draw(c, L) { betaChest(c, L, true); },
+};
+
 /** The ids drawn here (the store agent seeds exactly these). */
 export const GARMENT_ART_IDS: readonly string[] = Object.keys(GARMENT_ART);
 

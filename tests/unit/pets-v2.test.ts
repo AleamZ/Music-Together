@@ -71,7 +71,8 @@ describe("v21 pets: the TS rules mirror 0074", () => {
       id: m[1], name: m[2], kind: m[3], style: m[4], w: Number(m[5]), h: Number(m[6]), price: Number(m[7]), cap: Number(m[8]),
     }));
     expect(rows.length).toBe(17);
-    expect(rows).toEqual(FURNITURE.slice(-rows.length).map((f) => ({ ...f, cap: f.cap ?? 0 })));
+    const shop = FURNITURE.filter((f) => !f.id.startsWith("beta_"));   // 0118: the Beta keepsake is not a shop row
+    expect(rows).toEqual(shop.slice(-rows.length).map((f) => ({ ...f, cap: f.cap ?? 0 })));
   });
 });
 
