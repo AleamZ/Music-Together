@@ -57,3 +57,10 @@
 @media (max-width: 640px) {
   .lunch-scope .brand-logo { width: 40px; height: 40px; }
 }
+
+/* Food / drink case switch. */
+.lunch-scope .case-mode{display:flex;justify-content:center;gap:0;margin:-18px auto 26px;width:max-content;border:1px solid #ffffff30;background:#17232c88}
+.lunch-scope .case-mode button{display:flex;align-items:center;gap:7px;padding:9px 22px;font-size:14px;color:#c2c8cd;background:none;border:0}
+.lunch-scope .case-mode button.selected{background:linear-gradient(#739b4d,#5b8139);color:#fff}
+.lunch-scope .case-mode button:hover:not(.selected):not(:disabled){background:#ffffff10}
+.lunch-scope .food-card .custom-food-art{color:#dec989}

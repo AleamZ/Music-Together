@@ -41,12 +41,12 @@ const englishNames: Record<number, string> = {
 };
 
 export function foodName(food: Food, language: Language) {
-  return language === 'en' ? englishNames[food.image] ?? food.name : food.name;
+  return language === 'en' ? food.nameEn ?? englishNames[food.image] ?? food.name : food.name;
 }
 
 export function foodSubtitle(food: Food, language: Language) {
   if (language === 'vi') return food.sub;
-  return food.veg ? copy.en.vegetarianDish : copy.en.lunchDish;
+  return food.drink ? 'Drink' : food.veg ? copy.en.vegetarianDish : copy.en.lunchDish;
 }
 
 export function priceLabel(thousands: number | string, language: Language, approximate = false) {
