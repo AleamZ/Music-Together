@@ -56,4 +56,4 @@ const rows:DrinkRow[]=[
 ];
 // Drinks are cheaper than meals, so tiers use their own price bands.
 export function drinkRarity(price:number){return price<=20?0:price<=35?1:price<=50?2:price<=65?3:4}
-export const drinks:Food[]=rows.map(([name,nameEn,sub,price],i)=>({customId:`drink-${i}`,drink:true,name,nameEn,sub,price,rarity:drinkRarity(price),image:-1,quip:''}));
+export const drinks:Food[]=rows.map(([name,nameEn,sub,price],i)=>({customId:`drink-${i}`,drink:true,name,nameEn,sub,price,rarity:drinkRarity(price),image:1000+i,quip:''}));
