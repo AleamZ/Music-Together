@@ -259,6 +259,15 @@ export function ricePrice(kg: number, pricePerKg: number, dry: boolean): number 
   return dry ? kg * pricePerKg : Math.floor((kg * pricePerKg * 7) / 10);
 }
 
+/** Hours as the farm texts print them (0120: a crop fits in a day, so its windows are fractions of an hour): rounded to
+ *  a quarter hour — up for a window's start, down for its end or a deadline (acting at a printed hour is never early or
+ *  late), to the nearest otherwise — with a decimal comma: 8, 2,5, 3,75. */
+export function hoursText(x: number, round: "up" | "down" | "near" = "near"): string {
+  const f = round === "up" ? Math.ceil : round === "down" ? Math.floor : Math.round;
+  const q = f(x * 4 + (round === "near" ? 0 : round === "up" ? -1e-6 : 1e-6)) / 4;
+  return q.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+}
+
 /** Hours from soaking to ripe with prompt actions: 2 + 56·s (spec §8.1). */
 export function ripeAfterHours(v: Variety): number {
   return Math.round(2 + 56 * v.scale);
@@ -266,9 +275,9 @@ export function ripeAfterHours(v: Variety): number {
 
 /** A hoa-màu seed's line (§9): how it is planted, when it is ripe, the yield and the price. */
 function describeUpland(u: UplandCrop): string {
-  const how = u.method === "cutting" ? "Trồng dây" : u.method === "direct" ? "Gieo thẳng" : `Ươm ${u.nurseryReadyH ?? 0} giờ rồi trồng`;
+  const how = u.method === "cutting" ? "Trồng dây" : u.method === "direct" ? "Gieo thẳng" : `Ươm ${hoursText(u.nurseryReadyH ?? 0)} giờ rồi trồng`;
   const n = u.pickings.length, h = uplandHours(u, 1);
-  return `${how} · ${n > 1 ? `lứa đầu ~${h} giờ, ${n} lứa` : `chín ~${h} giờ`} · ${u.baseKg} kg/thửa · `
+  return `${how} · ${n > 1 ? `lứa đầu ~${hoursText(h)} giờ, ${n} lứa` : `chín ~${hoursText(h)} giờ`} · ${u.baseKg} kg/thửa · `
     + `${u.pricePerKg.toLocaleString("vi-VN")} xu/kg`;
 }
 

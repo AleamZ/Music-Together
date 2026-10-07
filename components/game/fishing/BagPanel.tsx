@@ -17,6 +17,7 @@ import type { RodActions } from "@/hooks/useFishingController";
 import FishLine from "./FishLine";
 import RodBuilds from "./RodBuilds";
 import WearBar from "./WearBar";
+import ForestBag from "@/components/game/forest/ForestBag";
 
 /** The field's side of the bag (v15.2 R29): my farm stock, the farm catalog's items and critter kinds (none before 0018),
  *  the server's clock, and Nạp thuốc. */
@@ -122,7 +123,7 @@ function untilText(until: string): string {
  *  hook, line, reel, phao — mounted and unmounted here), the baits, the groundbait, the bait box and bucket, and — once
  *  the field has loaded — the farm tools and the cua & ốc. */
 export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onClose, farm = null, groundbaitPick = null,
-  onPickGroundbait, onGroundbait, onNotebook, rods = null }: {
+  onPickGroundbait, onGroundbait, onNotebook, rods = null, forestToken = null }: {
   state: FishingState | null;
   catalog: FishingCatalog | null;
   /** An RPC is in flight: the buttons wait. */
@@ -132,6 +133,8 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
   onRelease: (fishId: string) => void;
   onClose: () => void;
   farm?: BagFarm | null;
+  /** 0121: the session, to show the forest's tools and goods (forest_state); null: no forest section. */
+  forestToken?: string | null;
   /** 0110: the groundbait the HUD throws, picking one, and throwing one where I last fished. */
   groundbaitPick?: string | null;
   onPickGroundbait?: (item: string) => void;
@@ -318,6 +321,7 @@ export default function BagPanel({ state, catalog, busy, onEquip, onRelease, onC
         </section>
         {farm && <FarmTools farm={farm} />}
         {farm && farm.critters.length > 0 && <Critters farm={farm} />}
+        {forestToken && <ForestBag token={forestToken} />}
       </div>
     </ParchmentModal>
   );

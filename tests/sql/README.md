@@ -238,3 +238,23 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   refused). Re-runs 0116 twice with `\i`; restores the `room_creation_open` / `unified_world` flags.
 
   sets its rods as instances; `anticheat-guards.sql` calls the seven rod RPCs (103 guarded calls); 0117 adds `groundbait_spots` (104).
+
+## Trồng trọt một ngày (0120) · Rừng tràm hoàn thiện (0121)
+
+- `farm-one-day-smoke.sql` (0120: every crop ready within 24 h, khoai in 8; the catalog = `tests/fixtures/farm-catalog-0120.json`,
+  which `tests/unit/farm-one-day.test.ts` reads too; crops already planted are squeezed toward now by new ÷ old — same
+  phase, same care marks, the water they had at every moment of their past, less growth left — and a re-run changes
+  nothing): `psql -v catalog=<abs>/tests/fixtures/farm-catalog-0120.json -f tests/sql/farm-one-day-smoke.sql` after the
+  chain. It puts the pre-0120 catalog back inside one transaction, re-runs 0120 twice with `\i` and rolls back.
+  From 0120 on a lease runs its 96 h through several crops: `econ-farm-smoke.sql` asserts the leases outlive the hand
+  harvest, the harvester and the last picking (and frees them for its later rents); it and the anti-cheat v2 farm smokes
+  build their ripe nếp in the variety's hours (`48·s + 2` h after transplanting) instead of 0013's fixed 50 h.
+- `forest-finish-smoke.sql` (0121: `_bow_bonus` / `_pan_bonus`; a hunt draws the best bow (tier, then durability), names it
+  in the round and keeps its tier in `mg_live.meta`; `_wild_json.bow` (null without one, a broken one skipped); a dish
+  draws the best pan the same way; wood / dish sales are work (XP); `_beta_net_worth` counts rice and the forest; the
+  `d_wood` / `d_hunt` dailies): chain-level, re-runs 0121 twice with `\i`, one transaction rolled back. Re-apply 0121
+  after `forest-professions-smoke.sql` / `forest-complete-smoke.sql` / `econ-crafts-smoke.sql` (they put 0096 / 0097 /
+  0103's `wild_start` / `wild_finish` / `cook_start` / `cook_finish` / `_wild_json` back) and after `econ-rewards-smoke.sql`
+  (0104's `_pg_work_reason`) and `beta-reset-smoke.sql` (0118's `_beta_net_worth`).
+  `beta-reset-smoke.sql` now also checks that a Tiều phu's tools and bags are wiped and that picking the nghề again after
+  the reset gives the starter axe back.

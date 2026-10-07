@@ -21,11 +21,13 @@ export interface ChopView {
 /** How far ahead (ticks) the track shows a beat. */
 const AHEAD = 60;
 
-export default function ChopGame({ view, onEnd, onClose }: {
+export default function ChopGame({ view, onEnd, onClose, onAgain }: {
   view: ChopView;
   /** The round is over: the presses (ticks), or null when given up / lost. */
   onEnd: (presses: number[] | null) => void;
   onClose: () => void;
+  /** 0121: the tree still stands — another round on it (Space / E). */
+  onAgain?: (() => void) | null;
 }) {
   const presses = useRef<number[]>([]);
   const inputs = useCallback((): [readonly number[] | null, readonly number[] | null] => [presses.current, null], []);
@@ -78,12 +80,17 @@ export default function ChopGame({ view, onEnd, onClose }: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
-      if (e.code === "Space" || e.code === "KeyE") { e.preventDefault(); if (!e.repeat) press(); }
+      if (e.code === "Space" || e.code === "KeyE") {
+        e.preventDefault();
+        if (e.repeat) return;
+        if (view.phase === "done" && onAgain) onAgain();
+        else press();
+      }
       else if (e.code === "Escape") { e.preventDefault(); if (view.phase === "playing") finish(null); else onClose(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [press, finish, onClose, view.phase]);
+  }, [press, finish, onClose, onAgain, view.phase]);
 
   const shake = tick - hitAt < 8;
   return (
@@ -117,7 +124,16 @@ export default function ChopGame({ view, onEnd, onClose }: {
         ) : (
           <div className="mt-2">
             <p className="whitespace-pre-line text-sm">{view.phase === "sending" ? "Đang tính…" : view.message}</p>
-            {view.phase === "done" && <button type="button" className="pch-btn mt-1 w-full" onClick={onClose}>Đóng</button>}
+            {view.phase === "done" && (
+              <div className="mt-1 flex gap-1">
+                {onAgain && (
+                  <button type="button" className="pch-btn pch-btn-primary flex-1" onClick={onAgain}>
+                    🪓 Chặt tiếp <span className="pointer-coarse:hidden">(Space)</span>
+                  </button>
+                )}
+                <button type="button" className="pch-btn flex-1" onClick={onClose}>Đóng</button>
+              </div>
+            )}
           </div>
         )}
       </div>

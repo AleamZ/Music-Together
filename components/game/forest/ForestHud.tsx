@@ -25,7 +25,17 @@ import { addFelled, setFelled } from "@/lib/game/forest/felled-store";
 import { nearForest } from "@/lib/game/world/forest-grid";
 import type { MapId } from "@/lib/game/maps/types";
 import ChopGame, { type ChopView } from "./ChopGame";
+import KeyBadge from "../KeyBadge";
+import { bowBonus, panBonus, SELL_MAX } from "@/lib/game/forest/catalog";
 import CookGame, { type CookView } from "./CookGame";
+
+/** 0121: what a tool's tier does, for the stall's list. */
+function toolPerk(t: { kind: string; power: number }): string {
+  if (t.kind === "axe") return ` · sức chặt ${t.power}`;
+  if (t.kind === "bow" && bowBonus(t.power) > 0) return ` · săn trúng +${bowBonus(t.power)}%`;
+  if (t.kind === "pan" && panBonus(t.power) > 0) return ` · món +${panBonus(t.power)} điểm`;
+  return "";
+}
 
 export default function ForestHud(props: {
   token: string;
@@ -45,6 +55,10 @@ export default function ForestHud(props: {
   const [cook, setCook] = useState<CookView | null>(null);
   const [panel, setPanel] = useState<"cook" | "stall" | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 0121: the last round left the tree standing — "Chặt tiếp" starts the next one on it. */
+  const [canAgain, setCanAgain] = useState(false);
+  /** Each round gets a fresh minigame (its presses and its clock start over): the overlay's key. */
+  const [roundNo, setRoundNo] = useState(0);
   /** Econ v2: the thương lái's day after my last sale at the stall (null until I sell). */
   const [npc, setNpc] = useState<NpcQuota | null>(null);
 
@@ -99,12 +113,27 @@ export default function ForestHud(props: {
     return f && state ? Math.max(0, f.respawnMs - state.serverNowMs) : 0;             // as of the last poll
   };
 
-  const startChop = async () => {
+  // again: from a finished round's "Chặt tiếp" (its overlay stays up until the next round starts)
+  const startChop = async (again = false) => {
     const c = canvas(), twoD = mapId === "rung_tram";
     const w = twoD ? c?.localPos() : c?.worldPos();
-    if (!tree || !w || busy || gameOpen) return;
+    if (!tree || !w || busy || (gameOpen && !again)) return;
     const round = await run(() => chopStart(token, tree.cx, tree.cy, tree.k, twoD ? "rung_tram" : "wild", w.x, w.y));
-    if (round) setChop({ round, phase: "playing", message: "", live: liveSync(token, "chop") });
+    if (round) {
+      setCanAgain(false);
+      setRoundNo((n) => n + 1);
+      setChop({ round, phase: "playing", message: "", live: liveSync(token, "chop") });
+    }
+  };
+  /** Sell a whole stack: the stall takes at most SELL_MAX a call (more is refused as a bad quantity). */
+  const sellAll = async (sell: (qty: number) => Promise<StallSale>, total: number): Promise<StallSale | null> => {
+    let left = total, last: StallSale | null = null, earned = 0, cut = 0;
+    while (left > 0) {
+      const n = Math.min(SELL_MAX, left);
+      const r = await sell(n);
+      earned += r.earned; cut += r.cut; last = r; left -= n;
+    }
+    return last ? { ...last, earned, cut } : null;
   };
   const endChop = (presses: number[] | null) => {
     const v = chop;
@@ -116,6 +145,7 @@ export default function ForestHud(props: {
       try {
         const r = await chopFinish(token, presses);
         if (r.forest) take(r.forest);
+        setCanAgain(r.result === "ok");
         if (r.result === "felled") addFelled(v.round.tree, Date.now() + (treeById(v.round.kind)?.respawnMin ?? 2) * 60_000);
         if (r.result === "lost") {
           message = r.why === "felled" ? "Có người đốn mất cây này rồi." : r.why === "late" ? "Mạng chập chờn — lượt này không được tính."
@@ -126,9 +156,11 @@ export default function ForestHud(props: {
         } else {
           message = `${r.hits}/3 nhịp → ${r.blows} nhát (${r.have}/${r.need})`;
         }
-        if (r.durability === 0) message += "\n⚠️ Rìu đã mòn hết — mua rìu mới ở Sạp thợ săn.";
+        if (r.durability === 0) message += "\n⚠️ Rìu đã mòn hết — sửa hoặc mua rìu mới ở Sạp thợ săn (Bãi đất trống).";
+        else if (r.durability !== null && r.durability <= 5) message += `\n⚠️ Rìu còn ${r.durability} độ bền — nhớ ghé Sạp thợ săn sửa.`;
       } catch (e) {
         message = forestErrorText(e);
+        setCanAgain(false);
       }
       setChop((cur) => (cur ? { ...cur, phase: "done", message } : cur));
     })();
@@ -192,24 +224,27 @@ export default function ForestHud(props: {
       {!blocked && !gameOpen && (tree || chef || atStall) && (
         <div className="pch pointer-events-auto absolute bottom-48 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 px-2 py-1 font-vt text-base">
           {tree && (
-            <button type="button" className="pch-btn px-2 py-0.5" disabled={busy || waitMs > 0 || !axe} onClick={() => void startChop()}
-              title={axe ? `${toolById(axe.item)?.name} (${axe.durability})` : "Chưa có rìu"}>
+            <button type="button" className="pch-btn relative px-2 py-0.5" disabled={busy || waitMs > 0 || !axe} onClick={() => void startChop()}
+              data-hotkey="chop" title={axe ? `${toolById(axe.item)?.name} (${axe.durability}) (G)` : "Chưa có rìu"}>
               🪓 Đốn {treeOf(tree.cx, tree.cy, tree.k).name}{waitMs > 0 ? ` (mọc lại sau ${Math.ceil(waitMs / 60000)}′)` : ""}
+              {axe && waitMs === 0 && <KeyBadge id="chop" />}
             </button>
           )}
+          {tree && !axe && state && <span className="text-sm">Chưa có rìu — mua ở 🪵 Sạp thợ săn (Bãi đất trống)</span>}
           {chef && <button type="button" className="pch-btn px-2 py-0.5" onClick={() => setPanel("cook")}>🍳 Nấu ăn</button>}
-          {atStall && <button type="button" className="pch-btn px-2 py-0.5" onClick={() => setPanel("stall")}>🪵 Gỗ · món · rìu</button>}
+          {atStall && <button type="button" className="pch-btn px-2 py-0.5" onClick={() => setPanel("stall")}>🪵 Gỗ · món · đồ nghề</button>}
         </div>
       )}
 
-      {chop && <ChopGame view={chop} onEnd={endChop} onClose={() => setChop(null)} />}
+      {chop && <ChopGame key={roundNo} view={chop} onEnd={endChop} onClose={() => { setChop(null); setCanAgain(false); }}
+        onAgain={canAgain && !busy && tree !== null && treeKey(tree.cx, tree.cy, tree.k) === chop.round.tree ? () => void startChop(true) : null} />}
       {cook && <CookGame view={cook} onEnd={endCook} onClose={() => { setCook(null); void reload(); }} />}
 
       {panel && state && (
         <div className="pointer-events-auto absolute inset-0 z-30 grid place-items-center bg-black/30 font-vt" onClick={() => setPanel(null)}>
           <div className="pch max-h-[80vh] w-[min(92vw,380px)] overflow-y-auto p-3 text-base" onClick={(e) => e.stopPropagation()} role="dialog">
             <div className="mb-2 flex items-center justify-between">
-              <b>{panel === "cook" ? "🍳 Bếp của Đầu bếp" : "🪵 Sạp thợ săn — gỗ, món ăn, rìu"}</b>
+              <b>{panel === "cook" ? "🍳 Bếp của Đầu bếp" : "🪵 Sạp thợ săn — gỗ, món ăn, đồ nghề"}</b>
               <button type="button" className="pch-btn px-2" onClick={() => setPanel(null)} aria-label="Đóng">✕</button>
             </div>
             {panel === "cook" ? (
@@ -233,10 +268,13 @@ export default function ForestHud(props: {
                   {state.wood.length === 0 ? <p className="text-sm">Chưa có gỗ.</p> : state.wood.map((w) => (
                     <div key={w.item} className="flex items-center justify-between text-sm">
                       <span>{LOG_NAME[w.item as LogId] ?? w.item}: {w.qty}{w.half > 0 ? ` + ${w.half} nửa giá` : ""} · {logPrice(w.item)} xu</span>
-                      <button type="button" className="pch-btn px-2" disabled={busy} onClick={() => void run(() => woodSell(token, w.item, w.qty + w.half)).then(sold)}>Bán hết</button>
+                      <button type="button" className="pch-btn px-2" disabled={busy} onClick={() => void run(() => sellAll((n) => woodSell(token, w.item, n), w.qty + w.half)).then(sold)}>Bán hết</button>
                     </div>
                   ))}
                 </section>
+                {Object.values(state.meat).some((n) => n > 0) && (
+                  <p className="text-sm opacity-80">🍖 Thịt, lông, da… bán ở tab 🏹 Săn bắt (phím 6) của sạp này.</p>
+                )}
                 <section>
                   <b className="text-sm">Món ăn</b>
                   {state.dishes.length === 0 ? <p className="text-sm">Chưa có món.</p> : state.dishes.map((d) => {
@@ -247,6 +285,7 @@ export default function ForestHud(props: {
                         <span className="flex gap-1">
                           <button type="button" className="pch-btn px-1" disabled={busy} onClick={() => void run(() => cookEat(token, d.dish, d.quality)).then((x) => { if (x) { take(x.forest); toast(`😋 +${x.gained} thể lực${r?.buff && d.quality > 0 ? ` · ${DISH_BUFF_TEXT[r.buff](r.buffValue)} ${dishBuffMin(r, d.quality)}′` : ""}`); } })}>Ăn</button>
                           <button type="button" className="pch-btn px-1" disabled={busy || !r} onClick={() => void run(() => cookSell(token, d.dish, d.quality, 1)).then(sold)}>Bán {r ? dishPrice(r, d.quality) : ""}</button>
+                          {d.qty > 1 && <button type="button" className="pch-btn px-1" disabled={busy || !r} onClick={() => void run(() => sellAll((n) => cookSell(token, d.dish, d.quality, n), d.qty)).then(sold)}>Bán hết</button>}
                         </span>
                       </div>
                     );
@@ -259,7 +298,7 @@ export default function ForestHud(props: {
                     const worn = mine && mine.durability < mine.max;
                     return (
                       <div key={t.id} className="flex items-center justify-between gap-1 text-sm">
-                        <span>{t.kind === "axe" ? "🪓" : t.kind === "bow" ? "🏹" : "🍳"} {t.name}{t.kind === "axe" ? ` · sức chặt ${t.power}` : ""} · bền {mine ? `${mine.durability}/${mine.max}` : t.durability}</span>
+                        <span>{t.kind === "axe" ? "🪓" : t.kind === "bow" ? "🏹" : "🍳"} {t.name}{toolPerk(t)} · bền {mine ? `${mine.durability}/${mine.max}` : t.durability}{mine ? " ✓" : ""}</span>
                         <span className="flex gap-1">
                           {worn && mine && <button type="button" className="pch-btn px-1" disabled={busy} onClick={() => void run(() => toolRepair(token, t.id)).then((x) => { if (x) { take(x.forest); onCoins(); toast(`🔧 Sửa xong rồi, xài tiếp thôi! (−${x.cost} xu)`); } })}>Sửa {repairCost(t, mine.durability, mine.max)}</button>}
                           <button type="button" className="pch-btn px-1" disabled={busy} onClick={() => void run(() => toolBuy(token, t.id)).then((f) => { if (f) { take(f); onCoins(); toast(`${t.name} ✓`); } })}>{t.price} xu</button>

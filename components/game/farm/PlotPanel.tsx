@@ -127,7 +127,7 @@ function Land({ p, ctx, busy, onAct }: { p: PlotView; ctx: LandCtx; busy: boolea
       <BuyListedButton key="listed" p={p} ctx={ctx} busy={busy} onAct={onAct}>Mua · {formatXu(p.salePrice)}</BuyListedButton>
     ),
     p.owner && p.subleasePrice !== null && (
-      <RentSubleaseButton key="sublease" p={p} ctx={ctx} busy={busy} onAct={onAct}>Thuê một vụ · {formatXu(p.subleasePrice)}</RentSubleaseButton>
+      <RentSubleaseButton key="sublease" p={p} ctx={ctx} busy={busy} onAct={onAct}>Thuê 4 ngày · {formatXu(p.subleasePrice)}</RentSubleaseButton>
     ),
   ].filter(Boolean);
   return buttons.length > 0 ? <div className="flex flex-wrap justify-end gap-2">{buttons}</div> : null;

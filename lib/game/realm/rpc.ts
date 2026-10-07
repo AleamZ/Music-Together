@@ -9,7 +9,13 @@ import {
 } from "./model";
 
 export interface WildAnimal { id: number; species: WildSpeciesId; hx: number; hy: number; seed: number; bornMs: number; expiresMs: number; photographed: boolean }
-export interface WildState { animals: WildAnimal[]; bag: Partial<Record<WildItemId, number>>; album: Record<string, number>; killsToday: number }
+/** 0121: the bow a hunt would draw (the best tier, then the most durability). */
+export interface WildBow { item: string; durability: number; max: number; power: number; bonus: number }
+export interface WildState {
+  animals: WildAnimal[]; bag: Partial<Record<WildItemId, number>>; album: Record<string, number>; killsToday: number;
+  /** 0121: my bow, null when I have none that shoots; undefined from a server before 0121 (unknown: never block). */
+  bow?: WildBow | null;
+}
 export interface PartyMember { id: string; name: string; map: MapId | null; x: number; y: number }
 export interface Party { id: number; leader: string; members: PartyMember[]; chat: Array<{ id: number; name: string; body: string; atMs: number }> }
 export interface BossFight {
@@ -50,7 +56,11 @@ export function parseWild(raw: unknown): WildState | null {
   for (const [k, v] of Object.entries(obj(r.bag))) if (isWildItem(k) && num(v) > 0) bag[k] = num(v);
   const album: Record<string, number> = {};
   for (const [k, v] of Object.entries(obj(r.album))) album[k] = num(v);
-  return { animals, bag, album, killsToday: num(r.kills_today) };
+  const b = r.bow && typeof r.bow === "object" ? obj(r.bow) : null;
+  const bow: WildBow | null | undefined = !("bow" in r) ? undefined
+    : b && typeof b.item === "string" ? { item: b.item, durability: num(b.durability), max: num(b.max, 1), power: num(b.power, 1), bonus: num(b.bonus) }
+    : null;
+  return { animals, bag, album, killsToday: num(r.kills_today), ...(bow === undefined ? {} : { bow }) };
 }
 
 export function parseParty(r: R): { party: Party | null; invites: WorldState["invites"] } {
@@ -194,7 +204,7 @@ export const snowStop = (token: string, roomId: string) => call("snow_event_stop
 const TEXTS: Record<string, string> = {
   "too far": "Còn xa quá — lại gần hơn nhé.",
   "not in forest": "Muốn săn thì vô rừng tràm nha!",   // 0096 (0097: forest-content copy)
-  "no bow": "Cần có cung mới đi săn được nghen!",   // 0097
+  "no bow": "Cần có cung mới đi săn được nghen! Mua cung ở 🪵 Sạp thợ săn (Bãi đất trống), mục Đồ nghề.",   // 0097 (0121: where)
   gone: "Con vật đã chạy mất.",
   cooldown: "Chậm lại một nhịp…",
   cannot: "Không làm vậy với con này được.",

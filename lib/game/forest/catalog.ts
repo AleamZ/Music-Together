@@ -83,6 +83,12 @@ export const TOOLS: readonly ToolDef[] = [
   { id: "riu_tinh_luyen", prof: "tieu_phu", name: "Rìu tinh luyện", kind: "axe", durability: 300, power: 4, price: 4500, starter: false, repairPp: 4 },
 ];
 export const toolById = (id: string): ToolDef | null => TOOLS.find((t) => t.id === id) ?? null;
+/** 0121 _bow_bonus: the points a bow of this tier adds to a hunt's chance (5 a tier above the first). */
+export const bowBonus = (tier: number): number => 5 * Math.max(0, tier - 1);
+/** 0121 _pan_bonus: the points a pan of this tier adds to a dish's score (4 a tier above the first). */
+export const panBonus = (tier: number): number => 4 * Math.max(0, tier - 1);
+/** The most one sale at the stall takes (wood_sell / cook_sell / wild_sell refuse more as a bad quantity). */
+export const SELL_MAX = 999;
 export const starterOf = (prof: string): ToolDef | null => TOOLS.find((t) => t.prof === prof && t.starter) ?? null;
 
 export type RecipeId = "ca_loc_nuong_trui" | "canh_chua_ca_loc" | "ca_ro_kho_tieu" | "bong_sung_xao_toi" | "goi_bong_dien_dien"

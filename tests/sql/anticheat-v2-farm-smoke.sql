@@ -101,10 +101,14 @@ begin
   update public.rat_clocks set last_k = 9000000000000000000 where room_id = room;
   insert into public.wallets (account_id, coins) values (a, 100000) on conflict (account_id) do update set coins = 100000;
   perform public._farm_do_rent(room, a, 5, now() - interval '1 hour');
+  -- a nếp crop ripe for 2 h, in the variety's hours (0120: scale 1 → 0.25; transplanted 48·s + 2 h ago, sown 10·s h before)
   insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, transplant_at, water_log)
-  values (room, 5, a, 'nep', now() - interval '64 hours', now() - interval '63 hours', now() - interval '60 hours',
-          now() - interval '50 hours', jsonb_build_array(jsonb_build_object('t', now() - interval '64 hours', 'l', 3),
-                                                          jsonb_build_object('t', now() - interval '5 hours', 'l', 1)));
+  select room, 5, a, 'nep', y.sow - interval '4 hours', y.sow - interval '3 hours', y.sow, y.tp,
+         jsonb_build_array(jsonb_build_object('t', y.sow - interval '4 hours', 'l', 3),
+                           jsonb_build_object('t', now() - interval '5 hours', 'l', 1))
+    from (select now() - make_interval(secs => (48 * v.scale + 2) * 3600) as tp,
+                 now() - make_interval(secs => (58 * v.scale + 2) * 3600) as sow
+            from public.rice_varieties v where v.id = 'nep') y;
   insert into public.inventory (account_id, item_id, qty) values (a, 'tool_sickle', 1), (a, 'tool_sling', 1), (a, 'ammo_pellet', 10)
   on conflict (account_id, item_id) do update set qty = excluded.qty;
   insert into public.vitals (account_id) values (a) on conflict do nothing;

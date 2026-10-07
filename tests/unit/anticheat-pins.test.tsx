@@ -248,10 +248,10 @@ describe("bad_price", () => {
 
   it("keeps Rao bán and Cho thuê disabled for a price the server refuses", () => {
     coop(STATE, "Của tôi");
-    for (const [label, good] of [["Rao bán", "1200000"], ["Cho thuê một vụ", "3000"]] as const) {
+    for (const [label, good] of [["Rao bán", "1200000"], ["Cho thuê 4 ngày", "3000"]] as const) {
       const button = () => screen.getByRole("button", { name: label === "Rao bán" ? "Rao bán" : "Cho thuê" });
       // econ v2 (0102): a sale in the band 400 000–2 400 000, a sublease at most 50 000
-      for (const v of [...BAD, ...(label === "Cho thuê một vụ" ? ["50001"] : ["12000", "399999", "2400001"])]) {
+      for (const v of [...BAD, ...(label === "Cho thuê 4 ngày" ? ["50001"] : ["12000", "399999", "2400001"])]) {
         fireEvent.change(screen.getByLabelText(label), { target: { value: v } });
         expect(button()).toBeDisabled();
       }

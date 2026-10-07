@@ -195,7 +195,7 @@ describe("CoopPanel", () => {
     expect(within(line("Thửa 1 · làng bán")).getByRole("button", { name: "Mua · 800.000 xu" })).toBeDisabled();
     expect(within(line("Thửa 1 · làng bán")).getByText("Bạn đã có một thửa đất tư — mỗi người chỉ một thửa (tính cả các sảnh)."))
       .toBeInTheDocument();
-    expect(screen.getByText(/Thửa 3 · của An · rao bán 800\.000 xu · cho thuê 300 xu\/vụ/)).toBeInTheDocument();
+    expect(screen.getByText(/Thửa 3 · của An · rao bán 800\.000 xu · cho thuê 300 xu\/4 ngày/)).toBeInTheDocument();
   });
 
   it("buys a listing after asking, rents a sublease and sends an offer", () => {
@@ -206,8 +206,8 @@ describe("CoopPanel", () => {
     expect(onAct).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "buy_listed", plot: 3, expected: 800000 }, "🏡 Đã mua thửa 3.");
-    fireEvent.click(within(line("Thửa 3 của An — cho thuê một vụ 300 xu")).getByRole("button", { name: "Thuê" }));
-    expect(onAct).toHaveBeenLastCalledWith({ kind: "rent_sublease", plot: 3, expected: 300 }, "Đã thuê thửa 3 của An một vụ.");
+    fireEvent.click(within(line("Thửa 3 của An — cho thuê 4 ngày 300 xu")).getByRole("button", { name: "Thuê" }));
+    expect(onAct).toHaveBeenLastCalledWith({ kind: "rent_sublease", plot: 3, expected: 300 }, "Đã thuê thửa 3 của An 4 ngày.");
     fireEvent.click(screen.getByRole("button", { name: "Thửa 4 (Lan)" }));
     // econ v2: offers are 400 000–2 400 000
     expect(screen.getByText(/Giá từ 400\.000 xu đến 2\.400\.000 xu\./)).toBeInTheDocument();
@@ -281,20 +281,20 @@ describe("CoopPanel", () => {
     expect(screen.queryByText("Số không hợp lệ.")).toBeNull();
     // econ v2: the band, the sublease cap and the seller's 95 %
     expect(screen.getByText("Giá từ 400.000 xu đến 2.400.000 xu; bán được bạn nhận 95% (phí 5% bị đốt).")).toBeInTheDocument();
-    expect(screen.getByText("Tối đa 50.000 xu một vụ; có người thuê bạn nhận 95% (phí 5% bị đốt).")).toBeInTheDocument();
+    expect(screen.getByText("Tối đa 50.000 xu một lượt 4 ngày; có người thuê bạn nhận 95% (phí 5% bị đốt).")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Rao bán"), { target: { value: "12000" } });
     expect(screen.getByRole("button", { name: "Rao bán" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Rao bán"), { target: { value: "1200000" } });
     fireEvent.click(screen.getByRole("button", { name: "Rao bán" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "list", plot: 2, price: 1200000 },
       "Đã rao bán thửa 2 giá 1.200.000 xu; bán được thì bạn nhận 1.140.000 xu (phí 5% bị đốt).");
-    fireEvent.change(screen.getByLabelText("Cho thuê một vụ"), { target: { value: "50001" } });
+    fireEvent.change(screen.getByLabelText("Cho thuê 4 ngày"), { target: { value: "50001" } });
     expect(screen.getByRole("button", { name: "Cho thuê" })).toBeDisabled();
     expect(screen.getByText("Số không hợp lệ.")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Cho thuê một vụ"), { target: { value: "50000" } });
+    fireEvent.change(screen.getByLabelText("Cho thuê 4 ngày"), { target: { value: "50000" } });
     fireEvent.click(screen.getByRole("button", { name: "Cho thuê" }));
     expect(onAct).toHaveBeenLastCalledWith({ kind: "set_sublease", plot: 2, price: 50000 },
-      "Đã cho thuê thửa 2 giá 50.000 xu một vụ; có người thuê thì bạn nhận 47.500 xu (phí 5% bị đốt).");
+      "Đã cho thuê thửa 2 giá 50.000 xu 4 ngày; có người thuê thì bạn nhận 47.500 xu (phí 5% bị đốt).");
     fireEvent.click(screen.getByRole("button", { name: "Bán lại cho làng · 400.000 xu" }));
     expect(screen.getByText("⚠️ Làng chỉ trả 400.000 xu (một nửa giá) — bán lại thửa 2?")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Vẫn làm" }));

@@ -141,7 +141,7 @@ export function BuyListedButton({ p, ctx, busy, onAct, children }: PlotButtonPro
 export function RentSubleaseButton({ p, ctx, busy, onAct, children }: PlotButtonProps) {
   return (
     <LandButton refusal={rentSubleaseRefusal(p, ctx)} busy={busy} primary
-      onClick={() => onAct({ kind: "rent_sublease", plot: p.no, expected: p.subleasePrice! }, `Đã thuê thửa ${p.no} của ${p.owner!.name} một vụ.`)}>
+      onClick={() => onAct({ kind: "rent_sublease", plot: p.no, expected: p.subleasePrice! }, `Đã thuê thửa ${p.no} của ${p.owner!.name} ${LEASE_HOURS / 24} ngày.`)}>
       {children}
     </LandButton>
   );
@@ -181,7 +181,7 @@ const who = (p: PlotView, me: string) => (p.farmer?.id === me ? "Bạn" : p.farm
 function VillageTab({ ctx, busy, now, onAct }: { ctx: LandCtx; busy: boolean; now: number; onAct: Act }) {
   return (
     <>
-      <p className="opacity-80">Thuê {formatXu(RENT_PRICE)} một vụ {LEASE_HOURS / 24} ngày — gặt xong là trả ruộng.</p>
+      <p className="opacity-80">Thuê {formatXu(RENT_PRICE)} được {LEASE_HOURS / 24} ngày — trồng được mấy vụ cũng được; hết hạn thì cây còn trên thửa sẽ mất.</p>
       <ul>
         {ctx.plots.filter((p) => p.kind === "village").map((p) => (
           <Line key={p.no} action={!p.lease && (
@@ -208,7 +208,7 @@ function PrivateTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: 
               <>
                 của {p.owner.id === ctx.me ? "bạn" : p.owner.name}
                 {p.salePrice !== null && ` · rao bán ${formatXu(p.salePrice)}`}
-                {p.subleasePrice !== null && ` · cho thuê ${formatXu(p.subleasePrice)}/vụ`}
+                {p.subleasePrice !== null && ` · cho thuê ${formatXu(p.subleasePrice)}/${LEASE_HOURS / 24} ngày`}
                 {p.lease && ` · ${who(p, ctx.me)} đang thuê`}
               </>
             ) : "làng bán"}
@@ -248,7 +248,7 @@ function MarketTab({ ctx, busy, onAct }: { ctx: LandCtx; busy: boolean; onAct: A
         ))}
         {subleased.map((p) => (
           <Line key={`lease:${p.no}`} action={<RentSubleaseButton p={p} ctx={ctx} busy={busy} onAct={onAct}>Thuê</RentSubleaseButton>}>
-            Thửa {p.no} của {p.owner!.name} — cho thuê một vụ {formatXu(p.subleasePrice!)}
+            Thửa {p.no} của {p.owner!.name} — cho thuê {LEASE_HOURS / 24} ngày {formatXu(p.subleasePrice!)}
           </Line>
         ))}
       </ul>
@@ -314,14 +314,14 @@ export function MyPlot({ p, ctx, busy, onAct }: { p: PlotView; ctx: LandCtx; bus
           <LandButton refusal={subleaseRefusal(p, ctx, null)} busy={busy} onClick={() => onAct({ kind: "set_sublease", plot: p.no, price: null }, "Đã thôi cho thuê.")}>
             Thôi cho thuê
           </LandButton>
-        }>Đang cho thuê một vụ {formatXu(p.subleasePrice)} — có người thuê thì {landNetText(p.subleasePrice, fee)}</Line>
+        }>Đang cho thuê {LEASE_HOURS / 24} ngày {formatXu(p.subleasePrice)} — có người thuê thì {landNetText(p.subleasePrice, fee)}</Line>
       ) : (
         <div className="flex flex-col gap-0.5">
           <div className="flex flex-wrap items-center justify-between gap-1">
-            <PriceInput label="Cho thuê một vụ" max={SUBLEASE_MAX} value={lease} onChange={setLease} />
+            <PriceInput label="Cho thuê 4 ngày" max={SUBLEASE_MAX} value={lease} onChange={setLease} />
             <LandButton refusal={priceRefusal(lease, (x) => subleaseRefusal(p, ctx, x))} busy={busy}
               onClick={() => onAct({ kind: "set_sublease", plot: p.no, price: leasePrice },
-                `Đã cho thuê thửa ${p.no} giá ${formatXu(leasePrice)} một vụ; có người thuê thì ${landNetText(leasePrice, fee)}.`)}>
+                `Đã cho thuê thửa ${p.no} giá ${formatXu(leasePrice)} ${LEASE_HOURS / 24} ngày; có người thuê thì ${landNetText(leasePrice, fee)}.`)}>
               Cho thuê
             </LandButton>
           </div>

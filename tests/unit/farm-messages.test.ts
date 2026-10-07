@@ -284,6 +284,6 @@ describe("land deals (econ v2, 0102)", () => {
     expect(landNetText(50_000, 0)).toBe("bạn nhận 50.000 xu");
     expect(saleRuleText(5)).toBe("Giá từ 400.000 xu đến 2.400.000 xu; bán được bạn nhận 95% (phí 5% bị đốt).");
     expect(saleRuleText(0)).toBe("Giá từ 400.000 xu đến 2.400.000 xu.");
-    expect(subleaseRuleText(5)).toBe("Tối đa 50.000 xu một vụ; có người thuê bạn nhận 95% (phí 5% bị đốt).");
+    expect(subleaseRuleText(5)).toBe("Tối đa 50.000 xu một lượt 4 ngày; có người thuê bạn nhận 95% (phí 5% bị đốt).");
   });
 });

@@ -17,9 +17,11 @@ import ShopPanel from "./ShopPanel";
 
 /** Fishing on top of the world (spec §6.1, §10): "🎣 Thu cần" while waiting, "❗ Giật cần!" at the bite, the reel, the
  *  catch card and the four fishing panels; the bag shows the farm tools once the field has loaded (v15.2 R29). */
-export default function FishingOverlays({ fishing, farm = null, onSail = null, onDetect = null }: {
+export default function FishingOverlays({ fishing, farm = null, onSail = null, onDetect = null, forestToken = null }: {
   fishing: FishingController;
   farm?: BagFarm | null;
+  /** 0121: the session, for the bag's forest section. */
+  forestToken?: string | null;
   /** v22 (0086): row out to Sông Cái (the shell's explore minigames). */
   onSail?: (() => void) | null;
   /** v22 (0086): switch the metal detector on for a treasure map. */
@@ -66,7 +68,8 @@ export default function FishingOverlays({ fishing, farm = null, onSail = null, o
       {panel === "bag" && (
         <BagPanel state={state} catalog={catalog} busy={busy} onEquip={fishing.equipSlot} onRelease={fishing.release} onClose={closePanel}
           farm={farm} groundbaitPick={fishing.groundbaitReady} onPickGroundbait={fishing.pickGroundbait}
-          onGroundbait={(item) => fishing.throwGroundbait(item)} onNotebook={() => fishing.openPanel("notebook")} rods={fishing.rods} />
+          onGroundbait={(item) => fishing.throwGroundbait(item)} onNotebook={() => fishing.openPanel("notebook")} rods={fishing.rods}
+          forestToken={forestToken} />
       )}
       {panel === "depot" && (
         <DepotPanel state={state} catalog={catalog} busy={busy} onSell={(ids) => fishing.sell(ids)} onClose={closePanel}

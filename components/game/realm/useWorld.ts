@@ -17,6 +17,7 @@ import {
 import { noLine, okLine } from "@/lib/game/realm/mg-copy";
 import { liveSync } from "@/lib/game/mglive";
 import { isFelled } from "@/lib/game/forest/felled-store";
+import { SELL_MAX, treeOf } from "@/lib/game/forest/catalog";
 import { drawStump, drawTram, rungTramTrees } from "@/lib/game/forest/trees2d";
 import type { WildView } from "./WildGame";
 import type { ComboView } from "./ComboGame";
@@ -142,7 +143,8 @@ export function useWorld(o: WorldOpts) {
         for (const tr of rungTramTrees()) {
           const down = isFelled(tr.key);
           out.push({ x: tr.x, y: tr.y, draw: (b, cx, cy) => (down ? drawStump(b, Math.round(tr.x) - cx, Math.round(tr.y) - cy)
-            : drawTram(b, Math.round(tr.x) - cx, Math.round(tr.y) - cy, tr.cx * 7 + tr.k, reduced ? 0 : (Math.sin(t / 900 + tr.x) + 1) / 2)) });
+            : drawTram(b, Math.round(tr.x) - cx, Math.round(tr.y) - cy, tr.cx * 7 + tr.k, reduced ? 0 : (Math.sin(t / 900 + tr.x) + 1) / 2,
+              treeOf(tr.cx, tr.cy, tr.k).id)) });   // 0121: a rarer kind's crown tint
         }
       }
       if (map === GATE.map) {
@@ -227,6 +229,24 @@ export function useWorld(o: WorldOpts) {
       toast(`💰 Bán được ${r.earned} xu${cut ? ` · ${cut}` : ""}`);
       onCoins();
     });
+  // 0121: a whole stack, SELL_MAX at a time (the stall refuses more in one sale as a bad quantity)
+  const sellAll = (item: WildItemId, total: number) =>
+    void run(async () => {
+      let left = total, earned = 0, cut = 0;
+      let last: Awaited<ReturnType<typeof wildSell>> | null = null;
+      while (left > 0) {
+        const n = Math.min(SELL_MAX, left);
+        last = await wildSell(token, item, n);
+        earned += last.earned; cut += last.cut; left -= n;
+      }
+      return last ? { ...last, earned, cut } : null;
+    }, (r) => {
+      if (!r) return;
+      if (r.npc) setNpc(r.npc);
+      const c = npcCutNote(r.cut);
+      toast(`💰 Bán được ${r.earned} xu${c ? ` · ${c}` : ""}`);
+      onCoins();
+    });
 
   // v22 (0083): the combo strike (bosses and the dungeon)
   const startCombo = (kind: "boss" | "dungeon", ref: number, target: number, view: Pick<ComboView, "name" | "boss" | "icon">) => {
@@ -299,7 +319,7 @@ export function useWorld(o: WorldOpts) {
     stop: () => void run(() => snowStop(token, roomId), () => onWeather()),
   };
 
-  return { state, offset, here, inWild, busy, lastHit, act, sell, npc, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
+  return { state, offset, here, inWild, busy, lastHit, act, sell, sellAll, npc, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
 }
 
 export type World = ReturnType<typeof useWorld>;

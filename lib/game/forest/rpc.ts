@@ -121,11 +121,11 @@ export const cookEat = async (token: string, dish: string, quality: number) => {
 /** A server refusal in words. */
 export function forestErrorText(e: unknown): string {
   const m = e instanceof Error ? e.message : typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : String(e);
-  if (m.includes("not in forest")) return "Muốn săn thì vô rừng tràm nha!";
+  if (m.includes("not in forest")) return "Vô rừng tràm (cổng nam Bãi đất trống) mới đốn cây được nha!";
   if (m.includes("no bow")) return "Cần có cung mới đi săn được nghen!";
   if (m.includes("no pan")) return "Cần có nồi hoặc chảo mới nấu được nghen!";
   if (m.includes("nothing to repair")) return "Đồ còn nguyên, chưa cần sửa.";
-  if (m.includes("no axe")) return "Rìu hư rồi, đem đi sửa nha!";
+  if (m.includes("no axe")) return "Chưa có rìu còn dùng được — mua hoặc sửa rìu ở Sạp thợ săn (Bãi đất trống) nha!";
   if (m.includes("felled")) return "Cây mới đốn, chờ mọc lại nghen!";
   if (m.includes("daily log limit")) return `Hôm nay đốn đủ ${DAILY_MAX_LOGS} khúc gỗ rồi — mai quay lại nghen!`;
   if (m.includes("not a chef")) return "Chỉ Đầu bếp mới nấu được — chọn nghề Đầu bếp (phím 3).";
@@ -137,5 +137,13 @@ export function forestErrorText(e: unknown): string {
   if (m.includes("too far")) return "Đứng gần cây hơn.";
   if (m.includes("not enough")) return "Không đủ hàng.";
   if (m.includes("round not found")) return "Lượt này đã hết hạn.";
+  if (m.includes("bad tree")) return "Cây này không đốn được — chọn cây khác nha.";
+  if (m.includes("invalid recipe")) return "Món này chưa có trong sổ nấu ăn.";
+  if (m.includes("invalid item")) return "Món đồ này không bán ở đây.";
+  if (m.includes("rate limited")) return "Thao tác quá nhanh — chờ một chút rồi thử lại nhé.";
+  if (m.includes("stunned")) return "Bạn đang choáng — đợi một chút!";
+  if (m.includes("fainted")) return "Bạn đang bất tỉnh.";
+  if (m.includes("too hungry")) return "Bạn đói quá, ăn gì đã.";
+  if (m.includes("too thirsty")) return "Bạn khát quá, uống gì đã.";
   return "Có lỗi, thử lại sau nhé.";
 }

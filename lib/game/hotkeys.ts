@@ -17,6 +17,9 @@ export interface Hotkey {
   desc: string;
   group: HotkeyGroup;
   external?: true;
+  /** 0121: another element this key clicks when the action's own is not on screen (G: the farm tasks at the field, the
+   *  chop button at the forest — never both on screen). */
+  fallback?: string;
 }
 
 export const HOTKEY_GROUPS: ReadonlyArray<{ group: HotkeyGroup; title: string }> = [
@@ -39,7 +42,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   { id: "fish", codes: ["KeyF"], label: "F", desc: "Cất / lấy cá trên tay", group: "hud" },
   { id: "umbrellas", codes: ["KeyU"], label: "U", desc: "Ô của tôi", group: "hud" },
   { id: "dog", codes: ["KeyP"], label: "P", desc: "Chó của bạn", group: "hud" },
-  { id: "farmTasks", codes: ["KeyG"], label: "G", desc: "Việc đồng áng (ở ruộng)", group: "hud" },
+  { id: "farmTasks", codes: ["KeyG"], label: "G", desc: "Việc đồng áng (ở ruộng) · đốn cây (ở rừng tràm)", group: "hud", fallback: "chop" },
   { id: "settings", codes: ["KeyO"], label: "O", desc: "Cài đặt cá nhân", group: "hud" },
   { id: "zoom", codes: ["KeyZ"], label: "Z", desc: "Chỉnh zoom camera", group: "hud" },
   { id: "cityMap", codes: ["KeyM"], label: "M", desc: "Bản đồ thế giới", group: "hud" },
@@ -88,8 +91,14 @@ export function hotkeyFor(e: HotkeyEvent, ctx: HotkeyContext): string | null {
   return k?.id ?? null;
 }
 
-/** The label of an action's key ("B"), for badges and tooltips. */
-export const hotkeyLabel = (id: string): string => HOTKEYS.find((h) => h.id === id)?.label ?? "";
+/** The label of an action's key ("B"), for badges and tooltips (a fallback target shows its key's label too). */
+export const hotkeyLabel = (id: string): string => HOTKEYS.find((h) => h.id === id || h.fallback === id)?.label ?? "";
+
+/** The elements an action may click, in order: its own, then its fallback. */
+export const hotkeyTargets = (id: string): string[] => {
+  const fb = HOTKEYS.find((h) => h.id === id)?.fallback;
+  return fb ? [id, fb] : [id];
+};
 
 /** "Giỏ đồ (B)". */
 export const withKey = (text: string, id: string): string => `${text} (${hotkeyLabel(id)})`;
