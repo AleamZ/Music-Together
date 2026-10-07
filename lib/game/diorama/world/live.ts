@@ -7,7 +7,7 @@ import { pondDuckAt } from "@/lib/game/world/pond-life";
 import { RIVER } from "@/lib/game/river/geometry";
 import { GROUNDBAIT_RADIUS_PX } from "@/lib/game/fishing/gear";
 import type { Facing } from "@/lib/game/types";
-import { RIVER_LEVEL, ZONE_ELEV } from "@/lib/game/world/terrain";
+import { RIVER_LEVEL, waterAt, ZONE_ELEV } from "@/lib/game/world/terrain";
 import { ZONES } from "@/lib/game/world/zones";
 import { WATER_Y } from "../build";
 import { NET_RELEASE_S } from "../character/pose";
@@ -18,7 +18,7 @@ import {
   type LiveBoss, type LiveNet, type Motion, type WakePoint, type WorldLive,
 } from "./live-plan";
 import {
-  barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, fishSpeciesModel, houseModel, Labels,
+  barrierModel, boatModel, bobberModel, bossModel, dogModel, digModel, duckModel, trapModel, fishSpeciesModel, houseModel, Labels,
   lotSign, ModelMats, petModel, poseCreature, ratModel, ringModel, spearModel, stallModel, vehicleModel, wildAnimal,
   type Barrier, type Boat, type Creature, type Vehicle,
 } from "./models";
@@ -346,6 +346,25 @@ export class LiveLayer {
       this.place(e.obj, d.x, d.y);
       const sp = e.obj.getObjectByName("sparkle");
       if (sp) { sp.rotation.y = tm / 300; sp.position.y = 0.7 + Math.sin(tm / 350) * 0.15; }
+    }
+
+    // 0123: my traps: a small wooden cage (or iron jaws), a glint over one that may hold something
+    for (const tr of live.traps ?? []) {
+      const e = this.get(`trap:${tr.id}`, `${tr.iron}:${tr.ready}`, () => {
+        const g = trapModel(this.mats, tr.iron);
+        if (tr.ready) {
+          const sp = this.mats.mesh(new THREE.OctahedronGeometry(0.1, 0), this.mats.glow, false);
+          sp.name = "sparkle";
+          sp.position.y = 0.75;
+          g.add(sp);
+        }
+        return g;
+      });
+      this.place(e.obj, tr.x, tr.y);
+      const wet = waterAt(tr.x, tr.y);                                          // never under the river's water
+      if (wet !== null && e.obj.position.y < wet) e.obj.position.y = wet;
+      const sp = e.obj.getObjectByName("sparkle");
+      if (sp) { sp.rotation.y = tm / 260; sp.position.y = 0.65 + Math.sin(tm / 300) * 0.12; }
     }
 
     for (const fsh of live.fishing ?? []) {

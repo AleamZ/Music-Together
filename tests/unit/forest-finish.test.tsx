@@ -85,7 +85,7 @@ describe("texts (0121)", () => {
   it("say where to get a bow or an axe", () => {
     expect(worldErrorText({ message: "no bow" })).toMatch(/Sạp thợ săn \(Bãi đất trống\)/);
     expect(forestErrorText({ message: "no axe" })).toMatch(/mua hoặc sửa rìu ở Sạp thợ săn/);
-    expect(forestErrorText({ message: "not in forest" })).toMatch(/đốn cây/);
+    expect(forestErrorText({ message: "not in forest" })).toMatch(/rừng tràm/);
     expect(forestErrorText({ message: "rate limited" })).toMatch(/quá nhanh/);
   });
 });

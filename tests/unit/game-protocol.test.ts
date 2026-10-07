@@ -77,9 +77,10 @@ describe("parseGameMessage", () => {
     // 0097: chopping (13) and cooking (14)
     expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.chop }, B)).toEqual({ t: "fa", id: "a", a: 13 });
     expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.cook }, B)).toEqual({ t: "fa", id: "a", a: 14 });
+    expect(parseGameMessage("fa", { id: "a", a: FARM_ANIM.hunt }, B)).toEqual({ t: "fa", id: "a", a: 15 });   // 0123: the bow
     const bad: Array<[string, unknown]> = [
       ["fp", { id: "a", p: 11 }], ["fp", { id: "a", p: -1 }], ["fp", { id: "a", p: 1.5 }], ["fp", { id: "a", p: "3" }], ["fp", { id: "a" }],
-      ["fa", { id: "a", a: 15 }], ["fa", { id: "a", a: -1 }], ["fa", { id: "a", a: "1" }], ["fa", { id: "" , a: 1 }],
+      ["fa", { id: "a", a: 16 }], ["fa", { id: "a", a: -1 }], ["fa", { id: "a", a: "1" }], ["fa", { id: "" , a: 1 }],
     ];
     for (const [event, payload] of bad) expect(parseGameMessage(event, payload, B), `${event} ${JSON.stringify(payload)}`).toBeNull();
   });

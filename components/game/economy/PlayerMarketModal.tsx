@@ -7,6 +7,7 @@ import {
   AUCTION_CAP_PERCENT, AUCTION_HOURS, AUCTION_MIN_VALUE, BAND_MAX_PERCENT, BAND_MIN_PERCENT, econErrText, kindIcon, kindName,
   leftText, LIST_FEE_PERCENT, LIST_HOURS, listFee, SALE_FEE_MIN_PERCENT, SALE_FEE_PERCENT, saleShare, SNIPE_SECONDS,
   type AssetKind, type Auction, type EconState, type Listing,
+  ASSET_KINDS,
 } from "@/lib/game/economy/model";
 import { auctionBid, auctionCancel, auctionCreate, econState, marketBuy, marketCancel, marketList } from "@/lib/game/economy/rpc";
 import { ParchmentModal } from "../Parchment";
@@ -178,7 +179,7 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
         {won > 0 && <p role="status" className="text-emerald-800">🏆 Bạn đã thắng một phiên đấu giá — món hàng đã gửi vào 📬 Hòm thư!</p>}
         <StallRowView rented={(state?.stalls ?? []).map((s) => s.renterName !== null)} notes={state?.listings.length ?? 0} />
         <p className="text-base">
-          Mua bán cá, đồ thời trang và nông sản giữa bà con. Giá trong khoảng {BAND_MIN_PERCENT} %–{BAND_MAX_PERCENT} % giá trị,
+          Mua bán cá, đồ thời trang, nông sản, gỗ, đồ săn, món ăn và đồ rừng giữa bà con. Giá trong khoảng {BAND_MIN_PERCENT} %–{BAND_MAX_PERCENT} % giá trị,
           phí đăng tin {LIST_FEE_PERCENT} % (hết hạn không ai mua thì hoàn một nửa), chợ thu {SALE_FEE_PERCENT} % khi bán được
           (Thương nhân có kỹ năng Mồm mép: chỉ {SALE_FEE_MIN_PERCENT} %).
         </p>
@@ -201,7 +202,7 @@ export default function PlayerMarketModal({ token, onChanged, onClose }: {
                 className="min-w-0 flex-1 rounded border border-gold-300 bg-cream px-1" />
               <select aria-label="Loại" className="rounded border border-gold-300 bg-cream px-1" value={kind} onChange={(e) => setKind(e.target.value as AssetKind | "")}>
                 <option value="">Tất cả</option>
-                {(["fish", "fashion", "produce"] as const).map((k) => <option key={k} value={k}>{kindIcon(k)} {kindName(k)}</option>)}
+                {ASSET_KINDS.map((k) => <option key={k} value={k}>{kindIcon(k)} {kindName(k)}</option>)}
               </select>
             </div>
             {shown.length === 0 ? <p>Chưa có món nào{q || kind ? " khớp" : ""}.</p> : <ul className="flex flex-col gap-2">{shown.map(listingRow)}</ul>}

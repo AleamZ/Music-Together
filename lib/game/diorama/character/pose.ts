@@ -5,13 +5,13 @@
 import type { FaceExpr } from "./voxel-face";
 import { EXTRA_ACTS, extraPose, isExtraAct, type ExtraAct } from "./pose-extra";
 
-export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "stretch" | "net_hold" | "net_throw" | "net_pull" | "net_won" | "transplant" | "harvest" | "pump" | "spray" | "fertilize" | "crab" | "snails" | "prepare" | "dig" | "pick" | "pet" | "aim" | "show_catch" | "faint" | "sleep" | "exhausted" | "hammock" | "eat" | "drink" | "photo" | "mine"
+export type CharAct = "idle" | "walk" | "run" | "sit" | "cast" | "bite" | "reel" | "swim" | "ride" | "pedal" | "wave" | "chop" | "cook" | "hunt" | "stretch" | "net_hold" | "net_throw" | "net_pull" | "net_won" | "transplant" | "harvest" | "pump" | "spray" | "fertilize" | "crab" | "snails" | "prepare" | "dig" | "pick" | "pet" | "aim" | "show_catch" | "faint" | "sleep" | "exhausted" | "hammock" | "eat" | "drink" | "photo" | "mine"
   | ExtraAct;                                                              // wave 3: pose-extra.ts
 /** 3D wave 1: the twelve farm animations (named as FARM_ANIM's keys), the catch held up, the vital states, the camera
  *  and the pickaxe. */
 export const WAVE1_ACTS = ["transplant", "harvest", "pump", "spray", "fertilize", "crab", "snails", "prepare", "dig", "pick", "pet", "aim",
   "show_catch", "faint", "sleep", "exhausted", "hammock", "eat", "drink", "photo", "mine"] as const satisfies readonly CharAct[];
-export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "stretch", "net_hold", "net_throw", "net_pull", "net_won",
+export const CHAR_ACTS: readonly CharAct[] = ["idle", "walk", "run", "sit", "cast", "bite", "reel", "swim", "ride", "pedal", "wave", "chop", "cook", "hunt", "stretch", "net_hold", "net_throw", "net_pull", "net_won",
   ...WAVE1_ACTS, ...EXTRA_ACTS];
 /** Actions that play once from their start (the caller passes the time since the action began, not a running clock):
  *  the cast's throw, then the rod held out while the line waits. */
@@ -32,6 +32,17 @@ function twoHands(p: Pose, crank = 0): void {
   p.armL.x = p.armR.x + 0.35 + Math.sin(crank) * 0.08;
   p.armL.z = -0.85 + Math.cos(crank) * 0.05;
   p.elbowL = Math.min(2.2, p.elbowR + 0.95 + Math.cos(crank) * 0.15);
+}
+
+/** 0123 the bow's cycle (s → a 1.6 s loop): how far the string is drawn (0…1), the snap of the loose (1 at the release,
+ *  fading), and where the arrow is: hidden while drawing, nocked during the aim, then flying `flight` 0…1 of its path. */
+export const HUNT_CYCLE_S = 1.6;
+export function huntPhase(s: number): { k: number; draw: number; loose: number; arrow: "none" | "nocked" | "flying"; flight: number } {
+  const k = ((s / HUNT_CYCLE_S) % 1 + 1) % 1;
+  if (k < 0.55) { const d = k / 0.55; return { k, draw: d * d * (3 - 2 * d), loose: 0, arrow: d > 0.3 ? "nocked" : "none", flight: 0 }; }
+  if (k < 0.8) return { k, draw: 1, loose: 0, arrow: "nocked", flight: 0 };
+  const f = (k - 0.8) / 0.2;
+  return { k, draw: 0, loose: 1 - f, arrow: "flying", flight: f };
 }
 
 /** A preview's clock for an action (the dev lab, the wardrobe): a one-shot action replays every 3 s. */
@@ -381,6 +392,16 @@ export function poseAt(act: CharAct, t: number, phase = 0, reduced = false): Pos
       p.legL.x = 0.18; p.legR.x = -0.12;
       p.bob = -0.02 - (1 - e) * 0.02;
       p.headX = 0.1 - e * 0.12;
+      break;
+    }
+    case "hunt": {
+      // 0123 Thợ săn: side-on, the bow upright at the left arm's length; the right hand draws the string to the cheek
+      // (0–0.55 of a 1.6 s cycle), holds the aim (–0.8), looses (the hand flies back) and the arrow goes (huntPhase)
+      const { draw, loose } = huntPhase(s);
+      p.armL.x = 1.5; p.armL.z = -0.1; p.elbowL = 0.04;
+      p.armR.x = 1.4 - loose * 0.35; p.armR.z = -0.2 - draw * 0.25 - loose * 0.2; p.elbowR = 0.5 + draw * 1.6 - loose * 0.9;
+      p.legL.x = 0.28; p.legR.x = -0.22; p.kneeL = 0.16; p.kneeR = 0.06;
+      p.headX = 0.04; p.headZ = -0.05; p.lean = -0.05 + loose * 0.03;
       break;
     }
     case "cook": {

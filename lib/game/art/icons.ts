@@ -1,4 +1,5 @@
 import { FARM_ICONS } from "./farm-icons";
+import { FOREST_ICONS } from "./forest-icons";
 import { FISH_ICONS } from "./fish";
 import { GEAR_ICONS } from "./gear";
 import { ITEM_ART, type ItemArt } from "./items";
@@ -393,6 +394,6 @@ export function pixelIconMatrix(icon: PixelIcon): string[][] {
 export function iconMatrixFor(id: string): string[][] | null {
   const clothing = itemIconMatrix(id) ?? garmentIconMatrix(id);
   if (clothing) return clothing;
-  const icon = FISH_ICONS[id] ?? GEAR_ICONS[id] ?? FARM_ICONS[id];
+  const icon = FISH_ICONS[id] ?? GEAR_ICONS[id] ?? FARM_ICONS[id] ?? FOREST_ICONS[id];   // 0123: the forest
   return icon ? pixelIconMatrix(icon) : null;
 }

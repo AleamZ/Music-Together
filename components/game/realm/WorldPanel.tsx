@@ -15,6 +15,7 @@ import type { World } from "./useWorld";
 import { NIGHT_MARKET_PCT, WILD_DAILY_KILLS } from "@/lib/game/realm/model";
 import { npcQuotaLine } from "@/lib/game/economy/npc";
 import { toolById } from "@/lib/game/forest/catalog";
+import ItemIcon from "@/components/game/ItemIcon";
 
 /** 0121: the forest's animals out now, by name (from the species table, so the six of 0097 are there too). */
 const outNow = (night: boolean): string => WILD_SPECIES.filter((sp) => sp.active === "any" || (sp.active === "night") === night)
@@ -97,7 +98,7 @@ function WildTab({ w, s, atStall }: { w: World; s: WorldState; atStall: boolean 
         {items.length === 0 && <p>Chưa có gì.</p>}
         {items.map((k) => (
           <div key={k} className="flex items-center justify-between gap-2">
-            <span>{WILD_ITEMS[k].icon} {WILD_ITEMS[k].name} × {bag[k]}</span>
+            <span className="flex items-center gap-1"><ItemIcon id={k} scale={1.5} /> {WILD_ITEMS[k].name} × {bag[k]}</span>
             <span className="flex gap-1">
               <button type="button" className="pch-btn px-2 py-0.5" disabled={!atStall || w.busy} onClick={() => w.sell(k, 1)}>Bán 1 ({sellPrice(k, 1, s.night)} xu)</button>
               <button type="button" className="pch-btn px-2 py-0.5" disabled={!atStall || w.busy} onClick={() => w.sellAll(k, bag[k] ?? 0)}>Bán hết ({sellPrice(k, bag[k] ?? 0, s.night)} xu)</button>

@@ -19,7 +19,7 @@ import { GENDERS, HAIR_COLORS, HAIR_STYLES, SKIN_TONES, type Look } from "@/lib/
 
 const ACT_LABEL: Record<CharAct, string> = {
   idle: "Đứng thở", walk: "Đi bộ", run: "Chạy", sit: "Ngồi", cast: "Quăng cần", reel: "Kéo cần", swim: "Bơi", ride: "Cưỡi xe", wave: "Vẫy tay",
-  chop: "Chặt cây", cook: "Nấu ăn", bite: "Cá cắn câu", pedal: "Đạp xe", stretch: "Khởi động", net_hold: "Cầm lưới", net_throw: "Tung lưới", net_pull: "Kéo lưới", net_won: "Giơ mẻ lưới",
+  chop: "Chặt cây", cook: "Nấu ăn", hunt: "Giương cung", bite: "Cá cắn câu", pedal: "Đạp xe", stretch: "Khởi động", net_hold: "Cầm lưới", net_throw: "Tung lưới", net_pull: "Kéo lưới", net_won: "Giơ mẻ lưới",
   ...(WAVE1_LABEL as Record<(typeof WAVE1_ACTS)[number], string>),
   ...EXTRA_ACT_LABEL,
 };

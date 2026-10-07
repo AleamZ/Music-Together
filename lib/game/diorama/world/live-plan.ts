@@ -19,6 +19,8 @@ export interface LiveAnimal { id: string; species: WildSpeciesId; x: number; y: 
 export interface LiveHouse { /** LOTS index (Khu nhà). */ lot: number; owned: boolean; built: boolean; roof: Roof; ownerName?: string | null; mine?: boolean }
 export interface LiveBoat { id: string; x: number; y: number; /** The rower's billboard id (the chibi rides in it). */ riderId?: string | null }
 export interface LiveDig { id: string; x: number; y: number; state: "hint" | "dug" }
+/** 0123: a hunter's trap set in the forest (world px): wood or iron, and whether something may be in it by now. */
+export interface LiveTrap { id: string; x: number; y: number; iron: boolean; ready: boolean }
 export interface LiveFishing { id: string; x: number; y: number; /** 0…1 how hard the fish pulls. */ tension: number; /** A fish is on. */ hooked: boolean }
 export interface LivePet { id: string; ownerId: string; species: PetSpecies; x: number; y: number; look?: PetLook3D }
 export interface LiveVehicle { riderId: string; kind: VehicleKind; color?: number }
@@ -37,6 +39,8 @@ export interface WorldLive {
   houses?: LiveHouse[];
   boats?: LiveBoat[];
   digs?: LiveDig[];
+  /** 0123: my traps. */
+  traps?: LiveTrap[];
   fishing?: LiveFishing[];
   pets?: LivePet[];
   vehicles?: LiveVehicle[];

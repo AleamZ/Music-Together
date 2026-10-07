@@ -4,11 +4,15 @@
 // and the dishes, read from forest_state when the bag opens. Before this they showed only at the hunter's stall, so a
 // player could not see what they carried. Selling, repairing and buying stay at the stall (Bãi đất trống).
 import { useEffect, useState } from "react";
-import { DAILY_FULL_LOGS, LOG_NAME, QUALITY_NAME, bowBonus, logPrice, panBonus, recipeById, toolById, dishPrice, type LogId } from "@/lib/game/forest/catalog";
+import { DAILY_FULL_LOGS, FOREST_ITEMS, LOG_NAME, QUALITY_NAME, bowBonus, logPrice, panBonus, recipeById, toolById, dishPrice, type LogId } from "@/lib/game/forest/catalog";
+import ItemIcon from "../ItemIcon";
 import { forestState, type ForestState } from "@/lib/game/forest/rpc";
 import { WILD_ITEMS, isWildItem } from "@/lib/game/realm/model";
 
-const KIND_ICON: Readonly<Record<string, string>> = { axe: "🪓", bow: "🏹", pan: "🍳" };
+const KIND_ICON: Readonly<Record<string, string>> = { axe: "🪓", bow: "🏹", pan: "🍳", saw: "🪚" };
+const Row = ({ id, children }: { id: string; children: React.ReactNode }) => (
+  <li className="flex items-center gap-1 py-0.5"><ItemIcon id={id} scale={1.5} /><span>{children}</span></li>
+);
 
 export default function ForestBag({ token }: { token: string }) {
   const [s, setS] = useState<ForestState | null>(null);
@@ -32,30 +36,34 @@ export default function ForestBag({ token }: { token: string }) {
         <ul className="text-base">
           {tools.length === 0 && <li className="py-0.5">Chưa có rìu, cung hay nồi chảo — Sạp thợ săn ở Bãi đất trống có bán.</li>}
           {tools.map((t) => (
-            <li key={t.item} className="py-0.5">
-              {KIND_ICON[t.d.kind]} {t.d.name} · bền {t.durability}/{t.max}
+            <Row key={t.item} id={t.item}>
+              {t.d.name} · bền {t.durability}/{t.max}
               {t.d.kind === "bow" && bowBonus(t.d.power) > 0 ? ` · săn trúng +${bowBonus(t.d.power)}%` : ""}
               {t.d.kind === "pan" && panBonus(t.d.power) > 0 ? ` · món +${panBonus(t.d.power)} điểm` : ""}
               {t.d.kind === "axe" ? ` · sức chặt ${t.d.power}` : ""}
               {t.durability === 0 ? " — hư rồi, đem sửa ở Sạp thợ săn" : ""}
-            </li>
+            </Row>
           ))}
+          {FOREST_ITEMS.filter((i) => (s.items[i.id] ?? 0) > 0).map((i) => (
+            <Row key={i.id} id={i.id}>{i.name} × {s.items[i.id]}{i.durability ? ` · bắt được ${i.durability} lần mỗi cái` : ""}</Row>
+          ))}
+          {s.traps.length > 0 && <li className="py-0.5">🪤 Đang đặt {s.traps.length} bẫy trong rừng tràm ({s.traps.map((t) => `${t.durability}/${t.max}`).join(", ")} lần bắt còn lại)</li>}
           {s.wood.filter((w) => w.qty + w.half > 0).map((w) => (
-            <li key={w.item} className="py-0.5">
-              🪵 {LOG_NAME[w.item as LogId] ?? w.item} × {w.qty + w.half}{w.half > 0 ? ` (${w.half} nửa giá)` : ""} · {logPrice(w.item)} xu/khúc
-            </li>
+            <Row key={w.item} id={w.item}>
+              {LOG_NAME[w.item as LogId] ?? w.item} × {w.qty + w.half}{w.half > 0 ? ` (${w.half} nửa giá)` : ""} · {logPrice(w.item)} xu/khúc
+            </Row>
           ))}
           {meat.map(([id, n]) => (
-            <li key={id} className="py-0.5">
-              {isWildItem(id) ? `${WILD_ITEMS[id].icon} ${WILD_ITEMS[id].name}` : id} × {n}{isWildItem(id) ? ` · ${WILD_ITEMS[id].price} xu` : ""}
-            </li>
+            <Row key={id} id={id}>
+              {isWildItem(id) ? WILD_ITEMS[id].name : id} × {n}{isWildItem(id) ? ` · ${WILD_ITEMS[id].price} xu` : ""}
+            </Row>
           ))}
           {s.dishes.filter((d) => d.qty > 0).map((d) => {
             const r = recipeById(d.dish);
             return (
-              <li key={`${d.dish}${d.quality}`} className="py-0.5">
-                🍲 {r?.name ?? d.dish} ({QUALITY_NAME[d.quality] ?? ""}) × {d.qty}{r ? ` · ${dishPrice(r, d.quality)} xu` : ""}
-              </li>
+              <Row key={`${d.dish}${d.quality}`} id={d.dish}>
+                {r?.name ?? d.dish} ({QUALITY_NAME[d.quality] ?? ""}) × {d.qty}{r ? ` · ${dishPrice(r, d.quality)} xu` : ""}
+              </Row>
             );
           })}
           {s.wood.length + meat.length + s.dishes.length > 0 && (

@@ -122,7 +122,7 @@ listed here; the reset refuses to run otherwise. `accounts` itself is kept (id, 
 `produce_stock`, `prof_starter_grants`, `prof_tools`, `quest_progress`, `quest_visits`, `rain_state`, `rat_bag`,
 `rest_state`, `rice_stock`, `river_rows`, `rods` (with `rod_parts`), `sling_aims`, `story_progress`, `treasure_digs`,
 `treasure_maps`, `ug_cup_entries`, `ug_ladder`, `ug_profiles`, `ug_queue`, `umbrellas`, `vitals`, `wallets`,
-`wild_album`, `wild_bag`, `wild_photos`, `wild_profile`, `wood_bag`, `world_mg`.
+`wild_album`, `wild_bag`, `wild_photos`, `wild_profile`, `wood_bag`, `world_mg`; 0123 adds `carpentry_profile` and `forest_traps`.
 
 Not wiped (global, no player): catalogues, `company_quests` (the community quest pool), `fish_price_index`,
 `world_forest`, `mine_nodes`, `rat_clocks`, `room_weather`, `play_history`.

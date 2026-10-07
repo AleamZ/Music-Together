@@ -1,5 +1,6 @@
--- 0122 — Tin tức: ruộng chín trong một ngày (0120), rừng tràm hoàn thiện (0121). Data only; re-runnable (skips a title
--- already posted). Run after 0121. Not pinned: the pinned post stays as the admins left it.
+-- 0122 — Tin tức: ruộng chín trong một ngày (0120), rừng tràm hoàn thiện (0121, and 0123–0124 — the post tells them all;
+-- it is shown when the client ships, after 0124). Data only; re-runnable (skips a title already posted). Run after 0121.
+-- Not pinned: the pinned post stays as the admins left it.
 
 insert into public.news_posts (title, emoji, body, pinned, created_at)
 select v.title, v.emoji, v.body, v.pinned, v.at
@@ -30,6 +31,14 @@ Trước đây một vụ mất 2–4 ngày, thuê ruộng 4 ngày chỉ gặt �
 - Bán gỗ, bán món ăn giờ cũng **tính kinh nghiệm "làm ăn"** như bán cá, bán quặng.
 - Chọn nghề Tiều phu / Thợ săn / Đầu bếp: bảng Nghề nghiệp (phím 3) có **hướng dẫn cách làm** và báo khi bạn **nhận đồ nghề tập sự**.
 - Nhiệm vụ ngày mới: **"Tiều phu chăm chỉ"** (đốn 10 khúc gỗ) và **"Đi săn"** (săn 2 con).
+
+## Thêm cho dân rừng 🪚🪤
+- **Thợ mộc đóng đồ gỗ** (nút 🪚 khi Thợ mộc là nghề chính, cần cưa): ghế, bàn, kệ sách, tủ áo, giường, sàn gỗ — vào kho đồ nội thất, **rẻ hơn mua tiệm nhiều**; còn đóng được **bẫy gỗ** và đốt **than củi**.
+- **Bẫy thật:** mua ở Sạp thợ săn (bẫy gỗ 120 xu, bẫy sắt 450 xu) hoặc tự đóng. Đặt tối đa **3 cái** trong rừng tràm, lát quay lại **thăm bẫy**: để càng lâu càng dễ dính (bẫy sắt nhanh hơn), mỗi lần dính mòn một chút.
+- **Than củi** cho bếp: mỗi món dùng 1 bao, món ngon thêm **5 điểm**.
+- **Mua bán giữa người chơi:** gỗ, thịt, da, lông, món ăn, bẫy, than củi giờ **giao dịch, rao Chợ người chơi, đấu giá, bày sạp** được (gỗ nửa giá trong ngày thì không).
+- **Đồ nghề tính lại giá:** rìu sắt 450, rìu thép 900, rìu thép tôi 1.300, rìu tinh luyện 2.000 xu — bền hơn nhiều, sửa chỉ 1 xu một điểm; cung, nồi chảo cũng rẻ và bền hơn. Đồ bạn đang có được cộng thêm độ bền.
+- Nhân vật **giương cung** khi săn (cả bản đồ 3D), cây hiếm có màu riêng ở 3D, mọi món đồ rừng có hình riêng.
 
 Chúc cả làng mùa màng bội thu, đi rừng gặp may!
 $b$, false, now())

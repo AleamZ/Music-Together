@@ -198,6 +198,26 @@ export function drawFarmAnim(c: Ctx, feet: Vec, facing: Facing, a: FarmAnim, t: 
       }
       break;
     }
+    case FARM_ANIM.hunt: {
+      // 0123: the bow upright at arm's length, the string drawn to the chest with an arrow on it; on the loose beat the
+      // arrow flies off along the facing
+      const k = reduced ? 0.6 : (t % 1600) / 1600, drawn = k < 0.8;
+      const grip = { x: hand.x + f.x * 6, y: hand.y + f.y * 3 };
+      const top = { x: grip.x + f.y * 2, y: grip.y - 6 }, bottom = { x: grip.x - f.y * 2, y: grip.y + 4 };
+      line(c, COL.fork, top, grip, 4);
+      line(c, COL.fork, grip, bottom, 3);
+      const nock = drawn ? { x: feet.x - f.x * 2, y: feet.y - 22 } : grip;
+      line(c, COL.band, top, nock, 6);
+      line(c, COL.band, bottom, nock, 6);
+      if (drawn) line(c, COL.fork, nock, { x: grip.x + f.x * 3, y: grip.y + f.y * 2 }, 6);
+      else {
+        const d = ((k - 0.8) / 0.2) * 40;
+        const tip = { x: grip.x + f.x * (6 + d), y: grip.y + f.y * (4 + d) - Math.sin(((k - 0.8) / 0.2) * Math.PI) * 3 };
+        line(c, COL.fork, { x: tip.x - f.x * 6, y: tip.y - f.y * 6 }, tip, 6);
+        px(c, COL.edge, tip.x, tip.y);
+      }
+      break;
+    }
     case FARM_ANIM.aim: {
       // v17: the ná at arm's length, its band drawn back to the chest with a pellet in the pouch, trembling every
       // other beat

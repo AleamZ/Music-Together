@@ -7,7 +7,7 @@ import { speciesOf, wildXY } from "@/lib/game/realm/model";
 import type { BossFight, WildAnimal, WorldState } from "@/lib/game/realm/rpc";
 import type { Vec } from "@/lib/game/types";
 import { toWorld, type ZoneId } from "@/lib/game/world/zones";
-import type { LiveAnimal, LiveBoss, LiveDig, LiveHouse, LiveRing, LiveStall, WorldLive } from "./live-plan";
+import type { LiveAnimal, LiveBoss, LiveDig, LiveHouse, LiveRing, LiveStall, LiveTrap, WorldLive } from "./live-plan";
 
 // P4: the real game's state → the 3D world's live model (WorldView.setLive). Pure: the shell's hooks hand GameCanvas
 // what the 2D game already has (zone-local, as the RPCs speak), and this turns it into world px. The static part
@@ -29,6 +29,8 @@ export interface LiveInputs {
   stalls?: ReadonlyArray<Stall> | null;
   realm?: LiveRealmIn | null;
   digs?: ReadonlyArray<LiveDigIn> | null;
+  /** 0123: my traps (world px already: the forest is the wild's). */
+  traps?: ReadonlyArray<LiveTrap> | null;
 }
 
 const W = (zone: ZoneId, p: Vec): Vec | null => toWorld(zone, p);
@@ -124,6 +126,7 @@ function stillLive(inp: LiveInputs): WorldLive {
   return {
     stalls: stallsLive(inp.stalls ?? []), rings: ringsLive(inp.ringLabels ?? []),
     houses: housesLive(inp.houses ?? []), digs: digsLive(inp.digs ?? []),
+    traps: [...(inp.traps ?? [])],                                                 // 0123
   };
 }
 

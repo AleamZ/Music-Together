@@ -258,3 +258,16 @@ Known, not caused by economy v2: `v22-fixes-smoke.sql`'s pet "a good press" chec
   (0104's `_pg_work_reason`) and `beta-reset-smoke.sql` (0118's `_beta_net_worth`).
   `beta-reset-smoke.sql` now also checks that a Tiều phu's tools and bags are wiped and that picking the nghề again after
   the reset gives the starter axe back.
+
+## Rừng tràm, round two (0123, 0124)
+
+- `forest-crafts-trade-smoke.sql` (0123: the tools rebalanced (the catalogue, a tool already owned gets the new maximum
+  and the difference); traps and charcoal as `forest` shop items, `forest_buy` at the stall; `carpenter_craft` — Thợ mộc
+  only, a saw, half-price logs first, the 'furniture' fee, furniture to storage, `furniture_crafted`, the 2 s cooldown;
+  charcoal in `cook_start` (+5 in the round's meta, `cook_finish` adds it); `trap_place` / `trap_check` / `trap_take` —
+  three at most, 32 px apart, the forest only, nothing before 5 min, a catch after hours, the wear, the day's kills, an
+  unused trap back to the bag, a used one gone; the new tables classified for the Beta reset and the wipe. 0124: forest
+  goods as `wood` / `wild` / `dish` / `item` assets — values, full-price logs only, `_econ_json`, a trade delivered by mail
+  and claimed, a market listing in the band, non-forest items refused): chain-level, re-runs 0123 and 0124 twice with
+  `\i`, one transaction rolled back. `forest-finish-smoke.sql` reads the starter's durability and the axe's price from
+  the catalogue (0123 changed them).

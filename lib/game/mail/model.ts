@@ -14,7 +14,7 @@ export const GIFT_MAX_ITEMS = 8;
 export const GIFT_ITEM_MAX_QTY = 99;
 
 export type MailKind = "trade" | "gift" | "admin" | "code" | "market" | "return";
-export type MailItemKind = "item" | "fashion" | "fish" | "produce";
+export type MailItemKind = "item" | "fashion" | "fish" | "produce" | "wood" | "wild" | "dish";   // 0124: the forest's goods
 
 export interface MailItem { kind: MailItemKind; ref: string; qty: number; name: string; value: number; rarity: number | null }
 export interface Mail {
@@ -32,7 +32,7 @@ const obj = (v: unknown): Record<string, unknown> | null => (v && typeof v === "
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
 const MAIL_KINDS: readonly MailKind[] = ["trade", "gift", "admin", "code", "market", "return"];
-const ITEM_KINDS: readonly MailItemKind[] = ["item", "fashion", "fish", "produce"];
+const ITEM_KINDS: readonly MailItemKind[] = ["item", "fashion", "fish", "produce", "wood", "wild", "dish"];
 
 export function parseMailItem(v: unknown): MailItem | null {
   const o = obj(v);
@@ -95,7 +95,8 @@ export const claimable = (m: Mail): boolean => !m.claimed && hasAttachments(m);
 /** Only a claimed mail or one with nothing in it may be deleted. */
 export const deletable = (m: Mail): boolean => m.claimed || !hasAttachments(m);
 
-export const itemIcon = (k: MailItemKind): string => (k === "fish" ? "🐟" : k === "fashion" ? "👕" : k === "produce" ? "🥔" : "📦");
+export const itemIcon = (k: MailItemKind): string =>
+  k === "fish" ? "🐟" : k === "fashion" ? "👕" : k === "produce" ? "🥔" : k === "wood" ? "🪵" : k === "wild" ? "🍖" : k === "dish" ? "🍲" : "📦";
 
 export function senderText(m: Mail): string {
   if (m.senderKind === "admin") return "Ban quản trị";

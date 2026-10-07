@@ -59,28 +59,29 @@ export interface ToolDef {
   repairPp: number;
 }
 
-/** 0097 _prof_tools_catalog (forest-content's bow / pot / axe tiers): a starter ("tập sự") tool per nghề, all sold. */
+/** 0097 _prof_tools_catalog (forest-content's bow / pot / axe tiers): a starter ("tập sự") tool per nghề, all sold. 0123:
+ *  bows, pans and axes rebalanced to pay back in ≈ 4–6 sessions (prices, durability, repair a point). */
 export const TOOLS: readonly ToolDef[] = [
   { id: "can_cau_tap_su", prof: "ngu_dan", name: "Cần câu tập sự", kind: "rod", durability: 60, power: 1, price: 60, starter: true, repairPp: 1 },
   { id: "cuoc_tap_su", prof: "nong_dan", name: "Cuốc tập sự", kind: "hoe", durability: 60, power: 1, price: 60, starter: true, repairPp: 1 },
   { id: "cuoc_chim_tap_su", prof: "tho_mo", name: "Cuốc chim tập sự", kind: "pick", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
-  { id: "chao_tap_su", prof: "dau_bep", name: "Chảo tập sự", kind: "pan", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
+  { id: "chao_tap_su", prof: "dau_bep", name: "Chảo tập sự", kind: "pan", durability: 80, power: 1, price: 80, starter: true, repairPp: 1 },
   { id: "can_hang_tap_su", prof: "thuong_nhan", name: "Cân hàng tập sự", kind: "scale", durability: 60, power: 1, price: 60, starter: true, repairPp: 1 },
   { id: "bua_ren_tap_su", prof: "tho_ren", name: "Búa rèn tập sự", kind: "hammer", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
-  { id: "cua_tap_su", prof: "tho_moc", name: "Cưa tập sự", kind: "saw", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
+  { id: "cua_tap_su", prof: "tho_moc", name: "Cưa tập sự", kind: "saw", durability: 100, power: 1, price: 80, starter: true, repairPp: 1 },
   { id: "gang_tay_tap_su", prof: "vo_si", name: "Găng tay tập sự", kind: "gloves", durability: 60, power: 1, price: 60, starter: true, repairPp: 1 },
-  { id: "cung_tap_su", prof: "tho_san", name: "Cung tập sự", kind: "bow", durability: 60, power: 1, price: 100, starter: true, repairPp: 1 },
-  { id: "riu_tap_su", prof: "tieu_phu", name: "Rìu tập sự", kind: "axe", durability: 60, power: 1, price: 80, starter: true, repairPp: 1 },
-  { id: "cung_tre", prof: "tho_san", name: "Cung tre", kind: "bow", durability: 60, power: 1, price: 280, starter: false, repairPp: 2 },
-  { id: "cung_go_tram", prof: "tho_san", name: "Cung gỗ tràm", kind: "bow", durability: 110, power: 2, price: 850, starter: false, repairPp: 3 },
-  { id: "cung_go_cung", prof: "tho_san", name: "Cung gỗ cứng", kind: "bow", durability: 180, power: 3, price: 1800, starter: false, repairPp: 4 },
-  { id: "noi_dat", prof: "dau_bep", name: "Nồi đất", kind: "pan", durability: 70, power: 1, price: 240, starter: false, repairPp: 1 },
-  { id: "chao_gang", prof: "dau_bep", name: "Chảo gang", kind: "pan", durability: 130, power: 2, price: 720, starter: false, repairPp: 2 },
-  { id: "noi_gang", prof: "dau_bep", name: "Nồi gang", kind: "pan", durability: 210, power: 3, price: 1500, starter: false, repairPp: 3 },
-  { id: "riu_sat", prof: "tieu_phu", name: "Rìu sắt", kind: "axe", durability: 80, power: 2, price: 300, starter: false, repairPp: 2 },
-  { id: "riu_thep", prof: "tieu_phu", name: "Rìu thép", kind: "axe", durability: 140, power: 3, price: 900, starter: false, repairPp: 3 },
-  { id: "riu_thep_toi", prof: "tieu_phu", name: "Rìu thép tôi", kind: "axe", durability: 220, power: 4, price: 1900, starter: false, repairPp: 4 },
-  { id: "riu_tinh_luyen", prof: "tieu_phu", name: "Rìu tinh luyện", kind: "axe", durability: 300, power: 4, price: 4500, starter: false, repairPp: 4 },
+  { id: "cung_tap_su", prof: "tho_san", name: "Cung tập sự", kind: "bow", durability: 80, power: 1, price: 100, starter: true, repairPp: 1 },
+  { id: "riu_tap_su", prof: "tieu_phu", name: "Rìu tập sự", kind: "axe", durability: 100, power: 1, price: 80, starter: true, repairPp: 1 },
+  { id: "cung_tre", prof: "tho_san", name: "Cung tre", kind: "bow", durability: 200, power: 1, price: 200, starter: false, repairPp: 1 },
+  { id: "cung_go_tram", prof: "tho_san", name: "Cung gỗ tràm", kind: "bow", durability: 200, power: 2, price: 700, starter: false, repairPp: 1 },
+  { id: "cung_go_cung", prof: "tho_san", name: "Cung gỗ cứng", kind: "bow", durability: 300, power: 3, price: 1500, starter: false, repairPp: 2 },
+  { id: "noi_dat", prof: "dau_bep", name: "Nồi đất", kind: "pan", durability: 200, power: 1, price: 150, starter: false, repairPp: 1 },
+  { id: "chao_gang", prof: "dau_bep", name: "Chảo gang", kind: "pan", durability: 200, power: 2, price: 600, starter: false, repairPp: 1 },
+  { id: "noi_gang", prof: "dau_bep", name: "Nồi gang", kind: "pan", durability: 300, power: 3, price: 1200, starter: false, repairPp: 2 },
+  { id: "riu_sat", prof: "tieu_phu", name: "Rìu sắt", kind: "axe", durability: 200, power: 2, price: 450, starter: false, repairPp: 1 },
+  { id: "riu_thep", prof: "tieu_phu", name: "Rìu thép", kind: "axe", durability: 300, power: 3, price: 900, starter: false, repairPp: 1 },
+  { id: "riu_thep_toi", prof: "tieu_phu", name: "Rìu thép tôi", kind: "axe", durability: 400, power: 4, price: 1300, starter: false, repairPp: 1 },
+  { id: "riu_tinh_luyen", prof: "tieu_phu", name: "Rìu tinh luyện", kind: "axe", durability: 800, power: 4, price: 2000, starter: false, repairPp: 1 },
 ];
 export const toolById = (id: string): ToolDef | null => TOOLS.find((t) => t.id === id) ?? null;
 /** 0121 _bow_bonus: the points a bow of this tier adds to a hunt's chance (5 a tier above the first). */
@@ -163,3 +164,47 @@ export const repairCost = (t: ToolDef, durability: number, max: number): number 
 export const FISH_NAME: Readonly<Record<string, string>> = { ca_loc: "Cá lóc", ca_ro: "Cá rô đồng", ca_sac: "Cá sặc rằn" };
 /** 0097 Rừng tràm (the 2D map): its px + this = world px (_forest_origin). */
 export const RUNG_TRAM_ORIGIN = { x: 2112, y: 1600 } as const;
+
+// ---------- 0123: forest items, carpentry, traps, charcoal ----------
+/** The forest's shop items (inventory, kind 'forest'): traps sold at the stall or crafted, and charcoal (crafted only). */
+export interface ForestItem { id: "bay_go" | "bay_sat" | "than_cui"; name: string; price: number; durability: number | null; sold: boolean }
+export const FOREST_ITEMS: readonly ForestItem[] = [
+  { id: "bay_go", name: "Bẫy gỗ", price: 120, durability: 6, sold: true },
+  { id: "bay_sat", name: "Bẫy sắt", price: 450, durability: 15, sold: true },
+  { id: "than_cui", name: "Than củi", price: 15, durability: null, sold: false },
+];
+export const forestItemById = (id: string): ForestItem | null => FOREST_ITEMS.find((i) => i.id === id) ?? null;
+/** 0123 _coal_bonus: the points a bag of charcoal adds to a dish. */
+export const COAL_BONUS = 5;
+
+/** 0123 _carpentry_recipes: logs (and a fee) into the shop's wooden furniture (to storage), a trap or charcoal. */
+export interface CarpentryRecipe {
+  id: string; name: string; outKind: "furniture" | "item"; outId: string; outQty: number;
+  logs: Readonly<Partial<Record<LogId, number>>>; fee: number;
+  /** What the same piece costs in the shop (furniture) or at the stall (a trap); charcoal: its value. */
+  shopPrice: number;
+}
+export const CARPENTRY: readonly CarpentryRecipe[] = [
+  { id: "than_cui", name: "Than củi", outKind: "item", outId: "than_cui", outQty: 2, logs: { go_tre: 3 }, fee: 0, shopPrice: 30 },
+  { id: "bay_go", name: "Bẫy gỗ", outKind: "item", outId: "bay_go", outQty: 1, logs: { go_tre: 4, go_keo: 2 }, fee: 10, shopPrice: 120 },
+  { id: "chair_go", name: "Ghế gỗ", outKind: "furniture", outId: "chair_go", outQty: 1, logs: { go_tre: 6, go_keo: 4 }, fee: 20, shopPrice: 150 },
+  { id: "floor_go", name: "Sàn gỗ", outKind: "furniture", outId: "floor_go", outQty: 1, logs: { go_tre: 20 }, fee: 30, shopPrice: 400 },
+  { id: "shelf_go", name: "Kệ sách gỗ", outKind: "furniture", outId: "shelf_go", outQty: 1, logs: { go_thong: 8 }, fee: 30, shopPrice: 350 },
+  { id: "table_go", name: "Bàn gỗ", outKind: "furniture", outId: "table_go", outQty: 1, logs: { go_keo: 10, go_thong: 6 }, fee: 40, shopPrice: 400 },
+  { id: "cabinet_go", name: "Tủ áo gỗ", outKind: "furniture", outId: "cabinet_go", outQty: 1, logs: { go_thong: 6, go_soi: 10 }, fee: 80, shopPrice: 900 },
+  { id: "bed_go", name: "Giường gỗ", outKind: "furniture", outId: "bed_go", outQty: 1, logs: { go_keo: 10, go_do: 8 }, fee: 100, shopPrice: 1200 },
+];
+/** What a recipe's logs are worth at the NPC (full price). */
+export const recipeLogValue = (r: CarpentryRecipe): number =>
+  Object.entries(r.logs).reduce((a, [log, n]) => a + logPrice(log) * (n ?? 0), 0);
+export const CARPENTRY_STAMINA = 2;
+
+/** 0123 traps: at most this many placed, this far apart (world px), a check at most this often (ms), in reach (px). */
+export const TRAP_LIMIT = 3;
+export const TRAP_GAP = 32;
+export const TRAP_CHECK_MS = 30_000;
+export const TRAP_REACH = 64;
+/** 0123 _trap_tau / _trap_odds: the odds (0 … 1) of a catch `minutes` after the trap's last catch (or its placing). */
+export const trapTau = (item: string): number => (item === "bay_sat" ? 18 : 30);
+export const trapOdds = (item: string, minutes: number): number =>
+  minutes < 5 ? 0 : 1 - Math.exp(-Math.min(minutes, 240) / trapTau(item));

@@ -157,7 +157,7 @@ export default function WorldGameDev() {
       zone: () => canvasRef.current?.zone(),
       travel: () => travel,
       // 0097 playtest: my chibi chops / cooks (the fa broadcast too); fell the tràm nearest (x, y) for 20 s, or clear
-      work: (a: "chop" | "cook" | null) => canvasRef.current?.setWork?.(a),
+      work: (a: "chop" | "cook" | "hunt" | null) => canvasRef.current?.setWork?.(a),
       fell: (x: number, y: number) => {
         const cx = Math.floor(x / 64), cy = Math.floor(y / 64);
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++)

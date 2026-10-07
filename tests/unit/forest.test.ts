@@ -17,8 +17,10 @@ const SQL = readFileSync("supabase/migrations/0096_forest_professions.sql", "utf
 /** 0097 re-made some of 0096's functions, 0103 (econ v2) the prices: the newest body wins. */
 const SQL97 = readFileSync("supabase/migrations/0097_forest_complete.sql", "utf8").replace(/\r\n/g, "\n");
 const SQL103 = readFileSync("supabase/migrations/0103_econ_crafts.sql", "utf8").replace(/\r\n/g, "\n");
+/** 0123: the tools rebalanced. */
+const SQL123 = readFileSync("supabase/migrations/0123_forest_crafts_traps.sql", "utf8").replace(/\r\n/g, "\n");
 function body(name: string): string {
-  for (const sql of [SQL103, SQL97, SQL]) {
+  for (const sql of [SQL123, SQL103, SQL97, SQL]) {
     const at = sql.indexOf(`function public.${name}(`);
     if (at < 0) continue;
     const start = sql.indexOf("$$", at);
@@ -41,9 +43,12 @@ describe("0096 tables = lib/game/forest/catalog.ts", () => {
     expect(rows.map((m) => ({
       id: m[1], prof: m[2], name: m[3], kind: m[4], durability: +m[5], power: +m[6], price: +m[7], starter: m[8] === "true", repairPp: +m[9],
     }))).toEqual(TOOLS);
-    for (const p of PROFESSIONS) expect(starterOf(p.id)?.durability).toBe(60);
-    expect(repairCost(TOOLS.find((t) => t.id === "riu_tap_su")!, 30, 60)).toBe(30);
-    expect(repairCost(TOOLS.find((t) => t.id === "riu_thep")!, 100, 140)).toBe(120);
+    // 0123: the forest's starters last longer (the axe and the saw 100, the bow and the pan 80); the others stay 60
+    for (const p of PROFESSIONS) {
+      expect(starterOf(p.id)?.durability).toBe(({ tieu_phu: 100, tho_moc: 100, tho_san: 80, dau_bep: 80 } as Record<string, number>)[p.id] ?? 60);
+    }
+    expect(repairCost(TOOLS.find((t) => t.id === "riu_tap_su")!, 30, 100)).toBe(70);
+    expect(repairCost(TOOLS.find((t) => t.id === "riu_thep")!, 100, 300)).toBe(200);
     expect(body("_forest_origin")).toContain(`select ${RUNG_TRAM_ORIGIN.x}, ${RUNG_TRAM_ORIGIN.y}`);
   });
   it("recipes (0097: forest-content's ten dishes) and qualities", () => {

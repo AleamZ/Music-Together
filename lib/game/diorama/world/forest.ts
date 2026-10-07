@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { DOMAIN } from "@/lib/game/world/terrain";
 import { CHUNK_PX, chunkOf, CHUNKS_X, CHUNKS_Y, landUse, scatterFlowers, scatterGrass, scatterHyacinths, scatterRocks, scatterTrees, type Spot, type TreeKind } from "@/lib/game/world/scenery";
 import { toon } from "./toon";
+import { choppableKindAt, CROWN } from "@/lib/game/forest/trees2d";
 
 // Browser only: the world's trees, rocks, grass and flowers, instanced per scenery chunk. Trees have three levels of
 // detail (a full crown with its trunk, a coarse crown, a far proxy of a few triangles); a chunk shows one level at a
@@ -249,6 +250,9 @@ export class Forest {
               }
               const pal = TREE_COLORS[kind], base = new THREE.Color(pal[0]);
               col.setHex(pal[Math.floor(t.tint * pal.length) % pal.length]);
+              // 0123: a rarer choppable kind (sồi, gõ đỏ, trầm hương, thần mộc) wears its 2D crown colour
+              const rare = kind === "tram" ? CROWN[choppableKindAt(t.x, t.y) ?? "cay_tre"] : undefined;
+              if (rare) col.set(rare[1]);
               im.setColorAt(i, col.setRGB(Math.min(1.25, col.r / Math.max(0.05, base.r)), Math.min(1.25, col.g / Math.max(0.05, base.g)), Math.min(1.25, col.b / Math.max(0.05, base.b))));
             });
             im.castShadow = lod < 2;

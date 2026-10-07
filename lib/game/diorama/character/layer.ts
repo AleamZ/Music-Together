@@ -3,7 +3,7 @@ import { BETA_GOLD, isBetaTag } from "@/lib/game/beta/frame";
 import { pxToWorld, type MapSize } from "../coords";
 import type { Billboard, Quality } from "../types";
 import { ChibiFactory, RIG } from "./build";
-import { FACING_YAW, locomotion, ONE_SHOT_ACTS, pedalAngle, poseAt, turnToward, yawOf, type CharAct } from "./pose";
+import { FACING_YAW, huntPhase, locomotion, ONE_SHOT_ACTS, pedalAngle, poseAt, turnToward, yawOf, type CharAct } from "./pose";
 import { heldFor, umbrellaArm } from "./held";
 import { ChibiRig } from "./rig";
 import { chibiSpec } from "./spec";
@@ -56,6 +56,13 @@ interface Actor {
   actT: number;
   /** Casting real shadows now (near the camera, high quality). */
   shadow: boolean;
+  /** 0123: the hunter's arrow in flight (made on the first loose). */
+  arrow?: THREE.Mesh;
+}
+
+/** 0123: where a loosed arrow is, from the bow hand forward (units: out along the facing, up from the ground). */
+export function arrowAt(flight: number): { out: number; up: number; pitch: number } {
+  return { out: 0.45 + flight * 7, up: 1.0 + Math.sin(flight * Math.PI) * 0.35 - flight * 0.25, pitch: -0.4 + flight * 0.8 };
 }
 
 /** The 3D chibi's name tag (a rounded plate; a gold inner border round a Beta-framed name, 0118). */
@@ -89,6 +96,8 @@ export class CharacterLayer {
   private readonly groundAt: (x: number, y: number) => number;
   private readonly factory = new ChibiFactory();
   private readonly blobGeo: THREE.PlaneGeometry;
+  private arrowGeo: THREE.BufferGeometry | null = null;
+  private arrowMat: THREE.MeshBasicMaterial | null = null;
   private readonly blobMat: THREE.MeshBasicMaterial;
   private readonly tags = new Map<string, { tex: THREE.CanvasTexture; mat: THREE.SpriteMaterial; aspect: number }>();
   private readonly actors = new Map<string, Actor>();
@@ -234,6 +243,7 @@ export class CharacterLayer {
       const pose = poseAt(swim ? "swim" : act, ONE_SHOT_ACTS.has(act) ? a.actT : a.walkT, a.phase, reduced);
       a.rig.apply(hf.L === "umbrella" ? umbrellaArm(pose) : pose);
       a.rig.setAct(swim ? null : act);                                   // wave 3: the act's props (held3d.ts)
+      this.flyArrow(a, act, reduced);                                    // 0123: the hunter's arrow
       const w = pxToWorld(b, this.size);
       a.rig.root.position.set(w.x, (swim && ground < WATER_DEPTH ? ground + SWIM_LIFT : ground) + (this.lifts.get(b.id) ?? b.lift ?? 0), w.z);
       a.rig.root.rotation.y = a.yaw;
@@ -268,7 +278,33 @@ export class CharacterLayer {
     }
   }
 
+  /** 0123: while hunting, the loosed arrow flies out along the facing (huntPhase: the last fifth of the cycle). */
+  private flyArrow(a: Actor, act: CharAct, reduced: boolean): void {
+    const ph = act === "hunt" && !reduced ? huntPhase(a.walkT) : null;
+    if (!ph || ph.arrow !== "flying") { if (a.arrow) a.arrow.visible = false; return; }
+    if (!a.arrow) {
+      this.arrowGeo ??= (() => {
+        const shaft = new THREE.CylinderGeometry(0.015, 0.015, 0.7, 4).rotateX(Math.PI / 2);
+        const tip = new THREE.ConeGeometry(0.035, 0.1, 4).rotateX(Math.PI / 2).translate(0, 0, 0.4);
+        const g = new THREE.BufferGeometry();
+        const pos = [...shaft.toNonIndexed().attributes.position.array, ...tip.toNonIndexed().attributes.position.array];
+        g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        g.computeVertexNormals();
+        shaft.dispose(); tip.dispose();
+        return g;
+      })();
+      this.arrowMat ??= new THREE.MeshBasicMaterial({ color: 0x6e4424 });
+      a.arrow = new THREE.Mesh(this.arrowGeo, this.arrowMat);
+      this.root.add(a.arrow);
+    }
+    const at = arrowAt(ph.flight), r = a.rig.root;
+    a.arrow.visible = r.visible;
+    a.arrow.position.set(r.position.x + Math.sin(a.yaw) * at.out, r.position.y + at.up, r.position.z + Math.cos(a.yaw) * at.out);
+    a.arrow.rotation.set(at.pitch, a.yaw, 0, "YXZ");
+  }
+
   private drop(a: Actor): void {
+    if (a.arrow) this.root.remove(a.arrow);
     this.root.remove(a.rig.root);
     if (a.tag) this.root.remove(a.tag);
     a.rig.detach();
@@ -290,6 +326,8 @@ export class CharacterLayer {
     this.blobGeo.dispose();
     this.blobMat.map?.dispose();
     this.blobMat.dispose();
+    this.arrowGeo?.dispose();
+    this.arrowMat?.dispose();
   }
 }
 

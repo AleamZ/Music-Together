@@ -110,7 +110,8 @@ begin
   j := public.cook_start(t, 'com_tam_suon');
   assert j->'round'->>'pan' = 'noi_gang' and (j->'round'->>'pan_bonus')::int = 8, format('the best pan %s', j->'round');
   assert (select durability from public.prof_tools where account_id = acc and item = 'noi_gang') = 209, 'the best pan wore';
-  assert (select durability from public.prof_tools where account_id = acc and item = 'chao_tap_su') = 60, 'not the starter';
+  assert (select durability from public.prof_tools where account_id = acc and item = 'chao_tap_su')
+         = (select durability from public._prof_tools_catalog() where id = 'chao_tap_su'), 'not the starter';
   assert (select meta->>'pan' from public.mg_live where account_id = acc and game = 'cook') = '3', 'the tier is kept in the round';
   raise notice 'B pan tiers ok';
 end $$;
@@ -139,13 +140,13 @@ begin
   insert into public.wild_bag (account_id, item, qty) values (acc, 'thit_tho', 2);                  -- 2 × 25 = 50
   insert into public.cooked_dishes (account_id, dish, quality, qty) values (acc, 'com_tam_suon', 2, 1);   -- 96 × 110 % = 105
   insert into public.prof_tools (account_id, item, durability, max_durability)
-  values (acc, 'cung_tap_su', 60, 60), (acc, 'riu_sat', 10, 80);                                    -- 0 (starter) + 300
+  values (acc, 'cung_tap_su', 60, 60), (acc, 'riu_sat', 10, 80);                                    -- 0 (starter) + its price (0123: 450)
   insert into public.rice_stock (account_id, variety, wet_kg, dry_kg) values (acc, 'nep', 10, 10)
   on conflict (account_id, variety) do update set wet_kg = 10, dry_kg = 10;                        -- 9 500 + 6 650
   nw := public._beta_net_worth(acc);
-  assert (nw->>'forest')::bigint - (nw0->>'forest')::bigint = 44 + 50 + 105 + 300, format('forest %s', nw);
+  assert (nw->>'forest')::bigint - (nw0->>'forest')::bigint = 44 + 50 + 105 + (select price from public._prof_tools_catalog() where id = 'riu_sat'), format('forest %s', nw);
   assert (nw->>'rice')::bigint - (nw0->>'rice')::bigint = 16150, format('rice %s', nw);
-  assert (nw->>'total')::bigint - (nw0->>'total')::bigint = 44 + 50 + 105 + 300 + 16150, format('the total %s', nw);
+  assert (nw->>'total')::bigint - (nw0->>'total')::bigint = 44 + 50 + 105 + (select price from public._prof_tools_catalog() where id = 'riu_sat') + 16150, format('the total %s', nw);
   raise notice 'D net worth ok';
 end $$;
 
