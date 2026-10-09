@@ -10,6 +10,7 @@ import {
 import type { MapId } from "@/lib/game/maps/types";
 import type { WildAnimal } from "@/lib/game/realm/rpc";
 import { animalAt, useWorld } from "./useWorld";
+import { toolById } from "@/lib/game/forest/catalog";
 import WorldPanel, { type WorldTab } from "./WorldPanel";
 import KeyBadge from "../KeyBadge";
 import WildGame from "./WildGame";
@@ -84,6 +85,9 @@ export default function WorldHud(props: {
   const atGate = near(mapId, zonePos, GATE, 56);
   const sp = target ? speciesOf(target.a.species) : null;
   const danger = sp !== null && sp.danger > 0 && s?.night === true;
+  // 0121: the bow a hunt would use (null: none that shoots — the hunt button says so before the server refuses)
+  const bow = s?.wild?.bow;
+  const noBow = bow === null;
 
   const actBtn = (action: WildAction, label: string, ok: boolean) => (
     <button key={action} type="button" className="pch-btn px-2 py-0.5 text-base" disabled={!ok || w.busy} onClick={() => target && w.act(target.a, action)}>
@@ -117,11 +121,17 @@ export default function WorldHud(props: {
       </div>
 
       {!blocked && !gameOpen && target && sp && !fight && (
-        <div className="pch pointer-events-auto absolute bottom-36 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 px-2 py-1 font-vt text-base">
+        <div className="pch pointer-events-auto absolute bottom-36 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap px-2 py-1 font-vt text-base">
           <span className="mr-1">{sp.name}{danger ? " ⚠️ nguy hiểm" : ""}{photoOnly(sp) ? " · 📷 Chỉ chụp ảnh" : ""}</span>
           {sp.hunt > 0 && actBtn("hunt", "🏹 Săn", target.d <= ACT_RANGE.hunt)}
           {sp.trap > 0 && actBtn("trap", "🪤 Bẫy", target.d <= ACT_RANGE.trap)}
           {actBtn("photo", target.a.photographed ? "📷 Đã chụp" : "📷 Chụp", !target.a.photographed)}
+          {sp.hunt > 0 && bow && (
+            <span className="ml-1 text-sm opacity-80" title="Cung đang dùng (độ bền)">
+              {toolById(bow.item)?.name ?? "Cung"} {bow.durability}/{bow.max}{bow.bonus > 0 ? ` · +${bow.bonus}%` : ""}
+            </span>
+          )}
+          {sp.hunt > 0 && noBow && <span className="ml-1 text-sm" title="Mua cung ở 🪵 Sạp thợ săn (Bãi đất trống), mục Đồ nghề">🏹 chưa có cung</span>}
         </div>
       )}
 

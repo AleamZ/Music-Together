@@ -14,6 +14,12 @@ import type { Vec } from "@/lib/game/types";
 import type { World } from "./useWorld";
 import { NIGHT_MARKET_PCT, WILD_DAILY_KILLS } from "@/lib/game/realm/model";
 import { npcQuotaLine } from "@/lib/game/economy/npc";
+import { toolById } from "@/lib/game/forest/catalog";
+import ItemIcon from "@/components/game/ItemIcon";
+
+/** 0121: the forest's animals out now, by name (from the species table, so the six of 0097 are there too). */
+const outNow = (night: boolean): string => WILD_SPECIES.filter((sp) => sp.active === "any" || (sp.active === "night") === night)
+  .map((sp) => sp.name.toLowerCase()).join(", ");
 
 export type WorldTab = "world" | "wild" | "party" | "boss" | "dungeon";
 const TABS: ReadonlyArray<[WorldTab, string]> = [
@@ -51,7 +57,7 @@ function WorldTabView(p: { world: World; state: WorldState; now: number; isOwner
   const { world: w, state: s, now } = p;
   return (
     <div className="flex flex-col gap-2">
-      <p>{s.night ? `🌙 Đang là ban đêm (18:00–06:00): cáo, sói, gấu và đom đóm ra rừng tràm; chợ đêm mua đồ săn giá +${NIGHT_MARKET_PCT} %; Sói Ma lúc 22:00.` : "☀️ Đang là ban ngày: chim sẻ và hươu sao ra rừng tràm; sạp thợ săn mở ở Bãi đất trống."}</p>
+      <p>{s.night ? `🌙 Đang là ban đêm (18:00–06:00) — trong rừng tràm có: ${outNow(true)}. Chợ đêm mua đồ săn giá +${NIGHT_MARKET_PCT} %; Sói Ma lúc 22:00.` : `☀️ Đang là ban ngày — trong rừng tràm có: ${outNow(false)}. Sạp thợ săn mở ở Bãi đất trống.`}</p>
       <p>Giờ Việt Nam: <b>{p.vnTime(now)}</b></p>
       <div className="pch p-2">
         <p className="font-bold">❄️ Tuyết</p>
@@ -81,16 +87,21 @@ function WildTab({ w, s, atStall }: { w: World; s: WorldState; atStall: boolean 
   return (
     <div className="flex flex-col gap-2">
       <p>Thú hoang sống trong rừng tràm (Rừng tràm, cổng nam Bãi đất trống). Lại gần để <b>săn</b>, <b>đặt bẫy</b> hoặc <b>chụp ảnh</b>. Ban đêm sói và gấu nguy hiểm: săn trượt sẽ bị hất văng, có thể ngất. Mỗi ngày săn, bẫy tối đa {WILD_DAILY_KILLS} con.</p>
+      <p className="text-sm">
+        🏹 Săn cần <b>cung</b> (mỗi phát mòn 1 độ bền); bẫy và chụp ảnh thì không. Cung mua và sửa ở Sạp thợ săn (nút 🪵 Gỗ · món · đồ nghề) — cung tốt hơn săn trúng dễ hơn.
+        {s.wild?.bow ? ` Đang dùng: ${toolById(s.wild.bow.item)?.name ?? s.wild.bow.item} (${s.wild.bow.durability}/${s.wild.bow.max}${s.wild.bow.bonus > 0 ? `, +${s.wild.bow.bonus}%` : ""}).`
+          : s.wild?.bow === null ? " Bạn chưa có cung còn dùng được." : ""}
+      </p>
       <div className="pch p-2">
         <p className="font-bold">🎒 Túi đồ săn {s.night ? `· 🏮 Chợ đêm +${NIGHT_MARKET_PCT} %` : ""}</p>
         {w.npc && <p className="text-sm opacity-80">{npcQuotaLine(w.npc)}</p>}
         {items.length === 0 && <p>Chưa có gì.</p>}
         {items.map((k) => (
           <div key={k} className="flex items-center justify-between gap-2">
-            <span>{WILD_ITEMS[k].icon} {WILD_ITEMS[k].name} × {bag[k]}</span>
+            <span className="flex items-center gap-1"><ItemIcon id={k} scale={1.5} /> {WILD_ITEMS[k].name} × {bag[k]}</span>
             <span className="flex gap-1">
               <button type="button" className="pch-btn px-2 py-0.5" disabled={!atStall || w.busy} onClick={() => w.sell(k, 1)}>Bán 1 ({sellPrice(k, 1, s.night)} xu)</button>
-              <button type="button" className="pch-btn px-2 py-0.5" disabled={!atStall || w.busy} onClick={() => w.sell(k, bag[k] ?? 0)}>Bán hết ({sellPrice(k, bag[k] ?? 0, s.night)} xu)</button>
+              <button type="button" className="pch-btn px-2 py-0.5" disabled={!atStall || w.busy} onClick={() => w.sellAll(k, bag[k] ?? 0)}>Bán hết ({sellPrice(k, bag[k] ?? 0, s.night)} xu)</button>
             </span>
           </div>
         ))}

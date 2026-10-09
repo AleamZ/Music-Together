@@ -4,8 +4,21 @@ import { useState } from "react";
 import { ParchmentModal } from "@/components/game/Parchment";
 import { BUFF_TEXT, MAX_LEVEL, PERK_TEXT, PROFESSIONS, type ProfId, type SkillNode } from "@/lib/game/professions/catalog";
 import {
-  levelProgress, nodeStatus, nodesOf, pointsLeft, professionErrorMessage, xpForLevel, type NodeStatus, type ProfState,
+  levelProgress, newTools, nodeStatus, nodesOf, pointsLeft, professionErrorMessage, xpForLevel, type NodeStatus, type ProfState,
 } from "@/lib/game/professions/model";
+import { toolById } from "@/lib/game/forest/catalog";
+
+/** 0121: how the forest's two nghề are done (they have no NPC to explain them). */
+const HOW_TO: Partial<Record<ProfId, string>> = {
+  tieu_phu: "Cách làm: vô Rừng tràm (cổng nam Bãi đất trống, hoặc đi thẳng vô rừng ở bản đồ 3D), đứng sát một cây tràm, bấm "
+    + "🪓 Đốn cây (phím G) rồi bấm Space đúng nhịp. Cần rìu — chọn nghề này được tặng Rìu tập sự; rìu tốt hơn, sửa rìu ở "
+    + "🪵 Sạp thợ săn (Bãi đất trống). Gỗ bán ở cùng sạp. Cây đốn xong mọc lại sau vài phút (cây hiếm lâu hơn).",
+  tho_san: "Cách làm: vô Rừng tràm, lại gần con thú, bấm 🏹 Săn (cần cung), 🪤 Bẫy hoặc 📷 Chụp. Chọn nghề này được tặng "
+    + "Cung tập sự; cung tốt hơn săn trúng dễ hơn — mua, sửa ở 🪵 Sạp thợ săn (Bãi đất trống). Thịt, da, lông bán ở 🏹 Sạp "
+    + "thợ săn (phím 6, tab Săn bắt); Đầu bếp nấu thịt thành món ngon.",
+  dau_bep: "Cách làm: cần nồi hoặc chảo (chọn nghề này được tặng Chảo tập sự). Bấm 🍳 Nấu ăn, chọn món có đủ thịt / cá, rồi "
+    + "làm đúng từng bước. Nồi, chảo tốt hơn cho món ngon hơn. Món ăn để ăn lấy buff, thể lực hoặc bán ở 🪵 Sạp thợ săn.",
+};
 import { professionChoose, skillLearn, skillReset } from "@/lib/game/professions/rpc";
 
 const STATUS_CLS: Record<NodeStatus, string> = {
@@ -39,12 +52,18 @@ export default function ProfessionModal({ token, state, nowMs, onState, onCoins,
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const [gift, setGift] = useState<string | null>(null);
   const run = async (f: () => Promise<ProfState>, coins = false) => {
     if (busy) return;
     setBusy(true);
     setMsg(null);
+    setGift(null);
     try {
-      onState(await f());
+      const next = await f();
+      // 0121: a starter tool that came with the choice (once per account and nghề)
+      const got = newTools(state, next).map((id) => toolById(id)?.name ?? id);
+      if (got.length > 0) setGift(`🎁 Nhận ${got.join(", ")} — dùng được ngay!`);
+      onState(next);
       if (coins) onCoins();
     } catch (e) {
       setMsg(professionErrorMessage(e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e)));
@@ -96,8 +115,11 @@ export default function ProfessionModal({ token, state, nowMs, onState, onCoins,
           <p className="mt-1 text-base">
             {isMain
               ? "★ Nghề chính: kỹ năng đã học đang có hiệu lực, kinh nghiệm ×1,5."
-              : "Chỉ kỹ năng của nghề chính mới có hiệu lực. Nghề nào cũng lên cấp khi bạn làm việc của nghề đó."}
+              : tab === "tho_san"
+                ? "Chỉ kỹ năng của nghề chính mới có hiệu lực. Riêng Thợ săn chỉ lên cấp khi đây là nghề chính."
+                : "Chỉ kỹ năng của nghề chính mới có hiệu lực. Nghề nào cũng lên cấp khi bạn làm việc của nghề đó."}
           </p>
+          {HOW_TO[tab] && <p className="mt-1 text-base">{HOW_TO[tab]}</p>}
           {!isMain && (
             <button type="button" className="pch-btn mt-1" disabled={busy || cooling} data-testid="prof-choose"
               onClick={() => void run(() => professionChoose(token, tab), state.main !== null)}>
@@ -138,7 +160,7 @@ export default function ProfessionModal({ token, state, nowMs, onState, onCoins,
 
         <section className="rounded-sm border border-ink/30 p-2 text-base">
           <h3 className="font-bold">⚡ Thể lực & buff</h3>
-          <p>Giữ <kbd>Shift</kbd> để chạy (tốn 1 thể lực/giây). Câu cá 3, kéo lưới 5, đào mỏ 4, trận võ 8. Hồi đầy sau ~10 phút;
+          <p>Giữ <kbd>Shift</kbd> để chạy (tốn 1 thể lực/giây). Câu cá 3, kéo lưới 5, đào mỏ 4, đốn cây 4, nấu ăn 2, săn / bẫy 1, trận võ 8. Hồi đầy sau ~10 phút;
             nhanh gấp 3 khi nằm võng, ×1,2 khi “Ngủ ngon”; ngủ nhà nghỉ hồi đầy ngay.</p>
           <p className="mt-1">Món ăn ở Chợ Lớn cho buff: cơm tấm / bún bò 💪, phở / nước dừa / trà đá 🔋, bánh mì / nước mía / cà phê 💨,
             cá kho / canh chua / cá chiên / sinh tố 🍀.</p>
@@ -150,6 +172,7 @@ export default function ProfessionModal({ token, state, nowMs, onState, onCoins,
             </ul>
           )}
         </section>
+        {gift && <p role="status" className="text-emerald-800">{gift}</p>}
         {msg && <p role="alert" className="text-red-700">{msg}</p>}
       </div>
     </ParchmentModal>

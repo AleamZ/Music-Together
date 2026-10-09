@@ -224,7 +224,7 @@ export class GameEngine {
   /** v18.13: my lift, since when (this world) and when the partner was last seen here (performance ms). */
   private lift: (LocalLift & { since: number; seenAt: number }) | null = null;
   private pendingInteract: Interactable | null = null;
-  private workAct: "chop" | "cook" | null = null;
+  private workAct: "chop" | "cook" | "hunt" | null = null;
   private prompt: Interactable | null = null;
   private lastSent = { mv: false, vx: 0, vy: 0, at: 0 };
   private fishing: Required<LocalFishing> = { phase: "idle", tint: null, glow: false };
@@ -748,7 +748,7 @@ export class GameEngine {
   }
 
   /** 0096: what my hands are busy with (chopping a tree, cooking) — the 3D chibi's action while a minigame runs. */
-  setWork(a: "chop" | "cook" | null): void {
+  setWork(a: "chop" | "cook" | "hunt" | null): void {
     this.workAct = a;
   }
 

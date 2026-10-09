@@ -2,7 +2,16 @@
 // house and the rented stalls at Chợ Lớn. Every price, fee, band and time is the server's; these are display copies
 // pinned to the SQL by tests/unit/economy-sql.test.ts. Pure.
 
-export type AssetKind = "fish" | "fashion" | "produce";
+export type AssetKind = "fish" | "fashion" | "produce" | "wood" | "wild" | "dish" | "item";
+/** 0124: every kind, in the market filter's order; the forest's goods are counted like produce's kg. */
+export const ASSET_KINDS: readonly AssetKind[] = ["fish", "fashion", "produce", "wood", "wild", "dish", "item"];
+/** A kind sold by the amount (kg of produce; logs, wild goods, dishes, forest items by the piece). */
+export const isStackable = (k: AssetKind): boolean => k !== "fish" && k !== "fashion";
+/** The amount's unit: "kg" for produce, else "cái". */
+export const qtyUnit = (k: AssetKind): string => (k === "produce" ? "kg" : "cái");
+/** "Khoai lang 5 kg", "Gỗ sồi ×4". */
+export const lotName = (k: AssetKind, name: string, qty: number): string =>
+  k === "produce" ? `${name} ${qty} kg` : isStackable(k) ? `${name} ×${qty}` : name;
 
 /** % of a sale burned (board, stall, auction). */
 export const SALE_FEE_PERCENT = 5;
@@ -66,8 +75,12 @@ export const tradeReceives = (gross: number, feePct = TRADE_FEE_PERCENT): number
 export const minBid = (start: number, top: number | null): number =>
   top === null ? start : top + Math.max(AUCTION_INC_MIN, Math.floor((top * AUCTION_INC_PERCENT + 99) / 100));
 
-export const kindIcon = (k: AssetKind): string => (k === "fish" ? "🐟" : k === "fashion" ? "👕" : "🥔");
-export const kindName = (k: AssetKind): string => (k === "fish" ? "Cá" : k === "fashion" ? "Thời trang" : "Nông sản");
+const KIND_ICON: Readonly<Record<AssetKind, string>> = { fish: "🐟", fashion: "👕", produce: "🥔", wood: "🪵", wild: "🍖", dish: "🍲", item: "🪤" };
+const KIND_NAME: Readonly<Record<AssetKind, string>> = {
+  fish: "Cá", fashion: "Thời trang", produce: "Nông sản", wood: "Gỗ", wild: "Đồ săn", dish: "Món ăn", item: "Đồ rừng",
+};
+export const kindIcon = (k: AssetKind): string => KIND_ICON[k] ?? "📦";
+export const kindName = (k: AssetKind): string => KIND_NAME[k] ?? k;
 
 // ---------------------------------------------------------------- parsers
 
@@ -96,7 +109,7 @@ const num = (v: unknown): number | null => (typeof v === "number" && Number.isFi
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const obj = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-const kind = (v: unknown): AssetKind | null => (v === "fish" || v === "fashion" || v === "produce" ? v : null);
+const kind = (v: unknown): AssetKind | null => ((ASSET_KINDS as readonly unknown[]).includes(v) ? (v as AssetKind) : null);
 
 export function parseAsset(v: unknown): Asset | null {
   const o = obj(v);
@@ -209,14 +222,14 @@ export function tradeXuLeg(t: Trade): XuLeg | null {
 /** What the server takes as an offer. */
 export const offerArg = (o: Offer) => ({
   coins: o.coins,
-  items: o.items.map((a) => (a.kind === "produce" ? { kind: a.kind, ref: a.ref, qty: a.qty } : { kind: a.kind, ref: a.ref })),
+  items: o.items.map((a) => (isStackable(a.kind) ? { kind: a.kind, ref: a.ref, qty: a.qty } : { kind: a.kind, ref: a.ref })),
 });
 
 /** How much of an asset is free to list or offer (kg for produce, else 0 or 1). */
 export const freeQty = (a: Asset): number => Math.max(0, a.qty - a.reserved);
 
 /** The NPC value of `qty` of my asset (produce is priced per kg in `assets`). */
-export const assetValue = (a: Asset, qty: number): number => (a.kind === "produce" ? a.value * qty : a.value);
+export const assetValue = (a: Asset, qty: number): number => (isStackable(a.kind) ? a.value * qty : a.value);
 
 // ---------------------------------------------------------------- texts
 

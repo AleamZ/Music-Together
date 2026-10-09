@@ -10,14 +10,14 @@ import type { CharAct, Pose } from "./pose";
 // while shown), built once and shared. Geometry frame: the fist at the origin, the handle along +z (out of the fist),
 // a blade/head at the far end pointing −y; the rig turns it by `grip` about x.
 
-export type ToolId = "axe" | "pan" | "pickaxe" | "sickle" | "sling" | "sprayer" | "pump" | "shovel" | "hoe" | "seedlings"
+export type ToolId = "axe" | "pan" | "bow" | "pickaxe" | "sickle" | "sling" | "sprayer" | "pump" | "shovel" | "hoe" | "seedlings"
   | "crab_basket" | "snail_basket" | "fert_bag" | "pick_basket" | "umbrella" | "camera" | "bowl" | "chopsticks" | "cup";
-export const TOOL_IDS: readonly ToolId[] = ["axe", "pan", "pickaxe", "sickle", "sling", "sprayer", "pump", "shovel", "hoe", "seedlings",
+export const TOOL_IDS: readonly ToolId[] = ["axe", "pan", "bow", "pickaxe", "sickle", "sling", "sprayer", "pump", "shovel", "hoe", "seedlings",
   "crab_basket", "snail_basket", "fert_bag", "pick_basket", "umbrella", "camera", "bowl", "chopsticks", "cup"];
 
 /** What each action holds: the right hand's and the left hand's (absent = empty). */
 export const ACT_TOOL: Readonly<Partial<Record<CharAct, { R?: ToolId; L?: ToolId }>>> = {
-  chop: { R: "axe" }, cook: { R: "pan" }, mine: { R: "pickaxe" },
+  chop: { R: "axe" }, cook: { R: "pan" }, hunt: { L: "bow" }, mine: { R: "pickaxe" },
   transplant: { L: "seedlings" }, harvest: { R: "sickle" }, pump: { R: "pump" }, spray: { R: "sprayer" }, fertilize: { L: "fert_bag" },
   crab: { L: "crab_basket" }, snails: { L: "snail_basket" }, prepare: { R: "hoe" }, dig: { R: "shovel" }, pick: { L: "pick_basket" },
   aim: { L: "sling" }, photo: { R: "camera" }, eat: { R: "chopsticks", L: "bowl" }, drink: { R: "cup" },
@@ -58,6 +58,12 @@ const TOOLS: Readonly<Record<ToolId, { grip: number; paint: (p: Paint) => void }
     handle(p, -0.05, 0.28, 0.025, 0x2a2420);
     p.add(new THREE.CylinderGeometry(0.2, 0.17, 0.06, 12), 0x3a3a40, 0, 0, 0.47);
     p.add(new THREE.CylinderGeometry(0.17, 0.17, 0.01, 12), 0xd8a050, 0, 0.03, 0.47);       // something frying
+  } },
+  bow: { grip: 1.5, paint: (p) => {
+    // 0123: an upright recurve bow out of the left fist (its grip in the fist), the string taut along the back
+    p.add(new THREE.TorusGeometry(0.42, 0.022, 4, 14, Math.PI * 0.9), WOOD, 0, 0, 0.09, 0, Math.PI / 2, Math.PI * 0.55);
+    p.box(0.05, 0.12, 0.05, WOOD_D, 0, 0, 0);
+    p.box(0.006, 0.8, 0.006, 0xeeeadf, 0, 0, -0.27);
   } },
   pickaxe: { grip: 0.2, paint: (p) => {
     handle(p, -0.08, 0.62);

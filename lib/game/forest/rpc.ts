@@ -16,7 +16,13 @@ export interface ForestState {
   /** Felled trees until they respawn (server ms). */
   felled: Array<{ tree: string; respawnMs: number }>;
   serverNowMs: number;
+  /** 0123: my placed traps (world px; `sinceMs` = the last catch or the placing, the clock of the odds). */
+  traps: ForestTrap[];
+  /** 0123: my forest items in the inventory (bay_go, bay_sat, than_cui). */
+  items: Record<string, number>;
 }
+
+export interface ForestTrap { id: number; item: string; durability: number; max: number; x: number; y: number; sinceMs: number; checkMs: number | null }
 
 const num = (x: unknown, d = 0): number => (typeof x === "number" && Number.isFinite(x) ? x : d);
 const obj = (x: unknown): Record<string, unknown> => (x && typeof x === "object" ? (x as Record<string, unknown>) : {});
@@ -38,6 +44,11 @@ export function parseForest(raw: unknown): ForestState {
     main: typeof o.main === "string" ? o.main : null,
     felled: arr(o.felled).flatMap((f) => (typeof f.tree === "string" ? [{ tree: f.tree, respawnMs: num(f.respawn_ms) }] : [])),
     serverNowMs: num(o.server_now_ms, Date.now()),
+    traps: arr(o.traps).flatMap((t) => (typeof t.id === "number" && typeof t.item === "string"
+      ? [{ id: t.id, item: t.item, durability: num(t.durability), max: num(t.max, 1), x: num(t.x), y: num(t.y), sinceMs: num(t.since_ms),
+          checkMs: typeof t.check_ms === "number" ? t.check_ms : null }]
+      : [])),
+    items: Object.fromEntries(Object.entries(obj(o.items)).flatMap(([k, v]) => (typeof v === "number" ? [[k, v] as const] : []))),
   };
 }
 
@@ -93,9 +104,35 @@ export const toolRepair = async (token: string, item: string) => {
 export const toolBuy = async (token: string, item: string) =>
   parseForest((await call("tool_buy", { p_session_token: token, p_item: item })).forest);
 
-export async function cookStart(token: string, recipe: string): Promise<{ recipe: string; steps: string[] }> {
+export async function cookStart(token: string, recipe: string): Promise<{ recipe: string; steps: string[]; coal: boolean }> {
   const r = obj((await call("cook_start", { p_session_token: token, p_recipe: recipe })).round);
-  return { recipe: String(r.recipe ?? recipe), steps: Array.isArray(r.steps) ? r.steps.map(String) : [] };
+  return { recipe: String(r.recipe ?? recipe), steps: Array.isArray(r.steps) ? r.steps.map(String) : [], coal: r.coal === true };
+}
+
+// ---------- 0123 ----------
+/** Buy traps at the stall (1 … 10). */
+export const forestBuy = async (token: string, item: string, qty: number) =>
+  parseForest((await call("forest_buy", { p_session_token: token, p_item: item, p_qty: qty })).forest);
+/** Thợ mộc: one recipe → furniture (storage), a trap or charcoal. */
+export async function carpenterCraft(token: string, recipe: string): Promise<{ made: string; qty: number; kind: string; saw: number | null; forest: ForestState }> {
+  const o = await call("carpenter_craft", { p_session_token: token, p_recipe: recipe });
+  return { made: String(o.made ?? ""), qty: num(o.qty), kind: String(o.kind ?? ""), saw: typeof o.saw === "number" ? o.saw : null, forest: parseForest(o.forest) };
+}
+/** Place a trap where I stand (the map and my position: the server checks both). */
+export const trapPlace = async (token: string, item: string, map: string, x: number, y: number) =>
+  parseForest((await call("trap_place", { p_session_token: token, p_item: item, p_map: map, p_x: Math.round(x), p_y: Math.round(y) })).forest);
+export interface TrapCheck { result: "caught" | "empty"; why: string | null; species: string | null; item: string | null; qty: number; xp: number; broken: boolean; odds: number; forest: ForestState }
+export async function trapCheck(token: string, id: number, map: string, x: number, y: number): Promise<TrapCheck> {
+  const o = await call("trap_check", { p_session_token: token, p_trap: id, p_map: map, p_x: Math.round(x), p_y: Math.round(y) });
+  return {
+    result: o.result === "caught" ? "caught" : "empty", why: typeof o.why === "string" ? o.why : null,
+    species: typeof o.species === "string" ? o.species : null, item: typeof o.item === "string" ? o.item : null,
+    qty: num(o.qty), xp: num(o.xp), broken: o.broken === true, odds: num(o.odds), forest: parseForest(o.forest),
+  };
+}
+export async function trapTake(token: string, id: number, map: string, x: number, y: number): Promise<{ returned: boolean; forest: ForestState }> {
+  const o = await call("trap_take", { p_session_token: token, p_trap: id, p_map: map, p_x: Math.round(x), p_y: Math.round(y) });
+  return { returned: o.returned === true, forest: parseForest(o.forest) };
 }
 
 export interface CookResult { result: "ok" | "lost"; why: string | null; score: number; steps: number[]; quality: number; forest: ForestState | null }
@@ -121,11 +158,11 @@ export const cookEat = async (token: string, dish: string, quality: number) => {
 /** A server refusal in words. */
 export function forestErrorText(e: unknown): string {
   const m = e instanceof Error ? e.message : typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : String(e);
-  if (m.includes("not in forest")) return "Muốn săn thì vô rừng tràm nha!";
+  if (m.includes("not in forest")) return "Vô rừng tràm (cổng nam Bãi đất trống) mới làm được nha!";
   if (m.includes("no bow")) return "Cần có cung mới đi săn được nghen!";
   if (m.includes("no pan")) return "Cần có nồi hoặc chảo mới nấu được nghen!";
   if (m.includes("nothing to repair")) return "Đồ còn nguyên, chưa cần sửa.";
-  if (m.includes("no axe")) return "Rìu hư rồi, đem đi sửa nha!";
+  if (m.includes("no axe")) return "Chưa có rìu còn dùng được — mua hoặc sửa rìu ở Sạp thợ săn (Bãi đất trống) nha!";
   if (m.includes("felled")) return "Cây mới đốn, chờ mọc lại nghen!";
   if (m.includes("daily log limit")) return `Hôm nay đốn đủ ${DAILY_MAX_LOGS} khúc gỗ rồi — mai quay lại nghen!`;
   if (m.includes("not a chef")) return "Chỉ Đầu bếp mới nấu được — chọn nghề Đầu bếp (phím 3).";
@@ -137,5 +174,20 @@ export function forestErrorText(e: unknown): string {
   if (m.includes("too far")) return "Đứng gần cây hơn.";
   if (m.includes("not enough")) return "Không đủ hàng.";
   if (m.includes("round not found")) return "Lượt này đã hết hạn.";
+  if (m.includes("bad tree")) return "Cây này không đốn được — chọn cây khác nha.";
+  if (m.includes("not a carpenter")) return "Chỉ Thợ mộc mới đóng đồ gỗ được — chọn nghề Thợ mộc (phím 3).";
+  if (m.includes("no saw")) return "Cần có cưa còn dùng được — sửa hoặc mua ở Sạp thợ săn.";
+  if (m.includes("trap limit")) return "Mỗi người đặt tối đa 3 cái bẫy — thu bớt bẫy cũ đã.";
+  if (m.includes("too close")) return "Chỗ này sát bẫy khác quá — dời ra xa chút.";
+  if (m.includes("no trap")) return "Bẫy này không còn nữa.";
+  if (m.includes("bag full")) return "Túi đầy rồi (tối đa 99 món mỗi loại).";
+  if (m.includes("invalid quantity")) return "Số lượng không hợp lệ.";
+  if (m.includes("invalid recipe")) return "Món này chưa có trong sổ nấu ăn.";
+  if (m.includes("invalid item")) return "Món đồ này không bán ở đây.";
+  if (m.includes("rate limited")) return "Thao tác quá nhanh — chờ một chút rồi thử lại nhé.";
+  if (m.includes("stunned")) return "Bạn đang choáng — đợi một chút!";
+  if (m.includes("fainted")) return "Bạn đang bất tỉnh.";
+  if (m.includes("too hungry")) return "Bạn đói quá, ăn gì đã.";
+  if (m.includes("too thirsty")) return "Bạn khát quá, uống gì đã.";
   return "Có lỗi, thử lại sau nhé.";
 }

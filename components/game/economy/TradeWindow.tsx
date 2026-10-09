@@ -5,6 +5,7 @@ import { formatXu } from "@/lib/game/fishing/catalog";
 import {
   assetValue, econErrText, freeQty, kindIcon, RECV_MIN_DAYS, RECV_MIN_LEVEL, TRADE_IDLE_MIN, TRADE_ITEMS, tradeXuLeg,
   type Asset, type Offer, type Trade, type TradeState,
+  isStackable, lotName, qtyUnit,
 } from "@/lib/game/economy/model";
 import { econState, tradeCancel, tradeConfirm, tradeOffer } from "@/lib/game/economy/rpc";
 import { MAIL_DAYS } from "@/lib/game/mail/model";
@@ -66,8 +67,8 @@ export default function TradeWindow({ token, trade, onState, onChanged }: {
   const chosen = available.find((a) => keyOf(a) === pick) ?? null;
   const add = () => {
     if (!chosen || draft.length >= TRADE_ITEMS) return;
-    const qty = chosen.kind === "produce" ? Math.max(1, Math.min(freeQty(chosen), Number(kg || freeQty(chosen)) | 0)) : 1;
-    setDraft([...draft, { ...chosen, qty, value: assetValue(chosen, qty), name: chosen.kind === "produce" ? `${chosen.name} ${qty} kg` : chosen.name }]);
+    const qty = isStackable(chosen.kind) ? Math.max(1, Math.min(freeQty(chosen), Number(kg || freeQty(chosen)) | 0)) : 1;
+    setDraft([...draft, { ...chosen, qty, value: assetValue(chosen, qty), name: lotName(chosen.kind, chosen.name, qty) }]);
     setPick("");
     setKg("");
   };
@@ -133,11 +134,11 @@ export default function TradeWindow({ token, trade, onState, onChanged }: {
                 <select aria-label="Thêm món" className="max-w-full rounded border border-gold-300 bg-cream px-1" value={pick} onChange={(e) => setPick(e.target.value)}>
                   <option value="">— thêm món —</option>
                   {available.map((a) => (
-                    <option key={keyOf(a)} value={keyOf(a)}>{kindIcon(a.kind)} {a.name}{a.kind === "produce" ? ` (còn ${freeQty(a)} kg)` : ""}</option>
+                    <option key={keyOf(a)} value={keyOf(a)}>{kindIcon(a.kind)} {a.name}{isStackable(a.kind) ? ` (còn ${freeQty(a)} ${qtyUnit(a.kind)})` : ""}</option>
                   ))}
                 </select>
-                {chosen?.kind === "produce" && (
-                  <input type="number" inputMode="numeric" min={1} max={freeQty(chosen)} aria-label="Số kg" placeholder={String(freeQty(chosen))}
+                {chosen && isStackable(chosen.kind) && (
+                  <input type="number" inputMode="numeric" min={1} max={freeQty(chosen)} aria-label={`Số ${qtyUnit(chosen.kind)}`} placeholder={String(freeQty(chosen))}
                     className="w-20 rounded border border-gold-300 bg-cream px-1" value={kg} onChange={(e) => setKg(e.target.value)} />
                 )}
                 <button type="button" className="pch-btn" disabled={!chosen} onClick={add}>Thêm</button>

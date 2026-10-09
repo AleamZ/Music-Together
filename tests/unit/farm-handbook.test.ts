@@ -23,14 +23,14 @@ describe("handbook", () => {
   it("gives the 11 steps and the hour marks per variety, each inside its window", () => {
     const [steps, marks] = handbookPage("process", [short, nep, thom]);
     expect(steps.lines).toHaveLength(11);
-    // A window's start rounds up and its end or deadline rounds down, so acting at a printed hour is never early or
-    // late. The model's windows (crop.ts): ngắn ngày (s = 0.9) mạ 7.2–12.6 h, bón thúc 1.8–9, phơi ruộng 12.6–16.2
+    // A window's start rounds up and its end or deadline rounds down, to a quarter hour (0120), so acting at a printed
+    // hour is never early or late. The model's windows (crop.ts): ngắn ngày (s = 0.9) mạ 7.2–12.6 h, bón thúc 1.8–9, phơi ruộng 12.6–16.2
     // (checked at 16.2), đón đòng 16.2–21.6, chín 43.2; thơm (s = 1.15) mạ 9.2–16.1, bón thúc 2.3–11.5, phơi ruộng
     // 16.1–20.7, đón đòng 20.7–27.6, chín 55.2.
     expect(marks.lines).toEqual([
-      "Lúa ngắn ngày: cấy khi mạ 8–12 giờ tuổi · bón thúc 2–9 giờ sau cấy · phơi ruộng 13–16 · đón đòng 17–21 · rút nước từ 36 · chín 44 giờ sau cấy (~52 giờ từ lúc ngâm).",
+      "Lúa ngắn ngày: cấy khi mạ 7,25–12,5 giờ tuổi · bón thúc 2–9 giờ sau cấy · phơi ruộng 12,75–16 · đón đòng 16,25–21,5 · rút nước từ 36 · chín 43,25 giờ sau cấy (~52 giờ từ lúc ngâm).",
       "Nếp: cấy khi mạ 8–14 giờ tuổi · bón thúc 2–10 giờ sau cấy · phơi ruộng 14–18 · đón đòng 18–24 · rút nước từ 40 · chín 48 giờ sau cấy (~58 giờ từ lúc ngâm).",
-      "Lúa thơm: cấy khi mạ 10–16 giờ tuổi · bón thúc 3–11 giờ sau cấy · phơi ruộng 17–20 · đón đòng 21–27 · rút nước từ 46 · chín 56 giờ sau cấy (~66 giờ từ lúc ngâm).",
+      "Lúa thơm: cấy khi mạ 9,25–16 giờ tuổi · bón thúc 2,5–11,5 giờ sau cấy · phơi ruộng 16,25–20,5 · đón đòng 20,75–27,5 · rút nước từ 46 · chín 55,25 giờ sau cấy (~66 giờ từ lúc ngâm).",
     ]);
     expect(handbookPage("varieties", [thom])[0].lines).toEqual(["Lúa thơm: chín ~66 giờ · 60 kg mỗi thửa · 26 xu/kg lúa khô · dễ bị đạo ôn"]);
   });
@@ -112,7 +112,7 @@ describe("v15.2 tabs (§14)", () => {
     for (const u of UPLANDS) {
       const lines = uplandHandbook(u, ITEMS)[0].lines;
       u.cares.forEach((c, i) => {
-        const [, from, to] = /(\d+)–(\d+) giờ sau trồng/.exec(lines[3 + i])!.map(Number);
+        const [, from, to] = /([\d,]+)–([\d,]+) giờ sau trồng/.exec(lines[3 + i])!.map((x) => Number(x.replace(",", ".")));
         expect(from >= c.fromH && to <= c.toH && from <= to, `${u.id} ${c.id}`).toBe(true);
       });
     }

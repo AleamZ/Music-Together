@@ -17,7 +17,10 @@ import {
 import { noLine, okLine } from "@/lib/game/realm/mg-copy";
 import { liveSync } from "@/lib/game/mglive";
 import { isFelled } from "@/lib/game/forest/felled-store";
-import { drawStump, drawTram, rungTramTrees } from "@/lib/game/forest/trees2d";
+import { SELL_MAX, treeOf } from "@/lib/game/forest/catalog";
+import { drawStump, drawTram, drawTrap, rungTramTrees } from "@/lib/game/forest/trees2d";
+import { trapList } from "@/lib/game/forest/trap-store";
+import { RT_ORIGIN } from "@/lib/game/maps/rung-tram";
 import type { WildView } from "./WildGame";
 import type { ComboView } from "./ComboGame";
 import { WILD_ITEMS } from "@/lib/game/realm/model";
@@ -61,6 +64,14 @@ export function useWorld(o: WorldOpts) {
   /** v22: the damage numbers floating over the boss (performance ms). */
   const floatsRef = useRef<Array<{ dmg: number; at: number }>>([]);
   const [wild, setWild] = useState<WildView | null>(null);
+  // 0123: my chibi draws the bow while a hunt round plays (the farm-animation code goes to the others too: they see it)
+  const hunting = wild?.round.game === "hunt" && wild.phase === "playing";
+  const wasHunting = useRef(false);
+  useEffect(() => {
+    if (hunting === wasHunting.current) return;
+    wasHunting.current = hunting;
+    canvas()?.setWork?.(hunting ? "hunt" : null);
+  }, [hunting, canvas]);
   const [combo, setCombo] = useState<ComboView | null>(null);
   /** Econ v2: the thương lái's day after my last sale at the stall (null until I sell). */
   const [npc, setNpc] = useState<NpcQuota | null>(null);
@@ -142,7 +153,15 @@ export function useWorld(o: WorldOpts) {
         for (const tr of rungTramTrees()) {
           const down = isFelled(tr.key);
           out.push({ x: tr.x, y: tr.y, draw: (b, cx, cy) => (down ? drawStump(b, Math.round(tr.x) - cx, Math.round(tr.y) - cy)
-            : drawTram(b, Math.round(tr.x) - cx, Math.round(tr.y) - cy, tr.cx * 7 + tr.k, reduced ? 0 : (Math.sin(t / 900 + tr.x) + 1) / 2)) });
+            : drawTram(b, Math.round(tr.x) - cx, Math.round(tr.y) - cy, tr.cx * 7 + tr.k, reduced ? 0 : (Math.sin(t / 900 + tr.x) + 1) / 2,
+              treeOf(tr.cx, tr.cy, tr.k).id)) });   // 0121: a rarer kind's crown tint
+        }
+      }
+      // 0123: my traps (world px → the window's px)
+      if (map === "rung_tram") {
+        for (const tr of trapList()) {
+          const x = tr.x - RT_ORIGIN.x, y = tr.y - RT_ORIGIN.y;
+          out.push({ x, y, draw: (b, cx, cy) => drawTrap(b, Math.round(x) - cx, Math.round(y) - cy, tr.item === "bay_sat", tr.odds >= 0.5, t) });
         }
       }
       if (map === GATE.map) {
@@ -227,6 +246,24 @@ export function useWorld(o: WorldOpts) {
       toast(`💰 Bán được ${r.earned} xu${cut ? ` · ${cut}` : ""}`);
       onCoins();
     });
+  // 0121: a whole stack, SELL_MAX at a time (the stall refuses more in one sale as a bad quantity)
+  const sellAll = (item: WildItemId, total: number) =>
+    void run(async () => {
+      let left = total, earned = 0, cut = 0;
+      let last: Awaited<ReturnType<typeof wildSell>> | null = null;
+      while (left > 0) {
+        const n = Math.min(SELL_MAX, left);
+        last = await wildSell(token, item, n);
+        earned += last.earned; cut += last.cut; left -= n;
+      }
+      return last ? { ...last, earned, cut } : null;
+    }, (r) => {
+      if (!r) return;
+      if (r.npc) setNpc(r.npc);
+      const c = npcCutNote(r.cut);
+      toast(`💰 Bán được ${r.earned} xu${c ? ` · ${c}` : ""}`);
+      onCoins();
+    });
 
   // v22 (0083): the combo strike (bosses and the dungeon)
   const startCombo = (kind: "boss" | "dungeon", ref: number, target: number, view: Pick<ComboView, "name" | "boss" | "icon">) => {
@@ -299,7 +336,7 @@ export function useWorld(o: WorldOpts) {
     stop: () => void run(() => snowStop(token, roomId), () => onWeather()),
   };
 
-  return { state, offset, here, inWild, busy, lastHit, act, sell, npc, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
+  return { state, offset, here, inWild, busy, lastHit, act, sell, sellAll, npc, attack, summon, dgStart, dgJoin, dgAttack, party, snow, reload, wild, wildEnd, wildClose, combo, comboEnd, comboClose };
 }
 
 export type World = ReturnType<typeof useWorld>;

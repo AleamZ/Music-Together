@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { hotkeyFor, type HotkeyContext } from "@/lib/game/hotkeys";
+import { hotkeyFor, hotkeyTargets, type HotkeyContext } from "@/lib/game/hotkeys";
 import { revealFor } from "@/components/game/hud/HudMenu";
 
 /** Runs a resolved hotkey: "help" goes to `onHelp`; any other action clicks (or, for a text field, focuses) the
@@ -11,7 +11,7 @@ export function runHotkey(id: string, onHelp: () => void, root: ParentNode = doc
     onHelp();
     return true;
   }
-  const el = root.querySelector<HTMLElement>(`[data-hotkey="${id}"]`);
+  const el = hotkeyTargets(id).map((t) => root.querySelector<HTMLElement>(`[data-hotkey="${t}"]`)).find((x) => x !== null) ?? null;
   if (!el || (el as HTMLButtonElement).disabled) return false;
   revealFor(el);                                   // a control inside a closed HUD group (the zoom) opens its group
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.focus();

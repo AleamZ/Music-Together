@@ -1,5 +1,5 @@
 import {
-  HARVEST_PARTS, LEASE_ROUND_MS, TEND_ACTS, TEND_MAX, TOOL_SICKLE, WATER_LOG_MAX, WATER_PER_HOUR, type FarmCatalog, type FarmItem,
+  HARVEST_PARTS, hoursText, LEASE_ROUND_MS, ripeAfterHours, uplandHours, TEND_ACTS, TEND_MAX, TOOL_SICKLE, WATER_LOG_MAX, WATER_PER_HOUR, type FarmCatalog, type FarmItem,
   type FarmItemKind, type UplandCare, type UplandCrop, type Variety,
 } from "./catalog";
 import {
@@ -129,7 +129,7 @@ export function tendAdvice(c: UplandModel, care: UplandCare, now: number): { don
   const onTime = (t: number) => (t - P) / HOUR_MS >= care.fromH && (t - P) / HOUR_MS <= care.toH;
   if (c.work.some((e) => e.act === care.id && onTime(e.t))) return { done: true, ok: false, text: `Đã ${job} rồi.` };
   const T = (now - P) / HOUR_MS;
-  if (T < care.fromH) return { done: false, ok: false, text: `Chưa tới lúc — ${job} lúc ${Math.ceil(care.fromH)}–${Math.floor(care.toH)} giờ sau trồng.` };
+  if (T < care.fromH) return { done: false, ok: false, text: `Chưa tới lúc — ${job} lúc ${hoursText(care.fromH, "up")}–${hoursText(care.toH, "down")} giờ sau trồng.` };
   if (T <= care.toH) return { done: false, ok: true, text: `Đúng lúc ${job}.` };
   if (T < care.halfToH) return { done: false, ok: false, text: "Trễ rồi — chỉ được nửa công." };
   return { done: false, ok: false, text: "Quá muộn — làm bây giờ là phí công." };
@@ -207,7 +207,11 @@ export function plotActions(p: PlotView, me: string, v: Variety | null, catalog:
   const soaks = (): PlotAction[] => {
     const seeds = riceSeeds(catalog, mine);
     if (seeds.length === 0) return [{ key: "soak", label: "Ngâm giống", run: { kind: "soak", plot, item: "" }, enabled: false, why: NO_SEED }];
-    return seeds.map((i) => ({ key: `soak:${i.id}`, label: `Ngâm ${lower(i.name)}`, run: { kind: "soak", plot, item: i.id }, enabled: true }));
+    return seeds.map((i) => {
+      const v0 = catalog.varieties.find((x) => x.id === i.variety);
+      const late = v0 ? leaseTooShort(p, ripeAfterHours(v0), now) : undefined;
+      return { key: `soak:${i.id}`, label: `Ngâm ${lower(i.name)}`, run: { kind: "soak", plot, item: i.id }, enabled: true, ...(late ? { warn: late } : {}) };
+    });
   };
   const prepare: PlotAction = {
     key: "prepare", label: "Làm ruộng lúa", run: { kind: "prepare", plot }, enabled: true, hint: "Cày bừa, cho nước ngập ruộng — để cấy lúa.",
@@ -290,7 +294,8 @@ function bedActions(p: PlotView, crop: CropView, catalog: FarmCatalog, mine: Far
     }
     for (const s of seeds) {
       const x = catalog.uplands.find((y) => y.id === s.upland)!;
-      out.push({ key: `plant:${s.id}`, label: x.plantLabel, run: { kind: "plant", plot, item: s.id }, enabled: !moist, why: moist });
+      const late = leaseTooShort(p, (x.nurseryReadyH ?? 0) + uplandHours(x, x.pickings.length), now);
+      out.push({ key: `plant:${s.id}`, label: x.plantLabel, run: { kind: "plant", plot, item: s.id }, enabled: !moist, why: moist, ...(late ? { warn: late } : {}) });
     }
   } else if (c.plantAt === null) {
     const ready = nurseryReadyAt(c, u);
@@ -334,6 +339,15 @@ function bedActions(p: PlotView, crop: CropView, catalog: FarmCatalog, mine: Far
   }
   out.push({ key: "abandon", label: "Bỏ vụ", run: { kind: "abandon", plot }, enabled: true, warn: "Bỏ vụ là mất hết hoa màu trên thửa này." });
   return out;
+}
+
+/** 0120: a lease runs its 96 h through several crops, and a crop still on the plot when it ends is lost — before sowing
+ *  or planting one that would not be in by then, say so (undefined: in time, or no lease, i.e. my own land). */
+export function leaseTooShort(p: PlotView, cropHours: number, now: number): string | undefined {
+  if (!p.lease) return undefined;
+  const left = p.lease.until - now;
+  if (left >= cropHours * HOUR_MS) return undefined;
+  return `Còn ${durationText(Math.max(0, left))} hạn thuê mà vụ này cần ~${hoursText(cropHours)} giờ mới chín — hết hạn thuê là mất cả vụ.`;
 }
 
 /** The jobs a plot's prompt can name, by action key (before the ":"); the v15.2 jobs are named by their button. */

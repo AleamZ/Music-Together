@@ -167,7 +167,7 @@ export interface GameCanvasHandle {
   setLiveInputs?: (patch: LiveInputs) => void;
   zone: () => ZoneId | null;
   /** 0096: my chibi chops or cooks while that minigame runs (null: done). */
-  setWork?: (a: "chop" | "cook" | null) => void;
+  setWork?: (a: "chop" | "cook" | "hunt" | null) => void;
   /** 3D wave 1: my vital state on the 3D chibi (faint, sleep, exhausted, eat, drink, photo) for `ms` (null = until
    *  cleared), and my fishing loadout's look on the 3D rod. */
   setVital?: (v: VitalAct | null, ms?: number | null) => void;
@@ -565,7 +565,7 @@ export default function GameCanvas({ ref, roomId, localId, mapId, arrive, world,
         // 0097: my chibi works; the others see it too — the farm animation code, re-sent while it lasts (it plays 2.5 s)
         engineRef.current?.setWork(a);
         window.clearInterval(workTimerRef.current);
-        const code = a === "chop" ? FARM_ANIM.chop : a === "cook" ? FARM_ANIM.cook : FARM_ANIM.stop;
+        const code = a === "chop" ? FARM_ANIM.chop : a === "cook" ? FARM_ANIM.cook : a === "hunt" ? FARM_ANIM.hunt : FARM_ANIM.stop;
         const send = () => {
           engineRef.current?.showFarmAnim(code);
           sendRef.current?.({ t: "fa", id: localId, a: code });

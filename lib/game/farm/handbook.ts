@@ -1,4 +1,4 @@
-import { ripeAfterHours, TOOL_SLING, uplandHours, type CritterKind, type FarmItem, type UplandCrop, type Variety } from "./catalog";
+import { hoursText, ripeAfterHours, TOOL_SLING, uplandHours, type CritterKind, type FarmItem, type UplandCrop, type Variety } from "./catalog";
 import { cropModel, cropPhase } from "./crop";
 import { BED_BAR_MS, BED_COUNT, GATHER, HOLE_COUNT } from "./gather";
 import { bedLevelsText } from "./messages";
@@ -32,11 +32,11 @@ export function handbookTabs(uplands: readonly UplandCrop[], critters: readonly 
 
 export interface HandbookSection { title: string; lines: string[] }
 
-// The hour marks stay inside the model's windows, whose edges scale with the variety (lúa thơm top-dresses at
-// 2.3–11.5 h): a window's start rounds up and its end or deadline rounds down, so acting at a printed hour is never
-// early or late.
-const start = (x: number) => `${Math.ceil(x)}`;
-const end = (x: number) => `${Math.floor(x)}`;
+// The hour marks stay inside the model's windows, whose edges scale with the variety (0120: lúa thơm top-dresses at
+// 0.64–3.2 h): a window's start rounds up and its end or deadline rounds down, to a quarter hour, so acting at a
+// printed hour is never early or late.
+const start = (x: number) => hoursText(x, "up");
+const end = (x: number) => hoursText(x, "down");
 const pct = (x: number) => `${Math.round(x * 100)}`;
 const lc = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
@@ -336,7 +336,7 @@ export function handbookPage(tab: HandbookTab, varieties: readonly Variety[], up
           "Đừng bón đạm quá tay — dư đạm vừa hút sâu bệnh vừa làm lúa đổ.",
           "Phơi lúa cho khô rồi mới bán: lúa ướt cô Út chỉ trả bảy phần.",
           "Đất tư được thêm 10% lúa và không tốn tiền thuê.",
-          "Gặt xong là trả ruộng thuê; muốn làm vụ nữa thì thuê lại.",
+          "Thuê ruộng được 4 ngày: gặt xong cứ làm vụ khác trên thửa đó; hết hạn thuê thì cây còn trên thửa sẽ mất.",
           "Làm đất có hai cách: làm ruộng lúa hoặc lên luống trồng màu — xen vụ lúa với vụ màu cho đỡ nhàm.",
           "Nạp thuốc trừ sâu vào bình phun là lợi nhất: nó trị sâu cuốn lá, sùng khoai, sâu keo và bọ trĩ.",
           ...(critters.length > 0

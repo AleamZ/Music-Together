@@ -250,7 +250,7 @@ export function saleRuleText(feePct: number): string {
 }
 /** Under the sublease price field: the cap and the fee. */
 export function subleaseRuleText(feePct: number): string {
-  return `Tối đa ${vnd(SUBLEASE_MAX)} một vụ` + (feePct > 0 ? `; có người thuê bạn nhận ${100 - feePct}% (phí ${feePct}% bị đốt).` : ".");
+  return `Tối đa ${vnd(SUBLEASE_MAX)} một lượt 4 ngày` + (feePct > 0 ? `; có người thuê bạn nhận ${100 - feePct}% (phí ${feePct}% bị đốt).` : ".");
 }
 
 /** The field chip (§12.1) while rats are live: its text and its aria-label. */

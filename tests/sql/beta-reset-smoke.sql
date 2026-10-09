@@ -166,6 +166,18 @@ begin
   assert (select applied_at from public.beta_state) is null, 'nothing applied';
 end $$;
 
+-- 0121: a Tiều phu before the reset (the starter axe, granted once per account and nghề)
+\o /dev/null
+select public.profession_choose(pg_temp.t('p1'), 'tieu_phu');
+\o
+do $$
+begin
+  assert exists (select 1 from public.prof_tools where account_id = pg_temp.a('p1') and item = 'riu_tap_su'), 'the starter axe';
+  assert exists (select 1 from public.prof_starter_grants where account_id = pg_temp.a('p1')), 'granted once';
+  insert into public.wood_bag (account_id, item, qty) values (pg_temp.a('p1'), 'go_tre', 5);
+  insert into public.wild_bag (account_id, item, qty) values (pg_temp.a('p1'), 'thit_tho', 2);
+end $$;
+
 -- ---------- 4. Phase 2 ----------
 create temp table res on commit drop as select public.admin_beta_reset(pg_temp.t('root'), 'RESET BETA') j;
 do $$
@@ -242,6 +254,18 @@ begin
   assert (select coins from public.wallets where account_id = pg_temp.a('p5')) = 20000, 'p5 xu';
   assert (select count(*) from public.account_items where account_id = pg_temp.a('p5') and item_id like 'beta\_%') = 5, 'p5 wardrobe';
   assert (select qty from public.inventory where account_id = pg_temp.a('p5') and item_id = 'gb_cam') = 5, 'p5 groundbait';
+end $$;
+
+-- 0121: the forest after the reset — bags and tools gone, and picking the nghề again gives the starter axe back
+do $$
+begin
+  assert not exists (select 1 from public.prof_tools where account_id = pg_temp.a('p1'))
+     and not exists (select 1 from public.wood_bag where account_id = pg_temp.a('p1'))
+     and not exists (select 1 from public.wild_bag where account_id = pg_temp.a('p1'))
+     and not exists (select 1 from public.prof_starter_grants where account_id = pg_temp.a('p1')), 'the forest wiped';
+  perform public.profession_choose(pg_temp.t('p1'), 'tieu_phu');
+  assert exists (select 1 from public.prof_tools where account_id = pg_temp.a('p1') and item = 'riu_tap_su' and durability > 0),
+    'the starter axe again after the reset';
 end $$;
 
 -- ---------- 6. Exclusivity ----------

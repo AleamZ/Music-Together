@@ -834,6 +834,27 @@ export function digModel(mats: ModelMats, dug: boolean): THREE.Group {
   return g;
 }
 
+/** 0123: a hunter's trap on the forest floor: a wooden box cage with a propped door (wood), or open iron jaws. */
+export function trapModel(mats: ModelMats, iron: boolean): THREE.Group {
+  const g = new THREE.Group(), p = new Paint();
+  if (iron) {
+    p.add(new THREE.CylinderGeometry(0.32, 0.32, 0.04, 10), 0x4a4c54, 0, 0.02, 0);
+    for (const sd of [-1, 1]) {
+      p.add(new THREE.TorusGeometry(0.28, 0.03, 4, 10, Math.PI), 0x5a5f68, 0, 0.05, sd * 0.02, Math.PI / 2 + sd * 0.5, 0, 0);
+      for (let i = 0; i < 4; i++) p.add(new THREE.ConeGeometry(0.03, 0.08, 4), 0xc8ccd4, -0.21 + i * 0.14, 0.12, sd * 0.1);
+    }
+  } else {
+    const W = 0x8b5a33, D = 0x6e4424;
+    p.box(0.6, 0.04, 0.4, D, 0, 0.02, 0);
+    for (const x of [-0.28, 0.28]) for (const z of [-0.18, 0.18]) p.box(0.04, 0.34, 0.04, W, x, 0.17, z);
+    for (let i = 0; i < 4; i++) p.box(0.6, 0.03, 0.03, W, 0, 0.32, -0.15 + i * 0.1);
+    p.box(0.04, 0.3, 0.38, D, 0.3, 0.3, 0, 0, 0, 0.6);                     // the door, propped up
+    p.box(0.02, 0.36, 0.02, W, 0.38, 0.18, 0);                             // the stick holding it
+  }
+  g.add(mats.baked1(p, false)!);
+  return g;
+}
+
 export function bobberModel(mats: ModelMats): THREE.Group {
   const g = new THREE.Group();
   g.add(mats.baked1(new Paint().add(new THREE.SphereGeometry(0.12, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), 0xe0342a, 0, 0, 0)

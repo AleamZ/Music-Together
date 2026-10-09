@@ -3,6 +3,7 @@
 // cell within one cell of me, so this is the client's pick of a real, visible tree for that key.
 import { scatterTrees } from "@/lib/game/world/scenery";
 import { FOREST_CELL, forestAt } from "@/lib/game/world/forest-grid";
+import { isFelled } from "./felled-store";
 
 export interface NearTree { cx: number; cy: number; k: number; x: number; y: number; d: number }
 
@@ -30,17 +31,23 @@ export function cellTrees(cx: number, cy: number): ReadonlyArray<{ x: number; y:
   return byCell.get(`${cx}:${cy}`) ?? [];
 }
 
-/** The nearest choppable tree within `reach` px of (x, y), or null. */
-export function nearestTree(x: number, y: number, reach = CHOP_REACH): NearTree | null {
+/** The nearest choppable tree within `reach` px of (x, y), or null. A standing tree wins over a nearer stump (0121: a
+ *  felled tree no longer hides the one behind it); a stump comes back only when no tree stands in reach, so its button
+ *  can show when it grows back. `felled` tells a stump ("cx:cy:k"); the shared felled store by default. */
+export function nearestTree(x: number, y: number, reach = CHOP_REACH,
+  felled: (key: string) => boolean = (key) => isFelled(key)): NearTree | null {
   const cx0 = Math.floor(x / FOREST_CELL), cy0 = Math.floor(y / FOREST_CELL);
-  let best: NearTree | null = null;
+  let best: NearTree | null = null, stump: NearTree | null = null;
   for (let cy = cy0 - 1; cy <= cy0 + 1; cy++) for (let cx = cx0 - 1; cx <= cx0 + 1; cx++) {
     cellTrees(cx, cy).forEach((t, k) => {
       const d = Math.hypot(t.x - x, t.y - y);
-      if (d <= reach && (!best || d < best.d)) best = { cx, cy, k, x: t.x, y: t.y, d };
+      if (d > reach) return;
+      const down = felled(`${cx}:${cy}:${k}`);
+      if (!down && (!best || d < best.d)) best = { cx, cy, k, x: t.x, y: t.y, d };
+      if (down && (!stump || d < stump.d)) stump = { cx, cy, k, x: t.x, y: t.y, d };
     });
   }
-  return best;
+  return best ?? stump;
 }
 
 /** 0097: the world px of felled trees ("cx:cy:k" keys), for the 3D Forest's stumps. */

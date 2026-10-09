@@ -2,7 +2,7 @@
 -- superuser on the throwaway cluster after the full chain (0004 … 0102), from the repo root:
 --   psql -f tests/sql/econ-farm-smoke.sql
 -- It re-runs 0102 twice with \i (the second time over listings, subleases and offers outside the new bounds, which the
--- migration withdraws). Every check is an ASSERT; the first failure stops psql. It turns app_flags.room_creation_open on
+-- migration withdraws), then 0120, whose harvest functions replace three of 0102's. Every check is an ASSERT; the first failure stops psql. It turns app_flags.room_creation_open on
 -- for its rooms (other smokes do the same after 0093) and puts it back as it was at the end. Time is the real now(),
 -- passed as p_now to the private _farm_do_* functions (the public RPCs are wrappers that add the anti-cheat gate).
 \set ON_ERROR_STOP on
@@ -46,12 +46,17 @@ $$;
 create or replace function pg_temp.events(p uuid, k text) returns bigint language sql stable as $$
   select count(*) from public.game_events where account_id = p and kind = k
 $$;
--- A ripe nếp crop on plot n (transplanted 50 h before t, drained 5 h before t): ripe until t + 10 h.
+-- A ripe nếp crop on plot n: ripe 2 h before t (transplanted 48·s + 2 h before t; sown 10·s h before that, soaked 3 h
+-- before sowing), drained 5 h before t — ripe until t + 10 h. In hours of the variety's scale (0120: s 1 → 0.25).
 create or replace function pg_temp.ripe_nep(r uuid, n integer, a uuid, t timestamptz) returns void language sql as $$
+  with s as (select scale from public.rice_varieties where id = 'nep'),
+       x as (select t - make_interval(secs => (48 * s.scale + 2) * 3600) as tp from s),
+       y as (select x.tp, x.tp - make_interval(secs => 10 * s.scale * 3600) as sow from x, s)
   insert into public.crops (room_id, plot_no, farmer_id, variety, prepared_at, soak_at, sow_at, transplant_at, water_log)
-  values (r, n, a, 'nep', t - interval '64 hours', t - interval '63 hours', t - interval '60 hours', t - interval '50 hours',
-          jsonb_build_array(jsonb_build_object('t', t - interval '64 hours', 'l', 3),
-                            jsonb_build_object('t', t - interval '5 hours', 'l', 1)))
+  select r, n, a, 'nep', y.sow - interval '4 hours', y.sow - interval '3 hours', y.sow, y.tp,
+         jsonb_build_array(jsonb_build_object('t', y.sow - interval '4 hours', 'l', 3),
+                           jsonb_build_object('t', t - interval '5 hours', 'l', 1))
+    from y
 $$;
 -- rats off in these rooms (their spawns would eat the ripe crops the checks weigh)
 insert into public.rat_clocks (room_id, last_k) select v::uuid, 9000000000000000000 from ef where k like 'r%'
@@ -209,6 +214,8 @@ begin
 end $$;
 set client_min_messages = warning;
 \i supabase/migrations/0102_econ_farm.sql
+-- 0120 re-creates three of 0102's harvest functions (a lease runs its 96 h): put them back over the re-run (A4 checks them)
+\i supabase/migrations/0120_farm_one_day.sql
 reset client_min_messages;
 do $$
 begin
@@ -335,6 +342,9 @@ begin
   assert pg_temp.events(g, 'crop_harvest') = 1
      and (select meta = jsonb_build_object('kind', 'rice', 'crop', 'nep', 'kg', kg, 'via', 'hand') and qty = 1
             from public.game_events where account_id = g and kind = 'crop_harvest'), format('the hand harvest: %s kg', kg);
+  -- 0120: a lease runs its 96 h — the last part cut by hand does not end it (g could replant); freed here for the cap
+  assert exists (select 1 from public.plot_leases where room_id = r and farmer_id = g and plot_no = 5), 'the lease runs on (hand)';
+  delete from public.plot_leases where room_id = r and farmer_id = g and plot_no = 5;
   -- the harvester: the sweep pays the parts left and emits it (two parts were cut by hand first)
   perform public._farm_do_rent(r, g, 6, t);
   perform pg_temp.ripe_nep(r, 6, g, t);
@@ -348,6 +358,9 @@ begin
      and (select meta->>'via' = 'harvester' and meta->>'crop' = 'nep' and (meta->>'kg')::int > 0 from public.game_events
            where account_id = g and kind = 'crop_harvest' order by id desc limit 1), 'the harvester''s job';
   assert not exists (select 1 from public.crops where room_id = r and plot_no = 6), 'the plot is free';
+  -- 0120: nor does the harvester's job
+  assert exists (select 1 from public.plot_leases where room_id = r and farmer_id = g and plot_no = 6), 'the lease runs on (harvester)';
+  delete from public.plot_leases where room_id = r and farmer_id = g and plot_no = 6;
   -- hoa màu: khoai (one picking) emits at its picking; ớt only at the last of its three
   perform public._farm_do_rent(r, g, 7, t);
   insert into public.crops (room_id, plot_no, farmer_id, kind, upland, prepared_at, plant_at, water_log)
@@ -358,11 +371,18 @@ begin
   assert s->'harvest'->'done' = 'true' and pg_temp.events(g, 'crop_harvest') = 3
      and (select meta = jsonb_build_object('kind', 'upland', 'crop', 'khoai', 'via', 'hand', 'kg', (s->'harvest'->>'kg')::int)
             from public.game_events where account_id = g and kind = 'crop_harvest' order by id desc limit 1), format('khoai %s', s->'harvest');
+  assert exists (select 1 from public.plot_leases where room_id = r and farmer_id = g and plot_no = 7), 'the khoai lease runs on (0120)';
+  delete from public.plot_leases where room_id = r and farmer_id = g and plot_no = 7;
   perform public._farm_do_rent(r, g, 8, t);
+  -- ớt planted between picking 1's loss and picking 2's (0120: 13.8 h, lost 32 h later; 17.4 h; 21 h): picking 1 is gone,
+  -- 2 and 3 are ready — the event at the last
   insert into public.crops (room_id, plot_no, farmer_id, kind, upland, prepared_at, sow_at, plant_at, water_log)
-  values (r, 8, g, 'upland', 'ot', t - interval '92 hours', t - interval '92 hours', t - interval '80 hours',
-          jsonb_build_array(jsonb_build_object('t', t - interval '1 hour', 'l', 1)));
-  -- ớt planted 80 h ago: picking 1 (46 h, lost 32 h later) is gone; 2 (58 h) and 3 (70 h) are ready: the event at the last
+  select r, 8, g, 'upland', 'ot', t - make_interval(secs => (h + u.nursery_ready_h + 1) * 3600),
+         t - make_interval(secs => (h + u.nursery_ready_h + 1) * 3600), t - make_interval(secs => h * 3600),
+         jsonb_build_array(jsonb_build_object('t', t - interval '1 hour', 'l', 1))
+    from public.upland_crops u,
+         lateral (select ((public._up_hours(u, 1) + public._up_hours(u, 2)) / 2 + u.ripe_window_h + u.lost_after_h) as h) x
+   where u.id = 'ot';
   perform public._farm_do_begin_work(r, g, 8, 'harvest', t);
   s := public._farm_do_harvest(r, g, 8, 1.0, t + interval '3 seconds');
   assert s->'harvest'->'done' = 'false' and pg_temp.events(g, 'crop_harvest') = 3, format('ớt, not the last %s', s->'harvest');
@@ -388,7 +408,7 @@ begin
   c0 := pg_temp.bal(e);
   s := public.sell_critters(t, null);
   assert s->'sold' = '{"n": 10, "xu": 12500}' and s->'npc_cut' = '2500', format('critters %s', s - 'mine');
-  assert s->'npc' = jsonb_build_object('gross', 25000, 'full', 20000, 'half', 40000, 'tail_pct', 20), format('the day %s', s->'npc');
+  assert (s->'npc') - 'boost_pct' = jsonb_build_object('gross', 25000, 'full', 20000, 'half', 40000, 'tail_pct', 20), format('the day %s', s->'npc');   -- 0118 added boost_pct
   assert s->'mine'->'npc' = s->'npc', 'the account part carries the day';
   assert pg_temp.bal(e) = c0 + 12500
      and exists (select 1 from public.coin_ledger where account_id = e and reason = 'critter_sell' and delta = 12500), 'paid 12 500';

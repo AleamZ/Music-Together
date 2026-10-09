@@ -1,0 +1,447 @@
+{
+    "uplands": [
+        {
+            "id": "khoai",
+            "name": "Khoai lang",
+            "cares": [
+                {
+                    "id": "td",
+                    "kind": "fert",
+                    "name": "Bón thúc nuôi củ",
+                    "to_h": 4.33,
+                    "items": [
+                        "fert_potash",
+                        "fert_npk"
+                    ],
+                    "from_h": 2.67,
+                    "pen_half": 0.10,
+                    "half_to_h": 6,
+                    "half_items": [
+                        "fert_urea"
+                    ],
+                    "half_from_h": 1,
+                    "pen_missing": 0.20
+                },
+                {
+                    "id": "lat_day",
+                    "kind": "act",
+                    "name": "Lật dây",
+                    "to_h": 5.33,
+                    "items": [
+                    ],
+                    "from_h": 4,
+                    "pen_half": 0.05,
+                    "half_to_h": 6.67,
+                    "half_items": [
+                    ],
+                    "half_from_h": 5.33,
+                    "pen_missing": 0.10
+                }
+            ],
+            "pests": [
+                {
+                    "kind": "weevil",
+                    "name": "Sùng khoai",
+                    "slot": 1,
+                    "to_h": 6.67,
+                    "chance": 0.40,
+                    "from_h": 4,
+                    "remedy": "spray_insect",
+                    "dry_mult": 2,
+                    "wet_mult": 1
+                }
+            ],
+            "method": "cutting",
+            "stages": [
+                {
+                    "id": "root",
+                    "name": "Bén rễ",
+                    "water": [
+                        1
+                    ],
+                    "until_h": 1
+                },
+                {
+                    "id": "vine",
+                    "name": "Bò dây",
+                    "water": [
+                        0,
+                        1
+                    ],
+                    "until_h": 3.67
+                },
+                {
+                    "id": "tuber",
+                    "name": "Tượng củ",
+                    "water": [
+                        0,
+                        1
+                    ],
+                    "until_h": 6
+                },
+                {
+                    "id": "bulk",
+                    "name": "Củ lớn",
+                    "water": [
+                        0,
+                        1
+                    ],
+                    "until_h": 8
+                }
+            ],
+            "base_kg": 43,
+            "rot_cap": 0.5,
+            "pickings": [
+                100
+            ],
+            "rat_food": true,
+            "rot_rate": 0.03,
+            "over_rate": 0.02,
+            "pick_gap_h": null,
+            "ripe_water": [
+                0,
+                1
+            ],
+            "rot_from_h": 3.67,
+            "sort_order": 10,
+            "plant_label": "Trồng dây khoai",
+            "harvest_anim": "dig",
+            "lost_after_h": 48,
+            "price_per_kg": 265,
+            "harvest_label": "Đào khoai",
+            "nursery_old_h": null,
+            "ripe_window_h": 12,
+            "nursery_ready_h": null,
+            "transplant_label": null
+        },
+        {
+            "id": "bap",
+            "name": "Bắp",
+            "cares": [
+                {
+                    "id": "td1",
+                    "kind": "fert",
+                    "name": "Bón thúc lần 1 (3–5 lá)",
+                    "to_h": 4,
+                    "items": [
+                        "fert_urea",
+                        "fert_npk"
+                    ],
+                    "from_h": 2,
+                    "pen_half": 0.10,
+                    "half_to_h": 6,
+                    "half_items": [
+                        "fert_potash"
+                    ],
+                    "half_from_h": 1.5,
+                    "pen_missing": 0.20
+                },
+                {
+                    "id": "vun_goc",
+                    "kind": "act",
+                    "name": "Vun gốc",
+                    "to_h": 7,
+                    "items": [
+                    ],
+                    "from_h": 4,
+                    "pen_half": 0.05,
+                    "half_to_h": 10,
+                    "half_items": [
+                    ],
+                    "half_from_h": 7,
+                    "pen_missing": 0.10
+                },
+                {
+                    "id": "td2",
+                    "kind": "fert",
+                    "name": "Bón thúc lần 2 (trổ cờ)",
+                    "to_h": 11.5,
+                    "items": [
+                        "fert_npk",
+                        "fert_potash"
+                    ],
+                    "from_h": 9.5,
+                    "pen_half": 0.10,
+                    "half_to_h": 12.5,
+                    "half_items": [
+                        "fert_urea"
+                    ],
+                    "half_from_h": 7.5,
+                    "pen_missing": 0.20
+                }
+            ],
+            "pests": [
+                {
+                    "kind": "armyworm",
+                    "name": "Sâu keo mùa thu",
+                    "slot": 1,
+                    "to_h": 6,
+                    "chance": 0.35,
+                    "from_h": 2,
+                    "remedy": "spray_insect",
+                    "dry_mult": 1,
+                    "wet_mult": 1
+                },
+                {
+                    "kind": "armyworm",
+                    "name": "Sâu keo mùa thu",
+                    "slot": 2,
+                    "to_h": 11,
+                    "chance": 0.35,
+                    "from_h": 6.5,
+                    "remedy": "spray_insect",
+                    "dry_mult": 1,
+                    "wet_mult": 1
+                }
+            ],
+            "method": "direct",
+            "stages": [
+                {
+                    "id": "sprout",
+                    "name": "Nảy mầm",
+                    "water": [
+                        1
+                    ],
+                    "until_h": 1.5
+                },
+                {
+                    "id": "leaf",
+                    "name": "Ra lá",
+                    "water": [
+                        1,
+                        2
+                    ],
+                    "until_h": 6
+                },
+                {
+                    "id": "knee",
+                    "name": "Xoáy nõn",
+                    "water": [
+                        1,
+                        2
+                    ],
+                    "until_h": 10
+                },
+                {
+                    "id": "tassel",
+                    "name": "Trổ cờ, phun râu",
+                    "water": [
+                        1,
+                        2
+                    ],
+                    "until_h": 12.5
+                },
+                {
+                    "id": "fill",
+                    "name": "Chắc hạt",
+                    "water": [
+                        0,
+                        1
+                    ],
+                    "until_h": 15
+                }
+            ],
+            "base_kg": 49,
+            "rot_cap": null,
+            "pickings": [
+                100
+            ],
+            "rat_food": true,
+            "rot_rate": null,
+            "over_rate": 0.02,
+            "pick_gap_h": null,
+            "ripe_water": [
+                0,
+                1
+            ],
+            "rot_from_h": null,
+            "sort_order": 20,
+            "plant_label": "Gieo hạt bắp",
+            "harvest_anim": "pick",
+            "lost_after_h": 48,
+            "price_per_kg": 460,
+            "harvest_label": "Bẻ bắp",
+            "nursery_old_h": null,
+            "ripe_window_h": 12,
+            "nursery_ready_h": null,
+            "transplant_label": null
+        },
+        {
+            "id": "ot",
+            "name": "Ớt",
+            "cares": [
+                {
+                    "id": "td1",
+                    "kind": "fert",
+                    "name": "Bón thúc bén rễ",
+                    "to_h": 3.6,
+                    "items": [
+                        "fert_urea",
+                        "fert_npk"
+                    ],
+                    "from_h": 1.2,
+                    "pen_half": 0.08,
+                    "half_to_h": 6,
+                    "half_items": [
+                        "fert_potash"
+                    ],
+                    "half_from_h": 0,
+                    "pen_missing": 0.15
+                },
+                {
+                    "id": "td2",
+                    "kind": "fert",
+                    "name": "Bón thúc ra hoa",
+                    "to_h": 9,
+                    "items": [
+                        "fert_npk",
+                        "fert_potash"
+                    ],
+                    "from_h": 6.6,
+                    "pen_half": 0.08,
+                    "half_to_h": 12,
+                    "half_items": [
+                        "fert_urea"
+                    ],
+                    "half_from_h": 6,
+                    "pen_missing": 0.15
+                },
+                {
+                    "id": "td3",
+                    "kind": "fert",
+                    "name": "Bón nuôi trái",
+                    "to_h": 16.8,
+                    "items": [
+                        "fert_npk",
+                        "fert_potash"
+                    ],
+                    "from_h": 13.8,
+                    "pen_half": 0.08,
+                    "half_to_h": 19.2,
+                    "half_items": [
+                        "fert_urea"
+                    ],
+                    "half_from_h": 12,
+                    "pen_missing": 0.15
+                }
+            ],
+            "pests": [
+                {
+                    "kind": "thrips",
+                    "name": "Bọ trĩ",
+                    "slot": 1,
+                    "to_h": 7.2,
+                    "chance": 0.40,
+                    "from_h": 1.8,
+                    "remedy": "spray_insect",
+                    "dry_mult": 1.5,
+                    "wet_mult": 1
+                },
+                {
+                    "kind": "anthracnose",
+                    "name": "Thán thư",
+                    "slot": 2,
+                    "to_h": 19.2,
+                    "chance": 0.40,
+                    "from_h": 12,
+                    "remedy": "spray_fungus",
+                    "dry_mult": 1,
+                    "wet_mult": 2
+                }
+            ],
+            "method": "nursery",
+            "stages": [
+                {
+                    "id": "root",
+                    "name": "Bén rễ",
+                    "water": [
+                        1
+                    ],
+                    "until_h": 2.4
+                },
+                {
+                    "id": "grow",
+                    "name": "Phát triển thân lá",
+                    "water": [
+                        1,
+                        2
+                    ],
+                    "until_h": 6.6
+                },
+                {
+                    "id": "flower",
+                    "name": "Ra hoa",
+                    "water": [
+                        1,
+                        2
+                    ],
+                    "until_h": 10.2
+                },
+                {
+                    "id": "fruit",
+                    "name": "Đậu trái",
+                    "water": [
+                        1,
+                        2
+                    ],
+                    "until_h": 13.8
+                }
+            ],
+            "base_kg": 23,
+            "rot_cap": null,
+            "pickings": [
+                40,
+                35,
+                25
+            ],
+            "rat_food": false,
+            "rot_rate": null,
+            "over_rate": 0.03,
+            "pick_gap_h": 3.6,
+            "ripe_water": [
+                0,
+                1
+            ],
+            "rot_from_h": null,
+            "sort_order": 30,
+            "plant_label": "Ươm hạt ớt",
+            "harvest_anim": "pick",
+            "lost_after_h": 24,
+            "price_per_kg": 1590,
+            "harvest_label": "Hái ớt",
+            "nursery_old_h": 9,
+            "ripe_window_h": 8,
+            "nursery_ready_h": 3,
+            "transplant_label": "Trồng cây ớt con"
+        }
+    ],
+    "varieties": [
+        {
+            "id": "short",
+            "name": "Lúa ngắn ngày",
+            "scale": 0.18,
+            "base_kg": 27,
+            "blast_mult": 1,
+            "sort_order": 10,
+            "price_per_kg": 710
+        },
+        {
+            "id": "nep",
+            "name": "Nếp",
+            "scale": 0.25,
+            "base_kg": 27,
+            "blast_mult": 1,
+            "sort_order": 20,
+            "price_per_kg": 950
+        },
+        {
+            "id": "thom",
+            "name": "Lúa thơm",
+            "scale": 0.32,
+            "base_kg": 23,
+            "blast_mult": 1.3,
+            "sort_order": 30,
+            "price_per_kg": 1350
+        }
+    ]
+}

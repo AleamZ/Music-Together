@@ -32,10 +32,19 @@ function accountTables(): Set<string> {
   return out;
 }
 
-/** The tables 0118's beta_reset_scope classifies. */
+/** The tables beta_reset_scope classifies: 0118's rows, and the later migrations' (0123: the forest's traps …). */
 function scope(): Map<string, string> {
-  const block = BETA.slice(BETA.indexOf("insert into public.beta_reset_scope"), BETA.indexOf("on conflict (tbl)"));
-  return new Map([...block.matchAll(/\('(\w+)', '(wipe|keep|release|reset)'/g)].map((m) => [m[1], m[2]] as const));
+  const out = new Map<string, string>();
+  for (const f of readdirSync(DIR).filter((x) => x.endsWith(".sql")).sort()) {
+    const s = f === "0118_beta_reset.sql" ? BETA : sql(f);
+    let at = s.indexOf("insert into public.beta_reset_scope");
+    while (at >= 0) {
+      const block = s.slice(at, s.indexOf("on conflict (tbl)", at));
+      for (const m of block.matchAll(/\('(\w+)', '(wipe|keep|release|reset)'/g)) out.set(m[1], m[2]);
+      at = s.indexOf("insert into public.beta_reset_scope", at + 1);
+    }
+  }
+  return out;
 }
 
 describe("0118 the end-of-Beta reset", () => {

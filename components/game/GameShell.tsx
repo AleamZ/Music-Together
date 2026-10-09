@@ -1387,6 +1387,7 @@ export default function GameShell({ view, derived, playback, sponsorBlock, onExi
 
       <FishingOverlays
         fishing={fishing}
+        forestToken={token}
         onSail={explore.rowOut}
         onDetect={explore.detect}
         // the bag's farm tools, once the field has loaded and the catalog has them (before 0016 it has none)

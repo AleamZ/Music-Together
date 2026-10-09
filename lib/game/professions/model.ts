@@ -23,6 +23,8 @@ export interface BuffRow { key: BuffKey; value: number; untilMs: number }
 export interface ProfState {
   main: ProfId | null; switchAtMs: number | null; switchFee: number; resetFee: number;
   profs: ProfRow[]; skills: string[]; buffs: BuffRow[]; stamina: StaminaState | null; serverNowMs: number;
+  /** 0096 prof_tools (the starter tools and the forest's): item → durability; 0121 reads it for the starter toast. */
+  tools: Record<string, number>;
 }
 
 const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
@@ -54,7 +56,14 @@ export function parseProfState(raw: unknown): ProfState | null {
     switchAtMs: num(r.switch_at_ms), switchFee: num(r.switch_fee) ?? 0, resetFee: num(r.reset_fee) ?? 0,
     profs, skills: (r.skills as unknown[]).filter((s): s is string => typeof s === "string"), buffs,
     stamina: parseStamina(r.stamina), serverNowMs: num(r.server_now_ms) ?? Date.now(),
+    tools: Object.fromEntries((Array.isArray(r.tools) ? (r.tools as Record<string, unknown>[]) : [])
+      .flatMap((t) => (typeof t?.item === "string" ? [[t.item, num(t.durability) ?? 0] as const] : []))),
   };
+}
+
+/** 0121: the tools that came with a choice (a starter granted once per account and nghề): in `after`, not in `before`. */
+export function newTools(before: ProfState | null, after: ProfState): string[] {
+  return Object.keys(after.tools).filter((id) => !(id in (before?.tools ?? {})));
 }
 
 /** The bar now: the server's value plus the regen since it answered (`elapsedMs`), capped. */
