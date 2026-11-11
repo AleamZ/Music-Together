@@ -49,4 +49,7 @@ describe("isDevtoolsShortcut", () => {
     for (const key of ["i", "b", "e", "F5", "ArrowUp", " "]) expect(isDevtoolsShortcut(k(key))).toBe(false);
     expect(isDevtoolsShortcut(k("c", { ctrlKey: true }))).toBe(false); // copy
   });
+  it("a keydown without a key (browser autofill) does not throw", () => {
+    expect(isDevtoolsShortcut(k(undefined as unknown as string))).toBe(false);
+  });
 });
