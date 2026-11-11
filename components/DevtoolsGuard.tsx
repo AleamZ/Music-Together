@@ -5,7 +5,7 @@ import { IS_PROD } from "@/lib/app-mode";
 
 /** Keys that open DevTools or the page source (Windows/Linux and macOS). */
 export function isDevtoolsShortcut(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey">): boolean {
-  const k = e.key.toLowerCase();
+  const k = (e.key ?? "").toLowerCase();                                     // autofill keydowns carry no key
   if (k === "f12") return true;
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.shiftKey && ["i", "j", "c", "k"].includes(k)) return true;   // Chrome/Edge/Firefox DevTools panels
